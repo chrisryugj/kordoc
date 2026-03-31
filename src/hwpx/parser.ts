@@ -615,6 +615,9 @@ function walkParagraphChildren(
       } else {
         tableCtx = tableStack.length > 0 ? tableStack.pop()! : null
       }
+    } else if (localTag === "run") {
+      // hp:run 안에 hp:tbl이 중첩된 구조 처리 (일부 HWPX 파일)
+      tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum)
     } else if (localTag === "pic" || localTag === "shape" || localTag === "drawingObject") {
       if (warnings && sectionNum) {
         warnings.push({ page: sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
