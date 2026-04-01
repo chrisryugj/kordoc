@@ -7,7 +7,6 @@
 import { detectFormat, isHwpxFile, isOldHwpFile, isPdfFile } from "./detect.js"
 import { parseHwpxDocument } from "./hwpx/parser.js"
 import { parseHwp5Document } from "./hwp5/parser.js"
-import { parsePdfDocument } from "./pdf/parser.js"
 import type { ParseResult, ParseOptions } from "./types.js"
 import { classifyError } from "./utils.js"
 
@@ -70,8 +69,12 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
 /** PDF 파일에서 텍스트를 추출하여 Markdown으로 변환 */
 export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
+    const { parsePdfDocument } = await import("./pdf/parser.js")
     return await parsePdfDocument(buffer, options)
   } catch (err) {
+    if (err instanceof Error && (err.message.includes("Cannot find") || err.message.includes("pdfjs-dist"))) {
+      return { success: false, fileType: "pdf", error: "PDF 파싱을 위해 pdfjs-dist를 설치하세요: npm install pdfjs-dist", code: "MISSING_DEPENDENCY" }
+    }
     return { success: false, fileType: "pdf", error: err instanceof Error ? err.message : "PDF 파싱 실패", code: classifyError(err) }
   }
 }

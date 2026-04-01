@@ -9,7 +9,6 @@ import { parse, detectFormat, blocksToMarkdown, compare, extractFormFields } fro
 import { VERSION, toArrayBuffer, sanitizeError, KordocError } from "./utils.js"
 import { extractHwp5MetadataOnly } from "./hwp5/parser.js"
 import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
-import { extractPdfMetadataOnly } from "./pdf/parser.js"
 
 /** 허용 파일 확장자 */
 const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf"])
@@ -162,9 +161,11 @@ server.tool(
         case "hwpx":
           metadata = await extractHwpxMetadataOnly(buffer)
           break
-        case "pdf":
+        case "pdf": {
+          const { extractPdfMetadataOnly } = await import("./pdf/parser.js")
           metadata = await extractPdfMetadataOnly(buffer)
           break
+        }
         default:
           return {
             content: [{ type: "text", text: `지원하지 않는 파일 형식입니다: ${file_path}` }],
