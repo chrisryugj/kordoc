@@ -74,7 +74,7 @@ export function buildTable(rows: CellContext[][]): IRTable {
     }
   }
 
-  return { rows: numRows, cols: maxCols, cells: grid, hasHeader: numRows > 1 }
+  return { rows: numRows, cols: maxCols, cells: grid, hasHeader: numRows >= 1 }
 }
 
 export function convertTableToText(rows: CellContext[][]): string {
@@ -224,6 +224,11 @@ function tableToMarkdown(table: IRTable): string {
   }
 
   if (uniqueRows.length === 0) return ""
+
+  // 헤더만 있고 데이터 행이 없는 경우, 빈 데이터 행 추가
+  if (uniqueRows.length === 1) {
+    uniqueRows.push(Array(numCols).fill(""))
+  }
 
   const md: string[] = []
   md.push("| " + uniqueRows[0].join(" | ") + " |")
