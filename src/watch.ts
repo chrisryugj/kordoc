@@ -130,6 +130,9 @@ function validateWebhookUrl(url: string): void {
   if (
     hostname === "localhost" ||
     hostname === "[::1]" ||
+    // IPv6 loopback 변형 차단
+    hostname === "[0:0:0:0:0:0:0:1]" ||
+    hostname === "[0000:0000:0000:0000:0000:0000:0000:0001]" ||
     hostname.startsWith("127.") ||
     hostname.startsWith("10.") ||
     hostname.startsWith("192.168.") ||
