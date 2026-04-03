@@ -99,7 +99,12 @@ function parseCharProperties(doc: Document, map: Map<string, HwpxCharProperty>):
 
       // height 속성 (centi-pt 단위)
       const height = el.getAttribute("height")
-      if (height) prop.fontSize = parseInt(height, 10) / 100
+      if (height) {
+        const parsedHeight = parseInt(height, 10)
+        if (!isNaN(parsedHeight) && parsedHeight > 0) {
+          prop.fontSize = parsedHeight / 100
+        }
+      }
 
       // bold/italic
       const bold = el.getAttribute("bold")
@@ -282,7 +287,7 @@ async function extractImagesFromZip(
         decompressed.total += data.length
         if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
 
-        const ext = ref.includes(".") ? ref.split(".").pop()! : "png"
+        const ext = ref.includes(".") ? (ref.split(".").pop() || "png") : "png"
         const mimeType = imageExtToMime(ext)
         imageIndex++
         const filename = `image_${String(imageIndex).padStart(3, "0")}.${mimeToExt(mimeType)}`
@@ -699,8 +704,10 @@ function walkSection(
 
       case "cellSpan":
         if (tableCtx?.cell) {
-          const cs = parseInt(el.getAttribute("colSpan") || "1", 10)
-          const rs = parseInt(el.getAttribute("rowSpan") || "1", 10)
+          const rawCs = parseInt(el.getAttribute("colSpan") || "1", 10)
+          const cs = isNaN(rawCs) ? 1 : rawCs
+          const rawRs = parseInt(el.getAttribute("rowSpan") || "1", 10)
+          const rs = isNaN(rawRs) ? 1 : rawRs
           tableCtx.cell.colSpan = clampSpan(cs, MAX_COLS)
           tableCtx.cell.rowSpan = clampSpan(rs, MAX_ROWS)
         }
