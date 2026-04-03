@@ -108,7 +108,9 @@ function extractInlineFields(text: string): FormField[] {
   // "라벨: 값" 또는 "라벨 : 값" 패턴
   const pattern = /([가-힣A-Za-z]{2,10})\s*[:：]\s*([^\n,;]{1,100})/g
   let match
-  while ((match = pattern.exec(text)) !== null) {
+  let iterations = 0
+  const MAX_FORM_MATCHES = 1000
+  while ((match = pattern.exec(text)) !== null && ++iterations < MAX_FORM_MATCHES) {
     const label = match[1].trim()
     const value = match[2].trim()
     if (value) {
