@@ -32,12 +32,11 @@ async function loadPdfWithTimeout(buffer: ArrayBuffer) {
     disableFontFace: true,
     isEvalSupported: false,
   })
-  return Promise.race([
-    loadingTask.promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => { loadingTask.destroy(); reject(new KordocError("PDF 로딩 타임아웃 (30초 초과)")) }, PDF_LOAD_TIMEOUT_MS)
-    ),
-  ])
+  let timeoutId: ReturnType<typeof setTimeout>
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => { loadingTask.destroy(); reject(new KordocError("PDF 로딩 타임아웃 (30초 초과)")) }, PDF_LOAD_TIMEOUT_MS)
+  })
+  return Promise.race([loadingTask.promise, timeoutPromise]).finally(() => clearTimeout(timeoutId))
 }
 
 interface PdfTextItem {
