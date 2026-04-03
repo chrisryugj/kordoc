@@ -107,7 +107,9 @@ export async function watchDirectory(options: WatchOptions): Promise<void> {
     if (existing) clearTimeout(existing)
     pending.set(filePath, setTimeout(() => {
       pending.delete(filePath)
-      processFile(filePath).catch(() => {})
+      processFile(filePath).catch((err) => {
+        process.stderr.write(`[kordoc watch] 처리 실패: ${filePath} — ${err instanceof Error ? err.message : String(err)}\n`)
+      })
     }, DEBOUNCE_MS))
   })
 
@@ -151,7 +153,7 @@ async function sendWebhook(url: string | undefined, payload: Record<string, unkn
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() }),
     })
-  } catch {
-    // webhook 실패는 조용히 무시
+  } catch (err) {
+    process.stderr.write(`[kordoc watch] webhook 전송 실패: ${err instanceof Error ? err.message : String(err)}\n`)
   }
 }
