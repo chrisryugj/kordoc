@@ -47,12 +47,12 @@ describe("buildTable", () => {
     assert.equal(table.cols, 0)
   })
 
-  it("1행 테이블의 hasHeader는 false", () => {
+  it("1행 테이블의 hasHeader는 true", () => {
     const rows: CellContext[][] = [
       [{ text: "A", colSpan: 1, rowSpan: 1 }],
     ]
     const table = buildTable(rows)
-    assert.equal(table.hasHeader, false)
+    assert.equal(table.hasHeader, true)
   })
 })
 
@@ -90,6 +90,22 @@ describe("blocksToMarkdown", () => {
     ]
     const md = blocksToMarkdown(blocks)
     assert.ok(md.includes("*(제10조제2항 관련)*"))
+  })
+
+  it("헤더만 있는 테이블은 빈 데이터 행 추가", () => {
+    const blocks: IRBlock[] = [
+      {
+        type: "table",
+        table: buildTable([
+          [{ text: "이름", colSpan: 1, rowSpan: 1 }, { text: "나이", colSpan: 1, rowSpan: 1 }],
+        ])
+      },
+    ]
+    const md = blocksToMarkdown(blocks)
+    assert.ok(md.includes("| 이름 | 나이 |"))
+    assert.ok(md.includes("| --- | --- |"))
+    // 빈 데이터 행이 추가되어야 함
+    assert.ok(md.includes("|  |  |"))
   })
 
   it("테이블 블록을 마크다운 테이블로 변환", () => {
