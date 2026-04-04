@@ -2,11 +2,11 @@
 
 **모두 파싱해버리겠다** — The Korean Document Platform.
 
-[![npm version](https://img.shields.io/badge/npm-v1.7.1-cb3837.svg)](https://www.npmjs.com/package/kordoc)
+[![npm version](https://img.shields.io/badge/npm-v1.8.0-cb3837.svg)](https://www.npmjs.com/package/kordoc)
 [![license](https://img.shields.io/npm/l/kordoc.svg)](https://github.com/chrisryugj/kordoc/blob/main/LICENSE)
 [![node](https://img.shields.io/node/v/kordoc.svg)](https://nodejs.org)
 
-> *Parse, compare, extract, and generate Korean documents. HWP, HWPX, PDF — all of them.*
+> *Parse, compare, extract, and generate Korean documents. HWP, HWPX, PDF, XLSX, DOCX — all of them.*
 
 [한국어](./README.md)
 
@@ -18,7 +18,7 @@
 
 Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean government documents**.
 
-*   **📄 Any Document to Markdown**: Convert `HWP`, `HWPX`, and `PDF` into clean `Markdown` instantly. It produces the optimal input for LLMs to analyze and reason.
+*   **📄 Any Document to Markdown**: Convert `HWP`, `HWPX`, `PDF`, `XLSX`, and `DOCX` into clean `Markdown` instantly. It produces the optimal input for LLMs to analyze and reason.
 *   **📊 Perfect Table Reconstruction**: Whether it's a borderless PDF table or a complex merged HWP table, kordoc analyzes the structure to restore accurate markdown tables.
 *   **🔍 Automatic Redline (Diff)**: Compare two documents and see exactly what changed at a glance. Supports cross-format comparison (e.g., Old HWP vs New HWPX).
 *   **📝 Markdown back to HWPX**: Convert AI-generated content back into official `HWPX` reports. No more tedious manual copy-pasting.
@@ -26,16 +26,25 @@ Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean
 
 ---
 
-## What's New in v1.7.1
+## What's New in v1.8.0
 
-- **Image Extraction (HWP/HWPX)** — Binary image extraction from ZIP entries and HWP5 BinData streams. Rendered as `![image](...)` in markdown output.
-- **Partial Parsing (Graceful Degradation)** — Single page failures no longer abort the whole document. Failed pages emit `PARTIAL_PARSE` warnings and parsing continues.
-- **Progress Callbacks** — `onProgress` callback in `ParseOptions`. CLI shows `[3/15 pages]` progress. Batch mode shows `[2/10 files]`.
-- **File Path Input** — `parse("path/to/file.hwp")` string overload. Auto-reads file, detects format, returns result.
-- **PDF Header/Footer Filtering** — `removeHeaderFooter: true` option removes repeated text at page edges. Removed elements recorded in `ParseWarning`.
-- **Security Hardening** — ZIP bomb cumulative-size tracking across all file types, SSRF prevention on webhook URLs, XSS-safe hyperlink rendering (javascript: URLs stripped), null-byte path traversal detection, Levenshtein length guard (O(m×n) DoS prevention), 30s PDF load timeout.
-- **Bug Fixes** — HWPX generator separator logic, XML recursion depth limit (MAX_XML_DEPTH=200), PDF table row merge protection, CLI `--format` validation, variable shadowing in PDF parser.
-- **UX Improvements** — KV table false-positive reduction (time/URL/number patterns excluded), MCP `parse_metadata` uses 50MB limit with header-only format detection, Watch debounce increased to 1000ms with stable-size check.
+- **XLSX Parser** — Excel spreadsheet parsing. Shared strings, merged cells, multi-sheet support. Each sheet becomes heading + table blocks.
+- **DOCX Parser** — Word document parsing. Style-based headings, numbering (lists), footnotes, hyperlinks, image extraction, vMerge/gridSpan table merging.
+- **Major Quality Improvement** — Parsing quality score improved 73→93 across all formats (PDF/HWPX/HWP5/XLSX).
+- **Production Review: 17 Fixes** — CLI `--no-header-footer` flag inversion, MCP XLSX/DOCX extension support, shared ZIP bomb protection, href XSS sanitization at extraction time, PDF timeout cleanup, HWP5 BinData O(n) optimization, cluster indexOf O(n²)→O(n), SSRF IPv6 blocking, and more.
+
+<details>
+<summary>v1.7.x changes</summary>
+
+- **Image Extraction (HWP/HWPX)** — Binary image extraction from ZIP entries and HWP5 BinData streams.
+- **Partial Parsing (Graceful Degradation)** — Single page failures no longer abort the whole document.
+- **Progress Callbacks** — `onProgress` callback. CLI shows `[3/15 pages]` progress.
+- **File Path Input** — `parse("path/to/file.hwp")` string overload.
+- **PDF Header/Footer Filtering** — `removeHeaderFooter` option.
+- **Security Hardening** — ZIP bomb tracking, SSRF prevention, XSS defense, null-byte detection, PDF timeout.
+- **pdfjs-dist v5 Compatibility** — constructPath operator format change support.
+
+</details>
 
 <details>
 <summary>v1.6.1 fixes</summary>
@@ -201,7 +210,7 @@ npx kordoc watch ./docs --webhook https://api/hook # webhook notification
 
 | Tool | Description |
 |------|-------------|
-| `parse_document` | Parse HWP/HWPX/PDF → Markdown with metadata |
+| `parse_document` | Parse HWP/HWPX/PDF/XLSX/DOCX → Markdown with metadata |
 | `detect_format` | Detect file format via magic bytes |
 | `parse_metadata` | Extract metadata only (fast, no full parse) |
 | `parse_pages` | Parse specific page range |
@@ -219,7 +228,9 @@ npx kordoc watch ./docs --webhook https://api/hook # webhook notification
 | `parseHwpx(buffer, options?)` | HWPX only |
 | `parseHwp(buffer, options?)` | HWP 5.x only |
 | `parsePdf(buffer, options?)` | PDF only |
-| `detectFormat(buffer)` | Returns `"hwpx" \| "hwp" \| "pdf" \| "unknown"` |
+| `parseXlsx(buffer, options?)` | XLSX only |
+| `parseDocx(buffer, options?)` | DOCX only |
+| `detectFormat(buffer)` | Returns `"hwpx" \| "hwp" \| "pdf" \| "xlsx" \| "docx" \| "unknown"` |
 
 ### Advanced
 
@@ -251,6 +262,8 @@ import type {
 | **HWPX** (한컴 2020+) | ZIP + XML DOM | Manifest, nested tables, merged cells, broken ZIP recovery |
 | **HWP 5.x** (한컴 Legacy) | OLE2 + CFB | 21 control chars, zlib decompression, DRM detection, colAddr-based table cell placement |
 | **PDF** | pdfjs-dist | Line-based table detection, XY-Cut reading order, heading detection, hidden text filter, OCR |
+| **XLSX** (Excel) | ZIP + XML DOM | Shared strings, merged cells, multi-sheet, formula display |
+| **DOCX** (Word) | ZIP + XML DOM | Style headings, numbering, footnotes, image extraction |
 
 ## Security
 
