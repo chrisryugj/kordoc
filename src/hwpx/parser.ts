@@ -785,6 +785,8 @@ function walkParagraphChildren(
       } else if (warnings && sectionNum) {
         warnings.push({ page: sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
       }
+    } else if (localTag === "run") {
+      tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
     }
   }
   return tableCtx
