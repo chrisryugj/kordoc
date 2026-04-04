@@ -12,7 +12,7 @@ import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
 import { extractPdfMetadataOnly } from "./pdf/parser.js"
 
 /** 허용 파일 확장자 */
-const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf"])
+const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf", ".xlsx", ".docx"])
 /** 최대 파일 크기 (500MB) */
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 
@@ -62,9 +62,9 @@ const server = new McpServer({
 
 server.tool(
   "parse_document",
-  "한국 문서 파일(HWP, HWPX, PDF)을 마크다운으로 변환합니다. 파일 경로를 입력하면 포맷을 자동 감지하여 텍스트를 추출합니다.",
+  "한국 문서 파일(HWP, HWPX, PDF, XLSX, DOCX)을 마크다운으로 변환합니다. 파일 경로를 입력하면 포맷을 자동 감지하여 텍스트를 추출합니다.",
   {
-    file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로 (HWP, HWPX, PDF)"),
+    file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX)"),
   },
   async ({ file_path }) => {
     try {

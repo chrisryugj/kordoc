@@ -11,8 +11,11 @@ import type {
   IRBlock, IRTable, IRCell, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage, InlineStyle,
 } from "../types.js"
-import { KordocError } from "../utils.js"
+import { KordocError, precheckZipSize } from "../utils.js"
 import { blocksToMarkdown } from "../table/builder.js"
+
+/** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
+const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
 
 // ─── XML 헬퍼 ──────────────────────────────────────────
 
@@ -473,6 +476,9 @@ export async function parseDocxDocument(
   buffer: ArrayBuffer,
   options?: ParseOptions,
 ): Promise<InternalParseResult> {
+  // ZIP bomb 사전 검사
+  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE)
+
   const zip = await JSZip.loadAsync(buffer)
   const warnings: ParseWarning[] = []
 

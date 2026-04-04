@@ -70,6 +70,7 @@ export interface IRTable {
   rows: number
   cols: number
   cells: IRCell[][]
+  /** 첫 행을 헤더로 렌더링할지 여부 (현재: rows > 1이면 true — 의미적 감지가 아닌 레이아웃 힌트) */
   hasHeader: boolean
 }
 
@@ -174,7 +175,7 @@ export type FileType = "hwpx" | "hwp" | "pdf" | "xlsx" | "docx" | "unknown"
 
 interface ParseResultBase {
   fileType: FileType
-  /** PDF 페이지 수 */
+  /** 페이지/섹션 수 — PDF: 실제 페이지 수, HWP/HWPX: 섹션 수, XLSX: 시트 수 */
   pageCount?: number
   /** 이미지 기반 PDF 여부 (텍스트 추출 불가) */
   isImageBased?: boolean
@@ -280,9 +281,16 @@ export interface WatchOptions {
   silent?: boolean
 }
 
+// ─── 헤딩 감지 공통 임계값 ──────────────────────────
+
+/** 폰트 크기 비율 → heading level (전 파서 공통) */
+export const HEADING_RATIO_H1 = 1.5
+export const HEADING_RATIO_H2 = 1.3
+export const HEADING_RATIO_H3 = 1.15
+
 // ─── 내부 파서 반환 타입 ─────────────────────────────
 
-/** HWP5/HWPX 파서가 index.ts에 반환하는 내부 타입 */
+/** 내부 파서가 index.ts에 반환하는 공통 타입 (HWP5/HWPX/PDF/XLSX/DOCX) */
 export interface InternalParseResult {
   markdown: string
   blocks: IRBlock[]
@@ -290,4 +298,6 @@ export interface InternalParseResult {
   outline?: OutlineItem[]
   warnings?: ParseWarning[]
   images?: ExtractedImage[]
+  /** PDF 전용: 이미지 기반 PDF 여부 */
+  isImageBased?: boolean
 }

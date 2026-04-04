@@ -9,7 +9,10 @@ import { inflateRawSync } from "zlib"
 import { DOMParser } from "@xmldom/xmldom"
 import { buildTable, convertTableToText, blocksToMarkdown, MAX_COLS, MAX_ROWS } from "../table/builder.js"
 import type { CellContext, IRBlock, DocumentMetadata, InternalParseResult, ParseOptions, ParseWarning, OutlineItem, InlineStyle, ExtractedImage } from "../types.js"
-import { KordocError, isPathTraversal } from "../utils.js"
+import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
+import { KordocError, isPathTraversal, sanitizeHref, precheckZipSize } from "../utils.js"
+// 테스트 호환성 re-export
+export { precheckZipSize } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 
 /** 압축 해제 최대 크기 (100MB) — ZIP bomb 방지 */
@@ -145,13 +148,7 @@ function stripDtd(xml: string): string {
 
 export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
   // Best-effort 사전 검증 — CD 선언 크기 기반 (위조 가능, 실제 방어는 per-file 누적 체크)
-  const precheck = precheckZipSize(buffer)
-  if (precheck.totalUncompressed > MAX_DECOMPRESS_SIZE) {
-    throw new KordocError("ZIP 비압축 크기 초과 (ZIP bomb 의심)")
-  }
-  if (precheck.entryCount > MAX_ZIP_ENTRIES) {
-    throw new KordocError("ZIP 엔트리 수 초과 (ZIP bomb 의심)")
-  }
+  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES)
 
   let zip: JSZip
 
@@ -383,59 +380,6 @@ export async function extractHwpxMetadataOnly(buffer: ArrayBuffer): Promise<Docu
   return metadata
 }
 
-/**
- * loadAsync 전 raw buffer에서 Central Directory를 파싱하여
- * 선언된 비압축 크기 합산 + 엔트리 수를 사전 검증.
- *
- * ⚠️ 한계: CD에 선언된 비압축 크기는 공격자가 위조 가능.
- * 이 함수는 "정직한 ZIP"에 대한 조기 거부(best-effort early rejection)만 수행.
- * 실제 ZIP bomb 방어는 loadAsync 후 per-file 누적 크기 체크에서 담당.
- *
- * Central Directory가 손상된 경우(extractFromBrokenZip으로 폴백될 케이스)에는
- * 안전한 기본값을 반환하여 loadAsync가 시도되도록 함.
- *
- * @internal 테스트 전용 export — public API(index.ts)에서 재노출하지 않음
- */
-export function precheckZipSize(buffer: ArrayBuffer): { totalUncompressed: number; entryCount: number } {
-  try {
-    const data = new DataView(buffer)
-    const len = buffer.byteLength
-    if (len < 22) return { totalUncompressed: 0, entryCount: 0 }
-
-    // End of Central Directory (EOCD) 시그니처를 뒤에서부터 탐색
-    // EOCD는 최소 22바이트, comment 최대 65535바이트
-    const searchStart = Math.max(0, len - 22 - 65535)
-    let eocdOffset = -1
-    for (let i = len - 22; i >= searchStart; i--) {
-      if (data.getUint32(i, true) === 0x06054b50) { eocdOffset = i; break }
-    }
-    if (eocdOffset < 0) return { totalUncompressed: 0, entryCount: 0 }
-
-    const entryCount = data.getUint16(eocdOffset + 10, true)
-    const cdSize = data.getUint32(eocdOffset + 12, true)
-    const cdOffset = data.getUint32(eocdOffset + 16, true)
-
-    if (cdOffset + cdSize > len) return { totalUncompressed: 0, entryCount }
-
-    // Central Directory 엔트리 순회
-    let totalUncompressed = 0
-    let pos = cdOffset
-    for (let i = 0; i < entryCount && pos + 46 <= cdOffset + cdSize; i++) {
-      if (data.getUint32(pos, true) !== 0x02014b50) break
-      totalUncompressed += data.getUint32(pos + 24, true)
-      const nameLen = data.getUint16(pos + 28, true)
-      const extraLen = data.getUint16(pos + 30, true)
-      const commentLen = data.getUint16(pos + 32, true)
-      pos += 46 + nameLen + extraLen + commentLen
-    }
-
-    return { totalUncompressed, entryCount }
-  } catch {
-    // DataView 범위 초과 등 예외 시 안전한 기본값 반환
-    return { totalUncompressed: 0, entryCount: 0 }
-  }
-}
-
 // ─── 손상 ZIP 복구 (edu-facility-ai에서 포팅) ──────────
 
 function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
@@ -443,8 +387,12 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
   const view = new DataView(buffer)
   let pos = 0
   const blocks: IRBlock[] = []
+  const warnings: ParseWarning[] = [
+    { code: "BROKEN_ZIP_RECOVERY", message: "손상된 ZIP 구조 — Local File Header 기반 복구 모드" },
+  ]
   let totalDecompressed = 0
   let entryCount = 0
+  let sectionNum = 0
 
   while (pos < data.length - 30) {
     // PK\x03\x04 시그니처 확인 — 미매칭 시 다음 PK 시그니처까지 스캔 (중간 손상 복구)
@@ -494,7 +442,8 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
       }
       totalDecompressed += content.length * 2
       if (totalDecompressed > MAX_DECOMPRESS_SIZE) throw new KordocError("압축 해제 크기 초과")
-      blocks.push(...parseSectionXml(content))
+      sectionNum++
+      blocks.push(...parseSectionXml(content, undefined, warnings, sectionNum))
     } catch {
       continue
     }
@@ -502,7 +451,7 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
 
   if (blocks.length === 0) throw new KordocError("손상된 HWPX에서 섹션 데이터를 복구할 수 없습니다")
   const markdown = blocksToMarkdown(blocks)
-  return { markdown, blocks }
+  return { markdown, blocks, warnings: warnings.length > 0 ? warnings : undefined }
 }
 
 // ─── Manifest 해석 ───────────────────────────────────
@@ -583,9 +532,9 @@ function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): void {
     // 폰트 크기 기반
     if (baseFontSize > 0 && block.style?.fontSize) {
       const ratio = block.style.fontSize / baseFontSize
-      if (ratio >= 1.5) level = 1
-      else if (ratio >= 1.3) level = 2
-      else if (ratio >= 1.15) level = 3
+      if (ratio >= HEADING_RATIO_H1) level = 1
+      else if (ratio >= HEADING_RATIO_H2) level = 2
+      else if (ratio >= HEADING_RATIO_H3) level = 3
     }
 
     // "제N조/장/절" 패턴
@@ -838,7 +787,11 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap): Paragraph
         // 하이퍼링크
         case "hyperlink": {
           const url = child.getAttribute("url") || child.getAttribute("href") || ""
-          if (url) href = url
+          if (url) {
+            // XSS 방지: 추출 시점에서 href 살균
+            const safe = sanitizeHref(url)
+            if (safe) href = safe
+          }
           // 하이퍼링크 내 텍스트 추출
           walk(child)
           break

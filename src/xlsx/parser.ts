@@ -11,12 +11,14 @@ import type {
   IRBlock, IRTable, IRCell, CellContext, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage,
 } from "../types.js"
-import { KordocError } from "../utils.js"
+import { KordocError, precheckZipSize } from "../utils.js"
 import { buildTable, blocksToMarkdown } from "../table/builder.js"
 
 // ─── 상수 ────────────────────────────────────────────
 
 const MAX_SHEETS = 100
+/** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
+const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
 const MAX_ROWS = 10000
 const MAX_COLS = 200
 
@@ -294,6 +296,9 @@ export async function parseXlsxDocument(
   buffer: ArrayBuffer,
   options?: ParseOptions,
 ): Promise<InternalParseResult> {
+  // ZIP bomb 사전 검사
+  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE)
+
   const zip = await JSZip.loadAsync(buffer)
   const warnings: ParseWarning[] = []
 

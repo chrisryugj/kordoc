@@ -6,7 +6,7 @@ import { parse, detectFormat } from "./index.js"
 import { toArrayBuffer } from "./utils.js"
 import type { WatchOptions } from "./types.js"
 
-const SUPPORTED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf"])
+const SUPPORTED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf", ".xlsx", ".docx"])
 const DEBOUNCE_MS = 1000
 /** 파일 쓰기 완료 판정: 연속 2회 동일 크기 확인 간격 */
 const STABLE_CHECK_MS = 300
@@ -57,6 +57,9 @@ export async function watchDirectory(options: WatchOptions): Promise<void> {
     const fileName = basename(filePath)
     try {
       const absPath = resolve(dir, filePath)
+      // 경로 순회 방지 — 감시 디렉토리 외부 파일 차단
+      const realDir = resolve(dir)
+      if (!absPath.startsWith(realDir)) return
       if (!existsSync(absPath)) return
 
       const fileSize = await waitForStableSize(absPath)
@@ -136,7 +139,19 @@ function validateWebhookUrl(url: string): void {
     /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
     hostname === "0.0.0.0" ||
     hostname.startsWith("169.254.") ||
-    hostname.endsWith(".local")
+    hostname.endsWith(".local") ||
+    // IPv6 사설 대역
+    hostname.startsWith("[fc") ||
+    hostname.startsWith("[fd") ||
+    hostname.startsWith("[fe80:") ||
+    hostname === "[::0]" ||
+    hostname === "[::]" ||
+    // 클라우드 메타데이터 엔드포인트
+    hostname === "metadata.google.internal" ||
+    hostname === "metadata.google" ||
+    // 16진수/8진수 IP 인코딩 우회 방지
+    /^0x[0-9a-f]+$/i.test(hostname) ||
+    /^0[0-7]+$/.test(hostname)
   ) {
     throw new Error(`내부 네트워크 대상 webhook은 허용되지 않습니다: ${hostname}`)
   }

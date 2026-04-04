@@ -49,7 +49,7 @@ program
 
         const parseOptions: ParseOptions = {}
         if (opts.pages) parseOptions.pages = opts.pages as string
-        if (opts.headerFooter === false) parseOptions.removeHeaderFooter = true
+        if (opts.headerFooter === false) parseOptions.removeHeaderFooter = false
         if (!opts.silent) {
           parseOptions.onProgress = (current: number, total: number) => {
             process.stderr.write(`\r[kordoc] ${filePrefix}${fileName} (${format}) [${current}/${total}]`)
@@ -101,7 +101,8 @@ program
           process.stdout.write(output + "\n")
         }
       } catch (err) {
-        process.stderr.write(`\n[kordoc] ERROR: ${fileName} — ${err instanceof Error ? err.message : err}\n`)
+        const { sanitizeError } = await import("./utils.js")
+        process.stderr.write(`\n[kordoc] ERROR: ${fileName} — ${sanitizeError(err)}\n`)
         process.exitCode = 1
       }
     }

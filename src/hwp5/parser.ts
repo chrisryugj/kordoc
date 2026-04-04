@@ -8,6 +8,7 @@ import {
 } from "./record.js"
 import { buildTable, blocksToMarkdown, MAX_COLS, MAX_ROWS } from "../table/builder.js"
 import type { CellContext, IRBlock, IRTable, DocumentMetadata, InternalParseResult, ParseOptions, ParseWarning, OutlineItem, InlineStyle, ExtractedImage } from "../types.js"
+import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
 import { KordocError } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 
@@ -146,10 +147,9 @@ function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo): void {
 
     const ratio = block.style.fontSize / baseFontSize
     let level = 0
-    // 통일된 threshold: PDF/HWPX와 동일 (1.5/1.3/1.15)
-    if (ratio >= 1.5) level = 1
-    else if (ratio >= 1.3) level = 2
-    else if (ratio >= 1.15) level = 3
+    if (ratio >= HEADING_RATIO_H1) level = 1
+    else if (ratio >= HEADING_RATIO_H2) level = 2
+    else if (ratio >= HEADING_RATIO_H3) level = 3
 
     // "제N조", "제N장" 패턴은 heading으로 강제 지정
     if (/^제\d+[조장절편]/.test(text) && text.length <= 50) {
@@ -311,21 +311,21 @@ function extractHwp5Images(
   compressed: boolean,
   warnings: ParseWarning[],
 ): ExtractedImage[] {
-  // BinData 스토리지의 모든 파일을 인덱스순으로 나열
+  // BinData 스토리지의 모든 파일을 FileIndex 순회로 수집 (O(n), 기존 O(20000) CFB.find 제거)
   const binDataMap = new Map<number, { data: Buffer; name: string }>()
-  for (let idx = 0; idx < 10000; idx++) {
-    const entry = CFB.find(cfb, `/BinData/BIN${String(idx).padStart(4, "0")}`)
-      || CFB.find(cfb, `/BinData/Bin${String(idx).padStart(4, "0")}`)
-    if (!entry?.content) {
-      if (idx > 0) break // 연속된 인덱스가 끝나면 중단
-      continue
+  const binDataRe = /\/BinData\/[Bb][Ii][Nn](\d{4})$/
+  if (cfb.FileIndex) {
+    for (const entry of cfb.FileIndex) {
+      if (!entry?.name || !entry.content) continue
+      const match = entry.name.match(binDataRe)
+      if (!match) continue
+      const idx = parseInt(match[1], 10)
+      let data = Buffer.from(entry.content)
+      if (compressed) {
+        try { data = decompressStream(data) } catch { /* 이미 비압축일 수 있음 */ }
+      }
+      binDataMap.set(idx, { data, name: entry.name })
     }
-    let data = Buffer.from(entry.content)
-    // compressed 플래그가 있으면 BinData도 압축됨
-    if (compressed) {
-      try { data = decompressStream(data) } catch { /* 이미 비압축일 수 있음 */ }
-    }
-    binDataMap.set(idx, { data, name: entry.name || `BIN${idx}` })
   }
 
   if (binDataMap.size === 0) return []

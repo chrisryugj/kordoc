@@ -5,7 +5,8 @@
  * ES 모듈 호이스팅 때문에 별도 파일로 분리되어 있음.
  */
 
-import type { ParseResult, IRBlock, IRTable, DocumentMetadata, ParseOptions, BoundingBox, ParseWarning, OutlineItem } from "../types.js"
+import type { ParseResult, InternalParseResult, IRBlock, IRTable, DocumentMetadata, ParseOptions, BoundingBox, ParseWarning, OutlineItem } from "../types.js"
+import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
 import { KordocError } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { blocksToMarkdown } from "../table/builder.js"
@@ -32,12 +33,17 @@ async function loadPdfWithTimeout(buffer: ArrayBuffer) {
     disableFontFace: true,
     isEvalSupported: false,
   })
-  return Promise.race([
-    loadingTask.promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => { loadingTask.destroy(); reject(new KordocError("PDF 로딩 타임아웃 (30초 초과)")) }, PDF_LOAD_TIMEOUT_MS)
-    ),
-  ])
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      loadingTask.promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => { loadingTask.destroy(); reject(new KordocError("PDF 로딩 타임아웃 (30초 초과)")) }, PDF_LOAD_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 interface PdfTextItem {
@@ -61,12 +67,12 @@ interface NormItem {
   isHidden: boolean
 }
 
-export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
+export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
   const doc = await loadPdfWithTimeout(buffer)
 
   try {
     const pageCount = doc.numPages
-    if (pageCount === 0) return { success: false, fileType: "pdf", pageCount: 0, error: "PDF에 페이지가 없습니다.", code: "PARSE_ERROR" }
+    if (pageCount === 0) throw new KordocError("PDF에 페이지가 없습니다.")
 
     // 메타데이터 추출 (best-effort)
     const metadata: DocumentMetadata = { pageCount }
@@ -138,13 +144,13 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           const ocrBlocks = await ocrPages(doc, options.ocr, pageFilter, effectivePageCount)
           if (ocrBlocks.length > 0) {
             const ocrMarkdown = ocrBlocks.map(b => b.text || "").filter(Boolean).join("\n\n")
-            return { success: true, fileType: "pdf", markdown: ocrMarkdown, pageCount: parsedPageCount, blocks: ocrBlocks, metadata, isImageBased: true, warnings }
+            return { markdown: ocrMarkdown, blocks: ocrBlocks, metadata, warnings, isImageBased: true }
           }
         } catch {
           // OCR 실패 시 원래 에러 반환
         }
       }
-      return { success: false, fileType: "pdf", pageCount, isImageBased: true, error: `이미지 기반 PDF (${pageCount}페이지, ${totalChars}자)`, code: "IMAGE_BASED_PDF" }
+      throw Object.assign(new KordocError(`이미지 기반 PDF (${pageCount}페이지, ${totalChars}자)`), { isImageBased: true })
     }
 
     // 머리글/바닥글 필터링 (기본 ON — 명시적 false일 때만 비활성화)
@@ -173,7 +179,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // blocksToMarkdown로 통일 — 헤딩 마크다운 반영 (HWP5/HWPX와 일관성)
     let markdown = cleanPdfText(blocksToMarkdown(blocks))
 
-    return { success: true, fileType: "pdf", markdown, pageCount: parsedPageCount, blocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined }
+    return { markdown, blocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined }
   } finally {
     await doc.destroy().catch(() => {})
   }
@@ -272,9 +278,9 @@ function detectHeadings(blocks: IRBlock[], medianFontSize: number): void {
 
     const ratio = block.style.fontSize / medianFontSize
     let level = 0
-    if (ratio >= 1.5) level = 1
-    else if (ratio >= 1.3) level = 2
-    else if (ratio >= 1.15) level = 3
+    if (ratio >= HEADING_RATIO_H1) level = 1
+    else if (ratio >= HEADING_RATIO_H2) level = 2
+    else if (ratio >= HEADING_RATIO_H3) level = 3
 
     if (level > 0) {
       block.type = "heading"
@@ -419,7 +425,7 @@ function computeRegion(items: NormItem[]): TextRegion {
 }
 
 /** Y축 분할점 찾기 — 수평 공백 밴드 중 가장 넓은 갭 */
-function findYSplit(items: NormItem[], region: TextRegion, gapThreshold: number): number | null {
+function findYSplit(items: NormItem[], _region: TextRegion, gapThreshold: number): number | null {
   // 아이템을 Y좌표로 정렬 (내림차순 — 위에서 아래)
   const sorted = [...items].sort((a, b) => b.y - a.y)
   let bestGap = gapThreshold
@@ -438,7 +444,7 @@ function findYSplit(items: NormItem[], region: TextRegion, gapThreshold: number)
 }
 
 /** X축 분할점 찾기 — 수직 공백 밴드 중 가장 넓은 갭 */
-function findXSplit(items: NormItem[], region: TextRegion, gapThreshold: number): number | null {
+function findXSplit(items: NormItem[], _region: TextRegion, gapThreshold: number): number | null {
   const sorted = [...items].sort((a, b) => a.x - b.x)
   let bestGap = gapThreshold
   let bestSplit: number | null = null
@@ -648,13 +654,14 @@ function extractPageBlocksFallback(items: NormItem[], pageNum: number): IRBlock[
     const clusterResults = detectClusterTables(clusterItems, pageNum)
 
     if (clusterResults.length > 0) {
-      // 클러스터 테이블로 소비된 아이템 추적 (인덱스 기반 — 문자열 키보다 안전)
+      // 클러스터 테이블로 소비된 아이템 추적 (Map 기반 O(n) — 기존 indexOf O(n²) 제거)
+      const ciToIdx = new Map<ClusterItem, number>()
+      for (let ci = 0; ci < clusterItems.length; ci++) ciToIdx.set(clusterItems[ci], ci)
       const usedIndices = new Set<number>()
       for (const cr of clusterResults) {
         for (const ci of cr.usedItems) {
-          // clusterItems와 items는 1:1 매핑, 동일 참조로 인덱스 찾기
-          const idx = clusterItems.indexOf(ci)
-          if (idx >= 0) usedIndices.add(idx)
+          const idx = ciToIdx.get(ci)
+          if (idx !== undefined) usedIndices.add(idx)
         }
         blocks.push({ type: "table", table: cr.table, pageNumber: pageNum, bbox: cr.bbox })
       }

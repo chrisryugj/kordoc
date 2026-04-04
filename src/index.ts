@@ -93,9 +93,11 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
 /** PDF 파일에서 텍스트를 추출하여 Markdown으로 변환 */
 export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
-    return await parsePdfDocument(buffer, options)
+    const { markdown, blocks, metadata, outline, warnings, isImageBased } = await parsePdfDocument(buffer, options)
+    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased }
   } catch (err) {
-    return { success: false, fileType: "pdf", error: err instanceof Error ? err.message : "PDF 파싱 실패", code: classifyError(err) }
+    const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
+    return { success: false, fileType: "pdf", error: err instanceof Error ? err.message : "PDF 파싱 실패", code: classifyError(err), isImageBased }
   }
 }
 
