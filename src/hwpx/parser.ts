@@ -752,6 +752,8 @@ function walkParagraphChildren(
         // <hp:run>, <hp:ctrl> 내부에 테이블/이미지가 포함될 수 있음 — 재귀
         walkChildren(el, d + 1)
       }
+    } else if (localTag === "run") {
+      tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
     }
   }
   walkChildren(node, depth)
