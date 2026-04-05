@@ -29,8 +29,14 @@ export async function markdownToHwpx(markdown: string): Promise<ArrayBuffer> {
   // mimetype (압축 없이)
   zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
 
-  // 매니페스트
+  // META-INF/container.xml — 루트파일 위치 지정
+  zip.file("META-INF/container.xml", generateContainerXml())
+
+  // 매니페스트 (HWPX 네이티브 포맷)
   zip.file("Contents/content.hpf", generateManifest())
+
+  // 헤더 (페이지 레이아웃, 폰트 정의)
+  zip.file("Contents/header.xml", generateHeaderXml())
 
   // 섹션 콘텐츠
   zip.file("Contents/section0.xml", sectionXml)
@@ -136,14 +142,75 @@ function blocksToSectionXml(blocks: MdBlock[]): string {
 </hs:sec>`
 }
 
+// ─── HWPX 구조 파일 생성 ────────────────────────────
+
+/** A4 페이지 기본 크기 (HWPX 단위) */
+const PAGE_WIDTH = 59528
+const PAGE_HEIGHT = 84188
+
+/** A4 기본 여백 (HWPX 단위) */
+const MARGIN_LEFT = 8504
+const MARGIN_RIGHT = 8504
+const MARGIN_TOP = 5668
+const MARGIN_BOTTOM = 4252
+const MARGIN_HEADER = 4252
+const MARGIN_FOOTER = 4252
+
+/** 기본 폰트 크기 (HWPX 단위, 10pt = 1000) */
+const DEFAULT_FONT_SIZE = 1000
+
+/** 기본 폰트 이름 */
+const DEFAULT_FONT_FACE = "바탕"
+
+function generateContainerXml(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0">
+  <rootfiles>
+    <rootfile full-path="Contents/content.hpf" media-type="application/hwp+zip"/>
+  </rootfiles>
+</container>`
+}
+
 function generateManifest(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<opf:package xmlns:opf="http://www.idpf.org/2007/opf">
-  <opf:manifest>
-    <opf:item id="s0" href="section0.xml" media-type="application/xml"/>
-  </opf:manifest>
-  <opf:spine>
-    <opf:itemref idref="s0"/>
-  </opf:spine>
-</opf:package>`
+<hpf:package xmlns:hpf="${HWPML_NS}">
+  <hpf:manifest>
+    <hpf:item id="header" href="header.xml" media-type="application/xml"/>
+    <hpf:item id="s0" href="section0.xml" media-type="application/xml"/>
+  </hpf:manifest>
+  <hpf:spine>
+    <hpf:itemref idref="header"/>
+    <hpf:itemref idref="s0"/>
+  </hpf:spine>
+</hpf:package>`
+}
+
+function generateHeaderXml(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<hs:header xmlns:hs="${HWPML_NS}"
+           xmlns:hp="${HWPML_NS}">
+  <hp:beginNum page="1"/>
+  <hp:refList>
+    <hp:fontfaces>
+      <hp:fontface lang="HANGUL">
+        <hp:font face="${DEFAULT_FONT_FACE}" type="TTF"/>
+      </hp:fontface>
+      <hp:fontface lang="LATIN">
+        <hp:font face="${DEFAULT_FONT_FACE}" type="TTF"/>
+      </hp:fontface>
+    </hp:fontfaces>
+    <hp:charProperties>
+      <hp:charPr id="0">
+        <hp:sz val="${DEFAULT_FONT_SIZE}"/>
+      </hp:charPr>
+    </hp:charProperties>
+  </hp:refList>
+  <hp:secDef>
+    <hp:pageDef landscape="NARROWLY" width="${PAGE_WIDTH}" height="${PAGE_HEIGHT}"
+      gutterType="LEFT_ONLY"
+      marginLeft="${MARGIN_LEFT}" marginRight="${MARGIN_RIGHT}"
+      marginTop="${MARGIN_TOP}" marginBottom="${MARGIN_BOTTOM}"
+      marginHeader="${MARGIN_HEADER}" marginFooter="${MARGIN_FOOTER}"/>
+  </hp:secDef>
+</hs:header>`
 }
