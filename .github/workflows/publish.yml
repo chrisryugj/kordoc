@@ -1,0 +1,29 @@
+name: 'Publish to npm'
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Publish stable release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Set up NodeJS LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Update npm package manager
+        run: npm install -g npm@latest
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install dependencies
+        run: npm i
+      - name: Build
+        run: npm run build
+      - name : Publish to npm
+        run: npm publish --access public
+    if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
