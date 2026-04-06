@@ -35,6 +35,18 @@ export interface IRBlock {
   href?: string
   /** 각주/미주 텍스트 (인라인 삽입용) */
   footnoteText?: string
+  /** 이미지 데이터 (type="image"일 때) */
+  imageData?: ImageData
+}
+
+/** 추출된 이미지 바이너리 데이터 */
+export interface ImageData {
+  /** 이미지 바이너리 */
+  data: Uint8Array
+  /** MIME 타입 (image/png, image/jpeg, image/gif, image/bmp, image/wmf, image/emf) */
+  mimeType: string
+  /** 원본 파일명 (있는 경우) */
+  filename?: string
 }
 
 /** 바운딩 박스 — PDF 포인트 단위 (72pt = 1인치) */
@@ -58,6 +70,7 @@ export interface IRTable {
   rows: number
   cols: number
   cells: IRCell[][]
+  /** 첫 행을 헤더로 렌더링할지 여부 (현재: rows > 1이면 true — 의미적 감지가 아닌 레이아웃 힌트) */
   hasHeader: boolean
 }
 
@@ -105,6 +118,10 @@ export interface ParseOptions {
   pages?: number[] | string
   /** 이미지 기반 PDF용 OCR 프로바이더 (선택) */
   ocr?: OcrProvider
+  /** 진행률 콜백 — current: 현재 페이지/섹션, total: 전체 수 */
+  onProgress?: (current: number, total: number) => void
+  /** PDF 머리글/바닥글 자동 제거 */
+  removeHeaderFooter?: boolean
 }
 
 // ─── 파싱 경고 ──────────────────────────────────────
@@ -127,6 +144,9 @@ export type WarningCode =
   | "UNSUPPORTED_ELEMENT"
   | "BROKEN_ZIP_RECOVERY"
   | "HIDDEN_TEXT_FILTERED"
+  | "MALFORMED_XML"
+  | "PARTIAL_PARSE"
+  | "LENIENT_CFB_RECOVERY"
 
 /** 문서 구조 (헤딩 트리) */
 export interface OutlineItem {
@@ -153,11 +173,11 @@ export type ErrorCode =
 
 // ─── 파싱 결과 (discriminated union) ────────────────
 
-export type FileType = "hwpx" | "hwp" | "pdf" | "unknown"
+export type FileType = "hwpx" | "hwp" | "pdf" | "xlsx" | "docx" | "unknown"
 
 interface ParseResultBase {
   fileType: FileType
-  /** PDF 페이지 수 */
+  /** 페이지/섹션 수 — PDF: 실제 페이지 수, HWP/HWPX: 섹션 수, XLSX: 시트 수 */
   pageCount?: number
   /** 이미지 기반 PDF 여부 (텍스트 추출 불가) */
   isImageBased?: boolean
@@ -175,6 +195,18 @@ export interface ParseSuccess extends ParseResultBase {
   outline?: OutlineItem[]
   /** 파싱 중 발생한 경고 — v2.0 */
   warnings?: ParseWarning[]
+  /** 추출된 이미지 목록 — 마크다운에서 파일명으로 참조됨 */
+  images?: ExtractedImage[]
+}
+
+/** 추출된 이미지 — ParseSuccess.images에 포함 */
+export interface ExtractedImage {
+  /** 마크다운에서 참조되는 파일명 (예: image_001.png) */
+  filename: string
+  /** 이미지 바이너리 */
+  data: Uint8Array
+  /** MIME 타입 */
+  mimeType: string
 }
 
 export interface ParseFailure extends ParseResultBase {
@@ -251,13 +283,23 @@ export interface WatchOptions {
   silent?: boolean
 }
 
+// ─── 헤딩 감지 공통 임계값 ──────────────────────────
+
+/** 폰트 크기 비율 → heading level (전 파서 공통) */
+export const HEADING_RATIO_H1 = 1.5
+export const HEADING_RATIO_H2 = 1.3
+export const HEADING_RATIO_H3 = 1.15
+
 // ─── 내부 파서 반환 타입 ─────────────────────────────
 
-/** HWP5/HWPX 파서가 index.ts에 반환하는 내부 타입 */
+/** 내부 파서가 index.ts에 반환하는 공통 타입 (HWP5/HWPX/PDF/XLSX/DOCX) */
 export interface InternalParseResult {
   markdown: string
   blocks: IRBlock[]
   metadata?: DocumentMetadata
   outline?: OutlineItem[]
   warnings?: ParseWarning[]
+  images?: ExtractedImage[]
+  /** PDF 전용: 이미지 기반 PDF 여부 */
+  isImageBased?: boolean
 }

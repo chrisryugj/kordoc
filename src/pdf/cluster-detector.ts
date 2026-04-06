@@ -1,7 +1,12 @@
 /**
  * 클러스터 기반 테이블 감지 — 선이 없는 PDF에서 텍스트 정렬 패턴으로 테이블 구조 추론.
  *
+ * Original work: Copyright 2025-2026 Hancom, Inc.
+ * Licensed under the Apache License, Version 2.0
+ * https://github.com/opendataloader-project/opendataloader-pdf
+ *
  * ODL의 ClusterTableConsumer를 kordoc 컨텍스트에 맞게 단순화한 구현.
+ * Modifications: TypeScript 재구현, 최소 2열 감지, 한국어 PDF 특화 최적화.
  *
  * 핵심 아이디어:
  * 1. 텍스트 아이템을 baseline(Y좌표)으로 그룹핑하여 행(row) 구성

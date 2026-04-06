@@ -4,8 +4,9 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.x   | Yes       |
-| < 1.0   | No        |
+| 1.8.x   | Yes       |
+| 1.7.x   | Security fixes only |
+| < 1.7   | No        |
 
 ## Reporting a Vulnerability
 
@@ -34,7 +35,7 @@ kordoc processes untrusted binary files. The following defenses are in place:
 ### Input Validation
 - Magic byte format detection (4-byte minimum guard)
 - File size limit: 500MB (CLI and MCP server)
-- Extension allowlist in MCP server (`.hwp`, `.hwpx`, `.pdf`)
+- Extension allowlist in MCP server (`.hwp`, `.hwpx`, `.pdf`, `.xlsx`, `.docx`)
 - Symlink resolution via `realpathSync`
 
 ### Resource Limits
@@ -66,4 +67,4 @@ kordoc is a **document parser library**, not a sandbox. It trusts the Node.js ru
 
 - `cfb` is bundled via `noExternal` — users cannot independently update it
 - HWPX format detection is ZIP-based (any ZIP file returns `"hwpx"` from `detectFormat`)
-- MCP server has no directory restriction by default (any `.hwp`/`.hwpx`/`.pdf` on the filesystem can be read)
+- MCP server has no directory restriction by default (any `.hwp`/`.hwpx`/`.pdf`/`.xlsx`/`.docx` on the filesystem can be read)

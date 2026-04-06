@@ -180,6 +180,33 @@ describe("합성 HWPX: 전체 파이프라인", () => {
       assert.ok(!result.markdown.includes("DOCTYPE"))
     }
   })
+
+  it("p > run > tbl 구조의 표를 정상 파싱 (issue #13)", async () => {
+    const xml = wrapSectionXml(`
+      <hp:p>
+        <hp:run>
+          <hp:tbl>
+            <hp:tr>
+              <hp:tc><hp:p><hp:run><hp:t>헤더1</hp:t></hp:run></hp:p></hp:tc>
+              <hp:tc><hp:p><hp:run><hp:t>헤더2</hp:t></hp:run></hp:p></hp:tc>
+            </hp:tr>
+            <hp:tr>
+              <hp:tc><hp:p><hp:run><hp:t>값1</hp:t></hp:run></hp:p></hp:tc>
+              <hp:tc><hp:p><hp:run><hp:t>값2</hp:t></hp:run></hp:p></hp:tc>
+            </hp:tr>
+          </hp:tbl>
+        </hp:run>
+      </hp:p>
+    `)
+    const buf = await makeHwpxZip([{ name: "section0.xml", xml }])
+    const result = await parseHwpx(buf)
+
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.ok(result.blocks.length > 0, "블록이 비어있지 않아야 함")
+    assert.ok(result.markdown.includes("헤더1"), "표 헤더가 마크다운에 포함되어야 함")
+    assert.ok(result.markdown.includes("값2"), "표 데이터가 마크다운에 포함되어야 함")
+  })
 })
 
 describe("포맷 감지 + 에러 경로", () => {

@@ -45,7 +45,7 @@ export async function ocrPages(
         blocks.push({ type: "paragraph", text: text.trim(), pageNumber: i })
       }
     } catch {
-      // OCR 실패한 페이지는 건너뜀
+      blocks.push({ type: "paragraph" as const, text: `[OCR 실패: 페이지 ${i}]` })
     }
   }
 

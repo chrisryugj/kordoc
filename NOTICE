@@ -1,0 +1,80 @@
+kordoc
+Copyright 2026 chrisryugj
+Licensed under the MIT License
+
+This project includes code derived from the following third-party works:
+
+================================================================================
+
+OpenDataLoader PDF (opendataloader-pdf)
+https://github.com/opendataloader-project/opendataloader-pdf
+
+Copyright 2025-2026 Hancom, Inc.
+Licensed under the Apache License, Version 2.0
+
+Used in:
+- src/pdf/line-detector.ts — TableBorderBuilder algorithm (line-based table
+  detection via PDF graphics commands, grid construction from line intersections)
+- src/pdf/cluster-detector.ts — ClusterTableConsumer algorithm (cluster-based
+  borderless table detection via text alignment patterns)
+
+Modifications:
+- TypeScript rewrite from Java/Kotlin
+- pdfjs-dist v4/v5 compatibility layer
+- Korean PDF-specific optimizations (character spacing, cell text merging)
+
+You may obtain a copy of the Apache License at:
+http://www.apache.org/licenses/LICENSE-2.0
+
+================================================================================
+
+cfb (Compound File Binary)
+https://github.com/SheetJS/js-cfb
+
+Copyright 2013-present SheetJS LLC
+Licensed under the Apache License, Version 2.0
+
+Used as a dependency for HWP 5.x OLE2 container parsing.
+No modifications — used as a bundled npm package.
+
+================================================================================
+
+pdfjs-dist (PDF.js)
+https://github.com/mozilla/pdf.js
+
+Copyright Mozilla Foundation
+Licensed under the Apache License, Version 2.0
+
+Used as an optional peer dependency for PDF text extraction.
+No modifications — used as an npm package.
+
+================================================================================
+
+JSZip
+https://github.com/Stuk/jszip
+
+Copyright 2009-2016 Stuart Knightley, David Duponchel, Franz Buchinger, Antonio Afonso
+Dual-licensed under the MIT License OR GPL-3.0-or-later
+This project uses JSZip under the MIT License.
+
+Used for ZIP-based format parsing (HWPX, XLSX, DOCX).
+No modifications — used as an npm package.
+
+================================================================================
+
+rhwp
+https://github.com/edwardkim/rhwp
+
+Copyright edwardkim
+Licensed under the MIT License
+
+Used in:
+- src/hwp5/cfb-lenient.ts — LenientCfbReader algorithm (FAT/directory/mini-stream
+  parsing for corrupted CFB containers)
+- src/hwp5/crypto.ts — Distribution document decryption algorithm (AES key
+  extraction from MSVC LCG-scrambled payload)
+
+Modifications:
+- TypeScript rewrite from Rust
+- Added sector size validation, chain length limits, and cycle detection
+- Pure JS AES-128 ECB implementation (no native dependency)

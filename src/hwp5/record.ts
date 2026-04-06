@@ -13,25 +13,31 @@ export const TAG_CTRL_HEADER = 0x0047
 export const TAG_LIST_HEADER = 0x0048
 export const TAG_TABLE = 0x004d
 
-// DocInfo 태그 (스타일 정보 해석용)
-export const TAG_ID_MAPPINGS = 0x0032
-export const TAG_FACE_NAME = 0x0033
-export const TAG_DOC_CHAR_SHAPE = 0x0037
-export const TAG_DOC_PARA_SHAPE = 0x0039
-export const TAG_DOC_STYLE = 0x003a
+// DocInfo 태그 (스타일 정보 해석용) — HWPTAG_BEGIN(0x0010) 기준
+export const TAG_ID_MAPPINGS = 0x0011      // HWPTAG_BEGIN + 1
+export const TAG_FACE_NAME = 0x0013        // HWPTAG_BEGIN + 3
+export const TAG_DOC_CHAR_SHAPE = 0x0015   // HWPTAG_BEGIN + 5
+export const TAG_DOC_PARA_SHAPE = 0x0019   // HWPTAG_BEGIN + 9
+export const TAG_DOC_STYLE = 0x001a        // HWPTAG_BEGIN + 10
 
-// 특수 문자 코드 (UTF-16LE)
-// HWP 스펙에서 0x0000은 NUL이 아닌 줄바꿈(line break)으로 정의됨
-const CHAR_LINE = 0x0000
-const CHAR_PARA = 0x000d
-const CHAR_TAB = 0x0009
-const CHAR_HYPHEN = 0x001e
-const CHAR_NBSP = 0x001f
-const CHAR_FIXED_NBSP = 0x0018
+// 특수 문자 코드 (UTF-16LE) — HWP 5.0 바이너리 스펙 + rhwp 검증
+// 3가지 카테고리: char(2바이트), inline(16바이트), extended(16바이트)
+// char:     0, 13, 24-31           — 제어문자만, 확장 데이터 없음
+// inline:   4-9, 19-20             — 제어문자(2) + 확장(14) = 16바이트
+// extended: 1-3, 10-12, 14-18, 21-23 — 제어문자(2) + 확장(14) = 16바이트
+const CHAR_LINE = 0x0000        // char: 줄바꿈
+const CHAR_SECTION_BREAK = 0x000a  // extended: 구역/단 정의 (14바이트 확장 데이터)
+const CHAR_PARA = 0x000d        // char: 문단 끝
+const CHAR_TAB = 0x0009         // inline: 탭
+const CHAR_HYPHEN = 0x001e      // char: 하이픈
+const CHAR_NBSP = 0x001f        // char: 비분리 공백
+const CHAR_FIXED_NBSP = 0x0018  // char: 고정 비분리 공백
+const CHAR_FIXED_WIDTH = 0x0019 // char: 고정폭 공백
 
 // FileHeader 플래그
 export const FLAG_COMPRESSED = 1 << 0
 export const FLAG_ENCRYPTED = 1 << 1
+export const FLAG_DISTRIBUTION = 1 << 2
 export const FLAG_DRM = 1 << 4
 
 // ─── 레코드 구조 ─────────────────────────────────────
@@ -108,6 +114,12 @@ export function parseFileHeader(data: Buffer): HwpFileHeader {
 
 // ─── 스타일 정보 구조 ────────────────────────────────
 
+/** DocInfo에서 추출한 문단 모양 (PARA_SHAPE) */
+export interface HwpParaShape {
+  /** 개요 수준: 0=본문, 1-7=개요수준 1-7 (heading 계층) */
+  outlineLevel: number
+}
+
 /** DocInfo에서 추출한 글자 모양 (CHAR_SHAPE) */
 export interface HwpCharShape {
   /** 글꼴 크기 (단위: 0.1pt, 예: 100 = 10pt) */
@@ -115,7 +127,7 @@ export interface HwpCharShape {
   /**
    * 속성 플래그 (HWP5 바이너리 스펙 1.1 기준):
    * bit 0 = italic, bit 1 = bold, bit 2 = underline, bit 3 = outline
-   * 주의: 일부 비공식 문서에서 bit 순서가 다를 수 있음
+   * 검증 완료: 공식 스펙 + pyhwp/hwp.js 등 오픈소스 파서와 일치 (v1.7)
    */
   attrFlags: number
 }
@@ -136,15 +148,25 @@ export interface HwpStyle {
 /** DocInfo 파싱 결과 */
 export interface HwpDocInfo {
   charShapes: HwpCharShape[]
+  paraShapes: HwpParaShape[]
   styles: HwpStyle[]
 }
 
 /** DocInfo 레코드들에서 스타일 정보 추출 */
 export function parseDocInfo(records: HwpRecord[]): HwpDocInfo {
   const charShapes: HwpCharShape[] = []
+  const paraShapes: HwpParaShape[] = []
   const styles: HwpStyle[] = []
 
   for (const rec of records) {
+    // PARA_SHAPE — 문단 모양 (개요 수준 추출)
+    // 첫 4바이트(u32) 비트 팩: bits 25-27 = 개요 수준 (0=본문, 1-7=heading)
+    if (rec.tagId === TAG_DOC_PARA_SHAPE && rec.data.length >= 4) {
+      const flags = rec.data.readUInt32LE(0)
+      const outlineLevel = (flags >> 25) & 0x07 // bits 25-27 → 3bit (0-7)
+      paraShapes.push({ outlineLevel })
+    }
+
     if (rec.tagId === TAG_DOC_CHAR_SHAPE && rec.data.length >= 18) {
       // HWP5 CHAR_SHAPE 구조 (바이너리 스펙 1.1 기준):
       //   faceId: 7개 언어 * u16 = 14바이트 (offset 0-13)
@@ -153,7 +175,7 @@ export function parseDocInfo(records: HwpRecord[]): HwpDocInfo {
       //   relSize: 7개 언어 * u8 =  7바이트 (offset 28-34)
       //   charOffset: 7개 언어 * s8 = 7바이트 (offset 35-41)
       //   baseSize: u32 at offset 42 (단위: 0.1pt)
-      //   attrFlags: u32 at offset 46 (bit0=italic, bit1=bold)
+      //   attrFlags: u32 at offset 46 (bit0=italic, bit1=bold) — 공식 스펙 검증 완료
       if (rec.data.length >= 50) {
         const fontSize = rec.data.readUInt32LE(42)  // 단위: 0.1pt
         const attrFlags = rec.data.readUInt32LE(46)
@@ -200,7 +222,7 @@ export function parseDocInfo(records: HwpRecord[]): HwpDocInfo {
     }
   }
 
-  return { charShapes, styles }
+  return { charShapes, paraShapes, styles }
 }
 
 // ─── UTF-16LE 텍스트 추출 (21가지 제어문자 처리) ─────
@@ -214,20 +236,32 @@ export function extractText(data: Buffer): string {
     i += 2
 
     switch (ch) {
+      // ── char 타입 (2바이트만, 확장 데이터 없음) ──
       case CHAR_LINE: result += "\n"; break
-      case CHAR_PARA: break
-      case CHAR_TAB:
-        result += "\t"
-        // TAB(0x0009)은 인라인 컨트롤(ch 4-9)로 14바이트 확장 데이터가 뒤따름
+      case CHAR_SECTION_BREAK:  // 구역/단 정의 — extended(14바이트 스킵)
+        result += "\n"
         if (i + 14 <= data.length) i += 14
         break
+      case CHAR_PARA: break  // 문단 끝
       case CHAR_HYPHEN: result += "-"; break
-      case CHAR_NBSP: case CHAR_FIXED_NBSP: result += " "; break
+      case CHAR_NBSP: result += " "; break
+      case CHAR_FIXED_NBSP: result += "\u00a0"; break  // 진짜 NBSP
+      case CHAR_FIXED_WIDTH: result += " "; break  // 고정폭 공백
+
+      // ── inline 타입 (2바이트 + 14바이트 확장) ──
+      case CHAR_TAB:
+        result += "\t"
+        if (i + 14 <= data.length) i += 14
+        break
+
       default:
         if (ch >= 0x0001 && ch <= 0x001f) {
-          const isExt = (ch >= 1 && ch <= 3) || (ch >= 10 && ch <= 18) || (ch >= 21 && ch <= 23)
+          // rhwp 기준 3-카테고리 분류:
+          // extended(1-3, 11-12, 14-18, 21-23) + inline(4-9, 19-20) → 14바이트 스킵
+          // char(24-31) → 스킵 없음 (이미 switch에서 24,25,30,31 처리됨)
+          const isExtended = (ch >= 1 && ch <= 3) || (ch >= 11 && ch <= 12) || (ch >= 14 && ch <= 18) || (ch >= 21 && ch <= 23)
           const isInline = (ch >= 4 && ch <= 9) || (ch >= 19 && ch <= 20)
-          if ((isExt || isInline) && i + 14 <= data.length) i += 14
+          if ((isExtended || isInline) && i + 14 <= data.length) i += 14
         } else if (ch >= 0x0020) {
           // UTF-16 surrogate pair 처리 (BMP 외 문자: 이모지, CJK 확장 등)
           if (ch >= 0xd800 && ch <= 0xdbff && i + 1 < data.length) {

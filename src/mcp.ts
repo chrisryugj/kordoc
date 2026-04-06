@@ -11,7 +11,7 @@ import { extractHwp5MetadataOnly } from "./hwp5/parser.js"
 import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
 
 /** 허용 파일 확장자 */
-const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf"])
+const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf", ".xlsx", ".docx"])
 /** 최대 파일 크기 (500MB) */
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 
@@ -26,15 +26,30 @@ function safePath(filePath: string): string {
   return real
 }
 
+/** 최대 파일 크기 — metadata 전용 (50MB, 전체 파싱보다 보수적) */
+const MAX_METADATA_FILE_SIZE = 50 * 1024 * 1024
+
 /** 파일 읽기 + 크기 검증 공통 로직 */
-function readValidatedFile(filePath: string): { buffer: ArrayBuffer; resolved: string } {
+function readValidatedFile(filePath: string, maxSize = MAX_FILE_SIZE): { buffer: ArrayBuffer; resolved: string } {
   const resolved = safePath(filePath)
   const fileSize = statSync(resolved).size
-  if (fileSize > MAX_FILE_SIZE) {
-    throw new KordocError(`파일이 너무 큽니다: ${(fileSize / 1024 / 1024).toFixed(1)}MB (최대 ${MAX_FILE_SIZE / 1024 / 1024}MB)`)
+  if (fileSize > maxSize) {
+    throw new KordocError(`파일이 너무 큽니다: ${(fileSize / 1024 / 1024).toFixed(1)}MB (최대 ${maxSize / 1024 / 1024}MB)`)
   }
   const raw = readFileSync(resolved)
   return { buffer: toArrayBuffer(raw), resolved }
+}
+
+/** 파일 헤더(16바이트)만 읽어 포맷 감지 — 전체 파일 로드 불필요 */
+function detectFormatFromHeader(resolved: string): ReturnType<typeof detectFormat> {
+  const fd = openSync(resolved, "r")
+  try {
+    const headerBuf = Buffer.alloc(16)
+    readSync(fd, headerBuf, 0, 16, 0)
+    return detectFormat(toArrayBuffer(headerBuf))
+  } finally {
+    closeSync(fd)
+  }
 }
 
 const server = new McpServer({
@@ -46,9 +61,9 @@ const server = new McpServer({
 
 server.tool(
   "parse_document",
-  "한국 문서 파일(HWP, HWPX, PDF)을 마크다운으로 변환합니다. 파일 경로를 입력하면 포맷을 자동 감지하여 텍스트를 추출합니다.",
+  "한국 문서 파일(HWP, HWPX, PDF, XLSX, DOCX)을 마크다운으로 변환합니다. 파일 경로를 입력하면 포맷을 자동 감지하여 텍스트를 추출합니다.",
   {
-    file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로 (HWP, HWPX, PDF)"),
+    file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX)"),
   },
   async ({ file_path }) => {
     try {
@@ -117,17 +132,7 @@ server.tool(
   async ({ file_path }) => {
     try {
       const resolved = safePath(file_path)
-      // 전체 파일 대신 첫 16바이트만 읽기 — 대용량 파일 OOM 방지
-      const fd = openSync(resolved, "r")
-      let headerBuf: Buffer
-      try {
-        headerBuf = Buffer.alloc(16)
-        readSync(fd, headerBuf, 0, 16, 0)
-      } finally {
-        closeSync(fd)
-      }
-      const header = toArrayBuffer(headerBuf)
-      const format = detectFormat(header)
+      const format = detectFormatFromHeader(resolved)
       return {
         content: [{ type: "text", text: `${file_path}: ${format}` }],
       }
@@ -150,8 +155,18 @@ server.tool(
   },
   async ({ file_path }) => {
     try {
-      const { buffer } = readValidatedFile(file_path)
-      const format = detectFormat(buffer)
+      const resolved = safePath(file_path)
+      const format = detectFormatFromHeader(resolved)
+
+      if (format === "unknown") {
+        return {
+          content: [{ type: "text", text: `지원하지 않는 파일 형식입니다: ${file_path}` }],
+          isError: true,
+        }
+      }
+
+      // metadata 전용 크기 제한 (50MB)
+      const { buffer } = readValidatedFile(file_path, MAX_METADATA_FILE_SIZE)
 
       let metadata
       switch (format) {
@@ -166,11 +181,6 @@ server.tool(
           metadata = await extractPdfMetadataOnly(buffer)
           break
         }
-        default:
-          return {
-            content: [{ type: "text", text: `지원하지 않는 파일 형식입니다: ${file_path}` }],
-            isError: true,
-          }
       }
 
       return {

@@ -71,7 +71,7 @@ function parseMarkdownToBlocks(md: string): MdBlock[] {
       while (i < lines.length && lines[i].trimStart().startsWith("|")) {
         const row = lines[i]
         // 구분선(| --- | --- |) 스킵
-        if (/^\|[\s\-:]+\|/.test(row) && !row.includes("---") === false && /^[\s|:\-]+$/.test(row)) {
+        if (/^[\s|:\-]+$/.test(row)) {
           i++; continue
         }
         const cells = row.split("|").slice(1, -1).map(c => c.trim())

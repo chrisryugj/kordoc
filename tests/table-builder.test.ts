@@ -92,6 +92,37 @@ describe("blocksToMarkdown", () => {
     assert.ok(md.includes("*(제10조제2항 관련)*"))
   })
 
+  it("colSpan 병합 셀은 내용을 복제하여 정보 보존", () => {
+    const blocks: IRBlock[] = [
+      {
+        type: "table",
+        table: buildTable([
+          [{ text: "병합셀", colSpan: 2, rowSpan: 1 }],
+          [{ text: "값1", colSpan: 1, rowSpan: 1 }, { text: "값2", colSpan: 1, rowSpan: 1 }],
+        ])
+      },
+    ]
+    const md = blocksToMarkdown(blocks)
+    assert.ok(md.includes("| 병합셀 | 병합셀 |"), "colSpan 병합 셀 내용이 복제되어야 함")
+    assert.ok(md.includes("| 값1 | 값2 |"))
+  })
+
+  it("rowSpan 병합 셀은 빈 칸으로 유지", () => {
+    const blocks: IRBlock[] = [
+      {
+        type: "table",
+        table: buildTable([
+          [{ text: "헤더1", colSpan: 1, rowSpan: 1 }, { text: "헤더2", colSpan: 1, rowSpan: 1 }],
+          [{ text: "행병합", colSpan: 1, rowSpan: 2 }, { text: "값1", colSpan: 1, rowSpan: 1 }],
+          [{ text: "값2", colSpan: 1, rowSpan: 1 }],
+        ])
+      },
+    ]
+    const md = blocksToMarkdown(blocks)
+    assert.ok(md.includes("| 행병합 | 값1 |"), "rowSpan 원본 셀은 내용 표시")
+    assert.ok(md.includes("|  | 값2 |"), "rowSpan 병합 위치는 빈 칸")
+  })
+
   it("테이블 블록을 마크다운 테이블로 변환", () => {
     const blocks: IRBlock[] = [
       {

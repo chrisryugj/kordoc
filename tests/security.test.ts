@@ -59,7 +59,7 @@ describe("extractText — 제어문자 코드 10 처리", () => {
     const buf = Buffer.alloc(2 + 14 + 2)
     buf.writeUInt16LE(0x000a, 0)
     buf.writeUInt16LE("Z".charCodeAt(0), 16)
-    assert.equal(extractText(buf), "Z")
+    assert.equal(extractText(buf), "\nZ")  // 구역/단 나눔 → 줄바꿈 출력 + 14바이트 스킵
   })
 
   it("코드 10 뒤에 payload가 부족하면 스킵 안 함 (안전 처리)", () => {

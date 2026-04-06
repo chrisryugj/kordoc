@@ -23,8 +23,12 @@ function normalize(s: string): string {
   return s.replace(/\s+/g, " ").trim()
 }
 
+/** 최대 입력 길이 합 — 초과 시 길이 차이 기반 빠른 추정 (O(m*n) CPU 폭발 방지) */
+const MAX_LEVENSHTEIN_LEN = 10_000
+
 /** Levenshtein 편집 거리 — O(min(m,n)) 공간 최적화 */
 function levenshtein(a: string, b: string): number {
+  if (a.length + b.length > MAX_LEVENSHTEIN_LEN) return Math.abs(a.length - b.length)
   if (a.length > b.length) [a, b] = [b, a]
   const m = a.length
   const n = b.length

@@ -8,8 +8,11 @@ import JSZip from "jszip"
 import { inflateRawSync } from "zlib"
 import { DOMParser } from "@xmldom/xmldom"
 import { buildTable, convertTableToText, blocksToMarkdown, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { CellContext, IRBlock, DocumentMetadata, InternalParseResult, ParseOptions, ParseWarning, OutlineItem, InlineStyle } from "../types.js"
-import { KordocError, isPathTraversal } from "../utils.js"
+import type { CellContext, IRBlock, DocumentMetadata, InternalParseResult, ParseOptions, ParseWarning, OutlineItem, InlineStyle, ExtractedImage } from "../types.js"
+import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
+import { KordocError, isPathTraversal, sanitizeHref, precheckZipSize } from "../utils.js"
+// 테스트 호환성 re-export
+export { precheckZipSize } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 
 /** 압축 해제 최대 크기 (100MB) — ZIP bomb 방지 */
@@ -22,7 +25,20 @@ function clampSpan(val: number, max: number): number {
   return Math.max(1, Math.min(val, max))
 }
 
+/** XML DOM 재귀 최대 깊이 — 악성 파일의 스택 오버플로 방지 */
+const MAX_XML_DEPTH = 200
+
 interface TableState { rows: CellContext[][]; currentRow: CellContext[]; cell: CellContext | null }
+
+/** xmldom DOMParser 생성 — onError 콜백으로 malformed XML 경고 수집 */
+function createXmlParser(warnings?: ParseWarning[]): DOMParser {
+  return new DOMParser({
+    onError(level: "warn" | "error" | "fatalError", msg: string) {
+      if (level === "fatalError") throw new KordocError(`XML 파싱 실패: ${msg}`)
+      warnings?.push({ code: "MALFORMED_XML", message: `XML ${level === "warn" ? "경고" : "오류"}: ${msg}` })
+    },
+  })
+}
 
 // ─── HWPX 스타일 정보 ──────────────────────────────
 
@@ -39,7 +55,7 @@ interface HwpxStyleMap {
 }
 
 /** head.xml 또는 header.xml에서 스타일 정보 추출 */
-async function extractHwpxStyles(zip: JSZip): Promise<HwpxStyleMap> {
+async function extractHwpxStyles(zip: JSZip, decompressed?: { total: number }): Promise<HwpxStyleMap> {
   const result: HwpxStyleMap = {
     charProperties: new Map(),
     styles: new Map(),
@@ -53,7 +69,11 @@ async function extractHwpxStyles(zip: JSZip): Promise<HwpxStyleMap> {
 
     try {
       const xml = await file.async("text")
-      const parser = new DOMParser()
+      if (decompressed) {
+        decompressed.total += xml.length * 2
+        if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
+      }
+      const parser = createXmlParser()
       const doc = parser.parseFromString(stripDtd(xml), "text/xml")
       if (!doc.documentElement) continue
 
@@ -82,7 +102,12 @@ function parseCharProperties(doc: Document, map: Map<string, HwpxCharProperty>):
 
       // height 속성 (centi-pt 단위)
       const height = el.getAttribute("height")
-      if (height) prop.fontSize = parseInt(height, 10) / 100
+      if (height) {
+        const parsedHeight = parseInt(height, 10)
+        if (!isNaN(parsedHeight) && parsedHeight > 0) {
+          prop.fontSize = parsedHeight / 100
+        }
+      }
 
       // bold/italic
       const bold = el.getAttribute("bold")
@@ -128,13 +153,7 @@ function stripDtd(xml: string): string {
 
 export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
   // Best-effort 사전 검증 — CD 선언 크기 기반 (위조 가능, 실제 방어는 per-file 누적 체크)
-  const precheck = precheckZipSize(buffer)
-  if (precheck.totalUncompressed > MAX_DECOMPRESS_SIZE) {
-    throw new KordocError("ZIP 비압축 크기 초과 (ZIP bomb 의심)")
-  }
-  if (precheck.entryCount > MAX_ZIP_ENTRIES) {
-    throw new KordocError("ZIP 엔트리 수 초과 (ZIP bomb 의심)")
-  }
+  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES)
 
   let zip: JSZip
 
@@ -150,12 +169,15 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     throw new KordocError("ZIP 엔트리 수 초과 (ZIP bomb 의심)")
   }
 
+  // ZIP 전체 파일 누적 압축해제 크기 추적 (비섹션 파일 포함)
+  const decompressed = { total: 0 }
+
   // 메타데이터 추출 (best-effort)
   const metadata: DocumentMetadata = {}
-  await extractHwpxMetadata(zip, metadata)
+  await extractHwpxMetadata(zip, metadata, decompressed)
 
   // 스타일 정보 추출 (best-effort)
-  const styleMap = await extractHwpxStyles(zip)
+  const styleMap = await extractHwpxStyles(zip, decompressed)
   const warnings: ParseWarning[] = []
 
   const sectionPaths = await resolveSectionPaths(zip)
@@ -165,18 +187,28 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
 
   // 페이지 범위 필터링 (섹션 단위 근사치)
   const pageFilter = options?.pages ? parsePageRange(options.pages, sectionPaths.length) : null
-
-  let totalDecompressed = 0
+  const totalTarget = pageFilter ? pageFilter.size : sectionPaths.length
   const blocks: IRBlock[] = []
+  let parsedSections = 0
   for (let si = 0; si < sectionPaths.length; si++) {
     if (pageFilter && !pageFilter.has(si + 1)) continue
     const file = zip.file(sectionPaths[si])
     if (!file) continue
-    const xml = await file.async("text")
-    totalDecompressed += xml.length * 2
-    if (totalDecompressed > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
-    blocks.push(...parseSectionXml(xml, styleMap, warnings, si + 1))
+    try {
+      const xml = await file.async("text")
+      decompressed.total += xml.length * 2
+      if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
+      blocks.push(...parseSectionXml(xml, styleMap, warnings, si + 1))
+      parsedSections++
+      options?.onProgress?.(parsedSections, totalTarget)
+    } catch (secErr) {
+      if (secErr instanceof KordocError) throw secErr
+      warnings.push({ page: si + 1, message: `섹션 ${si + 1} 파싱 실패: ${secErr instanceof Error ? secErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
+    }
   }
+
+  // 이미지 블록에서 ZIP 바이너리 추출
+  const images = await extractImagesFromZip(zip, blocks, decompressed, warnings)
 
   // 스타일 기반 헤딩 감지
   detectHwpxHeadings(blocks, styleMap)
@@ -187,7 +219,97 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     .map(b => ({ level: b.level!, text: b.text!, pageNumber: b.pageNumber }))
 
   const markdown = blocksToMarkdown(blocks)
-  return { markdown, blocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined }
+  return { markdown, blocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined }
+}
+
+// ─── 이미지 추출 ───────────────────────────────────
+
+/** 확장자 → MIME 타입 */
+function imageExtToMime(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case "jpg": case "jpeg": return "image/jpeg"
+    case "png": return "image/png"
+    case "gif": return "image/gif"
+    case "bmp": return "image/bmp"
+    case "tif": case "tiff": return "image/tiff"
+    case "wmf": return "image/wmf"
+    case "emf": return "image/emf"
+    case "svg": return "image/svg+xml"
+    default: return "application/octet-stream"
+  }
+}
+
+/** MIME → 확장자 */
+function mimeToExt(mime: string): string {
+  if (mime.includes("jpeg")) return "jpg"
+  if (mime.includes("png")) return "png"
+  if (mime.includes("gif")) return "gif"
+  if (mime.includes("bmp")) return "bmp"
+  if (mime.includes("tiff")) return "tif"
+  if (mime.includes("wmf")) return "wmf"
+  if (mime.includes("emf")) return "emf"
+  if (mime.includes("svg")) return "svg"
+  return "bin"
+}
+
+/** blocks에서 type="image" 블록의 참조를 ZIP에서 실제 바이너리로 변환 */
+async function extractImagesFromZip(
+  zip: JSZip,
+  blocks: IRBlock[],
+  decompressed: { total: number },
+  warnings?: ParseWarning[],
+): Promise<ExtractedImage[]> {
+  const images: ExtractedImage[] = []
+  let imageIndex = 0
+
+  for (const block of blocks) {
+    if (block.type !== "image" || !block.text) continue
+
+    const ref = block.text
+    // BinData/ 폴더 내에서 참조 파일 찾기
+    const candidates = [
+      `BinData/${ref}`,
+      `Contents/BinData/${ref}`,
+      ref, // 절대 경로일 수도 있음
+    ]
+
+    let found = false
+    for (const path of candidates) {
+      if (isPathTraversal(path)) continue
+      const file = zip.file(path)
+      if (!file) continue
+
+      try {
+        const data = await file.async("uint8array")
+        decompressed.total += data.length
+        if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
+
+        const ext = ref.includes(".") ? (ref.split(".").pop() || "png") : "png"
+        const mimeType = imageExtToMime(ext)
+        imageIndex++
+        const filename = `image_${String(imageIndex).padStart(3, "0")}.${mimeToExt(mimeType)}`
+
+        images.push({ filename, data, mimeType })
+        // 블록 텍스트를 참조 파일명으로 교체
+        block.text = filename
+        block.imageData = { data, mimeType, filename: ref }
+        found = true
+        break
+      } catch (err) {
+        if (err instanceof KordocError) throw err
+        // 개별 이미지 실패는 경고로 처리
+      }
+    }
+
+    if (!found) {
+      warnings?.push({ page: block.pageNumber, message: `이미지 파일 없음: ${ref}`, code: "SKIPPED_IMAGE" })
+      // image 블록을 paragraph로 전환 (참조만 남김)
+      block.type = "paragraph"
+      block.text = `[이미지: ${ref}]`
+    }
+  }
+
+  return images
 }
 
 // ─── 메타데이터 추출 (best-effort) ───────────────────
@@ -196,7 +318,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
  * HWPX ZIP 내 메타데이터 파일에서 Dublin Core 정보 추출.
  * 표준 경로: meta.xml, docProps/core.xml, META-INF/container.xml
  */
-async function extractHwpxMetadata(zip: JSZip, metadata: DocumentMetadata): Promise<void> {
+async function extractHwpxMetadata(zip: JSZip, metadata: DocumentMetadata, decompressed?: { total: number }): Promise<void> {
   try {
     // meta.xml (HWPX 표준) 또는 docProps/core.xml (OOXML 호환)
     const metaPaths = ["meta.xml", "META-INF/meta.xml", "docProps/core.xml"]
@@ -204,6 +326,10 @@ async function extractHwpxMetadata(zip: JSZip, metadata: DocumentMetadata): Prom
       const file = zip.file(mp) || Object.values(zip.files).find(f => f.name.toLowerCase() === mp.toLowerCase()) || null
       if (!file) continue
       const xml = await file.async("text")
+      if (decompressed) {
+        decompressed.total += xml.length * 2
+        if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
+      }
       parseDublinCoreMetadata(xml, metadata)
       if (metadata.title || metadata.author) return
     }
@@ -214,7 +340,7 @@ async function extractHwpxMetadata(zip: JSZip, metadata: DocumentMetadata): Prom
 
 /** Dublin Core (dc:) 메타데이터 XML 파싱 */
 function parseDublinCoreMetadata(xml: string, metadata: DocumentMetadata): void {
-  const parser = new DOMParser()
+  const parser = createXmlParser()
   const doc = parser.parseFromString(stripDtd(xml), "text/xml")
   if (!doc.documentElement) return
 
@@ -259,59 +385,6 @@ export async function extractHwpxMetadataOnly(buffer: ArrayBuffer): Promise<Docu
   return metadata
 }
 
-/**
- * loadAsync 전 raw buffer에서 Central Directory를 파싱하여
- * 선언된 비압축 크기 합산 + 엔트리 수를 사전 검증.
- *
- * ⚠️ 한계: CD에 선언된 비압축 크기는 공격자가 위조 가능.
- * 이 함수는 "정직한 ZIP"에 대한 조기 거부(best-effort early rejection)만 수행.
- * 실제 ZIP bomb 방어는 loadAsync 후 per-file 누적 크기 체크에서 담당.
- *
- * Central Directory가 손상된 경우(extractFromBrokenZip으로 폴백될 케이스)에는
- * 안전한 기본값을 반환하여 loadAsync가 시도되도록 함.
- *
- * @internal 테스트 전용 export — public API(index.ts)에서 재노출하지 않음
- */
-export function precheckZipSize(buffer: ArrayBuffer): { totalUncompressed: number; entryCount: number } {
-  try {
-    const data = new DataView(buffer)
-    const len = buffer.byteLength
-    if (len < 22) return { totalUncompressed: 0, entryCount: 0 }
-
-    // End of Central Directory (EOCD) 시그니처를 뒤에서부터 탐색
-    // EOCD는 최소 22바이트, comment 최대 65535바이트
-    const searchStart = Math.max(0, len - 22 - 65535)
-    let eocdOffset = -1
-    for (let i = len - 22; i >= searchStart; i--) {
-      if (data.getUint32(i, true) === 0x06054b50) { eocdOffset = i; break }
-    }
-    if (eocdOffset < 0) return { totalUncompressed: 0, entryCount: 0 }
-
-    const entryCount = data.getUint16(eocdOffset + 10, true)
-    const cdSize = data.getUint32(eocdOffset + 12, true)
-    const cdOffset = data.getUint32(eocdOffset + 16, true)
-
-    if (cdOffset + cdSize > len) return { totalUncompressed: 0, entryCount }
-
-    // Central Directory 엔트리 순회
-    let totalUncompressed = 0
-    let pos = cdOffset
-    for (let i = 0; i < entryCount && pos + 46 <= cdOffset + cdSize; i++) {
-      if (data.getUint32(pos, true) !== 0x02014b50) break
-      totalUncompressed += data.getUint32(pos + 24, true)
-      const nameLen = data.getUint16(pos + 28, true)
-      const extraLen = data.getUint16(pos + 30, true)
-      const commentLen = data.getUint16(pos + 32, true)
-      pos += 46 + nameLen + extraLen + commentLen
-    }
-
-    return { totalUncompressed, entryCount }
-  } catch {
-    // DataView 범위 초과 등 예외 시 안전한 기본값 반환
-    return { totalUncompressed: 0, entryCount: 0 }
-  }
-}
-
 // ─── 손상 ZIP 복구 (edu-facility-ai에서 포팅) ──────────
 
 function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
@@ -319,12 +392,23 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
   const view = new DataView(buffer)
   let pos = 0
   const blocks: IRBlock[] = []
+  const warnings: ParseWarning[] = [
+    { code: "BROKEN_ZIP_RECOVERY", message: "손상된 ZIP 구조 — Local File Header 기반 복구 모드" },
+  ]
   let totalDecompressed = 0
   let entryCount = 0
+  let sectionNum = 0
 
   while (pos < data.length - 30) {
-    // PK\x03\x04 시그니처 확인
-    if (data[pos] !== 0x50 || data[pos + 1] !== 0x4b || data[pos + 2] !== 0x03 || data[pos + 3] !== 0x04) break
+    // PK\x03\x04 시그니처 확인 — 미매칭 시 다음 PK 시그니처까지 스캔 (중간 손상 복구)
+    if (data[pos] !== 0x50 || data[pos + 1] !== 0x4b || data[pos + 2] !== 0x03 || data[pos + 3] !== 0x04) {
+      pos++
+      while (pos < data.length - 30) {
+        if (data[pos] === 0x50 && data[pos + 1] === 0x4b && data[pos + 2] === 0x03 && data[pos + 3] === 0x04) break
+        pos++
+      }
+      continue
+    }
 
     if (++entryCount > MAX_ZIP_ENTRIES) break
 
@@ -363,7 +447,8 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
       }
       totalDecompressed += content.length * 2
       if (totalDecompressed > MAX_DECOMPRESS_SIZE) throw new KordocError("압축 해제 크기 초과")
-      blocks.push(...parseSectionXml(content))
+      sectionNum++
+      blocks.push(...parseSectionXml(content, undefined, warnings, sectionNum))
     } catch {
       continue
     }
@@ -371,7 +456,7 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
 
   if (blocks.length === 0) throw new KordocError("손상된 HWPX에서 섹션 데이터를 복구할 수 없습니다")
   const markdown = blocksToMarkdown(blocks)
-  return { markdown, blocks }
+  return { markdown, blocks, warnings: warnings.length > 0 ? warnings : undefined }
 }
 
 // ─── Manifest 해석 ───────────────────────────────────
@@ -393,7 +478,7 @@ async function resolveSectionPaths(zip: JSZip): Promise<string[]> {
 }
 
 function parseSectionPathsFromManifest(xml: string): string[] {
-  const parser = new DOMParser()
+  const parser = createXmlParser()
   const doc = parser.parseFromString(stripDtd(xml), "text/xml")
   const items = doc.getElementsByTagName("opf:item")
   const spine = doc.getElementsByTagName("opf:itemref")
@@ -452,13 +537,14 @@ function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): void {
     // 폰트 크기 기반
     if (baseFontSize > 0 && block.style?.fontSize) {
       const ratio = block.style.fontSize / baseFontSize
-      if (ratio >= 1.5) level = 1
-      else if (ratio >= 1.3) level = 2
-      else if (ratio >= 1.15) level = 3
+      if (ratio >= HEADING_RATIO_H1) level = 1
+      else if (ratio >= HEADING_RATIO_H2) level = 2
+      else if (ratio >= HEADING_RATIO_H3) level = 3
     }
 
-    // "제N조/장/절" 패턴
-    if (/^제\d+[조장절편]/.test(text) && text.length <= 50) {
+    // "제N조/장/절" 패턴 — 균등배분 공백 허용 ("제 1 장" → "제1장")
+    const compactText = text.replace(/\s+/g, "")
+    if (/^제\d+[조장절편]/.test(compactText) && text.length <= 50) {
       if (level === 0) level = 3
     }
 
@@ -472,7 +558,7 @@ function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): void {
 // ─── 섹션 XML 파싱 ──────────────────────────────────
 
 function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number): IRBlock[] {
-  const parser = new DOMParser()
+  const parser = createXmlParser(warnings)
   const doc = parser.parseFromString(stripDtd(xml), "text/xml")
   if (!doc.documentElement) return []
 
@@ -481,11 +567,37 @@ function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?: ParseW
   return blocks
 }
 
+/** pic/shape 요소에서 이미지 참조 경로 추출 (binaryItemIDRef 또는 href) */
+function extractImageRef(el: Element): string | null {
+  // HWPX: <hp:imgRect> 또는 <hp:img> 내 binaryItemIDRef 속성
+  // 또는 하위에서 img 관련 속성 탐색
+  const children = el.childNodes
+  if (!children) return null
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i] as Element
+    if (child.nodeType !== 1) continue
+    const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
+    if (tag === "imgRect" || tag === "img" || tag === "imgClip") {
+      const ref = child.getAttribute("binaryItemIDRef") || child.getAttribute("href") || ""
+      if (ref) return ref
+    }
+    // lineShape > imgRect 같은 중첩 구조
+    const nested = extractImageRef(child)
+    if (nested) return nested
+  }
+  // 직접 속성 체크
+  const directRef = el.getAttribute("binaryItemIDRef") || ""
+  if (directRef) return directRef
+  return null
+}
+
 function walkSection(
   node: Node, blocks: IRBlock[],
   tableCtx: TableState | null, tableStack: TableState[],
-  styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number
+  styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number,
+  depth: number = 0
 ): void {
+  if (depth > MAX_XML_DEPTH) return
   const children = node.childNodes
   if (!children) return
 
@@ -500,14 +612,20 @@ function walkSection(
       case "tbl": {
         if (tableCtx) tableStack.push(tableCtx)
         const newTable: TableState = { rows: [], currentRow: [], cell: null }
-        walkSection(el, blocks, newTable, tableStack, styleMap, warnings, sectionNum)
+        walkSection(el, blocks, newTable, tableStack, styleMap, warnings, sectionNum, depth + 1)
 
         if (newTable.rows.length > 0) {
           if (tableStack.length > 0) {
             const parentTable = tableStack.pop()!
-            const nestedText = convertTableToText(newTable.rows)
-            if (parentTable.cell) {
-              parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + nestedText
+            // 중첩 표가 충분히 크면 (3행+, 2열+) 별도 블록으로 분리
+            const nestedCols = Math.max(...newTable.rows.map(r => r.length))
+            if (newTable.rows.length >= 3 && nestedCols >= 2) {
+              blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
+            } else {
+              const nestedText = convertTableToText(newTable.rows)
+              if (parentTable.cell) {
+                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + nestedText
+              }
             }
             tableCtx = parentTable
           } else {
@@ -523,7 +641,7 @@ function walkSection(
       case "tr":
         if (tableCtx) {
           tableCtx.currentRow = []
-          walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum)
+          walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
           if (tableCtx.currentRow.length > 0) tableCtx.rows.push(tableCtx.currentRow)
           tableCtx.currentRow = []
         }
@@ -532,7 +650,7 @@ function walkSection(
       case "tc":
         if (tableCtx) {
           tableCtx.cell = { text: "", colSpan: 1, rowSpan: 1 }
-          walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum)
+          walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
           if (tableCtx.cell) {
             tableCtx.currentRow.push(tableCtx.cell)
             tableCtx.cell = null
@@ -540,10 +658,21 @@ function walkSection(
         }
         break
 
+      case "cellAddr":
+        if (tableCtx?.cell) {
+          const ca = parseInt(el.getAttribute("colAddr") || "", 10)
+          const ra = parseInt(el.getAttribute("rowAddr") || "", 10)
+          if (!isNaN(ca)) tableCtx.cell.colAddr = ca
+          if (!isNaN(ra)) tableCtx.cell.rowAddr = ra
+        }
+        break
+
       case "cellSpan":
         if (tableCtx?.cell) {
-          const cs = parseInt(el.getAttribute("colSpan") || "1", 10)
-          const rs = parseInt(el.getAttribute("rowSpan") || "1", 10)
+          const rawCs = parseInt(el.getAttribute("colSpan") || "1", 10)
+          const cs = isNaN(rawCs) ? 1 : rawCs
+          const rawRs = parseInt(el.getAttribute("rowSpan") || "1", 10)
+          const rs = isNaN(rawRs) ? 1 : rawRs
           tableCtx.cell.colSpan = clampSpan(cs, MAX_COLS)
           tableCtx.cell.rowSpan = clampSpan(rs, MAX_ROWS)
         }
@@ -564,19 +693,23 @@ function walkSection(
         }
         // <p> 내부의 <tbl>만 별도 처리 — extractParagraphInfo가 이미 텍스트를 추출했으므로
         // 전체 walkSection 재귀 대신 테이블/이미지 자식만 선택적으로 처리
-        tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum)
+        tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
         break
       }
 
-      // 이미지/그림 — 경고 수집
-      case "pic": case "shape": case "drawingObject":
-        if (warnings && sectionNum) {
+      // 이미지/그림 — 경로 추출 또는 경고
+      case "pic": case "shape": case "drawingObject": {
+        const imgRef = extractImageRef(el)
+        if (imgRef) {
+          blocks.push({ type: "image", text: imgRef, pageNumber: sectionNum })
+        } else if (warnings && sectionNum) {
           warnings.push({ page: sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
         }
         break
+      }
 
       default:
-        walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum)
+        walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
         break
     }
   }
@@ -586,42 +719,115 @@ function walkSection(
 function walkParagraphChildren(
   node: Node, blocks: IRBlock[],
   tableCtx: TableState | null, tableStack: TableState[],
-  styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number
+  styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number,
+  depth: number = 0
 ): TableState | null {
+  if (depth > MAX_XML_DEPTH) return tableCtx
   const children = node.childNodes
   if (!children) return tableCtx
-  for (let i = 0; i < children.length; i++) {
-    const el = children[i] as Element
-    if (el.nodeType !== 1) continue
-    const tag = el.tagName || el.localName || ""
-    const localTag = tag.replace(/^[^:]+:/, "")
-    // 테이블은 walkSection으로 위임
-    if (localTag === "tbl") {
-      if (tableCtx) tableStack.push(tableCtx)
-      const newTable: TableState = { rows: [], currentRow: [], cell: null }
-      walkSection(el, blocks, newTable, tableStack, styleMap, warnings, sectionNum)
-      if (newTable.rows.length > 0) {
-        if (tableStack.length > 0) {
-          const parentTable = tableStack.pop()!
-          const nestedText = convertTableToText(newTable.rows)
-          if (parentTable.cell) {
-            parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + nestedText
+  const walkChildren = (parent: Node, d: number) => {
+    if (d > MAX_XML_DEPTH) return
+    const kids = parent.childNodes
+    if (!kids) return
+    for (let i = 0; i < kids.length; i++) {
+      const el = kids[i] as Element
+      if (el.nodeType !== 1) continue
+      const tag = el.tagName || el.localName || ""
+      const localTag = tag.replace(/^[^:]+:/, "")
+
+      if (localTag === "tbl") {
+        // 테이블은 walkSection으로 위임
+        if (tableCtx) tableStack.push(tableCtx)
+        const newTable: TableState = { rows: [], currentRow: [], cell: null }
+        walkSection(el, blocks, newTable, tableStack, styleMap, warnings, sectionNum, d + 1)
+        if (newTable.rows.length > 0) {
+          if (tableStack.length > 0) {
+            const parentTable = tableStack.pop()!
+            const nestedCols = Math.max(...newTable.rows.map(r => r.length))
+            if (newTable.rows.length >= 3 && nestedCols >= 2) {
+              blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
+            } else {
+              const nestedText = convertTableToText(newTable.rows)
+              if (parentTable.cell) {
+                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + nestedText
+              }
+            }
+            tableCtx = parentTable
+          } else {
+            blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
+            tableCtx = null
           }
-          tableCtx = parentTable
         } else {
-          blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
-          tableCtx = null
+          tableCtx = tableStack.length > 0 ? tableStack.pop()! : null
         }
-      } else {
-        tableCtx = tableStack.length > 0 ? tableStack.pop()! : null
-      }
-    } else if (localTag === "pic" || localTag === "shape" || localTag === "drawingObject") {
-      if (warnings && sectionNum) {
-        warnings.push({ page: sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
+      } else if (localTag === "pic" || localTag === "shape" || localTag === "drawingObject") {
+        // 도형/이미지 안에 drawText(글상자)가 있으면 텍스트 추출 우선
+        const drawTextChild = findDescendant(el, "drawText")
+        if (drawTextChild) {
+          extractDrawTextBlocks(drawTextChild, blocks, styleMap, sectionNum)
+        } else {
+          const imgRef = extractImageRef(el)
+          if (imgRef) {
+            blocks.push({ type: "image", text: imgRef, pageNumber: sectionNum })
+          } else if (warnings && sectionNum) {
+            warnings.push({ page: sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
+          }
+        }
+      } else if (localTag === "drawText") {
+        // 글상자(TextBox) 안 텍스트 추출 — <hp:p> 순회
+        extractDrawTextBlocks(el, blocks, styleMap, sectionNum)
+      } else if (localTag === "r" || localTag === "run" || localTag === "ctrl"
+        || localTag === "rect" || localTag === "ellipse" || localTag === "polygon"
+        || localTag === "line" || localTag === "arc" || localTag === "curve"
+        || localTag === "connectLine" || localTag === "container") {
+        // <hp:run>, <hp:ctrl>, 도형 요소 내부에 테이블/이미지/글상자가 포함될 수 있음 — 재귀
+        walkChildren(el, d + 1)
+      } else if (localTag === "run") {
+        tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
       }
     }
   }
+  walkChildren(node, depth)
   return tableCtx
+}
+
+/** 자손에서 특정 태그명의 첫 번째 요소 탐색 (최대 깊이 5) */
+function findDescendant(node: Node, targetTag: string, depth = 0): Element | null {
+  if (depth > 5) return null
+  const children = node.childNodes
+  if (!children) return null
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i] as Element
+    if (child.nodeType !== 1) continue
+    const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
+    if (tag === targetTag) return child
+    const found = findDescendant(child, targetTag, depth + 1)
+    if (found) return found
+  }
+  return null
+}
+
+/** drawText(글상자) 내부의 <p> 요소들에서 텍스트를 추출하여 paragraph 블록 생성 */
+function extractDrawTextBlocks(drawTextNode: Node, blocks: IRBlock[], styleMap?: HwpxStyleMap, sectionNum?: number): void {
+  const children = drawTextNode.childNodes
+  if (!children) return
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i] as Element
+    if (child.nodeType !== 1) continue
+    const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
+    if (tag === "subList" || tag === "p" || tag === "para") {
+      // subList 안의 <p>들을 순회
+      if (tag === "subList") {
+        extractDrawTextBlocks(child, blocks, styleMap, sectionNum)
+      } else {
+        const info = extractParagraphInfo(child, styleMap)
+        const text = info.text.trim()
+        if (text) {
+          blocks.push({ type: "paragraph", text, style: info.style ?? undefined, pageNumber: sectionNum })
+        }
+      }
+    }
+  }
 }
 
 interface ParagraphInfo {
@@ -651,8 +857,17 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap): Paragraph
 
       const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
       switch (tag) {
-        case "t": text += child.textContent || ""; break
-        case "tab": text += "\t"; break
+        case "t": walk(child); break  // 자식 순회 (tab 등 하위 요소 처리)
+        case "tab": {
+          const leader = child.getAttribute("leader")
+          if (leader && leader !== "0") {
+            // 목차 리더 탭 (점선/실선 등) — 뒤에 페이지번호가 오므로 이후 텍스트 무시
+            text += "\x1F"  // 특수 마커: 이후 텍스트 제거용
+          } else {
+            text += "\t"
+          }
+          break
+        }
         case "br":
           if ((child.getAttribute("type") || "line") === "line") text += "\n"
           break
@@ -662,7 +877,11 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap): Paragraph
         // 하이퍼링크
         case "hyperlink": {
           const url = child.getAttribute("url") || child.getAttribute("href") || ""
-          if (url) href = url
+          if (url) {
+            // XSS 방지: 추출 시점에서 href 살균
+            const safe = sanitizeHref(url)
+            if (safe) href = safe
+          }
           // 하이퍼링크 내 텍스트 추출
           walk(child)
           break
@@ -674,6 +893,18 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap): Paragraph
           if (noteText) footnote = (footnote ? footnote + "; " : "") + noteText
           break
         }
+
+        // 제어 요소 — 필드, 컨트롤, 매개변수 등 스킵
+        case "ctrl": case "fieldBegin": case "fieldEnd":
+        case "parameters": case "stringParam": case "integerParam":
+        case "boolParam": case "floatParam":
+        case "secPr":  // 섹션 속성 (페이지 설정 등)
+        case "colPr":  // 다단 속성
+        case "linesegarray": case "lineseg":  // 레이아웃 정보
+        // 도형/이미지 요소 — 대체텍스트("사각형입니다." 등) 누출 방지
+        case "pic": case "shape": case "drawingObject":
+        case "shapeComment": case "drawText":
+          break
 
         // run 요소에서 charPrIDRef 추출
         case "r": {
@@ -689,7 +920,18 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap): Paragraph
   }
   walk(para)
 
-  const cleanText = text.replace(/[ \t]+/g, " ").trim()
+  // 목차 리더 마커(\x1F) 이후 텍스트(페이지번호) 제거
+  const leaderIdx = text.indexOf("\x1F")
+  if (leaderIdx >= 0) text = text.substring(0, leaderIdx)
+
+  let cleanText = text.replace(/[ \t]+/g, " ").trim()
+
+  // 한글 이미지 OLE 대체 텍스트 필터링 ("그림입니다. 원본 그림의 이름: ...")
+  if (/^그림입니다\.?\s*원본\s*그림의\s*(이름|크기)/.test(cleanText)) cleanText = ""
+  // 멀티라인으로 삽입된 OLE 대체 텍스트도 제거
+  cleanText = cleanText.replace(/그림입니다\.?\s*원본\s*그림의\s*(이름|크기)[^\n]*(\n[^\n]*원본\s*그림의\s*(이름|크기)[^\n]*)*/g, "").trim()
+  // HWP 도형/개체 대체텍스트 제거 ("사각형입니다.", "개체 입니다." 등)
+  cleanText = cleanText.replace(/(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|선|직선|곡선|화살표|오각형|육각형|팔각형|별|십자|구름|마름모|도넛|평행사변형|사다리꼴|개체|그리기\s?개체|묶음\s?개체|글상자|수식|표|그림|OLE\s?개체)\s?입니다\.?/g, "").trim()
 
   // 스타일 정보 조회
   let style: InlineStyle | undefined

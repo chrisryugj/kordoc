@@ -5,7 +5,8 @@
  * ES 모듈 호이스팅 때문에 별도 파일로 분리되어 있음.
  */
 
-import type { ParseResult, IRBlock, IRTable, DocumentMetadata, ParseOptions, BoundingBox, ParseWarning, OutlineItem } from "../types.js"
+import type { ParseResult, InternalParseResult, IRBlock, IRTable, DocumentMetadata, ParseOptions, BoundingBox, ParseWarning, OutlineItem } from "../types.js"
+import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
 import { KordocError } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { blocksToMarkdown } from "../table/builder.js"
@@ -21,6 +22,29 @@ GlobalWorkerOptions.workerSrc = ""
 // ─── 안전 한계값 (구조적 파싱과 무관) ────────────────
 const MAX_PAGES = 5000
 const MAX_TOTAL_TEXT = 100 * 1024 * 1024 // 100MB
+/** PDF 로딩 타임아웃 (30초) — 악성/대용량 PDF 무한 대기 방지 */
+const PDF_LOAD_TIMEOUT_MS = 30_000
+
+/** getDocument + 타임아웃 래퍼 */
+async function loadPdfWithTimeout(buffer: ArrayBuffer) {
+  const loadingTask = getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+    disableFontFace: true,
+    isEvalSupported: false,
+  })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      loadingTask.promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => { loadingTask.destroy(); reject(new KordocError("PDF 로딩 타임아웃 (30초 초과)")) }, PDF_LOAD_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
 
 interface PdfTextItem {
   str: string
@@ -43,17 +67,12 @@ interface NormItem {
   isHidden: boolean
 }
 
-export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
-  const doc = await getDocument({
-    data: new Uint8Array(buffer),
-    useSystemFonts: true,
-    disableFontFace: true,
-    isEvalSupported: false,
-  }).promise
+export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
+  const doc = await loadPdfWithTimeout(buffer)
 
   try {
     const pageCount = doc.numPages
-    if (pageCount === 0) return { success: false, fileType: "pdf", pageCount: 0, error: "PDF에 페이지가 없습니다.", code: "PARSE_ERROR" }
+    if (pageCount === 0) throw new KordocError("PDF에 페이지가 없습니다.")
 
     // 메타데이터 추출 (best-effort)
     const metadata: DocumentMetadata = { pageCount }
@@ -67,45 +86,57 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     // 페이지 범위 필터링
     const pageFilter = options?.pages ? parsePageRange(options.pages, effectivePageCount) : null
+    const totalTarget = pageFilter ? pageFilter.size : effectivePageCount
 
     // 전체 문서의 폰트 크기 통계 수집 (헤딩 감지용)
     const allFontSizes: number[] = []
+    const pageHeights = new Map<number, number>()
 
+    let parsedPages = 0
     for (let i = 1; i <= effectivePageCount; i++) {
       if (pageFilter && !pageFilter.has(i)) continue
-      const page = await doc.getPage(i)
-      const tc = await page.getTextContent()
-      const viewport = page.getViewport({ scale: 1 })
-      const rawItems = tc.items as PdfTextItem[]
-      const items = normalizeItems(rawItems)
+      try {
+        const page = await doc.getPage(i)
+        const tc = await page.getTextContent()
+        const viewport = page.getViewport({ scale: 1 })
+        pageHeights.set(i, viewport.height)
+        const rawItems = tc.items as PdfTextItem[]
+        const items = normalizeItems(rawItems)
 
-      // hidden text 필터링 + 경고 수집
-      const { visible, hiddenCount } = filterHiddenText(items, viewport.width, viewport.height)
-      if (hiddenCount > 0) {
-        warnings.push({ page: i, message: `${hiddenCount}개 숨겨진 텍스트 요소 필터링됨`, code: "HIDDEN_TEXT_FILTERED" })
+        // hidden text 필터링 + 경고 수집
+        const { visible, hiddenCount } = filterHiddenText(items, viewport.width, viewport.height)
+        if (hiddenCount > 0) {
+          warnings.push({ page: i, message: `${hiddenCount}개 숨겨진 텍스트 요소 필터링됨`, code: "HIDDEN_TEXT_FILTERED" })
+        }
+
+        // 폰트 크기 통계 수집
+        for (const item of visible) {
+          if (item.fontSize > 0) allFontSizes.push(item.fontSize)
+        }
+
+        // 선 기반 테이블 감지를 위한 operatorList
+        const opList = await page.getOperatorList()
+
+        const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height)
+        for (const b of pageBlocks) blocks.push(b)
+
+        // 이미지 기반 PDF 감지 + 크기 제한용 문자 수 집계
+        for (const b of pageBlocks) {
+          const t = b.text || ""
+          totalChars += t.replace(/\s/g, "").length
+          totalTextBytes += t.length * 2
+        }
+        if (totalTextBytes > MAX_TOTAL_TEXT) throw new KordocError("텍스트 추출 크기 초과")
+        parsedPages++
+        options?.onProgress?.(parsedPages, totalTarget)
+      } catch (pageErr) {
+        // 크기 초과는 전체 중단
+        if (pageErr instanceof KordocError) throw pageErr
+        warnings.push({ page: i, message: `페이지 ${i} 파싱 실패: ${pageErr instanceof Error ? pageErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
       }
-
-      // 폰트 크기 통계 수집
-      for (const item of visible) {
-        if (item.fontSize > 0) allFontSizes.push(item.fontSize)
-      }
-
-      // 선 기반 테이블 감지를 위한 operatorList
-      const opList = await page.getOperatorList()
-
-      const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height)
-      for (const b of pageBlocks) blocks.push(b)
-
-      // 이미지 기반 PDF 감지 + 크기 제한용 문자 수 집계
-      for (const b of pageBlocks) {
-        const t = b.text || ""
-        totalChars += t.replace(/\s/g, "").length
-        totalTextBytes += t.length * 2
-      }
-      if (totalTextBytes > MAX_TOTAL_TEXT) throw new KordocError("텍스트 추출 크기 초과")
     }
 
-    const parsedPageCount = pageFilter ? pageFilter.size : effectivePageCount
+    const parsedPageCount = parsedPages || (pageFilter ? pageFilter.size : effectivePageCount)
     if (totalChars / Math.max(parsedPageCount, 1) < 10) {
       if (options?.ocr) {
         try {
@@ -113,20 +144,34 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           const ocrBlocks = await ocrPages(doc, options.ocr, pageFilter, effectivePageCount)
           if (ocrBlocks.length > 0) {
             const ocrMarkdown = ocrBlocks.map(b => b.text || "").filter(Boolean).join("\n\n")
-            return { success: true, fileType: "pdf", markdown: ocrMarkdown, pageCount: parsedPageCount, blocks: ocrBlocks, metadata, isImageBased: true, warnings }
+            return { markdown: ocrMarkdown, blocks: ocrBlocks, metadata, warnings, isImageBased: true }
           }
         } catch {
           // OCR 실패 시 원래 에러 반환
         }
       }
-      return { success: false, fileType: "pdf", pageCount, isImageBased: true, error: `이미지 기반 PDF (${pageCount}페이지, ${totalChars}자)`, code: "IMAGE_BASED_PDF" }
+      throw Object.assign(new KordocError(`이미지 기반 PDF (${pageCount}페이지, ${totalChars}자)`), { isImageBased: true })
+    }
+
+    // 머리글/바닥글 필터링 (기본 ON — 명시적 false일 때만 비활성화)
+    if (options?.removeHeaderFooter !== false && parsedPageCount >= 3) {
+      const removed = removeHeaderFooterBlocks(blocks, pageHeights, warnings)
+      // 필터링된 블록 제거 (뒤에서부터 삭제)
+      for (let ri = removed.length - 1; ri >= 0; ri--) {
+        blocks.splice(removed[ri], 1)
+      }
     }
 
     // 헤딩 감지: 폰트 크기 기반
     const medianFontSize = computeMedianFontSize(allFontSizes)
     if (medianFontSize > 0) {
       detectHeadings(blocks, medianFontSize)
+      // 같은 Y좌표의 연속 헤딩 블록 병합 ("1.3" + "사업비의 산정" → "1.3 사업비의 산정")
+      mergeAdjacentHeadings(blocks)
     }
+
+    // □/■ 마커 기반 서브헤딩 감지 (ODL 패턴)
+    detectMarkerHeadings(blocks)
 
     // outline 구축
     const outline: OutlineItem[] = blocks
@@ -136,7 +181,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // blocksToMarkdown로 통일 — 헤딩 마크다운 반영 (HWP5/HWPX와 일관성)
     let markdown = cleanPdfText(blocksToMarkdown(blocks))
 
-    return { success: true, fileType: "pdf", markdown, pageCount: parsedPageCount, blocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined }
+    return { markdown, blocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined }
   } finally {
     await doc.destroy().catch(() => {})
   }
@@ -174,12 +219,7 @@ function parsePdfDate(dateStr: string): string | undefined {
 
 /** 메타데이터만 추출 (전체 파싱 없이) — MCP parse_metadata용 */
 export async function extractPdfMetadataOnly(buffer: ArrayBuffer): Promise<DocumentMetadata> {
-  const doc = await getDocument({
-    data: new Uint8Array(buffer),
-    useSystemFonts: true,
-    disableFontFace: true,
-    isEvalSupported: false,
-  }).promise
+  const doc = await loadPdfWithTimeout(buffer)
 
   try {
     const metadata: DocumentMetadata = { pageCount: doc.numPages }
@@ -240,15 +280,434 @@ function detectHeadings(blocks: IRBlock[], medianFontSize: number): void {
 
     const ratio = block.style.fontSize / medianFontSize
     let level = 0
-    if (ratio >= 1.5) level = 1
-    else if (ratio >= 1.3) level = 2
-    else if (ratio >= 1.15) level = 3
+    if (ratio >= HEADING_RATIO_H1) level = 1
+    else if (ratio >= HEADING_RATIO_H2) level = 2
+    else if (ratio >= HEADING_RATIO_H3) level = 3
 
     if (level > 0) {
       block.type = "heading"
       block.level = level
+      // PDF 균등배분 스페이스 제거 ("기 본 현 황" → "기본현황")
+      // 한글 글자 사이에 단독 공백이 반복되면 균등배분으로 판단
+      block.text = collapseEvenSpacing(text)
     }
   }
+}
+
+/**
+ * 같은 Y좌표(같은 시각적 행)의 연속 헤딩 블록을 하나로 병합.
+ * 예: "1.3" (H1) + "사업비의 산정" (H1) → "1.3 사업비의 산정" (H1)
+ */
+function mergeAdjacentHeadings(blocks: IRBlock[]): void {
+  let i = 0
+  while (i < blocks.length - 1) {
+    const curr = blocks[i]
+    const next = blocks[i + 1]
+    if (curr.type !== "heading" || next.type !== "heading") { i++; continue }
+    if (!curr.bbox || !next.bbox || !curr.text || !next.text) { i++; continue }
+
+    // 같은 페이지 + 같은 헤딩 레벨
+    // Y비교: bbox가 배경 사각형으로 부풀려질 수 있으므로, fontSize 기반 baseline 추정
+    // baseline ≈ bbox.y + fontSize (PDF 좌표계에서 y는 baseline, bbox.y는 하단)
+    const currBaseline = curr.bbox.y + (curr.style?.fontSize || curr.bbox.height)
+    const nextBaseline = next.bbox.y + (next.style?.fontSize || next.bbox.height)
+    const yDiff = Math.abs(currBaseline - nextBaseline)
+    const maxFs = Math.max(curr.style?.fontSize || 12, next.style?.fontSize || 12)
+    const sameY = curr.bbox.page === next.bbox.page && yDiff < maxFs * 1.5
+    const sameLevel = curr.level === next.level
+
+    if (sameY && sameLevel) {
+      // X좌표 기준으로 왼쪽→오른쪽 순서로 합침
+      const currX = curr.bbox.x
+      const nextX = next.bbox.x
+      if (currX <= nextX) {
+        curr.text = curr.text + " " + next.text
+      } else {
+        curr.text = next.text + " " + curr.text
+      }
+      // bbox 확장
+      curr.bbox = {
+        page: curr.bbox.page,
+        x: Math.min(curr.bbox.x, next.bbox.x),
+        y: Math.min(curr.bbox.y, next.bbox.y),
+        width: Math.max(curr.bbox.x + curr.bbox.width, next.bbox.x + next.bbox.width) - Math.min(curr.bbox.x, next.bbox.x),
+        height: Math.max(curr.bbox.height, next.bbox.height),
+      }
+      blocks.splice(i + 1, 1)
+      // 같은 행에 더 있을 수 있으니 i 안 증가
+    } else {
+      i++
+    }
+  }
+}
+
+/** 한글 균등배분 레이아웃의 글자 간 공백 제거 ("기 본 현 황" → "기본현황") */
+function collapseEvenSpacing(text: string): string {
+  const tokens = text.split(" ")
+  // 토큰의 70% 이상이 1글자(한글/숫자/기호)면 균등배분으로 판단
+  const singleCharCount = tokens.filter(t => t.length === 1).length
+  if (tokens.length >= 3 && singleCharCount / tokens.length >= 0.7) {
+    return tokens.join("")
+  }
+  return text
+}
+
+/**
+ * 다단 레이아웃 아이템을 XY-Cut으로 순서 결정하여 paragraph 블록으로 변환.
+ * normalizeUnderSegmentedTable에서 다단 레이아웃 감지 시 사용.
+ */
+function buildXyCutBlocks(items: NormItem[], pageNum: number): IRBlock[] | null {
+  const allY = items.map(i => i.y)
+  const pageHeight = Math.max(...allY) - Math.min(...allY)
+  const gapThreshold = Math.max(15, pageHeight * 0.03)
+  const orderedGroups = xyCutOrder(items, gapThreshold)
+  const blocks: IRBlock[] = []
+  for (const group of orderedGroups) {
+    if (group.length === 0) continue
+    const yLines = groupByY(group)
+    for (const line of yLines) {
+      const text = mergeLineSimple(line)
+      if (!text.trim()) continue
+      blocks.push({
+        type: "paragraph",
+        text,
+        pageNumber: pageNum,
+        bbox: computeBBox(line, pageNum),
+        style: dominantStyle(line),
+      })
+    }
+  }
+  return blocks.length > 0 ? blocks : null
+}
+
+/**
+ * Under-segmented 테이블 정규화 (ODL TableStructureNormalizer 포팅).
+ *
+ * 선 기반 그리드가 1×1 또는 극소수 셀만 가진 큰 영역일 때,
+ * 내부 텍스트 아이템의 Y좌표 클러스터링으로 행을 재분할하고,
+ * X좌표 갭 분석으로 열을 감지하여 테이블을 재구성한다.
+ *
+ * 트리거 조건:
+ * - 1행 1열 (외곽선만 있는 배경 사각형)
+ * - 또는 셀당 평균 텍스트 행 >= 4 (내부 구조가 부족)
+ */
+function normalizeUnderSegmentedTable(
+  table: IRTable,
+  items: NormItem[],
+  pageNum: number,
+  bbox: BoundingBox,
+): IRBlock[] | null {
+  // 트리거: 1×1 셀이거나, 셀 수 <= 2이고 텍스트가 많은 경우
+  const totalCells = table.cells.reduce((sum, row) =>
+    sum + row.filter(c => c.text.trim()).length, 0)
+  const totalTextLines = table.cells.reduce((sum, row) =>
+    sum + row.reduce((s, c) => s + (c.text.trim() ? c.text.split("\n").length : 0), 0), 0)
+
+  const isUnderSegmented =
+    (table.rows === 1 && table.cols === 1) ||
+    (totalCells <= 2 && totalTextLines >= 8) ||
+    (totalCells <= 2 && items.length >= 6)
+
+  if (!isUnderSegmented) return null
+
+  // 다단 레이아웃이면 XY-Cut으로 읽기 순서 처리 (테이블 오인 방지)
+  if (hasMultiColumnLayout(items)) return buildXyCutBlocks(items, pageNum)
+
+  // 방법 1: 텍스트 Y좌표 + X좌표 갭 기반 직접 행/열 분할 (ODL RowBand 방식)
+  const directTable = buildTableFromTextLayout(items, pageNum, bbox)
+  if (directTable) return directTable
+
+  // 방법 2: cluster-detector fallback
+  const clusterItems: ClusterItem[] = items.map(i => ({
+    text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
+    fontSize: i.fontSize, fontName: i.fontName,
+  }))
+  const clusterResults = detectClusterTables(clusterItems, pageNum)
+
+  if (clusterResults.length > 0) {
+    const blocks: IRBlock[] = []
+    const ciToIdx = new Map<ClusterItem, number>()
+    for (let ci = 0; ci < clusterItems.length; ci++) ciToIdx.set(clusterItems[ci], ci)
+    const usedIndices = new Set<number>()
+
+    for (const cr of clusterResults) {
+      for (const ci of cr.usedItems) {
+        const idx = ciToIdx.get(ci)
+        if (idx !== undefined) usedIndices.add(idx)
+      }
+      blocks.push({ type: "table", table: cr.table, pageNumber: pageNum, bbox: cr.bbox })
+    }
+
+    const remaining = items.filter((_, idx) => !usedIndices.has(idx))
+    for (const item of remaining) {
+      if (!item.text.trim()) continue
+      blocks.push({
+        type: "paragraph",
+        text: item.text,
+        pageNumber: pageNum,
+        bbox: computeBBox([item], pageNum),
+        style: { fontSize: item.fontSize, fontName: item.fontName },
+      })
+    }
+
+    blocks.sort((a, b) => {
+      const ay = a.bbox ? (a.bbox.y + a.bbox.height) : 0
+      const by = b.bbox ? (b.bbox.y + b.bbox.height) : 0
+      return by - ay
+    })
+
+    return blocks.length > 0 ? blocks : null
+  }
+
+  return null
+}
+
+/**
+ * 텍스트 레이아웃 기반 테이블 구성 (ODL TableStructureNormalizer 핵심).
+ *
+ * 1. Y좌표로 행 그룹핑
+ * 2. 각 행 내 X좌표 갭으로 열 경계 감지
+ * 3. 행 간 공통 열 경계가 2+이면 테이블로 구성
+ * 4. 연속된 줄바꿈 행(동일 라벨)은 이전 행에 병합
+ */
+function buildTableFromTextLayout(
+  items: NormItem[],
+  pageNum: number,
+  bbox: BoundingBox,
+): IRBlock[] | null {
+  if (items.length < 4) return null
+
+  // 1. Y좌표로 행 그룹핑
+  const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x)
+  const yTol = 3
+  const rows: NormItem[][] = []
+  let curRow: NormItem[] = [sorted[0]]
+  let curY = sorted[0].y
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (Math.abs(sorted[i].y - curY) <= yTol) {
+      curRow.push(sorted[i])
+    } else {
+      rows.push(curRow)
+      curRow = [sorted[i]]
+      curY = sorted[i].y
+    }
+  }
+  rows.push(curRow)
+
+  if (rows.length < 2) return null
+
+  // 2. X좌표 갭 분석 — 열 경계 감지
+  // 각 행에서 아이템 간 큰 갭 위치 수집
+  const gapPositions: number[] = []
+  for (const row of rows) {
+    if (row.length < 2) continue
+    const sortedX = [...row].sort((a, b) => a.x - b.x)
+    const avgFs = sortedX.reduce((s, i) => s + i.fontSize, 0) / sortedX.length
+    for (let j = 1; j < sortedX.length; j++) {
+      const gap = sortedX[j].x - (sortedX[j - 1].x + sortedX[j - 1].w)
+      if (gap >= avgFs * 1.5) {
+        // 갭의 중간점을 열 경계로 기록
+        gapPositions.push(sortedX[j - 1].x + sortedX[j - 1].w + gap / 2)
+      }
+    }
+  }
+
+  if (gapPositions.length < 2) return null
+
+  // 3. 갭 위치 클러스터링 → 열 경계
+  gapPositions.sort((a, b) => a - b)
+  const colBoundaries: number[] = []
+  let clusterSum = gapPositions[0], clusterCount = 1
+  for (let i = 1; i < gapPositions.length; i++) {
+    const avg = clusterSum / clusterCount
+    if (Math.abs(gapPositions[i] - avg) <= 15) {
+      clusterSum += gapPositions[i]
+      clusterCount++
+    } else {
+      if (clusterCount >= 2) colBoundaries.push(clusterSum / clusterCount)
+      clusterSum = gapPositions[i]
+      clusterCount = 1
+    }
+  }
+  if (clusterCount >= 2) colBoundaries.push(clusterSum / clusterCount)
+
+  if (colBoundaries.length === 0) return null
+
+  // 열 수 = 경계 수 + 1
+  const numCols = colBoundaries.length + 1
+
+  // 4. 행을 열에 배정하여 IRTable 구성
+  // 연속줄(continuation line): 라벨 열이 비어있고 이전 행의 값에 이어지는 행
+  type TableRow = { cells: string[] }
+  const tableRows: TableRow[] = []
+
+  for (const row of rows) {
+    const cells = Array(numCols).fill("")
+    const sortedX = [...row].sort((a, b) => a.x - b.x)
+
+    for (const item of sortedX) {
+      const cx = item.x + item.w / 2
+      let col = 0
+      for (let b = 0; b < colBoundaries.length; b++) {
+        if (cx > colBoundaries[b]) col = b + 1
+      }
+      cells[col] = cells[col] ? cells[col] + " " + item.text : item.text
+    }
+
+    // continuation line 판별: 첫 열이 비어있고 이전 행이 있으면 이전 행에 병합
+    if (cells[0].trim() === "" && tableRows.length > 0) {
+      const prevCells = tableRows[tableRows.length - 1].cells
+      for (let c = 0; c < numCols; c++) {
+        if (cells[c].trim()) {
+          prevCells[c] = prevCells[c]
+            ? prevCells[c] + " " + cells[c].trim()
+            : cells[c].trim()
+        }
+      }
+    } else {
+      tableRows.push({ cells })
+    }
+  }
+
+  if (tableRows.length < 2) return null
+
+  // 검증: 2열 이상 + 3행 이상 or 2행+비어있지않은 셀 비율 > 50%
+  const nonEmptyCount = tableRows.reduce((sum, r) =>
+    sum + r.cells.filter(c => c.trim()).length, 0)
+  const totalCount = tableRows.length * numCols
+  if (nonEmptyCount < totalCount * 0.3) return null
+
+  // IRTable 구성 — 값 셀 선두 bullet 마커(•, ○, -, ·) 정리
+  const irCells: import("../types.js").IRCell[][] = tableRows.map(r =>
+    r.cells.map((text, colIdx) => {
+      let cleaned = text.trim()
+      // 첫 열(라벨)이 아닌 값 셀에서 선두 bullet 제거
+      if (colIdx > 0) cleaned = cleaned.replace(/^[•○·\-]\s*/, "")
+      return { text: cleaned, colSpan: 1, rowSpan: 1 }
+    }),
+  )
+
+  const irTable: IRTable = {
+    rows: tableRows.length,
+    cols: numCols,
+    cells: irCells,
+    hasHeader: tableRows.length > 1,
+  }
+
+  return [{ type: "table", table: irTable, pageNumber: pageNum, bbox }]
+}
+
+/**
+ * 의사 테이블 감지: 실제 데이터 테이블이 아닌 텍스트가 우연히 테이블로 감지된 경우.
+ */
+function shouldDemoteTable(table: IRTable): boolean {
+  const allCells = table.cells.flatMap(row => row.map(c => c.text.trim())).filter(Boolean)
+  const allText = allCells.join(" ")
+  if (allText.length > 200) return false
+  // □, ○, ■ 마커 포함 + 3행 이하 → 텍스트성
+  if (/[□■◆○●▶]/.test(allText) && table.rows <= 3) return true
+  // 빈 셀이 과반 → 의사 테이블 (텍스트가 우연히 선으로 둘러싸인 경우)
+  const totalCells = table.rows * table.cols
+  const emptyCells = totalCells - allCells.length
+  if (table.rows <= 2 && emptyCells > totalCells * 0.5) return true
+  // 1행 + 숫자 데이터 없음 → 의사 테이블
+  if (table.rows === 1 && !/\d{2,}/.test(allText)) return true
+  return false
+}
+
+/** demote된 테이블을 구조화된 텍스트로 변환 (2열 → "key: value", 그 외 → 줄바꿈) */
+function demoteTableToText(table: IRTable): string {
+  const lines: string[] = []
+  for (let r = 0; r < table.rows; r++) {
+    const cells = table.cells[r].map(c => c.text.trim()).filter(Boolean)
+    if (cells.length === 0) continue
+    if (table.cols === 2 && cells.length === 2) {
+      // 2열 테이블 → KV 형식 보존
+      lines.push(`${cells[0]} : ${cells[1]}`)
+    } else {
+      lines.push(cells.join(" "))
+    }
+  }
+  return lines.join("\n")
+}
+
+/** □/■ 마커 및 짧은 섹션명을 서브헤딩으로 변환 */
+function detectMarkerHeadings(blocks: IRBlock[]): void {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]
+    if (block.type !== "paragraph" || !block.text) continue
+    const text = block.text.trim()
+    // □/■ + 한글로 시작하는 짧은 텍스트 (50자 미만)
+    if (text.length < 50 && /^[□■◆◇▶]\s*[가-힣]/.test(text)) {
+      block.type = "heading"
+      block.level = 4
+      continue
+    }
+    // 순수 한글 2-6자 + 앞뒤가 표/헤딩/빈블록 → 섹션 제목으로 추정
+    // (예: "사업설명", "사업효과", "추진경위")
+    if (/^[가-힣]{2,6}$/.test(text) && block.style?.fontSize) {
+      const prev = blocks[i - 1]
+      const next = blocks[i + 1]
+      const prevIsStructural = !prev || prev.type === "table" || prev.type === "heading" || prev.type === "separator"
+      const nextIsStructural = !next || next.type === "table" || next.type === "heading" || (next.type === "paragraph" && next.text && /^[□■◆○●]/.test(next.text.trim()))
+      if (prevIsStructural || nextIsStructural) {
+        block.type = "heading"
+        block.level = 3
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// 다단(2단) 레이아웃 감지
+// ═══════════════════════════════════════════════════════
+
+/**
+ * 2단 이상 페이지 레이아웃 감지.
+ * 텍스트 영역 중앙에 큰 수직 갭이 있고, 양쪽에 균형잡힌 텍스트가 있으면 다단 레이아웃으로 판단.
+ * 이 경우 detectClusterTables 대신 xyCutOrder로 읽기 순서를 처리한다.
+ *
+ * 판별 기준:
+ * 1. 아이템 30개 이상
+ * 2. 가장 큰 X 갭이 20pt 이상
+ * 3. 갭 위치가 텍스트 영역 중앙 35–65%
+ * 4. 양쪽 각각 15개 이상, 비율 35% 이상
+ */
+function hasMultiColumnLayout(items: NormItem[]): boolean {
+  if (items.length < 30) return false
+
+  const sorted = [...items].sort((a, b) => a.x - b.x)
+  const minX = sorted[0].x
+  let maxX = minX
+  for (const i of sorted) if (i.x + i.w > maxX) maxX = i.x + i.w
+  const pageWidth = maxX - minX
+  if (pageWidth < 200) return false
+
+  // 가장 큰 X 갭 찾기
+  let bestGap = 0
+  let bestSplit = 0
+  for (let j = 1; j < sorted.length; j++) {
+    const gap = sorted[j].x - (sorted[j - 1].x + sorted[j - 1].w)
+    if (gap > bestGap) {
+      bestGap = gap
+      bestSplit = (sorted[j - 1].x + sorted[j - 1].w + sorted[j].x) / 2
+    }
+  }
+
+  if (bestGap < 20) return false
+
+  // 갭이 페이지 중앙 부근 (35–65%)
+  const splitRatio = (bestSplit - minX) / pageWidth
+  if (splitRatio < 0.35 || splitRatio > 0.65) return false
+
+  // 양쪽 텍스트 균형
+  const leftCount = items.filter(i => i.x + i.w / 2 < bestSplit).length
+  const rightCount = items.filter(i => i.x + i.w / 2 >= bestSplit).length
+  if (leftCount < 15 || rightCount < 15) return false
+  if (Math.min(leftCount, rightCount) / Math.max(leftCount, rightCount) < 0.35) return false
+
+  return true
 }
 
 // ═══════════════════════════════════════════════════════
@@ -312,7 +771,7 @@ function computeRegion(items: NormItem[]): TextRegion {
 }
 
 /** Y축 분할점 찾기 — 수평 공백 밴드 중 가장 넓은 갭 */
-function findYSplit(items: NormItem[], region: TextRegion, gapThreshold: number): number | null {
+function findYSplit(items: NormItem[], _region: TextRegion, gapThreshold: number): number | null {
   // 아이템을 Y좌표로 정렬 (내림차순 — 위에서 아래)
   const sorted = [...items].sort((a, b) => b.y - a.y)
   let bestGap = gapThreshold
@@ -331,7 +790,7 @@ function findYSplit(items: NormItem[], region: TextRegion, gapThreshold: number)
 }
 
 /** X축 분할점 찾기 — 수직 공백 밴드 중 가장 넓은 갭 */
-function findXSplit(items: NormItem[], region: TextRegion, gapThreshold: number): number | null {
+function findXSplit(items: NormItem[], _region: TextRegion, gapThreshold: number): number | null {
   const sorted = [...items].sort((a, b) => a.x - b.x)
   let bestGap = gapThreshold
   let bestSplit: number | null = null
@@ -429,8 +888,10 @@ function extractBlocksWithGrids(
     )
 
     for (const cell of cells) {
-      const textItems = cellTextMap.get(cell) || []
-      const text = cellTextToString(textItems)
+      const cellItems = cellTextMap.get(cell) || []
+      let text = cellTextToString(cellItems)
+      // 셀 안의 페이지 번호 표시 제거 ("- 2 -" 등)
+      text = text.replace(/^[\s]*[-–—]\s*\d+\s*[-–—][\s]*$/gm, "").trim()
       irGrid[cell.row][cell.col] = {
         text,
         colSpan: cell.colSpan,
@@ -449,16 +910,30 @@ function extractBlocksWithGrids(
     const hasContent = irGrid.some(row => row.some(cell => cell.text.trim() !== ""))
     if (!hasContent) continue
 
-    blocks.push({
-      type: "table",
-      table: irTable,
-      pageNumber: pageNum,
-      bbox: {
-        page: pageNum,
-        x: grid.bbox.x1, y: grid.bbox.y1,
-        width: grid.bbox.x2 - grid.bbox.x1, height: grid.bbox.y2 - grid.bbox.y1,
-      },
-    })
+    const tableBbox: BoundingBox = {
+      page: pageNum,
+      x: grid.bbox.x1, y: grid.bbox.y1,
+      width: grid.bbox.x2 - grid.bbox.x1, height: grid.bbox.y2 - grid.bbox.y1,
+    }
+
+    // Under-segmented 테이블 정규화 (ODL TableStructureNormalizer 포팅):
+    // 1×1 또는 극소수 셀의 큰 그리드 → 내부 텍스트 기반으로 재분할
+    const normalized = normalizeUnderSegmentedTable(irTable, tableItems, pageNum, tableBbox)
+    if (normalized) {
+      blocks.push(...normalized)
+      continue
+    }
+
+    // 의사 테이블 필터: 텍스트성 내용 → paragraph로 복원 (구조 보존)
+    if (shouldDemoteTable(irTable)) {
+      const demoted = demoteTableToText(irTable)
+      if (demoted) {
+        blocks.push({ type: "paragraph", text: demoted, pageNumber: pageNum, bbox: tableBbox, style: dominantStyle(tableItems) })
+      }
+      continue
+    }
+
+    blocks.push({ type: "table", table: irTable, pageNumber: pageNum, bbox: tableBbox })
   }
 
   // 테이블에 속하지 않은 나머지 텍스트 → 일반 블록
@@ -477,10 +952,34 @@ function extractBlocksWithGrids(
       const by = b.bbox ? (b.bbox.y + b.bbox.height) : 0
       return by - ay // PDF는 y가 위가 큼 → 내림차순
     })
-    return allBlocks
+    return mergeAdjacentTableBlocks(allBlocks)
   }
 
-  return blocks
+  return mergeAdjacentTableBlocks(blocks)
+}
+
+/** 같은 열 수의 연속 테이블 블록을 하나로 합침 */
+function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
+  if (blocks.length <= 1) return blocks
+  const result: IRBlock[] = [blocks[0]]
+  for (let i = 1; i < blocks.length; i++) {
+    const prev = result[result.length - 1]
+    const curr = blocks[i]
+    if (prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
+        prev.table.cols === curr.table.cols) {
+      // 합치기: prev의 cells에 curr의 cells 추가
+      const merged: IRTable = {
+        rows: prev.table.rows + curr.table.rows,
+        cols: prev.table.cols,
+        cells: [...prev.table.cells, ...curr.table.cells],
+        hasHeader: prev.table.hasHeader,
+      }
+      result[result.length - 1] = { ...prev, table: merged }
+    } else {
+      result.push(curr)
+    }
+  }
+  return result
 }
 
 /**
@@ -488,6 +987,12 @@ function extractBlocksWithGrids(
  */
 function extractPageBlocksFallback(items: NormItem[], pageNum: number): IRBlock[] {
   if (items.length === 0) return []
+
+  // 다단 레이아웃 우선 확인: detectColumns/detectClusterTables 전에 XY-Cut으로 처리
+  if (hasMultiColumnLayout(items)) {
+    const xyBlocks = buildXyCutBlocks(items, pageNum) || []
+    return detectSpecialKoreanTables(detectListBlocks(xyBlocks))
+  }
 
   const blocks: IRBlock[] = []
 
@@ -506,16 +1011,18 @@ function extractPageBlocksFallback(items: NormItem[], pageNum: number): IRBlock[
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
       fontSize: i.fontSize, fontName: i.fontName,
     }))
-    const clusterResults = detectClusterTables(clusterItems, pageNum)
+    // 다단 레이아웃이면 클러스터 감지 건너뜀 — xyCutOrder로 처리
+    const clusterResults = hasMultiColumnLayout(items) ? [] : detectClusterTables(clusterItems, pageNum)
 
     if (clusterResults.length > 0) {
-      // 클러스터 테이블로 소비된 아이템 추적 (인덱스 기반 — 문자열 키보다 안전)
+      // 클러스터 테이블로 소비된 아이템 추적 (Map 기반 O(n) — 기존 indexOf O(n²) 제거)
+      const ciToIdx = new Map<ClusterItem, number>()
+      for (let ci = 0; ci < clusterItems.length; ci++) ciToIdx.set(clusterItems[ci], ci)
       const usedIndices = new Set<number>()
       for (const cr of clusterResults) {
         for (const ci of cr.usedItems) {
-          // clusterItems와 items는 1:1 매핑, 동일 참조로 인덱스 찾기
-          const idx = clusterItems.indexOf(ci)
-          if (idx >= 0) usedIndices.add(idx)
+          const idx = ciToIdx.get(ci)
+          if (idx !== undefined) usedIndices.add(idx)
         }
         blocks.push({ type: "table", table: cr.table, pageNumber: pageNum, bbox: cr.bbox })
       }
@@ -935,10 +1442,10 @@ function mergeLineSimple(items: NormItem[]): string {
     const avgFs = (sorted[i].fontSize + sorted[i - 1].fontSize) / 2
     // 15px+ 갭 = 탭 (열 구분)
     if (gap > 15) result += "\t"
-    // 한글-한글 사이 매우 작은 갭 (< fontSize * 0.3) → 공백 없이 붙임
-    else if (gap < avgFs * 0.3 && /[가-힣]$/.test(result) && /^[가-힣]/.test(sorted[i].text)) {
-      /* 한글 어절 끊김 복원: PDF가 문자별로 배치할 때 생기는 미세 갭 */
-    }
+    // 매우 작은 갭 — 모든 문자 타입에서 공백 없이 붙임
+    else if (gap < avgFs * 0.15) { /* no space */ }
+    // 한글 관련 작은 갭 — PDF 문자 개별 배치 잔재
+    else if (gap < avgFs * 0.35 && (/[가-힣]$/.test(result) || /^[가-힣]/.test(sorted[i].text))) { /* no space */ }
     // 3px+ 갭 = 공백 (단어 구분)
     else if (gap > 3) result += " "
     result += sorted[i].text
@@ -949,11 +1456,17 @@ function mergeLineSimple(items: NormItem[]): string {
 export function cleanPdfText(text: string): string {
   return mergeKoreanLines(
     text
-      .replace(/^[\s]*[-–—]\s*\d+\s*[-–—][\s]*$/gm, "")
+      // "- 2 -" 스타일 페이지 번호 (독립 라인 및 목록 항목 형태 포함)
+      .replace(/^[\s]*[-–—]\s*[-–—]?\d+[-–—]?[\s]*[-–—]?[\s]*$/gm, "")
+      // "1 / 5" 스타일 페이지 번호
       .replace(/^\s*\d+\s*\/\s*\d+\s*$/gm, "")
+      // 단독 페이지 번호 (줄 끝에 혼자 있는 숫자)
+      .replace(/\n\d{1,4}\n/g, "\n")
+      // 문서 마지막 단독 페이지 번호
+      .replace(/\n\d{1,4}$/, "")
   )
-    // NOTE: 한국어 어절 중간 끊김("기 준을")은 형태소 분석 없이 정규식으로 수리하기 어려움.
-    // 과매칭 위험이 높아 현재는 적용하지 않음.
+    // 본문의 균등배분 스페이스 정리 (테이블/구분선 행 제외)
+    .replace(/^(?!\|).{3,30}$/gm, line => collapseEvenSpacing(line))
     .replace(/\n{3,}/g, "\n\n")
     .trim()
 }
@@ -982,17 +1495,16 @@ function detectListBlocks(blocks: IRBlock[]): IRBlock[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
 
-    // paragraph에서 번호 리스트 패턴 감지
     if (block.type === "paragraph" && block.text) {
-      const match = block.text.match(/^(\d+)\.\s/)
-      if (match) {
-        result.push({
-          ...block,
-          type: "list",
-          listType: "ordered",
-          // 원래 번호를 text에 보존 (blocksToMarkdown에서 그대로 출력)
-          text: block.text,
-        })
+      const text = block.text.trim()
+      // 번호 리스트: "1.", "2." 등
+      if (/^\d+\.\s/.test(text)) {
+        result.push({ ...block, type: "list", listType: "ordered", text: block.text })
+        continue
+      }
+      // 비번호 리스트: ○, -, ·, ※, ▶ 등
+      if (/^[○●·※▶▷◆◇\-]\s/.test(text)) {
+        result.push({ ...block, type: "list", listType: "unordered", text: block.text })
         continue
       }
     }
@@ -1017,6 +1529,9 @@ function detectListBlocks(blocks: IRBlock[]): IRBlock[] {
  * 3) 연속된 패턴을 하나의 테이블로 그룹화
  */
 const KOREAN_TABLE_HEADER_RE = /^\(?(구분|항목|종류|분류|유형|대상|내용|기간|금액|비율|방법|절차|요건|조건|근거|목적|범위|기준)\)?[:\s]/
+
+/** KV 오탐 패턴: 시간(14:30), URL(://), 숫자:숫자(3:2) */
+const KV_FALSE_POSITIVE_RE = /\d{1,2}:\d{2}|:\/\/|\d+:\d+/
 
 function detectSpecialKoreanTables(blocks: IRBlock[]): IRBlock[] {
   const result: IRBlock[] = []
@@ -1099,17 +1614,20 @@ function detectSpecialKoreanTables(blocks: IRBlock[]): IRBlock[] {
 
     // key-value 패턴이 아닌 블록이 나오면 축적된 것을 flush
     // 단, 이미 수집 중이고 현재 블록이 "label: value" 형태면 계속 수집
-    if (kvLines.length > 0 && text.includes(":") && !text.includes("(") && !text.includes(")")) {
-      const colonIdx = text.indexOf(":")
-      const key = text.slice(0, colonIdx).trim()
-      // key가 순수 한글 2~8자 (공백/괄호 없음)면 유효한 key-value 라인
-      if (/^[가-힣]+$/.test(key) && key.length >= 2 && key.length <= 8) {
-        kvLines.push({
-          key,
-          value: text.slice(colonIdx + 1).trim(),
-          block,
-        })
-        continue
+    if (kvLines.length > 0 && text.includes(":")) {
+      // 오탐 제외: 시간(14:30), URL(http://), 숫자:숫자(3:2), 괄호 포함
+      if (!KV_FALSE_POSITIVE_RE.test(text) && !text.includes("(") && !text.includes(")")) {
+        const colonIdx = text.indexOf(":")
+        const key = text.slice(0, colonIdx).trim()
+        // key가 순수 한글 2~8자 (공백/괄호 없음)면 유효한 key-value 라인
+        if (/^[가-힣]+$/.test(key) && key.length >= 2 && key.length <= 8) {
+          kvLines.push({
+            key,
+            value: text.slice(colonIdx + 1).trim(),
+            block,
+          })
+          continue
+        }
       }
     }
 
@@ -1121,6 +1639,87 @@ function detectSpecialKoreanTables(blocks: IRBlock[]): IRBlock[] {
   return result
 }
 
+// ─── 머리글/바닥글 감지 ────────────────────────────
+
+/** 상단/하단 10% 영역에서 페이지간 반복 텍스트를 감지하여 제거 대상 인덱스 반환 */
+function removeHeaderFooterBlocks(
+  blocks: IRBlock[],
+  pageHeights: Map<number, number>,
+  warnings: ParseWarning[],
+): number[] {
+  const ZONE_RATIO = 0.1 // 상하 10%
+  const MIN_REPEAT = 3   // 최소 3페이지에서 반복
+
+  // 페이지별 상단/하단 텍스트 수집
+  const headerTexts = new Map<number, string[]>() // page → texts
+  const footerTexts = new Map<number, string[]>()
+
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const b = blocks[bi]
+    if (!b.bbox || !b.pageNumber || !b.text?.trim()) continue
+    const ph = pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber)
+    if (!ph) continue
+
+    const blockTop = ph - (b.bbox.y + b.bbox.height) // PDF Y좌표는 아래가 0
+    const blockBottom = ph - b.bbox.y
+
+    if (blockBottom <= ph * ZONE_RATIO) {
+      // 하단 영역
+      const arr = footerTexts.get(b.pageNumber) || []
+      arr.push(b.text.trim())
+      footerTexts.set(b.pageNumber, arr)
+    } else if (blockTop >= ph * (1 - ZONE_RATIO)) {
+      // 상단 영역
+      const arr = headerTexts.get(b.pageNumber) || []
+      arr.push(b.text.trim())
+      headerTexts.set(b.pageNumber, arr)
+    }
+  }
+
+  // 반복 패턴 찾기: 페이지 번호 변동 허용 (숫자만 다른 경우)
+  const repeatedPatterns = new Set<string>()
+  for (const textsMap of [headerTexts, footerTexts]) {
+    const patternCount = new Map<string, number>()
+    for (const [, texts] of textsMap) {
+      for (const t of texts) {
+        // 숫자를 와일드카드로 치환하여 "- 1 -", "- 2 -" 같은 패턴 통합
+        const normalized = t.replace(/\d+/g, "#")
+        patternCount.set(normalized, (patternCount.get(normalized) || 0) + 1)
+      }
+    }
+    for (const [pattern, count] of patternCount) {
+      if (count >= MIN_REPEAT) repeatedPatterns.add(pattern)
+    }
+  }
+
+  if (repeatedPatterns.size === 0) return []
+
+  // 반복 패턴에 매칭되는 블록 인덱스 수집
+  const removeIndices: number[] = []
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const b = blocks[bi]
+    if (!b.bbox || !b.pageNumber || !b.text?.trim()) continue
+    const ph = pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber)
+    if (!ph) continue
+
+    const blockTop = ph - (b.bbox.y + b.bbox.height)
+    const blockBottom = ph - b.bbox.y
+    const inZone = blockBottom <= ph * ZONE_RATIO || blockTop >= ph * (1 - ZONE_RATIO)
+    if (!inZone) continue
+
+    const normalized = b.text.trim().replace(/\d+/g, "#")
+    if (repeatedPatterns.has(normalized)) {
+      removeIndices.push(bi)
+    }
+  }
+
+  if (removeIndices.length > 0) {
+    warnings.push({ message: `${removeIndices.length}개 머리글/바닥글 요소 제거됨`, code: "HIDDEN_TEXT_FILTERED" })
+  }
+
+  return removeIndices
+}
+
 function mergeKoreanLines(text: string): string {
   if (!text) return ""
   const lines = text.split("\n")
@@ -1130,11 +1729,23 @@ function mergeKoreanLines(text: string): string {
   for (let i = 1; i < lines.length; i++) {
     const prev = result[result.length - 1]
     const curr = lines[i]
-    // 마크다운 헤딩 라인(#)은 병합하지 않음
-    if (/^#{1,6}\s/.test(prev) || /^#{1,6}\s/.test(curr)) {
+    const currTrimmed = curr.trim()
+    // 마크다운 헤딩/테이블/구분선은 병합하지 않음
+    if (/^#{1,6}\s/.test(prev) || /^#{1,6}\s/.test(curr) || /^\|/.test(currTrimmed) || /^---/.test(currTrimmed)) {
       result.push(curr)
       continue
     }
+    // 쉼표로 끝나는 줄 + 다음 줄 = 연속 문장
+    if (/,$/.test(prev.trim()) && currTrimmed.length > 0) {
+      result[result.length - 1] = prev + "\n" + curr
+      continue
+    }
+    // (※ 로 시작하는 줄 = 이전 줄의 부연설명
+    if (/^\(※/.test(currTrimmed)) {
+      result[result.length - 1] = prev + " " + currTrimmed
+      continue
+    }
+    // 기존 한글 줄바꿈 병합
     if (/[가-힣·,\-]$/.test(prev) && /^[가-힣(]/.test(curr) && !startsWithMarker(curr) && !isStandaloneHeader(prev)) {
       result[result.length - 1] = prev + " " + curr
     } else {
