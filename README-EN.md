@@ -26,13 +26,24 @@ Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean
 
 ---
 
-## What's New in v2.0
+## What's New in v2.1.0
+
+- **📄 Large HWPX Government Document Parsing** — Fixed missing nested table parsing for `<p>><run>><tbl>` structure. Large public documents (e.g. MOTIR RFP files, 2.8MB+) now parse correctly.
+- **📰 PDF Two-Column Layout Detection** — Detects multi-column structure in academic papers and reports, extracting text in reading order.
+- **📊 Merged Cell Content Preservation** — colSpan merged cell text is now duplicated across merged positions, preventing information loss in markdown conversion.
+- **🔊 Improved Error Visibility** — Watch mode file processing errors and webhook failures now output to stderr. Failed OCR pages add `[OCR failed: page N]` placeholder.
+- **🛡️ Input Validation Hardening** — NaN/negative guard for font size parsing, NaN guard for colSpan/rowSpan, unsafe assertion removed from image extension extraction.
+
+<details>
+<summary>v2.0 changes</summary>
 
 - **🔓 Distribution (View-Restricted) HWP Parsing** — HWP files locked for distribution-only viewing can now be parsed. AES-128 ECB decryption, pure JS implementation. Algorithm ported from [rhwp](https://github.com/edwardkim/rhwp) (MIT).
 - **Corrupted HWP File Recovery** — Recover files rejected by standard CFB modules via direct FAT/directory parsing. Ported from rhwp's LenientCfbReader.
 - **HWP5 Footnote/Endnote/Hyperlink Extraction** — Footnote text linking, hyperlink URL extraction with XSS sanitization.
 - **HWPX Table Merge Fix** — Fixed colspan/rowspan grid calculation bug causing cell misalignment.
 - **Security Hardening** — CFB sector size validation, consistent sanitizeHref across all 3 code paths.
+
+</details>
 
 <details>
 <summary>v1.8.0 changes</summary>

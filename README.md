@@ -27,13 +27,24 @@ HWP, HWPX, PDF, XLSX, DOCX — 관공서에서 쏟아지는 모든 문서를 파
 
 ---
 
-## v2.0 변경사항
+## v2.1.0 변경사항
+
+- **📄 대형 HWPX 정부문서 파싱** — `<p>><run>><tbl>` 구조의 중첩 테이블 파싱 누락 수정. 산업통상자원부 품목개요서(RFP, 2.8MB+) 등 대형 공문서 정상 파싱.
+- **📰 PDF 2단 레이아웃 감지** — 다단 논문·보고서의 컬럼 구조를 감지하여 읽기 순서대로 추출.
+- **📊 병합 셀 정보 보존** — colSpan 병합 셀 텍스트를 병합 위치에 복제하여 마크다운 변환 시 정보 손실 방지.
+- **🔊 에러 가시성 개선** — watch 모드 파일 처리 실패·webhook 오류를 stderr로 출력. OCR 실패 페이지에 `[OCR 실패: 페이지 N]` placeholder 추가.
+- **🛡️ 입력 검증 강화** — 폰트 크기 NaN/음수 가드, colSpan/rowSpan NaN 가드, 이미지 확장자 비안전 단언 제거.
+
+<details>
+<summary>v2.0 변경사항</summary>
 
 - **🔓 배포용(열람 제한) HWP 파싱 지원** — 관공서에서 배포용으로 잠근 HWP 파일도 이제 파싱됩니다. AES-128 ECB 복호화, 순수 JS 구현. [rhwp](https://github.com/edwardkim/rhwp)(MIT) 알고리즘 포팅.
 - **손상된 HWP 파일 복구** — 표준 CFB 모듈이 거부하는 파일을 직접 FAT/디렉토리 파싱으로 복구. rhwp LenientCfbReader 포팅.
 - **HWP5 각주/미주/하이퍼링크 추출** — 각주 본문 텍스트 연결, 하이퍼링크 URL 추출 및 XSS 살균.
 - **HWPX 표 병합 밀림 수정** — colspan/rowspan 그리드 계산 버그 수정.
 - **보안 강화** — CFB 섹터 크기 검증, sanitizeHref 3중 경로 일관 적용.
+
+</details>
 
 <details>
 <summary>v1.8.0 변경사항</summary>
