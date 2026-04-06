@@ -72,7 +72,7 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
     const { parsePdfDocument } = await import("./pdf/parser.js")
     return await parsePdfDocument(buffer, options)
   } catch (err) {
-    if (err instanceof Error && (err.message.includes("Cannot find") || err.message.includes("pdfjs-dist"))) {
+    if ((err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") {
       return { success: false, fileType: "pdf", error: "PDF 파싱을 위해 pdfjs-dist를 설치하세요: npm install pdfjs-dist", code: "MISSING_DEPENDENCY" }
     }
     return { success: false, fileType: "pdf", error: err instanceof Error ? err.message : "PDF 파싱 실패", code: classifyError(err) }
