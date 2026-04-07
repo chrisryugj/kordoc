@@ -25,5 +25,5 @@ jobs:
       - name: Build
         run: npm run build
       - name : Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
     if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
