@@ -57,7 +57,7 @@ describe("buildTable", () => {
 })
 
 describe("blocksToMarkdown", () => {
-  it("기본 paragraph 블록 변환", () => {
+  it("기본 paragraph 블록 변환 — 문단 사이 빈 줄 삽입", () => {
     const blocks: IRBlock[] = [
       { type: "paragraph", text: "첫번째 문단" },
       { type: "paragraph", text: "두번째 문단" },
@@ -65,6 +65,8 @@ describe("blocksToMarkdown", () => {
     const md = blocksToMarkdown(blocks)
     assert.ok(md.includes("첫번째 문단"))
     assert.ok(md.includes("두번째 문단"))
+    // 문단 사이에 빈 줄(\n\n)이 있어야 마크다운에서 별도 문단으로 렌더링
+    assert.ok(md.includes("첫번째 문단\n\n두번째 문단"))
   })
 
   it("[별표 N] 패턴을 H2 헤더로 변환", () => {
@@ -141,13 +143,21 @@ describe("blocksToMarkdown", () => {
 })
 
 describe("convertTableToText", () => {
-  it("기본 셀 텍스트를 파이프로 연결", () => {
+  it("기본 셀 텍스트를 슬래시로 연결 (외부 테이블 pipe 충돌 방지)", () => {
     const rows: CellContext[][] = [
       [{ text: "A", colSpan: 1, rowSpan: 1 }, { text: "B", colSpan: 1, rowSpan: 1 }],
       [{ text: "C", colSpan: 1, rowSpan: 1 }, { text: "D", colSpan: 1, rowSpan: 1 }],
     ]
     const text = convertTableToText(rows)
-    assert.equal(text, "A | B\nC | D")
+    assert.equal(text, "A / B\nC / D")
+  })
+
+  it("셀 내 pipe 문자는 이스케이프", () => {
+    const rows: CellContext[][] = [
+      [{ text: "A|B", colSpan: 1, rowSpan: 1 }, { text: "C", colSpan: 1, rowSpan: 1 }],
+    ]
+    const text = convertTableToText(rows)
+    assert.equal(text, "A\\|B / C")
   })
 
   it("빈 셀은 필터링", () => {

@@ -132,12 +132,18 @@ export function convertTableToText(rows: CellContext[][]): string {
   return rows
     .map(row =>
       row
-        .map(c => c.text.trim().replace(/\n/g, " "))
+        .map(c => c.text.trim().replace(/\n/g, " ").replace(/\|/g, "\\|"))
         .filter(Boolean)
-        .join(" | ")
+        .join(" / ")
     )
     .filter(Boolean)
     .join("\n")
+}
+
+/** 마크다운 GFM 특수문자 이스케이프 — remark-gfm 오해석 방지 */
+function escapeGfm(text: string): string {
+  // ~ → \~ (GFM strikethrough 방지)
+  return text.replace(/~/g, "\\~")
 }
 
 /** HWP 자동생성 도형/개체 대체텍스트 정규식 — 한컴오피스가 삽입하는 모든 알려진 패턴 */
@@ -299,7 +305,7 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
         text += ` (주: ${block.footnoteText})`
       }
 
-      lines.push(text)
+      lines.push(escapeGfm(text), "")
     } else if (block.type === "table" && block.table) {
       // 테이블 앞에 빈 줄 보장 (마크다운 렌더링 필수)
       if (lines.length > 0 && lines[lines.length - 1] !== "") {
@@ -330,9 +336,9 @@ function tableToMarkdown(table: IRTable): string {
       .map(line => {
         const trimmed = line.trim()
         if (!trimmed) return ""
-        if (/^\d+\.\s/.test(trimmed)) return `**${trimmed}**`
-        if (/^[가-힣]\.\s/.test(trimmed)) return `  ${trimmed}`
-        return trimmed
+        if (/^\d+\.\s/.test(trimmed)) return `**${escapeGfm(trimmed)}**`
+        if (/^[가-힣]\.\s/.test(trimmed)) return `  ${escapeGfm(trimmed)}`
+        return escapeGfm(trimmed)
       })
       .filter(Boolean)
       .join("\n")
@@ -341,7 +347,7 @@ function tableToMarkdown(table: IRTable): string {
   // 1열 다행 테이블 → 각 행을 별도 라인으로 출력 (목록성 데이터)
   if (numCols === 1 && numRows >= 2) {
     return cells
-      .map(row => sanitizeText(row[0].text).replace(/\n/g, " "))
+      .map(row => escapeGfm(sanitizeText(row[0].text)).replace(/\n/g, " "))
       .filter(Boolean)
       .join("\n")
   }
@@ -355,7 +361,7 @@ function tableToMarkdown(table: IRTable): string {
       if (skip.has(`${r},${c}`)) continue
       const cell = cells[r]?.[c]
       if (!cell) continue
-      display[r][c] = sanitizeText(cell.text).replace(/\n/g, "<br>")
+      display[r][c] = escapeGfm(sanitizeText(cell.text)).replace(/\|/g, "\\|").replace(/\n/g, "<br>")
 
       // colSpan/rowSpan: 병합된 열은 빈 칸으로 유지 (텍스트 중복 방지)
       for (let dr = 0; dr < cell.rowSpan; dr++) {
