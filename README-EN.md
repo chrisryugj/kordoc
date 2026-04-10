@@ -22,14 +22,26 @@ Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean
 *   **📊 Perfect Table Reconstruction**: Whether it's a borderless PDF table or a complex merged HWP table, kordoc analyzes the structure to restore accurate markdown tables.
 *   **🔍 Automatic Redline (Diff)**: Compare two documents and see exactly what changed at a glance. Supports cross-format comparison (e.g., Old HWP vs New HWPX).
 *   **📝 Markdown back to HWPX**: Convert AI-generated content back into official `HWPX` reports. No more tedious manual copy-pasting.
+*   **✏️ Auto-Fill Forms**: Feed values into government form templates (applications, reports) and auto-fill every blank. Preserves 100% of the original formatting (fonts, sizes, alignment).
 *   **🤖 AI Agent Integration (MCP)**: Native support for `Model Context Protocol`. Let `Claude`, `Cursor`, or `Windsurf` read and process Korean documents directly.
 
 ---
 
-## What's New in v2.2.1
+## What's New in v2.2.4
+
+- **📝 Form Auto-Fill** — Automatically fill in government form templates with values. Supports label-value cell patterns, checkboxes (`□`→`☑`), parenthesized blanks (`일반(  )통`→`일반(3)통`), and annotations (`(한자：)`→`(한자：金)`).
+- **🏛️ HWPX Style-Preserving Mode** — `fillHwpx()` directly manipulates HWPX XML to replace only values while keeping 100% of original formatting (fonts, sizes, alignment).
+- **📊 HTML Table Output for Merged Cells** — Complex tables with `colspan`/`rowspan` now output as HTML `<table>` instead of GFM for accurate structure preservation.
+- **🔧 markdownToHwpx Formatting** — Greatly improved heading/bold/italic/table formatting support in reverse conversion.
+- **🤖 MCP fill_form Tool** — New MCP tool allowing AI agents to fill forms directly (8 tools total).
+
+<details>
+<summary>v2.2.1 changes</summary>
 
 - **🔧 Markdown Rendering Fix** — Escape GFM special characters (`~`) to prevent false strikethrough, escape `|` inside table cells, change nested table text delimiter from `|` to `/` to avoid GFM parser conflicts.
 - **📝 Paragraph Spacing** — Insert blank lines between paragraph blocks for proper markdown rendering as separate paragraphs.
+
+</details>
 
 <details>
 <summary>v2.2.0 changes</summary>
@@ -126,7 +138,7 @@ Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean
 - **Markdown to HWPX** — Reverse conversion. Generate valid HWPX files from markdown.
 - **OCR Integration** — Pluggable OCR for image-based PDFs (bring your own provider).
 - **Watch Mode** — `kordoc watch ./incoming --webhook https://...` for auto-conversion.
-- **7 MCP Tools** — parse_document, detect_format, parse_metadata, parse_pages, parse_table, compare_documents, parse_form.
+- **8 MCP Tools** — parse_document, detect_format, parse_metadata, parse_pages, parse_table, compare_documents, parse_form, fill_form.
 - **Error Codes** — Structured `code` field: `"ENCRYPTED"`, `"ZIP_BOMB"`, `"IMAGE_BASED_PDF"`, etc.
 
 </details>
@@ -193,6 +205,26 @@ if (result.success) {
 }
 ```
 
+### Auto-Fill Forms
+
+```typescript
+import { fillForm } from "kordoc"
+import { readFileSync, writeFileSync } from "fs"
+
+const template = readFileSync("application.hwpx")
+
+// HWPX style-preserving mode — keeps 100% of original formatting
+const result = await fillForm(template.buffer, {
+  성명: "홍길동",
+  주민등록번호: "900101-1234567",
+  주소: "서울특별시 광진구 능동로 120",
+}, { format: "hwpx-preserve" })
+
+writeFileSync("filled.hwpx", Buffer.from(result.buffer!))
+// result.filled → [{ label: "성명", value: "홍길동" }, ...]
+// result.unmatched → keys that didn't match any field
+```
+
 ### Generate HWPX from Markdown
 
 ```typescript
@@ -227,6 +259,9 @@ npx kordoc document.hwp -o output.md              # save to file
 npx kordoc *.pdf -d ./converted/                  # batch convert
 npx kordoc report.hwpx --format json              # JSON with blocks + metadata
 npx kordoc report.hwpx --pages 1-3                # page range
+npx kordoc fill form.hwpx -f 'name=John,addr=Seoul' -o filled.hwpx  # auto-fill form
+npx kordoc fill form.hwpx -j values.json -o filled.hwpx            # fill from JSON
+npx kordoc fill form.hwpx --dry-run                                # list fields only
 npx kordoc watch ./incoming -d ./output            # watch mode
 npx kordoc watch ./docs --webhook https://api/hook # webhook notification
 ```
@@ -244,7 +279,7 @@ npx kordoc watch ./docs --webhook https://api/hook # webhook notification
 }
 ```
 
-**7 Tools:**
+**8 Tools:**
 
 | Tool | Description |
 |------|-------------|
@@ -255,6 +290,7 @@ npx kordoc watch ./docs --webhook https://api/hook # webhook notification
 | `parse_table` | Extract Nth table from document |
 | `compare_documents` | Diff two documents (cross-format) |
 | `parse_form` | Extract form fields as structured JSON |
+| `fill_form` | Fill form template with values (preserves HWPX formatting) |
 
 ## API Reference
 
@@ -276,6 +312,9 @@ npx kordoc watch ./docs --webhook https://api/hook # webhook notification
 |----------|-------------|
 | `compare(bufferA, bufferB, options?)` | Document diff at IR level |
 | `extractFormFields(blocks)` | Form field recognition from IRBlock[] |
+| `fillForm(buffer, values, options?)` | Fill form template (markdown/hwpx/hwpx-preserve) |
+| `fillFormFields(blocks, values)` | IRBlock[]-based field value replacement |
+| `fillHwpx(buffer, values)` | Direct HWPX XML manipulation (style-preserving) |
 | `markdownToHwpx(markdown)` | Markdown → HWPX reverse conversion |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown string |
 
@@ -288,7 +327,7 @@ import type {
   BoundingBox, InlineStyle, OutlineItem, ParseWarning, WarningCode,
   DocumentMetadata, ParseOptions, ErrorCode,
   DiffResult, BlockDiff, CellDiff, DiffChangeType,
-  FormField, FormResult,
+  FormField, FormResult, FillResult, HwpxFillResult, FillOutputFormat,
   OcrProvider, WatchOptions,
 } from "kordoc"
 ```

@@ -23,14 +23,26 @@ HWP, HWPX, PDF, XLSX, DOCX — 관공서에서 쏟아지는 모든 문서를 파
 *   **📊 복잡한 표(Table) 완벽 재현**: 선이 없는 PDF나 복잡하게 병합된 HWP 표도 구조를 분석하여 정확한 마크다운 테이블로 복원합니다.
 *   **🔍 신구대조표 자동 생성**: 두 문서의 차이점을 분석하여 무엇이 바뀌었는지 한눈에 보여줍니다. (HWP와 HWPX 간의 비교도 가능!)
 *   **📝 마크다운을 다시 HWPX로**: AI가 작성한 내용을 다시 보고서 양식(`HWPX`)으로 되돌려줍니다. 이제 복사-붙여넣기 노가다에서 해방되세요.
+*   **✏️ 양식 자동 채우기**: 공문서 양식 템플릿(신청서, 보고서)에 값을 넣으면 자동으로 빈칸을 채웁니다. 원본 서식(글꼴, 크기, 정렬)을 100% 보존합니다.
 *   **🤖 AI 에이전트 연동 (MCP)**: `Claude`, `Cursor`와 같은 도구에서 직접 `kordoc`을 호출해 문서를 읽고 코딩할 수 있습니다.
 
 ---
 
-## v2.2.1 변경사항
+## v2.2.4 변경사항
+
+- **📝 양식 자동 채우기 (Form Filler)** — 공문서 양식 템플릿에 값을 자동으로 채워넣습니다. 라벨-값 셀 패턴, 체크박스(`□`→`☑`), 괄호 빈칸(`일반(  )통`→`일반(3)통`), 어노테이션(`(한자：)`→`(한자：金)`) 지원.
+- **🏛️ HWPX 원본 서식 보존 모드** — `fillHwpx()`로 HWPX XML을 직접 조작하여 글꼴, 크기, 정렬 등 원본 서식 100% 유지한 채 값만 교체.
+- **📊 병합 셀 HTML 테이블 출력** — `colspan`/`rowspan`이 있는 복잡한 표를 GFM 대신 HTML `<table>`로 출력하여 구조 보존.
+- **🔧 markdownToHwpx 서식 강화** — 역변환 시 heading/bold/italic/table 등 서식 지원 대폭 개선.
+- **🤖 MCP fill_form 도구** — AI 에이전트가 양식을 직접 채울 수 있는 새 MCP 도구 추가 (총 8개).
+
+<details>
+<summary>v2.2.1 변경사항</summary>
 
 - **🔧 마크다운 렌더링 개선** — GFM 특수문자(`~`) 이스케이프로 취소선 오해석 방지, 테이블 셀 내 `|` 문자 이스케이프, 중첩 테이블 텍스트 구분자 `|` → `/` 변경으로 GFM 파서 충돌 방지.
 - **📝 문단 간격 정상화** — paragraph 블록 사이 빈 줄 삽입으로 마크다운에서 별도 문단으로 렌더링.
+
+</details>
 
 <details>
 <summary>v2.2.0 변경사항</summary>
@@ -186,6 +198,26 @@ if (result.success) {
 }
 ```
 
+### 양식 자동 채우기
+
+```typescript
+import { fillForm } from "kordoc"
+import { readFileSync, writeFileSync } from "fs"
+
+const template = readFileSync("신청서.hwpx")
+
+// HWPX 원본 서식 보존 모드 — 글꼴, 크기, 정렬 100% 유지
+const result = await fillForm(template.buffer, {
+  성명: "홍길동",
+  주민등록번호: "900101-1234567",
+  주소: "서울특별시 광진구 능동로 120",
+}, { format: "hwpx-preserve" })
+
+writeFileSync("신청서_작성완료.hwpx", Buffer.from(result.buffer!))
+// result.filled → [{ label: "성명", value: "홍길동" }, ...]
+// result.unmatched → 매칭 실패한 키 목록
+```
+
 ### HWPX 생성 (역변환)
 
 ```typescript
@@ -220,6 +252,9 @@ npx kordoc 보고서.hwp -o 보고서.md                  # 파일 저장
 npx kordoc *.pdf -d ./변환결과/                     # 일괄 변환
 npx kordoc 검토서.hwpx --format json               # JSON (blocks + metadata 포함)
 npx kordoc 보고서.hwpx --pages 1-3                  # 페이지 범위
+npx kordoc fill 신청서.hwpx -f '성명=홍길동,주소=서울' -o 결과.hwpx  # 양식 채우기
+npx kordoc fill 신청서.hwpx -j values.json -o 결과.hwpx             # JSON 파일로 채우기
+npx kordoc fill 신청서.hwpx --dry-run                               # 필드 목록만 확인
 npx kordoc watch ./수신함 -d ./변환결과              # 폴더 감시 모드
 npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 ```
@@ -237,7 +272,7 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 }
 ```
 
-**7개 도구:**
+**8개 도구:**
 
 | 도구 | 설명 |
 |------|------|
@@ -248,6 +283,7 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 | `parse_table` | N번째 테이블만 추출 |
 | `compare_documents` | 두 문서 비교 (크로스 포맷) |
 | `parse_form` | 양식 필드를 JSON으로 추출 |
+| `fill_form` | 양식 템플릿에 값 채우기 (HWPX 원본 서식 보존) |
 
 ## API
 
@@ -269,6 +305,9 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 |------|------|
 | `compare(bufferA, bufferB, options?)` | IR 레벨 문서 비교 |
 | `extractFormFields(blocks)` | IRBlock[]에서 양식 필드 인식 |
+| `fillForm(buffer, values, options?)` | 양식 템플릿에 값 채우기 (markdown/hwpx/hwpx-preserve) |
+| `fillFormFields(blocks, values)` | IRBlock[] 기반 필드 값 교체 |
+| `fillHwpx(buffer, values)` | HWPX XML 직접 조작 (원본 서식 보존) |
 | `markdownToHwpx(markdown)` | Markdown → HWPX 역변환 |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown 문자열 |
 
@@ -280,7 +319,7 @@ import type {
   IRBlock, IRTable, IRCell, CellContext,
   DocumentMetadata, ParseOptions, ErrorCode,
   DiffResult, BlockDiff, CellDiff, DiffChangeType,
-  FormField, FormResult,
+  FormField, FormResult, FillResult, HwpxFillResult, FillOutputFormat,
   OcrProvider, WatchOptions,
 } from "kordoc"
 ```
