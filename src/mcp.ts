@@ -9,7 +9,8 @@ import { parse, detectFormat, detectZipFormat, blocksToMarkdown, compare, extrac
 import { VERSION, toArrayBuffer, sanitizeError, KordocError } from "./utils.js"
 import { extractHwp5MetadataOnly } from "./hwp5/parser.js"
 import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
-import { extractPdfMetadataOnly } from "./pdf/parser.js"
+// pdfjs-dist는 optional — dynamic import로 지연 로드
+// import { extractPdfMetadataOnly } from "./pdf/parser.js"
 
 /** 허용 파일 확장자 */
 const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".pdf", ".xlsx", ".docx"])
@@ -202,7 +203,12 @@ server.tool(
           metadata = await extractHwpxMetadataOnly(buffer)
           break
         case "pdf":
-          metadata = await extractPdfMetadataOnly(buffer)
+          try {
+            const { extractPdfMetadataOnly } = await import("./pdf/parser.js")
+            metadata = await extractPdfMetadataOnly(buffer)
+          } catch {
+            metadata = undefined // pdfjs-dist 미설치 시 metadata 생략
+          }
           break
         case "xlsx":
         case "docx": {

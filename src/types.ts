@@ -169,6 +169,7 @@ export type ErrorCode =
   | "IMAGE_BASED_PDF"
   | "NO_SECTIONS"
   | "PARSE_ERROR"
+  | "MISSING_DEPENDENCY"
 
 // ─── 파싱 결과 (discriminated union) ────────────────
 

@@ -8,7 +8,8 @@ import { readFile } from "fs/promises"
 import { detectFormat, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
 import { parseHwpxDocument } from "./hwpx/parser.js"
 import { parseHwp5Document } from "./hwp5/parser.js"
-import { parsePdfDocument } from "./pdf/parser.js"
+// pdfjs-dist는 optional peer dep (37MB) — PDF 안 쓰는 사용자를 위해 dynamic import
+// import { parsePdfDocument } from "./pdf/parser.js"
 import { parseXlsxDocument } from "./xlsx/parser.js"
 import { parseDocxDocument } from "./docx/parser.js"
 import type { ParseResult, ParseOptions } from "./types.js"
@@ -98,6 +99,17 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
 
 /** PDF 파일에서 텍스트를 추출하여 Markdown으로 변환 */
 export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
+  let parsePdfDocument: typeof import("./pdf/parser.js").parsePdfDocument
+  try {
+    const mod = await import("./pdf/parser.js")
+    parsePdfDocument = mod.parsePdfDocument
+  } catch {
+    return {
+      success: false, fileType: "pdf",
+      error: "PDF 파싱에 pdfjs-dist가 필요합니다. 설치: npm install pdfjs-dist",
+      code: "MISSING_DEPENDENCY",
+    }
+  }
   try {
     const { markdown, blocks, metadata, outline, warnings, isImageBased } = await parsePdfDocument(buffer, options)
     return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased }
