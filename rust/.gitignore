@@ -1,0 +1,5 @@
+target/
+pkg/
+Cargo.lock
+*.wasm
+.DS_Store

@@ -4,6 +4,11 @@ dist/
 .DS_Store
 demo/node_modules/
 
+# Rust sub-crate build artifacts (see rust/)
+rust/target/
+rust/Cargo.lock
+rust/pkg/
+
 # 실제 문서 fixture — 개인 문서이므로 저장소에 포함하지 않음
 tests/fixtures/sample.*
 
