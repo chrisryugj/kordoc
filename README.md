@@ -266,7 +266,7 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
   "mcpServers": {
     "kordoc": {
       "command": "npx",
-      "args": ["-y", "kordoc-mcp"]
+      "args": ["-y", "kordoc", "mcp"]
     }
   }
 }

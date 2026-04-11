@@ -280,4 +280,11 @@ program
     }
   })
 
+program
+  .command("mcp")
+  .description("MCP 서버 실행 (Claude / Cursor / Windsurf 연동)")
+  .action(async () => {
+    await import("./mcp.js")
+  })
+
 program.parse()

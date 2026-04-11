@@ -273,7 +273,7 @@ npx kordoc watch ./docs --webhook https://api/hook # webhook notification
   "mcpServers": {
     "kordoc": {
       "command": "npx",
-      "args": ["-y", "kordoc-mcp"]
+      "args": ["-y", "kordoc", "mcp"]
     }
   }
 }
