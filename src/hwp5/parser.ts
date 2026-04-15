@@ -820,6 +820,7 @@ function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: numb
   }
 
   let i = startIdx + 1
+  let hasNestedTable = false
 
   while (i < records.length) {
     const r = records[i]
@@ -830,8 +831,19 @@ function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: numb
       const t = extractText(r.data).trim()
       if (t) texts.push(t)
     }
+
+    // 셀 내부 중첩 테이블 감지 (HWP5에서는 내용 파싱 없이 마커만 표시)
+    if (r.tagId === TAG_CTRL_HEADER && r.data.length >= 4) {
+      const ctrlId = r.data.subarray(0, 4).toString("ascii")
+      if ((ctrlId === " lbt" || ctrlId === "tbl ") && !hasNestedTable) {
+        hasNestedTable = true
+      }
+    }
+
     i++
   }
+
+  if (hasNestedTable) texts.push("[중첩 테이블]")
 
   return { cell: { text: texts.join("\n"), colSpan, rowSpan, colAddr, rowAddr } as CellContext, nextIdx: i }
 }

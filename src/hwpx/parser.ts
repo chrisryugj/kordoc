@@ -618,10 +618,14 @@ function walkSection(
             let nestedCols = 0; for (const r of newTable.rows) if (r.length > nestedCols) nestedCols = r.length
             if (newTable.rows.length >= 3 && nestedCols >= 2) {
               blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
+              // 부모 셀에 중첩 테이블 위치 마킹 (별도 블록으로 분리됨을 표시)
+              if (parentTable.cell) {
+                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]"
+              }
             } else {
               const nestedText = convertTableToText(newTable.rows)
               if (parentTable.cell) {
-                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + nestedText
+                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]\n" + nestedText
               }
             }
             tableCtx = parentTable
@@ -743,10 +747,14 @@ function walkParagraphChildren(
             let nestedCols = 0; for (const r of newTable.rows) if (r.length > nestedCols) nestedCols = r.length
             if (newTable.rows.length >= 3 && nestedCols >= 2) {
               blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
+              // 부모 셀에 중첩 테이블 위치 마킹 (별도 블록으로 분리됨을 표시)
+              if (parentTable.cell) {
+                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]"
+              }
             } else {
               const nestedText = convertTableToText(newTable.rows)
               if (parentTable.cell) {
-                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + nestedText
+                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]\n" + nestedText
               }
             }
             tableCtx = parentTable
