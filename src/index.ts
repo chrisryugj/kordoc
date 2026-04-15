@@ -12,6 +12,7 @@ import { parseHwp5Document } from "./hwp5/parser.js"
 // import { parsePdfDocument } from "./pdf/parser.js"
 import { parseXlsxDocument } from "./xlsx/parser.js"
 import { parseDocxDocument } from "./docx/parser.js"
+import { parseHwpmlDocument } from "./hwpml/parser.js"
 import type { ParseResult, ParseOptions } from "./types.js"
 import { classifyError, toArrayBuffer } from "./utils.js"
 import { fillFormFields } from "./form/filler.js"
@@ -68,6 +69,8 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
     }
     case "hwp":
       return parseHwp(buffer, options)
+    case "hwpml":
+      return parseHwpml(buffer, options)
     case "pdf":
       return parsePdf(buffer, options)
     default:
@@ -136,6 +139,16 @@ export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     return { success: true, fileType: "docx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined }
   } catch (err) {
     return { success: false, fileType: "docx", error: err instanceof Error ? err.message : "DOCX 파싱 실패", code: classifyError(err) }
+  }
+}
+
+/** HWPML (XML 기반 한컴 문서) 파일을 Markdown으로 변환 */
+export async function parseHwpml(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
+  try {
+    const { markdown, blocks, metadata, outline, warnings } = parseHwpmlDocument(buffer, options)
+    return { success: true, fileType: "hwpml", markdown, blocks, metadata, outline, warnings }
+  } catch (err) {
+    return { success: false, fileType: "hwpml", error: err instanceof Error ? err.message : "HWPML 파싱 실패", code: classifyError(err) }
   }
 }
 

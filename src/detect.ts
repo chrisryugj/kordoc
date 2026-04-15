@@ -31,12 +31,20 @@ export function isPdfFile(buffer: ArrayBuffer): boolean {
   return b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46
 }
 
+/** HWPML (XML 기반 한컴 문서): <?xml ... <HWPML */
+export function isHwpmlFile(buffer: ArrayBuffer): boolean {
+  const bytes = new Uint8Array(buffer, 0, Math.min(512, buffer.byteLength))
+  const head = new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/^\uFEFF/, "")
+  return head.trimStart().startsWith("<?xml") && head.includes("<HWPML")
+}
+
 /** 동기 포맷 감지 — ZIP은 모두 "hwpx"로 반환 (하위 호환) */
 export function detectFormat(buffer: ArrayBuffer): FileType {
   if (buffer.byteLength < 4) return "unknown"
   if (isZipFile(buffer)) return "hwpx"
   if (isOldHwpFile(buffer)) return "hwp"
   if (isPdfFile(buffer)) return "pdf"
+  if (isHwpmlFile(buffer)) return "hwpml"
   return "unknown"
 }
 
