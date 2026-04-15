@@ -19,7 +19,7 @@ HWP, HWPX, PDF, XLSX, DOCX — 관공서에서 쏟아지는 모든 문서를 파
 
 단순한 텍스트 추출을 넘어, **공문서 처리를 위한 모든 과정**을 자동화합니다.
 
-*   **📄 어떤 문서든 마크다운으로**: `HWP`, `HWPX`, `PDF`, `XLSX`, `DOCX` 파일을 즉시 `Markdown`으로 변환합니다. AI(LLM)가 문서를 읽고 분석하기 가장 좋은 상태로 만들어줍니다.
+*   **📄 어떤 문서든 마크다운으로**: `HWP`, `HWPX`, `HWPML`, `PDF`, `XLSX`, `DOCX` 파일을 즉시 `Markdown`으로 변환합니다. AI(LLM)가 문서를 읽고 분석하기 가장 좋은 상태로 만들어줍니다.
 *   **📊 복잡한 표(Table) 완벽 재현**: 선이 없는 PDF나 복잡하게 병합된 HWP 표도 구조를 분석하여 정확한 마크다운 테이블로 복원합니다.
 *   **🔍 신구대조표 자동 생성**: 두 문서의 차이점을 분석하여 무엇이 바뀌었는지 한눈에 보여줍니다. (HWP와 HWPX 간의 비교도 가능!)
 *   **📝 마크다운을 다시 HWPX로**: AI가 작성한 내용을 다시 보고서 양식(`HWPX`)으로 되돌려줍니다. 이제 복사-붙여넣기 노가다에서 해방되세요.
@@ -28,13 +28,20 @@ HWP, HWPX, PDF, XLSX, DOCX — 관공서에서 쏟아지는 모든 문서를 파
 
 ---
 
-## v2.2.4 변경사항
+## v2.3.0 변경사항
+
+- **📄 HWPML 2.x 파서 추가** — XML 기반 한컴 문서(`.hwp` XML 방식) 파싱 지원. `npx kordoc <file.hwp>`에서 `지원하지 않는 파일 형식` 오류가 나던 XML 기반 공문서를 이제 Markdown으로 변환할 수 있습니다. HWP 5.x 바이너리와 자동 구분(XML 시그니처 감지).
+
+<details>
+<summary>v2.2.4 변경사항</summary>
 
 - **📝 양식 자동 채우기 (Form Filler)** — 공문서 양식 템플릿에 값을 자동으로 채워넣습니다. 라벨-값 셀 패턴, 체크박스(`□`→`☑`), 괄호 빈칸(`일반(  )통`→`일반(3)통`), 어노테이션(`(한자：)`→`(한자：金)`) 지원.
 - **🏛️ HWPX 원본 서식 보존 모드** — `fillHwpx()`로 HWPX XML을 직접 조작하여 글꼴, 크기, 정렬 등 원본 서식 100% 유지한 채 값만 교체.
 - **📊 병합 셀 HTML 테이블 출력** — `colspan`/`rowspan`이 있는 복잡한 표를 GFM 대신 HTML `<table>`로 출력하여 구조 보존.
 - **🔧 markdownToHwpx 서식 강화** — 역변환 시 heading/bold/italic/table 등 서식 지원 대폭 개선.
 - **🤖 MCP fill_form 도구** — AI 에이전트가 양식을 직접 채울 수 있는 새 MCP 도구 추가 (총 8개).
+
+</details>
 
 <details>
 <summary>v2.2.1 변경사항</summary>
@@ -297,7 +304,8 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 | `parsePdf(buffer, options?)` | PDF 전용 |
 | `parseXlsx(buffer, options?)` | XLSX 전용 |
 | `parseDocx(buffer, options?)` | DOCX 전용 |
-| `detectFormat(buffer)` | `"hwpx" \| "hwp" \| "pdf" \| "xlsx" \| "docx" \| "unknown"` |
+| `parseHwpml(buffer, options?)` | HWPML (XML 기반 HWP) 전용 |
+| `detectFormat(buffer)` | `"hwpx" \| "hwp" \| "hwpml" \| "pdf" \| "xlsx" \| "docx" \| "unknown"` |
 
 ### 고급 함수
 
@@ -330,6 +338,7 @@ import type {
 |------|------|------|
 | **HWPX** (한컴 2020+) | ZIP + XML DOM | 매니페스트, 중첩 테이블, 병합 셀, 손상 ZIP 복구 |
 | **HWP 5.x** (한컴 레거시) | OLE2 + CFB | 배포용 복호화, 손상 CFB 복구, 각주/하이퍼링크, 21종 제어문자, 이미지 추출 |
+| **HWPML 2.x** (XML 기반 HWP) | XML DOM | HeadingType 기반 헤딩 감지, 병합 셀, DoS 방어 |
 | **PDF** | pdfjs-dist | 선 기반 테이블, XY-Cut 읽기 순서, 헤딩 감지, OCR |
 | **XLSX** (Excel) | ZIP + XML DOM | 공유 문자열, 병합 셀, 다중 시트, 수식 표시 |
 | **DOCX** (Word) | ZIP + XML DOM | 스타일 heading, 번호 매기기, 각주, 이미지 추출 |

@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/npm/l/kordoc.svg)](https://github.com/chrisryugj/kordoc/blob/main/LICENSE)
 [![node](https://img.shields.io/node/v/kordoc.svg)](https://nodejs.org)
 
-> *Parse, compare, extract, and generate Korean documents. HWP, HWPX, PDF, XLSX, DOCX — all of them.*
+> *Parse, compare, extract, and generate Korean documents. HWP, HWPX, HWPML, PDF, XLSX, DOCX — all of them.*
 
 [한국어](./README.md)
 
@@ -18,7 +18,7 @@
 
 Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean government documents**.
 
-*   **📄 Any Document to Markdown**: Convert `HWP`, `HWPX`, `PDF`, `XLSX`, and `DOCX` into clean `Markdown` instantly. It produces the optimal input for LLMs to analyze and reason.
+*   **📄 Any Document to Markdown**: Convert `HWP`, `HWPX`, `HWPML`, `PDF`, `XLSX`, and `DOCX` into clean `Markdown` instantly. It produces the optimal input for LLMs to analyze and reason.
 *   **📊 Perfect Table Reconstruction**: Whether it's a borderless PDF table or a complex merged HWP table, kordoc analyzes the structure to restore accurate markdown tables.
 *   **🔍 Automatic Redline (Diff)**: Compare two documents and see exactly what changed at a glance. Supports cross-format comparison (e.g., Old HWP vs New HWPX).
 *   **📝 Markdown back to HWPX**: Convert AI-generated content back into official `HWPX` reports. No more tedious manual copy-pasting.
@@ -27,6 +27,13 @@ Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean
 
 ---
 
+## What's New in v2.3.0
+
+- **📄 HWPML 2.x Parser** — Added support for XML-based HWP files (`.hwp` in XML format). Government documents that previously returned "unsupported format" are now fully parsed to Markdown. Auto-detected by XML signature (`<?xml` + `<HWPML`), separate from HWP 5.x binary files.
+
+<details>
+<summary>v2.2.4 changes</summary>
+
 ## What's New in v2.2.4
 
 - **📝 Form Auto-Fill** — Automatically fill in government form templates with values. Supports label-value cell patterns, checkboxes (`□`→`☑`), parenthesized blanks (`일반(  )통`→`일반(3)통`), and annotations (`(한자：)`→`(한자：金)`).
@@ -34,6 +41,8 @@ Beyond simple text extraction, kordoc automates the **entire lifecycle of Korean
 - **📊 HTML Table Output for Merged Cells** — Complex tables with `colspan`/`rowspan` now output as HTML `<table>` instead of GFM for accurate structure preservation.
 - **🔧 markdownToHwpx Formatting** — Greatly improved heading/bold/italic/table formatting support in reverse conversion.
 - **🤖 MCP fill_form Tool** — New MCP tool allowing AI agents to fill forms directly (8 tools total).
+
+</details>
 
 <details>
 <summary>v2.2.1 changes</summary>
@@ -304,7 +313,8 @@ npx kordoc watch ./docs --webhook https://api/hook # webhook notification
 | `parsePdf(buffer, options?)` | PDF only |
 | `parseXlsx(buffer, options?)` | XLSX only |
 | `parseDocx(buffer, options?)` | DOCX only |
-| `detectFormat(buffer)` | Returns `"hwpx" \| "hwp" \| "pdf" \| "xlsx" \| "docx" \| "unknown"` |
+| `parseHwpml(buffer, options?)` | HWPML (XML-based HWP) only |
+| `detectFormat(buffer)` | Returns `"hwpx" \| "hwp" \| "hwpml" \| "pdf" \| "xlsx" \| "docx" \| "unknown"` |
 
 ### Advanced
 
@@ -338,6 +348,7 @@ import type {
 |--------|--------|----------|
 | **HWPX** (한컴 2020+) | ZIP + XML DOM | Manifest, nested tables, merged cells, broken ZIP recovery |
 | **HWP 5.x** (한컴 Legacy) | OLE2 + CFB | Distribution decryption, corrupted CFB recovery, footnotes/hyperlinks, 21 control chars, image extraction |
+| **HWPML 2.x** (XML-based HWP) | XML DOM | HeadingType-based heading detection, merged cells, DoS protection |
 | **PDF** | pdfjs-dist | Line-based table detection, XY-Cut reading order, heading detection, hidden text filter, OCR |
 | **XLSX** (Excel) | ZIP + XML DOM | Shared strings, merged cells, multi-sheet, formula display |
 | **DOCX** (Word) | ZIP + XML DOM | Style headings, numbering, footnotes, image extraction |
