@@ -243,7 +243,7 @@ function parseTable(
   const cells: CellContext[] = []
   const rowCount = parseInt(el.getAttribute("RowCount") ?? "0", 10)
   const colCount = parseInt(el.getAttribute("ColCount") ?? "0", 10)
-  if (rowCount === 0 || colCount === 0) return
+  if (isNaN(rowCount) || isNaN(colCount) || rowCount === 0 || colCount === 0) return
   if (rowCount > MAX_TABLE_ROWS || colCount > MAX_TABLE_COLS) {
     warnings.push({ message: `테이블 크기 초과 (${rowCount}x${colCount}) — 스킵`, code: "TRUNCATED_TABLE" })
     return
@@ -266,7 +266,7 @@ function parseTable(
       const rowSpan = parseInt(cellEl.getAttribute("RowSpan") ?? "1", 10)
 
       // 셀 텍스트: PARALIST > P 재귀 추출
-      const cellText = extractCellText(cellEl, paraShapeMap, sectionNum, warnings)
+      const cellText = extractCellText(cellEl)
 
       cells.push({ text: cellText, colSpan, rowSpan, colAddr, rowAddr })
     }
@@ -279,7 +279,7 @@ function parseTable(
   for (const cell of cells) {
     const r = cell.rowAddr ?? 0
     const c = cell.colAddr ?? 0
-    if (r >= rowCount || c >= colCount) continue
+    if (isNaN(r) || isNaN(c) || r >= rowCount || c >= colCount) continue
     grid[r][c] = cell
     for (let dr = 0; dr < cell.rowSpan; dr++) {
       for (let dc = 0; dc < cell.colSpan; dc++) {
@@ -300,25 +300,13 @@ function parseTable(
 }
 
 /** 셀 내부 텍스트 추출 — PARALIST > P 재귀, 중첩 테이블은 평탄화 */
-function extractCellText(
-  cellEl: Element,
-  paraShapeMap: Map<string, ParaShapeInfo>,
-  sectionNum: number,
-  warnings: ParseWarning[],
-): string {
+function extractCellText(cellEl: Element): string {
   const textParts: string[] = []
-  collectCellText(cellEl, textParts, paraShapeMap, sectionNum, warnings, 0)
+  collectCellText(cellEl, textParts, 0)
   return textParts.filter(Boolean).join("\n").trim()
 }
 
-function collectCellText(
-  node: Element,
-  parts: string[],
-  paraShapeMap: Map<string, ParaShapeInfo>,
-  sectionNum: number,
-  warnings: ParseWarning[],
-  depth: number,
-): void {
+function collectCellText(node: Element, parts: string[], depth: number): void {
   if (depth > 20) return
   const children = node.childNodes
   for (let i = 0; i < children.length; i++) {
@@ -333,7 +321,7 @@ function collectCellText(
       // 중첩 테이블 — 텍스트로 평탄화
       parts.push("[중첩 테이블]")
     } else {
-      collectCellText(el, parts, paraShapeMap, sectionNum, warnings, depth + 1)
+      collectCellText(el, parts, depth + 1)
     }
   }
 }
