@@ -10,6 +10,7 @@ import type { CellContext } from "../types.js"
 const MAX_XML_DEPTH = 200
 const MAX_TABLE_ROWS = 5000
 const MAX_TABLE_COLS = 500
+const MAX_HWPML_BYTES = 50 * 1024 * 1024  // 50MB 상한
 
 /** ParaShape 헤딩 정보 */
 interface ParaShapeInfo {
@@ -18,6 +19,9 @@ interface ParaShapeInfo {
 
 /** HWPML 문서 파싱 진입점 */
 export function parseHwpmlDocument(buffer: ArrayBuffer, options?: ParseOptions): InternalParseResult {
+  if (buffer.byteLength > MAX_HWPML_BYTES) {
+    throw new Error(`HWPML 파일 크기 초과 (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB > 50MB)`)
+  }
   const text = new TextDecoder("utf-8").decode(buffer).replace(/^\uFEFF/, "")
 
   // &nbsp; 엔티티 치환 (DOCTYPE 제거 전에 처리)
@@ -112,7 +116,8 @@ function buildParaShapeMap(root: Element): Map<string, ParaShapeInfo> {
     const level = parseInt(el.getAttribute("Level") ?? "0", 10)
     let headingLevel: number | null = null
     if (headingType === "Outline") {
-      headingLevel = Math.min(level + 1, 6)  // Level 0→H1, 1→H2, ..., 5→H6
+      const safeLevel = isNaN(level) ? 0 : Math.max(0, level)
+      headingLevel = Math.min(safeLevel + 1, 6)  // Level 0→H1, 1→H2, ..., 5→H6
     }
     map.set(id, { headingLevel })
   }
@@ -210,7 +215,8 @@ function extractParagraphText(p: Element): string {
   return parts.join("").trim()
 }
 
-function collectCharText(node: Element, parts: string[]): void {
+function collectCharText(node: Element, parts: string[], depth: number = 0): void {
+  if (depth > MAX_XML_DEPTH) return
   const children = node.childNodes
   for (let i = 0; i < children.length; i++) {
     const el = children[i] as Element
@@ -226,7 +232,7 @@ function collectCharText(node: Element, parts: string[]): void {
     } else if (tag === "AUTONUM") {
       // 자동 번호 (페이지 번호 등) 스킵
     } else {
-      collectCharText(el, parts)
+      collectCharText(el, parts, depth + 1)
     }
   }
 }
@@ -262,8 +268,9 @@ function parseTable(
 
       const colAddr = parseInt(cellEl.getAttribute("ColAddr") ?? "0", 10)
       const rowAddr = parseInt(cellEl.getAttribute("RowAddr") ?? "0", 10)
-      const colSpan = parseInt(cellEl.getAttribute("ColSpan") ?? "1", 10)
-      const rowSpan = parseInt(cellEl.getAttribute("RowSpan") ?? "1", 10)
+      // colSpan/rowSpan 클램핑: NaN, 음수, 과대값 방어
+      const colSpan = Math.min(Math.max(1, parseInt(cellEl.getAttribute("ColSpan") ?? "1", 10) || 1), MAX_TABLE_COLS)
+      const rowSpan = Math.min(Math.max(1, parseInt(cellEl.getAttribute("RowSpan") ?? "1", 10) || 1), MAX_TABLE_ROWS)
 
       // 셀 텍스트: PARALIST > P 재귀 추출
       const cellText = extractCellText(cellEl)
