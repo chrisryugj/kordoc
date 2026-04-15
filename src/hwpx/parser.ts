@@ -568,7 +568,7 @@ function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): void {
 function makeNestedTableMarker(counter: { count: number }, rows: CellContext[][]): string {
   counter.count++
   const firstRow = rows[0] ?? []
-  const hint = firstRow.map(c => c.text.trim()).filter(Boolean).join(" | ")
+  const hint = firstRow.map(c => c.text.trim().replace(/\n/g, " ")).filter(Boolean).join(" | ")
   const hintChars = [...hint]
   const truncated = hintChars.length > 60 ? hintChars.slice(0, 60).join("") + "…" : hint
   return truncated
