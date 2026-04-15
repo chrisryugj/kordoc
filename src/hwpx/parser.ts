@@ -264,14 +264,26 @@ async function extractImagesFromZip(
 
     const ref = block.text
     // BinData/ 폴더 내에서 참조 파일 찾기
+    // HWPX binaryItemIDRef는 확장자 없이 오는 경우가 많음 (예: "image1" → "BinData/image1.bmp")
     const candidates = [
       `BinData/${ref}`,
       `Contents/BinData/${ref}`,
       ref, // 절대 경로일 수도 있음
     ]
 
+    // 확장자 없는 ref인 경우 ZIP에서 매칭 파일 탐색
+    let resolvedPath: string | null = null
+    if (!ref.includes(".")) {
+      const prefixes = [`BinData/${ref}`, `Contents/BinData/${ref}`]
+      for (const prefix of prefixes) {
+        const match = zip.file(new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.[a-zA-Z0-9]+$`))
+        if (match.length > 0) { resolvedPath = match[0].name; break }
+      }
+    }
+
     let found = false
-    for (const path of candidates) {
+    const allCandidates = resolvedPath ? [resolvedPath, ...candidates] : candidates
+    for (const path of allCandidates) {
       if (isPathTraversal(path)) continue
       const file = zip.file(path)
       if (!file) continue
@@ -281,7 +293,8 @@ async function extractImagesFromZip(
         decompressed.total += data.length
         if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
 
-        const ext = ref.includes(".") ? (ref.split(".").pop() || "png") : "png"
+        const actualPath = path
+        const ext = actualPath.includes(".") ? (actualPath.split(".").pop() || "png") : "png"
         const mimeType = imageExtToMime(ext)
         imageIndex++
         const filename = `image_${String(imageIndex).padStart(3, "0")}.${mimeToExt(mimeType)}`
