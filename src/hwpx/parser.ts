@@ -30,6 +30,14 @@ const MAX_XML_DEPTH = 200
 
 interface TableState { rows: CellContext[][]; currentRow: CellContext[]; cell: CellContext | null }
 
+/** walk 함수들이 공유하는 파싱 컨텍스트 — 개별 optional 파라미터를 하나로 묶어 시그니처 안정화 */
+interface WalkCtx {
+  styleMap?: HwpxStyleMap
+  warnings?: ParseWarning[]
+  sectionNum?: number
+  counter?: { count: number }
+}
+
 /** xmldom DOMParser 생성 — onError 콜백으로 malformed XML 경고 수집 */
 function createXmlParser(warnings?: ParseWarning[]): DOMParser {
   return new DOMParser({
@@ -186,6 +194,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   const pageFilter = options?.pages ? parsePageRange(options.pages, sectionPaths.length) : null
   const totalTarget = pageFilter ? pageFilter.size : sectionPaths.length
   const blocks: IRBlock[] = []
+  const nestedTableCounter = { count: 0 }
   let parsedSections = 0
   for (let si = 0; si < sectionPaths.length; si++) {
     if (pageFilter && !pageFilter.has(si + 1)) continue
@@ -195,7 +204,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
       const xml = await file.async("text")
       decompressed.total += xml.length * 2
       if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
-      blocks.push(...parseSectionXml(xml, styleMap, warnings, si + 1))
+      blocks.push(...parseSectionXml(xml, styleMap, warnings, si + 1, nestedTableCounter))
       parsedSections++
       options?.onProgress?.(parsedSections, totalTarget)
     } catch (secErr) {
@@ -395,6 +404,7 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
   let totalDecompressed = 0
   let entryCount = 0
   let sectionNum = 0
+  const nestedTableCounter = { count: 0 }
 
   while (pos < data.length - 30) {
     // PK\x03\x04 시그니처 확인 — 미매칭 시 다음 PK 시그니처까지 스캔 (중간 손상 복구)
@@ -445,7 +455,7 @@ function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
       totalDecompressed += content.length * 2
       if (totalDecompressed > MAX_DECOMPRESS_SIZE) throw new KordocError("압축 해제 크기 초과")
       sectionNum++
-      blocks.push(...parseSectionXml(content, undefined, warnings, sectionNum))
+      blocks.push(...parseSectionXml(content, undefined, warnings, sectionNum, nestedTableCounter))
     } catch {
       continue
     }
@@ -554,13 +564,57 @@ function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): void {
 
 // ─── 섹션 XML 파싱 ──────────────────────────────────
 
-function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number): IRBlock[] {
+/** 중첩 테이블 마커 생성 — 순번 + 첫 행 힌트(있는 경우) */
+function makeNestedTableMarker(counter: { count: number }, rows: CellContext[][]): string {
+  counter.count++
+  const firstRow = rows[0] ?? []
+  const hint = firstRow.map(c => c.text.trim()).filter(Boolean).join(" | ")
+  const hintChars = [...hint]
+  const truncated = hintChars.length > 60 ? hintChars.slice(0, 60).join("") + "…" : hint
+  return truncated
+    ? `[중첩 테이블 #${counter.count}: ${truncated}]`
+    : `[중첩 테이블 #${counter.count}]`
+}
+
+/**
+ * 중첩 테이블 처리 공통 로직 — walkSection/walkParagraphChildren 중복 제거
+ * 큰 중첩 테이블(≥3행, ≥2열)은 별도 블록으로 분리, 작은 것은 텍스트로 평탄화.
+ * 두 경우 모두 부모 셀에 마커 삽입. parentTable을 반환하여 tableCtx 갱신에 사용.
+ */
+function handleNestedTable(
+  newTable: TableState,
+  tableStack: TableState[],
+  blocks: IRBlock[],
+  ctx: WalkCtx
+): TableState {
+  const parentTable = tableStack.pop()!
+  let nestedCols = 0
+  for (const r of newTable.rows) if (r.length > nestedCols) nestedCols = r.length
+  const marker = ctx.counter
+    ? makeNestedTableMarker(ctx.counter, newTable.rows)
+    : "[중첩 테이블]"
+  if (newTable.rows.length >= 3 && nestedCols >= 2) {
+    blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: ctx.sectionNum })
+    if (parentTable.cell) {
+      parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + marker
+    }
+  } else {
+    const nestedText = convertTableToText(newTable.rows)
+    if (parentTable.cell) {
+      parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + marker + "\n" + nestedText
+    }
+  }
+  return parentTable
+}
+
+function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number, counter?: { count: number }): IRBlock[] {
   const parser = createXmlParser(warnings)
   const doc = parser.parseFromString(stripDtd(xml), "text/xml")
   if (!doc.documentElement) return []
 
   const blocks: IRBlock[] = []
-  walkSection(doc.documentElement, blocks, null, [], styleMap, warnings, sectionNum)
+  const ctx: WalkCtx = { styleMap, warnings, sectionNum, counter }
+  walkSection(doc.documentElement, blocks, null, [], ctx)
   return blocks
 }
 
@@ -591,8 +645,7 @@ function extractImageRef(el: Element): string | null {
 function walkSection(
   node: Node, blocks: IRBlock[],
   tableCtx: TableState | null, tableStack: TableState[],
-  styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number,
-  depth: number = 0
+  ctx: WalkCtx, depth: number = 0
 ): void {
   if (depth > MAX_XML_DEPTH) return
   const children = node.childNodes
@@ -609,28 +662,13 @@ function walkSection(
       case "tbl": {
         if (tableCtx) tableStack.push(tableCtx)
         const newTable: TableState = { rows: [], currentRow: [], cell: null }
-        walkSection(el, blocks, newTable, tableStack, styleMap, warnings, sectionNum, depth + 1)
+        walkSection(el, blocks, newTable, tableStack, ctx, depth + 1)
 
         if (newTable.rows.length > 0) {
           if (tableStack.length > 0) {
-            const parentTable = tableStack.pop()!
-            // 중첩 표가 충분히 크면 (3행+, 2열+) 별도 블록으로 분리
-            let nestedCols = 0; for (const r of newTable.rows) if (r.length > nestedCols) nestedCols = r.length
-            if (newTable.rows.length >= 3 && nestedCols >= 2) {
-              blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
-              // 부모 셀에 중첩 테이블 위치 마킹 (별도 블록으로 분리됨을 표시)
-              if (parentTable.cell) {
-                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]"
-              }
-            } else {
-              const nestedText = convertTableToText(newTable.rows)
-              if (parentTable.cell) {
-                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]\n" + nestedText
-              }
-            }
-            tableCtx = parentTable
+            tableCtx = handleNestedTable(newTable, tableStack, blocks, ctx)
           } else {
-            blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
+            blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: ctx.sectionNum })
             tableCtx = null
           }
         } else {
@@ -642,7 +680,7 @@ function walkSection(
       case "tr":
         if (tableCtx) {
           tableCtx.currentRow = []
-          walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
+          walkSection(el, blocks, tableCtx, tableStack, ctx, depth + 1)
           if (tableCtx.currentRow.length > 0) tableCtx.rows.push(tableCtx.currentRow)
           tableCtx.currentRow = []
         }
@@ -651,7 +689,7 @@ function walkSection(
       case "tc":
         if (tableCtx) {
           tableCtx.cell = { text: "", colSpan: 1, rowSpan: 1 }
-          walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
+          walkSection(el, blocks, tableCtx, tableStack, ctx, depth + 1)
           if (tableCtx.cell) {
             tableCtx.currentRow.push(tableCtx.cell)
             tableCtx.cell = null
@@ -680,12 +718,12 @@ function walkSection(
         break
 
       case "p": {
-        const { text, href, footnote, style } = extractParagraphInfo(el, styleMap)
+        const { text, href, footnote, style } = extractParagraphInfo(el, ctx.styleMap)
         if (text) {
           if (tableCtx?.cell) {
             tableCtx.cell.text += (tableCtx.cell.text ? "\n" : "") + text
           } else if (!tableCtx) {
-            const block: IRBlock = { type: "paragraph", text, pageNumber: sectionNum }
+            const block: IRBlock = { type: "paragraph", text, pageNumber: ctx.sectionNum }
             if (style) block.style = style
             if (href) block.href = href
             if (footnote) block.footnoteText = footnote
@@ -694,7 +732,7 @@ function walkSection(
         }
         // <p> 내부의 <tbl>만 별도 처리 — extractParagraphInfo가 이미 텍스트를 추출했으므로
         // 전체 walkSection 재귀 대신 테이블/이미지 자식만 선택적으로 처리
-        tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
+        tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, ctx, depth + 1)
         break
       }
 
@@ -702,15 +740,15 @@ function walkSection(
       case "pic": case "shape": case "drawingObject": {
         const imgRef = extractImageRef(el)
         if (imgRef) {
-          blocks.push({ type: "image", text: imgRef, pageNumber: sectionNum })
-        } else if (warnings && sectionNum) {
-          warnings.push({ page: sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
+          blocks.push({ type: "image", text: imgRef, pageNumber: ctx.sectionNum })
+        } else if (ctx.warnings && ctx.sectionNum) {
+          ctx.warnings.push({ page: ctx.sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
         }
         break
       }
 
       default:
-        walkSection(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
+        walkSection(el, blocks, tableCtx, tableStack, ctx, depth + 1)
         break
     }
   }
@@ -720,8 +758,7 @@ function walkSection(
 function walkParagraphChildren(
   node: Node, blocks: IRBlock[],
   tableCtx: TableState | null, tableStack: TableState[],
-  styleMap?: HwpxStyleMap, warnings?: ParseWarning[], sectionNum?: number,
-  depth: number = 0
+  ctx: WalkCtx, depth: number = 0
 ): TableState | null {
   if (depth > MAX_XML_DEPTH) return tableCtx
   const children = node.childNodes
@@ -740,26 +777,12 @@ function walkParagraphChildren(
         // 테이블은 walkSection으로 위임
         if (tableCtx) tableStack.push(tableCtx)
         const newTable: TableState = { rows: [], currentRow: [], cell: null }
-        walkSection(el, blocks, newTable, tableStack, styleMap, warnings, sectionNum, d + 1)
+        walkSection(el, blocks, newTable, tableStack, ctx, d + 1)
         if (newTable.rows.length > 0) {
           if (tableStack.length > 0) {
-            const parentTable = tableStack.pop()!
-            let nestedCols = 0; for (const r of newTable.rows) if (r.length > nestedCols) nestedCols = r.length
-            if (newTable.rows.length >= 3 && nestedCols >= 2) {
-              blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
-              // 부모 셀에 중첩 테이블 위치 마킹 (별도 블록으로 분리됨을 표시)
-              if (parentTable.cell) {
-                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]"
-              }
-            } else {
-              const nestedText = convertTableToText(newTable.rows)
-              if (parentTable.cell) {
-                parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + "[중첩 테이블]\n" + nestedText
-              }
-            }
-            tableCtx = parentTable
+            tableCtx = handleNestedTable(newTable, tableStack, blocks, ctx)
           } else {
-            blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: sectionNum })
+            blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: ctx.sectionNum })
             tableCtx = null
           }
         } else {
@@ -769,18 +792,18 @@ function walkParagraphChildren(
         // 도형/이미지 안에 drawText(글상자)가 있으면 텍스트 추출 우선
         const drawTextChild = findDescendant(el, "drawText")
         if (drawTextChild) {
-          extractDrawTextBlocks(drawTextChild, blocks, styleMap, sectionNum)
+          extractDrawTextBlocks(drawTextChild, blocks, ctx.styleMap, ctx.sectionNum)
         } else {
           const imgRef = extractImageRef(el)
           if (imgRef) {
-            blocks.push({ type: "image", text: imgRef, pageNumber: sectionNum })
-          } else if (warnings && sectionNum) {
-            warnings.push({ page: sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
+            blocks.push({ type: "image", text: imgRef, pageNumber: ctx.sectionNum })
+          } else if (ctx.warnings && ctx.sectionNum) {
+            ctx.warnings.push({ page: ctx.sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
           }
         }
       } else if (localTag === "drawText") {
         // 글상자(TextBox) 안 텍스트 추출 — <hp:p> 순회
-        extractDrawTextBlocks(el, blocks, styleMap, sectionNum)
+        extractDrawTextBlocks(el, blocks, ctx.styleMap, ctx.sectionNum)
       } else if (localTag === "r" || localTag === "run" || localTag === "ctrl"
         || localTag === "rect" || localTag === "ellipse" || localTag === "polygon"
         || localTag === "line" || localTag === "arc" || localTag === "curve"
@@ -788,7 +811,7 @@ function walkParagraphChildren(
         // <hp:run>, <hp:ctrl>, 도형 요소 내부에 테이블/이미지/글상자가 포함될 수 있음 — 재귀
         walkChildren(el, d + 1)
       } else if (localTag === "run") {
-        tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, styleMap, warnings, sectionNum, depth + 1)
+        tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, ctx, depth + 1)
       }
     }
   }

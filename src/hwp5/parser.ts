@@ -87,6 +87,7 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
   const totalTarget = pageFilter ? pageFilter.size : sections.length
 
   const blocks: IRBlock[] = []
+  const nestedTableCounter = { count: 0 }
   let totalDecompressed = 0
   let parsedSections = 0
   for (let si = 0; si < sections.length; si++) {
@@ -98,7 +99,7 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
       totalDecompressed += data.length
       if (totalDecompressed > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
       const records = readRecords(data)
-      const sectionBlocks = parseSection(records, docInfo, warnings, si + 1)
+      const sectionBlocks = parseSection(records, docInfo, warnings, si + 1, nestedTableCounter)
       blocks.push(...sectionBlocks)
       parsedSections++
       options?.onProgress?.(parsedSections, totalTarget)
@@ -536,7 +537,7 @@ function extractHwp5ImagesLenient(
   return images
 }
 
-function parseSection(records: HwpRecord[], docInfo: HwpDocInfo | null, warnings: ParseWarning[], sectionNum: number): IRBlock[] {
+function parseSection(records: HwpRecord[], docInfo: HwpDocInfo | null, warnings: ParseWarning[], sectionNum: number, counter?: { count: number }): IRBlock[] {
   const blocks: IRBlock[] = []
   let i = 0
 
@@ -544,7 +545,7 @@ function parseSection(records: HwpRecord[], docInfo: HwpDocInfo | null, warnings
     const rec = records[i]
 
     if (rec.tagId === TAG_PARA_HEADER && rec.level === 0) {
-      const { paragraph, tables, nextIdx, charShapeIds, paraShapeId } = parseParagraphWithTables(records, i)
+      const { paragraph, tables, nextIdx, charShapeIds, paraShapeId } = parseParagraphWithTables(records, i, counter)
       if (paragraph) {
         const block: IRBlock = { type: "paragraph", text: paragraph, pageNumber: sectionNum }
         // CHAR_SHAPE 기반 스타일 정보 추가
@@ -570,7 +571,7 @@ function parseSection(records: HwpRecord[], docInfo: HwpDocInfo | null, warnings
     if (rec.tagId === TAG_CTRL_HEADER && rec.level <= 1 && rec.data.length >= 4) {
       const ctrlId = rec.data.subarray(0, 4).toString("ascii")
       if (ctrlId === " lbt" || ctrlId === "tbl ") {
-        const { table, nextIdx } = parseTableBlock(records, i)
+        const { table, nextIdx } = parseTableBlock(records, i, counter)
         if (table) blocks.push({ type: "table", table, pageNumber: sectionNum })
         i = nextIdx
         continue
@@ -709,7 +710,7 @@ function resolveCharStyle(charShapeIds: number[], docInfo: HwpDocInfo): InlineSt
   return (style.fontSize || style.bold || style.italic) ? style : undefined
 }
 
-function parseParagraphWithTables(records: HwpRecord[], startIdx: number) {
+function parseParagraphWithTables(records: HwpRecord[], startIdx: number, counter?: { count: number }) {
   const startLevel = records[startIdx].level
   let text = ""
   const tables: ReturnType<typeof buildTable>[] = []
@@ -740,7 +741,7 @@ function parseParagraphWithTables(records: HwpRecord[], startIdx: number) {
     if (rec.tagId === TAG_CTRL_HEADER && rec.data.length >= 4) {
       const ctrlId = rec.data.subarray(0, 4).toString("ascii")
       if (ctrlId === " lbt" || ctrlId === "tbl ") {
-        const { table, nextIdx } = parseTableBlock(records, i)
+        const { table, nextIdx } = parseTableBlock(records, i, counter)
         if (table) tables.push(table)
         i = nextIdx
         continue
@@ -753,7 +754,7 @@ function parseParagraphWithTables(records: HwpRecord[], startIdx: number) {
   return { paragraph: trimmed || null, tables, nextIdx: i, charShapeIds, paraShapeId }
 }
 
-function parseTableBlock(records: HwpRecord[], startIdx: number) {
+function parseTableBlock(records: HwpRecord[], startIdx: number, counter?: { count: number }) {
   const tableLevel = records[startIdx].level
   let i = startIdx + 1
   let rows = 0, cols = 0
@@ -770,7 +771,7 @@ function parseTableBlock(records: HwpRecord[], startIdx: number) {
     }
 
     if (rec.tagId === TAG_LIST_HEADER) {
-      const { cell, nextIdx } = parseCellBlock(records, i, tableLevel)
+      const { cell, nextIdx } = parseCellBlock(records, i, tableLevel, counter)
       if (cell) cells.push(cell)
       i = nextIdx
       continue
@@ -797,7 +798,7 @@ function parseTableBlock(records: HwpRecord[], startIdx: number) {
   return { table: buildTable(cellRows), nextIdx: i }
 }
 
-function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: number) {
+function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: number, counter?: { count: number }) {
   const rec = records[startIdx]
   const cellLevel = rec.level
   const texts: string[] = []
@@ -820,7 +821,6 @@ function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: numb
   }
 
   let i = startIdx + 1
-  let hasNestedTable = false
 
   while (i < records.length) {
     const r = records[i]
@@ -833,17 +833,21 @@ function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: numb
     }
 
     // 셀 내부 중첩 테이블 감지 (HWP5에서는 내용 파싱 없이 마커만 표시)
+    // 힌트 없음 — HWP5는 이 단계에서 중첩 테이블 내부를 파싱하지 않으므로 첫 행 추출 불가
     if (r.tagId === TAG_CTRL_HEADER && r.data.length >= 4) {
       const ctrlId = r.data.subarray(0, 4).toString("ascii")
-      if ((ctrlId === " lbt" || ctrlId === "tbl ") && !hasNestedTable) {
-        hasNestedTable = true
+      if (ctrlId === " lbt" || ctrlId === "tbl ") {
+        if (counter) {
+          counter.count++
+          texts.push(`[중첩 테이블 #${counter.count}]`)
+        } else {
+          texts.push("[중첩 테이블]")
+        }
       }
     }
 
     i++
   }
-
-  if (hasNestedTable) texts.push("[중첩 테이블]")
 
   return { cell: { text: texts.join("\n"), colSpan, rowSpan, colAddr, rowAddr } as CellContext, nextIdx: i }
 }
