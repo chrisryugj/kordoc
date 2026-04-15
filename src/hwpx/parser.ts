@@ -590,17 +590,16 @@ function handleNestedTable(
   const parentTable = tableStack.pop()!
   let nestedCols = 0
   for (const r of newTable.rows) if (r.length > nestedCols) nestedCols = r.length
-  const marker = ctx.counter
-    ? makeNestedTableMarker(ctx.counter, newTable.rows)
-    : "[중첩 테이블]"
   if (newTable.rows.length >= 3 && nestedCols >= 2) {
     blocks.push({ type: "table", table: buildTable(newTable.rows), pageNumber: ctx.sectionNum })
     if (parentTable.cell) {
+      const marker = ctx.counter ? makeNestedTableMarker(ctx.counter, newTable.rows) : "[중첩 테이블]"
       parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + marker
     }
   } else {
     const nestedText = convertTableToText(newTable.rows)
     if (parentTable.cell) {
+      const marker = ctx.counter ? makeNestedTableMarker(ctx.counter, newTable.rows) : "[중첩 테이블]"
       parentTable.cell.text += (parentTable.cell.text ? "\n" : "") + marker + "\n" + nestedText
     }
   }
