@@ -47,7 +47,7 @@ program
           process.stderr.write(`[kordoc] ${filePrefix}${fileName} (${format}) ...`)
         }
 
-        const parseOptions: ParseOptions = {}
+        const parseOptions: ParseOptions = { filePath: absPath }
         if (opts.pages) parseOptions.pages = opts.pages as string
         if (opts.headerFooter === false) parseOptions.removeHeaderFooter = false
         if (!opts.silent) {

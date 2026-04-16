@@ -14,6 +14,7 @@ import { KordocError, isPathTraversal, sanitizeHref, precheckZipSize, stripDtd }
 // 테스트 호환성 re-export
 export { precheckZipSize } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
+import { isComFallbackAvailable, isEncryptedHwpx, extractTextViaCom, comResultToParseResult } from "./com-fallback.js"
 
 /** 압축 해제 최대 크기 (100MB) — ZIP bomb 방지 */
 const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
@@ -172,6 +173,22 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   const actualEntryCount = Object.keys(zip.files).length
   if (actualEntryCount > MAX_ZIP_ENTRIES) {
     throw new KordocError("ZIP 엔트리 수 초과 (ZIP bomb 의심)")
+  }
+
+  // ── DRM 감지: manifest.xml에 encryption-data가 있으면 COM fallback ──
+  const manifestFile = zip.file("META-INF/manifest.xml")
+  if (manifestFile) {
+    const manifestXml = await manifestFile.async("text")
+    if (isEncryptedHwpx(manifestXml)) {
+      // 파일 경로가 options에 있으면 COM fallback 시도
+      if (isComFallbackAvailable() && options?.filePath) {
+        const { pages, pageCount, warnings } = extractTextViaCom(options.filePath)
+        if (pages.some(p => p && p.trim().length > 0)) {
+          return comResultToParseResult(pages, pageCount, warnings)
+        }
+      }
+      throw new KordocError("DRM 암호화된 HWPX 파일입니다. Windows + 한컴 오피스 설치 시 자동 추출됩니다.")
+    }
   }
 
   // ZIP 전체 파일 누적 압축해제 크기 추적 (비섹션 파일 포함)

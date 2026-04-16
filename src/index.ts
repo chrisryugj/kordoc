@@ -38,6 +38,10 @@ import { markdownToHwpx } from "./hwpx/generator.js"
  */
 export async function parse(input: string | ArrayBuffer | Buffer, options?: ParseOptions): Promise<ParseResult> {
   let buffer: ArrayBuffer
+  // 파일 경로 입력 시 filePath를 options에 자동 설정 (DRM COM fallback에 필요)
+  const opts = typeof input === "string" && !options?.filePath
+    ? { ...options, filePath: input }
+    : options
   if (typeof input === "string") {
     try {
       const buf = await readFile(input)
@@ -63,16 +67,16 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
     case "hwpx": {
       // ZIP 기반 포맷 세분화: HWPX, XLSX, DOCX 구분
       const zipFormat = await detectZipFormat(buffer)
-      if (zipFormat === "xlsx") return parseXlsx(buffer, options)
-      if (zipFormat === "docx") return parseDocx(buffer, options)
-      return parseHwpx(buffer, options)
+      if (zipFormat === "xlsx") return parseXlsx(buffer, opts)
+      if (zipFormat === "docx") return parseDocx(buffer, opts)
+      return parseHwpx(buffer, opts)
     }
     case "hwp":
-      return parseHwp(buffer, options)
+      return parseHwp(buffer, opts)
     case "hwpml":
-      return parseHwpml(buffer, options)
+      return parseHwpml(buffer, opts)
     case "pdf":
-      return parsePdf(buffer, options)
+      return parsePdf(buffer, opts)
     default:
       return { success: false, fileType: "unknown", error: "지원하지 않는 파일 형식입니다.", code: "UNSUPPORTED_FORMAT" }
   }

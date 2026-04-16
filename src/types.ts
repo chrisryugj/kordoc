@@ -122,6 +122,8 @@ export interface ParseOptions {
   onProgress?: (current: number, total: number) => void
   /** PDF 머리글/바닥글 자동 제거 */
   removeHeaderFooter?: boolean
+  /** 원본 파일 경로 (DRM COM fallback에 필요, 내부 전용) */
+  filePath?: string
 }
 
 // ─── 파싱 경고 ──────────────────────────────────────
