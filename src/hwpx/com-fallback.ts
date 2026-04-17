@@ -40,6 +40,9 @@ export function extractTextViaCom(filePath: string): { pages: string[]; pageCoun
 $ErrorActionPreference = 'Stop'
 try {
   $hwp = New-Object -ComObject HWPFrame.HwpObject
+  # 보안 경고/메시지박스 전체 자동 응답 (RegisterModule만으로는 불충분한 환경 대응)
+  # 상위 16비트 = 대상 메시지박스 플래그(0xFFFF = 전체), 하위 16비트 = 자동 응답(0x1 = Yes/OK)
+  try { $hwp.SetMessageBoxMode(0xFFFF0001) | Out-Null } catch { }
   $hwp.RegisterModule('FilePathCheckerModule', 'FilePathCheckerModuleExample') | Out-Null
   $hwp.Open('${escaped}', '', '') | Out-Null
   $pc = $hwp.PageCount
