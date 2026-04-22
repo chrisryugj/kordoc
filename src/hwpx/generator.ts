@@ -293,8 +293,12 @@ function generateManifest(): string {
 function charPr(id: number, height: number, bold: boolean, italic: boolean, fontId: number = 0): string {
   const boldAttr = bold ? ` bold="1"` : ""
   const italicAttr = italic ? ` italic="1"` : ""
+  // 볼드면 fontfaces의 bold variant(id=2: HY견고딕/Arial Black, weight=9) 참조해
+  // macOS 한컴에서 합성 굵기 안 되는 케이스 커버. 코드(fontId=1)는 bold 아닌 경우에만
+  // 원본 id 유지 (Consolas/함초롬돋움).
+  const effFont = bold ? 2 : fontId
   return `      <hh:charPr id="${id}" height="${height}" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0"${boldAttr}${italicAttr}>
-        <hh:fontRef hangul="${fontId}" latin="${fontId}" hanja="${fontId}" japanese="${fontId}" other="${fontId}" symbol="${fontId}" user="${fontId}"/>
+        <hh:fontRef hangul="${effFont}" latin="${effFont}" hanja="${effFont}" japanese="${effFont}" other="${effFont}" symbol="${effFont}" user="${effFont}"/>
         <hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
         <hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
         <hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
@@ -323,20 +327,26 @@ function generateHeaderXml(): string {
   <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
   <hh:refList>
     <hh:fontfaces itemCnt="7">
-      <hh:fontface lang="HANGUL" fontCnt="2">
+      <hh:fontface lang="HANGUL" fontCnt="3">
         <hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0">
           <hh:typeInfo familyType="FCAT_GOTHIC" weight="6" proportion="4" contrast="0" strokeVariation="1" armStyle="1" letterform="1" midline="1" xHeight="1"/>
         </hh:font>
         <hh:font id="1" face="함초롬돋움" type="TTF" isEmbedded="0">
           <hh:typeInfo familyType="FCAT_GOTHIC" weight="6" proportion="4" contrast="0" strokeVariation="1" armStyle="1" letterform="1" midline="1" xHeight="1"/>
         </hh:font>
+        <hh:font id="2" face="HY견고딕" type="TTF" isEmbedded="0">
+          <hh:typeInfo familyType="FCAT_GOTHIC" weight="9" proportion="0" contrast="0" strokeVariation="1" armStyle="1" letterform="1" midline="1" xHeight="1"/>
+        </hh:font>
       </hh:fontface>
-      <hh:fontface lang="LATIN" fontCnt="2">
+      <hh:fontface lang="LATIN" fontCnt="3">
         <hh:font id="0" face="Times New Roman" type="TTF" isEmbedded="0">
           <hh:typeInfo familyType="FCAT_OLDSTYLE" weight="5" proportion="4" contrast="2" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="4"/>
         </hh:font>
         <hh:font id="1" face="Consolas" type="TTF" isEmbedded="0">
           <hh:typeInfo familyType="FCAT_MODERN" weight="5" proportion="0" contrast="0" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/>
+        </hh:font>
+        <hh:font id="2" face="Arial Black" type="TTF" isEmbedded="0">
+          <hh:typeInfo familyType="FCAT_GOTHIC" weight="9" proportion="0" contrast="0" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/>
         </hh:font>
       </hh:fontface>
       <hh:fontface lang="HANJA" fontCnt="1">
@@ -369,21 +379,21 @@ function generateHeaderXml(): string {
       <hh:borderFill id="0" threeD="0" shadow="0" centerLine="0" breakCellSeparateLine="0">
         <hh:slash type="NONE" Crooked="0" isCounter="0"/>
         <hh:backSlash type="NONE" Crooked="0" isCounter="0"/>
-        <hh:leftBorder type="NONE" width="0.1mm" color="#000000"/>
-        <hh:rightBorder type="NONE" width="0.1mm" color="#000000"/>
-        <hh:topBorder type="NONE" width="0.1mm" color="#000000"/>
-        <hh:bottomBorder type="NONE" width="0.1mm" color="#000000"/>
-        <hh:diagonal type="NONE" width="0.1mm" color="#000000"/>
+        <hh:leftBorder type="NONE" width="0.1 mm" color="#000000"/>
+        <hh:rightBorder type="NONE" width="0.1 mm" color="#000000"/>
+        <hh:topBorder type="NONE" width="0.1 mm" color="#000000"/>
+        <hh:bottomBorder type="NONE" width="0.1 mm" color="#000000"/>
+        <hh:diagonal type="NONE" width="0.1 mm" color="#000000"/>
         <hh:fillInfo/>
       </hh:borderFill>
       <hh:borderFill id="1" threeD="0" shadow="0" centerLine="0" breakCellSeparateLine="0">
         <hh:slash type="NONE" Crooked="0" isCounter="0"/>
         <hh:backSlash type="NONE" Crooked="0" isCounter="0"/>
-        <hh:leftBorder type="SOLID" width="0.12mm" color="#000000"/>
-        <hh:rightBorder type="SOLID" width="0.12mm" color="#000000"/>
-        <hh:topBorder type="SOLID" width="0.12mm" color="#000000"/>
-        <hh:bottomBorder type="SOLID" width="0.12mm" color="#000000"/>
-        <hh:diagonal type="NONE" width="0.1mm" color="#000000"/>
+        <hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/>
+        <hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/>
+        <hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/>
+        <hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/>
+        <hh:diagonal type="NONE" width="0.1 mm" color="#000000"/>
         <hh:fillInfo/>
       </hh:borderFill>
     </hh:borderFills>
@@ -498,9 +508,21 @@ function generateTable(rows: string[][]): string {
 function blocksToSectionXml(blocks: MdBlock[]): string {
   const paraXmls: string[] = []
   let isFirst = true
+  // 순서 있는 목록 카운터 — indent 레벨별 별도 유지. 다른 블록 만나면 해당 레벨 리셋.
+  const orderedCounters: Record<number, number> = {}
+  let prevWasOrdered = false
 
   for (const block of blocks) {
     let xml = ""
+
+    // 순서 있는 list_item이 아니면 카운터 전부 리셋 (연속되지 않은 목록은 다시 1부터)
+    if (block.type !== "list_item" || !block.ordered) {
+      if (prevWasOrdered) {
+        for (const k of Object.keys(orderedCounters)) delete orderedCounters[+k]
+      }
+      prevWasOrdered = false
+    }
+
     switch (block.type) {
       case "heading": {
         const pId = headingParaPrId(block.level || 1)
@@ -520,8 +542,25 @@ function blocksToSectionXml(blocks: MdBlock[]): string {
         xml = generateParagraph(block.text || "", PARA_QUOTE)
         break
       case "list_item": {
-        const marker = block.ordered ? `${(block.indent || 0) + 1}. ` : "· "
-        const indentPrefix = "  ".repeat(block.indent || 0)
+        const indent = block.indent || 0
+        let marker: string
+        if (block.ordered) {
+          // 러닝 카운터: indent 레벨별로 증가. 하위 레벨(더 깊은 indent)은 별도 세퀀스.
+          orderedCounters[indent] = (orderedCounters[indent] || 0) + 1
+          // 상위 레벨 번호가 바뀌면 하위는 자동 리셋되어야 함 — 한 레벨 위로 올라갈 때 하위 카운터 초기화
+          for (const k of Object.keys(orderedCounters)) {
+            if (+k > indent) delete orderedCounters[+k]
+          }
+          marker = `${orderedCounters[indent]}. `
+          prevWasOrdered = true
+        } else {
+          marker = "· "
+          if (prevWasOrdered) {
+            for (const k of Object.keys(orderedCounters)) delete orderedCounters[+k]
+          }
+          prevWasOrdered = false
+        }
+        const indentPrefix = "  ".repeat(indent)
         xml = generateParagraph(indentPrefix + marker + (block.text || ""), PARA_LIST)
         break
       }

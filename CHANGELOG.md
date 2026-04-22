@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.2] - 2026-04-22
+
+macOS 한컴 재테스트 피드백 3건 반영 (#4 후속).
+
+### Fixed
+- **테이블 테두리 미렌더링** — `width="0.12mm"`/`"0.1mm"` 값에 숫자-단위 사이 **공백 추가** (`"0.12 mm"`, `"0.1 mm"`). 한컴 공식 HWPX 샘플이 공백 포함 형식을 쓰는데 비공백 형식을 파서가 NONE으로 fallback하던 현상 추정. borderFill/footNotePr/endNotePr 전구간 일관되게 적용.
+- **볼드·이탤릭 시각 구분 없음** — 기존 `bold="1"` 속성만으로는 macOS 한컴이 합성 굵기를 적용 안 하는 문제. **별도 bold 전용 fontface 추가**:
+  - HANGUL: `id=2` face="HY견고딕" `weight="9"` 추가
+  - LATIN: `id=2` face="Arial Black" `weight="9"` 추가
+  - `charPr` 헬퍼가 bold 플래그 true일 때 `fontRef`를 id=2로 자동 라우팅 → 속성 + 실제 굵은 폰트 참조 병행
+- **순서 있는 목록 자동 번호 미작동** — 기존 `(indent+1). ` 고정값으로 모든 항목이 `1. `로 찍히던 버그. **indent 레벨별 러닝 카운터** 도입. 블록이 list_item 아니면 카운터 리셋 → 분리된 목록은 각각 1부터. 상위 레벨 번호가 바뀌면 하위 자동 리셋.
+
+### Technical notes
+- 테스트 226/226 통과 (regression 없음)
+- 자체 파서 roundtrip OK
+
+## [2.5.1] - 2026-04-22
+
+README 현행화 (한/영). 기능 변경 없음.
+
 ## [2.5.0] - 2026-04-22
 
 HWPX 생성기 스펙 완전 준수 + HWP 배포용 문서 COM fallback 확장.
