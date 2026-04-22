@@ -332,6 +332,19 @@ function hasMergedCells(table: IRTable): boolean {
   return false
 }
 
+function containsInlineMath(text: string): boolean {
+  return /(^|[^\\])\$(?=\S)(?:\\.|[^$\n])+?\S\$/.test(text)
+}
+
+function tableContainsInlineMath(table: IRTable): boolean {
+  for (const row of table.cells) {
+    for (const cell of row) {
+      if (containsInlineMath(cell.text)) return true
+    }
+  }
+  return false
+}
+
 /** 병합 테이블 → HTML <table> 출력 (rowspan/colspan 보존) */
 function tableToHtml(table: IRTable): string {
   const { cells, rows: numRows, cols: numCols } = table
@@ -373,8 +386,9 @@ function tableToMarkdown(table: IRTable): string {
 
   const { cells, rows: numRows, cols: numCols } = table
 
-  // 병합 셀이 있으면 HTML 테이블로 출력
-  if (hasMergedCells(table)) return tableToHtml(table)
+  // 병합 셀이 있으면 HTML 테이블로 출력하되, 수식이 있으면 GFM 표로 출력한다.
+  // 많은 Markdown 렌더러가 raw HTML table 내부의 $...$를 수식으로 다시 처리하지 않는다.
+  if (hasMergedCells(table) && !tableContainsInlineMath(table)) return tableToHtml(table)
 
   // 1행 1열 → 구조화된 텍스트 (빈 셀이면 스킵)
   if (numRows === 1 && numCols === 1) {

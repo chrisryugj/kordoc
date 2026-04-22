@@ -1,12 +1,14 @@
 /** HWP 5.x 바이너리 파서 — OLE2 컨테이너 → 섹션 → Markdown */
 
 import {
-  readRecords, decompressStream, parseFileHeader, extractText, parseDocInfo,
+  readRecords, decompressStream, parseFileHeader, extractTextWithControls, extractEquationText, parseDocInfo,
   TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE, TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE,
+  TAG_EQEDIT,
   FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_DISTRIBUTION, FLAG_DRM,
   type HwpRecord, type HwpDocInfo, type HwpCharShape, type HwpParaShape,
 } from "./record.js"
 import { decryptViewText } from "./crypto.js"
+import { hwpEquationToLatex } from "./equation.js"
 import { parseLenientCfb, type LenientCfbContainer } from "./cfb-lenient.js"
 import { buildTable, blocksToMarkdown, flattenLayoutTables, MAX_COLS, MAX_ROWS } from "../table/builder.js"
 import type { CellContext, IRBlock, IRTable, DocumentMetadata, InternalParseResult, ParseOptions, ParseWarning, OutlineItem, InlineStyle, ExtractedImage } from "../types.js"
@@ -390,6 +392,7 @@ function findViewTextSectionsLenient(lcfb: LenientCfbContainer, compressed: bool
 
 /** SHAPE_COMPONENT 태그 — HWP5 스펙 */
 const TAG_SHAPE_COMPONENT = 0x004a
+const CTRL_ID_EQEDIT = "deqe"
 
 /** gso 제어 뒤의 하위 레코드에서 binDataId 추출 (best-effort) */
 function extractBinDataId(records: HwpRecord[], ctrlIdx: number): number {
@@ -412,6 +415,39 @@ function extractBinDataId(records: HwpRecord[], ctrlIdx: number): number {
     }
   }
   return -1
+}
+
+function isEquationControlId(ctrlId: string): boolean {
+  return ctrlId === CTRL_ID_EQEDIT || ctrlId === "eqed"
+}
+
+function formatEquationForMarkdown(equation: string): string {
+  const normalized = hwpEquationToLatex(equation)
+  if (!normalized) return ""
+  return `$${normalized.replace(/\$/g, "\\$")}$`
+}
+
+function extractEquationFromControl(records: HwpRecord[], ctrlIdx: number): string | null {
+  const ctrlLevel = records[ctrlIdx].level
+  for (let j = ctrlIdx + 1; j < records.length && j < ctrlIdx + 10; j++) {
+    const r = records[j]
+    if (r.level <= ctrlLevel) break
+    if (r.tagId !== TAG_EQEDIT) continue
+    const equation = extractEquationText(r.data)
+    return equation ? formatEquationForMarkdown(equation) : null
+  }
+  return null
+}
+
+function renderTextWithEquations(textRecords: Buffer[], equations: string[]): string {
+  const queue = [...equations]
+  return textRecords
+    .map(data => extractTextWithControls(data, ctrlId => {
+      if (!isEquationControlId(ctrlId) || queue.length === 0) return null
+      return queue.shift()
+    }))
+    .join("")
+    .replace(/\$\$/g, "$ $")
 }
 
 /** MIME 타입 매직바이트 판별 */
@@ -627,17 +663,38 @@ function parseSection(records: HwpRecord[], docInfo: HwpDocInfo | null, warnings
 function extractNoteText(records: HwpRecord[], ctrlIdx: number): string | null {
   const ctrlLevel = records[ctrlIdx].level
   const texts: string[] = []
+  let textRecords: Buffer[] = []
+  let equations: string[] = []
+
+  const flushText = () => {
+    const text = renderTextWithEquations(textRecords, equations).trim()
+    if (text) texts.push(text)
+    textRecords = []
+    equations = []
+  }
 
   for (let j = ctrlIdx + 1; j < records.length && j < ctrlIdx + 100; j++) {
     const r = records[j]
     if (r.level <= ctrlLevel) break  // 상위 레벨 도달 → 이 컨트롤 블록 끝
 
+    if (r.tagId === TAG_PARA_HEADER) {
+      flushText()
+    }
+
     if (r.tagId === TAG_PARA_TEXT) {
-      const t = extractText(r.data).trim()
-      if (t) texts.push(t)
+      textRecords.push(r.data)
+    }
+
+    if (r.tagId === TAG_CTRL_HEADER && r.data.length >= 4) {
+      const ctrlId = r.data.subarray(0, 4).toString("ascii")
+      if (isEquationControlId(ctrlId)) {
+        const equation = extractEquationFromControl(records, j)
+        if (equation) equations.push(equation)
+      }
     }
   }
 
+  flushText()
   return texts.length > 0 ? texts.join(" ") : null
 }
 
@@ -645,17 +702,38 @@ function extractNoteText(records: HwpRecord[], ctrlIdx: number): string | null {
 function extractTextBoxText(records: HwpRecord[], ctrlIdx: number): string | null {
   const ctrlLevel = records[ctrlIdx].level
   const texts: string[] = []
+  let textRecords: Buffer[] = []
+  let equations: string[] = []
+
+  const flushText = () => {
+    const text = renderTextWithEquations(textRecords, equations).trim()
+    if (text) texts.push(text)
+    textRecords = []
+    equations = []
+  }
 
   for (let j = ctrlIdx + 1; j < records.length && j < ctrlIdx + 200; j++) {
     const r = records[j]
     if (r.level <= ctrlLevel) break
 
+    if (r.tagId === TAG_PARA_HEADER) {
+      flushText()
+    }
+
     if (r.tagId === TAG_PARA_TEXT) {
-      const t = extractText(r.data).trim()
-      if (t) texts.push(t)
+      textRecords.push(r.data)
+    }
+
+    if (r.tagId === TAG_CTRL_HEADER && r.data.length >= 4) {
+      const ctrlId = r.data.subarray(0, 4).toString("ascii")
+      if (isEquationControlId(ctrlId)) {
+        const equation = extractEquationFromControl(records, j)
+        if (equation) equations.push(equation)
+      }
     }
   }
 
+  flushText()
   return texts.length > 0 ? texts.join("\n") : null
 }
 
@@ -712,7 +790,8 @@ function resolveCharStyle(charShapeIds: number[], docInfo: HwpDocInfo): InlineSt
 
 function parseParagraphWithTables(records: HwpRecord[], startIdx: number, counter?: { count: number }) {
   const startLevel = records[startIdx].level
-  let text = ""
+  const textRecords: Buffer[] = []
+  const equations: string[] = []
   const tables: ReturnType<typeof buildTable>[] = []
   const charShapeIds: number[] = []
 
@@ -727,7 +806,7 @@ function parseParagraphWithTables(records: HwpRecord[], startIdx: number, counte
     if (rec.tagId === TAG_PARA_HEADER && rec.level <= startLevel) break
 
     if (rec.tagId === TAG_PARA_TEXT) {
-      text = extractText(rec.data)
+      textRecords.push(rec.data)
     }
 
     // CHAR_SHAPE 레코드 — 문단 내 글자 모양 인덱스 배열
@@ -740,7 +819,10 @@ function parseParagraphWithTables(records: HwpRecord[], startIdx: number, counte
 
     if (rec.tagId === TAG_CTRL_HEADER && rec.data.length >= 4) {
       const ctrlId = rec.data.subarray(0, 4).toString("ascii")
-      if (ctrlId === " lbt" || ctrlId === "tbl ") {
+      if (isEquationControlId(ctrlId)) {
+        const equation = extractEquationFromControl(records, i)
+        if (equation) equations.push(equation)
+      } else if (ctrlId === " lbt" || ctrlId === "tbl ") {
         const { table, nextIdx } = parseTableBlock(records, i, counter)
         if (table) tables.push(table)
         i = nextIdx
@@ -750,6 +832,7 @@ function parseParagraphWithTables(records: HwpRecord[], startIdx: number, counte
     i++
   }
 
+  const text = renderTextWithEquations(textRecords, equations)
   const trimmed = text.trim()
   return { paragraph: trimmed || null, tables, nextIdx: i, charShapeIds, paraShapeId }
 }
@@ -802,6 +885,15 @@ function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: numb
   const rec = records[startIdx]
   const cellLevel = rec.level
   const texts: string[] = []
+  let textRecords: Buffer[] = []
+  let equations: string[] = []
+
+  const flushText = () => {
+    const text = renderTextWithEquations(textRecords, equations).trim()
+    if (text) texts.push(text)
+    textRecords = []
+    equations = []
+  }
 
   // LIST_HEADER에서 셀 위치 및 병합 정보 추출
   // HWP5 셀 LIST_HEADER 구조:
@@ -827,16 +919,23 @@ function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: numb
     if (r.tagId === TAG_LIST_HEADER && r.level <= cellLevel) break
     if (r.level <= tableLevel && (r.tagId === TAG_PARA_HEADER || r.tagId === TAG_CTRL_HEADER)) break
 
+    if (r.tagId === TAG_PARA_HEADER) {
+      flushText()
+    }
+
     if (r.tagId === TAG_PARA_TEXT) {
-      const t = extractText(r.data).trim()
-      if (t) texts.push(t)
+      textRecords.push(r.data)
     }
 
     // 셀 내부 중첩 테이블 감지 (HWP5에서는 내용 파싱 없이 마커만 표시)
     // 힌트 없음 — HWP5는 이 단계에서 중첩 테이블 내부를 파싱하지 않으므로 첫 행 추출 불가
     if (r.tagId === TAG_CTRL_HEADER && r.data.length >= 4) {
       const ctrlId = r.data.subarray(0, 4).toString("ascii")
-      if (ctrlId === " lbt" || ctrlId === "tbl ") {
+      if (isEquationControlId(ctrlId)) {
+        const equation = extractEquationFromControl(records, i)
+        if (equation) equations.push(equation)
+      } else if (ctrlId === " lbt" || ctrlId === "tbl ") {
+        flushText()
         if (counter) {
           counter.count++
           texts.push(`[중첩 테이블 #${counter.count}]`)
@@ -849,6 +948,7 @@ function parseCellBlock(records: HwpRecord[], startIdx: number, tableLevel: numb
     i++
   }
 
+  flushText()
   return { cell: { text: texts.join("\n"), colSpan, rowSpan, colAddr, rowAddr } as CellContext, nextIdx: i }
 }
 
