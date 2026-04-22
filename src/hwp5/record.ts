@@ -12,6 +12,7 @@ export const TAG_PARA_SHAPE = 0x0045
 export const TAG_CTRL_HEADER = 0x0047
 export const TAG_LIST_HEADER = 0x0048
 export const TAG_TABLE = 0x004d
+export const TAG_EQEDIT = 0x0058
 
 // DocInfo 태그 (스타일 정보 해석용) — HWPTAG_BEGIN(0x0010) 기준
 export const TAG_ID_MAPPINGS = 0x0011      // HWPTAG_BEGIN + 1
@@ -227,7 +228,13 @@ export function parseDocInfo(records: HwpRecord[]): HwpDocInfo {
 
 // ─── UTF-16LE 텍스트 추출 (21가지 제어문자 처리) ─────
 
+export type InlineControlResolver = (ctrlId: string) => string | null | undefined
+
 export function extractText(data: Buffer): string {
+  return extractTextWithControls(data)
+}
+
+export function extractTextWithControls(data: Buffer, resolveControl?: InlineControlResolver): string {
   let result = ""
   let i = 0
 
@@ -238,10 +245,19 @@ export function extractText(data: Buffer): string {
     switch (ch) {
       // ── char 타입 (2바이트만, 확장 데이터 없음) ──
       case CHAR_LINE: result += "\n"; break
-      case CHAR_SECTION_BREAK:  // 구역/단 정의 — extended(14바이트 스킵)
+      case CHAR_SECTION_BREAK: { // 구역/단 정의 또는 일부 inline control 래퍼
+        // 일부 HWP5 문서는 수식 placeholder를 0x000a + 0x000b + ctrlId + payload + 0x000b로 저장한다.
+        if (i + 16 <= data.length && data.readUInt16LE(i) === 0x000b) {
+          const ctrlId = data.subarray(i + 2, i + 6).toString("ascii")
+          const replacement = resolveControl?.(ctrlId)
+          if (replacement) result += replacement
+          i += 16
+          break
+        }
         result += "\n"
         if (i + 14 <= data.length) i += 14
         break
+      }
       case CHAR_PARA: break  // 문단 끝
       case CHAR_HYPHEN: result += "-"; break
       case CHAR_NBSP: result += " "; break
@@ -261,7 +277,12 @@ export function extractText(data: Buffer): string {
           // char(24-31) → 스킵 없음 (이미 switch에서 24,25,30,31 처리됨)
           const isExtended = (ch >= 1 && ch <= 3) || (ch >= 11 && ch <= 12) || (ch >= 14 && ch <= 18) || (ch >= 21 && ch <= 23)
           const isInline = (ch >= 4 && ch <= 9) || (ch >= 19 && ch <= 20)
-          if ((isExtended || isInline) && i + 14 <= data.length) i += 14
+          if ((isExtended || isInline) && i + 14 <= data.length) {
+            const ctrlId = data.subarray(i, i + 4).toString("ascii")
+            const replacement = resolveControl?.(ctrlId)
+            if (replacement) result += replacement
+            i += 14
+          }
         } else if (ch >= 0x0020) {
           // UTF-16 surrogate pair 처리 (BMP 외 문자: 이모지, CJK 확장 등)
           if (ch >= 0xd800 && ch <= 0xdbff && i + 1 < data.length) {
@@ -280,4 +301,17 @@ export function extractText(data: Buffer): string {
   }
 
   return result
+}
+
+/** HWP5 EQEDIT(0x58) 레코드에서 한글 수식 스크립트 원문 추출 */
+export function extractEquationText(data: Buffer): string | null {
+  if (data.length < 6) return null
+
+  const scriptLength = data.readUInt16LE(4)
+  const scriptStart = 6
+  const scriptEnd = scriptStart + scriptLength * 2
+  if (scriptLength <= 0 || scriptEnd > data.length) return null
+
+  const equation = data.subarray(scriptStart, scriptEnd).toString("utf16le").replace(/\0+/g, "").trim()
+  return equation || null
 }

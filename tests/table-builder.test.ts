@@ -130,6 +130,37 @@ describe("blocksToMarkdown", () => {
     assert.ok(md.includes("값2"))
   })
 
+  it("수식이 있는 병합 표는 Markdown 표로 출력", () => {
+    const blocks: IRBlock[] = [
+      {
+        type: "table",
+        table: buildTable([
+          [{ text: "각도($^\\circ$)", colSpan: 2, rowSpan: 1 }],
+          [{ text: "값1", colSpan: 1, rowSpan: 1 }, { text: "$\\frac{1}{2}$", colSpan: 1, rowSpan: 1 }],
+        ])
+      },
+    ]
+    const md = blocksToMarkdown(blocks)
+    assert.ok(!md.includes("<table>"), "수식 렌더링을 위해 HTML table을 피함")
+    assert.ok(md.includes("| 각도($^\\circ$) |  |"))
+    assert.ok(md.includes("$\\frac{1}{2}$"))
+  })
+
+  it("일반 달러 기호만 있는 병합 표는 HTML <table>로 출력", () => {
+    const blocks: IRBlock[] = [
+      {
+        type: "table",
+        table: buildTable([
+          [{ text: "예산 $5", colSpan: 2, rowSpan: 1 }],
+          [{ text: "값1", colSpan: 1, rowSpan: 1 }, { text: "값2", colSpan: 1, rowSpan: 1 }],
+        ])
+      },
+    ]
+    const md = blocksToMarkdown(blocks)
+    assert.ok(md.includes("<table>"), "일반 달러 표기는 병합 정보를 보존")
+    assert.ok(md.includes('colspan="2"'))
+  })
+
   it("테이블 블록을 마크다운 테이블로 변환", () => {
     const blocks: IRBlock[] = [
       {

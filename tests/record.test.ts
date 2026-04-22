@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { deflateSync, deflateRawSync } from "zlib"
-import { extractText, readRecords, decompressStream, parseFileHeader } from "../src/hwp5/record.js"
+import { extractText, extractTextWithControls, extractEquationText, readRecords, decompressStream, parseFileHeader } from "../src/hwp5/record.js"
 
 describe("extractText", () => {
   function toUtf16Buffer(text: string): Buffer {
@@ -57,6 +57,31 @@ describe("extractText", () => {
     assert.equal(extractText(buf), "X")
   })
 
+  it("인라인 수식 컨트롤을 콜백 결과로 치환", () => {
+    const buf = Buffer.alloc(2 + 2 + 14 + 2)
+    buf.writeUInt16LE("A".charCodeAt(0), 0)
+    buf.writeUInt16LE(0x000b, 2)
+    buf.write("deqe", 4, "ascii")
+    buf.writeUInt16LE(0x000b, 16)
+    buf.writeUInt16LE("B".charCodeAt(0), 18)
+
+    const result = extractTextWithControls(buf, ctrlId => ctrlId === "deqe" ? "$x+1$" : null)
+    assert.equal(result, "A$x+1$B")
+  })
+
+  it("0x000a 래퍼가 붙은 인라인 수식 컨트롤을 치환", () => {
+    const buf = Buffer.alloc(2 + 2 + 16 + 2)
+    buf.writeUInt16LE("A".charCodeAt(0), 0)
+    buf.writeUInt16LE(0x000a, 2)
+    buf.writeUInt16LE(0x000b, 4)
+    buf.write("deqe", 6, "ascii")
+    buf.writeUInt16LE(0x000b, 18)
+    buf.writeUInt16LE("B".charCodeAt(0), 20)
+
+    const result = extractTextWithControls(buf, ctrlId => ctrlId === "deqe" ? "$x^2$" : null)
+    assert.equal(result, "A$x^2$B")
+  })
+
   it("빈 버퍼는 빈 문자열 반환", () => {
     assert.equal(extractText(Buffer.alloc(0)), "")
   })
@@ -66,6 +91,24 @@ describe("extractText", () => {
     buf.writeUInt16LE("A".charCodeAt(0), 0)
     buf[2] = 0xff
     assert.equal(extractText(buf), "A")
+  })
+})
+
+describe("extractEquationText", () => {
+  it("EQEDIT 레코드에서 수식 스크립트 추출", () => {
+    const equation = "m(a+b)`=`ma+mb"
+    const buf = Buffer.alloc(6 + equation.length * 2 + 16)
+    buf.writeUInt16LE(equation.length, 4)
+    buf.write(equation, 6, "utf16le")
+
+    assert.equal(extractEquationText(buf), equation)
+  })
+
+  it("잘린 EQEDIT 레코드는 null 반환", () => {
+    const buf = Buffer.alloc(8)
+    buf.writeUInt16LE(10, 4)
+
+    assert.equal(extractEquationText(buf), null)
   })
 })
 
