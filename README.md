@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/chrisryugj-kordoc-badge.png)](https://mseep.ai/app/chrisryugj-kordoc)
+
 # kordoc
 
 **모두 파싱해버리겠다.**
