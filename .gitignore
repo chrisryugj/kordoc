@@ -5,7 +5,12 @@ dist/
 demo/node_modules/
 .tools/
 .vscode/
-.claude/
+
+# Claude Code 개인 설정 — .claude/memory/ 의 .md만 추적 (자동 생성 로그는 제외)
+.claude/*
+!.claude/memory/
+.claude/memory/.changes-*.log
+.claude/memory/*.log
 
 # tsup 임시 빌드 산출물
 tsup.config.bundled_*.mjs
