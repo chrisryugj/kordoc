@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-04-29 — XLS 파서 + Print Renderer (KorDoc Suite Phase 1)
+
+### Added — XLS (Excel 97-2003 / BIFF8) 파서
+
+OLE2 컨테이너에 담긴 `.xls` 파일을 순수 JavaScript로 파싱. 한컴오피스나 LibreOffice 같은 외부 도구 없이 동작.
+
+- `parse()` 자동 라우팅: OLE2 매직 + Workbook 스트림 존재 → XLS, 그 외 → HWP 5.x
+- `parseXls(buffer)` 공개 API (`fileType: 'xls'`)
+- `detectOle2Format(buffer)` — OLE2 컨테이너 내부 스트림 기반 구분 (XLS/HWP/unknown)
+- 신규 모듈: `src/xls/{record,encoding,sst,cell,parser,index}.ts`
+
+지원 BIFF 레코드: BOF/EOF/CONTINUE/BoundSheet8/SST/CodePage/FilePass/Number/RK/MulRk/LabelSst/Label/Formula(+String)/BoolErr/Blank/MulBlank/MergeCells.
+인코딩: UTF-16LE, Compressed Unicode, CP949(EUC-KR).
+처리: 다중 시트, 병합 셀, 큰 SST의 CONTINUE 분할 경계 flags 재해석, 부동소수점 아티팩트 정리.
+제한: 차트/매크로/그림/암호화 파일은 미지원 (암호화 파일은 경고와 함께 빈 결과 반환). 날짜 셀은 raw number로 출력 (XF 레코드 처리는 v2.8.0+).
+
+기존 `src/hwp5/cfb-lenient.ts`의 OLE2 파서를 재사용하여 새 컨테이너 파서 작성 없이 구현.
+
+### Added — Print Renderer (Markdown / IRBlock[] → PDF)
+
+공공기관 인쇄용 PDF 렌더링 파이프라인. markdown-it로 HTML 변환 후 puppeteer-core로 PDF 출력.
+
+- `renderHtml(markdown, options)` — HTML 문자열 반환 (외부 PDF 엔진 결합 가능)
+- `markdownToPdf(markdown, options)` / `blocksToPdf(blocks, options)` — Buffer 반환
+- 프리셋 3종:
+  - `default` — A4, 여백 20mm, Pretendard 11pt
+  - `gov-formal` — 휴먼명조 시뮬, 머리글/바닥글 옵션, 본문 들여쓰기 (시행문 스타일)
+  - `compact` — 여백 10mm, 9pt (참고자료용)
+- 옵션: 페이지 크기/방향, 여백, 머리글/바닥글, 워터마크(대각선), 추가 CSS
+- Chromium 자동 감지 (Windows/Mac/Linux 표준 경로) 또는 `PUPPETEER_EXECUTABLE_PATH` 환경변수
+- 신규 의존성: `markdown-it` (small)
+- 새 optional peer dep: `puppeteer-core` (PDF 출력 시에만 필요)
+
+### Technical notes
+- 318 tests pass (신규 22: `tests/xls.test.ts` 12개 + `tests/print.test.ts` 10개)
+- XLS 합성 픽스처 5건 (`tests/fixtures/xls/{population,budget,facilities,roster,minutes}.xls`) — 단순 텍스트, 병합+음수+큰 정수, 다중 시트, 빈 행/열, 200행 SST CONTINUE 분할 검증
+- 명세 문서: `docs/biff8-spec.md`
+
+---
+
 ## [2.6.2] - 2026-04-23
 
 ### Fixed — PDF 수식 OCR noise 필터 대폭 강화

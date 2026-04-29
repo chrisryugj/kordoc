@@ -5,6 +5,13 @@ dist/
 demo/node_modules/
 .tools/
 .vscode/
+.claude/
+
+# tsup 임시 빌드 산출물
+tsup.config.bundled_*.mjs
+
+# 개인 메모/임시 파일
+reply-*.md
 
 # 실제 문서 fixture — 개인 문서이므로 저장소에 포함하지 않음
 tests/fixtures/sample.*

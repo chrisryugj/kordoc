@@ -1,7 +1,7 @@
 {
   "name": "kordoc",
-  "version": "2.6.2",
-  "description": "Parse Korean documents (HWP, HWPX, HWPML, PDF, XLSX, DOCX) to Markdown",
+  "version": "2.7.0",
+  "description": "Parse Korean documents (HWP, HWPX, HWPML, PDF, XLS, XLSX, DOCX) to Markdown + Print Renderer",
   "type": "module",
   "exports": {
     ".": {
@@ -35,12 +35,16 @@
     "document",
     "parser",
     "pdf",
+    "xls",
     "xlsx",
+    "biff8",
     "docx",
     "markdown",
     "converter",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "print",
+    "puppeteer"
   ],
   "author": "chrisryugj",
   "license": "MIT",
@@ -57,28 +61,35 @@
     "cfb": "1.2.2",
     "commander": "^13.0.0",
     "jszip": "^3.10.1",
+    "markdown-it": "^14.1.1",
     "zod": "^3.23.0"
   },
   "peerDependencies": {
-    "pdfjs-dist": ">=4.0.0"
+    "pdfjs-dist": ">=4.0.0",
+    "puppeteer-core": ">=22.0.0"
   },
   "peerDependenciesMeta": {
     "pdfjs-dist": {
       "optional": true
+    },
+    "puppeteer-core": {
+      "optional": true
     }
   },
   "optionalDependencies": {
+    "@huggingface/transformers": "^4.1.0",
     "@hyzyla/pdfium": "^2.1.0",
     "onnxruntime-node": "^1.24.0",
-    "sharp": "^0.34.0",
-    "@huggingface/transformers": "^4.1.0"
+    "sharp": "^0.34.0"
   },
   "devDependencies": {
-    "@hyzyla/pdfium": "^2.1.0",
     "@huggingface/transformers": "^4.1.0",
+    "@hyzyla/pdfium": "^2.1.0",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^18.19.130",
     "onnxruntime-node": "^1.24.0",
     "pdfjs-dist": "^4.10.38",
+    "puppeteer-core": "^24.42.0",
     "sharp": "^0.34.0",
     "tsup": "^8.4.0",
     "tsx": "^4.21.0",

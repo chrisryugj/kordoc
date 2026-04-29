@@ -8,6 +8,7 @@ const define = { __KORDOC_VERSION__: JSON.stringify(pkg.version) }
 // (1) dist 크기 폭증, (2) 사용자가 설치 안 했을 때 require 시도되며 즉시 실패.
 const OPTIONAL_EXTERNAL = [
   "pdfjs-dist",
+  "puppeteer-core",
   "onnxruntime-node",
   "@huggingface/transformers",
   "@hyzyla/pdfium",

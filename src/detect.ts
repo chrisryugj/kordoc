@@ -2,6 +2,7 @@
 
 import JSZip from "jszip"
 import type { FileType } from "./types.js"
+import { parseLenientCfb } from "./hwp5/cfb-lenient.js"
 
 /** 매직 바이트 뷰 생성 (복사 없이 view) */
 function magicBytes(buffer: ArrayBuffer): Uint8Array {
@@ -46,6 +47,26 @@ export function detectFormat(buffer: ArrayBuffer): FileType {
   if (isPdfFile(buffer)) return "pdf"
   if (isHwpmlFile(buffer)) return "hwpml"
   return "unknown"
+}
+
+/**
+ * OLE2 컨테이너 내부 스트림 기반 포맷 세분화.
+ * HWP 5.x, XLS 모두 OLE2이므로 스트림 이름으로 구분.
+ *  - "Workbook" 또는 "Book" → 'xls'
+ *  - 그 외 (FileHeader 등) → 'hwp'
+ */
+export function detectOle2Format(buffer: ArrayBuffer): "hwp" | "xls" | "unknown" {
+  try {
+    const cfb = parseLenientCfb(Buffer.from(buffer))
+    const names = cfb.entries().map(e => e.name)
+    if (names.includes("Workbook") || names.includes("Book")) return "xls"
+    if (names.includes("FileHeader")) return "hwp"
+    // FileHeader 없어도 BodyText/DocInfo 있으면 hwp
+    if (names.some(n => n === "DocInfo" || n.startsWith("Section"))) return "hwp"
+    return "unknown"
+  } catch {
+    return "unknown"
+  }
 }
 
 /**

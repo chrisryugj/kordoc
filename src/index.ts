@@ -5,7 +5,7 @@
  */
 
 import { readFile } from "fs/promises"
-import { detectFormat, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
+import { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
 import { parseHwpxDocument } from "./hwpx/parser.js"
 import { parseHwp5Document } from "./hwp5/parser.js"
 import { isComFallbackAvailable, extractTextViaCom, comResultToParseResult } from "./hwpx/com-fallback.js"
@@ -13,6 +13,7 @@ import { isDistributionSentinel } from "./hwp5/sentinel.js"
 // pdfjs-dist는 optional peer dep (37MB) — PDF 안 쓰는 사용자를 위해 dynamic import
 // import { parsePdfDocument } from "./pdf/parser.js"
 import { parseXlsxDocument } from "./xlsx/parser.js"
+import { parseXlsDocument } from "./xls/parser.js"
 import { parseDocxDocument } from "./docx/parser.js"
 import { parseHwpmlDocument } from "./hwpml/parser.js"
 import type { ParseResult, ParseOptions } from "./types.js"
@@ -73,8 +74,12 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
       if (zipFormat === "docx") return parseDocx(buffer, opts)
       return parseHwpx(buffer, opts)
     }
-    case "hwp":
+    case "hwp": {
+      // OLE2 기반 포맷 세분화: HWP 5.x vs XLS (Excel 97-2003)
+      const ole2Format = detectOle2Format(buffer)
+      if (ole2Format === "xls") return parseXls(buffer, opts)
       return parseHwp(buffer, opts)
+    }
     case "hwpml":
       return parseHwpml(buffer, opts)
     case "pdf":
@@ -157,6 +162,16 @@ export async function parseXlsx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     return { success: true, fileType: "xlsx", markdown, blocks, metadata, warnings }
   } catch (err) {
     return { success: false, fileType: "xlsx", error: err instanceof Error ? err.message : "XLSX 파싱 실패", code: classifyError(err) }
+  }
+}
+
+/** XLS (Excel 97-2003) 파일을 Markdown으로 변환 */
+export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
+  try {
+    const { markdown, blocks, metadata, warnings } = await parseXlsDocument(buffer, options)
+    return { success: true, fileType: "xls", markdown, blocks, metadata, warnings }
+  } catch (err) {
+    return { success: false, fileType: "xls", error: err instanceof Error ? err.message : "XLS 파싱 실패", code: classifyError(err) }
   }
 }
 
@@ -280,10 +295,12 @@ export type { FillResult } from "./form/filler.js"
 export { fillHwpx } from "./form/filler-hwpx.js"
 export type { HwpxFillResult } from "./form/filler-hwpx.js"
 export { markdownToHwpx } from "./hwpx/generator.js"
+export { renderHtml, markdownToPdf, blocksToPdf } from "./print/renderer.js"
+export type { PrintPreset, PrintOptions, PageMargin } from "./print/renderer.js"
 
 // ─── Re-exports ──────────────────────────────────────
 
-export { detectFormat, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
+export { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
 export type {
   ParseResult, ParseSuccess, ParseFailure, FileType,
   IRBlock, IRBlockType, IRTable, IRCell, CellContext,

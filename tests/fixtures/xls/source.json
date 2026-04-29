@@ -1,0 +1,35 @@
+{
+  "note": "v2.7.0 단위/통합 테스트용 합성 픽스처. 실제 공공기관 XLS 샘플 추가 시 본 파일에 항목 추가.",
+  "samples": [
+    {
+      "file": "population.xls",
+      "kind": "synthetic",
+      "generator": "tests/fixtures/xls/generate.py:make_population",
+      "verifies": ["다중 시트", "한글 헤더", "정수 셀 (Number/RK)", "Globals SST"]
+    },
+    {
+      "file": "budget.xls",
+      "kind": "synthetic",
+      "generator": "tests/fixtures/xls/generate.py:make_budget",
+      "verifies": ["병합 셀 (MergeCells)", "음수", "큰 정수 (10^10)", "double 셀"]
+    },
+    {
+      "file": "facilities.xls",
+      "kind": "synthetic",
+      "generator": "tests/fixtures/xls/generate.py:make_facilities",
+      "verifies": ["다중 시트 3개", "빈 행/열 혼재", "비연속 컬럼 (col 0,2,3)"]
+    },
+    {
+      "file": "roster.xls",
+      "kind": "synthetic",
+      "generator": "tests/fixtures/xls/generate.py:make_roster",
+      "verifies": ["긴 SST (200행 × 5컬럼)", "SST CONTINUE 분할", "한글 텍스트 셀 (LabelSst)"]
+    },
+    {
+      "file": "minutes.xls",
+      "kind": "synthetic",
+      "generator": "tests/fixtures/xls/generate.py:make_minutes",
+      "verifies": ["단일 시트", "단순 텍스트 셀", "짧은 SST"]
+    }
+  ]
+}
