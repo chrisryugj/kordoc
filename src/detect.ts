@@ -26,6 +26,20 @@ export function isOldHwpFile(buffer: ArrayBuffer): boolean {
   return b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0
 }
 
+/**
+ * HWP 3.x (한글 워드프로세서 3.0): "HWP Document File V3.00 \x1A\x01\x02\x03\x04\x05" 30 byte.
+ * CFB(OLE2) 컨테이너 아닌 단일 binary stream — isOldHwpFile 과 magic 이 다르다.
+ */
+const HWP3_PREFIX = new TextEncoder().encode("HWP Document File V3.00")
+export function isHwp3File(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < HWP3_PREFIX.length) return false
+  const head = new Uint8Array(buffer, 0, HWP3_PREFIX.length)
+  for (let i = 0; i < HWP3_PREFIX.length; i++) {
+    if (head[i] !== HWP3_PREFIX[i]) return false
+  }
+  return true
+}
+
 /** PDF 문서: %PDF */
 export function isPdfFile(buffer: ArrayBuffer): boolean {
   const b = magicBytes(buffer)
@@ -42,6 +56,7 @@ export function isHwpmlFile(buffer: ArrayBuffer): boolean {
 /** 동기 포맷 감지 — ZIP은 모두 "hwpx"로 반환 (하위 호환) */
 export function detectFormat(buffer: ArrayBuffer): FileType {
   if (buffer.byteLength < 4) return "unknown"
+  if (isHwp3File(buffer)) return "hwp3"
   if (isZipFile(buffer)) return "hwpx"
   if (isOldHwpFile(buffer)) return "hwp"
   if (isPdfFile(buffer)) return "pdf"

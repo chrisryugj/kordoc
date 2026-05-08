@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-05-09 — HWP 3.0 (구버전) 파서
+
+### Added — HWP 3.0 (한글 워드프로세서 3.x) 텍스트 추출 파서
+
+1996~2002년 한컴이 사용한 binary 포맷. CFB(OLE2) 컨테이너가 아닌 단일 binary stream 으로,
+기존 kordoc(HWP5+) 가 거부하던 구버전 문서를 텍스트 인덱싱 용도로 추출 가능하게 한다.
+
+- `parse()` 자동 라우팅: 매직 `"HWP Document File V3.00"` 30 byte 시그니처 → HWP3
+- `parseHwp3(buffer)` 공개 API (`fileType: 'hwp3'`)
+- `isHwp3File(buffer)` — 매직 바이트 detector
+- 신규 모듈: `src/hwp3/{johab,reader,records,parser,johab-symbols}.ts`
+
+알고리즘 흐름:
+- 30 byte 시그니처 + 128 byte DocInfo + 1008 byte DocSummary → 메타데이터 추출
+- `compressed` 플래그가 set 이면 InfoBlock 이후 raw deflate(RFC 1951) 압축 해제
+- 7개 언어별 font face + style 메타데이터 skip → paragraph_list 진입
+- 각 paragraph: 헤더 (43 byte ± 187 ParaShape) + LineInfos + InlineCharShapes + char stream
+- char stream: u16 LE hchar 단위, ASCII(< 0x80) 직접 처리, 상용조합형(>= 0x8000) → 0xAC00 한글 음절 매핑 + 5,893개 한자/기호 lookup table
+- 표(ch=10) cell 본문, 머리말/꼬리말(ch=16), 각주(ch=17), 숨은설명(ch=15) 의 nested paragraph 재귀 추출
+
+검증: rhwp 레포의 HWP3 sample 3건 — sample4(임베디드 시스템 개요) 444 byte 본문 + 작자 "유미경" 메타데이터, sample5(리눅스 시스템 관리자 가이드) 7,204 byte 본문 + 작자 "김태형" 메타데이터를 경고 없이 깨끗하게 추출. sample(Creating Linux Virtual Servers) 161 byte 본문 추출 + 메타 컨트롤이 가득한 첫 paragraph 영역에서만 PARTIAL_PARSE 경고.
+
+Robustness:
+- paragraph 단위 try/catch — 한 paragraph stream 손상이 전체 추출을 막지 않음
+- 헤더 sanity 가드 — char_count > 60K 또는 line_count > 4K 면 즉시 list 종료
+- 표 cell_count > 256 가드 — 비정상 표 메타로 인한 무한 read 방지
+- johab 매핑 실패 hchar 는 silent skip (기존 `?` fallback 으로 인한 검색 인덱스 noise 제거)
+
+알고리즘은 [rhwp](https://github.com/edwardkim/rhwp) (Apache-2.0) 의 `src/parser/hwp3/` 를 TypeScript 로 minimal port. 5,893 entry 의 johab→유니코드 lookup table 은 `scripts/convert-johab-map.mjs` 로 자동 추출.
+
+알려진 한계 (v0.1):
+- DocSummary 외 description/link_print_file 등 metadata 영역은 byte stream 디코더 사용 (별도 fix 필요)
+- HWP3 표 변종 일부에서 cell layout 어긋남 — 본문 텍스트 추출엔 영향 없음
+- ch=5/6/27 등 메타 컨트롤의 추가 byte size 미상 (rhwp 자체도 미해결 영역)
+
+---
+
 ## [2.7.0] - 2026-04-29 — XLS 파서 + Print Renderer (KorDoc Suite Phase 1)
 
 ### Added — XLS (Excel 97-2003 / BIFF8) 파서

@@ -8,6 +8,7 @@ import { readFile } from "fs/promises"
 import { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
 import { parseHwpxDocument } from "./hwpx/parser.js"
 import { parseHwp5Document } from "./hwp5/parser.js"
+import { parseHwp3Document } from "./hwp3/parser.js"
 import { isComFallbackAvailable, extractTextViaCom, comResultToParseResult } from "./hwpx/com-fallback.js"
 import { isDistributionSentinel } from "./hwp5/sentinel.js"
 // pdfjs-dist는 optional peer dep (37MB) — PDF 안 쓰는 사용자를 위해 dynamic import
@@ -80,12 +81,24 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
       if (ole2Format === "xls") return parseXls(buffer, opts)
       return parseHwp(buffer, opts)
     }
+    case "hwp3":
+      return parseHwp3(buffer, opts)
     case "hwpml":
       return parseHwpml(buffer, opts)
     case "pdf":
       return parsePdf(buffer, opts)
     default:
       return { success: false, fileType: "unknown", error: "지원하지 않는 파일 형식입니다.", code: "UNSUPPORTED_FORMAT" }
+  }
+}
+
+/** HWP 3.x (구버전 한컴 워드프로세서) 파일을 Markdown 으로 변환. */
+export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
+  try {
+    const { markdown, blocks, metadata, outline, warnings } = parseHwp3Document(buffer, options)
+    return { success: true, fileType: "hwp3", markdown, blocks, metadata, outline, warnings }
+  } catch (err) {
+    return { success: false, fileType: "hwp3", error: err instanceof Error ? err.message : "HWP3 파싱 실패", code: classifyError(err) }
   }
 }
 

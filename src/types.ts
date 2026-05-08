@@ -190,7 +190,7 @@ export type ErrorCode =
 
 // ─── 파싱 결과 (discriminated union) ────────────────
 
-export type FileType = "hwpx" | "hwp" | "hwpml" | "pdf" | "xlsx" | "xls" | "docx" | "unknown"
+export type FileType = "hwpx" | "hwp" | "hwp3" | "hwpml" | "pdf" | "xlsx" | "xls" | "docx" | "unknown"
 
 interface ParseResultBase {
   fileType: FileType
