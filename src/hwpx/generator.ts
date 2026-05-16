@@ -16,7 +16,7 @@ const NS_HPF = "http://www.hancom.co.kr/schema/2011/hpf"
 const NS_OCF = "urn:oasis:names:tc:opendocument:xmlns:container"
 
 // ─── 스타일 ID 매핑 ─────────────────────────────────
-// charPr: 0=본문, 1=볼드, 2=이탤릭, 3=볼드이탤릭, 4=인라인코드, 5=h1, 6=h2, 7=h3, 8=h4~h6
+// charPr: 0=본문, 1=볼드, 2=이탤릭, 3=볼드이탤릭, 4=인라인코드, 5=h1, 6=h2, 7=h3, 8=h4~h6, 9=표 헤더 셀, 10=인용문
 // paraPr: 0=본문, 1=h1, 2=h2, 3=h3, 4=h4~h6, 5=코드블록, 6=인용문, 7=리스트
 
 const CHAR_NORMAL = 0
@@ -28,6 +28,8 @@ const CHAR_H1 = 5
 const CHAR_H2 = 6
 const CHAR_H3 = 7
 const CHAR_H4 = 8
+const CHAR_TABLE_HEADER = 9
+const CHAR_QUOTE = 10
 
 const PARA_NORMAL = 0
 const PARA_H1 = 1
@@ -38,18 +40,69 @@ const PARA_CODE = 5
 const PARA_QUOTE = 6
 const PARA_LIST = 7
 
+/** HWPX 생성 시 적용할 시각 테마 (모두 선택) */
+export interface HwpxTheme {
+  /**
+   * 헤딩 레벨별 텍스트 색상. 미지정 시 검정.
+   * 현재 charPr 매핑은 h1/h2/h3/h4 4단계 (h5, h6은 h4와 같은 charPr 공유)이므로
+   * 키는 1~4만 받는다.
+   */
+  headingColors?: Partial<Record<1 | 2 | 3 | 4, string>>
+  /** 본문 단락 텍스트 색상. 미지정 시 검정 */
+  bodyColor?: string
+  /**
+   * 인용문 텍스트 색상. 미지정 시 검정.
+   *
+   * 주의: 이 옵션을 지정하면 인용문이 별도 charPr(이탤릭)로 렌더링된다.
+   * 미지정 시 기존 동작 그대로 본문 charPr로 렌더링 (이탤릭 아님).
+   */
+  quoteColor?: string
+  /** 표 첫 행 텍스트 색상. 미지정 시 본문과 동일 */
+  tableHeaderColor?: string
+  /** 표 첫 행 텍스트를 굵게 표시 (기본 false) */
+  tableHeaderBold?: boolean
+}
+
+/** markdownToHwpx 옵션 */
+export interface MarkdownToHwpxOptions {
+  theme?: HwpxTheme
+}
+
+const DEFAULT_TEXT_COLOR = "#000000"
+
+function resolveTheme(theme?: HwpxTheme) {
+  return {
+    h1: theme?.headingColors?.[1] ?? DEFAULT_TEXT_COLOR,
+    h2: theme?.headingColors?.[2] ?? DEFAULT_TEXT_COLOR,
+    h3: theme?.headingColors?.[3] ?? DEFAULT_TEXT_COLOR,
+    h4: theme?.headingColors?.[4] ?? theme?.headingColors?.[3] ?? DEFAULT_TEXT_COLOR,
+    body: theme?.bodyColor ?? DEFAULT_TEXT_COLOR,
+    quote: theme?.quoteColor ?? DEFAULT_TEXT_COLOR,
+    /** quoteColor가 명시되었는지 — blockquote charPr 분기에 사용 (baseline 호환) */
+    hasQuoteOption: theme?.quoteColor !== undefined,
+    tableHeader: theme?.tableHeaderColor ?? theme?.bodyColor ?? DEFAULT_TEXT_COLOR,
+    tableHeaderBold: !!theme?.tableHeaderBold,
+  }
+}
+
+type ResolvedTheme = ReturnType<typeof resolveTheme>
+
 /**
  * 마크다운 텍스트를 HWPX (ArrayBuffer)로 변환.
  */
-export async function markdownToHwpx(markdown: string): Promise<ArrayBuffer> {
+export async function markdownToHwpx(
+  markdown: string,
+  options?: MarkdownToHwpxOptions,
+): Promise<ArrayBuffer> {
+  const theme = resolveTheme(options?.theme)
   const blocks = parseMarkdownToBlocks(markdown)
-  const sectionXml = blocksToSectionXml(blocks)
+  const sectionXml = blocksToSectionXml(blocks, theme)
 
   const zip = new JSZip()
   zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
   zip.file("META-INF/container.xml", generateContainerXml())
   zip.file("Contents/content.hpf", generateManifest())
-  zip.file("Contents/header.xml", generateHeaderXml())
+  zip.file("Contents/header.xml", generateHeaderXml(theme))
   zip.file("Contents/section0.xml", sectionXml)
   // Preview/ — 한글 프로그램의 일부 버전(특히 macOS)이 존재 여부를 확인함
   zip.file("Preview/PrvText.txt", buildPrvText(blocks))
@@ -290,14 +343,21 @@ function generateManifest(): string {
 
 // ─── charPr 생성 헬퍼 ───────────────────────────────
 
-function charPr(id: number, height: number, bold: boolean, italic: boolean, fontId: number = 0): string {
+function charPr(
+  id: number,
+  height: number,
+  bold: boolean,
+  italic: boolean,
+  fontId: number = 0,
+  textColor: string = DEFAULT_TEXT_COLOR,
+): string {
   const boldAttr = bold ? ` bold="1"` : ""
   const italicAttr = italic ? ` italic="1"` : ""
   // 볼드면 fontfaces의 bold variant(id=2: HY견고딕/Arial Black, weight=9) 참조해
   // macOS 한컴에서 합성 굵기 안 되는 케이스 커버. 코드(fontId=1)는 bold 아닌 경우에만
   // 원본 id 유지 (Consolas/함초롬돋움).
   const effFont = bold ? 2 : fontId
-  return `      <hh:charPr id="${id}" height="${height}" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0"${boldAttr}${italicAttr}>
+  return `      <hh:charPr id="${id}" height="${height}" textColor="${textColor}" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0"${boldAttr}${italicAttr}>
         <hh:fontRef hangul="${effFont}" latin="${effFont}" hanja="${effFont}" japanese="${effFont}" other="${effFont}" symbol="${effFont}" user="${effFont}"/>
         <hh:ratio hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
         <hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
@@ -321,7 +381,7 @@ function paraPr(id: number, opts: { align?: string; spaceBefore?: number; spaceA
       </hh:paraPr>`
 }
 
-function generateHeaderXml(): string {
+function generateHeaderXml(theme: ResolvedTheme): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <hh:head xmlns:hh="${NS_HEAD}" xmlns:hp="${NS_PARA}" version="1.4" secCnt="1">
   <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
@@ -397,16 +457,18 @@ function generateHeaderXml(): string {
         <hh:fillInfo/>
       </hh:borderFill>
     </hh:borderFills>
-    <hh:charProperties itemCnt="9">
-${charPr(0, 1000, false, false)}
-${charPr(1, 1000, true, false)}
-${charPr(2, 1000, false, true)}
-${charPr(3, 1000, true, true)}
+    <hh:charProperties itemCnt="11">
+${charPr(0, 1000, false, false, 0, theme.body)}
+${charPr(1, 1000, true, false, 0, theme.body)}
+${charPr(2, 1000, false, true, 0, theme.body)}
+${charPr(3, 1000, true, true, 0, theme.body)}
 ${charPr(4, 900, false, false, 1)}
-${charPr(5, 1800, true, false, 1)}
-${charPr(6, 1400, true, false, 1)}
-${charPr(7, 1200, true, false, 1)}
-${charPr(8, 1100, true, false, 1)}
+${charPr(5, 1800, true, false, 1, theme.h1)}
+${charPr(6, 1400, true, false, 1, theme.h2)}
+${charPr(7, 1200, true, false, 1, theme.h3)}
+${charPr(8, 1100, true, false, 1, theme.h4)}
+${charPr(CHAR_TABLE_HEADER, 1000, theme.tableHeaderBold, false, 0, theme.tableHeader)}
+${charPr(CHAR_QUOTE, 1000, false, true, 0, theme.quote)}
     </hh:charProperties>
     <hh:tabProperties itemCnt="0"/>
     <hh:numberings itemCnt="0"/>
@@ -461,7 +523,7 @@ const TABLE_ID_BASE = 1000
 let tableIdCounter = TABLE_ID_BASE
 function nextTableId(): number { return ++tableIdCounter }
 
-function generateTable(rows: string[][]): string {
+function generateTable(rows: string[][], theme: ResolvedTheme): string {
   const rowCnt = rows.length
   const colCnt = Math.max(...rows.map(r => r.length), 1)
   // A4 portrait: 폭 약 44000 HWPUnit 사용 가능 → colCnt로 균등 분배
@@ -472,14 +534,20 @@ function generateTable(rows: string[][]): string {
 
   const tblId = nextTableId()
 
+  // theme.tableHeaderColor 또는 tableHeaderBold가 설정되면 첫 행 셀에 별도 charPr 사용
+  const useHeaderStyle =
+    theme.tableHeader !== theme.body || theme.tableHeaderBold
+
   const trElements = rows.map((row, rowIdx) => {
     // 부족한 셀은 빈 문자열로 채워 colCnt 맞춤
     const cells = row.length < colCnt ? [...row, ...Array(colCnt - row.length).fill("")] : row
+    const isHeaderRow = rowIdx === 0
+    const headerCharPr = isHeaderRow && useHeaderStyle ? CHAR_TABLE_HEADER : CHAR_NORMAL
     const tdElements = cells.map((cell, colIdx) => {
-      const runs = generateRuns(cell)
+      const runs = generateRuns(cell, headerCharPr)
       const p = `<hp:p paraPrIDRef="0" styleIDRef="0">${runs}</hp:p>`
       // <hp:tc> 필수 속성 + subList + cellAddr + cellSpan + cellSz + cellMargin
-      return `<hp:tc name="" header="${rowIdx === 0 ? 1 : 0}" hasMargin="0" protect="0" editable="1" dirty="0" borderFillIDRef="1">`
+      return `<hp:tc name="" header="${isHeaderRow ? 1 : 0}" hasMargin="0" protect="0" editable="1" dirty="0" borderFillIDRef="1">`
         + `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${p}</hp:subList>`
         + `<hp:cellAddr colAddr="${colIdx}" rowAddr="${rowIdx}"/>`
         + `<hp:cellSpan colSpan="1" rowSpan="1"/>`
@@ -505,7 +573,7 @@ function generateTable(rows: string[][]): string {
 
 // ─── 섹션 XML 생성 ──────────────────────────────────
 
-function blocksToSectionXml(blocks: MdBlock[]): string {
+function blocksToSectionXml(blocks: MdBlock[], theme: ResolvedTheme): string {
   const paraXmls: string[] = []
   let isFirst = true
   // 순서 있는 목록 카운터 — indent 레벨별 별도 유지. 다른 블록 만나면 해당 레벨 리셋.
@@ -539,7 +607,12 @@ function blocksToSectionXml(blocks: MdBlock[]): string {
         break
       }
       case "blockquote":
-        xml = generateParagraph(block.text || "", PARA_QUOTE)
+        // baseline 호환: quoteColor 옵션 없으면 기존처럼 CHAR_NORMAL (이탤릭 아님)
+        xml = generateParagraph(
+          block.text || "",
+          PARA_QUOTE,
+          theme.hasQuoteOption ? CHAR_QUOTE : CHAR_NORMAL,
+        )
         break
       case "list_item": {
         const indent = block.indent || 0
@@ -576,7 +649,7 @@ function blocksToSectionXml(blocks: MdBlock[]): string {
             paraXmls.push(`<hp:p paraPrIDRef="0" styleIDRef="0">${secRun}</hp:p>`)
             isFirst = false
           }
-          xml = generateTable(block.rows)
+          xml = generateTable(block.rows, theme)
         }
         break
     }
