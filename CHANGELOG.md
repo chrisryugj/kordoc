@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`markdownToHwpx` 테마 옵션** — 헤딩/본문/인용/표 헤더 셀의 텍스트 색상과 표 헤더 굵기를 옵션으로 지정 가능. 새 export 타입 `HwpxTheme`, `MarkdownToHwpxOptions`. 옵션 미지정 시 기존과 동일하게 검정으로 출력 (baseline 백워드 호환).
+  - 동기: 외부 사용자가 `markdownToHwpx`로 계약서·검토 보고서 등 시각 차별화가 필요한 문서를 생성할 때, 현재 모든 텍스트가 검정이라 헤딩 위계가 흐려지는 한계. (scopeguard-kr 백엔드 치환 PoC에서 도출된 필요.)
+  - charProperties `itemCnt` 9 → 11 (표 헤더 셀용 charPr id=9, 인용문용 charPr id=10 신설). HWPX 1.4 호환 유지.
+
 ## [2.7.2] - 2026-05-16 — HWPX 양식 채우기 빈 셀 버그픽스
 
 ### Fixed

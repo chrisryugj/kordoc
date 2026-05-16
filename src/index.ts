@@ -308,6 +308,7 @@ export type { FillResult } from "./form/filler.js"
 export { fillHwpx } from "./form/filler-hwpx.js"
 export type { HwpxFillResult } from "./form/filler-hwpx.js"
 export { markdownToHwpx } from "./hwpx/generator.js"
+export type { HwpxTheme, MarkdownToHwpxOptions } from "./hwpx/generator.js"
 export { renderHtml, markdownToPdf, blocksToPdf } from "./print/renderer.js"
 export type { PrintPreset, PrintOptions, PageMargin } from "./print/renderer.js"
 
