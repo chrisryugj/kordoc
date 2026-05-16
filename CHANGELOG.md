@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 2026-05-16 — HWPX 양식 채우기 빈 셀 버그픽스
+
+### Fixed
+
+- **`fillHwpx`(`hwpx-preserve` 모드) 빈 셀 미삽입 버그** (#29, #30) — 한컴오피스에서 HWP→HWPX로 변환한 양식의 빈 값 셀(`<hp:run>`이 `<hp:t>` 자식 없이 self-closing 형태)에 값이 삽입되지 않으면서 `filled`/`matched` 결과에는 성공으로 보고되던 false-positive 수정. `setRunText`가 `<hp:t>` 없는 run을 만나면 부모 run의 prefix/namespace를 따라 새로 `<hp:t>`를 생성해 텍스트 삽입. 빈 문자열 호출(run 비우기) 케이스와의 호환성 유지를 위한 가드 포함.
+- 회귀 테스트 추가 — self-closing `<hp:run/>`을 가진 minimal HWPX로 실제 XML 삽입까지 검증 (`tests/filler-hwpx.test.ts`).
+
+기여: @amnotyoung — 정확한 진단과 임시 우회법(빈 셀에 placeholder 텍스트 입력 후 저장)까지 정리해주셔서 큰 도움이 되었습니다.
+
 ## [2.7.1] - 2026-05-09 — HWP 3.0 (구버전) 파서
 
 ### Added — HWP 3.0 (한글 워드프로세서 3.x) 텍스트 추출 파서
