@@ -342,7 +342,23 @@ function setRunText(runEl: Element, text: string): void {
     for (let i = 1; i < tElements.length; i++) {
       clearChildren(tElements[i])
     }
+    return
   }
+
+  // <hp:t>가 없는 빈 run — 한컴오피스가 HWP→HWPX 변환 시 빈 셀의 run을
+  // self-closing(<hp:run charPrIDRef="..."/>)으로 만들면서 <hp:t>를 생략한다.
+  // 이 경우 부모 run의 prefix/namespace를 따라 새로 생성해 추가한다.
+  // 빈 문자열이면 굳이 노드를 만들지 않는다(다른 호출부에서 run을 비울 때 사용).
+  if (!text) return
+
+  const doc = runEl.ownerDocument!
+  const ns = runEl.namespaceURI
+  const qualifiedName = runEl.prefix ? `${runEl.prefix}:t` : "t"
+  const tEl = ns
+    ? doc.createElementNS(ns, qualifiedName)
+    : doc.createElement(qualifiedName)
+  tEl.appendChild(doc.createTextNode(text))
+  runEl.appendChild(tEl)
 }
 
 /** 요소의 모든 자식 노드 제거 */
