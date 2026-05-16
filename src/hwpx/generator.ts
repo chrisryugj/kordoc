@@ -42,11 +42,20 @@ const PARA_LIST = 7
 
 /** HWPX 생성 시 적용할 시각 테마 (모두 선택) */
 export interface HwpxTheme {
-  /** 헤딩 레벨별 텍스트 색상 (1~6). 미지정 시 검정 */
-  headingColors?: Partial<Record<1 | 2 | 3 | 4 | 5 | 6, string>>
+  /**
+   * 헤딩 레벨별 텍스트 색상. 미지정 시 검정.
+   * 현재 charPr 매핑은 h1/h2/h3/h4 4단계 (h5, h6은 h4와 같은 charPr 공유)이므로
+   * 키는 1~4만 받는다.
+   */
+  headingColors?: Partial<Record<1 | 2 | 3 | 4, string>>
   /** 본문 단락 텍스트 색상. 미지정 시 검정 */
   bodyColor?: string
-  /** 인용문 텍스트 색상. 미지정 시 검정 */
+  /**
+   * 인용문 텍스트 색상. 미지정 시 검정.
+   *
+   * 주의: 이 옵션을 지정하면 인용문이 별도 charPr(이탤릭)로 렌더링된다.
+   * 미지정 시 기존 동작 그대로 본문 charPr로 렌더링 (이탤릭 아님).
+   */
   quoteColor?: string
   /** 표 첫 행 텍스트 색상. 미지정 시 본문과 동일 */
   tableHeaderColor?: string
@@ -69,6 +78,8 @@ function resolveTheme(theme?: HwpxTheme) {
     h4: theme?.headingColors?.[4] ?? theme?.headingColors?.[3] ?? DEFAULT_TEXT_COLOR,
     body: theme?.bodyColor ?? DEFAULT_TEXT_COLOR,
     quote: theme?.quoteColor ?? DEFAULT_TEXT_COLOR,
+    /** quoteColor가 명시되었는지 — blockquote charPr 분기에 사용 (baseline 호환) */
+    hasQuoteOption: theme?.quoteColor !== undefined,
     tableHeader: theme?.tableHeaderColor ?? theme?.bodyColor ?? DEFAULT_TEXT_COLOR,
     tableHeaderBold: !!theme?.tableHeaderBold,
   }
@@ -596,7 +607,12 @@ function blocksToSectionXml(blocks: MdBlock[], theme: ResolvedTheme): string {
         break
       }
       case "blockquote":
-        xml = generateParagraph(block.text || "", PARA_QUOTE, CHAR_QUOTE)
+        // baseline 호환: quoteColor 옵션 없으면 기존처럼 CHAR_NORMAL (이탤릭 아님)
+        xml = generateParagraph(
+          block.text || "",
+          PARA_QUOTE,
+          theme.hasQuoteOption ? CHAR_QUOTE : CHAR_NORMAL,
+        )
         break
       case "list_item": {
         const indent = block.indent || 0

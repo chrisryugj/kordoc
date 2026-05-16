@@ -40,6 +40,11 @@ async function getHeaderXml(buf) {
   return await zip.file("Contents/header.xml").async("string");
 }
 
+async function getSectionXml(buf) {
+  const zip = await JSZip.loadAsync(Buffer.from(buf));
+  return await zip.file("Contents/section0.xml").async("string");
+}
+
 async function main() {
   // 1) 옵션 없음 → 모든 textColor 검정 (백워드 호환)
   const plain = await markdownToHwpx(sampleMd);
@@ -49,6 +54,26 @@ async function main() {
   console.log(`[baseline] textColor count=${plainColors.length}, all #000000? ${plainAllBlack}`);
   if (!plainAllBlack) {
     console.error("FAIL: baseline should be all black");
+    process.exit(1);
+  }
+
+  // 1-b) 회귀 가드: 옵션 없을 때 blockquote는 CHAR_QUOTE(id=10)를 안 써야 함
+  //      (CHAR_QUOTE는 italic이므로 baseline에 적용되면 시각 회귀)
+  const plainSection = await getSectionXml(plain);
+  const usesQuoteCharPrInBaseline = plainSection.includes('charPrIDRef="10"');
+  console.log(`[baseline] blockquote avoids CHAR_QUOTE? ${!usesQuoteCharPrInBaseline}`);
+  if (usesQuoteCharPrInBaseline) {
+    console.error("FAIL: baseline must not use CHAR_QUOTE (would force italic)");
+    process.exit(1);
+  }
+
+  // 1-c) quoteColor 옵션 명시 시엔 CHAR_QUOTE 적용되어야 함
+  const withQuote = await markdownToHwpx(sampleMd, { theme: { quoteColor: "#5C667A" } });
+  const withQuoteSection = await getSectionXml(withQuote);
+  const usesQuoteCharPrWhenSet = withQuoteSection.includes('charPrIDRef="10"');
+  console.log(`[quoteColor set] blockquote uses CHAR_QUOTE? ${usesQuoteCharPrWhenSet}`);
+  if (!usesQuoteCharPrWhenSet) {
+    console.error("FAIL: quoteColor option should activate CHAR_QUOTE");
     process.exit(1);
   }
 
