@@ -5,13 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.8.0] - 2026-05-17 — `markdownToHwpx` 테마 옵션
 
 ### Added
 
-- **`markdownToHwpx` 테마 옵션** — 헤딩/본문/인용/표 헤더 셀의 텍스트 색상과 표 헤더 굵기를 옵션으로 지정 가능. 새 export 타입 `HwpxTheme`, `MarkdownToHwpxOptions`. 옵션 미지정 시 기존과 동일하게 검정으로 출력 (baseline 백워드 호환).
+- **`markdownToHwpx` 테마 옵션** (#31) — 헤딩/본문/인용/표 헤더 셀의 텍스트 색상과 표 헤더 굵기를 옵션으로 지정 가능. 새 export 타입 `HwpxTheme`, `MarkdownToHwpxOptions`. 옵션 미지정 시 기존과 동일하게 검정으로 출력 (baseline 백워드 호환).
   - 동기: 외부 사용자가 `markdownToHwpx`로 계약서·검토 보고서 등 시각 차별화가 필요한 문서를 생성할 때, 현재 모든 텍스트가 검정이라 헤딩 위계가 흐려지는 한계. (scopeguard-kr 백엔드 치환 PoC에서 도출된 필요.)
   - charProperties `itemCnt` 9 → 11 (표 헤더 셀용 charPr id=9, 인용문용 charPr id=10 신설). HWPX 1.4 호환 유지.
+  - `HwpxTheme.headingColors` 키는 1..4만 받음 — 현재 charPr 매핑이 h1/h2/h3/h4 4단계 (h5, h6은 h4와 charPr 공유). 향후 h5/h6 분리 시 확장 예정.
+  - `theme.quoteColor` 명시 시에만 인용문이 CHAR_QUOTE(이탤릭) 사용. 미지정 시엔 기존처럼 본문 charPr 사용 (시각 회귀 없음).
+
+```ts
+import { markdownToHwpx } from "kordoc"
+
+const buf = await markdownToHwpx(md, {
+  theme: {
+    headingColors: { 1: "#17365D", 2: "#1F4E79", 3: "#2E74B5" },
+    bodyColor: "#222222",
+    quoteColor: "#5C667A",
+    tableHeaderColor: "#1F4E79",
+    tableHeaderBold: true,
+  }
+})
+```
 
 ## [2.7.2] - 2026-05-16 — HWPX 양식 채우기 빈 셀 버그픽스
 
