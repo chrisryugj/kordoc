@@ -42,8 +42,10 @@ function sectionPathsFromManifest(xml: string): string[] {
 
 function normalizeSectionHref(href: string): string | null {
   if (!href) return null
-  let normalized = href.replace(/^\/+/, "")
-  if (normalized.includes("..") || normalized.startsWith("/")) return null
+  let normalized = href.replace(/\\/g, "/").replace(/^\/+/, "")
+  if (normalized.includes("\x00")) return null
+  if (/^[A-Za-z]:/.test(normalized)) return null
+  if (normalized.split("/").some(s => s === "..")) return null
   if (/^[Ss]ection\d+\.xml$/.test(normalized)) normalized = "Contents/" + normalized
   return /(?:^|\/)[Ss]ection\d+\.xml$/.test(normalized) ? normalized : null
 }
