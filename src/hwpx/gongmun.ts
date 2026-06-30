@@ -147,6 +147,30 @@ export function reportMarker(depth: number): string {
   return REPORT_BULLETS[Math.min(depth, REPORT_BULLETS.length - 1)]
 }
 
+// 전각(全角) 부호 — 한글 1자 폭(=bodyHeight)으로 렌더되는 항목부호 문자.
+// 원문자(①~⑳, ㉮~㉻)·도형부호(□ ○ 등)·아래아(ㆍ). 한글 음절은 정규식으로 별도 판정.
+const MARKER_FULLWIDTH =
+  "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉮㉯㉰㉱㉲㉳㉴㉵㉶㉷㉸㉹㉺㉻□○◦▪◇△▶ㆍ"
+
+/**
+ * 항목부호 문자열의 실제 렌더 폭(HWPUNIT) 근사 + 부호와 내용 사이 1타.
+ * 내어쓰기(둘째 줄 정렬)의 기준값이다 — 실제 한컴 공문서를 디코드해 보면 |intent|가
+ * 부호의 실제 폭과 같아야 둘째 줄이 첫 줄 내용 첫 글자에 맞는다. 부호마다 폭이 달라
+ * (예: '1.'은 좁고 '가.'는 넓음) 고정값으로는 정렬을 맞출 수 없다.
+ * 전각(한글·원문자·도형부호)=bodyHeight, 반각(숫자·영문)=절반, 온점/쉼표·괄호는 더 좁게.
+ */
+export function markerWidth(marker: string, bodyHeight: number): number {
+  const ta = bodyHeight / 2 // 1타 = 반각 1자 폭
+  let w = 0
+  for (const c of marker) {
+    if (/[가-힣]/.test(c) || MARKER_FULLWIDTH.includes(c)) w += bodyHeight
+    else if (c === "." || c === ",") w += Math.round(bodyHeight * 0.25)
+    else if (c === "(" || c === ")") w += Math.round(bodyHeight * 0.45)
+    else w += Math.round(ta) // 숫자·영문 등 반각
+  }
+  return Math.round(w + ta) // +1타(부호와 내용 사이 간격)
+}
+
 // ─── 단계별 들여쓰기(left/내어쓰기 indent) 계산 ──────
 
 export interface LevelIndent {
@@ -161,20 +185,19 @@ export interface LevelIndent {
 
 /**
  * depth(0~)별 들여쓰기 계산. (한컴 OWPML 실측 모델)
- * - 1타 = bodyHeight/2 HWPUNIT (1pt≈100 HWPUNIT, 한글 1자=2타=bodyHeight)
- * - left = depth × 2타 (단계마다 한 글자씩 누적 — 첫 줄 부호 위치)
- * - intent = -(부호폭 + 1타) (음수 내어쓰기 → 둘째 줄이 left+|intent| = 내용 첫 글자에 정렬)
+ * - left = depth × bodyHeight (단계마다 한글 1자=2타씩 누적 — 첫 줄 부호 위치)
+ * - intent = -(단계 대표 부호의 실제 렌더폭) (음수 내어쓰기 → 둘째 줄이
+ *   left+|intent| = 첫 줄 내용 첫 글자에 정렬). 부호폭은 markerWidth로 산출하므로
+ *   '1.'(좁음)·'가.'(넓음)이 각각 자기 폭만큼만 내어써진다(실측 한컴 공문서와 동일).
  */
 export function levelIndent(
   depth: number,
   bodyHeight: number,
   numbering: GongmunNumbering,
 ): LevelIndent {
-  const ta = bodyHeight / 2 // 1타
-  // 부호폭(타): standard 5·6단계((1)/(가))만 3타, 그 외 2타. report는 전부 2타.
-  const markerTa = numbering === "standard" && (depth === 4 || depth === 5) ? 3 : 2
-  const hang = Math.round((markerTa + 1) * ta)
-  return { left: Math.round(depth * bodyHeight), indent: -hang }
+  // 같은 단계는 부호 종류가 일정하므로 대표 부호(순번 0)의 폭으로 내어쓰기를 정한다.
+  const marker = numbering === "report" ? reportMarker(depth) : standardMarker(depth, 0)
+  return { left: Math.round(depth * bodyHeight), indent: -markerWidth(marker, bodyHeight) }
 }
 
 // ─── 단일 형제 부호 생략(2-pass) ─────────────────────

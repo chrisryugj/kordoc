@@ -10,6 +10,7 @@ import {
   circledHangul,
   standardMarker,
   reportMarker,
+  markerWidth,
   levelIndent,
   computeSuppression,
   resolveGongmun,
@@ -58,18 +59,29 @@ describe("gongmun 순수 로직", () => {
     assert.equal(reportMarker(3), "ㆍ")
   })
 
-  it("levelIndent — left=누적 깊이, intent 음수=내어쓰기(둘째 줄 정렬)", () => {
+  it("markerWidth — 전각·반각·문장부호 폭 합산 + 1타(부호-내용 간격)", () => {
+    const body = 1500 // 15pt
+    assert.equal(markerWidth("1.", body), 1875) // 숫자750 + 온점375 + 1타750
+    assert.equal(markerWidth("가.", body), 2625) // 한글1500 + 온점375 + 1타750
+    assert.equal(markerWidth("①", body), 2250) // 원문자1500 + 1타750
+    // 한글 부호가 숫자 부호보다 넓다(고정값으로는 못 맞추는 차이)
+    assert.ok(markerWidth("가.", body) > markerWidth("1.", body))
+  })
+
+  it("levelIndent — left=누적 깊이, intent=부호 실제폭만큼 내어쓰기", () => {
     const body = 1500 // 15pt
     const d0 = levelIndent(0, body, "standard")
     // depth0: 첫 줄(부호) = left = 0(왼쪽 기본선), 둘째 줄 = left+|intent|
     assert.equal(d0.left, 0)
     assert.ok(d0.indent < 0, "내어쓰기는 음수 intent")
-    // 둘째 줄 정렬 위치 = 내용 첫 글자 ≈ 부호(2타)+1타 = 3타
-    assert.equal(d0.left - d0.indent, Math.round(3 * (body / 2)))
+    // 둘째 줄 정렬 위치 = 부호 '1.'의 실제 렌더폭(markerWidth)
+    assert.equal(d0.left - d0.indent, markerWidth("1.", body))
     const d1 = levelIndent(1, body, "standard")
     // depth1 첫 줄 = 2타(=body) 위치
     assert.equal(d1.left, body)
-    // 5단계((1)=3글자)는 더 깊은 내어쓰기
+    // 부호마다 폭이 다르다 — '가.'(한글)는 '1.'(숫자)보다 넓게 내어쓴다
+    assert.ok(Math.abs(d1.indent) > Math.abs(d0.indent))
+    // 괄호 부호 '(1)'(5단계)도 '1.'보다 깊은 내어쓰기
     const d4 = levelIndent(4, body, "standard")
     assert.ok(Math.abs(d4.indent) > Math.abs(d0.indent))
   })

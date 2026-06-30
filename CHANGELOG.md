@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.4] - 2026-06-30
+
+### Fixed
+
+- **공문서 항목 둘째 줄 내어쓰기 정렬** — 여러 줄 항목에서 둘째 줄이 첫 줄 내용
+  첫 글자보다 더 들여써지던 문제 수정. 내어쓰기(`intent`)를 고정값(3타=2250)이
+  아니라 **단계 대표 부호의 실제 렌더폭**으로 산출한다. 부호마다 폭이 달라
+  (`1.`은 좁고 `가.`는 한글이라 넓음) 고정값으로는 양쪽을 동시에 맞출 수 없었다.
+  실제 한컴 공문서(서울 정보소통광장 결재문서)를 디코드해 `|intent|`가 부호의
+  실제 폭과 같을 때 둘째 줄이 첫 줄 내용에 정렬됨을 확인.
+  - `markerWidth(marker, bodyHeight)` 추가 — 전각(한글·원문자·도형부호)=bodyHeight,
+    반각(숫자·영문)=절반, 온점/쉼표·괄호는 더 좁게 + 부호·내용 1타 간격.
+  - `levelIndent`의 `intent`를 `-markerWidth(대표 부호)`로. 단계별 실측 폭:
+    `1.`=−1875, `가.`=−2625, `1)`=−2175, `(1)`=−2850, `①`=−2250 (15pt 기준).
+  - `standard`·`report` 두 numbering 모두 적용. `left`(누적 깊이)는 변경 없음.
+
 ## [3.5.3] - 2026-06-30
 
 ### Improved

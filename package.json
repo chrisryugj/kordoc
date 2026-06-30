@@ -1,6 +1,6 @@
 {
   "name": "kordoc",
-  "version": "3.5.3",
+  "version": "3.5.4",
   "description": "Parse Korean documents (HWP3, HWP, HWPX, HWPML, PDF, XLS, XLSX, DOCX) to Markdown + Print Renderer",
   "type": "module",
   "exports": {
