@@ -226,4 +226,17 @@ describe("DOCX 파서", () => {
     assert.ok(result.markdown.includes("성명"), `markdown: ${result.markdown}`)
     assert.ok(result.markdown.includes("홍길동"), `markdown: ${result.markdown}`)
   })
+
+  it("깨진 styles.xml — 무시 대신 PARTIAL_PARSE 경고 + 본문 파싱 계속", async () => {
+    const buffer = await createDocx(
+      `<w:p><w:r><w:t>본문은 살아있다</w:t></w:r></w:p>`,
+      { styles: `<w:styles xmlns:w="x"><w:style` },
+    )
+    const result = await parse(buffer)
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.ok(result.markdown.includes("본문은 살아있다"), "본문 파싱 계속")
+    assert.ok(result.warnings?.some(w => w.code === "PARTIAL_PARSE" && w.message.includes("styles.xml")),
+      `경고 목록: ${JSON.stringify(result.warnings)}`)
+  })
 })

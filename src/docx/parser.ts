@@ -490,6 +490,7 @@ async function extractImages(
   zip: JSZip,
   rels: Map<string, string>,
   doc: Document,
+  warnings: ParseWarning[],
 ): Promise<{ blocks: IRBlock[]; images: ExtractedImage[] }> {
   const blocks: IRBlock[] = []
   const images: ExtractedImage[] = []
@@ -524,7 +525,12 @@ async function extractImages(
         const filename = `image_${String(imgIdx).padStart(3, "0")}.${ext}`
         images.push({ filename, data, mimeType: mimeMap[ext] ?? "image/png" })
         blocks.push({ type: "image", text: filename })
-      } catch { /* 이미지 실패 무시 */ }
+      } catch (err) {
+        warnings.push({
+          code: "SKIPPED_IMAGE",
+          message: `DOCX 이미지 추출 실패 (${imgPath}): ${err instanceof Error ? err.message : String(err)}`,
+        })
+      }
     }
   }
   return { blocks, images }
@@ -561,7 +567,12 @@ export async function parseDocxDocument(
   if (stylesFile) {
     try {
       styles = parseStyles(await stylesFile.async("text"))
-    } catch { /* 스타일 실패 무시 */ }
+    } catch (err) {
+      warnings.push({
+        code: "PARTIAL_PARSE",
+        message: `DOCX 스타일(styles.xml) 파싱 실패 — 기본 스타일로 계속: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
   }
 
   // 3. 번호 매기기 로드
@@ -570,7 +581,12 @@ export async function parseDocxDocument(
   if (numFile) {
     try {
       numbering = parseNumbering(await numFile.async("text"))
-    } catch { /* 번호 매기기 실패 무시 */ }
+    } catch (err) {
+      warnings.push({
+        code: "PARTIAL_PARSE",
+        message: `DOCX 번호매기기(numbering.xml) 파싱 실패 — 목록 번호 생략: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
   }
 
   // 4. 각주 로드
@@ -579,7 +595,12 @@ export async function parseDocxDocument(
   if (fnFile) {
     try {
       footnotes = parseFootnotes(await fnFile.async("text"))
-    } catch { /* 각주 실패 무시 */ }
+    } catch (err) {
+      warnings.push({
+        code: "PARTIAL_PARSE",
+        message: `DOCX 각주(footnotes.xml) 파싱 실패 — 각주 생략: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
   }
 
   // 5. 본문 파싱
@@ -608,7 +629,7 @@ export async function parseDocxDocument(
   }
 
   // 6. 이미지 추출
-  const { blocks: imgBlocks, images } = await extractImages(zip, rels, doc)
+  const { blocks: imgBlocks, images } = await extractImages(zip, rels, doc, warnings)
   // 이미지 블록은 본문에 이미 포함되어야 하지만, 누락된 것 추가
   // (drawing이 paragraph 내에 있으므로 대부분 이미 포함됨)
 
@@ -630,7 +651,12 @@ export async function parseDocxDocument(
       if (created) metadata.createdAt = created
       const modified = getFirst("dcterms:modified")
       if (modified) metadata.modifiedAt = modified
-    } catch { /* 메타데이터 실패 무시 */ }
+    } catch (err) {
+      warnings.push({
+        code: "PARTIAL_PARSE",
+        message: `DOCX 메타데이터(core.xml) 파싱 실패: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
   }
 
   // 8. 아웃라인
