@@ -52,6 +52,26 @@ async function loadPdfjs() {
   return pdfjsMod
 }
 
+// CID 폰트 자산 — 파서와 동일 조건으로 추출해야 참조가 대칭 (없으면 CMap 필요
+// 폰트 텍스트가 참조에서도 소실되어 해당 구간이 채점에서 빠진다)
+let pdfjsAssets = null
+async function resolvePdfjsAssets() {
+  if (pdfjsAssets !== null) return pdfjsAssets
+  try {
+    const { createRequire } = await import("node:module")
+    const { dirname, join } = await import("node:path")
+    const pkgDir = dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"))
+    pdfjsAssets = {
+      cMapUrl: join(pkgDir, "cmaps") + "/",
+      cMapPacked: true,
+      standardFontDataUrl: join(pkgDir, "standard_fonts") + "/",
+    }
+  } catch {
+    pdfjsAssets = {}
+  }
+  return pdfjsAssets
+}
+
 /** pdfjs getTextContent raw — 페이지별 텍스트 */
 async function pdfjsPages(buffer) {
   const pdfjs = await loadPdfjs()
@@ -65,6 +85,7 @@ async function pdfjsPages(buffer) {
       isEvalSupported: false,
       useSystemFonts: true,
       verbosity: 0,
+      ...(await resolvePdfjsAssets()),
     }).promise
   } catch {
     return null

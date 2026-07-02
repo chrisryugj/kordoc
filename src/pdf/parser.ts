@@ -24,6 +24,8 @@ import { applyFormulaOcr } from "./formula-ocr.js"
 // polyfill 먼저 (ES 모듈 호이스팅되므로 별도 파일 필수)
 import "./polyfill.js"
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
 
 // 기존 공개 API 경로 유지 — 이동된 함수의 re-export
 export { mergeCrossPageTables }
@@ -39,6 +41,18 @@ const MAX_TOTAL_TEXT = 100 * 1024 * 1024 // 100MB
 /** PDF 로딩 타임아웃 (30초) — 악성/대용량 PDF 무한 대기 방지 */
 const PDF_LOAD_TIMEOUT_MS = 30_000
 
+// CID 폰트 자산(cmaps/standard_fonts) 경로 — 미지정이면 CMap 필요 폰트의 텍스트가
+// "loadFont failed: cMapUrl 필요" 경고와 함께 통째로 소실된다 (성과계획서류 숫자 전멸).
+// pdfjs-dist 패키지 위치에서 해석하고, 실패 시 미지정(기존 동작) 유지.
+const pdfjsAssets: { cMapUrl?: string; cMapPacked?: boolean; standardFontDataUrl?: string } = {}
+try {
+  const _require = createRequire(import.meta.url)
+  const pkgDir = dirname(_require.resolve("pdfjs-dist/package.json"))
+  pdfjsAssets.cMapUrl = join(pkgDir, "cmaps") + "/"
+  pdfjsAssets.cMapPacked = true
+  pdfjsAssets.standardFontDataUrl = join(pkgDir, "standard_fonts") + "/"
+} catch { /* optional dep — 경로 해석 실패 시 cMap 없이 진행 */ }
+
 /** getDocument + 타임아웃 래퍼 */
 async function loadPdfWithTimeout(buffer: ArrayBuffer) {
   const loadingTask = getDocument({
@@ -46,6 +60,7 @@ async function loadPdfWithTimeout(buffer: ArrayBuffer) {
     useSystemFonts: true,
     disableFontFace: true,
     isEvalSupported: false,
+    ...pdfjsAssets,
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
