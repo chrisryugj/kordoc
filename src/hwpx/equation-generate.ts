@@ -321,17 +321,25 @@ interface EquationMetrics {
 }
 
 function estimateEquationMetrics(script: string): EquationMetrics {
+  const metricScript = script.replace(/"[^"]*"/g, " ")
   const cleaned = script.replace(/[{}\\^_]/g, "").replace(/\s+/g, " ").trim()
   const width = Math.min(Math.max(cleaned.length, 5) * 700 + 2000, 40000)
   const rowCount = Math.max(1, (script.match(/#/g) ?? []).length + 1)
 
-  if (/\bmatrix\b|#/.test(script)) {
+  if (/\bmatrix\b|#/.test(metricScript)) {
     if (rowCount >= 4) return { width, height: 5500, baseline: 55 }
     if (rowCount === 3) return { width, height: 4500, baseline: 60 }
     return { width, height: 3260, baseline: 63 }
   }
-  if (/\bover\b|\broot\b|\bsqrt\b/.test(script)) return { width, height: 3010, baseline: 69 }
+  if (/\bover\b|\broot\b|\bsqrt\b/.test(metricScript)) return { width, height: 3010, baseline: 69 }
+  if (/\b(?:int|dint|tint|oint|sum|prod|coprod|lim|liminf|limsup|bigcup|bigcap)\b/.test(metricScript)) {
+    return { width, height: 3010, baseline: 69 }
+  }
   return { width, height: 1450, baseline: 71 }
+}
+
+function estimateEquationLineHeight(metrics: EquationMetrics): number {
+  return metrics.height + Math.max(700, Math.round(metrics.height * 0.2))
 }
 
 export function generateEquationXml(script: string, zOrder: number = 0): string {
@@ -353,8 +361,11 @@ export function generateEquationXml(script: string, zOrder: number = 0): string 
 
 export function generateEquationParagraph(input: string, zOrder: number = 0): string {
   const script = latexLikeToEqEdit(input)
-  // 다른 생성 문단과 같은 최소 셸 — lineseg/고정 id 없이 한컴 재계산에 맡긴다
-  // (gen-table.ts 표 래핑과 동일 규약)
+  const metrics = estimateEquationMetrics(script)
+  const lineHeight = estimateEquationLineHeight(metrics)
   return `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0">` +
-    `<hp:run charPrIDRef="${CHAR_NORMAL}">${generateEquationXml(script, zOrder)}</hp:run></hp:p>`
+    `<hp:run charPrIDRef="${CHAR_NORMAL}">${generateEquationXml(script, zOrder)}<hp:t/></hp:run>` +
+    `<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="${lineHeight}" textheight="${lineHeight}" ` +
+    `baseline="${Math.max(lineHeight - 938, 200)}" spacing="600" horzpos="0" horzsize="42520" flags="393216"/>` +
+    `</hp:linesegarray></hp:p>`
 }

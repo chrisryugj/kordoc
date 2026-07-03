@@ -4,7 +4,7 @@ import JSZip from "jszip"
 import { markdownToHwpx, parseHwpx } from "../src/index.js"
 import {
   COMMAND_MAP, ACCENT_COMMANDS,
-  generateEquationXml, latexLikeToEqEdit, quoteReservedKeywords,
+  generateEquationParagraph, generateEquationXml, latexLikeToEqEdit, quoteReservedKeywords,
 } from "../src/hwpx/equation-generate.js"
 import { hmlToLatex } from "../src/hwpx/equation.js"
 import { parseMarkdownToBlocks } from "../src/hwpx/md-runs.js"
@@ -193,6 +193,7 @@ describe("generateEquationXml", () => {
     assert.ok(xml.includes('<hp:equation id="2000000004" zOrder="3" numberingType="EQUATION"'))
     assert.ok(xml.includes('version="Equation Version 60"'))
     assert.ok(xml.includes('font="HYhwpEQ"'))
+    assert.ok(xml.includes('affectLSpacing="0"'))
     assert.ok(xml.includes("<hp:shapeComment>수식입니다.</hp:shapeComment>"))
     assert.ok(xml.includes("<hp:script>{a} over {b}</hp:script>"))
   })
@@ -200,6 +201,43 @@ describe("generateEquationXml", () => {
   it("<hp:script> 내용을 XML-safe하게 escape한다", () => {
     const xml = generateEquationXml("x < y & z > w")
     assert.ok(xml.includes("<hp:script>x &lt; y &amp; z &gt; w</hp:script>"))
+  })
+
+  it("적분/극한처럼 위아래 limit가 붙는 연산자는 큰 수식 높이를 예약한다", () => {
+    const integral = generateEquationXml("int _{a} ^{b} f(x) dx")
+    const limit = generateEquationXml("lim _{x -> 0} f(x)")
+
+    assert.ok(integral.includes('baseLine="69"'))
+    assert.ok(integral.includes('height="3010"'))
+    assert.ok(limit.includes('baseLine="69"'))
+    assert.ok(limit.includes('height="3010"'))
+  })
+
+  it("따옴표 처리된 리터럴 예약어는 tall operator로 오인하지 않는다", () => {
+    const xml = generateEquationXml('T _{"int"}')
+    assert.ok(xml.includes('baseLine="71"'))
+    assert.ok(xml.includes('height="1450"'))
+  })
+})
+
+describe("generateEquationParagraph", () => {
+  it("큰 연산자 수식은 shape보다 큰 lineseg 높이를 예약한다", () => {
+    const xml = generateEquationParagraph("\\int_a^b f(x) dx", 1)
+    const shapeHeight = Number(/<hp:sz[^>]*height="(\d+)"/.exec(xml)?.[1] ?? "0")
+    const textHeight = Number(/<hp:lineseg[^>]*textheight="(\d+)"/.exec(xml)?.[1] ?? "0")
+
+    assert.ok(shapeHeight >= 3000, xml)
+    assert.ok(textHeight >= shapeHeight + 700, xml)
+    assert.ok(!/<hp:p[^>]*\sid=/.test(xml), "문단 고정 id는 추가하지 않는다")
+  })
+
+  it("행렬 수식은 여러 행을 담을 수 있는 lineseg 높이를 예약한다", () => {
+    const xml = generateEquationParagraph("\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}", 1)
+    const shapeHeight = Number(/<hp:sz[^>]*height="(\d+)"/.exec(xml)?.[1] ?? "0")
+    const textHeight = Number(/<hp:lineseg[^>]*textheight="(\d+)"/.exec(xml)?.[1] ?? "0")
+
+    assert.ok(shapeHeight >= 3260, xml)
+    assert.ok(textHeight > shapeHeight, xml)
   })
 })
 
@@ -214,11 +252,12 @@ describe("markdownToHwpx equation generation", () => {
     assert.equal((section.match(/<hp:secPr/g) ?? []).length, 1, "secPr는 1회만 생성")
   })
 
-  it("수식 문단은 다른 생성 문단과 같은 최소 셸 — lineseg/고정 id 없음", async () => {
+  it("수식 문단은 후행 빈 텍스트와 lineseg 높이를 가진다", async () => {
     const buf = await markdownToHwpx("$$a+b$$")
     const zip = await JSZip.loadAsync(buf)
     const section = await zip.file("Contents/section0.xml")!.async("text")
-    assert.ok(!section.includes("<hp:linesegarray"), "lineseg는 한컴 재계산에 맡긴다")
+    assert.ok(section.includes("<hp:linesegarray"), "수식 높이를 위한 lineseg를 둔다")
+    assert.ok(section.includes("<hp:t/></hp:run><hp:linesegarray>"), "수식 run 뒤 빈 텍스트 노드 유지")
   })
 
   it("수식이 첫 블록이면 secPr 전용 더미 문단 뒤에 equation 문단을 둔다", async () => {
