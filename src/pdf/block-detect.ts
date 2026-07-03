@@ -66,15 +66,15 @@ export function shouldDemoteTable(table: IRTable): boolean {
   const allCells = table.cells.flatMap(row => row.map(c => c.text.trim())).filter(Boolean)
   const allText = allCells.join(" ")
 
-  // 라벨 헤더 표 가드: 2행2열+ 전체 셀 채움 + 첫 행이 마커 없는 짧은 라벨
-  // (예: 채용분야|담당업무|우대조건) — 본문 셀의 ○/ㅇ 항목부호는 행정문서 표
-  // 관행이므로 텍스트 박스로 강등하지 않음
+  // 라벨 헤더 표 가드: 2행2열+ + 첫 행 전체가 마커 없는 짧은 라벨 + 본문에
+  // 내용 실존 (예: 채용분야|담당업무|우대조건, 성명|응시분야|비고) — 본문 셀의
+  // ○/ㅇ 항목부호와 양식 표의 빈 기입란은 행정문서 표 관행이므로 강등하지 않음
   if (table.rows >= 2 && table.cols >= 2 &&
-      allCells.length === table.rows * table.cols &&
       table.cells[0].every(c => {
         const t = c.text.trim()
         return t.length > 0 && t.length <= 12 && !/[□■◆○●▶ㅇ<>]/.test(t)
-      })) return false
+      }) &&
+      table.cells.slice(1).some(row => row.some(c => c.text.trim() !== ""))) return false
 
   // 텍스트 박스 패턴: 3행 이하 + 3열 이하 + <...> 또는 ㅇ 마커 포함
   // 공문서 "중점 추진사항" 등 요약 박스
