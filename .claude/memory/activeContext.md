@@ -29,6 +29,29 @@
   프로즈든 pdftotext 읽기순과 불일치, linearize 불가) + hampyeong −4e-5 → 리버트.
   파서 버그도 OCR도 아닌 원리적 잔여
 
+## 뷰어 통합 트랙 (2026-07-04 신설 — 대형 차기)
+
+**목표**: `src/render/`를 **순수 TS·벡터(SVG)·reflow 가능·전 한글포맷** 뷰어로 승화 =
+"유일무이한 원탑 뷰어". 상세 계획 = **`.claude/plans/next-session-viewer-unification.md`**
+(트리거 "kordoc 뷰어"). 다른 PC에서 이 트랙 이어가려면 그 파일부터 정독.
+
+- **해자 4**: 순수 TS(WASM 의존 0) / SVG 벡터(텍스트 선택·검색·무한확대 선명, canvas
+  대비 구조적 우위) / 듀얼모드(캐시재생+reflow) / 전 포맷(HWPX·HWP5/3·HWPML·IR 경유)
+- **대비 대상 claw-hwp**(DoHyun468, Claude Code 플러그인) = rhwp WASM + Canvas 브라우저,
+  `reflowLinesegs`로 stale 캐시 재계산. **뿌리(rhwp) 공유**(우리가 일부 포팅)하나 우리는
+  순수 TS·SVG·서버렌더. claw-hwp의 유일 강점(reflow)을 Tier-2로 흡수 = 원탑
+- **2-Tier**: Tier-1(캐시 재생, 있음·견고: 좌표산식·표솔버·charPr·borderFill 실측검증)
+  + **Tier-2 reflow 엔진(신규 핵심)** — 캐시 없/stale(markdownToHwpx·에이전트본) 시
+  paraPr·charPr·`text-metrics`(함초롬 hmtx)로 줄배치 재계산 → linesegarray 생성 → Tier-1 재사용
+- **검증 열쇠 = 자기일관성**: 한컴본 캐시 strip → reflow → Tier-1과 기하 diff. 한컴 없이
+  reflow를 진리값 대비 게이트(코퍼스 85 hwpx). 순수 TS·SVG·Tier-1 무회귀가 절대 원칙
+- **진척(v3.14.0, 다른 PC)**: Tier-1에 **다페이지 스택**(Phase 1 다페이지 완료) +
+  검색어 형광펜 + 슬롯스트림 textpos 정합 + 이미지 크롭 정정. **Tier-2 reflow(해자)는
+  아직 미착수** — 이게 남은 핵심
+- **1순위**: Phase 0(통합계획 확정 + reflow POC "성립 판정", findings.md 패턴) → **Tier-2
+  reflow 착수**(다페이지는 v3.14.0에 있으니 Phase 1 잔여는 머리말/꼬리말 소품뿐).
+  소액 백로그(A-5·hwp3)는 이 트랙 뒤로
+
 ## 직전 세션 (2026-07-03 연속 10차)
 
 미매칭 7건 인벤토리 각개 격파 — 매칭 90.28→**98.55%** (69모수 중 잔여 1 수용):
