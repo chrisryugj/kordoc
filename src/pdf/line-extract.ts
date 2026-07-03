@@ -328,6 +328,45 @@ const EDGE_INSET = 15
 const EDGE_NEAR = 10
 /** 선 교차 판정 여유 (table-grid CONNECT_TOL과 동일) */
 const EDGE_CONNECT_TOL = 5
+/** 체인 뷰: 같은 논리 괘선으로 묶는 y 허용 오차 (pt) */
+const CHAIN_Y_TOL = 1.5
+/** 체인 뷰: 콜리니어 세그먼트 연결 최대 간격 (pt) */
+const CHAIN_GAP = 3
+
+/**
+ * 체인 뷰 — 같은 y의 콜리니어 세그먼트(셀 단위로 쪼개 그은 괘선)를 논리
+ * 괘선 하나로 잇는다. closeOpenTableEdges의 끝점 정렬 판정 전용이며 물리
+ * 수평선은 수정하지 않는다 (물리 병합은 셀 배치 변질 실측으로 폐기, 9차).
+ * 근접 평행 겹줄(장식 이중선)도 한 논리 괘선으로 흡수된다.
+ */
+function chainCollinearRules(horizontals: LineSegment[]): LineSegment[] {
+  if (horizontals.length <= 1) return horizontals
+  const sorted = [...horizontals].sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1)
+  const rules: LineSegment[] = []
+  let bandStart = 0
+  const flushBand = (end: number) => {
+    const band = sorted.slice(bandStart, end).sort((a, b) => a.x1 - b.x1)
+    let cur = { ...band[0] }
+    for (let i = 1; i < band.length; i++) {
+      const seg = band[i]
+      if (seg.x1 - cur.x2 <= CHAIN_GAP) {
+        if (seg.x2 > cur.x2) cur.x2 = seg.x2
+        if (seg.lineWidth > cur.lineWidth) cur.lineWidth = seg.lineWidth
+      } else {
+        rules.push(cur)
+        cur = { ...seg }
+      }
+    }
+    rules.push(cur)
+  }
+  for (let i = 1; i <= sorted.length; i++) {
+    if (i === sorted.length || sorted[i].y1 - sorted[bandStart].y1 > CHAIN_Y_TOL) {
+      flushBand(i)
+      bandStart = i
+    }
+  }
+  return rules
+}
 
 /**
  * 개방 변 표 테두리 합성 — 한국 행정문서 표는 좌/우 바깥 테두리를 생략하는
@@ -335,6 +374,8 @@ const EDGE_CONNECT_TOL = 5
  * 교차점(Vertex) 기반 그리드 구성은 수직선 없는 변의 열을 통째로 잃으므로,
  * 끝점이 정렬된 수평 괘선 묶음(≥3줄)에 그 묶음 괘선 2개 이상과 교차하는 내부
  * 수직선이 실존할 때에 한해 끝점 x에 가상 수직 테두리를 합성해 그리드를 닫는다.
+ * 판정은 체인 뷰(콜리니어 세그먼트를 이은 논리 괘선) 기준 — 셀 단위로 쪼개
+ * 그은 중간 괘선도 끝점 정렬 그룹에 합류한다.
  *
  * 전역 끝점 그룹핑이라 폭이 비슷한 표가 위아래로 쌓인 페이지에선 그룹 하나로
  * 뭉쳐 y-범위가 넓어지고, 가장자리에 이미 수직선이 있는 경우가 많아 발동이
@@ -347,9 +388,9 @@ export function closeOpenTableEdges(
 ): LineSegment[] {
   if (horizontals.length < EDGE_MIN_RULES) return verticals
 
-  // 1) 끝점 정렬 그룹핑 (x1·x2 모두 근접)
+  // 1) 끝점 정렬 그룹핑 (x1·x2 모두 근접) — 체인 뷰의 논리 괘선 기준
   const groups: LineSegment[][] = []
-  for (const hl of horizontals) {
+  for (const hl of chainCollinearRules(horizontals)) {
     let placed = false
     for (const g of groups) {
       if (Math.abs(g[0].x1 - hl.x1) <= EDGE_ALIGN_TOL && Math.abs(g[0].x2 - hl.x2) <= EDGE_ALIGN_TOL) {
