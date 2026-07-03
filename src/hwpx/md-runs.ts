@@ -28,7 +28,7 @@ export function buildPrvText(blocks: MdBlock[]): string {
 
 
 export interface MdBlock {
-  type: "paragraph" | "heading" | "table" | "html_table" | "code_block" | "hr" | "blockquote" | "list_item"
+  type: "paragraph" | "heading" | "table" | "html_table" | "code_block" | "equation" | "hr" | "blockquote" | "list_item"
   text?: string
   level?: number
   rows?: string[][]
@@ -47,6 +47,37 @@ export function parseMarkdownToBlocks(md: string): MdBlock[] {
 
     // 빈 줄 스킵
     if (!line.trim()) { i++; continue }
+
+    // Display math block: $$ ... $$
+    const mathStart = line.trimStart().match(/^\$\$(.*)$/)
+    if (mathStart) {
+      const first = mathStart[1]
+      const singleLine = first.match(/^(.*?)\$\$\s*$/)
+      if (singleLine) {
+        const text = singleLine[1].trim()
+        if (text) blocks.push({ type: "equation", text })
+        i++
+        continue
+      }
+
+      const mathLines: string[] = []
+      if (first.trim()) mathLines.push(first)
+      i++
+      while (i < lines.length) {
+        const end = lines[i].indexOf("$$")
+        if (end >= 0) {
+          const before = lines[i].slice(0, end)
+          if (before.trim()) mathLines.push(before)
+          i++
+          break
+        }
+        mathLines.push(lines[i])
+        i++
+      }
+      const text = mathLines.join("\n").trim()
+      if (text) blocks.push({ type: "equation", text })
+      continue
+    }
 
     // 코드블록
     const fenceMatch = line.match(/^(`{3,}|~{3,})(.*)$/)

@@ -14,6 +14,7 @@ import {
 import { type MdBlock, generateParagraph, generateRuns } from "./md-runs.js"
 import { type GongmunFitPlan, variantMapper, precomputeGongmunList } from "./gen-gongmun-fit.js"
 import { generateTable, generateHtmlTableXml } from "./gen-table.js"
+import { generateEquationParagraph } from "./equation-generate.js"
 
 // ─── 섹션 속성 (공문서 표준 여백) ────────────────────
 
@@ -99,6 +100,15 @@ export function blocksToSectionXml(
       case "code_block": {
         const codeLines = (block.text || "").split("\n")
         xml = codeLines.map(line => generateParagraph(line || " ", PARA_CODE)).join("\n  ")
+        break
+      }
+      case "equation": {
+        if (isFirst) {
+          const secRun = `<hp:run charPrIDRef="0">${generateSecPr(gongmun)}<hp:t></hp:t></hp:run>`
+          paraXmls.push(`<hp:p paraPrIDRef="0" styleIDRef="0">${secRun}</hp:p>`)
+          isFirst = false
+        }
+        xml = generateEquationParagraph(block.text || "", blockIdx)
         break
       }
       case "blockquote":
