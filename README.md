@@ -439,6 +439,11 @@ import { markdownToHwpx } from "kordoc"
 const hwpxBuffer = await markdownToHwpx("# 제목\n\n본문 텍스트\n\n| 이름 | 직급 |\n| --- | --- |\n| 홍길동 | 과장 |")
 writeFileSync("출력.hwpx", Buffer.from(hwpxBuffer))
 
+// display math block은 HWPX native 수식(<hp:equation>)으로 생성됩니다.
+// 초기 지원 범위는 \frac, \sqrt, 첨자/위첨자, Greek, 적분/극한,
+// 화살표, 관계 연산자, matrix 계열의 제한된 LaTeX-like subset입니다.
+const withEquation = await markdownToHwpx("피타고라스\n\n$$a^2 + b^2 = c^2$$")
+
 // 공문서 모드 — 항목부호 8단계 + 내어쓰기 + 공식 여백/명조 자동
 const gongmun = await markdownToHwpx("1. 추진배경\n  - 세부 항목\n2. 추진계획", {
   gongmun: { preset: "보고서" },  // official | report | plan | notice | minutes

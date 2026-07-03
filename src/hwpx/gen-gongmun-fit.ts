@@ -86,15 +86,17 @@ export function precomputeGongmunList(
   let i = 0
   while (i < blocks.length) {
     if (blocks[i].type !== "list_item") { i++; continue }
-    // 연속 run 수집 — 항목 사이에 낀 표는 run을 끊지 않는다 (공문 관행: 항목 아래
-    // 근거 표를 붙이고 다음 항목 번호가 이어짐). 표 뒤에 항목이 없으면 거기서 종료.
+    // 연속 run 수집 — 항목 사이에 낀 표/수식은 run을 끊지 않는다 (공문 관행: 항목
+    // 아래 근거 표·수식을 붙이고 다음 항목 번호가 이어짐 — 리뷰 #39 ·5).
+    // 표/수식 뒤에 항목이 없으면 거기서 종료.
+    const passThrough = (t: MdBlock["type"]) => t === "table" || t === "html_table" || t === "equation"
     const run: number[] = []
     while (i < blocks.length) {
       const t = blocks[i].type
       if (t === "list_item") { run.push(i); i++; continue }
-      if (t === "table" || t === "html_table") {
+      if (passThrough(t)) {
         let j = i + 1
-        while (j < blocks.length && (blocks[j].type === "table" || blocks[j].type === "html_table")) j++
+        while (j < blocks.length && passThrough(blocks[j].type)) j++
         if (j < blocks.length && blocks[j].type === "list_item") { i = j; continue }
       }
       break

@@ -26,7 +26,8 @@ interface MatrixMapping {
 
 // ─── convertMap (from convertMap.json) ────────────────────────────────────
 // Single-token replacements (applied to each whitespace-delimited token).
-const CONVERT_MAP: Record<string, string> = {
+// Exported for equation-generate.ts: 예약어 도출 + 전 토큰 왕복 테스트 (PR #39).
+export const CONVERT_MAP: Record<string, string> = {
   TIMES: "\\times", times: "\\times",
   LEFT: "\\left", RIGHT: "\\right",
   under: "\\underline",
@@ -42,7 +43,8 @@ const CONVERT_MAP: Record<string, string> = {
   "<<": "\\ll", ">>": "\\gg", "<<<": "\\lll", ">>>": "\\ggg",
   PREC: "\\prec", SUCC: "\\succ",
   UPLUS: "\\uplus",
-  "±": "\\pm", "-+": "\\mp", "÷": "\\div",
+  "±": "\\pm", "+-": "\\pm", "-+": "\\mp", "÷": "\\div",
+  cdot: "\\cdot",
   CIRC: "\\circ", BULLET: "\\bullet", DEG: " ^\\circ",
   AST: "\\ast", STAR: "\\bigstar", BIGCIRC: "\\bigcirc",
   EMPTYSET: "\\emptyset",
@@ -118,7 +120,7 @@ const CONVERT_MAP: Record<string, string> = {
 }
 
 // Tokens rewritten to a HULK-prefixed marker, then expanded in second passes.
-const MIDDLE_CONVERT_MAP: Record<string, string> = {
+export const MIDDLE_CONVERT_MAP: Record<string, string> = {
   matrix: "HULKMATRIX",
   pmatrix: "HULKPMATRIX",
   bmatrix: "HULKBMATRIX",
@@ -407,6 +409,13 @@ export function hmlToLatex(hmlEqStr: string): string {
     const t = tokens[i]
     if (t in CONVERT_MAP) tokens[i] = CONVERT_MAP[t]
     else if (t in MIDDLE_CONVERT_MAP) tokens[i] = MIDDLE_CONVERT_MAP[t]
+    else {
+      // EqEdit 리터럴 따옴표("int" 등 — 명령 해석 차단용) → \text{...}로 복원.
+      // 생성기(equation-generate.ts)의 \text→"..." 출력과 고정점을 이룬다.
+      // 공백 포함 다중 토큰 인용은 기존대로 통과 (토큰 단위라 식별 불가).
+      const quoted = /^"(.+)"$/.exec(t)
+      if (quoted) tokens[i] = `\\text{${quoted[1]}}`
+    }
   }
   tokens = tokens.filter(tok => tok.length !== 0)
   tokens = replaceBracket(tokens)

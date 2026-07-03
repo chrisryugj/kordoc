@@ -37,7 +37,11 @@ const docFilter = (args.find(a => a.startsWith("--doc=")) ?? "").split("=")[1] ?
 // 언이스케이프 (fwd 0.947→0.9996의 주역).
 // 잔여(수용): ④셀 내 <img> → "image" 텍스트化 (바이너리 없음) / hr → 대시 런 비대칭 /
 // fixture basic의 인라인 강조(**굵게**) 마커 소실 — IR이 블록 단위라 재출력 불가.
-const GATES = { fwdCovMicro: 0.999, bwdCovMicro: 0.998, tableExact: 0.72, cellExact: 0.99, genErrors: 0, headingErrors: 0 }
+// equationErrors: fixture $$…$$가 native 수식으로 갔다가 같은 LaTeX(공백 무시)로
+// 돌아오는지 — 코퍼스 md에 $$가 없어 게이트 무감이던 구멍 봉합 (PR #39).
+// lineErrors: lineCheck fixture의 실질 줄(정규화 ≥10자)이 왕복에서 통째로 보존되는지 —
+// 번호 뒤 불필요 줄바꿈·문장 중간 끊김 클래스 고정 (2026-07-03 법령 md 실측 후 편입).
+const GATES = { fwdCovMicro: 0.999, bwdCovMicro: 0.998, tableExact: 0.72, cellExact: 0.99, genErrors: 0, headingErrors: 0, equationErrors: 0, lineErrors: 0 }
 
 const round = (x, d = 6) => (x === null || x === undefined ? null : +x.toFixed(d))
 
@@ -97,6 +101,12 @@ const FIXTURES = [
   { name: "table-merge", md: '<table><tr><th rowspan="2">구분</th><th colspan="2">내역</th></tr><tr><td>세입</td><td>세출</td></tr><tr><td>합계</td><td>1,000</td><td>900</td></tr></table>\n' },
   { name: "mixed", md: "# 사업 개요\n\n○ 기간: 2026년 상반기\n\n| 항목 | 값 |\n| --- | --- |\n| 예산 | 1억 |\n\n마무리 문단입니다.\n" },
   { name: "gongmun", md: "수신 내부결재\n\n제목 테스트 기안\n\n1. 관련: 행정안전부 공문\n\n2. 다음과 같이 보고합니다.\n\n가. 첫째 항목\n\n나. 둘째 항목\n\n붙임 1부.  끝.\n", opts: { gongmun: { preset: "기안문" } } },
+  // 수식 왕복 무결성 게이트 — display math → native <hp:equation> → 인라인 $…$ 재파싱.
+  // 고정점 형태(명시적 중괄호·\leq 등 정규 명령)로 작성 — 별칭 정규화까지 요구하지 않는다.
+  { name: "equation", md: "수식 검증 문단.\n\n$$a \\pm b \\cdot c = \\frac{x}{y}$$\n\n중간 문단.\n\n$$\\sqrt{x^{2} + y^{2}} \\leq z$$\n\n$$\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$$\n\n끝 문단.\n" },
+  // 법령 문서 줄 무결성 게이트(lineCheck) — 조문 번호 뒤 분리·문장 중간 끊김 검출
+  // (2026-07-03 민원처리법 전문 왕복 실측: 228문단 빈문단 0·쪼개짐 0 — 그 구조 클래스를 고정)
+  { name: "law", lineCheck: true, md: "# 민원 처리에 관한 법률\n\n**제2조(정의)** 이 법에서 사용하는 용어의 뜻은 다음과 같다.\n\n1. \"민원\"이란 민원인이 행정기관에 대하여 처분 등 특정한 행위를 요구하는 것을 말하며, 그 종류는 다음 각 목과 같다.\n\n   가. 일반민원\n   1) 법정민원: 법령ㆍ훈령ㆍ예규ㆍ고시ㆍ자치법규 등에서 정한 일정 요건에 따라 인가ㆍ허가ㆍ승인ㆍ특허ㆍ면허 등을 신청하는 민원\n   2) 질의민원: 법령ㆍ제도ㆍ절차 등 행정업무에 관하여 행정기관의 설명이나 해석을 요구하는 민원\n\n2. \"민원인\"이란 행정기관에 민원을 제기하는 개인ㆍ법인 또는 단체를 말한다.\n\n**제4조(민원 처리 담당자의 의무와 보호)** ① 민원을 처리하는 담당자는 담당 민원을 신속ㆍ공정ㆍ친절ㆍ적법하게 처리하여야 한다. <개정 2022. 1. 11.>\n\n② 행정기관의 장은 민원 처리 담당자의 신체적ㆍ정신적 피해의 예방 및 치료 등 대통령령으로 정하는 필요한 조치를 하여야 한다. <신설 2022. 1. 11.>\n\n[제목개정 2022. 1. 11.]\n\n---\n\n> **[개정·예정] 제10조의2 (시행일: 2026. 12. 3.)**\n> ⑥항이 다음과 같이 개정됨: 「도로교통법」 인용이 변경. 그 외 본문은 동일.\n" },
 ]
 
 // ─── 메인 ──────────────────────────────────────────
@@ -134,9 +144,18 @@ for (const file of files) {
 
 // 헤딩 시퀀스 — 레벨은 min(4) 매핑 (paraPr h4가 h4~h6 겸용), 텍스트는 원문 그대로
 const headingSeq = md => [...md.matchAll(/^(#{1,6}) (.+)$/gm)].map(m => `${Math.min(m[1].length, 4)}|${m[2].trim()}`)
+// 수식 시퀀스 — 입력 $$…$$(블록)·재파싱 $…$(인라인) 양쪽을 공백 무시 LaTeX로 정규화
+const mathSeq = md => [...md.matchAll(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g)].map(m => (m[1] ?? m[2]).replace(/\s+/g, ""))
+// 줄 키 — 마크다운 장식·공백 제거 후 실질 내용만 (짧은 줄은 마커 정규화 노이즈라 제외)
+const lineKeys = md => md.split("\n").map(l => l.trim())
+  .filter(l => l && !/^[-—─*_]{3,}$/.test(l))
+  .map(l => l.replace(/[\\*_`>#|]/g, "").replace(/\s+/g, ""))
+  .filter(k => k.length >= 10)
 
 const fixtureRows = []
 let headingErrors = 0
+let equationErrors = 0
+let lineErrors = 0
 for (const f of FIXTURES) {
   try {
     const rt = await roundtrip(f.md, f.opts)
@@ -151,7 +170,19 @@ for (const f of FIXTURES) {
     const h0 = headingSeq(f.md), h1 = headingSeq(rt.m1)
     const headingOk = h0.length === h1.length && h0.every((x, i) => x === h1[i])
     if (!headingOk) headingErrors++
-    fixtureRows.push({ name: f.name, ok: true, gongmun: !!f.opts, fwdCov: round(fwd.coverage), bwdCov: round(bwd.coverage), refGrams: fwd.total, headings: { ref: h0.length, out: h1.length, ok: headingOk } })
+    // 수식 왕복 무결성 — LaTeX 내용(공백 무시) 시퀀스 완전 일치 (PR #39 게이트)
+    const e0 = mathSeq(f.md), e1 = mathSeq(rt.m1)
+    const equationOk = e0.length === e1.length && e0.every((x, i) => x === e1[i])
+    if (!equationOk) equationErrors++
+    // 줄 무결성(lineCheck fixture) — 원본 실질 줄이 왕복에서 통째로 남아야 한다
+    let lines = null
+    if (f.lineCheck) {
+      const k1 = new Set(lineKeys(rt.m1))
+      const missing = lineKeys(f.md).filter(k => !k1.has(k))
+      lines = { ref: lineKeys(f.md).length, missing: missing.length, ok: missing.length === 0 }
+      if (!lines.ok) lineErrors++
+    }
+    fixtureRows.push({ name: f.name, ok: true, gongmun: !!f.opts, fwdCov: round(fwd.coverage), bwdCov: round(bwd.coverage), refGrams: fwd.total, headings: { ref: h0.length, out: h1.length, ok: headingOk }, equations: { ref: e0.length, out: e1.length, ok: equationOk }, ...(lines ? { lines } : {}) })
   } catch (err) {
     fixtureRows.push({ name: f.name, ok: false, stage: "generate", error: String(err?.message ?? err).slice(0, 300) })
   }
@@ -174,6 +205,8 @@ const gates = {
   cellExact: { value: round(cellExactRate), threshold: GATES.cellExact, pass: cellExactRate >= GATES.cellExact },
   genErrors: { value: genErrors, threshold: GATES.genErrors, pass: genErrors <= GATES.genErrors },
   headingErrors: { value: headingErrors, threshold: GATES.headingErrors, pass: headingErrors <= GATES.headingErrors },
+  equationErrors: { value: equationErrors, threshold: GATES.equationErrors, pass: equationErrors <= GATES.equationErrors },
+  lineErrors: { value: lineErrors, threshold: GATES.lineErrors, pass: lineErrors <= GATES.lineErrors },
 }
 const pass = Object.values(gates).every(g => g.pass)
 
@@ -201,6 +234,6 @@ console.log(`  표: ref=${tblRef} exact=${tblExact} | 셀 ${cellExact}/${cellTot
 console.log("[worst fwd 5]")
 for (const w of report.worstFwd.slice(0, 5)) console.log(`  ${w.fwdCov} bwd=${w.bwdCov} ${w.file}`)
 console.log("[fixtures]")
-for (const f of fixtureRows) console.log(`  ${f.ok ? (f.gongmun ? "공문" : "  ") : "ERR"} fwd=${f.fwdCov ?? "-"} bwd=${f.bwdCov ?? "-"}${f.headings?.ref ? ` 헤딩${f.headings.ok ? "✓" : "✗"} ${f.headings.out}/${f.headings.ref}` : ""} ${f.name}${f.error ? " — " + f.error : ""}`)
+for (const f of fixtureRows) console.log(`  ${f.ok ? (f.gongmun ? "공문" : "  ") : "ERR"} fwd=${f.fwdCov ?? "-"} bwd=${f.bwdCov ?? "-"}${f.headings?.ref ? ` 헤딩${f.headings.ok ? "✓" : "✗"} ${f.headings.out}/${f.headings.ref}` : ""}${f.equations?.ref ? ` 수식${f.equations.ok ? "✓" : "✗"} ${f.equations.out}/${f.equations.ref}` : ""}${f.lines ? ` 줄${f.lines.ok ? "✓" : "✗"} ${f.lines.ref - f.lines.missing}/${f.lines.ref}` : ""} ${f.name}${f.error ? " — " + f.error : ""}`)
 console.log(`report → bench/out/roundtrip.json | ${pass ? "PASS ✅" : "FAIL ❌"}${gateMode ? "" : " (보고 전용 — --gate 시 exit code 반영)"}`)
 if (gateMode && !pass) process.exit(1)

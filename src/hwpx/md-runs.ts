@@ -28,7 +28,7 @@ export function buildPrvText(blocks: MdBlock[]): string {
 
 
 export interface MdBlock {
-  type: "paragraph" | "heading" | "table" | "html_table" | "code_block" | "hr" | "blockquote" | "list_item"
+  type: "paragraph" | "heading" | "table" | "html_table" | "code_block" | "equation" | "hr" | "blockquote" | "list_item"
   text?: string
   level?: number
   rows?: string[][]
@@ -37,6 +37,18 @@ export interface MdBlock {
   indent?: number
   /** 리스트 원본 마커 ("2." "3)" "-" "*" 등) — 왕복 시 번호 재시작·기호 변형 방지 */
   marker?: string
+}
+
+/** 이스케이프(\$$) 아닌 "$$" 위치 탐색 — 백슬래시 홀수 개 선행이면 이스케이프로 본다 */
+function findMathDelim(s: string, from: number): number {
+  let i = s.indexOf("$$", from)
+  while (i > 0) {
+    let backslashes = 0
+    for (let j = i - 1; j >= 0 && s[j] === "\\"; j--) backslashes++
+    if (backslashes % 2 === 0) break
+    i = s.indexOf("$$", i + 1)
+  }
+  return i
 }
 
 export function parseMarkdownToBlocks(md: string): MdBlock[] {
@@ -49,6 +61,51 @@ export function parseMarkdownToBlocks(md: string): MdBlock[] {
 
     // 빈 줄 스킵
     if (!line.trim()) { i++; continue }
+
+    // Display math block: $$ ... $$ — 같은 줄 닫힘/멀티라인/닫는 $$ 뒤 잔여 텍스트를
+    // 모두 처리하고, 미종결이면 아래 일반 파이프라인으로 폴백한다 (문서 통삼킴 방지,
+    // 리뷰 #39 ·1/·6). 이스케이프된 \$$ 는 여닫이로 세지 않는다 (escapeGfm 접점).
+    const mathOpen = /^\s*\$\$/.exec(line)
+    if (mathOpen) {
+      const afterOpen = line.slice(mathOpen[0].length)
+      const closeSame = findMathDelim(afterOpen, 0)
+      if (closeSame >= 0) {
+        const inner = afterOpen.slice(0, closeSame).trim()
+        const trailing = afterOpen.slice(closeSame + 2).trim()
+        if (inner) blocks.push({ type: "equation", text: inner })
+        if (trailing) blocks.push({ type: "paragraph", text: trailing })
+        i++
+        continue
+      }
+      // 멀티라인 수집 — 빈 줄/코드펜스를 만나면 미종결로 판정 (거리 무제한 삼킴 방지)
+      const mathLines: string[] = []
+      if (afterOpen.trim()) mathLines.push(afterOpen)
+      let closed = false
+      let trailing = ""
+      let j = i + 1
+      for (; j < lines.length; j++) {
+        const l = lines[j]
+        if (!l.trim() || /^\s*(`{3,}|~{3,})/.test(l)) break
+        const end = findMathDelim(l, 0)
+        if (end >= 0) {
+          const before = l.slice(0, end)
+          if (before.trim()) mathLines.push(before)
+          trailing = l.slice(end + 2).trim()
+          closed = true
+          j++
+          break
+        }
+        mathLines.push(l)
+      }
+      if (closed) {
+        const text = mathLines.join("\n").trim()
+        if (text) blocks.push({ type: "equation", text })
+        if (trailing) blocks.push({ type: "paragraph", text: trailing })
+        i = j
+        continue
+      }
+      // 미종결 — 수식 아님. 이 줄부터 일반 블록으로 처리 (통과)
+    }
 
     // 코드블록
     const fenceMatch = line.match(/^(`{3,}|~{3,})(.*)$/)

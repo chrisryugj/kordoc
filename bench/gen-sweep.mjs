@@ -16,6 +16,7 @@ const FIXTURES = {
   htmlTable: '<table><tr><th rowspan="2">구분</th><th colspan="2">내역</th></tr><tr><td>a</td><td>b</td></tr><tr><td>합계</td><td>1</td><td>2</td></tr></table>\n',
   gongmun: "수신 내부결재\n\n제목 테스트 기안\n\n1. 관련: 행정안전부 공문\n\n2. 다음과 같이 보고합니다.\n\n가. 첫째 항목\n\n나. 둘째 항목\n\n붙임 1부. 끝.\n",
   mixed: "# 사업 개요\n\n○ 기간: 2026년\n\n| 항목 | 값 |\n| --- | --- |\n| a | 1 |\n\n마무리 문단\n",
+  equation: "수식\n\n$$a \\pm b = \\frac{x}{y}$$\n\n끝\n",
 }
 
 const out = {}
