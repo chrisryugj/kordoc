@@ -61,6 +61,10 @@ function getElements(parent: Element, tagName: string): Element[] {
   const nodes = parent.getElementsByTagName(tagName)
   const result: Element[] = []
   for (let i = 0; i < nodes.length; i++) result.push(nodes[i] as Element)
+  if (result.length > 0) return result
+  // 한셀(HCell) 등은 spreadsheetml을 접두사로 선언(<x:sheet>) — localName 폴백 매칭
+  const nsNodes = parent.getElementsByTagNameNS?.("*", tagName)
+  if (nsNodes) for (let i = 0; i < nsNodes.length; i++) result.push(nsNodes[i] as Element)
   return result
 }
 

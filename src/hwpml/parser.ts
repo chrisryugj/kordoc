@@ -165,6 +165,9 @@ function walkContent(
     if (tag === "P") {
       if (!inHeaderFooter) {
         parseParagraph(el, blocks, paraShapeMap, sectionNum)
+        // HML의 표는 <P><TEXT>… 안에 앵커로 들어있다 — 텍스트만 뽑고 지나치면
+        // 표 전체가 소실된다 (해수부 공고 코퍼스에서 recall 0.23 실측)
+        walkTablesInP(el, blocks, paraShapeMap, sectionNum, warnings)
       }
       continue
     }
@@ -184,6 +187,34 @@ function walkContent(
 
     // TEXT, SECDEF 등 내부에서도 P/TABLE이 중첩될 수 있음 — 재귀
     walkContent(el, blocks, paraShapeMap, sectionNum, warnings, inHeaderFooter, depth + 1)
+  }
+}
+
+/**
+ * P 내부의 TABLE 앵커만 수집 (문단 텍스트는 parseParagraph 소관).
+ * FOOTNOTE/ENDNOTE/HEADER/FOOTER 하위는 제외 — 그 텍스트는 collectCharText가
+ * 문단 텍스트로 이미 수집하므로 내부 표까지 올리면 중복·순서 왜곡.
+ */
+function walkTablesInP(
+  node: Element,
+  blocks: IRBlock[],
+  paraShapeMap: Map<string, ParaShapeInfo>,
+  sectionNum: number,
+  warnings: ParseWarning[],
+  depth: number = 0,
+): void {
+  if (depth > MAX_XML_DEPTH) return
+  const children = node.childNodes
+  for (let i = 0; i < children.length; i++) {
+    const el = children[i] as Element
+    if (el.nodeType !== 1) continue
+    const tag = localName(el)
+    if (tag === "TABLE") {
+      parseTable(el, blocks, paraShapeMap, sectionNum, warnings)
+      continue
+    }
+    if (tag === "FOOTNOTE" || tag === "ENDNOTE" || tag === "HEADER" || tag === "FOOTER") continue
+    walkTablesInP(el, blocks, paraShapeMap, sectionNum, warnings, depth + 1)
   }
 }
 
@@ -324,12 +355,31 @@ function collectCellText(node: Element, parts: string[], depth: number): void {
     if (tag === "P") {
       const t = extractParagraphText(el)
       if (t) parts.push(t)
+      // P 안에 앵커된 중첩표 — 텍스트 평탄화 (안내 박스가 1×1 표로 흔함)
+      collectNestedTableText(el, parts, depth + 1)
     } else if (tag === "TABLE") {
-      // 중첩 테이블 — 텍스트로 평탄화
-      parts.push("[중첩 테이블]")
+      // 중첩 테이블 — 셀 문단 텍스트로 평탄화 (구 "[중첩 테이블]" 마커는 내용 소실)
+      collectCellText(el, parts, depth + 1)
     } else {
       collectCellText(el, parts, depth + 1)
     }
+  }
+}
+
+/** P 하위의 TABLE만 찾아 텍스트 평탄화 — 각주류는 extractParagraphText가 이미 수집 */
+function collectNestedTableText(node: Element, parts: string[], depth: number): void {
+  if (depth > 20) return
+  const children = node.childNodes
+  for (let i = 0; i < children.length; i++) {
+    const el = children[i] as Element
+    if (el.nodeType !== 1) continue
+    const tag = localName(el)
+    if (tag === "TABLE") {
+      collectCellText(el, parts, depth + 1)
+      continue
+    }
+    if (tag === "FOOTNOTE" || tag === "ENDNOTE" || tag === "HEADER" || tag === "FOOTER") continue
+    collectNestedTableText(el, parts, depth + 1)
   }
 }
 
