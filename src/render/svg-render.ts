@@ -24,8 +24,9 @@ import JSZip from "jszip"
 import { KordocError } from "../utils.js"
 import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE } from "../hwpx/parser-shared.js"
 import { toInt32, solveBoundaries, solveRowHeights, type SpanConstraint } from "./layout.js"
-import { measureTextWidth } from "../hwpx/text-metrics.js"
+import { measureTextWidth, type WrapMode } from "../hwpx/text-metrics.js"
 import { parseRenderStyles, DEFAULT_CHAR, type RenderStyles, type RenderBorderEdge } from "./head-styles.js"
+import { reflowSection } from "./reflow.js"
 
 export interface RenderSvgOptions {
   /** 이미지 1장당 허용 최대 바이트 (기본 40MB) */
@@ -33,6 +34,11 @@ export interface RenderSvgOptions {
   /** 검색어 형광펜 — 텍스트 조각 내 매치 구간에 배경 rect (대소문자 무시).
    *  charPr(스타일) 경계에 걸친 매치는 칠하지 못한다. */
   highlights?: string[]
+  /** Tier-2 reflow — 조판 캐시(linesegarray) 없는 파일도 순수 TS 조판으로 렌더.
+   *  캐시가 있으면 무시(한컴본은 캐시 재생). 기본 false(캐시 없으면 KordocError). */
+  reflow?: boolean
+  /** reflow 줄바꿈 모드 — 'keep'(어절, Windows 한글·공문서) / 'charAll'(글자, macOS·전자결재) */
+  reflowMode?: WrapMode
 }
 
 export interface RenderSvgResult {
@@ -85,16 +91,16 @@ function escapeXml(s: string): string {
 
 interface PageGeom { PW: number; PH: number; ML: number; MT: number; BODY_W: number; BODY_H: number }
 
-interface Seg { textpos: number; vertpos: number; horzpos: number; horzsize: number; textheight: number; baseline: number }
+export interface Seg { textpos: number; vertpos: number; horzpos: number; horzsize: number; textheight: number; baseline: number }
 
-interface ParaChar { ch: string; prId: string | null }
+export interface ParaChar { ch: string; prId: string | null }
 
 /** 렌더 대상 개체 태그 — 이 외(도형류)는 경고 후 생략 */
 const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", "ellipse", "polygon", "curv", "line", "arc", "ole", "textart"])
 
 interface ParaObj { el: Element; tag: string; index: number; inline: boolean; width: number; height: number }
 
-interface ParaModel { chars: ParaChar[]; segs: Seg[]; objs: ParaObj[]; paraPrId: string | null }
+export interface ParaModel { chars: ParaChar[]; segs: Seg[]; objs: ParaObj[]; paraPrId: string | null }
 
 interface Ctx {
   /** 페이지별 SVG 버퍼 — emit()이 현재 페이지(page)로 라우팅 */
@@ -162,7 +168,7 @@ function pushTextSlots(t: Element, chars: ParaChar[], prId: string | null, depth
   }
 }
 
-function buildPara(p: Element): ParaModel {
+export function buildPara(p: Element): ParaModel {
   const chars: ParaChar[] = []
   const objs: ParaObj[] = []
   let segs: Seg[] = []
@@ -177,10 +183,13 @@ function buildPara(p: Element): ParaModel {
         } else if (OBJ_TAGS.has(cn)) {
           const sz = findChildByLocalName(ch, "sz")
           const pos = findChildByLocalName(ch, "pos")
+          // 그리기 도형은 hp:sz가 없다 — curSz(>0) → orgSz 폴백
+          const w = num(sz, "width") || num(findChildByLocalName(ch, "curSz"), "width") || num(findChildByLocalName(ch, "orgSz"), "width")
+          const h = num(sz, "height") || num(findChildByLocalName(ch, "curSz"), "height") || num(findChildByLocalName(ch, "orgSz"), "height")
           objs.push({
             el: ch, tag: cn, index: chars.length,
             inline: pos?.getAttribute("treatAsChar") === "1",
-            width: num(sz, "width"), height: num(sz, "height"),
+            width: w, height: h,
           })
           // 확장 컨트롤(GSO 등)은 문자 스트림에서 8슬롯 — 실측: 데모 코퍼스 1,132개
           // 멀티라인 문단에서 textpos 가 8슬롯 블록 중간에 걸린 경계 0건
@@ -453,8 +462,71 @@ function drawObject(o: ParaObj, x: number, y: number, baseV: number, areaW: numb
     }
   } else if (o.tag === "equation") {
     warnOnce(ctx, "equation", "수식 개체는 렌더 미지원 — 생략")
+  } else if (SHAPE_TAGS.has(o.tag)) {
+    drawShape(o, x, y, ctx, depth)
   } else {
-    warnOnce(ctx, `shape:${o.tag}`, `도형 개체(${o.tag}) 렌더 미지원 — 생략`)
+    warnOnce(ctx, `shape:${o.tag}`, `개체(${o.tag}) 렌더 미지원 — 생략`)
+  }
+}
+
+// ─── 그리기 도형 (rect/ellipse/line/polygon/curv/arc) ────────────────
+// geometry 좌표는 개체 로컬(orgSz 기준). 실제 크기 = curSz(있으면)로 스케일.
+// lineShape=선(color/width/style), fillBrush>winBrush=채움(faceColor). 회전은 근사 생략.
+
+const SHAPE_TAGS = new Set(["rect", "ellipse", "line", "polygon", "curv", "arc"])
+
+/** lineShape width(1/100 mm) → pt */
+function shapeStrokePt(v: number): number {
+  return Math.max(0.2, (v / 100) * 2.834645)
+}
+
+function drawShape(o: ParaObj, x: number, y: number, ctx: Ctx, depth: number): void {
+  const el = o.el
+  const orgSz = findChildByLocalName(el, "orgSz")
+  const curSz = findChildByLocalName(el, "curSz")
+  const ow = num(orgSz, "width"), oh = num(orgSz, "height")
+  const w = num(curSz, "width") || ow || o.width
+  const h = num(curSz, "height") || oh || o.height
+  const sx = ow > 0 ? w / ow : 1
+  const sy = oh > 0 ? h / oh : 1
+
+  const lineShape = findChildByLocalName(el, "lineShape")
+  const lstyle = lineShape?.getAttribute("style") ?? "SOLID"
+  const strokeCol = lineShape?.getAttribute("color") || "#000000"
+  const hasStroke = lstyle !== "NONE"
+  const strokeW = hasStroke ? shapeStrokePt(lineShape ? num(lineShape, "width") : 33) : 0
+  const dash = /DASH|DOT/.test(lstyle) ? ` stroke-dasharray="${lstyle.includes("DOT") ? "1,1.5" : "3,1.5"}"` : ""
+  const strokeAttr = hasStroke ? ` stroke="${escapeXml(strokeCol)}" stroke-width="${strokeW.toFixed(2)}"${dash}` : ""
+
+  const fillBrush = findChildByLocalName(el, "fillBrush")
+  const winBrush = fillBrush ? findChildByLocalName(fillBrush, "winBrush") : null
+  const face = winBrush?.getAttribute("faceColor")
+  const fill = face && face.toLowerCase() !== "none" ? face : "none"
+  const fillAttr = ` fill="${fill === "none" ? "none" : escapeXml(fill)}"`
+
+  if (o.tag === "rect") {
+    emit(ctx, `<rect x="${pt(x)}" y="${pt(y)}" width="${pt(w)}" height="${pt(h)}"${fillAttr}${strokeAttr}/>`)
+  } else if (o.tag === "ellipse") {
+    emit(ctx, `<ellipse cx="${pt(x + w / 2)}" cy="${pt(y + h / 2)}" rx="${pt(w / 2)}" ry="${pt(h / 2)}"${fillAttr}${strokeAttr}/>`)
+  } else if (o.tag === "line") {
+    const s = findChildByLocalName(el, "startPt"), e = findChildByLocalName(el, "endPt")
+    const x1 = x + num(s, "x") * sx, y1 = y + num(s, "y") * sy
+    const x2 = x + num(e, "x") * sx, y2 = y + num(e, "y") * sy
+    emit(ctx, `<line x1="${pt(x1)}" y1="${pt(y1)}" x2="${pt(x2)}" y2="${pt(y2)}" stroke="${escapeXml(strokeCol)}" stroke-width="${(strokeW || 0.3).toFixed(2)}"${dash}/>`)
+  } else if (o.tag === "polygon" || o.tag === "curv") {
+    const pts: string[] = []
+    for (const c of elements(el)) if (ln(c) === "pt") pts.push(`${pt(x + num(c, "x") * sx)},${pt(y + num(c, "y") * sy)}`)
+    if (pts.length >= 2) emit(ctx, `<polygon points="${pts.join(" ")}"${fillAttr}${strokeAttr}/>`)
+  } else if (o.tag === "arc") {
+    // 호는 외접 박스 타원으로 근사 (start/sweep 각 미해석)
+    emit(ctx, `<ellipse cx="${pt(x + w / 2)}" cy="${pt(y + h / 2)}" rx="${pt(w / 2)}" ry="${pt(h / 2)}" fill="none"${strokeAttr || ` stroke="${escapeXml(strokeCol)}" stroke-width="0.3"`}/>`)
+  }
+
+  // 도형 안 텍스트(drawText>subList) — 조판 캐시 있으면 그린다
+  const dt = findChildByLocalName(el, "drawText")
+  const sub = dt ? findChildByLocalName(dt, "subList") : null
+  if (sub) {
+    for (const p of elements(sub)) if (ln(p) === "p") drawPara(p, x, y, w, ctx, depth + 1)
   }
 }
 
@@ -641,15 +713,16 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
   if (!secFile) throw new KordocError("Contents/section0.xml 없음 — HWPX가 아니거나 손상됨")
   const secXml = await secFile.async("string")
   if (secXml.length > MAX_DECOMPRESS_SIZE) throw new KordocError("섹션 XML이 허용 크기를 초과")
-  if (!secXml.includes("linesegarray")) {
-    throw new KordocError("조판 캐시(linesegarray) 없음 — 한컴에서 저장한 HWPX만 렌더 가능")
+  const hasCache = secXml.includes("linesegarray")
+  if (!hasCache && !options?.reflow) {
+    throw new KordocError("조판 캐시(linesegarray) 없음 — 한컴에서 저장한 HWPX만 렌더 가능 (reflow 옵션으로 합성 렌더 가능)")
   }
 
   const warnings: string[] = []
   const headFile = zip.file("Contents/header.xml") ?? zip.file("Contents/head.xml")
   const styles: RenderStyles = headFile
     ? parseRenderStyles(await headFile.async("string"))
-    : { charPr: new Map(), paraAlign: new Map(), borderFill: new Map() }
+    : { charPr: new Map(), paraAlign: new Map(), paraGeom: new Map(), borderFill: new Map() }
   if (!headFile) warnings.push("header.xml 없음 — 기본 스타일로 렌더")
 
   // BinData 매니페스트 (id → href) — content.hpf 우선, 파일명 휴리스틱 폴백
@@ -692,6 +765,10 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
   const MT = num(margin, "top", 5668) + num(margin, "header", 0)
   const BODY_H = PH - MT - num(margin, "bottom", 4252) - num(margin, "footer", 0)
   const BODY_W = PW - ML - num(margin, "right", 8504)
+
+  // Tier-2 reflow — 캐시 없는 문단에 linesegarray 합성 주입(한컴본은 이 경로 미진입).
+  // 이후 페이지 프리패스·drawPara가 합성 캐시를 그대로 소비한다.
+  if (!hasCache) reflowSection(root, styles, { BODY_W, BODY_H }, options?.reflowMode ?? "keep")
 
   // 페이지 분할 프리패스 — 최상위 lineseg vertpos는 페이지 로컬(페이지마다 0부터)이라
   // 역행 지점이 곧 페이지 경계다. 다단(colCount>1)은 단 이동도 vertpos가 리셋되지만

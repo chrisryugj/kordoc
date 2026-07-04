@@ -402,6 +402,8 @@ program
   .description("레이아웃 보존 렌더 — 한컴 저장 HWPX의 조판 캐시를 SVG로 (전체 페이지 세로 스택) — kordoc render 문서.hwpx -o 문서.svg")
   .option("-o, --output <path>", "출력 SVG 경로 (기본: <입력>.svg)")
   .option("--highlight <terms>", "검색어 형광펜 (쉼표 구분)")
+  .option("--reflow", "조판 캐시 없는 HWPX도 순수 TS 조판으로 렌더 (markdownToHwpx 산출물·편집본)")
+  .option("--reflow-mode <mode>", "reflow 줄바꿈 모드: keep(어절) | charAll(글자)", "keep")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (file: string, opts) => {
     try {
@@ -412,7 +414,7 @@ program
       const absPath = resolve(file)
       const buffer = readFileSync(absPath)
       const highlights = opts.highlight ? String(opts.highlight).split(",") : undefined
-      const result = await renderHwpxToSvg(toArrayBuffer(buffer), { highlights })
+      const result = await renderHwpxToSvg(toArrayBuffer(buffer), { highlights, reflow: opts.reflow, reflowMode: opts.reflowMode })
       const outPath = resolve(output ?? file.replace(/\.hwpx$/i, "") + ".svg")
       mkdirSync(dirname(outPath), { recursive: true })
       writeFileSync(outPath, result.svg, "utf-8")
@@ -423,6 +425,42 @@ program
     } catch (err) {
       process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
       process.exit(1)
+    }
+  })
+
+program
+  .command("render-worker")
+  .description("persistent 렌더 워커 — stdin NDJSON 요청 → 조판 SVG 파일 출력 (프로세스 유지, 콜드스타트 제거)")
+  .action(async () => {
+    // 프로토콜(NDJSON, 한 줄=한 요청/응답):
+    //  요청 {"id":1,"file":"a.hwpx","out":"a.svg","reflow":true,"highlight":["term"]}
+    //  응답 {"id":1,"ok":true,"out":"a.svg","width":..,"height":..,"pageCount":..,"stats":{..},"warnings":[..]}
+    //  {"cmd":"quit"} 로 종료. 모듈은 최초 1회만 로드 → 이후 요청은 콜드스타트 없음.
+    const { createInterface } = await import("node:readline")
+    const { renderHwpxToSvg } = await import("./render/index.js")
+    const rl = createInterface({ input: process.stdin })
+    const write = (o: unknown): void => void process.stdout.write(JSON.stringify(o) + "\n")
+    write({ ready: true, version: VERSION })
+    for await (const line of rl) {
+      const t = line.trim()
+      if (!t) continue
+      let req: { id?: number; cmd?: string; file?: string; out?: string; reflow?: boolean; reflowMode?: string; highlight?: string[] }
+      try { req = JSON.parse(t) } catch { continue }
+      if (req.cmd === "quit") break
+      const id = req.id
+      try {
+        if (!req.file || !req.out) throw new Error("file·out 필수")
+        const buffer = readFileSync(resolve(req.file))
+        const result = await renderHwpxToSvg(toArrayBuffer(buffer), {
+          highlights: req.highlight, reflow: req.reflow, reflowMode: req.reflowMode as "keep" | "charAll" | undefined,
+        })
+        const outPath = resolve(req.out)
+        mkdirSync(dirname(outPath), { recursive: true })
+        writeFileSync(outPath, result.svg, "utf-8")
+        write({ id, ok: true, out: outPath, width: result.width, height: result.height, pageCount: result.pageCount, stats: result.stats, warnings: result.warnings })
+      } catch (err) {
+        write({ id, ok: false, error: sanitizeError(err) })
+      }
     }
   })
 

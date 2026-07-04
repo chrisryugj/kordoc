@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.0] - 2026-07-04
+
+### Added
+
+- **Tier-2 reflow 렌더** — 조판 캐시(`linesegarray`)가 없는 HWPX(`markdownToHwpx`
+  산출물·에이전트 생성본·편집본)도 순수 TS 조판으로 렌더한다.
+  `renderHwpxToSvg(buf, { reflow: true })` / CLI `kordoc render --reflow`.
+  `simulateWrap`(수평 줄나눔, 실측 `linesegarray` 98% 일치) + 세로 모델
+  (`baseline = round(0.85 × textheight)`·줄 pitch = `round(textheight × lineSpacing%/100)`,
+  한컴 저장본 실측 역설계)로 lineseg를 합성 주입 → 기존 렌더 파이프(정렬·표·이미지·
+  형광펜·다페이지)를 그대로 재사용한다. 단문단 텍스트 + 표 셀(셀 로컬 좌표) + 표
+  밀어내기 + 자동 페이지 분할. 자기일관성 게이트(`bench/verify-reflow.mjs` —
+  한컴본 strip→reflow→기하 diff) 9/10(내용 매치 91~100%·세로 오차 0.1~1pt).
+  **캐시가 있으면 캐시 재생(Tier-1 무회귀)** — reflow는 캐시 부재 문단만 채운다.
+- **그리기 도형 렌더** — `rect`/`ellipse`/`line`/`polygon`/`curv`/`arc`를 SVG shape로
+  그린다(`lineShape` 선 색·굵기·점선, `fillBrush` 채움, `curSz`/`orgSz` 스케일,
+  개체 로컬 좌표). 기존에는 경고 후 생략해 "원본과 다름"의 큰 원인이었다.
+- **persistent 렌더 워커** — `kordoc render-worker`가 stdin NDJSON 요청
+  (`{id,file,out,reflow,highlight}`)을 받아 조판 SVG를 파일로 출력한다(프로세스 유지 →
+  node 콜드스타트 제거). 임베더(docufinder 등)의 연속 미리보기 렌더에 유리.
+
+### Changed
+
+- `RenderStyles`에 `paraGeom`(줄간격·여백) 추가 — reflow 세로 조판용. 기존 파싱 무영향.
+
 ## [3.14.0] - 2026-07-04
 
 ### Added
