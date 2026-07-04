@@ -332,6 +332,32 @@ program
     }
   })
 
+program
+  .command("validate <file>")
+  .description("HWPX 구조 검증 — ZIP·mimetype·필수 파일·XML 웰폼드·secCnt·manifest 참조 (한컴독스 거부 요인 사전 차단)")
+  .option("--json", "결과를 JSON으로 stdout에 출력")
+  .action(async (file: string, opts) => {
+    try {
+      const { validateHwpx } = await import("./index.js")
+      const buf = new Uint8Array(readFileSync(resolve(file)))
+      const result = await validateHwpx(buf)
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + "\n")
+      } else if (result.ok) {
+        process.stderr.write(`[kordoc] ✓ 구조 검증 통과 (엔트리 ${result.entryCount}개): ${file}\n`)
+      } else {
+        process.stderr.write(`[kordoc] ✗ 구조 문제 ${result.issues.length}건: ${file}\n`)
+        for (const i of result.issues) {
+          process.stderr.write(`[kordoc]   - ${i.path ? `${i.path}: ` : ""}${i.message}\n`)
+        }
+      }
+      if (!result.ok) process.exit(1)
+    } catch (err) {
+      process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+      process.exit(1)
+    }
+  })
+
 // 공문서 프리셋 별칭(한글/영문) → 내부 preset 키 — gongmun.ts와 공용(PRESET_ALIAS)
 
 program

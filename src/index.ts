@@ -329,6 +329,8 @@ export type {
 export { patchHwpx } from "./roundtrip/patcher.js"
 export { patchHwp } from "./roundtrip/hwp5-patch.js"
 export type { PatchResult, PatchSkip, PatchOptions } from "./types.js"
+export { validateHwpx } from "./validate.js"
+export type { ValidateResult, ValidateIssue } from "./validate.js"
 
 // ─── 에디터 통합 API (v3.1) ─────────────────────────
 
