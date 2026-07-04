@@ -4,7 +4,8 @@
  * 절차: 원본 render(truth) → linesegarray strip → render({reflow:true}) → 두 SVG의
  * <text> (내용·x·y) 대조. 폰트 근사로 exact는 아니므로 허용오차(줄 y ±px + 줄수 일치) 기준.
  *
- * 사용: node bench/verify-reflow.mjs [glob수 제한]
+ * 사용: node bench/verify-reflow.mjs [glob수 제한] [--gate]
+ *   --gate: 통과율 <90%면 exit 1 (bench:gate 체인 편입용, 기존 --gate 스크립트 관례)
  */
 import { renderHwpxToSvg } from "../dist/index.js"
 import JSZip from "jszip"
@@ -12,7 +13,11 @@ import fs from "node:fs"
 import path from "node:path"
 
 const CORPUS = "bench/corpus/seoul"
-const LIMIT = Number(process.argv[2] || 6)
+const args = process.argv.slice(2)
+const GATE_MODE = args.includes("--gate")
+// 게이트는 전체 코퍼스로 판정(소표본은 통과율 노이즈), 관찰 모드는 6건만(빠른 확인).
+const explicitLimit = args.find(a => /^\d+$/.test(a))
+const LIMIT = explicitLimit ? Number(explicitLimit) : (GATE_MODE ? Infinity : 6)
 
 function extractTexts(svg) {
   // <text ... x="X" y="Y" ...>content</text>
@@ -90,3 +95,18 @@ for (const f of files) {
   }
 }
 console.log(`\n게이트: ${pass}/${files.length} 통과`)
+
+// --gate: 통과율 임계(≥90%) 미달 시 exit 1 — 기존 bench:gate 스크립트(--gate)와 관례 통일.
+if (GATE_MODE) {
+  const GATE = 0.9
+  if (files.length === 0) {
+    console.error(`❌ reflow 게이트: 코퍼스(${CORPUS})가 비어 검증 불가`)
+    process.exit(1)
+  }
+  const rate = pass / files.length
+  if (rate < GATE) {
+    console.error(`❌ reflow 게이트 실패: ${pass}/${files.length} (${Math.round(rate * 100)}%) < ${GATE * 100}%`)
+    process.exit(1)
+  }
+  console.log(`✅ reflow 게이트 통과 (${Math.round(rate * 100)}% ≥ ${GATE * 100}%)`)
+}

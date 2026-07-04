@@ -24,7 +24,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "node --import tsx --test tests/*.test.ts",
-    "bench:gate": "node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate",
+    "bench:gate": "node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate",
     "prepublishOnly": "npm run test && npm run build"
   },
   "keywords": [
