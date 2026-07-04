@@ -245,6 +245,12 @@ function readCommand(input: string, idx: number, depth: number): ReadResult {
     return { value: `${ACCENT_COMMANDS[command]}{${body.value}}`, next: body.next }
   }
 
+  // LaTeX 공백 매크로 → EqEdit 공백 어휘 (리터럴 , ; : ! 로 주입되면 한글에 보이는
+  // 구두점으로 렌더된다). `=1/4 공백, ~=공백. \!(음수 공백)는 EqEdit 대응 없어 제거.
+  if (command === ",") return { value: "`", next: name.next }
+  if (command === ";" || command === ":") return { value: "~", next: name.next }
+  if (command === "!") return { value: "", next: name.next }
+
   if (command === "mathrm" || command === "text") {
     // 리터럴 텍스트 — 변환하지 않고 EqEdit 따옴표로 보호 (int가 ∫로 렌더 방지).
     // hmlToLatex는 단일 토큰 따옴표를 \text{...}로 되읽어 고정점이 된다.

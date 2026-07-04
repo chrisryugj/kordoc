@@ -118,6 +118,42 @@ describe("첨자 예약어 보호 (리뷰 ·8)", () => {
   })
 })
 
+describe("예약어 왕복 파괴 방지 (리뷰 #7)", () => {
+  it("\\frac{a}{b}+x_{over} 왕복이 frac을 보존한다 (실측 재현)", () => {
+    const script = latexLikeToEqEdit("\\frac{a}{b}+x_{over}")
+    const back = noSpace(hmlToLatex(script))
+    assert.equal(back, "\\frac{a}{b}+x_{\\text{over}}")
+  })
+
+  it("\\sqrt[n]{x}+y_{of} 왕복이 root를 보존한다", () => {
+    const script = latexLikeToEqEdit("\\sqrt[n]{x}+y_{of}")
+    const back = noSpace(hmlToLatex(script))
+    assert.equal(back, "\\sqrt[n]{x}+y_{\\text{of}}")
+  })
+
+  it("\\text{over} 리터럴 뒤 frac도 안전하다", () => {
+    const script = latexLikeToEqEdit("\\text{over} + \\frac{1}{2}")
+    const back = noSpace(hmlToLatex(script))
+    assert.equal(back, "\\text{over}+\\frac{1}{2}")
+  })
+})
+
+describe("LaTeX 공백 매크로 (리뷰 #8)", () => {
+  it("\\, \\; \\: \\! 가 리터럴 구두점으로 주입되지 않는다", () => {
+    const script = latexLikeToEqEdit("\\int_a^b f(x)\\,dx")
+    assert.ok(!script.includes(","), script)
+    assert.ok(!noSpace(hmlToLatex(script)).includes(","), script)
+    for (const [macro, ch] of [["\\;", ";"], ["\\:", ":"], ["\\!", "!"]] as const) {
+      const s = latexLikeToEqEdit(`a${macro}b`)
+      assert.ok(!s.includes(ch), `${macro} → ${s}`)
+    }
+  })
+
+  it("\\, 는 EqEdit 얇은 공백(백틱)으로 나간다", () => {
+    assert.equal(latexLikeToEqEdit("f(x)\\,dx"), "f(x) ` dx")
+  })
+})
+
 describe("악성/기형 입력 가드 (리뷰 ·2)", () => {
   it("중괄호 폭탄에 스택 오버플로 없이 리터럴 폴백한다", () => {
     const out = latexLikeToEqEdit("{".repeat(5000))

@@ -246,11 +246,33 @@ function findEnclosingBrackets(eqString: string, startIdx: number): [number, num
 
 // ─── Rewrite passes ───────────────────────────────────────────────────────
 
+/**
+ * "..." 리터럴과 \text{...} 스팬을 동일 길이 필러로 가린 사본 — 예약어(over/root/of)
+ * 검색이 리터럴 내부 부분문자열을 연산자로 오인하지 않게 한다 (인덱스 정렬 보존).
+ * 따옴표 홀수(비페어)면 해당 구간은 못 가리고 기존 동작으로 남는다.
+ */
+function maskLiteralSpans(eqString: string): string {
+  return eqString
+    .replace(/"[^"]*"/g, (m) => "￿".repeat(m.length))
+    .replace(/\\text\{[^}]*\}/g, (m) => "￿".repeat(m.length))
+}
+
+/** 공백 경계의 독립 토큰으로만 예약어 검색 (리터럴 스팬 마스킹). 없으면 -1 */
+function findKeywordToken(eqString: string, word: string, from = 0): number {
+  const masked = maskLiteralSpans(eqString)
+  for (let i = masked.indexOf(word, from); i !== -1; i = masked.indexOf(word, i + 1)) {
+    const okL = i === 0 || masked[i - 1] === " "
+    const okR = i + word.length === masked.length || masked[i + word.length] === " "
+    if (okL && okR) return i
+  }
+  return -1
+}
+
 /** `{1} over {2}` → `\frac{1}{2}` */
 function replaceFrac(eqString: string): string {
   const hmlFrac = "over"
   while (true) {
-    const cursor = eqString.indexOf(hmlFrac)
+    const cursor = findKeywordToken(eqString, hmlFrac)
     if (cursor === -1) break
     try {
       const [numStart, numEnd] = findBrackets(eqString, cursor, 0)
@@ -268,12 +290,13 @@ function replaceFrac(eqString: string): string {
 /** `root {1} of {2}` → `\sqrt[1]{2}` */
 function replaceRootOf(eqString: string): string {
   while (true) {
-    const rootCursor = eqString.indexOf("root")
+    const rootCursor = findKeywordToken(eqString, "root")
     if (rootCursor === -1) break
     try {
-      const ofCursor = eqString.indexOf("of")
-      if (ofCursor === -1) return eqString
       const elem1 = findBrackets(eqString, rootCursor, 1)
+      // of는 root의 지수 그룹 뒤에서만 유효 — 전역 첫 매치는 리터럴/선행 텍스트를 오인한다
+      const ofCursor = findKeywordToken(eqString, "of", elem1[1])
+      if (ofCursor === -1) return eqString
       const elem2 = findBrackets(eqString, ofCursor, 1)
       const e1 = eqString.slice(elem1[0] + 1, elem1[1] - 1)
       const e2 = eqString.slice(elem2[0] + 1, elem2[1] - 1)

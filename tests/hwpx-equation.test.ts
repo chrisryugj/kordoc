@@ -43,6 +43,29 @@ describe("hmlToLatex — root of", () => {
   })
 })
 
+describe("hmlToLatex — 예약어 리터럴 오파싱 방지 (리뷰 #7)", () => {
+  it('첨자 따옴표 리터럴 "over"가 frac 트리거가 되지 않는다 (\\frac{a}{b}+x_{over} 왕복)', () => {
+    const out = hmlToLatex('{a} over {b} + x _ {"over"}').replace(/\s+/g, "")
+    assert.equal(out, "\\frac{a}{b}+x_{\\text{over}}")
+  })
+
+  it('다중 단어 인용 "sum over items" 내부의 over를 건드리지 않는다', () => {
+    const out = hmlToLatex('{ "sum over items" } + {a} over {b}')
+    assert.ok(out.includes('"sum over items"'), out)
+    assert.ok(out.replace(/\s+/g, "").includes("\\frac{a}{b}"), out)
+  })
+
+  it('선행 리터럴 "profit"의 of 부분문자열이 root의 of로 오인되지 않는다', () => {
+    const out = hmlToLatex('"profit" + root {3} of {x}').replace(/\s+/g, "")
+    assert.equal(out, "\\text{profit}+\\sqrt[3]{x}")
+  })
+
+  it("단어 내부 부분문자열(groot·cover)은 연산자가 아니다", () => {
+    const out = hmlToLatex("groot + cover").replace(/\s+/g, " ").trim()
+    assert.equal(out, "groot + cover")
+  })
+})
+
 describe("hmlToLatex — vec / bar", () => {
   it("{ vec {AB} } → \\overrightarrow{AB}", () => {
     const out = hmlToLatex("{ vec {AB} }").replace(/\s+/g, "")
