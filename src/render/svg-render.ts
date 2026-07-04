@@ -542,7 +542,7 @@ interface CellModel {
 }
 
 /** 셀 콘텐츠 세로 범위 — 줄(vp+th)과 PARA 앵커 개체(anchor+h) 최대값 */
-function cellContentExtent(cell: CellModel, ctx: Ctx): number {
+function cellContentExtent(cell: CellModel): number {
   if (!cell.sub) return 0
   let ext = 0
   for (const p of elements(cell.sub)) {
@@ -568,10 +568,8 @@ function edgeLine(x1: number, y1: number, x2: number, y2: number, e: RenderBorde
   return `<line x1="${pt(x1)}" y1="${pt(y1)}" x2="${pt(x2)}" y2="${pt(y2)}" stroke="${escapeXml(e.color)}" stroke-width="${e.widthPt.toFixed(2)}"${dash}/>`
 }
 
-function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number): void {
-  if (depth > 16) { warnOnce(ctx, "depth", "중첩 깊이 16 초과 — 이하 생략"); return }
-  ctx.stats.tables++
-  const tblSz = findChildByLocalName(tbl, "sz")
+/** tbl의 셀 모델 수집 — drawTable과 measureTableHeight가 같은 셀 해석을 공유 */
+function collectCells(tbl: Element): CellModel[] {
   const inMargin = findChildByLocalName(tbl, "inMargin")
   const defL = num(inMargin, "left", 141), defR = num(inMargin, "right", 141)
   const defT = num(inMargin, "top", 141), defB = num(inMargin, "bottom", 141)
@@ -598,6 +596,32 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
       })
     }
   }
+  return cells
+}
+
+/**
+ * 표 실효 높이(HWPUNIT) — drawTable의 rowH 모델(solveRowHeights + 셀 콘텐츠 성장) 그대로.
+ * 선언 hp:sz는 셀 콘텐츠로 자란 높이를 모르므로, reflow가 표 뒤 문단을 실제 그려질
+ * 표 바닥 아래로 배치할 때 이 값을 쓴다. 셀 lineseg가 있어야 성장분이 측정된다.
+ */
+export function measureTableHeight(tbl: Element): number {
+  const cells = collectCells(tbl)
+  if (cells.length === 0 || cells.length > 4096) return 0
+  const nRows = Math.max(...cells.map(c => c.ra + c.rs))
+  const rowH = solveRowHeights(
+    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c) : undefined })),
+    nRows,
+  )
+  let sum = 0
+  for (const h of rowH) sum += h
+  return sum
+}
+
+function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number): void {
+  if (depth > 16) { warnOnce(ctx, "depth", "중첩 깊이 16 초과 — 이하 생략"); return }
+  ctx.stats.tables++
+  const tblSz = findChildByLocalName(tbl, "sz")
+  const cells = collectCells(tbl)
   if (cells.length === 0 || cells.length > 4096) return
 
   const nCols = Math.max(...cells.map(c => c.ca + c.cs))
@@ -605,7 +629,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
   const colCons: SpanConstraint[] = cells.map(c => ({ a: c.ca, b: c.ca + c.cs, size: c.w }))
   const colX = solveBoundaries(colCons, nCols, num(tblSz, "width") || undefined)
   const rowH = solveRowHeights(
-    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c, ctx) : undefined })),
+    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c) : undefined })),
     nRows,
   )
   const rowY: number[] = [0]
@@ -626,7 +650,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
     const { c } = g
     if (!c.sub) continue
     const innerH = g.h - c.marginT - c.marginB
-    const extent = cellContentExtent(c, ctx)
+    const extent = cellContentExtent(c)
     const va = c.sub.getAttribute("vertAlign") ?? "TOP"
     let yoff = 0
     if (va === "CENTER") yoff = Math.max(0, (innerH - extent) / 2)

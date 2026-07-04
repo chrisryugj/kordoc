@@ -15,7 +15,7 @@
  * Phase 2: 최상위 텍스트 문단. 표 셀·개체 밀어내기·자동 페이지 분할은 Phase 3.
  */
 
-import { buildPara } from "./svg-render.js"
+import { buildPara, measureTableHeight } from "./svg-render.js"
 import { simulateWrap, type WrapMode } from "../hwpx/text-metrics.js"
 import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
@@ -142,10 +142,15 @@ function reflowPara(
   }
   p.appendChild(lsa)
 
-  // 문단 바닥 = 텍스트 줄 흐름과 개체(표·이미지) 높이 중 큰 쪽 (표 밀어내기 반영)
+  // 문단 바닥 = 텍스트 줄 흐름과 개체(표·이미지) 높이 중 큰 쪽 (표 밀어내기 반영).
+  // 표는 셀 콘텐츠 성장으로 선언 sz보다 커질 수 있어 drawTable과 같은 실효 높이를 쓴다
+  // (셀 lineseg 필요 — reflowBlockFlow가 reflowTablesIn을 먼저 돌린다).
   const textBottom = startV + wrap.starts.length * pitch
   let objBottom = startV
-  for (const o of m.objs) objBottom = Math.max(objBottom, startV + o.height)
+  for (const o of m.objs) {
+    const h = o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el)) : o.height
+    objBottom = Math.max(objBottom, startV + h)
+  }
   return { paraBottom: Math.max(textBottom, objBottom), spaceAfter: geom.spaceAfter }
 }
 
@@ -191,6 +196,9 @@ function reflowBlockFlow(
   let prevSpaceAfter = 0
   for (const p of elements(container)) {
     if (ln(p) !== "p") continue
+    // 문단 안 표 셀을 먼저 셀 로컬 좌표로 reflow (본문 세로 흐름과 무관) —
+    // reflowPara의 표 실효높이 측정이 셀 lineseg를 읽으므로 호스트 문단보다 앞서야 한다
+    reflowTablesIn(p, doc, styles, mode, counter)
     const g = styles.paraGeom.get(p.getAttribute("paraPrIDRef") ?? "")
     const startV = cursorV + prevSpaceAfter + (g?.spaceBefore ?? 0)
     const res = reflowPara(p, doc, styles, areaW, startV, mode)
@@ -206,8 +214,6 @@ function reflowBlockFlow(
       prevSpaceAfter = res.spaceAfter
       counter.n++
     }
-    // 문단 안 표 셀은 셀 로컬 좌표로 별도 reflow (본문 세로 흐름과 무관)
-    reflowTablesIn(p, doc, styles, mode, counter)
   }
 }
 

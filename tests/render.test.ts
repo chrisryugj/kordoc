@@ -81,6 +81,27 @@ describe("render: 조판 캐시 없는 파일 거부", () => {
   })
 })
 
+describe("render: reflow 표 밀어내기 (셀 콘텐츠 성장)", () => {
+  it("긴 셀로 자란 표 뒤 문단이 표 바닥 아래에 온다 (리뷰#6 겹침)", async () => {
+    // 셀 폭(약 22000HWPUNIT)을 여러 줄로 감는 긴 텍스트 — 선언 행높이 1500을 훌쩍 넘긴다
+    const long = "서울특별시 도시기반시설 관리 실태 전수조사 결과에 따라 노후 시설물의 안전등급 재산정과 보수보강 우선순위 조정이 필요하며 연차별 투자계획을 수립하여 시행한다."
+    const hwpx = await markdownToHwpx(`| 항목 | 내용 |\n| --- | --- |\n| 개요 | ${long} |\n\n표뒤문단입니다.`)
+    const r = await renderHwpxToSvg(hwpx, { reflow: true })
+    // 표 바닥 = 수평 border(<line y1==y2>) 최대 y, 뒤 문단 = 해당 <text>의 y
+    const borderYs = [...r.svg.matchAll(/<line x1="[\d.-]+" y1="([\d.-]+)" x2="[\d.-]+" y2="([\d.-]+)"/g)]
+      .filter(m => m[1] === m[2]).map(m => parseFloat(m[1]))
+    const tableBottom = Math.max(...borderYs)
+    const after = [...r.svg.matchAll(/<text [^>]*y="([\d.-]+)"[^>]*>([^<]*)<\/text>/g)]
+      .find(m => m[2].includes("표뒤문단"))
+    assert.ok(after, "표 뒤 문단 텍스트가 렌더에 없음")
+    assert.ok(parseFloat(after[1]) > tableBottom,
+      `표 뒤 문단(y=${after[1]})이 표 바닥(y=${tableBottom}) 위에 겹침`)
+    // 성장 자체가 일어났는지 — 선언 표높이(행 1500×2=3000u=30pt)보다 실제 표가 크다
+    const tableTop = Math.min(...borderYs)
+    assert.ok(tableBottom - tableTop > 30, "재현 전제(셀 성장) 자체가 깨짐 — 테스트 입력 확인 필요")
+  })
+})
+
 describe("render: 실파일 e2e (corpus 존재 시)", { skip: !existsSync(CORPUS) }, () => {
   const read = (rel: string): Uint8Array => new Uint8Array(readFileSync(join(CORPUS, rel)))
   // base64 데이터 URI엔 "NaN"이 유효 부분열로 우연히 등장한다 — 좌표 검사에서 제외
