@@ -82,6 +82,19 @@ describe("extractText", () => {
     assert.equal(result, "A$x^2$B")
   })
 
+  it("강제 줄바꿈(0x000a)은 2바이트만 소비 — 뒤 텍스트 보존", () => {
+    // 회귀: 0x000a를 확장 컨트롤로 오분류해 뒤 14바이트(7글자)를 먹던 자료손상 버그.
+    // "가나다" + 줄바꿈 + "라마바사아자차"(7글자) + 문단끝(0x000d)
+    const tail = "라마바사아자차"
+    const buf = Buffer.alloc(6 + 2 + tail.length * 2 + 2)
+    let p = 0
+    for (const c of "가나다") { buf.writeUInt16LE(c.charCodeAt(0), p); p += 2 }
+    buf.writeUInt16LE(0x000a, p); p += 2            // 강제 줄바꿈 (char 2바이트)
+    for (const c of tail) { buf.writeUInt16LE(c.charCodeAt(0), p); p += 2 }
+    buf.writeUInt16LE(0x000d, p)                    // 문단끝
+    assert.equal(extractText(buf), "가나다\n라마바사아자차")
+  })
+
   it("빈 버퍼는 빈 문자열 반환", () => {
     assert.equal(extractText(Buffer.alloc(0)), "")
   })

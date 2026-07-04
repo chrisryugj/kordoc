@@ -849,12 +849,12 @@ export function splitParaText(data: Buffer):
         toks.push({ start, end: i, units: 1, plain: false, visible: true }); break
       case 0x0d: // 문단끝 — 비가시
         toks.push({ start, end: i, units: 1, plain: false, visible: false }); break
-      case 0x0a: // 구역/단 정의 또는 수식 래퍼
+      case 0x0a: // 강제 줄바꿈(char 2바이트) — 단, 뒤에 0x000b 수식 래퍼면 확장 처리
         if (i + 16 <= data.length && data.readUInt16LE(i) === 0x000b) {
           i += 16; toks.push({ start, end: i, units: 1, plain: false, visible: false })  // 수식 등 비가시
         } else {
-          if (i + 14 <= data.length) i += 14
-          toks.push({ start, end: i, units: 1, plain: false, visible: true })            // "\n" 가시
+          // bare 0x000a = 2바이트 줄바꿈. 14바이트 소비 금지(appendParaText와 대칭 — 어긋나면 한컴 변조감지).
+          toks.push({ start, end: i, units: 1, plain: false, visible: true })            // "\n" 가시, 2바이트
         }
         break
       default: {

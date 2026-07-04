@@ -34,7 +34,7 @@ export const TAG_DOC_STYLE = 0x001a        // HWPTAG_BEGIN + 10
 // inline:   4-9, 19-20             — 제어문자(2) + 확장(14) = 16바이트
 // extended: 1-3, 10-12, 14-18, 21-23 — 제어문자(2) + 확장(14) = 16바이트
 const CHAR_LINE = 0x0000        // char: 줄바꿈
-const CHAR_SECTION_BREAK = 0x000a  // extended: 구역/단 정의 (14바이트 확장 데이터)
+const CHAR_SECTION_BREAK = 0x000a  // char: 강제 줄 나눔(line break, 2바이트). 구역/단 정의는 코드2(extended)라 혼동 주의
 const CHAR_PARA = 0x000d        // char: 문단 끝
 const CHAR_TAB = 0x0009         // inline: 탭
 const CHAR_HYPHEN = 0x001e      // char: 하이픈
@@ -428,15 +428,15 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
     switch (ch) {
       // ── char 타입 (2바이트만, 확장 데이터 없음) ──
       case CHAR_LINE: result += "\n"; break
-      case CHAR_SECTION_BREAK: { // 구역/단 정의 또는 일부 inline control 래퍼
+      case CHAR_SECTION_BREAK: { // 강제 줄 나눔(char 2바이트). 단, 뒤에 0x000b 수식 래퍼가 오는 경우만 확장 처리
         // 일부 HWP5 문서는 수식 placeholder를 0x000a + 0x000b + ctrlId + payload + 0x000b로 저장한다.
         if (i + 16 <= data.length && data.readUInt16LE(i) === 0x000b) {
           resolveAt(i + 2, true)
           i += 16
           break
         }
+        // bare 0x000a = char 타입 줄바꿈(2바이트, 확장 데이터 없음) — 뒤 14바이트 소비 금지(줄마다 7글자 증발 버그).
         result += "\n"
-        if (i + 14 <= data.length) i += 14
         break
       }
       case CHAR_PARA: break  // 문단 끝

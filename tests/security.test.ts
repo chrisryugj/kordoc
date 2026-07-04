@@ -52,23 +52,25 @@ describe("buildTable — 악성 span 값 방어", () => {
   })
 })
 
-// ─── extractText: 제어문자 코드 10 (각주/미주) ──────────────
+// ─── extractText: 제어문자 코드 10 (강제 줄바꿈) ──────────────
 
 describe("extractText — 제어문자 코드 10 처리", () => {
-  it("코드 10(각주/미주)이 확장 제어문자로 14바이트 스킵됨", () => {
-    const buf = Buffer.alloc(2 + 14 + 2)
+  it("코드 10(강제 줄바꿈)은 char 타입 2바이트 — 뒤 14바이트를 소비하지 않음", () => {
+    // 회귀: 코드 10을 확장 컨트롤(각주/미주는 코드 17)로 오인해 뒤 14바이트(7글자)를 먹던 자료손상 버그.
+    // 코드 10은 char 타입 줄바꿈(2바이트)이라 뒤 텍스트가 그대로 보존돼야 한다.
+    const tail = "일이삼사오육칠"  // 7글자 = 14바이트
+    const buf = Buffer.alloc(2 + tail.length * 2)
     buf.writeUInt16LE(0x000a, 0)
-    buf.writeUInt16LE("Z".charCodeAt(0), 16)
-    assert.equal(extractText(buf), "\nZ")  // 구역/단 나눔 → 줄바꿈 출력 + 14바이트 스킵
+    for (let k = 0; k < tail.length; k++) buf.writeUInt16LE(tail.charCodeAt(k), 2 + k * 2)
+    assert.equal(extractText(buf), "\n" + tail)  // 옛 버그면 "\n"만, 정상이면 7글자 전부 보존
   })
 
-  it("코드 10 뒤에 payload가 부족하면 스킵 안 함 (안전 처리)", () => {
+  it("코드 10 + 일반 텍스트 → 줄바꿈 뒤 텍스트 그대로", () => {
     const buf = Buffer.alloc(6)
     buf.writeUInt16LE(0x000a, 0)
     buf.writeUInt16LE("A".charCodeAt(0), 2)
     buf.writeUInt16LE("B".charCodeAt(0), 4)
-    const result = extractText(buf)
-    assert.equal(typeof result, "string")
+    assert.equal(extractText(buf), "\nAB")
   })
 })
 
