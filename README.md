@@ -523,19 +523,23 @@ CLI로도: `kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서`
 ### 레이아웃 보존 렌더 (HWPX → SVG)
 
 한컴이 HWPX에 저장하는 조판 캐시(줄 좌표·셀 그리드·개체 앵커)를 그대로 SVG 절대배치로
-그립니다. 조판 엔진이 없으므로 빠르고, 서버에 한컴 설치 없이 원본 모양 미리보기를 만들 수
-있습니다. **한컴(또는 조판 캐시를 기록하는 편집기)에서 저장한 파일 전용** — `markdownToHwpx`
-산출물엔 조판 캐시가 없어 에러를 반환합니다. 현재 1페이지·수식/도형 개체 미지원.
+그립니다. 조판 엔진 없이 빠르고, 서버에 한컴 설치 없이 원본 모양 미리보기를 만들 수
+있습니다. 다페이지 세로 스택·검색어 형광펜·그리기 도형 지원(v3.14~15). 조판 캐시가 없는
+파일(`markdownToHwpx` 산출물·AI 생성본·편집본)은 `reflow: true`를 주면 **순수 TS reflow
+엔진**이 직접 조판합니다(v3.15). 수식 개체는 미지원.
 
 ```typescript
 import { renderHwpxToSvg } from "kordoc"
 
-const r = await renderHwpxToSvg(readFileSync("결재문서.hwpx"))
+const r = await renderHwpxToSvg(readFileSync("결재문서.hwpx"), { highlights: ["예산"] })
 writeFileSync("결재문서.svg", r.svg)
-// r.width/r.height (pt), r.stats { texts, images, tables }, r.warnings
+// r.width/r.height (pt), r.pageCount, r.stats { texts, images, tables }, r.warnings
+
+const g = await renderHwpxToSvg(generatedHwpx, { reflow: true }) // 조판 캐시 없는 생성본
 ```
 
-CLI로도: `kordoc render 결재문서.hwpx -o 결재문서.svg`
+CLI로도: `kordoc render 결재문서.hwpx -o 결재문서.svg` (`--reflow`·`--highlight 예산,집행`),
+연속 렌더는 `kordoc render-worker`(stdin NDJSON, 미리보기 앱 연동용)
 
 ### 페이지 범위 지정
 
@@ -584,7 +588,11 @@ npx kordoc 보고서.hwpx --pages 1-3                  # 페이지 범위
 npx kordoc fill 신청서.hwpx -f '성명=홍길동,주소=서울' -o 결과.hwpx  # 양식 채우기
 npx kordoc fill 신청서.hwpx -j values.json -o 결과.hwpx             # JSON 파일로 채우기
 npx kordoc fill 신청서.hwpx --dry-run                               # 필드 목록만 확인
-npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더
+npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서         # 마크다운 → 공문서 HWPX
+npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx      # 서식 보존 라운드트립 패치 (.hwp도 자동 분기)
+npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx  # 도장/서명 날인
+npx kordoc validate 산출물.hwpx                      # HWPX 구조 검증 (ZIP·필수 파트·XML)
+npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더 (--reflow 지원)
 npx kordoc watch ./수신함 -d ./변환결과              # 폴더 감시 모드
 npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 ```
@@ -625,7 +633,7 @@ npx -y kordoc setup
 }
 ```
 
-**8개 도구:**
+**11개 도구:**
 
 | 도구 | 설명 |
 |------|------|
@@ -636,7 +644,10 @@ npx -y kordoc setup
 | `parse_table` | N번째 테이블만 추출 |
 | `compare_documents` | 두 문서 비교 (크로스 포맷) |
 | `parse_form` | 양식 필드를 JSON으로 추출 |
-| `fill_form` | 양식 템플릿에 값 채우기 (HWPX 원본 서식 보존) |
+| `fill_form` | 양식 템플릿에 값 채우기 (HWPX 원본 서식 보존, 서식/유일성 가드) |
+| `patch_document` | 편집된 마크다운을 원본 HWPX/HWP에 서식 보존 반영 (v3.3) |
+| `generate_document` | 마크다운(표·수식·차트 포함) → HWPX 생성, 공문서 프리셋 (v3.5) |
+| `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
 
 ## API
 
@@ -673,7 +684,9 @@ npx -y kordoc setup
 | `markdownToPdf(markdown, options?)` | Markdown → PDF 생성 (Print Renderer) |
 | `blocksToPdf(blocks, options?)` | IRBlock[] → PDF 생성 |
 | `renderHtml(blocks, options?)` | IRBlock[] → 인쇄용 HTML |
-| `renderHwpxToSvg(buffer, options?)` | HWPX 조판 캐시 → 레이아웃 보존 SVG (v3.10) |
+| `renderHwpxToSvg(buffer, options?)` | HWPX → 레이아웃 보존 SVG — 다페이지·형광펜·도형, 캐시 없으면 `reflow` (v3.10~15) |
+| `placeSealHwpx(buffer, seals)` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
+| `validateHwpx(buffer)` | HWPX 구조 검증 — ZIP·mimetype·필수 파트·XML 웰폼드 (v3.16) |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown 문자열 |
 
 ### 타입
