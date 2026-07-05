@@ -9,6 +9,10 @@ export interface LineSegment {
   x1: number; y1: number
   x2: number; y2: number
   lineWidth: number
+  /** fill 연산(그라디언트 밴드 스택)에서 나온 선분 — PDF w 연산자는 stroke 전용이라
+   *  fill 선분의 lineWidth 는 마지막 stroke 상태를 상속한 스테일 값이다. 음영 스택 폭
+   *  판별(dropShadingStacks)이 스테일 폭에 속지 않게 표기한다 (pline-3). */
+  fromFill?: boolean
 }
 
 export interface TableGrid {

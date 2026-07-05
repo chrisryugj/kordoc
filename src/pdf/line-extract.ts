@@ -79,11 +79,11 @@ export function extractLines(
     }
   }
 
-  function flushPath(isStroke: boolean) {
+  function flushPath(isStroke: boolean, fromFill = false) {
     if (!isStroke) { currentPath = []; return }
     const effWidth = lineWidth * ctmScale()
     for (const seg of currentPath) {
-      classifyAndAdd(seg, effWidth, horizontals, verticals)
+      classifyAndAdd(seg, effWidth, horizontals, verticals, fromFill)
     }
     currentPath = []
   }
@@ -184,10 +184,11 @@ export function extractLines(
 
           if (afterOp === OPS.stroke || afterOp === OPS.closeStroke) {
             flushPath(true)
-          } else if (afterOp === OPS.fill || afterOp === OPS.eoFill ||
-                     afterOp === OPS.fillStroke || afterOp === OPS.eoFillStroke ||
+          } else if (afterOp === OPS.fill || afterOp === OPS.eoFill) {
+            flushPath(true, true) // 순수 fill — 그라디언트 밴드 스택(스테일 폭)
+          } else if (afterOp === OPS.fillStroke || afterOp === OPS.eoFillStroke ||
                      afterOp === OPS.closeFillStroke || afterOp === OPS.closeEOFillStroke) {
-            flushPath(true)
+            flushPath(true) // fill+stroke — stroke 폭 유효
           } else if (afterOp === OPS.endPath) {
             flushPath(false)
           }
@@ -202,11 +203,13 @@ export function extractLines(
 
       case OPS.fill:
       case OPS.eoFill:
+        flushPath(true, true) // 순수 fill — 그라디언트 밴드 스택(스테일 폭)
+        break
       case OPS.fillStroke:
       case OPS.eoFillStroke:
       case OPS.closeFillStroke:
       case OPS.closeEOFillStroke:
-        flushPath(true)
+        flushPath(true) // fill+stroke — stroke 폭 유효
         break
 
       case OPS.endPath:
@@ -224,6 +227,7 @@ function classifyAndAdd(
   lineWidth: number,
   horizontals: LineSegment[],
   verticals: LineSegment[],
+  fromFill = false,
 ) {
   const dx = Math.abs(seg.x2 - seg.x1)
   const dy = Math.abs(seg.y2 - seg.y1)
@@ -235,12 +239,12 @@ function classifyAndAdd(
     const y = (seg.y1 + seg.y2) / 2
     const x1 = Math.min(seg.x1, seg.x2)
     const x2 = Math.max(seg.x1, seg.x2)
-    horizontals.push({ x1, y1: y, x2, y2: y, lineWidth })
+    horizontals.push({ x1, y1: y, x2, y2: y, lineWidth, fromFill })
   } else if (dx <= ORIENTATION_TOL) {
     const x = (seg.x1 + seg.x2) / 2
     const y1 = Math.min(seg.y1, seg.y2)
     const y2 = Math.max(seg.y1, seg.y2)
-    verticals.push({ x1: x, y1, x2: x, y2, lineWidth })
+    verticals.push({ x1: x, y1, x2: x, y2, lineWidth, fromFill })
   }
 }
 
@@ -320,8 +324,14 @@ function dropShadingStacks(lines: LineSegment[], dir: "h" | "v"): LineSegment[] 
         for (let j = s + 1; j <= e; j++) pitches.push(coord(group[j]) - coord(group[j - 1]))
         pitches.sort((a, b) => a - b)
         const medPitch = pitches[Math.floor(pitches.length / 2)] ?? 0
+        // 스택 본체가 fill 유래(그라디언트)면, stroke 로 그은 말단(글상자 실 테두리)은
+        // fromFill 이 달라, 스테일 폭이 우연히 스택과 같아도 트리밍해 보존한다 (pline-3)
+        let fillN = 0
+        for (let j = s; j <= e; j++) if (group[j].fromFill) fillN++
+        const stackIsFill = fillN * 2 > (e - s + 1)
         const edgeAlien = (j: number, inwardGap: number): boolean =>
-          wKey(group[j]) !== domW || (medPitch > 0 && inwardGap > medPitch * 1.8)
+          (stackIsFill && !group[j].fromFill)
+          || wKey(group[j]) !== domW || (medPitch > 0 && inwardGap > medPitch * 1.8)
         while (e - s + 1 >= STACK_MIN_LINES) {
           if (edgeAlien(s, coord(group[s + 1]) - coord(group[s]))) { s++; continue }
           if (edgeAlien(e, coord(group[e]) - coord(group[e - 1]))) { e--; continue }
@@ -353,6 +363,8 @@ const EDGE_NEAR = 10
 const EDGE_CONNECT_TOL = 5
 /** 상하 스택 표 분할: 그룹 내 세로 간격이 중앙값의 이 배를 넘으면 표 경계로 보고 쪼갬 */
 const EDGE_YGAP_SPLIT_K = 2.5
+/** y-간격 분할 절대 하한(pt) — 이중괘선 중앙값 붕괴 시 정상 행간을 표 경계로 오인하지 않게 */
+const EDGE_YGAP_ABS_MIN = 30
 /** 체인 뷰: 같은 논리 괘선으로 묶는 y 허용 오차 (pt) */
 const CHAIN_Y_TOL = 1.5
 /** 체인 뷰: 콜리니어 세그먼트 연결 최대 간격 (pt) */
@@ -440,7 +452,16 @@ export function closeOpenTableEdges(
     const threshold = median * EDGE_YGAP_SPLIT_K
     let cur: LineSegment[] = sorted.length ? [sorted[0]] : []
     for (let i = 1; i < sorted.length; i++) {
-      if (median > 0 && sorted[i].y1 - sorted[i - 1].y1 > threshold
+      const yLo = sorted[i - 1].y1, yHi = sorted[i].y1
+      const gap = yHi - yLo
+      // 밴드 아래 행 수직선(위 끝이 밴드 하단에 닿음)과 위 행 수직선(아래 끝이 밴드 상단에
+      // 닿음)이 같은 x 로 다리를 놓으면, 이 간격은 표 사이가 아니라 표 내부 병합 큰 행이므로
+      // 분할하지 않는다 — 정당한 개방변 표를 두 표로 절단하던 회귀 방지 (pline-1).
+      // 밴드 y구간을 관통하는 수직선(병합 셀 좌우변·내부 구분선)이 있으면 표 내부 병합 큰
+      // 행이므로 분할하지 않는다. 표 사이 프로즈에는 관통 수직선이 없다 — 두 별개 표는 각자
+      // 내부에서만 수직선이 끝나므로, 두 표 용접 방지(원 #3)와 양립한다 (pline-1).
+      const bridged = verticals.some(vl => vl.y1 <= yLo + EDGE_NEAR && vl.y2 >= yHi - EDGE_NEAR)
+      if (median > 0 && gap > threshold && gap > EDGE_YGAP_ABS_MIN && !bridged
           && cur.length >= EDGE_MIN_RULES && sorted.length - i >= EDGE_MIN_RULES) {
         splitGroups.push(cur)
         cur = []

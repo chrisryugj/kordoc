@@ -58,6 +58,17 @@ describe("closeOpenTableEdges — 상하 스택 표 용접 방지", () => {
     const spanning = synth.filter(s => s.y1 <= 601 && s.y2 >= 759)
     assert.ok(spanning.length >= 1, `단일 표로 유지돼 전체를 닫아야 함: ${JSON.stringify(synth)}`)
   })
+
+  it("병합 큰 행에 관통 수직선이 있으면 분할하지 않는다 (pline-1)", () => {
+    // 위 3괘선 + 병합 큰 행(140~200, 60pt) + 아래 3괘선. 병합 셀 좌우 구분선이 밴드를
+    // 관통하면 표 내부이므로 단일 표로 유지 — 정당한 개방변 표를 두 표로 절단하던 회귀 방지.
+    const horizontals = [h(100), h(120), h(140), h(200), h(220), h(240)]
+    const verticals = [v(300, 100, 240)]
+    const result = closeOpenTableEdges(horizontals, verticals)
+    const synth = result.filter(s => !verticals.includes(s))
+    const spanning = synth.filter(s => s.y1 <= 101 && s.y2 >= 239)
+    assert.ok(spanning.length >= 1, `병합 행 관통 수직선이 있으면 단일 표(y100~240): ${JSON.stringify(synth)}`)
+  })
 })
 
 describe("dropShadingStacks — 플러시 테두리 삼킴 방지 (리뷰 #12)", () => {
@@ -87,5 +98,19 @@ describe("dropShadingStacks — 플러시 테두리 삼킴 방지 (리뷰 #12)",
     for (let i = 0; i < 26; i++) stack.push(hl(200 + i * 0.5, 0.1))
     const { horizontals } = preprocessLines(stack, [])
     assert.equal(horizontals.length, 0)
+  })
+
+  it("동폭이어도 fromFill 스택 사이 stroke 테두리는 살린다 (pline-3)", () => {
+    // 그라디언트 밴드를 fill rect 스택으로 그리면 fill 선분이 마지막 stroke 폭(0.75)을
+    // 상속해 테두리와 동폭이 된다 — 폭 판별만으론 상하변을 못 살린다. fromFill 로 구분.
+    const stack: LineSegment[] = []
+    for (let i = 0; i < 20; i++) stack.push({ x1: 100, y1: 101.5 + i * 0.5, x2: 500, y2: 101.5 + i * 0.5, lineWidth: 0.75, fromFill: true })
+    const top: LineSegment = { x1: 100, y1: 100.9, x2: 500, y2: 100.9, lineWidth: 0.75, fromFill: false }
+    const bot: LineSegment = { x1: 100, y1: 112.1, x2: 500, y2: 112.1, lineWidth: 0.75, fromFill: false }
+    const { horizontals } = preprocessLines([top, ...stack, bot], [])
+    const ys = horizontals.map(l => l.y1)
+    assert.ok(ys.includes(100.9), "상변 stroke 테두리 보존(동폭이어도 fromFill 구분)")
+    assert.ok(ys.includes(112.1), "하변 stroke 테두리 보존")
+    assert.ok(!ys.some(y => y > 101 && y < 112), "fill 스택은 드랍")
   })
 })
