@@ -20,6 +20,7 @@ program
   .option("--format <type>", "출력 형식: markdown (기본) 또는 json", "markdown")
   .option("--no-header-footer", "PDF 머리글/바닥글 자동 제거")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
+  .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, 별도 파일 미저장)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
     const validFormats = ["markdown", "json"]
@@ -52,6 +53,7 @@ program
         if (opts.pages) parseOptions.pages = opts.pages as string
         if (opts.headerFooter === false) parseOptions.removeHeaderFooter = false
         if (opts.formulaOcr) parseOptions.formulaOcr = true
+        if (opts.inlineImages) parseOptions.inlineImages = true
         if (!opts.silent) {
           parseOptions.onProgress = (current: number, total: number) => {
             process.stderr.write(`\r[kordoc] ${filePrefix}${fileName} (${format}) [${current}/${total}]`)
@@ -69,8 +71,8 @@ program
         if (!opts.silent) process.stderr.write(` OK\n`)
 
         let markdown = result.markdown
-        // --out-dir 시 이미지 참조 경로에 images/ 접두사 추가
-        if (opts.outDir && result.images?.length) {
+        // --out-dir 시 이미지 참조 경로에 images/ 접두사 추가 (인라인 모드에선 이미지가 마크다운에 임베드되므로 건너뜀)
+        if (opts.outDir && result.images?.length && !opts.inlineImages) {
           markdown = markdown.replace(/!\[image\]\(image_/g, "![image](images/image_")
         }
         const output = opts.format === "json"
@@ -79,9 +81,9 @@ program
             , 2)
           : markdown
 
-        // 이미지 저장 (--out-dir 또는 --output 시)
+        // 이미지 저장 (--out-dir 또는 --output 시) — 인라인 모드에선 이미지가 마크다운에 임베드되므로 미저장
         const saveImages = (dir: string) => {
-          if (!result.images?.length) return
+          if (!result.images?.length || opts.inlineImages) return
           const imgDir = resolve(dir, "images")
           mkdirSync(imgDir, { recursive: true })
           for (const img of result.images) {

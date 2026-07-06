@@ -98,7 +98,8 @@ server.tool(
         }
       }
 
-      const result = await parse(buffer)
+      // 에이전트가 별도 파일 없이 이미지를 해석하도록 자체 완결형 마크다운(이미지 인라인)을 기본 제공
+      const result = await parse(buffer, { inlineImages: true })
 
       if (!result.success) {
         return {

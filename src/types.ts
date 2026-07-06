@@ -149,6 +149,15 @@ export interface ParseOptions {
    * `~/.cache/kordoc/models/pix2text/` 에 SHA-256 검증과 함께 저장된다.
    */
   formulaOcr?: boolean
+  /**
+   * 추출된 이미지를 마크다운에 base64 data URI 로 인라인 (기본 false).
+   *
+   * 활성화 시 `![image](image_001.bmp)` 참조를 `![image](data:image/png;base64,...)` 로
+   * 치환한다. 임베드된 BMP 는 PNG 로 무손실 압축 후 인라인하여 용량을 크게 줄인다.
+   * 별도 이미지 파일 없이 자체 완결형 마크다운이 되어 MCP/AI 에이전트 소비에 적합하다.
+   * (현재 HWP5 경로 지원)
+   */
+  inlineImages?: boolean
 }
 
 // ─── 파싱 경고 ──────────────────────────────────────

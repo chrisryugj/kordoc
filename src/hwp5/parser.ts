@@ -10,6 +10,7 @@ import {
 } from "./record.js"
 import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
 import { extractHwp5Images, extractHwp5ImagesLenient } from "./images.js"
+import { inlineImagesIntoMarkdown } from "../image/transcode.js"
 import { decryptViewText } from "./crypto.js"
 import { hwpEquationToLatex } from "./equation.js"
 import { parseLenientCfb, type LenientCfbContainer } from "./cfb-lenient.js"
@@ -196,7 +197,11 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
     .filter(b => b.type === "heading" && b.level && b.text)
     .map(b => ({ level: b.level!, text: b.text!, pageNumber: b.pageNumber }))
 
-  const markdown = blocksToMarkdown(flatBlocks)
+  let markdown = blocksToMarkdown(flatBlocks)
+  // 이미지 인라인 옵션 — BMP→PNG 압축 후 base64 data URI 로 치환 (AI 에이전트 자체 완결형 마크다운)
+  if (options?.inlineImages && images.length > 0) {
+    markdown = inlineImagesIntoMarkdown(markdown, images, { compress: true })
+  }
   return { markdown, blocks: flatBlocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined }
 }
 
