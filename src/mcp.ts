@@ -11,6 +11,7 @@ import type { GongmunOptions } from "./index.js"
 import { VERSION, toArrayBuffer, sanitizeError, KordocError } from "./utils.js"
 import { extractHwp5MetadataOnly } from "./hwp5/parser.js"
 import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
+import { MAX_INLINE_MD_BYTES } from "./image/transcode.js"
 // pdfjs-dist는 optional — dynamic import로 지연 로드
 // import { extractPdfMetadataOnly } from "./pdf/parser.js"
 
@@ -108,6 +109,17 @@ server.tool(
         }
       }
 
+      // 인라인 결과가 상한을 넘으면(이미지 다수 → base64 폭증) 에이전트 컨텍스트/전송 오버플로를
+      // 막기 위해 비인라인(파일 참조) 마크다운으로 폴백하고, 생략 사실을 안내한다. (재파싱 대신
+      // 이미 파싱된 blocks 로 마크다운만 재생성 — blocks 의 이미지 참조는 인라인으로 바뀌지 않음)
+      let markdown = result.markdown
+      let omitNote = ""
+      if (Buffer.byteLength(markdown, "utf8") > MAX_INLINE_MD_BYTES) {
+        markdown = blocksToMarkdown(result.blocks)
+        const imgCount = result.images?.length ?? 0
+        omitNote = `\n\n⚠️ 이미지 ${imgCount}개가 인라인 크기 상한(${(MAX_INLINE_MD_BYTES / 1024 / 1024).toFixed(0)}MB)을 초과하여 본문에 인라인하지 않았습니다. 이미지는 파일 참조(image_NNN)로만 표시됩니다.`
+      }
+
       const meta = [
         `포맷: ${result.fileType.toUpperCase()}`,
         result.pageCount ? `페이지: ${result.pageCount}` : null,
@@ -129,7 +141,8 @@ server.tool(
         parts.push(`\n⚠️ 경고:\n${warnText}`)
       }
 
-      parts.push(`\n\n${result.markdown}`)
+      parts.push(`\n\n${markdown}`)
+      if (omitNote) parts.push(omitNote)
 
       return {
         content: [{ type: "text", text: parts.join("") }],

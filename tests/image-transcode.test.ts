@@ -3,7 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { inflateSync } from "node:zlib"
-import { bmpToPng, inlineImagesIntoMarkdown } from "../src/image/transcode.js"
+import { bmpToPng, inlineImagesIntoMarkdown, MAX_INLINE_MD_BYTES } from "../src/image/transcode.js"
 
 /** 24bpp BI_RGB(bottom-up) BMP 합성 — pixelsTopDown 은 [r,g,b] 배열(행 우선, 0행=최상단) */
 function makeBmp24(width: number, height: number, pixelsTopDown: number[][]): Uint8Array {
@@ -97,6 +97,30 @@ describe("bmpToPng", () => {
     bmp8.writeUInt16LE(8, 28) // biBitCount = 8
     assert.equal(bmpToPng(new Uint8Array(bmp8)), null, "8bpp 미지원")
   })
+
+  it("W×H 가 픽셀 상한(~64MP)을 넘으면 할당 전에 null 을 반환한다", () => {
+    // 54바이트 헤더만 만들고 거대한 폭·높이를 '주장'한다 — 실제 픽셀 데이터는 없다.
+    // 각 변(20000)은 MAX_DIM(0x7fff=32767) 이하이므로 변별 상한은 통과하지만
+    // 곱(4억 픽셀)이 64MP 를 크게 초과 → rgba/raw 할당·deflate 이전에 차단되어야 한다.
+    // (구현이 픽셀 검사를 stride/잘림 검사보다 앞에 두므로, null 은 픽셀 상한에 의한 것이다.)
+    const buf = Buffer.alloc(54)
+    buf[0] = 0x42
+    buf[1] = 0x4d // "BM"
+    buf.writeUInt32LE(54, 10) // bfOffBits
+    buf.writeUInt32LE(40, 14) // biSize (BITMAPINFOHEADER)
+    buf.writeInt32LE(20000, 18) // width  (≤ MAX_DIM)
+    buf.writeInt32LE(20000, 22) // height (≤ MAX_DIM) → 20000×20000 = 4억 픽셀
+    buf.writeUInt16LE(1, 26) // biPlanes
+    buf.writeUInt16LE(24, 28) // biBitCount = 24
+    buf.writeUInt32LE(0, 30) // biCompression = BI_RGB
+    assert.equal(bmpToPng(new Uint8Array(buf)), null, "픽셀 상한 초과는 null")
+  })
+
+  it("MAX_DIM 이하이면서 픽셀 상한 이하인 헤더는 픽셀 검사에서 걸리지 않는다", () => {
+    // 정상 크기 이미지는 픽셀 상한과 무관하게 통과해야 한다 (거짓 양성 방지 회귀).
+    const bmp = makeBmp24(2, 2, [[10, 20, 30], [40, 50, 60], [70, 80, 90], [100, 110, 120]])
+    assert.ok(bmpToPng(bmp), "정상 소형 이미지는 픽셀 상한에 걸리면 안 됨")
+  })
 })
 
 describe("inlineImagesIntoMarkdown", () => {
@@ -128,5 +152,18 @@ describe("inlineImagesIntoMarkdown", () => {
     // base64 가 원본 BMP 바이트와 일치하는지 확인
     const b64 = out.match(/data:image\/bmp;base64,([A-Za-z0-9+/=]+)/)![1]
     assert.deepEqual(new Uint8Array(Buffer.from(b64, "base64")), bmp)
+  })
+})
+
+describe("MAX_INLINE_MD_BYTES (MCP parse_document 인라인 크기 상한)", () => {
+  it("상한은 4MB 이며 바이트 길이 비교가 경계에서 뒤집힌다", () => {
+    // MCP parse_document 는 Buffer.byteLength(markdown) > MAX_INLINE_MD_BYTES 로 폴백 여부를
+    // 결정한다. 상수값과 경계 판정을 고정해 임계 회귀를 막는다. (MCP 서버 진입점은 import
+    // 시 stdio 서버를 기동하므로 핸들러를 직접 부르지 않고, 공유 상수와 판정식을 검증한다.)
+    assert.equal(MAX_INLINE_MD_BYTES, 4 * 1024 * 1024)
+    const atCap = "a".repeat(MAX_INLINE_MD_BYTES)
+    const overCap = "a".repeat(MAX_INLINE_MD_BYTES + 1)
+    assert.ok(!(Buffer.byteLength(atCap, "utf8") > MAX_INLINE_MD_BYTES), "상한 이하는 인라인 유지")
+    assert.ok(Buffer.byteLength(overCap, "utf8") > MAX_INLINE_MD_BYTES, "상한 초과는 비인라인 폴백")
   })
 })

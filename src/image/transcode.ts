@@ -38,6 +38,12 @@ function crc32(bytes: Uint8Array): number {
 const BI_RGB = 0
 /** 폭·높이 상한 — 비정상 헤더에 의한 과대 할당 방지 */
 const MAX_DIM = 0x7fff
+/**
+ * 총 픽셀(W×H) 상한 — MAX_DIM 은 각 변만 제한하므로 곱의 폭주(과대 할당 + 긴 deflateSync
+ * 동기 블로킹)를 별도로 차단한다. raw 저장 BMP 는 상위 inflate 100MB 캡을 우회하므로 필요.
+ * ~64MP 는 실제 문서 임베드 이미지보다 훨씬 크다.
+ */
+const MAX_PIXELS = 64_000_000
 
 /**
  * 비압축 BMP(24/32bpp, BI_RGB) → PNG(8bit RGBA).
@@ -69,6 +75,8 @@ export function bmpToPng(bmp: Uint8Array): Uint8Array | null {
 
   const topDown = rawHeight < 0
   const height = Math.abs(rawHeight)
+  // 총 픽셀 상한 검사 — rgba/raw 할당·deflate 전에 조기 차단 (각 변은 MAX_DIM 이하여도 곱은 폭주 가능)
+  if (width * height > MAX_PIXELS) return null
   const bytesPerPixel = bitCount >> 3
   // 행 스트라이드 — 4바이트 경계 패딩 (24bpp 에서 유효)
   const rowStride = (width * bytesPerPixel + 3) & ~3
@@ -158,6 +166,13 @@ function encodePng(width: number, height: number, rgba: Uint8Array): Uint8Array 
 }
 
 // ─── 마크다운 이미지 인라이너 ────────────────────────
+
+/**
+ * 인라인 마크다운 바이트 상한(4MB) — MCP `parse_document` 가 이미지 다수 문서를
+ * 인라인할 때 base64 폭증으로 에이전트 컨텍스트/전송을 넘기지 않도록 하는 폴백 기준.
+ * 초과 시 비인라인(파일 참조) 출력으로 되돌린다.
+ */
+export const MAX_INLINE_MD_BYTES = 4 * 1024 * 1024
 
 /** 정규식 메타문자 이스케이프 */
 function escapeRegExp(s: string): string {
