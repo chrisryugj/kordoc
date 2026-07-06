@@ -229,7 +229,17 @@ export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
         // 레이아웃 테이블 → 각 셀을 paragraph 블록으로 분해
         for (let r = 0; r < numRows; r++) {
           for (let c = 0; c < numCols; c++) {
-            const cellText = cells[r]?.[c]?.text?.trim()
+            const cell = cells[r]?.[c]
+            if (!cell) continue
+            // 셀에 구조화 블록(중첩표·이미지·다중문단)이 있으면 재귀 해체로 구조 보존.
+            // 중첩 spec 표(numRows>3)는 해체되지 않고 실제 table 블록으로 살아남는다
+            // (text의 " / " 평탄화 폴백으로만 남아 유실되던 버그 수정). 셀 blocks는
+            // 이미 같은 pageNumber로 생성되므로 그대로 보존된다.
+            if (cell.blocks?.length) {
+              result.push(...flattenLayoutTables(cell.blocks))
+              continue
+            }
+            const cellText = cell.text?.trim()
             if (!cellText) continue
             // 셀 내 줄바꿈을 별도 paragraph로 분리
             for (const line of cellText.split("\n")) {
