@@ -1,0 +1,643 @@
+{
+  "schema_version": "0.1.0-draft",
+  "purpose": "kordoc generate가 소비할 수 있는 표 시각 서식 프로필 예시 (kordoc issue #41)",
+  "unit_note": "길이 값은 HWPUNIT (1/7200 inch). borderFill/charPr id는 이 파일 안에서 자기완결적으로 해석 가능.",
+  "source": "pledge_form_reference.hwpx (비식별 처리된 위원회 공약 실천계획 서식)",
+  "tables": [
+    {
+      "table_index": 0,
+      "rows": 3,
+      "cols": 3,
+      "width_hwpunit": "49042",
+      "col_widths_hwpunit": [
+        "16819",
+        "15970",
+        "16253"
+      ],
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "16819",
+          "height_hwpunit": "882",
+          "borderFillIDRef": "5",
+          "charPrIDRef": "21"
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "15970",
+          "height_hwpunit": "1764",
+          "borderFillIDRef": "7",
+          "charPrIDRef": "22"
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "16253",
+          "height_hwpunit": "882",
+          "borderFillIDRef": "9",
+          "charPrIDRef": "21"
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "16819",
+          "height_hwpunit": "882",
+          "borderFillIDRef": "10",
+          "charPrIDRef": "21"
+        },
+        {
+          "row": 1,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "16253",
+          "height_hwpunit": "882",
+          "borderFillIDRef": "11",
+          "charPrIDRef": "21"
+        },
+        {
+          "row": 2,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 3,
+          "width_hwpunit": "49042",
+          "height_hwpunit": "5090",
+          "borderFillIDRef": "12",
+          "charPrIDRef": "9"
+        }
+      ],
+      "used_border_fills": {
+        "10": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#000000"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#502962"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#000000"
+          }
+        },
+        "11": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#502962"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.2 mm",
+            "color": "#000000"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#000000"
+          }
+        },
+        "12": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#000000"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.2 mm",
+            "color": "#000000"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.2 mm",
+            "color": "#000000"
+          }
+        },
+        "5": {
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#502962"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#000000"
+          }
+        },
+        "7": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#502962"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#502962"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#502962"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#000000"
+          }
+        },
+        "9": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#502962"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#000000"
+          }
+        }
+      },
+      "used_char_prs": {
+        "21": {
+          "height_hwpunit": "600",
+          "textColor": "#000000",
+          "bold": false,
+          "fontRef_hangul": "4"
+        },
+        "22": {
+          "height_hwpunit": "1300",
+          "textColor": "#FFFFFF",
+          "bold": true,
+          "fontRef_hangul": "5"
+        },
+        "9": {
+          "height_hwpunit": "1200",
+          "textColor": "#000000",
+          "bold": false,
+          "fontRef_hangul": "2"
+        }
+      }
+    },
+    {
+      "table_index": 1,
+      "rows": 5,
+      "cols": 9,
+      "width_hwpunit": "47624",
+      "col_widths_hwpunit": [
+        "5953",
+        "8783",
+        "5953",
+        "5387",
+        "5387",
+        "5387",
+        "5387"
+      ],
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "rowSpan": 3,
+          "colSpan": 1,
+          "width_hwpunit": "5953",
+          "height_hwpunit": "4840",
+          "borderFillIDRef": "21",
+          "charPrIDRef": "24"
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "8783",
+          "height_hwpunit": "2614",
+          "borderFillIDRef": "19",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "rowSpan": 3,
+          "colSpan": 1,
+          "width_hwpunit": "5953",
+          "height_hwpunit": "4840",
+          "borderFillIDRef": "22",
+          "charPrIDRef": "24"
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 0,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 0,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 2,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 0,
+          "col": 7,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 0,
+          "col": 8,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "16",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 1,
+          "col": 3,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 1,
+          "col": 4,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 1,
+          "col": 5,
+          "rowSpan": 2,
+          "colSpan": 2,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 1,
+          "col": 7,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 1,
+          "col": 8,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "5387",
+          "height_hwpunit": "2420",
+          "borderFillIDRef": "16",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 2,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "width_hwpunit": "8783",
+          "height_hwpunit": "2226",
+          "borderFillIDRef": "20",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 3,
+          "col": 0,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "5953",
+          "height_hwpunit": "3896",
+          "borderFillIDRef": "21",
+          "charPrIDRef": "24"
+        },
+        {
+          "row": 3,
+          "col": 1,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "8783",
+          "height_hwpunit": "3896",
+          "borderFillIDRef": "13",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 3,
+          "col": 2,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "width_hwpunit": "5953",
+          "height_hwpunit": "3896",
+          "borderFillIDRef": "22",
+          "charPrIDRef": "24"
+        },
+        {
+          "row": 3,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 3,
+          "width_hwpunit": "13467",
+          "height_hwpunit": "1948",
+          "borderFillIDRef": "14",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 3,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 3,
+          "width_hwpunit": "13468",
+          "height_hwpunit": "1948",
+          "borderFillIDRef": "17",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 4,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 3,
+          "width_hwpunit": "13467",
+          "height_hwpunit": "1948",
+          "borderFillIDRef": "15",
+          "charPrIDRef": "25"
+        },
+        {
+          "row": 4,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 3,
+          "width_hwpunit": "13468",
+          "height_hwpunit": "1948",
+          "borderFillIDRef": "18",
+          "charPrIDRef": "25"
+        }
+      ],
+      "used_border_fills": {
+        "13": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "14": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "15": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "16": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "17": {
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "18": {
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "19": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "20": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "21": {
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        },
+        "22": {
+          "leftBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "rightBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "topBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "bottomBorder": {
+            "type": "SOLID",
+            "width": "0.12 mm",
+            "color": "#0000FF"
+          },
+          "diagonal": {
+            "type": "SOLID",
+            "width": "0.1 mm",
+            "color": "#000000"
+          }
+        }
+      },
+      "used_char_prs": {
+        "24": {
+          "height_hwpunit": "1100",
+          "textColor": "#000000",
+          "bold": true,
+          "fontRef_hangul": "2"
+        },
+        "25": {
+          "height_hwpunit": "1100",
+          "textColor": "#000000",
+          "bold": false,
+          "fontRef_hangul": "2"
+        }
+      }
+    }
+  ]
+}
