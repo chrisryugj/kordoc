@@ -259,6 +259,60 @@ export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
   return result
 }
 
+/** 러닝 헤더 후보 판정 최대 길이 — 긴 본문 문단을 헤더로 오인하지 않도록 */
+const RUNNING_HEADER_MAX_LEN = 40
+/** 러닝 헤더로 판정할 최소 반복 횟수 — 페이지마다 재삽입되는 노이즈만 제거 */
+const RUNNING_HEADER_MIN_FREQ = 3
+
+/** 러닝 헤더 후보 여부 — 짧은 번호매김 섹션 제목("2. 과제 구축 내용")만 */
+function isRunningHeaderCandidate(block: IRBlock): boolean {
+  if (block.type !== "paragraph" && block.type !== "heading") return false
+  const text = block.text?.trim()
+  if (!text || text.length > RUNNING_HEADER_MAX_LEN) return false
+  return /^\d+\.\s/.test(text)
+}
+
+/**
+ * 페이지 레이아웃 표에서 유래한 반복 러닝 헤더 문단 중복 제거 — IRBlock 레벨.
+ *
+ * 배경: 구형 HWP5 문서(군 제안서 등)는 본문 전체를 "페이지 = N×1 표" 사슬로
+ * 구성하고 각 표의 cell(0,0)에 동일한 섹션 헤더("2. 과제 구축 내용")를 반복
+ * 배치한다. flattenLayoutTables가 이 표들을 문단으로 해체하면 같은 헤더가
+ * 페이지마다 1회씩 독립 문단으로 남아 본문 사이에 노이즈로 흩어진다. HWP
+ * 머리말/꼬리말(CTRL_HEAD/CTRL_FOOT)은 applyHeaderFooterEffect에서 이미
+ * dedupe되지만, 본문 레이아웃 표의 러닝 헤더는 그 대상이 아니다.
+ *
+ * 정책(보수적): "짧은 번호매김 섹션 제목"이 정확히 동일 텍스트로 3회 이상
+ * 반복될 때만 최초 1회를 남기고 이후 중복을 제거한다. 비후보 블록과 3회 미만
+ * 후보는 원형 그대로 통과시킨다(본문 삭제 위험 최소화). 위치 무관 — 평탄화된
+ * 블록 스트림 전체를 대상으로 하며, 입력 블록을 변형하지 않고 새 배열을 반환한다.
+ */
+export function dedupeRunningHeaders(blocks: IRBlock[]): IRBlock[] {
+  // Pass 1: 후보 텍스트 빈도 집계
+  const freq = new Map<string, number>()
+  for (const block of blocks) {
+    if (!isRunningHeaderCandidate(block)) continue
+    const text = block.text!.trim()
+    freq.set(text, (freq.get(text) ?? 0) + 1)
+  }
+
+  // Pass 2: 빈도 ≥ 임계값인 후보는 최초 1회만 유지, 이후 중복 제거
+  const seen = new Set<string>()
+  const result: IRBlock[] = []
+  for (const block of blocks) {
+    if (isRunningHeaderCandidate(block)) {
+      const text = block.text!.trim()
+      if ((freq.get(text) ?? 0) >= RUNNING_HEADER_MIN_FREQ) {
+        if (seen.has(text)) continue // 이후 중복 — 제거
+        seen.add(text)
+      }
+    }
+    result.push(block)
+  }
+
+  return result
+}
+
 export function blocksToMarkdown(blocks: IRBlock[]): string {
   const lines: string[] = []
 

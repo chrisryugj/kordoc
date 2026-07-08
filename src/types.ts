@@ -149,6 +149,16 @@ export interface ParseOptions {
    * `~/.cache/kordoc/models/pix2text/` 에 SHA-256 검증과 함께 저장된다.
    */
   formulaOcr?: boolean
+  /**
+   * 레이아웃 표 페이지 반복 헤더(러닝 헤더) 정리 휴리스틱 활성화 (기본 false).
+   *
+   * 구형 HWP5 문서가 페이지마다 재삽입한 짧은 번호매김 러닝 헤더
+   * ("2. 과제 구축 내용")를 최초 1회만 남기고 이후 중복을 제거한다.
+   * 다만 페이지 위치 정보가 없는 HWP5 특성상 이 휴리스틱은 정당하게 반복되는
+   * 번호매김 문단(예: 붙임/별지별 재번호 "1. 목적")도 삭제할 수 있어 opt-in 으로
+   * 둔다. 활성 시 제거가 발생하면 HIDDEN_TEXT_FILTERED 경고를 남긴다.
+   */
+  dedupeRunningHeaders?: boolean
 }
 
 // ─── 파싱 경고 ──────────────────────────────────────

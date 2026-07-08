@@ -20,6 +20,7 @@ program
   .option("--format <type>", "출력 형식: markdown (기본) 또는 json", "markdown")
   .option("--no-header-footer", "PDF 머리글/바닥글 자동 제거")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
+  .option("--dedupe-headers", "HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
     const validFormats = ["markdown", "json"]
@@ -52,6 +53,7 @@ program
         if (opts.pages) parseOptions.pages = opts.pages as string
         if (opts.headerFooter === false) parseOptions.removeHeaderFooter = false
         if (opts.formulaOcr) parseOptions.formulaOcr = true
+        if (opts.dedupeHeaders) parseOptions.dedupeRunningHeaders = true
         if (!opts.silent) {
           parseOptions.onProgress = (current: number, total: number) => {
             process.stderr.write(`\r[kordoc] ${filePrefix}${fileName} (${format}) [${current}/${total}]`)
