@@ -41,9 +41,10 @@ const MAX_DIM = 0x7fff
 /**
  * 총 픽셀(W×H) 상한 — MAX_DIM 은 각 변만 제한하므로 곱의 폭주(과대 할당 + 긴 deflateSync
  * 동기 블로킹)를 별도로 차단한다. raw 저장 BMP 는 상위 inflate 100MB 캡을 우회하므로 필요.
- * ~64MP 는 실제 문서 임베드 이미지보다 훨씬 크다.
+ * 36MP = A4 전면 600dpi 스캔(≈35MP)까지 허용 — 그 이상은 rgba+raw 로 300MB 를 넘겨
+ * MCP 서버 이벤트루프를 수 초 세우므로 원본 바이트 폴백으로 돌린다.
  */
-const MAX_PIXELS = 64_000_000
+const MAX_PIXELS = 36_000_000
 
 /**
  * 비압축 BMP(24/32bpp, BI_RGB) → PNG(8bit RGBA).
@@ -167,13 +168,6 @@ function encodePng(width: number, height: number, rgba: Uint8Array): Uint8Array 
 
 // ─── 마크다운 이미지 인라이너 ────────────────────────
 
-/**
- * 인라인 마크다운 바이트 상한(4MB) — MCP `parse_document` 가 이미지 다수 문서를
- * 인라인할 때 base64 폭증으로 에이전트 컨텍스트/전송을 넘기지 않도록 하는 폴백 기준.
- * 초과 시 비인라인(파일 참조) 출력으로 되돌린다.
- */
-export const MAX_INLINE_MD_BYTES = 4 * 1024 * 1024
-
 /** 정규식 메타문자 이스케이프 */
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -186,9 +180,12 @@ interface InlineImage {
 }
 
 /**
- * 마크다운의 `![image](FILENAME)` 및 `![image](images/FILENAME)`(CLI 접두사) 참조를
- * base64 data URI 로 치환한다. 별도 이미지 파일 없이 자체 완결형 마크다운이 되어
- * MCP/AI 에이전트 소비에 적합하다.
+ * 마크다운의 이미지 참조를 base64 data URI 로 치환해 자체 완결형 마크다운을 만든다.
+ * 두 방출 형태를 모두 커버한다:
+ * - `![image](FILENAME)` / `![image](images/FILENAME)` — 일반 문단 (CLI 접두사 포함)
+ * - `<img src="FILENAME">` — 병합/중첩 표 셀 (table/builder.ts HTML 표 경로).
+ *   이걸 빼면 CLI `--inline-images` 가 이미지 저장을 생략하면서 표 셀 이미지만
+ *   dangling 참조로 유실된다.
  *
  * @param opts.compress 기본 true. `image/bmp` 는 PNG 로 트랜스코딩 후 인라인하며,
  *                      트랜스코딩 실패 시 원본 바이트+원본 MIME 으로 폴백한다.
@@ -212,9 +209,12 @@ export function inlineImagesIntoMarkdown(
     }
     const base64 = Buffer.from(bytes).toString("base64")
     const dataUri = `data:${mime};base64,${base64}`
+    const name = escapeRegExp(img.filename)
     // FILENAME 과 images/FILENAME 접두사를 모두 정확한 파일명 기준으로 치환
-    const re = new RegExp(`!\\[image\\]\\((?:images/)?${escapeRegExp(img.filename)}\\)`, "g")
-    out = out.replace(re, () => `![image](${dataUri})`)
+    const mdRe = new RegExp(`!\\[image\\]\\((?:images/)?${name}\\)`, "g")
+    out = out.replace(mdRe, () => `![image](${dataUri})`)
+    const imgTagRe = new RegExp(`(<img\\b[^>]*\\bsrc=")(?:images/)?${name}(")`, "g")
+    out = out.replace(imgTagRe, (_m, pre: string, post: string) => `${pre}${dataUri}${post}`)
   }
   return out
 }

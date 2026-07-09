@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.18.1] - 2026-07-10
+
+v3.17.0→v3.18.0 릴리스 범위 프로덕션 리뷰(적대 검증 에이전트 2기 + 실증 재현)에서 확인된
+결함 수정. P1 3건은 전부 스크립트로 재현 후 수정했다.
+
+### Fixed
+- **서식 프로필 표 정합 붕괴 — 남의 서식이 엉뚱한 표에 무경고 적용 (P1)**: 추출기는 원본의
+  모든 top-level `<hp:tbl>`을 세지만 parse 마크다운은 일부 표(1×1 제목박스, 머리말/꼬리말 표
+  등)를 표로 방출하지 않아 순번(`table_index`) 매칭이 어긋났다 — 재현: `[1×1, 2×2 RED, 2×2
+  GREEN]` 원본에서 재생성 시 두 번째 표에 RED 음영이 무경고 적용. 프로필에 첫 셀 정규화 앵커
+  `anchor_text`(스키마 0.2.0)를 싣고, 소비는 **행·열 필수 + 앵커 일치 우선, 앵커 없으면
+  순번 정확일치**로 전환 — 매칭 실패는 무서식(잘못된 서식보다 안전). 앵커 없는 손편집 sparse
+  프로필(`table_index`로 특정 표 지정)의 기존 의미는 보존된다.
+- **html_table 생성 실패 시 이후 표 프로필이 한 칸씩 시프트 (P1 연쇄)**: 표 순번을 생성
+  성공이 아니라 **시도 기준**으로 세도록 변경 — 깨진 HTML 표가 문단 폴백돼도 뒤 표들의
+  순번 매칭이 밀리지 않는다.
+- **MCP `parse_document` 이미지 인라인 회귀 (P1)**: v3.18.0이 기본 인라인(base64, 4MB 상한)으로
+  바꿨으나 MCP 텍스트 응답의 data URI는 모델이 이미지로 해석하지 못하고, 사진 1장(≈100KB →
+  base64 133KB ≈ 34k 토큰)만으로 클라이언트 도구 응답 한도(Claude Code 기본 25k 토큰)를 넘겨
+  호출이 깨졌다 — v3.17.0의 파일 참조(`image_NNN`) 방식으로 복원. 자체 완결형 마크다운이
+  필요하면 CLI `--inline-images`를 사용.
+- **병합/중첩 표 셀 이미지 유실 (P1)**: HWP5 표 셀 이미지는 `<img src="image_NNN.bmp">`(HTML
+  표 경로)로 방출되는데 인라이너가 `![image](...)` 문법만 치환해, CLI `--inline-images`가
+  이미지 저장을 생략하면서 표 셀 이미지만 dangling 참조로 유실 — `<img src>` 참조도 인라인.
+  `--out-dir`의 `images/` 경로 접두사도 `<img src>`에 함께 적용(비인라인 모드 참조 깨짐 수정).
+- **프로필 `fontRef_hangul` dangling IDREF (P2)**: 원본 fontfaces 순번(3 이상 흔함)을
+  생성 header(HANGUL 3종, id 0~2)에 없는 id로 그대로 방출하던 것 — 범위 밖은 기본 글꼴(0)로.
+- **BMP 픽셀 상한 64MP→36MP (P2)**: A4 전면 600dpi(≈35MP)는 허용하되, 헤더가 주장하는
+  초대형 BMP가 rgba+raw 300MB+와 수 초의 `deflateSync` 동기 블로킹(MCP 서버 정지)을
+  유발하지 않도록 축소. 초과분은 원본 바이트 폴백(기존 동작).
+
+### Docs
+- **v3.18.0 미기재 변경 소급 기재**: CLI `--inline-images`(HWP5 전용 base64 인라인,
+  BMP→PNG 압축) / `--dedupe-headers`(HWP5 러닝 헤더 중복 제거 opt-in, 기본 off) 옵션 신설,
+  레이아웃 표 해체 시 중첩 구조(`cell.blocks`) 보존으로 중첩표 유실 수정, 비-HWP5 포맷에서
+  `--inline-images` 지정 시에도 이미지 저장 유지(유실 방지). `--inline-images` help 문구의
+  "별도 파일 미저장"을 실동작(인라인된 경우만 미저장)으로 정정.
+- format-profile-spec.md 0.2.0 현행화(`anchor_text`·매칭 규칙·fontRef 클램프).
+
+### Notes
+- 검증: npm test 842/842 (신규: 방출 누락 표 앵커 정합, 동형 쌍둥이 표 순서, html 실패
+  무시프트, fontRef 클램프, `<img src>` 인라인).
+
 ## [3.18.0] - 2026-07-09
 
 ### Added

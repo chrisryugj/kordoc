@@ -6,30 +6,23 @@
 import { parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables, type HtmlRowInfo } from "../roundtrip/markdown-units.js"
 import { CHAR_NORMAL, CHAR_TABLE_HEADER, escapeXml, type ResolvedTheme } from "./gen-ids.js"
 import { generateRuns } from "./md-runs.js"
-import { type TableRemap } from "./gen-profile.js"
+import { takeProfile, normalizeAnchor, type ProfileRemap, type TableRemap } from "./gen-profile.js"
 
 // 기본 셀 크기 (HWPUnit) — A4 기준 적당한 기본값
 const TABLE_ID_BASE = 1000
 let tableIdCounter = TABLE_ID_BASE
 function nextTableId(): number { return ++tableIdCounter }
 
-// 프로필 표 불일치 경고 — 표당 1회 (라이브러리 stdout 오염 최소화)
-const warnedTables = new Set<number>()
-function warnProfileMismatch(tblId: number, tp: TableRemap, rowCnt: number, colCnt: number): void {
-  if (warnedTables.has(tblId)) return
-  warnedTables.add(tblId)
-  // eslint-disable-next-line no-console
-  console.warn(`[kordoc] format profile: table ${tp.rows}x${tp.cols} vs document ${rowCnt}x${colCnt} — 프로필 무시`)
+/** 마크다운 셀 → 매칭 앵커. 이미지 참조는 원본 XML 텍스트에 없으므로 제거 후 정규화. */
+function anchorOfMarkdownCell(cell: string): string {
+  return normalizeAnchor(cell.replace(/!\[[^\]]*\]\([^)]*\)/g, ""))
 }
 
-/** 표 프로필 유효성 — 행·열 수 일치해야 적용(불일치 시 하위호환 폴백). */
-function usableProfile(tp: TableRemap | null | undefined, tblId: number, rowCnt: number, colCnt: number): TableRemap | null {
-  if (!tp) return null
-  if (tp.rows !== rowCnt || tp.cols !== colCnt) {
-    warnProfileMismatch(tblId, tp, rowCnt, colCnt)
-    return null
-  }
-  return tp
+/** HTML 셀 inner → 매칭 앵커. 중첩표 내용은 추출기 직속 텍스트 규칙에 맞춰 제외. */
+function anchorOfHtmlCell(inner: string): string {
+  const noNested = inner.replace(/<table[\s\S]*?<\/table>/gi, "")
+  const { lines } = htmlCellInnerToLines(noNested)
+  return normalizeAnchor(lines.join(""))
 }
 
 /** 열 폭 배열 — 프로필 col_widths > width/cols > 기본 total/cols. */
@@ -39,13 +32,13 @@ function resolveColWidths(tp: TableRemap | null, colCnt: number, fallbackTotal: 
   return Array(colCnt).fill(w)
 }
 
-export function generateTable(rows: string[][], theme: ResolvedTheme, tp: TableRemap | null = null): string {
+export function generateTable(rows: string[][], theme: ResolvedTheme, remap: ProfileRemap | null = null, seq = 0): string {
   const rowCnt = rows.length
   const colCnt = Math.max(...rows.map(r => r.length), 1)
   const cellH = 1500  // 기본 행 높이
 
   const tblId = nextTableId()
-  const prof = usableProfile(tp, tblId, rowCnt, colCnt)
+  const prof = takeProfile(remap, rowCnt, colCnt, anchorOfMarkdownCell(rows[0]?.[0] ?? ""), seq)
   // A4 portrait: 폭 약 44000 HWPUnit → 프로필 열폭 우선, 없으면 균등 분배
   const colW = resolveColWidths(prof, colCnt, 44000)
   const tblW = colW.reduce((a, b) => a + b, 0)
@@ -145,7 +138,7 @@ function unescapeHtml(s: string): string {
  * subList 안에 재귀 생성한다. 파싱 불가면 null (호출부가 문단 폴백).
  * @param totalWidth 표 전체 폭(HWPUNIT) — 중첩표는 부모 셀폭에 맞춰 축소
  */
-export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, totalWidth: number = 44000, tp: TableRemap | null = null): string | null {
+export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, totalWidth: number = 44000, remap: ProfileRemap | null = null, seq = 0): string | null {
   const rows = parseHtmlTable(rawHtml)
   if (!rows || rows.length === 0) return null
   const { placed, rowCnt, colCnt } = layoutHtmlRows(rows)
@@ -153,7 +146,8 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
 
   const cellH = 1500
   const tblId = nextTableId()
-  const prof = usableProfile(tp, tblId, rowCnt, colCnt)
+  const first = placed.find(p => p.r === 0 && p.c === 0) ?? placed[0]
+  const prof = takeProfile(remap, rowCnt, colCnt, first ? anchorOfHtmlCell(first.inner) : "", seq)
   const colW = resolveColWidths(prof, colCnt, totalWidth)
   const tblW = colW.reduce((a, b) => a + b, 0)
   const useHeaderStyle = theme.tableHeader !== theme.body || theme.tableHeaderBold

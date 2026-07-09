@@ -13,6 +13,7 @@
 import JSZip from "jszip"
 import { createXmlParser, findChildByLocalName } from "./parser-shared.js"
 import { toArrayBuffer } from "../utils.js"
+import { normalizeAnchor } from "./gen-profile.js"
 import type { FormatProfile, TableProfile, CellProfile, BorderFillDef, BorderDef, CharPrDef } from "./gen-profile.js"
 
 /** localName(접두사 제거)으로 자손 요소 전부 — 문서 순서 보존 */
@@ -113,6 +114,8 @@ function parseTable(
   // 첫 행 셀 폭으로 col_widths 근사 (span-1 셀만)
   const colWidths: (string | undefined)[] = new Array(cols).fill(undefined)
 
+  let anchorText = ""
+
   for (const tc of elemsByLocal(tbl, "tc")) {
     // 중첩표 셀 제외 — 이 tbl 직속 tc만
     if (nearestTable(tc) !== tbl) continue
@@ -121,6 +124,7 @@ function parseTable(
     const csz = findChildByLocalName(tc, "cellSz")
     const row = num(addr?.getAttribute("rowAddr")) ?? 0
     const col = num(addr?.getAttribute("colAddr")) ?? 0
+    if (row === 0 && col === 0 && !anchorText) anchorText = directCellText(tc)
     const colSpan = num(span?.getAttribute("colSpan")) ?? 1
     const rowSpan = num(span?.getAttribute("rowSpan")) ?? 1
     const bfId = tc.getAttribute("borderFillIDRef") || undefined
@@ -144,6 +148,8 @@ function parseTable(
     cells,
     used_border_fills: pick(borderFills, usedBf),
   }
+  const anchor = normalizeAnchor(anchorText)
+  if (anchor) table.anchor_text = anchor
   if (width) table.width_hwpunit = width
   if (colWidths.every(w => w != null)) table.col_widths_hwpunit = colWidths as string[]
   const cp = pick(charPrs, usedCp)
@@ -181,6 +187,17 @@ function nearestCell(el: Element): Element | null {
     p = p.parentNode as Element | null
   }
   return null
+}
+
+/** 셀 직속(중첩표 제외) hp:t 텍스트 연결 — anchor_text 원료 */
+function directCellText(tc: Element): string {
+  let out = ""
+  for (const t of elemsByLocal(tc, "t")) {
+    if (nearestCell(t) !== tc) continue
+    out += t.textContent ?? ""
+    if (out.length >= 64) break // 정규화 후 24자 절단 — 원료도 적당히서 끊는다
+  }
+  return out
 }
 
 function pick<T>(map: Map<string, T>, keys: Set<string>): Record<string, T> {
@@ -222,5 +239,5 @@ export async function hwpxToProfile(input: ArrayBuffer | Buffer): Promise<Format
     }
   }
 
-  return { schema_version: "0.1.0", tables }
+  return { schema_version: "0.2.0", tables }
 }

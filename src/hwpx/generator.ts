@@ -67,6 +67,16 @@ export async function markdownToHwpx(
   const chartParts: ChartPart[] = []
   const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, remap)
 
+  // 프로필이 있었는데 한 표에도 못 붙었으면 진단 경고 — 매칭은 보수적(불일치=미적용)이라
+  // 마크다운을 크게 고쳐 쓴 경우 전멸할 수 있는데, 그걸 조용히 삼키지 않는다. 1회만.
+  if (remap && remap.tables.length > 0) {
+    const unused = remap.tables.filter(t => !t.used).length
+    if (unused === remap.tables.length) {
+      // eslint-disable-next-line no-console
+      console.warn(`[kordoc] format profile: 프로필 표 ${unused}개가 문서 표와 매칭되지 않아 미적용 (행·열/첫 셀 텍스트 불일치)`)
+    }
+  }
+
   const zip = new JSZip()
   zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
   zip.file("META-INF/container.xml", generateContainerXml())

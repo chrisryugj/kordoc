@@ -21,7 +21,7 @@ program
   .option("--no-header-footer", "PDF 머리글/바닥글 자동 제거")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
   .option("--dedupe-headers", "HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의)")
-  .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, 별도 파일 미저장)")
+  .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, HWP5 전용 — 인라인된 경우만 파일 미저장, 그 외 포맷은 저장 유지)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
     const validFormats = ["markdown", "json"]
@@ -78,8 +78,11 @@ program
         // 깨지고(dangling) 바이트가 유실된다 → 실제 인라인된 경우에만 생략한다.
         const imagesInlined = opts.inlineImages && result.fileType === "hwp"
         // --out-dir 시 이미지 참조 경로에 images/ 접두사 추가 (인라인 모드에선 이미지가 마크다운에 임베드되므로 건너뜀)
+        // <img src> 는 병합/중첩 표 셀 경로(table/builder.ts) — 마크다운 문법과 함께 둘 다 바꿔야 참조가 안 깨진다
         if (opts.outDir && result.images?.length && !imagesInlined) {
-          markdown = markdown.replace(/!\[image\]\(image_/g, "![image](images/image_")
+          markdown = markdown
+            .replace(/!\[image\]\(image_/g, "![image](images/image_")
+            .replace(/(<img\b[^>]*\bsrc=")image_/g, "$1images/image_")
         }
         const output = opts.format === "json"
           ? JSON.stringify(result, (_key, value) =>

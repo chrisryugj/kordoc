@@ -11,7 +11,6 @@ import type { GongmunOptions } from "./index.js"
 import { VERSION, toArrayBuffer, sanitizeError, KordocError } from "./utils.js"
 import { extractHwp5MetadataOnly } from "./hwp5/parser.js"
 import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
-import { MAX_INLINE_MD_BYTES } from "./image/transcode.js"
 // pdfjs-dist는 optional — dynamic import로 지연 로드
 // import { extractPdfMetadataOnly } from "./pdf/parser.js"
 
@@ -99,8 +98,11 @@ server.tool(
         }
       }
 
-      // 에이전트가 별도 파일 없이 이미지를 해석하도록 자체 완결형 마크다운(이미지 인라인)을 기본 제공
-      const result = await parse(buffer, { inlineImages: true })
+      // 이미지는 파일 참조(image_NNN)로 둔다 — MCP 텍스트 응답에 base64 를 인라인해도
+      // 모델은 data URI 를 이미지로 해석하지 못하고, 사진 한 장(≈100KB → base64 133KB)
+      // 만으로 클라이언트 도구 응답 한도(Claude Code 기본 25k 토큰)를 넘겨 호출 자체가
+      // 깨진다(v3.18.0 회귀). 자체 완결형 마크다운이 필요하면 CLI `--inline-images`.
+      const result = await parse(buffer)
 
       if (!result.success) {
         return {
@@ -109,20 +111,7 @@ server.tool(
         }
       }
 
-      // 인라인 결과가 상한을 넘으면(이미지 다수 → base64 폭증) 에이전트 컨텍스트/전송 오버플로를
-      // 막기 위해 비인라인(파일 참조) 마크다운으로 폴백하고, 생략 사실을 안내한다. (재파싱 대신
-      // 이미 파싱된 blocks 로 마크다운만 재생성 — blocks 의 이미지 참조는 인라인으로 바뀌지 않음)
-      // 인라인은 HWP5 이미지 경로에서만 일어나므로, 실제 인라인된 경우에 한해 폴백한다 — 그 외
-      // 포맷의 대용량 '텍스트' 는 정상 출력이며 blocksToMarkdown 재생성은 포맷별 후처리(PDF
-      // cleanPdfText 등)를 잃으므로 건드리지 않는다.
-      let markdown = result.markdown
-      let omitNote = ""
-      const imgCount = result.images?.length ?? 0
-      const didInline = result.fileType === "hwp" && imgCount > 0
-      if (didInline && Buffer.byteLength(markdown, "utf8") > MAX_INLINE_MD_BYTES) {
-        markdown = blocksToMarkdown(result.blocks)
-        omitNote = `\n\n⚠️ 이미지 ${imgCount}개가 인라인 크기 상한(${(MAX_INLINE_MD_BYTES / 1024 / 1024).toFixed(0)}MB)을 초과하여 본문에 인라인하지 않았습니다. 이미지는 파일 참조(image_NNN)로만 표시됩니다.`
-      }
+      const markdown = result.markdown
 
       const meta = [
         `포맷: ${result.fileType.toUpperCase()}`,
@@ -146,7 +135,6 @@ server.tool(
       }
 
       parts.push(`\n\n${markdown}`)
-      if (omitNote) parts.push(omitNote)
 
       return {
         content: [{ type: "text", text: parts.join("") }],

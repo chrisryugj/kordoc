@@ -77,7 +77,8 @@ export function blocksToSectionXml(
 ): string {
   const paraXmls: string[] = []
   let isFirst = true
-  // 문서 내 표 등장 순서 — 실제 방출된 <hp:tbl> 기준(추출기 순서와 정합)
+  // 표 방출 순번 — 생성 성공 여부와 무관하게 '시도' 기준으로 센다. 실패한 표가 이후
+  // 표들의 순번을 밀면 앵커 없는 프로필(손편집·구버전)의 table_index 매칭이 어긋난다.
   let tableSeq = 0
   // 순서 있는 목록 카운터 — indent 레벨별 별도 유지. 다른 블록 만나면 해당 레벨 리셋.
   const orderedCounters: Record<number, number> = {}
@@ -202,12 +203,13 @@ export function blocksToSectionXml(
             paraXmls.push(`<hp:p paraPrIDRef="0" styleIDRef="0">${secRun}</hp:p>`)
             isFirst = false
           }
-          xml = generateTable(block.rows, theme, remap?.tables.get(tableSeq) ?? null)
-          tableSeq++
+          // 프로필 대응은 takeProfile(행·열+앵커 매칭, 순번은 앵커 없을 때 폴백) —
+          // parse 가 방출하지 않는 표(1×1 제목박스 등)가 있어도 서식이 밀리지 않는다.
+          xml = generateTable(block.rows, theme, remap, tableSeq++)
         }
         break
       case "html_table": {
-        const tbl = generateHtmlTableXml(block.text || "", theme, 44000, remap?.tables.get(tableSeq) ?? null)
+        const tbl = generateHtmlTableXml(block.text || "", theme, 44000, remap, tableSeq++)
         if (tbl) {
           if (isFirst) {
             const secRun = `<hp:run charPrIDRef="0">${generateSecPr(gongmun)}<hp:t></hp:t></hp:run>`
@@ -215,7 +217,6 @@ export function blocksToSectionXml(
             isFirst = false
           }
           xml = `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">${tbl}</hp:run></hp:p>`
-          tableSeq++
         } else {
           // 파싱 불가 — 태그 제거한 텍스트 문단 폴백 (원문 HTML을 그대로 싣지 않음)
           const plain = (block.text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()

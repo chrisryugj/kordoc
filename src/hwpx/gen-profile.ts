@@ -65,6 +65,12 @@ export interface TableProfile {
   table_index: number
   rows: number
   cols: number
+  /**
+   * 첫 셀(0,0) 텍스트의 정규화 앵커(normalizeAnchor) — 소비 시 표 대응의 보조 키.
+   * parse 가 마크다운으로 방출하지 않는 표(1×1 제목박스·머리말 표 등) 때문에 순번이
+   * 어긋나도, 앵커+치수가 맞는 프로필만 골라 적용해 남의 서식 오적용을 막는다(v3.18.1).
+   */
+  anchor_text?: string
   width_hwpunit?: string
   col_widths_hwpunit?: string[]
   cells: CellProfile[]
@@ -83,8 +89,14 @@ export interface FormatProfile {
 
 /** 표별 셀 서식 조회 테이블 (전역 id로 해석됨) */
 export interface TableRemap {
+  /** 프로필 table_index — 앵커 없는(손편집·구버전) 프로필의 순번 매칭 키 */
+  index: number
   rows: number
   cols: number
+  /** 프로필 anchor_text (정규화됨) — takeProfile 매칭 1순위 키 */
+  anchor?: string
+  /** takeProfile 이 소비했는지 — 한 프로필이 여러 표에 재적용되는 것 방지 */
+  used?: boolean
   width?: number
   colWidths?: number[]
   /** "r,c" → 전역 borderFill id */
@@ -101,8 +113,56 @@ export interface ProfileRemap {
   borderFillXmls: string[]
   /** header charProperties에 추가할 XML (인덱스 i → 전역 id charPrBase+i) */
   charPrXmls: string[]
-  /** table_index → 표별 리맵 */
-  tables: Map<number, TableRemap>
+  /** 프로필 표 목록 — 원본 등장 순서. 매칭은 takeProfile(순번 아님)로 한다 */
+  tables: TableRemap[]
+}
+
+// ─── 표 대응 매칭 ────────────────────────────────────
+
+/**
+ * 앵커 정규화 — 문자·숫자만 남기고 소문자화, 24자 절단.
+ * 추출(원본 XML 첫 셀 텍스트)과 소비(마크다운/HTML 첫 셀) 양쪽이 같은 규칙을 써서
+ * 굵게(**)·공백·구두점 차이에 흔들리지 않는 비교 키를 만든다.
+ */
+export function normalizeAnchor(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice(0, 24)
+}
+
+/**
+ * 방출되는 표 하나에 적용할 프로필 선택.
+ *
+ * parse 는 원본의 모든 top-level 표를 마크다운 표로 방출하지 않는다(1×1 제목박스는
+ * 문단으로, 머리말/꼬리말 표는 본문 제외 등). 순번(tableSeq) 단독 매칭은 이때 어긋나
+ * **다른 표의 서식이 무경고로 적용**됐다(v3.18.0). 규칙:
+ *
+ * 1. 행·열 일치는 언제나 필수 (cellBf 가 "r,c" 좌표 키라 치수가 다르면 무의미)
+ * 2. 앵커가 양쪽 다 있으면 앵커 일치가 유일한 근거 — 미사용 첫 일치 항목 소비.
+ *    앵커 불일치 항목에는 순번 매칭도 허용하지 않는다(동형 쌍둥이 표 오적용 방지).
+ * 3. 앵커가 한쪽이라도 없으면 table_index === 방출 순번(시도 기준)일 때만 소비 —
+ *    손편집 sparse 프로필("두 번째 표만")과 구버전(0.1.0) 프로필의 의미 보존.
+ *
+ * 매칭 실패는 null — 서식 없음이 잘못된 서식보다 안전하다.
+ */
+export function takeProfile(
+  remap: ProfileRemap | null | undefined,
+  rows: number,
+  cols: number,
+  anchor: string,
+  seq: number,
+): TableRemap | null {
+  if (!remap) return null
+  for (const t of remap.tables) {
+    if (t.used) continue
+    if (t.rows !== rows || t.cols !== cols) continue
+    if (t.anchor && anchor) {
+      if (t.anchor !== anchor) continue
+    } else if (t.index !== seq) {
+      continue
+    }
+    t.used = true
+    return t
+  }
+  return null
 }
 
 // ─── 파싱 유틸 ──────────────────────────────────────
@@ -146,10 +206,19 @@ export function borderFillDefToXml(id: number, def: BorderFillDef): string {
  * charPr() 헬퍼와 달리 볼드라도 fontRef를 강제 치환하지 않고(프로필 순번 존중),
  * underline을 지원한다.
  */
+/**
+ * 생성 header 의 fontface 최대 id — gen-header.ts HANGUL fontCnt=3 (id 0~2).
+ * 프로필 fontRef_hangul 은 원본 문서의 fontfaces 순번이라 3 이상이 흔한데, 그대로
+ * 방출하면 존재하지 않는 id 를 가리키는 dangling IDREF 가 된다. 생성 문서에는 원본
+ * 글꼴 목록이 없으므로 범위 밖 순번은 기본 글꼴(0)로 접는다.
+ */
+const PROFILE_FONT_MAX = 2
+
 export function profileCharPrXml(id: number, def: CharPrDef): string {
   const height = parseHu(def.height_hwpunit) ?? 1000
   const color = def.textColor ?? "#000000"
-  const font = def.fontRef_hangul != null ? parseInt(def.fontRef_hangul, 10) || 0 : 0
+  const rawFont = def.fontRef_hangul != null ? parseInt(def.fontRef_hangul, 10) || 0 : 0
+  const font = rawFont >= 0 && rawFont <= PROFILE_FONT_MAX ? rawFont : 0
   const boldAttr = def.bold ? ` bold="1"` : ""
   const italicAttr = def.italic ? ` italic="1"` : ""
   const underline = def.underline
@@ -178,7 +247,7 @@ export function buildProfileRemap(
   charPrBase: number,
   borderFillBase = 3,
 ): ProfileRemap {
-  const remap: ProfileRemap = { borderFillXmls: [], charPrXmls: [], tables: new Map() }
+  const remap: ProfileRemap = { borderFillXmls: [], charPrXmls: [], tables: [] }
   let bfNext = borderFillBase
   let charNext = charPrBase
 
@@ -204,8 +273,11 @@ export function buildProfileRemap(
       if (parsed.every(n => n != null)) colWidths = parsed as number[]
     }
     const tr: TableRemap = {
+      index: t.table_index,
       rows: t.rows,
       cols: t.cols,
+      // 재정규화 — 추출기는 정규화해 담지만 손편집된 프로필 JSON도 같은 키 공간으로
+      anchor: t.anchor_text ? normalizeAnchor(t.anchor_text) : undefined,
       width: parseHu(t.width_hwpunit),
       colWidths,
       cellBf: new Map(),
@@ -224,7 +296,7 @@ export function buildProfileRemap(
       const h = parseHu(cell.height_hwpunit)
       if (h != null) tr.cellH.set(k, h)
     }
-    remap.tables.set(t.table_index, tr)
+    remap.tables.push(tr)
   }
   return remap
 }
