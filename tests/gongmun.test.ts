@@ -296,12 +296,12 @@ describe("gaejosik 개조식 보고서", () => {
     assert.ok(texts.some((t) => t.includes("데이터 개요") && !t.includes("1.")), "장 제목 선행번호 제거")
   })
 
-  it("h3→□, 리스트 시프트(○/―), ※·인용→참고 스타일", async () => {
+  it("h3→□, 리스트 시프트(○/-), ※·인용→참고 스타일", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "개조식" } })
     const texts = await sectionTexts(buf)
     assert.ok(texts.includes("□ 핵심 요약"), "h3 → □")
     assert.ok(texts.includes("○ 첫째 요점"), "h3 있으면 리스트 depth0 → ○")
-    assert.ok(texts.includes("― 둘째 세부"), "depth1 → ― (U+2015)")
+    assert.ok(texts.includes("- 둘째 세부"), "depth1 → - (하이픈, 실무 관행 — ― 아님)")
     assert.ok(texts.includes("※ 참고 문구입니다"), "※ 항목은 부호 없이 유지")
     assert.ok(texts.includes("※ 인용 참고"), "인용문 → ※")
     assert.ok(texts.includes("※ 문단형 참고"), "※ 문단 유지")
@@ -629,3 +629,67 @@ describe("공문서 v4 구조 요소 — 쪽번호·제목박스·배너·결재
 function escapeStub(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
+
+// ─── v4.0.1 QA 수정 (실측 폰트·h2 말머리·표기법 린터) ──
+
+describe("v4.0.1 실측 폰트 프리셋 (QA-1)", () => {
+  const md = `# 제목\n\n## 개요\n\n본문 **강조** 문장임\n\n- 대항목\n\n※ 자료: 행안부`
+
+  it("보고서 프리셋 — 휴먼명조 본문·HY헤드라인M 제목·한양중고딕 ※ 폰트 세트", async () => {
+    const buf = await markdownToHwpx(md, { gongmun: { preset: "보고서" } })
+    const head = await headerXml(buf)
+    for (const f of ["휴먼명조", "HY헤드라인M", "한양중고딕", "맑은 고딕"]) {
+      assert.ok(head.includes(`face="${f}"`), `폰트 세트에 ${f}`)
+    }
+    // 본문(0)·볼드(1) = 휴먼명조(id 4), h2(6) = HY헤드라인M(id 3, bold 없음)
+    assert.match(head, /<hh:charPr id="0" height="1500"[^>]*>\s*<hh:fontRef hangul="4"/)
+    assert.match(head, /<hh:charPr id="1" height="1500"[^>]*bold="1"[^>]*>\s*<hh:fontRef hangul="4"/)
+    assert.match(head, /<hh:charPr id="6" height="1600"[^>]*>\s*<hh:fontRef hangul="3"/)
+    assert.ok(!/<hh:charPr id="6"[^>]*bold="1"/.test(head), "h2는 HY헤드라인M 자체 굵기 (bold 없음)")
+  })
+
+  it("볼드 폰트 치환 제거 — 범용·기안문 볼드가 원 폰트 유지 (HY견고딕 참조 없음)", async () => {
+    for (const opts of [undefined, { gongmun: { preset: "기안문" as const } }]) {
+      const head = await headerXml(await markdownToHwpx("**굵게** 본문", opts))
+      assert.match(head, /<hh:charPr id="1" [^>]*bold="1"[^>]*>\s*<hh:fontRef hangul="0"/)
+    }
+  })
+
+  it("보고서 ※ 문단 — 참고 스타일(charPr 13)·리스트 □는 HY헤드라인M(charPr 11)", async () => {
+    const buf = await markdownToHwpx(md, { gongmun: { preset: "보고서" } })
+    const zip = await JSZip.loadAsync(buf)
+    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    assert.ok(sec.includes(`charPrIDRef="13"><hp:t>※ 자료: 행안부</hp:t>`), "※ → 한양중고딕 참고")
+    assert.ok(sec.includes(`charPrIDRef="11"><hp:t>□ 대항목</hp:t>`), "리스트 □ → HY헤드라인M 16pt")
+  })
+})
+
+describe("v4.0.1 h2 말머리 (QA-2)", () => {
+  const md = `# 문서 제목\n\n## 개요\n\n내용임\n\n## 1. 추진 성과\n\n내용임`
+
+  it("보고서·계획서 기본 — h2에 □ 말머리 + 선행 번호 제거", async () => {
+    for (const preset of ["보고서", "계획서"] as const) {
+      const texts = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset } }))
+      assert.ok(texts.includes("□ 개요"), `${preset} h2 → □ 개요`)
+      assert.ok(texts.includes("□ 추진 성과"), `${preset} 선행 번호 제거 후 □`)
+    }
+  })
+
+  it("h2Marker number — 아라비아 순번 재부여", async () => {
+    const texts = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "보고서", h2Marker: "number" } }))
+    assert.ok(texts.includes("1. 개요"))
+    assert.ok(texts.includes("2. 추진 성과"))
+  })
+
+  it("h2Marker none — 말머리 없음, 기안문 기본도 없음", async () => {
+    const t1 = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "보고서", h2Marker: "none" } }))
+    assert.ok(t1.includes("개요") && !t1.includes("□ 개요"))
+    const t2 = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "기안문" } }))
+    assert.ok(t2.includes("개요") && !t2.includes("□ 개요"), "기안문은 기본 말머리 없음")
+  })
+
+  it("개조식 h2는 장 헤더가 소비 — h2Marker 영향 없음", async () => {
+    const texts = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "개조식", cover: false, toc: false } }))
+    assert.ok(!texts.includes("□ 개요"), "개조식 h2 = 로마숫자 장헤더 (□ 아님)")
+  })
+})

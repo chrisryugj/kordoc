@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2026-07-11
+
+v4.0.0 실무자(현직 공무원) 눈 QA 3건 수정 — 근거는 부처별 실측 양식 3종(업무보고·보고서×2)
+전수 디코드 + 실무자 확인. 전 프리셋 한글 COM 실렌더 PDF 육안 게이트 통과.
+
+### Fixed — QA 결함 3건
+
+- **"정체모를 폰트" 제거 (QA-1)**: ① bold 시 HY견고딕/Arial Black 강제 치환(charPr 헬퍼)
+  삭제 — 굵기는 `<hh:bold/>` 정본 요소만, 폰트는 항상 원 폰트 유지. ② 실측 폰트 세트를
+  보고서·계획서 프리셋으로 확장(`usesReportFonts`) — 본문 휴먼명조, 제목·□ HY헤드라인M,
+  ※ 한양중고딕 13pt, 표 셀 맑은 고딕 12pt, 제목박스 HY헤드라인M 22pt. `fonts` 4역할
+  오버라이드도 보고서·계획서에 적용. 기안문·통지·회의록은 함초롬 유지(전자결재 관행)
+- **h2 섹션 제목 말머리 (QA-2)**: OUTLINE 번호 제거(v4.0.0)의 대체 부재 수정 —
+  `h2Marker` 옵션 신설: `box`(□ + 문단 위 2×본문 + 부호폭 내어쓰기, 실측 □ 대항목과 동일 —
+  보고서·계획서 기본) / `number`(1. 2. 순번 재부여, 공고문 관행) / `none`. 선행 번호 자동
+  제거 후 재부여. CLI `--h2-marker`, MCP `h2_marker`
+- **개조식 소분류 부호 ― → 하이픈 `-` (QA-3)**: GT3 양식 저장값(U+2015)을 실무 관행으로
+  교정 — 실무자 확인 + 부처별 양식 3종 중 2종이 하이픈. 내어쓰기 폭은 부호 실폭 연동이라 자동
+
+### Added
+
+- **공문서 표기법 검수 13룰** (`gongmun-lint.ts`, jkf87/hwpx-skill gonmun_lint 이식·보강):
+  날짜(온점 뒤 공백·0패딩·2자리 연도·끝 마침표)·시간(24시각제·쌍점)·금액(천원·금 붙여쓰기)·
+  붙임 쌍점·물결표+까지 중복·외국어 우선·쌍점 띄어쓰기. URL(`://`)·코드펜스 오탐 가드.
+  공문서 모드 generate 시 경고 병기(생성은 진행) + `kordoc lint <file>`(error 시 exit 1) +
+  `lintGongmunText`/`gongmunLintWarnings` 공개 API
+- 보고서·계획서에서 ※ 문단/항목·blockquote → ※ 참고 스타일, 리스트 1단계 □ →
+  HY헤드라인M 16pt (개조식과 동일 실측 위계)
+
 ## [4.0.0] - 2026-07-11
 
 "완벽한 공문서 생산로직" 릴리스 — 실제 정부 공문서 16종(내부 실무문서 포함)을 요소 전수

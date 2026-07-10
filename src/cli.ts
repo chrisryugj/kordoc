@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, PRESET_ALIAS, unknownFontWarnings } from "./index.js"
+import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, PRESET_ALIAS, unknownFontWarnings, lintGongmunText, gongmunLintWarnings } from "./index.js"
 import type { ParseOptions } from "./types.js"
 import { VERSION, toArrayBuffer, sanitizeError } from "./utils.js"
 
@@ -482,6 +482,7 @@ program
   .option("--end-mark", "본문 끝 '끝.' 표시 강제 켜기")
   .option("--no-end-mark", "'끝.' 표시 끄기 (기안문 기본 켜짐)")
   .option("--no-body-title-box", "본문 첫 페이지 제목 반복 박스 끄기 (개조식+표지 기본 켜짐)")
+  .option("--h2-marker <type>", "h2 섹션 제목 말머리: box(□ — 보고서·계획서 기본)·number(1. — 공고문 관행)·none")
   .option("--fonts <spec>", "요소별 글꼴 오버라이드: body=나눔명조,heading=나눔고딕,ref=한양중고딕,table=맑은 고딕")
   .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
   .option("--plain", "공문서 모드 끄기 (범용 마크다운 변환)")
@@ -527,6 +528,13 @@ program
         if (opts.pageNumbers !== undefined) gongmun.pageNumbers = opts.pageNumbers
         if (opts.endMark !== undefined) gongmun.endMark = opts.endMark
         if (opts.bodyTitleBox === false) gongmun.bodyTitleBox = false
+        if (opts.h2Marker) {
+          if (!["box", "number", "none"].includes(opts.h2Marker)) {
+            process.stderr.write(`[kordoc] --h2-marker 는 box/number/none\n`)
+            process.exit(1)
+          }
+          gongmun.h2Marker = opts.h2Marker
+        }
         if (opts.font) {
           if (opts.font !== "myeongjo" && opts.font !== "gothic") {
             process.stderr.write(`[kordoc] --font 은 myeongjo 또는 gothic\n`)
@@ -551,6 +559,10 @@ program
       if (gongmun?.fonts && !silent) {
         for (const w of unknownFontWarnings(gongmun.fonts)) process.stderr.write(`[kordoc] ${w}\n`)
       }
+      // 공문서 표기법 검수 (편람 기준, 조언용) — 생성은 진행, stderr 경고만
+      if (gongmun && !silent) {
+        for (const w of gongmunLintWarnings(md, 5)) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
+      }
 
       const buf = await markdownToHwpx(md, gongmun ? { gongmun } : undefined)
       const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
@@ -561,6 +573,30 @@ program
         const mode = gongmun ? `공문서:${gongmun.preset}` : "범용"
         process.stderr.write(`[kordoc] HWPX 생성 (${mode}) → ${outPath}\n`)
       }
+    } catch (err) {
+      process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+      process.exit(1)
+    }
+  })
+
+program
+  .command("lint <file>")
+  .description("공문서 표기법 검수 — 날짜·시간·금액·붙임 등 행정업무운영 편람 표기법 (md/txt, '-'=stdin). error 있으면 exit 1")
+  .option("--json", "JSON 출력")
+  .action((file: string, opts) => {
+    try {
+      const text = file === "-" ? readFileSync(0, "utf-8") : readFileSync(resolve(file), "utf-8")
+      const findings = lintGongmunText(text)
+      const errors = findings.filter((f) => f.severity === "error").length
+      if (opts.json) {
+        process.stdout.write(JSON.stringify({ findings, summary: { total: findings.length, errors, ok: errors === 0 } }, null, 2) + "\n")
+      } else {
+        process.stdout.write(`[kordoc] 표기법 검수: 위반 ${findings.length}건 (error ${errors}, warning ${findings.length - errors})\n`)
+        for (const f of findings) {
+          process.stdout.write(`  L${f.line} [${f.severity}] ${f.rule}: "${f.match}" — ${f.message}${f.suggest ? ` → ${f.suggest}` : ""}\n`)
+        }
+      }
+      process.exit(errors > 0 ? 1 : 0)
     } catch (err) {
       process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
       process.exit(1)

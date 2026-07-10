@@ -111,15 +111,13 @@ export function charPr(
   fontId: number = 0,
   textColor: string = DEFAULT_TEXT_COLOR,
   ratioPct: number = 100,
-  keepFontOnBold: boolean = false,
 ): string {
   const boldAttr = bold ? ` bold="1"` : ""
   const italicAttr = italic ? ` italic="1"` : ""
-  // 볼드면 fontfaces의 bold variant(id=2: HY견고딕/Arial Black, weight=9) 참조해
-  // macOS 한컴에서 합성 굵기 안 되는 케이스 커버. 코드(fontId=1)는 bold 아닌 경우에만
-  // 원본 id 유지 (Consolas/함초롬돋움). keepFontOnBold=true면 치환 없이 원 폰트 유지
-  // (개조식 헤드라인M·명조 bold 등 폰트 정체성이 스펙인 경우).
-  const effFont = bold && !keepFontOnBold ? 2 : fontId
+  // 볼드여도 폰트는 치환하지 않는다 — 종전의 bold variant(HY견고딕/Arial Black) 자동
+  // 참조는 v4.0.1 QA에서 "정체모를 폰트"로 확정된 결함 (실측 양식들도 원 폰트에
+  // bold 요소만 얹는다). 굵기는 아래 <hh:bold/> 정본 요소가 담당.
+  const effFont = fontId
   // 볼드 정본은 <hh:bold/> 자식 요소 — 실측 한컴 파일은 속성 없이 요소만 쓴다.
   // 속성(bold="1")은 하위 호환으로 병기 (Windows 한컴 구버전이 속성을 읽던 경로 유지).
   const boldEl = bold ? `<hh:bold/>` : ""
@@ -176,8 +174,9 @@ export const GONGMUN_RIGHT = GONGMUN_CENTER + 1
 export const GONGMUN_TBL_CENTER = GONGMUN_RIGHT + 1
 export const GONGMUN_TBL_LEFT = GONGMUN_TBL_CENTER + 1
 
-// ─── 개조식(gaejosik) 전용 charPr id — 기본 11종(0~10) 뒤 11~24 ──
-// 부호·요소별 폰트/크기 분리 (실측: docs/gongmunseo-engine-spec.md, gaejosik.ts)
+// ─── 실측 폰트 프리셋(개조식·보고서·계획서) 전용 charPr id — 기본 11종(0~10) 뒤 11~25 ──
+// 부호·요소별 폰트/크기 분리 (실측: docs/gongmunseo-engine-spec.md, gaejosik.ts).
+// 보고서·계획서는 이 중 ※(13·14)·표 셀(22·23)·제목박스(25)를 사용 (id 공간은 통일 등록)
 export const GJ_CHAR_DAE = 11          // □ 대항목 — HY헤드라인M 16pt
 export const GJ_CHAR_DAE_BOLD = 12     // □ 안 강조 — HY헤드라인M 16pt bold
 export const GJ_CHAR_CHAM = 13         // ※ 참고 — 한양중고딕 13pt
@@ -271,11 +270,11 @@ export function pageHidingCtrl(hideHeader: boolean = false): string {
 
 // ─── 공문서 자동 장평(orphan 축소) ───────────────────
 // 기본 charPr 11종(0~10) 뒤에, 자동 장평이 필요한 문단용 변형 charPr를 붙인다.
-// 개조식 모드는 전용 charPr 15종(11~25)이 먼저 오므로 변형은 26부터.
+// 실측 폰트 프리셋(개조식·보고서·계획서)은 전용 charPr 15종(11~25)이 먼저 오므로 변형은 26부터.
 // 변형 vi번째 장평 r → charPr id = charVariantBase + vi×4 + (0 본문|1 볼드|2 이탤릭|3 볼드이탤릭)
 export const CHAR_VARIANT_BASE = 11
-export function charVariantBase(gaejosik: boolean): number {
-  return gaejosik ? CHAR_VARIANT_BASE + GJ_CHAR_COUNT : CHAR_VARIANT_BASE
+export function charVariantBase(measured: boolean): number {
+  return measured ? CHAR_VARIANT_BASE + GJ_CHAR_COUNT : CHAR_VARIANT_BASE
 }
 /** 공문서 본문 기본 장평(%) — 실제 공문서 관행 (v3.5.3) */
 export const GONGMUN_BODY_RATIO = 95

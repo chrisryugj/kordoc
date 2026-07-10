@@ -2,8 +2,9 @@
  * 개조식(정부 표준 개조식 보고서) 프리셋 — 순수 로직 + 실측 스타일 상수
  *
  * 근거: 실제 정부 보고서 양식 hwpx(「2_보고서 양식」)를 디코드해 실측한 값.
- *   부호: □ HY헤드라인M 16pt(문단 위 15) / ○ 휴먼명조 15pt(10) / ― 휴먼명조 15pt(6)
+ *   부호: □ HY헤드라인M 16pt(문단 위 15) / ○ 휴먼명조 15pt(10) / - 휴먼명조 15pt(6)
  *         / ※ 한양중고딕 13pt(3)   ※ 문단 위 간격 저장값 = UI(pt) × 200
+ *   (소분류 부호만 양식 저장값 ―(U+2015) 대신 실무 관행 하이픈 - 채택 — GAEJOSIK_BULLETS 주석)
  *   장 헤더: 1×3 표 — 로마숫자 셀(흰 글자 17pt·#193AAA 음영·#006699 테두리) +
  *           간격 셀(#006699 좌선) + 제목 셀(HY헤드라인M 17pt·#F2F2F2 음영·회색 상하선)
  *   표지: 파랑 장식 바(#193AAA/#A0B4E6) 사이 제목 30pt, 날짜·기관명 25pt
@@ -16,8 +17,13 @@ import { markerWidth } from "./gongmun.js"
 
 // ─── 부호 ───────────────────────────────────────────
 
-/** 개조식 단계별 부호: □(대) ○(중) ―(소, U+2015) ㆍ(세) — 3단계 초과는 ㆍ 고정 */
-const GAEJOSIK_BULLETS = ["□", "○", "―", "ㆍ"]
+/**
+ * 개조식 단계별 부호: □(대) ○(중) -(소, 하이픈) ㆍ(세) — 3단계 초과는 ㆍ 고정.
+ * 소분류는 실무 관행이 하이픈이다 — GT3 양식 저장값은 ―(U+2015)지만 실무자 확인
+ * (2026-07-11 QA) + 부처별 양식 3종 중 2종(업무보고·보고서3)이 하이픈으로 실측됨.
+ * 양식 파일 하나의 저장값보다 실무 관행 우선.
+ */
+const GAEJOSIK_BULLETS = ["□", "○", "-", "ㆍ"]
 
 export function gaejosikMarker(depth: number): string {
   return GAEJOSIK_BULLETS[Math.min(depth, GAEJOSIK_BULLETS.length - 1)]
@@ -69,8 +75,8 @@ export function gaejosikSpaceBefore(depth: number, bodyHeight: number): number {
 }
 
 /**
- * 단계별 들여쓰기 — 실측: 선행 공백 □=1 ○=2 ―=3 (0.5em씩) ≈
- * □ left 0 / ○ 1자 / ― 1.5자 / ㆍ 2자(+0.5자씩 누적). 내어쓰기는 부호 실폭.
+ * 단계별 들여쓰기 — 실측: 선행 공백 □=1 ○=2 -=3 (0.5em씩) ≈
+ * □ left 0 / ○ 1자 / - 1.5자 / ㆍ 2자(+0.5자씩 누적). 내어쓰기는 부호 실폭.
  */
 export function gaejosikLevelIndent(depth: number, bodyHeight: number, sizes: GaejosikSizeOverrides = {}): { left: number; indent: number } {
   const lefts = [0, 1.0, 1.5, 2.0]

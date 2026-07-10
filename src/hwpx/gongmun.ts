@@ -38,7 +38,7 @@ export interface GongmunOptions {
   bodyPt?: number
   /** 본문 줄간격(%). 기본 160 (회의록 130) */
   lineSpacing?: number
-  /** 항목부호 체계. 'standard'=법정 8단계(1. 가. 1) …) / 'report'=보고서 불릿(□ ○ - ㆍ) / 'gaejosik'=개조식(□ ○ ― ㆍ + 부호별 폰트) */
+  /** 항목부호 체계. 'standard'=법정 8단계(1. 가. 1) …) / 'report'=보고서 불릿(□ ○ - ㆍ) / 'gaejosik'=개조식(□ ○ - ㆍ + 부호별 폰트) */
   numbering?: GongmunNumbering
   /**
    * 표지 페이지(개조식 프리셋 기본 켜짐) — 첫 h1을 제목으로, 파랑 장식 바 + 날짜 + 기관명.
@@ -59,8 +59,9 @@ export interface GongmunOptions {
   autoFit?: boolean | { minRatio?: number }
   /**
    * 요소별 글꼴 오버라이드 — 기관 표준 폰트 적용이나 미설치 폰트 대체용.
-   * body=본문(개조식 ○·―) / heading=제목 계열(□·장헤더·표지·목차) / ref=※ 참고 / table=표 셀.
-   * 개조식 외 프리셋은 body만 적용된다 (bodyFont보다 우선).
+   * body=본문(개조식 ○·-) / heading=제목 계열(□·장헤더·표지·목차) / ref=※ 참고 / table=표 셀.
+   * 실측 폰트 프리셋(개조식·보고서·계획서)은 네 역할 전부, 그 외 프리셋은 body만
+   * 적용된다 (bodyFont보다 우선).
    */
   fonts?: { body?: string; heading?: string; ref?: string; table?: string }
   /** 개조식 요소별 글자 크기(pt) 오버라이드 — 미지정 요소는 bodyPt 비례 기본값 */
@@ -73,6 +74,12 @@ export interface GongmunOptions {
   approval?: string[]
   /** 본문 첫 페이지 제목 박스(개조식) — 목차 뒤 본문 시작에 제목 반복(실측 관행). 기본: 표지 있으면 켜짐 */
   bodyTitleBox?: boolean
+  /**
+   * h2 섹션 제목 말머리 (비개조식 — 개조식 h2는 로마숫자 장 헤더가 대체).
+   * 'box'=□ 대항목(실측 보고서 양식 관행) / 'number'=아라비아 번호(1. 2. — 공고문 관행)
+   * / 'none'=말머리 없음. 기본: 보고서·계획서 'box', 그 외 'none'.
+   */
+  h2Marker?: "box" | "number" | "none"
 }
 
 export interface ResolvedGongmun {
@@ -103,6 +110,8 @@ export interface ResolvedGongmun {
   approval: string[] | null
   /** 본문 첫 페이지 제목 박스(개조식, 실측 GT3 표④) — 표지 있을 때 기본 켜짐 */
   bodyTitleBox: boolean
+  /** h2 섹션 제목 말머리 — 보고서·계획서 기본 '□'(실측), 'number'=아라비아, 'none'=없음 */
+  h2Marker: "box" | "number" | "none"
 }
 
 /** 공식 표준 여백(mm) — 편람 서식 작성방법 해설 / 시행규칙 별표4 */
@@ -142,6 +151,16 @@ export function normalizeGongmunPreset(preset?: string): GongmunPreset {
   return PRESET_ALIAS[preset.trim()] ?? "official"
 }
 
+/**
+ * 실측 보고서 폰트 세트(제목 HY헤드라인M·본문 휴먼명조·※ 한양중고딕·표 맑은 고딕)를
+ * 쓰는 프리셋 — 부처별 실측 양식 3종(업무보고·보고서×2) 공통 스펙 (v4.0.1 QA-1).
+ * 개조식만 받던 실측 폰트를 보고서·계획서로 확장. 기안문·통지·회의록은 함초롬 유지
+ * (전자결재·일반 공문 관행).
+ */
+export function usesReportFonts(preset: GongmunPreset): boolean {
+  return preset === "gaejosik" || preset === "report" || preset === "plan"
+}
+
 export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
   const preset = normalizeGongmunPreset(opts.preset)
   const d = PRESET_DEFAULTS[preset]
@@ -175,6 +194,8 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     approval: opts.approval && opts.approval.length > 0 ? opts.approval : null,
     // 본문 제목박스 — 실측(GT3·GT12): 목차 뒤 본문 시작에 제목 반복. 표지 켜진 개조식 기본
     bodyTitleBox: opts.bodyTitleBox ?? (gaejosik && coverOn),
+    // h2 말머리 — 실측 보고서 양식(부처별 3종)의 섹션 제목이 곧 □ 대항목 (QA-2)
+    h2Marker: opts.h2Marker ?? (preset === "report" || preset === "plan" ? "box" : "none"),
   }
 }
 
@@ -268,7 +289,7 @@ export function levelIndent(
   numbering: GongmunNumbering,
   sizes: GaejosikSizeOverrides = {},
 ): LevelIndent {
-  // 개조식은 실측 양식의 들여쓰기 체계(□ 0 / ○ 1자 / ― 1.5자 …)를 따른다.
+  // 개조식은 실측 양식의 들여쓰기 체계(□ 0 / ○ 1자 / - 1.5자 …)를 따른다.
   if (numbering === "gaejosik") return gaejosikLevelIndent(depth, bodyHeight, sizes)
   // 같은 단계는 부호 종류가 일정하므로 대표 부호(순번 0)의 폭으로 내어쓰기를 정한다.
   const marker = numbering === "report" ? reportMarker(depth) : standardMarker(depth, 0)

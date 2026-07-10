@@ -3,7 +3,7 @@
  * 섹션 속성(공문서 표준 여백)과 블록 목록 → section0.xml 본문.
  */
 
-import { type ResolvedGongmun, levelIndent, mmToHwpunit } from "./gongmun.js"
+import { type ResolvedGongmun, levelIndent, mmToHwpunit, usesReportFonts } from "./gongmun.js"
 import { stripChapterNumber, gaejosikSizes } from "./gaejosik.js"
 import { buildGaejosikCover, buildGaejosikToc, buildGaejosikChapter, buildGaejosikBodyTitle } from "./gen-gaejosik.js"
 import {
@@ -11,7 +11,7 @@ import {
   CHAR_NORMAL, CHAR_BOLD, CHAR_QUOTE, CHAR_H1, PARA_NORMAL, PARA_QUOTE, PARA_CODE, PARA_LIST,
   GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT, GONGMUN_LIST_BASE,
   GJ_CHAR_DAE, GJ_CHAR_DAE_BOLD, GJ_CHAR_CHAM, GJ_CHAR_CHAM_BOLD, GJ_PARA_CHAM,
-  GJ_CHAR_TABLE, GJ_CHAR_TABLE_BOLD, gongmunTableHeaderBf,
+  GJ_CHAR_TABLE, GJ_CHAR_TABLE_BOLD, GJ_CHAR_BODY_TITLE, gongmunTableHeaderBf,
   charVariantBase, pageNumCtrl, newPageNumCtrl, pageHidingCtrl,
   escapeXml, headingParaPrId, headingCharPrId,
   type ResolvedTheme,
@@ -98,15 +98,17 @@ export function blocksToSectionXml(
 
   // ─── 개조식 전면부(표지·목차) + 장 카운터 ───────────
   const gaejosik = gongmun?.preset === "gaejosik"
-  const vBase = charVariantBase(gaejosik)
-  // 공문서 표 스타일 — 본문 폭 맞춤 + 실측 정부 양식(헤더 음영·개조식 맑은 고딕 12pt)
+  // 실측 폰트 프리셋(개조식·보고서·계획서) — 표 셀 맑은 고딕 12pt·※ 한양중고딕 공유 (QA-1)
+  const measured = !!gongmun && usesReportFonts(gongmun.preset)
+  const vBase = charVariantBase(measured)
+  // 공문서 표 스타일 — 본문 폭 맞춤 + 실측 정부 양식(헤더 음영·실측 프리셋 맑은 고딕 12pt)
   // bfReg가 있으면 실측 테두리 위계(외곽 0.4/내부 0.12/헤더 이중선)·셀 문단·우측 배치 적용
   const tableStyle: GongmunTableStyle | null = gongmun
     ? {
         totalWidth: mmToHwpunit(210 - gongmun.margins.left - gongmun.margins.right),
-        charPr: gaejosik ? GJ_CHAR_TABLE : CHAR_NORMAL,
-        boldCharPr: gaejosik ? GJ_CHAR_TABLE_BOLD : CHAR_BOLD,
-        charHeight: gaejosik ? gaejosikSizes(gongmun.bodyHeight, gongmun.sizes).table : gongmun.bodyHeight,
+        charPr: measured ? GJ_CHAR_TABLE : CHAR_NORMAL,
+        boldCharPr: measured ? GJ_CHAR_TABLE_BOLD : CHAR_BOLD,
+        charHeight: measured ? gaejosikSizes(gongmun.bodyHeight, gongmun.sizes).table : gongmun.bodyHeight,
         headerBf: gongmunTableHeaderBf(gaejosik),
         centerParaPr: GONGMUN_CENTER,
         tblCenterParaPr: GONGMUN_TBL_CENTER,
@@ -117,6 +119,7 @@ export function blocksToSectionXml(
     : null
   const chamMap = (id: number) => (id === CHAR_BOLD ? GJ_CHAR_CHAM_BOLD : id)
   let chapterNo = 0
+  let h2Seq = 0 // h2 말머리 'number' 모드 아라비아 순번 (QA-2)
   let coverH1Idx = -1
   let pendingPageBreak = false
   let pendingNewNum = false
@@ -186,8 +189,9 @@ export function blocksToSectionXml(
     switch (block.type) {
       case "heading": {
         if (gongmun && blockIdx === titleBoxH1Idx && tableStyle && bfReg) {
-          // 1페이지형 제목박스 (실측 GT2/GT6/GT7) — report/plan/notice 첫 h1
-          xml = buildTitleBox((block.text || "").trim(), CHAR_H1, tableStyle.totalWidth, bfReg)
+          // 1페이지형 제목박스 (실측 GT2/GT6/GT7) — report/plan/notice 첫 h1.
+          // 실측 프리셋은 제목박스 전용 HY헤드라인M 22pt(GJ_CHAR_BODY_TITLE, 실측 GT2 표④)
+          xml = buildTitleBox((block.text || "").trim(), measured ? GJ_CHAR_BODY_TITLE : CHAR_H1, tableStyle.totalWidth, bfReg)
           break
         }
         if (gaejosik) {
@@ -212,12 +216,19 @@ export function blocksToSectionXml(
         // 공문서 모드: OUTLINE 대신 명명 스타일("개요 N")로 헤딩 의미 보존 —
         // 한글이 개요 번호("1.")를 강제 렌더하는 결함 회피 + 재파싱 헤딩 감지 유지
         const styleId = gongmun ? Math.min(block.level || 1, 4) : 0
-        xml = generateParagraph(block.text || "", pId, cId, undefined, styleId)
+        let hText = block.text || ""
+        if (gongmun && (block.level || 1) === 2 && gongmun.h2Marker !== "none") {
+          // h2 섹션 제목 말머리 (QA-2) — OUTLINE 번호 제거의 대체. 실측: □ 대항목(보고서
+          // 양식 3종) 기본 / 아라비아 번호(공고문 관행) 옵션. 선행 번호는 제거 후 재부여
+          const title = stripChapterNumber(hText)
+          hText = gongmun.h2Marker === "box" ? `□ ${title}` : `${++h2Seq}. ${title}`
+        }
+        xml = generateParagraph(hText, pId, cId, undefined, styleId)
         break
       }
       case "paragraph": {
-        // 개조식: ※로 시작하는 문단 → 참고 스타일 (한양중고딕 13pt)
-        if (gaejosik && (block.text || "").trimStart().startsWith("※")) {
+        // 실측 프리셋(개조식·보고서·계획서): ※로 시작하는 문단 → 참고 스타일 (한양중고딕 13pt)
+        if (measured && (block.text || "").trimStart().startsWith("※")) {
           xml = generateParagraph((block.text || "").trim(), GJ_PARA_CHAM, GJ_CHAR_CHAM, chamMap)
           break
         }
@@ -265,8 +276,8 @@ export function blocksToSectionXml(
         break
       }
       case "blockquote": {
-        // 개조식: 인용문 → ※ 참고 (한양중고딕 13pt)
-        if (gaejosik) {
+        // 실측 프리셋(개조식·보고서·계획서): 인용문 → ※ 참고 (한양중고딕 13pt)
+        if (measured) {
           const t = (block.text || "").trim()
           if (t) xml = generateParagraph(t.startsWith("※") ? t : `※ ${t}`, GJ_PARA_CHAM, GJ_CHAR_CHAM, chamMap)
           break
@@ -286,18 +297,19 @@ export function blocksToSectionXml(
           const depth = info?.depth ?? 0
           const marker = info?.marker ?? ""
           const content = block.text || ""
-          // 개조식: ※로 시작하는 항목은 부호 없이 참고 스타일
-          if (gaejosik && content.trimStart().startsWith("※")) {
+          // 실측 프리셋: ※로 시작하는 항목은 부호 없이 참고 스타일
+          if (measured && content.trimStart().startsWith("※")) {
             xml = generateParagraph(content.trim(), GJ_PARA_CHAM, GJ_CHAR_CHAM, chamMap)
             break
           }
           // 부호 + 1타(공백 1개) + 내용 (부호 없으면 내용만)
           const text = marker ? `${marker} ${content}` : content
-          // 보고서(□○-) 모드의 1단계 □ 대제목은 굵게 — 정부 보고서 관행.
-          // 개조식 1단계 □는 전용 HY헤드라인M 16pt (fit 변형 제외 대상이라 매퍼 불필요)
+          // 비실측 보고서(□○-) 모드의 1단계 □ 대제목은 굵게 — 정부 보고서 관행.
+          // 실측 프리셋의 □(개조식·보고서 numbering) 1단계는 전용 HY헤드라인M 16pt
+          // (실측: 부처별 양식 3종 전부 □=HY헤드라인M. fit 변형 제외 대상이라 매퍼 불필요)
           let listCharPr = gongmun.numbering === "report" && depth === 0 ? CHAR_BOLD : CHAR_NORMAL
           let mapId = fit ? variantMapper(fit, blockIdx, vBase) : undefined
-          if (gaejosik && depth === 0) {
+          if (measured && depth === 0 && gongmun.numbering !== "standard") {
             listCharPr = GJ_CHAR_DAE
             mapId = (id) => (id === CHAR_BOLD ? GJ_CHAR_DAE_BOLD : id)
           }

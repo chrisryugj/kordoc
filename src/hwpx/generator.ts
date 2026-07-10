@@ -17,7 +17,7 @@
  */
 
 import JSZip from "jszip"
-import { type GongmunOptions, resolveGongmun } from "./gongmun.js"
+import { type GongmunOptions, resolveGongmun, usesReportFonts } from "./gongmun.js"
 import { type HwpxTheme, resolveTheme, charVariantBase } from "./gen-ids.js"
 import { buildPrvText, parseMarkdownToBlocks } from "./md-runs.js"
 import { generateContainerXml, generateManifest, generateHeaderXml } from "./gen-header.js"
@@ -61,14 +61,16 @@ export async function markdownToHwpx(
   const theme = resolveTheme(options?.theme)
   const gongmun = options?.gongmun ? resolveGongmun(options.gongmun) : null
   const gaejosik = gongmun?.preset === "gaejosik"
+  // 실측 폰트 프리셋(개조식·보고서·계획서) — 전용 charPr 블록(11~25)이 먼저 온다 (QA-1)
+  const measured = !!gongmun && usesReportFonts(gongmun.preset)
   const blocks = parseMarkdownToBlocks(markdown)
   const gongmunList = gongmun ? precomputeGongmunList(blocks, gongmun) : null
   const fit = gongmun && gongmunList ? computeGongmunFitPlan(blocks, gongmun, gongmunList) : null
   // id 배치: 정적 borderFill(기본 2 + 개조식 7 + 공문서 헤더음영 1) → 프로필 → 표 레지스트리.
-  // charPr는 기본(+개조식 전용) + 장평 variant 다음부터 프로필 할당.
+  // charPr는 기본(+실측 프리셋 전용) + 장평 variant 다음부터 프로필 할당.
   const staticBfEnd = gongmun ? (gaejosik ? 11 : 4) : 3
   const remap = options?.profile
-    ? buildProfileRemap(options.profile, charVariantBase(gaejosik) + (fit?.variants?.length ?? 0) * 4, staticBfEnd)
+    ? buildProfileRemap(options.profile, charVariantBase(measured) + (fit?.variants?.length ?? 0) * 4, staticBfEnd)
     : null
   // 표 테두리 위계 레지스트리 — 섹션 생성 중 등록된 조합을 header.xml에 함께 방출
   const bfReg = gongmun ? new TableBfRegistry(staticBfEnd + (remap?.borderFillXmls.length ?? 0)) : null
