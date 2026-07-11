@@ -48,7 +48,10 @@ export function computeGongmunFitPlan(
       if (gongmun.numbering === "gaejosik" && (depth === 0 || (block.text || "").trimStart().startsWith("※"))) continue
       const content = plainRenderText(block.text || "")
       text = marker ? `${marker} ${content}` : content
-      const { left, indent } = levelIndent(depth, gongmun.bodyHeight, gongmun.numbering)
+      const li = levelIndent(depth, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, gongmun.preset === "press")
+      // 부호 생략 항목은 내어쓰기 없는 전용 paraPr(GONGMUN_LIST_PLAIN_BASE) — indent 0
+      const left = li.left
+      const indent = marker ? li.indent : 0
       // 음수 intent(내어쓰기): 첫 줄은 left에서, 둘째 줄부터 left+|intent|에서 시작
       firstW = pageW - left - Math.max(indent, 0)
       contW = pageW - left - Math.max(-indent, 0)
@@ -88,9 +91,13 @@ export function precomputeGongmunList(
   gongmun: ResolvedGongmun,
 ): Map<number, { marker: string; depth: number }> {
   const result = new Map<number, { marker: string; depth: number }>()
-  // 개조식 적응 시프트 — h3가 □ 대항목을 차지하는 문서는 리스트가 ○부터 시작
+  // 개조식 적응 시프트 — h3가 □ 대항목을 차지하는 문서는 리스트가 ○부터 시작.
+  // 법정 8단계 + h2 말머리 'number'(공고문)는 h2가 1단계(1. 2.)를 차지하므로
+  // 리스트를 한 단계 내림(가.부터 + 1자 들여쓰기) — "1. 제목 / 1. 본문" 동일 부호
+  // 중복은 규정 위계 위반 (v4.0.2 실무자 QA)
   const depthOffset =
-    gongmun.numbering === "gaejosik" && blocks.some((b) => b.type === "heading" && b.level === 3)
+    (gongmun.numbering === "gaejosik" && blocks.some((b) => b.type === "heading" && b.level === 3)) ||
+    (gongmun.numbering === "standard" && gongmun.h2Marker === "number" && blocks.some((b) => b.type === "heading" && b.level === 2))
       ? 1
       : 0
   let i = 0
@@ -116,11 +123,12 @@ export function precomputeGongmunList(
       break
     }
     const depths = run.map((bi) => Math.min(Math.max((blocks[bi].indent || 0) + depthOffset, 0), GONGMUN_LIST_LEVELS - 1))
-    // 단일 형제 부호 생략은 법정 번호(standard)에만. 불릿(report)은 항상 표시.
-    const suppress = gongmun.numbering === "standard"
+    // 단일 형제 부호 생략(편람 규정)은 suppressSingle 옵트인 + 법정 번호(standard)에만.
+    // 기본은 하나여도 부호 부여 — 부호 없는 계단 들여쓰기가 실무 눈에 어색 (v4.0.2 QA)
+    const suppress = gongmun.suppressSingle && gongmun.numbering === "standard"
       ? computeSuppression(depths)
       : depths.map(() => false)
-    const numberer = new GongmunNumberer(gongmun.numbering)
+    const numberer = new GongmunNumberer(gongmun.numbering, gongmun.bullet2, gongmun.preset === "press")
     run.forEach((bi, k) => {
       const marker = numberer.next(depths[k], suppress[k])
       result.set(bi, { marker, depth: depths[k] })

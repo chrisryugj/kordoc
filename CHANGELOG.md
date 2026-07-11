@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.2] - 2026-07-11
+
+실측 벤치마킹 릴리스 — 부처별 양식 3종 + 실물 8종 + 서울 정보소통광장 실결재 기안문
+60건(계획·보고·공고) 전수 디코드 분포를 근거로 괴리 17건 전수 목록화(GAP-01~17), 9건 반영.
+전 프리셋 한글 COM 실렌더 → PDF 벡터 좌표 실측으로 조판영역 초과 0건 게이트 통과.
+
+### Fixed
+
+- **조판영역 우측 침범 근본수정 (GAP-01)**: 생성 문서에 단 컬럼 정의(`<hp:colPr>`)가 없어
+  한글이 컬럼 영역을 좌우 10mm(2835HU)씩 좁게 잡던 결함 — 본문 텍스트는 우측 여백에
+  10mm 미달하고, 컬럼보다 넓은 treatAsChar 표(제목박스 +10mm·데이터표 +3.6mm·목차박스
+  +5mm)는 우측 여백을 침범했다(실무자 보고 재현). secPr 뒤 같은 run에 colPr 방출로 수정 —
+  COM 실렌더 실측: 본문 190.0mm 정합, 전 프리셋 초과 0. 표지·본문 제목박스(48180)는
+  outMargin 좌우 0(실물 t2와 동일 — 283이면 진행폭이 컬럼을 넘어 1mm 침범)
+- **report/plan 리스트 문단 위 간격 실측값 (GAP-05)**: 1단계 □만 body×0.5(750)이던 것을
+  실측 저장값 □3000/○2000/-1200/ㆍ600(t2 「2_보고서 양식」 paraPr)으로 — 개조식과 동일
+  스케일. □ 항목 `keepWithNext`도 report로 확장
+- **기안문 여백 실결재 지배값 (GAP-10)**: 편람 공식 20/10/20/20 → 실결재 지배값
+  **20/15/20/15**(정보소통광장 60건 중 41건). 보고서·계획서·통지·보도자료는 실측 상하
+  15mm(GAEJOSIK_MARGINS), 통지·보도자료 머리말·꼬리말 10mm. `margins`로 공식값 지정 가능
+
+### Fixed — 실무자 눈 QA 반려 4건
+
+- **단일 형제 부호 생략 기본 off**: 편람 규정(형제 없는 단독 항목은 부호 생략)을 기본
+  적용하던 것을 `suppressSingle` 옵트인으로 — "말머리 빠지면 열 위치가 맛간 것처럼
+  보인다"(실무자, 실무 관행 > 규정). 부호 생략 항목이 depth 공용 paraPr의 음수 내어쓰기를
+  물려받아 둘째 줄이 있지도 않은 부호 폭만큼 더 들어가던 유령 내어쓰기도 전용 plain
+  paraPr(25~32, 내어쓰기 0)로 수정
+- **비실측 프리셋 표 셀 12pt**: 기안문·통지·회의록 표 셀이 본문 15pt를 그대로 써 서술
+  열이 세로로 길어지던 것 → 실결재 지배값 12pt(굴림체 12·맑은고딕 11 실측)의 전용
+  charPr 11·12 신설, 자동 장평 variant 기점 11→13 (실측 프리셋은 종전 GJ 22·23 유지)
+- **표 열폭 배분 재작성**: 짧은 열이 글자 단위로 세로 쪼개지던 결함 — 열 하한 = 최장
+  어절 폭(글자 단위 세로 분해 금지), 셀 실패딩 1200HU(tbl inMargin 510×2 — hasMargin=0이라
+  cellMargin 무시) 기준으로 짧은 열부터 실폭 고정, 최장 서술 열만 유연
+- **h2 `number` 시 리스트 위계 시프트**: 공고문에서 h2가 "1. 2." 부호를 차지하는데
+  리스트도 1.부터 시작해 제목·본문에 동일 부호가 중복되던 규정 위반 — 리스트를 법정
+  8단계 위계의 가.부터 시작 + 1자 들여쓰기(precomputeGongmunList depthOffset)
+
+### Added
+
+- **기안문 두문·결문 (GAP-02)**: 행안부 별지 제1호서식 — `docHead`(기관명 18pt bold
+  중앙·수신·경유·제목 라벨 bold) / `docFoot`(발신명의 22pt 중앙·구분선·기안자/검토자/
+  결재권자·협조자·시행/접수·주소·전화/전송/이메일/공개구분 9pt). CLI `--doc-head`/`--doc-foot`
+- **보도자료 프리셋 `press`/`보도자료` (GAP-03)**: 국토부 실물(bodojaryo-reference) 실측 —
+  머리박스("보도자료" 20pt bold + 보도시점/배포 10pt bold) + 제목 25pt bold 중앙 + 부제
+  `- … -` + 본문 바탕 14pt □→ㅇ→\*(각주 12pt) + 담당 부서/담당자/연락처 표.
+  `press` 옵션·CLI `--press-head`/`--press-sub`
+- **업무보고 보고정보 행 (GAP-04)**: `reportInfo` — 최상단 우측 12pt "(보고일시, 보고자,
+  연락처)" (실측 t3: 휴먼명조 12pt RIGHT). CLI `--report-info`
+- **2단계 부호 ㅇ/○ 프리셋 분화 (GAP-06)**: 실결재 기안문 ㅇ 134 : ○ 5 실측 분포 —
+  `bullet2` 옵션 신설, 기본값 통지·보도자료 `ㅇ`, 보고서 양식 계열 `○`. CLI `--bullet2`
+- **공고문 두문·결문 (GAP-08)**: `noticeHead` — 공고번호(본문 위 bold 좌)·날짜(우측)·
+  발신명의(우측 bold), h2 말머리 기본 `number`("1. 사업개요" — 바이오헬스 공고문 실측).
+  CLI `--notice-head`
+- **`*` 참고 항목 (GAP-15)**: 실측 프리셋에서 `*` 마커 리스트 항목 → ※ 참고 스타일
+  (실결재·부처별 양식에서 참고를 `*`로 표기하는 관행이 ※보다 많음 — 부호 `*` 유지)
+- MCP `generate_document`: `bullet2`/`doc_head`/`doc_foot`/`report_info`/`notice_head`/`press` 노출
+- 측정 도구: `scripts/style-digest.mjs`가 `hp:switch` 안의 margin·lineSpacing도 읽음
+  (전자결재 기안문 필수), `bench/collect-opengov.mjs` Windows 경로 수정
+
+### 보류 (실측 근거 부족·갈림 — .claude/plans/gap-table-v4.1.md 기록)
+
+- 내어쓰기 실측 광분산(GAP-07 — 현행 부호실폭 유지), 회의록 실측 부재(GAP-09),
+  □ 부호 별도 run(GAP-12 — 표본 3:2), 기안문 개조식형 HY견고딕 17pt 스타일(GAP-14)
+
 ## [4.0.1] - 2026-07-11
 
 v4.0.0 실무자(현직 공무원) 눈 QA 3건 수정 — 근거는 부처별 실측 양식 3종(업무보고·보고서×2)

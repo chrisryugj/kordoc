@@ -9,10 +9,12 @@
 // 다운로드 링크)를 짝지어 추출한다. 구형 dname= 링크도 폴백으로 유지.
 import { writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const UA = 'kordoc-bench/3.0 (research; contact: ryuseungin@gmail.com)';
 const BASE = 'https://opengov.seoul.go.kr';
-const outDir = new URL(`./corpus/${process.argv[4] ?? 'seoul'}/`, import.meta.url).pathname;
+// fileURLToPath — URL.pathname은 Windows에서 "/C:/…"를 내 mkdir가 "C:\C:\…"로 죽는다
+const outDir = fileURLToPath(new URL(`./corpus/${process.argv[4] ?? 'seoul'}/`, import.meta.url));
 const MAX_FILES = Number(process.argv[2] ?? 60);
 const START_PAGE = Number(process.argv[3] ?? 1);
 const EXTRA_QUERY = process.argv[5] ? `&${process.argv[5]}` : '';

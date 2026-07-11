@@ -14,7 +14,7 @@ import { gaejosikMarker, gaejosikLevelIndent, type GaejosikSizeOverrides } from 
 
 // ─── 옵션 타입 ──────────────────────────────────────
 
-export type GongmunPreset = "official" | "report" | "plan" | "notice" | "minutes" | "gaejosik"
+export type GongmunPreset = "official" | "report" | "plan" | "notice" | "minutes" | "gaejosik" | "press"
 export type GongmunNumbering = "standard" | "report" | "gaejosik"
 export type GongmunFont = "myeongjo" | "gothic"
 
@@ -27,6 +27,7 @@ export type GongmunPresetInput =
   | "통지" | "알림" | "안내"
   | "회의록"
   | "개조식" | "개조식보고서" | "정부보고서" | "정부표준개조식보고서"
+  | "보도자료"
 
 /** 공문서 모드 옵션 (전부 선택 — 프리셋 기본값을 개별 override) */
 export interface GongmunOptions {
@@ -77,9 +78,34 @@ export interface GongmunOptions {
   /**
    * h2 섹션 제목 말머리 (비개조식 — 개조식 h2는 로마숫자 장 헤더가 대체).
    * 'box'=□ 대항목(실측 보고서 양식 관행) / 'number'=아라비아 번호(1. 2. — 공고문 관행)
-   * / 'none'=말머리 없음. 기본: 보고서·계획서 'box', 그 외 'none'.
+   * / 'none'=말머리 없음. 기본: 보고서·계획서 'box', 공고문 'number', 그 외 'none'.
    */
   h2Marker?: "box" | "number" | "none"
+  /**
+   * 2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서
+   * 양식 계열 실측). 기본: notice·press 'ㅇ', 그 외 '○' (v4.1.0 실결재 60건 분포).
+   */
+  bullet2?: "ㅇ" | "○"
+  /**
+   * 단일 형제 항목 부호 생략(편람 규정: 항목이 하나면 부호 미부여). 기본 false —
+   * 부호 없는 계단 들여쓰기가 실무 눈에 더 어색하다(실무자 QA, v4.0.2).
+   * 규정 엄수가 필요하면 true.
+   */
+  suppressSingle?: boolean
+  /** 기안문 두문 — 행정기관명·수신·경유·제목 (별지 제1호서식, official 전용) */
+  docHead?: { org?: string; to?: string; via?: string; title?: string }
+  /** 기안문 결문 — 발신명의·기안/검토/결재·시행/접수·주소·연락처·공개구분 (official 전용) */
+  docFoot?: {
+    sender?: string; drafter?: string; reviewer?: string; approver?: string
+    cooperator?: string; docNum?: string; receive?: string
+    address?: string; site?: string; phone?: string; fax?: string; email?: string; disclosure?: string
+  }
+  /** 업무보고 우상단 보고정보 행 — "(보고일시, 보고자, 연락처)" (실측 t3: 휴먼명조 12pt RIGHT) */
+  reportInfo?: string
+  /** 공고문 두문·결문 — 공고번호(본문 위)·날짜·발신명의(본문 아래 우측, 실측 바이오헬스 공고) */
+  noticeHead?: { no?: string; date?: string; sender?: string }
+  /** 보도자료(press) 머리·담당 — 보도시점/배포 행·부제·담당 부서 표 */
+  press?: { release?: string; distribute?: string; sub?: string[]; contact?: { dept?: string; manager?: string; phone?: string } }
 }
 
 export interface ResolvedGongmun {
@@ -112,12 +138,29 @@ export interface ResolvedGongmun {
   bodyTitleBox: boolean
   /** h2 섹션 제목 말머리 — 보고서·계획서 기본 '□'(실측), 'number'=아라비아, 'none'=없음 */
   h2Marker: "box" | "number" | "none"
+  /** 2단계 항목부호 — notice·press 기본 'ㅇ', 그 외 '○' (실결재 60건 분포, v4.1.0) */
+  bullet2: "ㅇ" | "○"
+  /** 단일 형제 부호 생략(규정) — 기본 false (실무 관행: 하나여도 부호, v4.0.2) */
+  suppressSingle: boolean
+  /** 기안문 두문 — null이면 없음 */
+  docHead: { org?: string; to?: string; via?: string; title?: string } | null
+  /** 기안문 결문 — null이면 없음 */
+  docFoot: NonNullable<GongmunOptions["docFoot"]> | null
+  /** 보고정보 행 — null이면 없음 */
+  reportInfo: string | null
+  /** 공고문 두문·결문 — null이면 없음 */
+  noticeHead: { no?: string; date?: string; sender?: string } | null
+  /** 보도자료 머리·담당 — press 프리셋이면 옵션 미지정이어도 빈 객체(머리박스는 항상) */
+  press: NonNullable<GongmunOptions["press"]> | null
 }
 
-/** 공식 표준 여백(mm) — 편람 서식 작성방법 해설 / 시행규칙 별표4 */
-const OFFICIAL_MARGINS = { top: 20, bottom: 10, left: 20, right: 20 }
+/**
+ * 기안문 여백(mm) — 실결재 지배값 t20/b15/l20/r15 (서울 정보소통광장 60건 중 41건,
+ * v4.1.0 실측). 편람 공식값(위20/아래10/좌우20)보다 실무 관행 우선 — margins로 조정 가능.
+ */
+const OFFICIAL_MARGINS = { top: 20, bottom: 15, left: 20, right: 15 }
 
-/** 개조식 보고서 여백(mm) — 실측: 「2_보고서 양식」·샘플양식1·공고문 공통 상하 15mm */
+/** 보고서 계열 여백(mm) — 실측: 「2_보고서 양식」·샘플양식1·공고문·보도자료 공통 상하 15mm */
 const GAEJOSIK_MARGINS = { top: 15, bottom: 15, left: 20, right: 20 }
 
 /** 개조식 머리말·꼬리말 영역(HWPUNIT) — 실측 4251(15mm). 쪽번호가 이 영역에 렌더 */
@@ -133,6 +176,8 @@ const PRESET_DEFAULTS: Record<
   notice: { bodyPt: 15, lineSpacing: 160, numbering: "standard" },
   minutes: { bodyPt: 14, lineSpacing: 130, numbering: "standard" },
   gaejosik: { bodyPt: 15, lineSpacing: 160, numbering: "gaejosik" },
+  // 보도자료 — 실측(국토부 실물): 본문 바탕 14pt 160%, □→ㅇ→*(각주) 부호
+  press: { bodyPt: 14, lineSpacing: 160, numbering: "report" },
 }
 
 /** 프리셋 별칭(한글/영문) → 내부 preset 키. CLI·라이브러리 공용 */
@@ -143,6 +188,7 @@ export const PRESET_ALIAS: Record<string, GongmunPreset> = {
   notice: "notice", 통지: "notice", 알림: "notice", 안내: "notice",
   minutes: "minutes", 회의록: "minutes",
   gaejosik: "gaejosik", 개조식: "gaejosik", 개조식보고서: "gaejosik", 정부보고서: "gaejosik", 정부표준개조식보고서: "gaejosik",
+  press: "press", 보도자료: "press",
 }
 
 /** 프리셋 입력(영문 키 또는 한글 별칭)을 내부 GongmunPreset로 정규화. 미상은 'official' */
@@ -173,13 +219,16 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
   const coverOn = opts.cover !== undefined ? opts.cover !== false : preset === "gaejosik"
   const coverOpts = typeof opts.cover === "object" ? opts.cover : {}
   const gaejosik = preset === "gaejosik"
+  // 여백 — 보고서 계열(개조식·보고서·계획서·공고문·보도자료)은 실측 상하 15mm,
+  // 기안문·회의록은 실결재 지배값(20/15/20/15)
+  const reportFamily = gaejosik || preset === "report" || preset === "plan" || preset === "notice" || preset === "press"
   return {
     preset,
     bodyFont: opts.bodyFont ?? "myeongjo",
     bodyHeight: Math.round(bodyPt * 100),
     lineSpacing: opts.lineSpacing ?? d.lineSpacing,
     numbering: opts.numbering ?? d.numbering,
-    margins: opts.margins ?? (gaejosik ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
+    margins: opts.margins ?? (reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
     centerTitle: opts.centerTitle ?? true,
     autoFitMinRatio,
     cover: coverOn ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "" } : null,
@@ -188,14 +237,27 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     sizes: opts.sizes ?? {},
     // 쪽번호 — 보고서 계열 관행(실측: 2_보고서 양식·추진계획·공고문 전부 하단 중앙)
     pageNumbers: opts.pageNumbers ?? (gaejosik || preset === "report" || preset === "plan"),
-    headerFooter: gaejosik ? GAEJOSIK_HEADER_FOOTER : 0,
+    // 머리말·꼬리말 — 실측: 보고서 계열 15mm(GT3·t2·춘천·브라더), 공고·보도 10mm,
+    // 기안문 0(실결재 41/60건 h0/f0)
+    headerFooter: usesReportFonts(preset) ? GAEJOSIK_HEADER_FOOTER
+      : preset === "notice" || preset === "press" ? 2835 : 0,
     // "끝." — 기안문 규정(본문 끝 2타+"끝."). 그 외는 opt-in
     endMark: opts.endMark ?? preset === "official",
     approval: opts.approval && opts.approval.length > 0 ? opts.approval : null,
     // 본문 제목박스 — 실측(GT3·GT12): 목차 뒤 본문 시작에 제목 반복. 표지 켜진 개조식 기본
     bodyTitleBox: opts.bodyTitleBox ?? (gaejosik && coverOn),
-    // h2 말머리 — 실측 보고서 양식(부처별 3종)의 섹션 제목이 곧 □ 대항목 (QA-2)
-    h2Marker: opts.h2Marker ?? (preset === "report" || preset === "plan" ? "box" : "none"),
+    // h2 말머리 — 실측: 보고서 양식 □ 대항목(QA-2), 공고문 아라비아("1. 사업개요", 바이오헬스 실측)
+    h2Marker: opts.h2Marker ?? (preset === "report" || preset === "plan" ? "box" : preset === "notice" ? "number" : "none"),
+    // 2단계 부호 — 실결재 기안문·공고문 ㅇ 지배(60건 중 ㅇ134:○5), 보고서 양식 계열 ○
+    bullet2: opts.bullet2 ?? (preset === "notice" || preset === "press" ? "ㅇ" : "○"),
+    // 단일 형제 부호 생략 — 규정이지만 부호 없는 계단이 실무 눈에 어색 (실무자 QA)
+    suppressSingle: opts.suppressSingle ?? false,
+    docHead: preset === "official" && opts.docHead ? opts.docHead : null,
+    docFoot: preset === "official" && opts.docFoot ? opts.docFoot : null,
+    reportInfo: opts.reportInfo?.trim() || null,
+    noticeHead: preset === "notice" && opts.noticeHead ? opts.noticeHead : null,
+    // 보도자료 머리박스는 프리셋 자체가 요구 — 옵션 미지정이어도 빈 객체
+    press: preset === "press" ? (opts.press ?? {}) : null,
   }
 }
 
@@ -224,8 +286,10 @@ export function circledHangul(n: number): string {
   return String.fromCodePoint(0x326e + (n % 14))
 }
 
-/** 보고서 모드 단계별 불릿(정부 보고서 관행: □ 대 / ○ 중 / - 소 / ㆍ 세) */
+/** 보고서 모드 단계별 불릿(정부 보고서 관행: □ 대 / ○·ㅇ 중 / - 소 / ㆍ 세) */
 const REPORT_BULLETS = ["□", "○", "-", "ㆍ"]
+/** 보도자료 불릿 — 실측(국토부 실물): □ → ㅇ → *(각주 12pt) */
+const PRESS_BULLETS = ["□", "ㅇ", "*", "ㆍ"]
 
 /**
  * 'standard'(법정 8단계) 마커. depth 0~7, n은 해당 단계 형제 중 0-based 순번.
@@ -245,9 +309,11 @@ export function standardMarker(depth: number, n: number): string {
   }
 }
 
-/** 'report' 모드 마커(불릿, 순번 무관) */
-export function reportMarker(depth: number): string {
-  return REPORT_BULLETS[Math.min(depth, REPORT_BULLETS.length - 1)]
+/** 'report' 모드 마커(불릿, 순번 무관). bullet2로 2단계 ㅇ/○ 전환, press는 보도자료 체계 */
+export function reportMarker(depth: number, bullet2: "ㅇ" | "○" = "○", press = false): string {
+  const bullets = press ? PRESS_BULLETS : REPORT_BULLETS
+  const m = bullets[Math.min(depth, bullets.length - 1)]
+  return depth === 1 && !press ? bullet2 : m
 }
 
 /**
@@ -288,11 +354,13 @@ export function levelIndent(
   bodyHeight: number,
   numbering: GongmunNumbering,
   sizes: GaejosikSizeOverrides = {},
+  bullet2: "ㅇ" | "○" = "○",
+  press = false,
 ): LevelIndent {
   // 개조식은 실측 양식의 들여쓰기 체계(□ 0 / ○ 1자 / - 1.5자 …)를 따른다.
-  if (numbering === "gaejosik") return gaejosikLevelIndent(depth, bodyHeight, sizes)
+  if (numbering === "gaejosik") return gaejosikLevelIndent(depth, bodyHeight, sizes, bullet2)
   // 같은 단계는 부호 종류가 일정하므로 대표 부호(순번 0)의 폭으로 내어쓰기를 정한다.
-  const marker = numbering === "report" ? reportMarker(depth) : standardMarker(depth, 0)
+  const marker = numbering === "report" ? reportMarker(depth, bullet2, press) : standardMarker(depth, 0)
   return { left: Math.round(depth * bodyHeight), indent: -markerWidth(marker, bodyHeight) }
 }
 
@@ -329,7 +397,11 @@ export function computeSuppression(depths: number[]): boolean[] {
  */
 export class GongmunNumberer {
   private counts: number[] = []
-  constructor(private numbering: GongmunNumbering) {}
+  constructor(
+    private numbering: GongmunNumbering,
+    private bullet2: "ㅇ" | "○" = "○",
+    private press = false,
+  ) {}
 
   /** depth 항목 하나에 대한 마커. suppress=true면 빈 문자열(부호 없음) */
   next(depth: number, suppress: boolean): string {
@@ -338,9 +410,9 @@ export class GongmunNumberer {
     const n = (this.counts[depth] ?? 0)
     this.counts[depth] = n + 1
     if (suppress) return ""
-    if (this.numbering === "gaejosik") return gaejosikMarker(depth)
+    if (this.numbering === "gaejosik") return gaejosikMarker(depth, this.bullet2)
     return this.numbering === "report"
-      ? reportMarker(depth)
+      ? reportMarker(depth, this.bullet2, this.press)
       : standardMarker(depth, n)
   }
 

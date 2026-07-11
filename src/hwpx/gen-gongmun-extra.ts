@@ -15,7 +15,7 @@ import { TableBfRegistry } from "./gen-table-bf.js"
 
 let extraTableId = 9_300_000
 
-function tbl(rows: string[], w: number, h: number, cols: number): string {
+export function tbl(rows: string[], w: number, h: number, cols: number): string {
   return `<hp:tbl id="${++extraTableId}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="${rows.length}" colCnt="${cols}" cellSpacing="0" borderFillIDRef="1" noAdjust="1">`
     + `<hp:sz width="${w}" widthRelTo="ABSOLUTE" height="${h}" heightRelTo="ABSOLUTE" protect="0"/>`
     + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
@@ -25,7 +25,7 @@ function tbl(rows: string[], w: number, h: number, cols: number): string {
     + `</hp:tbl>`
 }
 
-function tc(opts: { bf: number; row: number; col: number; w: number; h: number; colSpan?: number; paras: string }): string {
+export function tc(opts: { bf: number; row: number; col: number; w: number; h: number; colSpan?: number; paras: string }): string {
   return `<hp:tc name="" header="0" hasMargin="0" protect="0" editable="1" dirty="0" borderFillIDRef="${opts.bf}">`
     + `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${opts.paras}</hp:subList>`
     + `<hp:cellAddr colAddr="${opts.col}" rowAddr="${opts.row}"/>`
@@ -35,7 +35,7 @@ function tc(opts: { bf: number; row: number; col: number; w: number; h: number; 
     + `</hp:tc>`
 }
 
-function para(text: string, paraPrId: number, charPrId: number): string {
+export function para(text: string, paraPrId: number, charPrId: number): string {
   return `<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"><hp:run charPrIDRef="${charPrId}"><hp:t>${escapeXml(text)}</hp:t></hp:run></hp:p>`
 }
 

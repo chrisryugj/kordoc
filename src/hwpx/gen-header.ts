@@ -3,11 +3,12 @@
  */
 
 import { type ResolvedGongmun, levelIndent, markerWidth, usesReportFonts } from "./gongmun.js"
+import { GONGMUN_TBL_PT } from "./gen-ids.js"
 import { gaejosikSizes, gaejosikSpaceBefore, gaejosikChamIndent, gaejosikTocItemIndent, GAEJOSIK_COLORS } from "./gaejosik.js"
 import {
   NS_HEAD, NS_OPF, NS_HPF, NS_OCF, NS_PARA, NS_CORE,
   CHAR_TABLE_HEADER, CHAR_QUOTE,
-  GONGMUN_BODY_RATIO, GONGMUN_LIST_BASE, GONGMUN_LIST_LEVELS,
+  GONGMUN_BODY_RATIO, GONGMUN_LIST_BASE, GONGMUN_LIST_LEVELS, GONGMUN_LIST_PLAIN_BASE,
   GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT,
   GJ_PARA_CHAM, GJ_PARA_COVER, GJ_PARA_TOC_ITEM, GJ_PARA_CHAPTER, GJ_PARA_BAR,
   charPr, paraPr, borderFillEntry, type BorderSide,
@@ -79,6 +80,14 @@ function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | nu
     charPr(CHAR_TABLE_HEADER, body, theme.tableHeaderBold, false, bodyFont, theme.tableHeader),
     charPr(CHAR_QUOTE, body, false, true, bodyFont, theme.quote),
   ]
+  if (gongmun && !measured) {
+    // 비실측 공문서 표 셀 11·12 — 12pt (실결재 실측: 표 셀은 본문보다 작은 11~12pt 지배.
+    // 본문 크기 셀은 열폭 부족으로 서술 열이 세로로 길어진다 — v4.0.2 실렌더 QA)
+    rows.push(
+      charPr(11, GONGMUN_TBL_PT, false, false, bodyFont, theme.body),
+      charPr(12, GONGMUN_TBL_PT, true, false, bodyFont, theme.body),
+    )
+  }
   if (measured) {
     // 부호·요소별 전용 charPr 11~25 (gen-ids GJ_CHAR_*) — 실측 스펙 (gaejosik.ts).
     // 보고서·계획서도 ※(13·14)·표 셀(22·23)·제목박스(25)를 쓰므로 블록 전체를 공유 등록
@@ -155,13 +164,15 @@ function buildParaProperties(gongmun: ResolvedGongmun | null): string {
   ]
   // 항목 단계별 paraPr (8 ~ 8+7): left/내어쓰기 indent
   for (let d = 0; d < GONGMUN_LIST_LEVELS; d++) {
-    const { left, indent } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes)
-    // 단락 위 간격 — 개조식은 실측 스펙(□15/○10/-6pt), 보고서는 1단계 □ 관행 간격
-    const sectionGap = gongmun.numbering === "gaejosik"
+    const { left, indent } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, gongmun.preset === "press")
+    // 단락 위 간격 — 개조식·보고서(report 불릿) 공통 실측 스펙 □15/○10/-6/ㆍ3pt
+    // (v4.1.0 GAP-05: t2 「2_보고서 양식」 paraPr 저장값 3000/2000/1200/600 실측 확정.
+    //  종전 report d0 body×0.5=750은 실측의 1/4이라 □ 대항목 간격이 답답했음)
+    const sectionGap = gongmun.numbering === "gaejosik" || gongmun.numbering === "report"
       ? gaejosikSpaceBefore(d, gongmun.bodyHeight)
-      : gongmun.numbering === "report" && d === 0 ? Math.round(gongmun.bodyHeight * 0.5) : 0
+      : 0
     // □ 대항목은 다음 문단과 같은 쪽에 — 쪽 하단 고아 표제 방지 (장헤더와 동일 관행)
-    const keepNext = gongmun.numbering === "gaejosik" && d === 0
+    const keepNext = (gongmun.numbering === "gaejosik" || gongmun.numbering === "report") && d === 0
     base.push(paraPr(GONGMUN_LIST_BASE + d, { align: "JUSTIFY", lineSpacing: ls, left, indent, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext }))
   }
   // 가운데정렬 본문 단락(발신명의 등)
@@ -171,8 +182,9 @@ function buildParaProperties(gongmun: ResolvedGongmun | null): string {
   // 표 셀 전용 — 실측(GT1 표⑪): CENTER 130% / 장문 열 LEFT 130%. 셀 문단은 어절유지
   base.push(paraPr(GONGMUN_TBL_CENTER, { align: "CENTER", lineSpacing: 130, keepWord: true }))
   base.push(paraPr(GONGMUN_TBL_LEFT, { align: "LEFT", lineSpacing: 130, keepWord: true }))
-  if (gongmun.preset === "gaejosik") {
-    // 개조식 전용 paraPr 17~21 (gen-ids GJ_PARA_*)
+  // 개조식 전용 paraPr 20~24 (gen-ids GJ_PARA_*) — id 연속성 위해 전 프리셋 방출
+  // (비개조식은 ※ 참고(20)만 참조. v4.0.2: 뒤에 부호생략 전용 25~32가 오므로 구멍 금지)
+  {
     const cham = gaejosikChamIndent(gongmun.bodyHeight, gongmun.sizes)
     const toc = gaejosikTocItemIndent(gongmun.bodyHeight, gongmun.sizes)
     base.push(
@@ -184,12 +196,15 @@ function buildParaProperties(gongmun: ResolvedGongmun | null): string {
       // 표지 장식 바 셀 빈 문단 — 저줄간격(실측 71%)으로 바 높이 818 안에 수납
       paraPr(GJ_PARA_BAR, { align: "CENTER", lineSpacing: 70, keepWord: true }),
     )
-  } else if (usesReportFonts(gongmun.preset)) {
-    // 보고서·계획서 — ※ 참고 문단(한양중고딕 13pt 실측 스타일)만 개조식과 공유 (QA-1)
-    const cham = gaejosikChamIndent(gongmun.bodyHeight, gongmun.sizes)
-    base.push(
-      paraPr(GJ_PARA_CHAM, { align: "JUSTIFY", lineSpacing: ls, left: cham.left, indent: cham.indent, spaceBefore: gaejosikSpaceBefore(3, gongmun.bodyHeight), keepWord: true }),
-    )
+  }
+  // 부호 생략(단일 형제) 항목 전용 25~32 — left는 단계 동일·내어쓰기 0 (v4.0.2:
+  // 유령 내어쓰기로 둘째 줄이 첫 줄보다 더 들어가던 결함 수정, 실렌더 QA)
+  for (let d = 0; d < GONGMUN_LIST_LEVELS; d++) {
+    const { left } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, gongmun.preset === "press")
+    const sectionGap = gongmun.numbering === "gaejosik" || gongmun.numbering === "report"
+      ? gaejosikSpaceBefore(d, gongmun.bodyHeight)
+      : 0
+    base.push(paraPr(GONGMUN_LIST_PLAIN_BASE + d, { align: "JUSTIFY", lineSpacing: ls, left, indent: 0, spaceBefore: sectionGap, keepWord: true }))
   }
   return `<hh:paraProperties itemCnt="${base.length}">\n${base.join("\n")}\n    </hh:paraProperties>`
 }

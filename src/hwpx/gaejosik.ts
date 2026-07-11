@@ -25,7 +25,8 @@ import { markerWidth } from "./gongmun.js"
  */
 const GAEJOSIK_BULLETS = ["□", "○", "-", "ㆍ"]
 
-export function gaejosikMarker(depth: number): string {
+export function gaejosikMarker(depth: number, bullet2: "ㅇ" | "○" = "○"): string {
+  if (depth === 1) return bullet2
   return GAEJOSIK_BULLETS[Math.min(depth, GAEJOSIK_BULLETS.length - 1)]
 }
 
@@ -78,14 +79,14 @@ export function gaejosikSpaceBefore(depth: number, bodyHeight: number): number {
  * 단계별 들여쓰기 — 실측: 선행 공백 □=1 ○=2 -=3 (0.5em씩) ≈
  * □ left 0 / ○ 1자 / - 1.5자 / ㆍ 2자(+0.5자씩 누적). 내어쓰기는 부호 실폭.
  */
-export function gaejosikLevelIndent(depth: number, bodyHeight: number, sizes: GaejosikSizeOverrides = {}): { left: number; indent: number } {
+export function gaejosikLevelIndent(depth: number, bodyHeight: number, sizes: GaejosikSizeOverrides = {}, bullet2: "ㅇ" | "○" = "○"): { left: number; indent: number } {
   const lefts = [0, 1.0, 1.5, 2.0]
   const left = depth <= 3
     ? Math.round(lefts[depth] * bodyHeight)
     : Math.round((2.0 + (depth - 3) * 0.5) * bodyHeight)
   // □는 자기 크기(16pt 상당)로 부호폭 계산 — 둘째 줄이 내용 첫 글자에 정렬
   const h = depth === 0 ? gaejosikSizes(bodyHeight, sizes).dae : bodyHeight
-  return { left, indent: -markerWidth(gaejosikMarker(depth), h) }
+  return { left, indent: -markerWidth(gaejosikMarker(depth, bullet2), h) }
 }
 
 /** ※ 참고 문단 들여쓰기 — 실측: 선행 공백 5칸(13pt) ≈ 2.5×cham폭 */

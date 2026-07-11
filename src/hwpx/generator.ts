@@ -25,6 +25,7 @@ import { computeGongmunFitPlan, precomputeGongmunList } from "./gen-gongmun-fit.
 import { blocksToSectionXml, type ChartPart } from "./gen-section.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
 import { buildProfileRemap, type FormatProfile } from "./gen-profile.js"
+import { docframeActive, docframeCharPrXmls, docframeIds } from "./gen-docframe.js"
 
 export { type HwpxTheme } from "./gen-ids.js"
 export {
@@ -70,12 +71,17 @@ export async function markdownToHwpx(
   // charPr는 기본(+실측 프리셋 전용) + 장평 variant 다음부터 프로필 할당.
   const staticBfEnd = gongmun ? (gaejosik ? 11 : 4) : 3
   const remap = options?.profile
-    ? buildProfileRemap(options.profile, charVariantBase(measured) + (fit?.variants?.length ?? 0) * 4, staticBfEnd)
+    ? buildProfileRemap(options.profile, charVariantBase(measured, !!gongmun) + (fit?.variants?.length ?? 0) * 4, staticBfEnd)
     : null
   // 표 테두리 위계 레지스트리 — 섹션 생성 중 등록된 조합을 header.xml에 함께 방출
   const bfReg = gongmun ? new TableBfRegistry(staticBfEnd + (remap?.borderFillXmls.length ?? 0)) : null
+  // docframe(두문·결문·보고정보·공고두문·보도머리) charPr — variant·프로필 다음 id.
+  // 기능이 꺼져 있으면 미방출(기존 산출물 불변)
+  const dfActive = !!gongmun && docframeActive(gongmun)
+  const dfBase = charVariantBase(measured, !!gongmun) + (fit?.variants?.length ?? 0) * 4 + (remap?.charPrXmls.length ?? 0)
+  const dfIds = dfActive ? docframeIds(dfBase) : null
   const chartParts: ChartPart[] = []
-  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap)
+  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds)
 
   // 프로필이 있었는데 한 표에도 못 붙었으면 진단 경고 — 매칭은 보수적(불일치=미적용)이라
   // 마크다운을 크게 고쳐 쓴 경우 전멸할 수 있는데, 그걸 조용히 삼키지 않는다. 1회만.
@@ -94,7 +100,8 @@ export async function markdownToHwpx(
   zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
   zip.file("META-INF/container.xml", generateContainerXml())
   zip.file("Contents/content.hpf", generateManifest(chartParts))
-  zip.file("Contents/header.xml", generateHeaderXml(theme, gongmun, fit?.variants ?? [], extraBorderFills, remap?.charPrXmls ?? []))
+  zip.file("Contents/header.xml", generateHeaderXml(theme, gongmun, fit?.variants ?? [], extraBorderFills,
+    [...(remap?.charPrXmls ?? []), ...(dfActive ? docframeCharPrXmls(dfBase, measured) : [])]))
   zip.file("Contents/section0.xml", sectionXml)
   for (const part of chartParts) zip.file(part.name, part.xml)
   // Preview/ — 한글 프로그램의 일부 버전(특히 macOS)이 존재 여부를 확인함

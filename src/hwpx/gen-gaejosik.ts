@@ -48,10 +48,14 @@ function cell(opts: {
 }
 
 function table(rows: string[], w: number, h: number, cols: number, tblBf: number = 1): string {
+  // 본문폭급 표(표지·본문 제목박스 48180)는 outMargin 좌우 0 — 실측(t2): 283을 주면
+  // treatAsChar 진행폭이 컬럼폭을 넘어 좌우 1mm씩 밀려 우측 여백을 침범한다 (GAP-01 잔여).
+  // 실물도 48180 표지 표 2개만 0, 좁은 표(배너·목차박스·장헤더)는 283.
+  const outLR = w + 566 > 48000 ? 0 : 283
   return `<hp:tbl id="${++gjTableId}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="${rows.length}" colCnt="${cols}" cellSpacing="0" borderFillIDRef="${tblBf}" noAdjust="1">`
     + `<hp:sz width="${w}" widthRelTo="ABSOLUTE" height="${h}" heightRelTo="ABSOLUTE" protect="0"/>`
     + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
-    + `<hp:outMargin left="283" right="283" top="283" bottom="283"/>`
+    + `<hp:outMargin left="${outLR}" right="${outLR}" top="283" bottom="283"/>`
     + `<hp:inMargin left="141" right="141" top="141" bottom="141"/>`
     + rows.map((r) => `<hp:tr>${r}</hp:tr>`).join("")
     + `</hp:tbl>`

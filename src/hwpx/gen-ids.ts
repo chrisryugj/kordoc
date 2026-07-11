@@ -195,12 +195,19 @@ export const GJ_CHAR_BODY_TITLE = 25   // 본문 첫 페이지 제목 박스 —
 const GJ_CHAR_COUNT = 15
 
 // ─── 개조식 전용 paraPr id — 공통(0~7)+단계(8~15)+CENTER(16)+RIGHT(17)+표셀(18·19) 뒤 20~24 ──
+// v4.0.2부터 id 연속성을 위해 전 공문서 프리셋이 이 블록을 방출한다 (비개조식은 20만 사용)
 export const GJ_PARA_CHAM = 20     // ※ 참고 문단 (들여쓰기 + 문단 위 3pt)
 export const GJ_PARA_COVER = 21    // 표지 제목·날짜·기관명 (CENTER, 줄간격 130)
 export const GJ_PARA_TOC_ITEM = 22 // 목차 항목
 export const GJ_PARA_CHAPTER = 23  // 장 헤더 표 호스트 문단 (문단 위 간격)
 export const GJ_PARA_BAR = 24      // 표지 장식 바 셀 빈 문단 (줄간격 70% — 실측 71%)
 export const GJ_PARA_COUNT = 5
+
+// ─── 부호 생략 항목 전용 paraPr — 25~32 (v4.0.2) ──
+// 단일 형제 규정으로 부호가 생략된 항목이 depth 공용 paraPr(음수 내어쓰기)를 쓰면
+// 있지도 않은 부호 폭만큼 둘째 줄이 더 들어간다(유령 내어쓰기 — 실렌더 QA 확인).
+// left는 단계 동일, 내어쓰기 0인 전용 세트.
+export const GONGMUN_LIST_PLAIN_BASE = 25
 
 // ─── 개조식 전용 borderFill id — 기본 2종(1·2) 뒤 3~9 ──
 export const GJ_BF_CHAPTER_NUM = 3   // 장헤더 로마숫자 셀 — #193AAA 음영 + #006699 테두리
@@ -268,13 +275,24 @@ export function pageHidingCtrl(hideHeader: boolean = false): string {
   return `<hp:ctrl><hp:pageHiding hideHeader="${hideHeader ? 1 : 0}" hideFooter="0" hideMasterPage="0" hideBorder="0" hideFill="0" hidePageNum="1"/></hp:ctrl>`
 }
 
+// ─── 비실측 공문서 표 셀 charPr — 11·12 (v4.0.2) ──
+// 실결재 기안문 실측: 표 셀은 본문(15pt)보다 작은 11~12pt가 지배(굴림체12·맑은고딕11).
+// 본문 크기 셀은 열폭이 부족해 서술 열이 세로로 길어진다 (실렌더 QA).
+// 실측 프리셋은 GJ_CHAR_TABLE(22·23, 맑은 고딕 12pt)을 그대로 쓴다.
+export const GONGMUN_TBL_CHAR = 11
+export const GONGMUN_TBL_CHAR_BOLD = 12
+/** 비실측 공문서 표 셀 크기 — 12pt (실결재 실측 지배값) */
+export const GONGMUN_TBL_PT = 1200
+
 // ─── 공문서 자동 장평(orphan 축소) ───────────────────
 // 기본 charPr 11종(0~10) 뒤에, 자동 장평이 필요한 문단용 변형 charPr를 붙인다.
-// 실측 폰트 프리셋(개조식·보고서·계획서)은 전용 charPr 15종(11~25)이 먼저 오므로 변형은 26부터.
+// 비공문서는 11부터(종전과 동일). 비실측 공문서는 표 셀 2종(11·12)이 먼저 와 13부터.
+// 실측 폰트 프리셋(개조식·보고서·계획서)은 전용 charPr 15종(11~25)이 먼저 오므로 26부터.
 // 변형 vi번째 장평 r → charPr id = charVariantBase + vi×4 + (0 본문|1 볼드|2 이탤릭|3 볼드이탤릭)
 export const CHAR_VARIANT_BASE = 11
-export function charVariantBase(measured: boolean): number {
-  return measured ? CHAR_VARIANT_BASE + GJ_CHAR_COUNT : CHAR_VARIANT_BASE
+export function charVariantBase(measured: boolean, isGongmun: boolean = true): number {
+  if (!isGongmun) return CHAR_VARIANT_BASE
+  return measured ? 11 + GJ_CHAR_COUNT : 11 + 2
 }
 /** 공문서 본문 기본 장평(%) — 실제 공문서 관행 (v3.5.3) */
 export const GONGMUN_BODY_RATIO = 95

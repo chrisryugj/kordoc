@@ -61,13 +61,17 @@ for (const pp of findAll(hdr, "paraPr")) {
   const bs = kids(pp, "breakSetting")[0];
   if (bs) { o.brkNonLatin = A(bs, "breakNonLatinWord"); o.brkLatin = A(bs, "breakLatinWord"); if (A(bs, "keepWithNext") === "1") o.keepNext = 1; }
   if (A(pp, "snapToGrid") === "1") o.grid = 1;
-  const m = kids(pp, "margin")[0];
+  // margin·lineSpacing이 hp:switch>hp:default 안에 있을 수 있다(전자결재 산출 기안문 실측)
+  // — hp:default가 표준 HWPUNIT 값, hp:case(HwpUnitChar)는 글자단위라 default 우선
+  const swDefault = kids(pp, "switch").flatMap((sw) => kids(sw, "default"));
+  const scopes = [pp, ...swDefault];
+  const m = scopes.flatMap((s) => kids(s, "margin"))[0];
   if (m) {
     const g = (t) => { const el = kids(m, t)[0]; return el ? Number(A(el, "value")) : 0; };
     const mm = { indent: g("intent"), left: g("left"), right: g("right"), before: g("prev"), after: g("next") };
     for (const [k, v] of Object.entries(mm)) if (v) o[k] = v;
   }
-  const ls = kids(pp, "lineSpacing")[0];
+  const ls = scopes.flatMap((s) => kids(s, "lineSpacing"))[0];
   if (ls) o.lineSp = `${A(ls, "value")}${A(ls, "type") === "PERCENT" ? "%" : A(ls, "type")}`;
   const hd = kids(pp, "heading")[0];
   if (hd && A(hd, "type") !== "NONE") o.heading = `${A(hd, "type")}:${A(hd, "level")}`;

@@ -704,8 +704,8 @@ server.tool(
   {
     markdown: z.string().min(1).describe("HWPX로 변환할 마크다운 전문. 표는 GFM 문법 사용 (예: '| 이름 | 부서 |\\n| --- | --- |\\n| 홍길동 | 기획팀 |')"),
     output_path: z.string().min(1).describe("출력 HWPX 파일의 절대 경로 (.hwpx 권장)"),
-    preset: z.enum(["기안문", "보고서", "계획서", "통지", "회의록", "개조식", "개조식보고서", "정부보고서", "정부표준개조식보고서", "official", "report", "plan", "notice", "minutes", "gaejosik"]).optional()
-      .describe("공문서 프리셋 — 지정 시 한국 행정 공문서 표준 서식 적용. '개조식'=정부 표준 개조식 보고서(표지·목차·로마숫자 장 헤더 자동 + □○-※ 부호별 폰트). 미지정 시 범용 마크다운 변환"),
+    preset: z.enum(["기안문", "보고서", "계획서", "통지", "회의록", "개조식", "개조식보고서", "정부보고서", "정부표준개조식보고서", "보도자료", "official", "report", "plan", "notice", "minutes", "gaejosik", "press"]).optional()
+      .describe("공문서 프리셋 — 지정 시 한국 행정 공문서 표준 서식 적용. '개조식'=정부 표준 개조식 보고서(표지·목차·로마숫자 장 헤더 자동 + □○-※ 부호별 폰트), '보도자료'=머리박스+제목 25pt+□→ㅇ→*(각주) 체계. 미지정 시 범용 마크다운 변환"),
     font: z.enum(["myeongjo", "gothic"]).optional().describe("본문 글꼴(공문서 모드): myeongjo=명조 계열(개조식·보고서·계획서는 실측 휴먼명조, 그 외 함초롬바탕), gothic=맑은 고딕"),
     body_pt: z.number().int().min(6).max(40).optional().describe("본문 글자 크기(pt, 공문서 모드). 기본 15"),
     org: z.string().optional().describe("표지 기관명(개조식 프리셋 전용). 미지정 시 표지에 기관명 생략"),
@@ -727,8 +727,28 @@ server.tool(
       tocRoman: z.number().min(6).max(60).optional(), tocItem: z.number().min(6).max(60).optional(),
       table: z.number().min(6).max(60).optional(),
     }).optional().describe("개조식 요소별 글자 크기(pt) 오버라이드 — dae=□/cham=※/chapter=장헤더/coverTitle·coverSub=표지/tocLabel·tocRoman·tocItem=목차/table=표 셀. 미지정 요소는 body_pt 비례 기본값"),
+    bullet2: z.enum(["ㅇ", "○"]).optional().describe("2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서 양식). 미지정 시 통지·보도자료 ㅇ, 그 외 ○"),
+    suppress_single: z.boolean().optional().describe("단일 형제 항목 부호 생략(편람 규정). 기본 false — 하나뿐인 항목에도 부호(1. 가.)를 부여 (부호 없는 계단 들여쓰기가 실무 눈에 어색)"),
+    doc_head: z.object({
+      org: z.string().optional(), to: z.string().optional(), via: z.string().optional(), title: z.string().optional(),
+    }).optional().describe("기안문 두문(별지 제1호서식) — org=행정기관명(18pt bold 중앙)/to=수신/via=경유/title=제목. 기안문 프리셋 전용"),
+    doc_foot: z.object({
+      sender: z.string().optional(), drafter: z.string().optional(), reviewer: z.string().optional(), approver: z.string().optional(),
+      cooperator: z.string().optional(), docNum: z.string().optional(), receive: z.string().optional(),
+      address: z.string().optional(), site: z.string().optional(), phone: z.string().optional(), fax: z.string().optional(),
+      email: z.string().optional(), disclosure: z.string().optional(),
+    }).optional().describe("기안문 결문 — sender=발신명의(22pt 중앙)/drafter·reviewer·approver=기안·검토·결재/docNum=시행/receive=접수/disclosure=공개구분 등. 기안문 프리셋 전용"),
+    report_info: z.string().optional().describe("업무보고 우상단 보고정보 행 — 예: '(2026. 7. 11., 과장 홍길동, ☎02-120)' (실측: 12pt 우측정렬)"),
+    notice_head: z.object({
+      no: z.string().optional(), date: z.string().optional(), sender: z.string().optional(),
+    }).optional().describe("공고문 두문·결문 — no=공고번호(본문 위 bold)/date=날짜(본문 아래 우측)/sender=발신명의(우측 bold). 통지 프리셋 전용"),
+    press: z.object({
+      release: z.string().optional(), distribute: z.string().optional(),
+      sub: z.array(z.string()).optional(),
+      contact: z.object({ dept: z.string().optional(), manager: z.string().optional(), phone: z.string().optional() }).optional(),
+    }).optional().describe("보도자료 옵션 — release=보도시점/distribute=배포일(머리박스)/sub=부제 배열('- … -')/contact=담당 부서·담당자·연락처 표"),
   },
-  async ({ markdown, output_path, preset, font, body_pt, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, fonts, sizes }) => {
+  async ({ markdown, output_path, preset, font, body_pt, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, fonts, sizes, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press }) => {
     try {
       let gongmun: GongmunOptions | undefined
       if (preset) {
@@ -747,6 +767,13 @@ server.tool(
         if (h2_marker) gongmun.h2Marker = h2_marker
         if (fonts) gongmun.fonts = fonts
         if (sizes) gongmun.sizes = sizes
+        if (bullet2) gongmun.bullet2 = bullet2
+        if (suppress_single !== undefined) gongmun.suppressSingle = suppress_single
+        if (doc_head) gongmun.docHead = doc_head
+        if (doc_foot) gongmun.docFoot = doc_foot
+        if (report_info) gongmun.reportInfo = report_info
+        if (notice_head) gongmun.noticeHead = notice_head
+        if (press) gongmun.press = press
       }
       const buf = await markdownToHwpx(markdown, gongmun ? { gongmun } : undefined)
       const out = resolve(output_path)

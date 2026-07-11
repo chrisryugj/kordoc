@@ -103,9 +103,12 @@ describe("gongmun 순수 로직", () => {
     const off = resolveGongmun({ preset: "official" })
     assert.equal(off.bodyHeight, 1500)
     assert.equal(off.numbering, "standard")
-    assert.deepEqual(off.margins, { top: 20, bottom: 10, left: 20, right: 20 })
+    // v4.1.0 GAP-10: 기안문 여백 = 실결재 지배값 20/15/20/15 (정보소통광장 60건 중 41건 실측)
+    assert.deepEqual(off.margins, { top: 20, bottom: 15, left: 20, right: 15 })
     const rep = resolveGongmun({ preset: "report" })
     assert.equal(rep.numbering, "report")
+    // v4.1.0: 보고서 계열 여백 = 실측 상하 15mm (t2 「2_보고서 양식」 계열)
+    assert.deepEqual(rep.margins, { top: 15, bottom: 15, left: 20, right: 20 })
     const min = resolveGongmun({ preset: "minutes" })
     assert.equal(min.bodyHeight, 1400)
     assert.equal(min.lineSpacing, 130)
@@ -193,18 +196,29 @@ describe("gongmun 렌더링", () => {
     assert.ok(texts.includes("2. 새 둘째"))
   })
 
-  it("공식 여백(위20/아래10/좌20/우20) + 머리말·꼬리말 0", async () => {
+  // v4.1.0 GAP-10: 기안문 여백 = 실결재 지배값 20/15/20/15 (편람 공식 20/10/20/20에서 교체 —
+  // 서울 정보소통광장 실결재 60건 중 41건 실측. margins 옵션으로 공식값 지정 가능)
+  it("기안문 여백(위20/아래15/좌20/우15) + 머리말·꼬리말 0", async () => {
     const buf = await markdownToHwpx("# 제목\n\n본문", { gongmun: { preset: "official" } })
     const zip = await JSZip.loadAsync(buf)
     const sec = await zip.file("Contents/section0.xml")!.async("text")
     const m = sec.match(/<hp:margin header="(\d+)" footer="(\d+)" gutter="0" left="(\d+)" right="(\d+)" top="(\d+)" bottom="(\d+)"/)!
     assert.ok(m, "secPr margin 존재")
     assert.equal(m[5], "5669") // top 20mm
-    assert.equal(m[6], "2835") // bottom 10mm
+    assert.equal(m[6], "4252") // bottom 15mm
     assert.equal(m[3], "5669") // left 20mm
-    assert.equal(m[4], "5669") // right 20mm
+    assert.equal(m[4], "4252") // right 15mm
     assert.equal(m[1], "0") // header
     assert.equal(m[2], "0") // footer
+  })
+
+  // v4.1.0 GAP-01: colPr 미방출 시 한글이 컬럼을 좌우 10mm 좁게 잡아 본문 미달·표 우측 침범
+  // (COM 실렌더 실측). secPr 뒤 같은 run에 단 컬럼 정의가 반드시 있어야 한다
+  it("colPr 방출 — secPr 뒤 같은 run에 단 컬럼 정의", async () => {
+    const buf = await markdownToHwpx("본문", { gongmun: { preset: "official" } })
+    const zip = await JSZip.loadAsync(buf)
+    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    assert.match(sec, /<\/hp:secPr><hp:ctrl><hp:colPr[^>]*colCount="1"/)
   })
 
   it("본문 15pt(height 1500)", async () => {

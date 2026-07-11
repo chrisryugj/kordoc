@@ -466,7 +466,7 @@ program
   .alias("gen")
   .description("마크다운 → 공문서 HWPX 생성 — kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 (markdown에 '-' 지정 시 stdin)")
   .option("-o, --output <path>", "출력 HWPX 경로 (기본: <입력>.hwpx)")
-  .option("--preset <name>", "공문서 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·개조식(gaejosik — 표지·목차·장헤더 자동)", "기안문")
+  .option("--preset <name>", "공문서 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·개조식(gaejosik — 표지·목차·장헤더 자동)·보도자료(press)", "기안문")
   .option("--font <type>", "본문 글꼴: myeongjo(함초롬바탕) 또는 gothic(맑은 고딕)")
   .option("--pt <size>", "본문 글자 크기(pt)")
   .option("--line-spacing <percent>", "본문 줄간격(%)")
@@ -485,6 +485,14 @@ program
   .option("--h2-marker <type>", "h2 섹션 제목 말머리: box(□ — 보고서·계획서 기본)·number(1. — 공고문 관행)·none")
   .option("--fonts <spec>", "요소별 글꼴 오버라이드: body=나눔명조,heading=나눔고딕,ref=한양중고딕,table=맑은 고딕")
   .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
+  .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배) 또는 ○(원 — 보고서 양식)")
+  .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
+  .option("--doc-head <spec>", "기안문 두문: org=행정안전부,to=수신처,title=제목 (별지 제1호서식)")
+  .option("--doc-foot <spec>", "기안문 결문: sender=장관명의,drafter=기안자,reviewer=검토자,approver=결재권자,docNum=시행번호,phone=전화,email=메일,disclosure=공개구분 …")
+  .option("--report-info <text>", "업무보고 우상단 보고정보 행 — 예: '(2026. 7. 11., 과장 홍길동, ☎02-120)'")
+  .option("--notice-head <spec>", "공고문 두문·결문: no=공고 제2026-1호,date=2026년 7월 11일,sender=행정안전부장관")
+  .option("--press-head <spec>", "보도자료 머리: release=보도시점,distribute=배포일,dept=담당부서,manager=담당자,phone=연락처")
+  .option("--press-sub <items>", "보도자료 부제 (세미콜론 구분, 제목 아래 '- … -')")
   .option("--plain", "공문서 모드 끄기 (범용 마크다운 변환)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (markdown: string, opts) => {
@@ -509,7 +517,7 @@ program
       if (!opts.plain) {
         const preset = PRESET_ALIAS[String(opts.preset).trim()]
         if (!preset) {
-          process.stderr.write(`[kordoc] 알 수 없는 프리셋: ${opts.preset} (기안문/보고서/계획서/통지/회의록/개조식)\n`)
+          process.stderr.write(`[kordoc] 알 수 없는 프리셋: ${opts.preset} (기안문/보고서/계획서/통지/회의록/개조식/보도자료)\n`)
           process.exit(1)
         }
         gongmun = { preset }
@@ -552,6 +560,27 @@ program
           gongmun.sizes = Object.fromEntries(
             Object.entries(parseKv(String(opts.sizes))).map(([k, v]) => [k, Number(v)]).filter(([, v]) => Number.isFinite(v as number)),
           )
+        }
+        // v4.1.0 — 두문·결문·보고정보·공고두문·보도머리 (GAP-02/03/04/06/08)
+        if (opts.bullet2) {
+          if (opts.bullet2 !== "ㅇ" && opts.bullet2 !== "○") {
+            process.stderr.write(`[kordoc] --bullet2 는 ㅇ 또는 ○\n`)
+            process.exit(1)
+          }
+          gongmun.bullet2 = opts.bullet2
+        }
+        if (opts.suppressSingle) gongmun.suppressSingle = true
+        if (opts.docHead) gongmun.docHead = parseKv(String(opts.docHead))
+        if (opts.docFoot) gongmun.docFoot = parseKv(String(opts.docFoot))
+        if (opts.reportInfo) gongmun.reportInfo = String(opts.reportInfo)
+        if (opts.noticeHead) gongmun.noticeHead = parseKv(String(opts.noticeHead))
+        if (opts.pressHead || opts.pressSub) {
+          const kv = opts.pressHead ? parseKv(String(opts.pressHead)) : {}
+          gongmun.press = {
+            release: kv.release, distribute: kv.distribute,
+            sub: opts.pressSub ? String(opts.pressSub).split(";").map((s: string) => s.trim()).filter(Boolean) : undefined,
+            contact: kv.dept || kv.manager || kv.phone ? { dept: kv.dept, manager: kv.manager, phone: kv.phone } : undefined,
+          }
         }
       }
 
