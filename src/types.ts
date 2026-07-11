@@ -194,6 +194,8 @@ export type WarningCode =
   | "PARTIAL_PARSE"
   | "LENIENT_CFB_RECOVERY"
   | "NEEDS_OCR"
+  | "COM_EMPTY"
+  | "DRM_COM_FALLBACK"
 
 /** 문서 구조 (헤딩 트리) */
 export interface OutlineItem {

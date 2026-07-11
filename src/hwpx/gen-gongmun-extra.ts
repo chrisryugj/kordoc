@@ -9,8 +9,7 @@
  *   "끝." — 행정업무규정(본문 끝 2타+"끝.") + GT12 실측(단독 문단).
  */
 
-import { type ResolvedGongmun } from "./gongmun.js"
-import { PARA_NORMAL, CHAR_NORMAL, CHAR_BOLD, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, escapeXml } from "./gen-ids.js"
+import { PARA_NORMAL, CHAR_NORMAL, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_PARA_APPROVAL, GJ_PARA_BAR, escapeXml } from "./gen-ids.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
 
 let extraTableId = 9_300_000
@@ -43,15 +42,15 @@ export function para(text: string, paraPrId: number, charPrId: number): string {
 
 /** 결재란 칸 폭 — 25mm(실무 서명칸 관행) */
 const APPROVAL_COL_W = 7085
-/** 라벨 행·서명 행 높이 */
-const APPROVAL_LABEL_H = 1100
+/** 라벨 행·서명 행 높이 — 라벨은 10pt 100% 줄박스 + 상하 여백(141×2)이 들어가는 1300 */
+const APPROVAL_LABEL_H = 1300
 const APPROVAL_SIGN_H = 4200
 
 /**
  * 간이 결재란 — 직위 라벨 행 + 서명 공란 행 (2×N). 호스트 문단 RIGHT 정렬.
  * 실측(GT12 결재선)의 간이형: 외곽 0.4mm·내부 0.12mm, 라벨 CENTER.
  */
-export function buildApprovalTable(labels: string[], gongmun: ResolvedGongmun, reg: TableBfRegistry): string {
+export function buildApprovalTable(labels: string[], reg: TableBfRegistry, approvalCharPr: number): string {
   const n = labels.length
   const w = APPROVAL_COL_W * n
   const bfAt = (row: number, col: number) =>
@@ -62,10 +61,10 @@ export function buildApprovalTable(labels: string[], gongmun: ResolvedGongmun, r
       r: col === n - 1 ? "thick" : "thin",
     })
   const labelRow = labels.map((label, c) =>
-    tc({ bf: bfAt(0, c), row: 0, col: c, w: APPROVAL_COL_W, h: APPROVAL_LABEL_H, paras: para(label, GONGMUN_TBL_CENTER, CHAR_NORMAL) }),
+    tc({ bf: bfAt(0, c), row: 0, col: c, w: APPROVAL_COL_W, h: APPROVAL_LABEL_H, paras: para(label, GONGMUN_PARA_APPROVAL, approvalCharPr) }),
   ).join("")
   const signRow = labels.map((_, c) =>
-    tc({ bf: bfAt(1, c), row: 1, col: c, w: APPROVAL_COL_W, h: APPROVAL_SIGN_H, paras: para("", GONGMUN_TBL_CENTER, CHAR_NORMAL) }),
+    tc({ bf: bfAt(1, c), row: 1, col: c, w: APPROVAL_COL_W, h: APPROVAL_SIGN_H, paras: para("", GONGMUN_PARA_APPROVAL, approvalCharPr) }),
   ).join("")
   const table = tbl([labelRow, signRow], w, APPROVAL_LABEL_H + APPROVAL_SIGN_H, n)
   return `<hp:p paraPrIDRef="${GONGMUN_RIGHT}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}">${table}</hp:run></hp:p>`
@@ -92,15 +91,15 @@ const TITLE_BOX = { barH: 382, titleH: 2850, color: "#0080C0", gradient: ["#0080
  * 색상 바 + 제목 + gradient 바 3단 제목박스 — GT2/GT6/GT7 공통 서두 골격.
  * 제목 문단은 CENTER, 헤딩 h1 charPr(호출부 전달)로 렌더.
  */
-export function buildTitleBox(title: string, titleCharPr: number, bodyWidth: number, reg: TableBfRegistry): string {
+export function buildTitleBox(title: string, titleCharPr: number, barCharPr: number, bodyWidth: number, reg: TableBfRegistry): string {
   const w = bodyWidth - 280
   const outer = { t: "thin", b: "thin", l: "thin", r: "thin" } as const
   const barTop = reg.get({ ...outer, fill: TITLE_BOX.color })
   const barBottom = reg.get({ ...outer, fill: { gradient: TITLE_BOX.gradient } })
   const mid = reg.get(outer)
   // 바 셀 빈 문단 — 1pt 극소 스페이서(실측: GT6/GT7 함초롬바탕 1pt 빈런, TBL-12).
-  // 전용 charPr 없이 CHAR_BOLD 아닌 CHAR_NORMAL을 쓰되 행높이는 셀 h로 강제된다.
-  const barPara = `<hp:p paraPrIDRef="${GONGMUN_TBL_CENTER}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}"><hp:t></hp:t></hp:run></hp:p>`
+  // 전용 1pt charPr를 사용하고 행높이는 셀 h로 강제한다.
+  const barPara = para("", GJ_PARA_BAR, barCharPr)
   const rows = [
     tc({ bf: barTop, row: 0, col: 0, w, h: TITLE_BOX.barH, paras: barPara }),
     tc({ bf: mid, row: 1, col: 0, w, h: TITLE_BOX.titleH, paras: para(title, GONGMUN_TBL_CENTER, titleCharPr) }),

@@ -65,9 +65,9 @@ export interface WalkCtx {
 /** xmldom DOMParser 생성 — onError 콜백으로 malformed XML 경고 수집 */
 export function createXmlParser(warnings?: ParseWarning[]): DOMParser {
   return new DOMParser({
-    onError(level: "warn" | "error" | "fatalError", msg: string) {
+    onError(level: "warning" | "error" | "fatalError", msg: string) {
       if (level === "fatalError") throw new KordocError(`XML 파싱 실패: ${msg}`)
-      warnings?.push({ code: "MALFORMED_XML", message: `XML ${level === "warn" ? "경고" : "오류"}: ${msg}` })
+      warnings?.push({ code: "MALFORMED_XML", message: `XML ${level === "warning" ? "경고" : "오류"}: ${msg}` })
     },
   })
 }

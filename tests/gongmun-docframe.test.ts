@@ -12,8 +12,9 @@ async function part(buf: ArrayBuffer, name: string): Promise<string> {
 const texts = (sec: string) => [...sec.matchAll(/<hp:t>([^<]*)<\/hp:t>/g)].map((m) => m[1]).filter(Boolean)
 
 describe("bullet2 ㅇ/○ (GAP-06)", () => {
-  it("기본값 — 보고서 ○, 통지·보도자료 ㅇ", () => {
+  it("기본값 — 보고서 ○, 계획서·통지·보도자료 ㅇ", () => {
     assert.equal(resolveGongmun({ preset: "report" }).bullet2, "○")
+    assert.equal(resolveGongmun({ preset: "plan" }).bullet2, "ㅇ")
     assert.equal(resolveGongmun({ preset: "notice" }).bullet2, "ㅇ")
     assert.equal(resolveGongmun({ preset: "press" }).bullet2, "ㅇ")
   })

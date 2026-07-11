@@ -48,7 +48,7 @@ export function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?:
   }
 
   const blocks: IRBlock[] = []
-  walkSection(doc.documentElement, blocks, null, [], ctx)
+  walkSection(doc.documentElement as unknown as Node, blocks, null, [], ctx)
   return blocks
 }
 
@@ -310,7 +310,7 @@ function walkParagraphChildren(
   if (depth > MAX_XML_DEPTH) return tableCtx
   const children = node.childNodes
   if (!children) return tableCtx
-  const walkChildren = (parent: Node, d: number) => {
+  const walkChildren = (parent: Node, d: number, inShape = false) => {
     if (d > MAX_XML_DEPTH) return
     const kids = parent.childNodes
     if (!kids) return
@@ -326,6 +326,15 @@ function walkParagraphChildren(
         const newTable: TableState = { rows: [], currentRow: [], cell: null }
         walkSection(el, blocks, newTable, tableStack, ctx, d + 1)
         tableCtx = completeTable(newTable, tableStack, blocks, ctx)
+      } else if (localTag === "caption" && !inShape) {
+        // ctrl 래핑 표 캡션 — 도형(rect 등) 자체 캡션은 기존 텍스트 추출 경로에 맡긴다.
+        // 셀 안이면 표 caption이 아니라 개체 캡션이므로 셀 텍스트로 귀속 (오귀속 방지)
+        const capText = collectSubListText(el, ctx)
+        if (capText) {
+          if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, [{ type: "paragraph", text: capText, pageNumber: ctx.sectionNum }])
+          else if (tableCtx) tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + capText
+          else blocks.push({ type: "paragraph", text: capText, pageNumber: ctx.sectionNum })
+        }
       } else if (localTag === "pic" || localTag === "shape" || localTag === "drawingObject") {
         // 글상자 텍스트 + 이미지 병행 추출 — 셀 안이면 위치 보존을 위해 IRCell.blocks로
         if (tableCtx?.cell) {
@@ -344,12 +353,14 @@ function walkParagraphChildren(
         } else {
           extractDrawTextBlocks(el, blocks, ctx)
         }
-      } else if (localTag === "r" || localTag === "run" || localTag === "ctrl"
-        || localTag === "rect" || localTag === "ellipse" || localTag === "polygon"
+      } else if (localTag === "r" || localTag === "run" || localTag === "ctrl") {
+        // <hp:run>, <hp:ctrl> 내부에 테이블/캡션이 포함될 수 있음 — 재귀
+        walkChildren(el, d + 1, inShape)
+      } else if (localTag === "rect" || localTag === "ellipse" || localTag === "polygon"
         || localTag === "line" || localTag === "arc" || localTag === "curve"
         || localTag === "connectLine" || localTag === "container") {
-        // <hp:run>, <hp:ctrl>, 도형 요소 내부에 테이블/이미지/글상자가 포함될 수 있음 — 재귀
-        walkChildren(el, d + 1)
+        // 도형 요소 내부에 테이블/이미지/글상자가 포함될 수 있음 — 재귀 (도형 자체 캡션은 제외)
+        walkChildren(el, d + 1, true)
       }
     }
   }
@@ -503,6 +514,10 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         // 콘텐츠 없는 제어 요소 — 스킵
         case "bookmark": case "pageNum": case "pageNumCtrl": case "pageHiding":
         case "newNum": case "autoNum": case "indexmark": case "colPr":
+          break
+
+        // 캡션 — walkParagraphChildren의 caption 분기가 보존하므로 손실 경고 대상 아님
+        case "caption":
           break
 
         // 미지원 요소 — 텍스트를 가졌으면 무음 손실 대신 경고

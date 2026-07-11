@@ -3,7 +3,7 @@
  * 섹션 속성(공문서 표준 여백)과 블록 목록 → section0.xml 본문.
  */
 
-import { type ResolvedGongmun, levelIndent, mmToHwpunit, usesReportFonts } from "./gongmun.js"
+import { type ResolvedGongmun, levelIndent, mmToHwpunit, needsGaejosikAssets, usesReportFonts } from "./gongmun.js"
 import { stripChapterNumber, gaejosikSizes } from "./gaejosik.js"
 import { buildGaejosikCover, buildGaejosikToc, buildGaejosikChapter, buildGaejosikBodyTitle } from "./gen-gaejosik.js"
 import {
@@ -12,7 +12,8 @@ import {
   GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT, GONGMUN_LIST_BASE, GONGMUN_LIST_PLAIN_BASE,
   GJ_CHAR_DAE, GJ_CHAR_DAE_BOLD, GJ_CHAR_CHAM, GJ_CHAR_CHAM_BOLD, GJ_PARA_CHAM,
   GJ_CHAR_TABLE, GJ_CHAR_TABLE_BOLD, GJ_CHAR_BODY_TITLE, gongmunTableHeaderBf,
-  GONGMUN_TBL_CHAR, GONGMUN_TBL_CHAR_BOLD, GONGMUN_TBL_PT,
+  GJ_CHAR_APPROVAL, GJ_CHAR_TITLE_BAR, GONGMUN_APPROVAL_CHAR,
+  GONGMUN_TBL_CHAR, GONGMUN_TBL_CHAR_BOLD, GONGMUN_TBL_PT, GONGMUN_TITLE_BAR_CHAR,
   charVariantBase, pageNumCtrl, newPageNumCtrl, pageHidingCtrl,
   escapeXml, headingParaPrId, headingCharPrId,
   type ResolvedTheme,
@@ -108,7 +109,8 @@ export function blocksToSectionXml(
   const gaejosik = gongmun?.preset === "gaejosik"
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 표 셀 맑은 고딕 12pt·※ 한양중고딕 공유 (QA-1)
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
-  const vBase = charVariantBase(measured, !!gongmun)
+  const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
+  const vBase = charVariantBase(richAssets, !!gongmun)
   // 공문서 표 스타일 — 본문 폭 맞춤 + 실측 정부 양식(헤더 음영·실측 프리셋 맑은 고딕 12pt)
   // bfReg가 있으면 실측 테두리 위계(외곽 0.4/내부 0.12/헤더 이중선)·셀 문단·우측 배치 적용
   const tableStyle: GongmunTableStyle | null = gongmun
@@ -116,10 +118,10 @@ export function blocksToSectionXml(
         totalWidth: mmToHwpunit(210 - gongmun.margins.left - gongmun.margins.right),
         // 표 셀 크기 — 실측: 실측 프리셋 맑은 고딕 12pt(22·23), 비실측도 12pt(11·12,
         // 실결재 지배값 — 본문 크기 셀은 열폭 부족으로 서술 열 세로 신장, v4.0.2 QA)
-        charPr: measured ? GJ_CHAR_TABLE : GONGMUN_TBL_CHAR,
-        boldCharPr: measured ? GJ_CHAR_TABLE_BOLD : GONGMUN_TBL_CHAR_BOLD,
-        charHeight: measured ? gaejosikSizes(gongmun.bodyHeight, gongmun.sizes).table : GONGMUN_TBL_PT,
-        headerBf: gongmunTableHeaderBf(gaejosik),
+        charPr: richAssets ? GJ_CHAR_TABLE : GONGMUN_TBL_CHAR,
+        boldCharPr: richAssets ? GJ_CHAR_TABLE_BOLD : GONGMUN_TBL_CHAR_BOLD,
+        charHeight: richAssets ? gaejosikSizes(gongmun.bodyHeight, gongmun.sizes).table : GONGMUN_TBL_PT,
+        headerBf: gongmunTableHeaderBf(richAssets),
         centerParaPr: GONGMUN_CENTER,
         tblCenterParaPr: GONGMUN_TBL_CENTER,
         tblLeftParaPr: GONGMUN_TBL_LEFT,
@@ -143,7 +145,7 @@ export function blocksToSectionXml(
   }
   // 결재란 — 문서 최상단 우측 (실측 GT12: 결재선이 표지 최상단)
   if (gongmun?.approval && bfReg) {
-    preamble.push(buildApprovalTable(gongmun.approval, gongmun, bfReg))
+    preamble.push(buildApprovalTable(gongmun.approval, bfReg, richAssets ? GJ_CHAR_APPROVAL : GONGMUN_APPROVAL_CHAR))
   }
   // 기안문 두문 (별지 제1호서식 — 기관명·수신·경유·제목)
   if (gongmun?.docHead && dfIds) {
@@ -157,7 +159,7 @@ export function blocksToSectionXml(
   if (gongmun?.press && dfIds && bfReg && tableStyle) {
     preamble.push(...buildPressHead(gongmun, dfIds, tableStyle.totalWidth, bfReg))
   }
-  if (gaejosik && gongmun) {
+  if (gongmun && (gongmun.cover || gongmun.toc)) {
     const h1Idx = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
     const chapters = blocks
       .filter((b) => b.type === "heading" && b.level === 2)
@@ -184,10 +186,11 @@ export function blocksToSectionXml(
     if (gongmun.bodyTitleBox && coverTitle && hasFrontPages) {
       preamble.push(buildGaejosikBodyTitle(coverTitle, gongmun).replace(/^<hp:p /, `<hp:p pageBreak="1" `))
     }
-  } else if (gongmun && !gaejosik && bfReg && (gongmun.preset === "report" || gongmun.preset === "plan" || gongmun.preset === "notice")) {
+  }
+  if (gongmun && !gaejosik && coverH1Idx < 0 && bfReg && (gongmun.preset === "report" || gongmun.preset === "plan" || gongmun.preset === "notice")) {
     // 1페이지형 제목박스 (실측 GT2/GT6/GT7: 색상바+제목+gradient바) — 첫 h1을 박스로
     titleBoxH1Idx = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
-  } else if (gongmun?.press && dfIds) {
+  } else if (gongmun?.press && coverH1Idx < 0 && dfIds) {
     // 보도자료 — 첫 h1을 제목 25pt bold CENTER + 부제(- … -)로 (실측: 국토부 실물 표2)
     pressH1Idx = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
   }
@@ -218,6 +221,7 @@ export function blocksToSectionXml(
 
     switch (block.type) {
       case "heading": {
+        if (gongmun && blockIdx === coverH1Idx) break // 표지가 소비한 h1
         if (gongmun && blockIdx === pressH1Idx && dfIds) {
           // 보도자료 제목 + 부제 "- … -" (실측: 국토부 실물 25pt bold / 부제 15pt bold)
           const parts = [generateParagraph((block.text || "").trim(), GONGMUN_CENTER, dfIds.pressTitle)]
@@ -230,12 +234,15 @@ export function blocksToSectionXml(
         if (gongmun && blockIdx === titleBoxH1Idx && tableStyle && bfReg) {
           // 1페이지형 제목박스 (실측 GT2/GT6/GT7) — report/plan/notice 첫 h1.
           // 실측 프리셋은 제목박스 전용 HY헤드라인M 22pt(GJ_CHAR_BODY_TITLE, 실측 GT2 표④)
-          xml = buildTitleBox((block.text || "").trim(), measured ? GJ_CHAR_BODY_TITLE : CHAR_H1, tableStyle.totalWidth, bfReg)
+          xml = buildTitleBox(
+            (block.text || "").trim(), measured ? GJ_CHAR_BODY_TITLE : CHAR_H1,
+            richAssets ? GJ_CHAR_TITLE_BAR : GONGMUN_TITLE_BAR_CHAR,
+            tableStyle.totalWidth, bfReg,
+          )
           break
         }
         if (gaejosik) {
           const lvl = block.level || 1
-          if (blockIdx === coverH1Idx) break // 표지가 소비한 h1
           if (lvl <= 2) {
             // h1(표지 아님)·h2 → 로마숫자 장 헤더 표 (선행 번호는 로마숫자로 대체)
             chapterNo++

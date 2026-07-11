@@ -3,7 +3,7 @@
  * 자동장평(orphan 줄 축소) 계획과 리스트 항목부호/깊이 사전 산출.
  */
 
-import { type ResolvedGongmun, GongmunNumberer, computeSuppression, levelIndent, mmToHwpunit } from "./gongmun.js"
+import { type ResolvedGongmun, GongmunNumberer, computeSuppression, levelIndent, mmToHwpunit, usesAsteriskThird } from "./gongmun.js"
 import { fitRatioForFewerLines } from "./text-metrics.js"
 import { type MdBlock, parseInlineMarkdown } from "./md-runs.js"
 import { CHAR_VARIANT_BASE, GONGMUN_BODY_RATIO, GONGMUN_LIST_LEVELS } from "./gen-ids.js"
@@ -48,7 +48,7 @@ export function computeGongmunFitPlan(
       if (gongmun.numbering === "gaejosik" && (depth === 0 || (block.text || "").trimStart().startsWith("※"))) continue
       const content = plainRenderText(block.text || "")
       text = marker ? `${marker} ${content}` : content
-      const li = levelIndent(depth, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, gongmun.preset === "press")
+      const li = levelIndent(depth, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset))
       // 부호 생략 항목은 내어쓰기 없는 전용 paraPr(GONGMUN_LIST_PLAIN_BASE) — indent 0
       const left = li.left
       const indent = marker ? li.indent : 0
@@ -128,7 +128,7 @@ export function precomputeGongmunList(
     const suppress = gongmun.suppressSingle && gongmun.numbering === "standard"
       ? computeSuppression(depths)
       : depths.map(() => false)
-    const numberer = new GongmunNumberer(gongmun.numbering, gongmun.bullet2, gongmun.preset === "press")
+    const numberer = new GongmunNumberer(gongmun.numbering, gongmun.bullet2, usesAsteriskThird(gongmun.preset))
     run.forEach((bi, k) => {
       const marker = numberer.next(depths[k], suppress[k])
       result.set(bi, { marker, depth: depths[k] })

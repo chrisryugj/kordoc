@@ -19,8 +19,8 @@
  *   node bench/visual/verify-visual.mjs --seal-sens # 도장 감도 실측 (없음/15/25/40mm 4캡처)
  */
 import { execFileSync } from "node:child_process"
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs"
-import { join, dirname } from "node:path"
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, unlinkSync } from "node:fs"
+import { join, dirname, basename } from "node:path"
 import { fileURLToPath } from "node:url"
 import { markdownToHwpx, placeSealHwpx } from "../../dist/index.js"
 import { analyzePng, hamming, formatBaseline, parseBaseline } from "./hash-lib.mjs"
@@ -120,39 +120,63 @@ const SEAL_PNG = Buffer.from(
 
 // ─── 한컴 캡처 ────────────────────────────────────────
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const osa = (script) => execFileSync("osascript", ["-e", script], { encoding: "utf8" }).trim()
+const osa = (script, quiet = false) => execFileSync("osascript", ["-e", script], {
+  encoding: "utf8",
+  ...(quiet && { stdio: ["ignore", "pipe", "ignore"] }),
+}).trim()
 
 async function captureHancom(hwpxPath, pngPath) {
-  execFileSync("open", ["-a", APP, hwpxPath])
-  await sleep(LOAD_WAIT_MS)
-  // 콜드 스타트 대비 — 창이 잡힐 때까지 재시도 (최대 +20s)
-  let bounds = null
-  for (let i = 0; i < 10 && !bounds; i++) {
+  // 같은 basename의 사용자 창이 이미 열려 있어도 다른 문서를 잡지 않도록 캡처 전용
+  // 고유 파일명으로 복제한다. 캡처 후 이 창만 닫고 원래 열려 있던 한컴 창은 유지한다.
+  const stem = basename(hwpxPath).replace(/\.hwpx$/i, "")
+  const openPath = join(outDir, `${stem}.visual-${process.pid}-${Date.now()}.hwpx`)
+  const windowName = basename(openPath).replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+  copyFileSync(hwpxPath, openPath)
+  try {
+    execFileSync("open", ["-a", APP, openPath])
+    await sleep(LOAD_WAIT_MS)
+    // 콜드 스타트 대비 — 창이 잡힐 때까지 재시도 (최대 +20s)
+    let bounds = null
+    for (let i = 0; i < 10 && !bounds; i++) {
+      try {
+        const b = osa(
+          `tell application "System Events" to tell process "${APP}"\n` +
+          `  set w to first window whose name is "${windowName}"\n` +
+          `  set frontmost to true\n` +
+          `  perform action "AXRaise" of w\n` +
+          `  return (position of w as list) & (size of w as list)\nend tell`,
+        ).split(", ").map(Number)
+        if (b.length === 4 && b.every(Number.isFinite)) bounds = b
+      } catch { /* 프로세스/창 미준비 */ }
+      if (!bounds) await sleep(2000)
+    }
+    if (!bounds) throw new Error("한컴 창을 못 잡음 — GUI 세션·손상 다이얼로그 확인")
+    // -R은 z-order 무관 영역 캡처라, 한컴이 front가 아니면 앞 창(브라우저 등)이 찍힌다
+    osa(`tell application "${APP}" to activate`)
+    await sleep(700)
+    const front = osa('tell application "System Events" to name of first process whose frontmost is true')
+    if (front !== APP) throw new Error(`한컴이 front가 아님 (front=${front}) — 다른 창이 캡처를 가림`)
+    osa('tell application "System Events" to key code 115 using command down') // Cmd+Home 스크롤 리셋
+    await sleep(800)
+    // 툴바·찾기필드·상태바 등 UI 크롬 제거용 대강 크롭 — 종이(순백) 경계는
+    // hash-lib pageRect 가 픽셀에서 다시 찾으므로 여기 비율은 크롬만 잘라내면 된다
+    const [wx, wy, ww, wh] = bounds
+    const crop = [wx + ww * 0.04, wy + wh * 0.2, ww * 0.92, wh * 0.72].map(Math.round)
+    execFileSync("screencapture", ["-x", `-R${crop.join(",")}`, pngPath])
+  } finally {
+    // 성공·실패와 무관하게 캡처용 고유 창과 파일만 정리한다.
     try {
-      const b = osa(
+      // 한컴 창은 AXClose 액션이 없다(실측: AXRaise뿐) — 표준대로 닫기 버튼(AXCloseButton)을 누른다
+      osa(
         `tell application "System Events" to tell process "${APP}"\n` +
-        `  set w to window 1\n  return (position of w as list) & (size of w as list)\nend tell`,
-      ).split(", ").map(Number)
-      if (b.length === 4 && b.every(Number.isFinite)) bounds = b
-    } catch { /* 프로세스/창 미준비 */ }
-    if (!bounds) await sleep(2000)
+        `  set matchedWindows to every window whose name is "${windowName}"\n` +
+        `  if (count of matchedWindows) > 0 then click (first button of item 1 of matchedWindows whose subrole is "AXCloseButton")\nend tell`,
+        true,
+      )
+    } catch { /* 창이 아직 없거나 이미 닫힘 — best-effort */ }
+    try { unlinkSync(openPath) } catch { /* best-effort */ }
+    await sleep(1500)
   }
-  if (!bounds) throw new Error("한컴 창을 못 잡음 — GUI 세션·손상 다이얼로그 확인")
-  // -R은 z-order 무관 영역 캡처라, 한컴이 front가 아니면 앞 창(브라우저 등)이 찍힌다
-  osa(`tell application "${APP}" to activate`)
-  await sleep(700)
-  const front = osa('tell application "System Events" to name of first process whose frontmost is true')
-  if (front !== APP) throw new Error(`한컴이 front가 아님 (front=${front}) — 다른 창이 캡처를 가림`)
-  osa('tell application "System Events" to key code 115 using command down') // Cmd+Home 스크롤 리셋
-  await sleep(800)
-  // 툴바·찾기필드·상태바 등 UI 크롬 제거용 대강 크롭 — 종이(순백) 경계는
-  // hash-lib pageRect 가 픽셀에서 다시 찾으므로 여기 비율은 크롬만 잘라내면 된다
-  const [wx, wy, ww, wh] = bounds
-  const crop = [wx + ww * 0.04, wy + wh * 0.2, ww * 0.92, wh * 0.72].map(Math.round)
-  execFileSync("screencapture", ["-x", `-R${crop.join(",")}`, pngPath])
-  // quit은 best-effort — 확인 다이얼로그로 -128이 떠도 다음 open이 front 창을 대체한다
-  try { osa(`tell application "${APP}" to quit`) } catch { execFileSync("killall", [APP], { stdio: "ignore" }) }
-  await sleep(1500)
 }
 
 // ─── 메인 ────────────────────────────────────────────

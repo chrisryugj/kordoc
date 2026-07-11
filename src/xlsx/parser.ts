@@ -73,7 +73,7 @@ function getTextContent(el: Element): string {
 }
 
 function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(stripDtd(text), "text/xml")
+  return new DOMParser().parseFromString(stripDtd(text), "text/xml") as unknown as Document
 }
 
 // ─── 공유 문자열 파싱 ──────────────────────────────────

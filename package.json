@@ -1,6 +1,6 @@
 {
   "name": "kordoc",
-  "version": "4.0.2",
+  "version": "4.0.3",
   "description": "Parse Korean documents (HWP3-5, HWPX, HWPML, PDF, XLS(X), DOCX) to Markdown — CLI + MCP server with lossless patch/roundtrip, form-filler, document diff, print & layout-preserving SVG renderer",
   "type": "module",
   "exports": {
@@ -58,12 +58,12 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.28.0",
-    "@xmldom/xmldom": "^0.9.8",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@xmldom/xmldom": "^0.9.10",
     "cfb": "1.2.2",
     "commander": "^13.0.0",
     "jszip": "^3.10.1",
-    "markdown-it": "^14.1.1",
+    "markdown-it": "^14.3.0",
     "zod": "^3.23.0"
   },
   "peerDependencies": {

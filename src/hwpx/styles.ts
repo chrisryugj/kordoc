@@ -70,13 +70,13 @@ export async function extractHwpxStyles(zip: JSZip, decompressed?: { total: numb
       const parser = createXmlParser()
       const doc = parser.parseFromString(stripDtd(xml), "text/xml")
       if (!doc.documentElement) continue
+      const domDoc = doc as unknown as Document
 
       // charProperties 파싱
-      parseCharProperties(doc, result.charProperties)
+      parseCharProperties(domDoc, result.charProperties)
       // styles 파싱
-      parseStyleElements(doc, result.styles)
+      parseStyleElements(domDoc, result.styles)
       // 자동번호/글머리표/개요 정의 파싱 (v3.0)
-      const domDoc = doc as unknown as Document
       parseNumberings(domDoc, result.numberings)
       parseBullets(domDoc, result.bullets)
       parseParaHeadings(domDoc, result.paraHeadings)
@@ -263,4 +263,3 @@ export function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap): v
     }
   }
 }
-

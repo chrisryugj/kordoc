@@ -2,16 +2,16 @@
  * HWPX 패키지 구조 파일(container/manifest)과 head.xml 생성 (generator.ts에서 분리).
  */
 
-import { type ResolvedGongmun, levelIndent, markerWidth, usesReportFonts } from "./gongmun.js"
-import { GONGMUN_TBL_PT } from "./gen-ids.js"
+import { type ResolvedGongmun, levelIndent, markerWidth, needsGaejosikAssets, usesAsteriskThird, usesReportFonts } from "./gongmun.js"
+import { GJ_CHAR_APPROVAL, GJ_CHAR_TITLE_BAR, GONGMUN_APPROVAL_CHAR, GONGMUN_TBL_PT, GONGMUN_TITLE_BAR_CHAR } from "./gen-ids.js"
 import { gaejosikSizes, gaejosikSpaceBefore, gaejosikChamIndent, gaejosikTocItemIndent, GAEJOSIK_COLORS } from "./gaejosik.js"
 import {
   NS_HEAD, NS_OPF, NS_HPF, NS_OCF, NS_PARA, NS_CORE,
   CHAR_TABLE_HEADER, CHAR_QUOTE,
-  GONGMUN_BODY_RATIO, GONGMUN_LIST_BASE, GONGMUN_LIST_LEVELS, GONGMUN_LIST_PLAIN_BASE,
+  GONGMUN_BODY_RATIO, GONGMUN_LIST_BASE, GONGMUN_LIST_LEVELS, GONGMUN_LIST_PLAIN_BASE, GONGMUN_PARA_APPROVAL,
   GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT,
   GJ_PARA_CHAM, GJ_PARA_COVER, GJ_PARA_TOC_ITEM, GJ_PARA_CHAPTER, GJ_PARA_BAR,
-  charPr, paraPr, borderFillEntry, type BorderSide,
+  charPr, paraPr, borderFillEntry, escapeXml, type BorderSide,
   type ResolvedTheme,
 } from "./gen-ids.js"
 
@@ -49,6 +49,7 @@ export function generateManifest(chartParts: Array<{ name: string }> = []): stri
 function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | null, ratioVariants: number[] = [], extraCharPrXmls: string[] = []): string {
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 제목 HY헤드라인M·본문 휴먼명조 (QA-1, 부처별 양식 3종 실측)
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
+  const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
   // 비공문서(기존 동작): 본문 10pt
   let body = 1000, code = 900, h1 = 1800, h2 = 1400, h3 = 1200, h4 = 1100
   if (gongmun) {
@@ -57,10 +58,13 @@ function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | nu
     h1 = gongmun.preset === "report" || gongmun.preset === "plan" ? 2000 : 1700
     h2 = 1600
     h3 = body
-    h4 = Math.max(body - 100, 1300)
+    // h4 하한 1300은 15pt 본문 기준값 — 본문이 13pt 이하면 h3를 넘지 않게 캡 (위계 역전 방지)
+    h4 = Math.min(h3, Math.max(body - 100, 1300))
   }
-  // 실측 프리셋 본문 = 휴먼명조(fontface id 4). 그 외 공문서·비공문서 = 기본 본문 폰트(id 0)
-  const bodyFont = measured ? 4 : 0
+  // 실측 프리셋 본문 = 휴먼명조(fontface id 4). 비실측이라도 개조식 자산(표지·목차)을 쓰면
+  // 폰트 테이블이 rich 8종(id 0=함초롬바탕 고정, 해석된 본문 폰트는 id 4)으로 바뀌므로
+  // richAssets 기준으로 골라야 bodyFont/fonts.body 지정이 유지된다
+  const bodyFont = richAssets ? 4 : 0
   // 제목 계열 — 실측 프리셋은 HY헤드라인M(id 3, 자체 굵기라 bold 없음. 실측: □·제목 전부
   // bold=0), 그 외는 함초롬돋움(id 1) bold (범용 헤딩 관행)
   const hFont = measured ? 3 : 1
@@ -80,15 +84,17 @@ function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | nu
     charPr(CHAR_TABLE_HEADER, body, theme.tableHeaderBold, false, bodyFont, theme.tableHeader),
     charPr(CHAR_QUOTE, body, false, true, bodyFont, theme.quote),
   ]
-  if (gongmun && !measured) {
+  if (gongmun && !richAssets) {
     // 비실측 공문서 표 셀 11·12 — 12pt (실결재 실측: 표 셀은 본문보다 작은 11~12pt 지배.
     // 본문 크기 셀은 열폭 부족으로 서술 열이 세로로 길어진다 — v4.0.2 실렌더 QA)
     rows.push(
       charPr(11, GONGMUN_TBL_PT, false, false, bodyFont, theme.body),
       charPr(12, GONGMUN_TBL_PT, true, false, bodyFont, theme.body),
+      charPr(GONGMUN_TITLE_BAR_CHAR, 100, false, false, bodyFont, theme.body),
+      charPr(GONGMUN_APPROVAL_CHAR, 1000, false, false, bodyFont, theme.body),
     )
   }
-  if (measured) {
+  if (richAssets) {
     // 부호·요소별 전용 charPr 11~25 (gen-ids GJ_CHAR_*) — 실측 스펙 (gaejosik.ts).
     // 보고서·계획서도 ※(13·14)·표 셀(22·23)·제목박스(25)를 쓰므로 블록 전체를 공유 등록
     const sz = gaejosikSizes(body, gongmun!.sizes)
@@ -108,6 +114,8 @@ function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | nu
       charPr(23, sz.table, true, false, 7),                             // 표 셀 bold
       charPr(24, sz.bar, false, false, 4),                              // 표지 바 셀 빈 문단(6pt)
       charPr(25, sz.bodyTitle, false, false, 3),                        // 본문 제목박스(HY헤드라인M 22pt, 실측 GT3 표④)
+      charPr(GJ_CHAR_TITLE_BAR, 100, false, false, 4),                  // 1페이지형 제목박스 바(1pt)
+      charPr(GJ_CHAR_APPROVAL, 1000, false, false, 7),                  // 결재란 라벨(맑은 고딕 10pt)
     )
   }
   // 자동 장평 변형 — 본문 계열(0~3)의 장평만 바꾼 복제본
@@ -164,7 +172,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null): string {
   ]
   // 항목 단계별 paraPr (8 ~ 8+7): left/내어쓰기 indent
   for (let d = 0; d < GONGMUN_LIST_LEVELS; d++) {
-    const { left, indent } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, gongmun.preset === "press")
+    const { left, indent } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset))
     // 단락 위 간격 — 개조식·보고서(report 불릿) 공통 실측 스펙 □15/○10/-6/ㆍ3pt
     // (v4.1.0 GAP-05: t2 「2_보고서 양식」 paraPr 저장값 3000/2000/1200/600 실측 확정.
     //  종전 report d0 body×0.5=750은 실측의 1/4이라 □ 대항목 간격이 답답했음)
@@ -200,12 +208,14 @@ function buildParaProperties(gongmun: ResolvedGongmun | null): string {
   // 부호 생략(단일 형제) 항목 전용 25~32 — left는 단계 동일·내어쓰기 0 (v4.0.2:
   // 유령 내어쓰기로 둘째 줄이 첫 줄보다 더 들어가던 결함 수정, 실렌더 QA)
   for (let d = 0; d < GONGMUN_LIST_LEVELS; d++) {
-    const { left } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, gongmun.preset === "press")
+    const { left } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset))
     const sectionGap = gongmun.numbering === "gaejosik" || gongmun.numbering === "report"
       ? gaejosikSpaceBefore(d, gongmun.bodyHeight)
       : 0
     base.push(paraPr(GONGMUN_LIST_PLAIN_BASE + d, { align: "JUSTIFY", lineSpacing: ls, left, indent: 0, spaceBefore: sectionGap, keepWord: true }))
   }
+  // 결재란 라벨 셀 — 실측 결재선 lineSp 100% (GJ_PARA_BAR 70%는 스페이서 전용)
+  base.push(paraPr(GONGMUN_PARA_APPROVAL, { align: "CENTER", lineSpacing: 100, keepWord: true }))
   return `<hh:paraProperties itemCnt="${base.length}">\n${base.join("\n")}\n    </hh:paraProperties>`
 }
 
@@ -229,19 +239,21 @@ ${heads}
 
 /** 한 폰트 항목 XML — typeInfo는 한컴 관례상 존재만 하면 됨(범용값) */
 function fontEntry(id: number, face: string, weight = 6): string {
-  return `        <hh:font id="${id}" face="${face}" type="TTF" isEmbedded="0">
+  return `        <hh:font id="${id}" face="${escapeXml(face)}" type="TTF" isEmbedded="0">
           <hh:typeInfo familyType="FCAT_GOTHIC" weight="${weight}" proportion="4" contrast="0" strokeVariation="1" armStyle="1" letterform="1" midline="1" xHeight="1"/>
         </hh:font>`
 }
 
 function buildFontFaces(gongmun: ResolvedGongmun | null, bodyFace: string): string {
-  if (gongmun && usesReportFonts(gongmun.preset)) {
+  if (gongmun && needsGaejosikAssets(gongmun)) {
     // 실측 폰트 프리셋(개조식·보고서·계획서) — 실측 양식의 폰트 세트. 모든 언어에 동일
     // 목록(한글 폰트의 라틴 글리프 사용, 실제 정부 양식 hwpx도 전 언어 동일 id 참조).
     // fonts 옵션으로 역할별 오버라이드: id 3=heading(제목 계열) / 4=body(본문) / 5=ref(※) / 7=table(표 셀)
     const ov = gongmun.fonts
     // 본문 기본 휴먼명조(실측). 보고서·계획서는 bodyFont='gothic' 명시 시 맑은 고딕 존중
-    const bodyDefault = gongmun.preset !== "gaejosik" && gongmun.bodyFont === "gothic" ? "맑은 고딕" : "휴먼명조"
+    const bodyDefault = usesReportFonts(gongmun.preset)
+      ? (gongmun.preset !== "gaejosik" && gongmun.bodyFont === "gothic" ? "맑은 고딕" : "휴먼명조")
+      : bodyFace
     const faces = [
       "함초롬바탕", "함초롬돋움", "HY견고딕",
       ov.heading ?? "HY헤드라인M", ov.body ?? bodyDefault, ov.ref ?? "한양중고딕",
@@ -295,7 +307,7 @@ function buildBorderFills(gongmun: ResolvedGongmun | null, extra: string[] = [])
     borderFillEntry(1, {}),
     borderFillEntry(2, { l: thin, r: thin, t: thin, b: thin }),
   ]
-  if (gongmun?.preset === "gaejosik") {
+  if (gongmun && needsGaejosikAssets(gongmun)) {
     // 개조식 전용 3~9 (gen-ids GJ_BF_*) — 실측 색상 (gaejosik.ts GAEJOSIK_COLORS)
     const c = GAEJOSIK_COLORS
     const edge: BorderSide = ["0.12 mm", c.border]
@@ -358,4 +370,3 @@ export function generateHeaderXml(theme: ResolvedTheme, gongmun: ResolvedGongmun
   <hh:compatibleDocument targetProgram="HWP2018"><hh:layoutCompatibility/></hh:compatibleDocument>
 </hh:head>`
 }
-

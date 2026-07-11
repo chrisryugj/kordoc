@@ -3,7 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
-import { markdownToHwpx, parse } from "../src/index.js"
+import { markdownToHwpx, parse, validateHwpx } from "../src/index.js"
 import {
   hangulOrdinal,
   circledNumber,
@@ -15,6 +15,7 @@ import {
   computeSuppression,
   resolveGongmun,
   mmToHwpunit,
+  needsGaejosikAssets,
 } from "../src/hwpx/gongmun.js"
 
 // ─── 순수 로직 ──────────────────────────────────────
@@ -101,7 +102,7 @@ describe("gongmun 순수 로직", () => {
 
   it("resolveGongmun 프리셋 기본값", () => {
     const off = resolveGongmun({ preset: "official" })
-    assert.equal(off.bodyHeight, 1500)
+    assert.equal(off.bodyHeight, 1200)
     assert.equal(off.numbering, "standard")
     // v4.1.0 GAP-10: 기안문 여백 = 실결재 지배값 20/15/20/15 (정보소통광장 60건 중 41건 실측)
     assert.deepEqual(off.margins, { top: 20, bottom: 15, left: 20, right: 15 })
@@ -112,6 +113,20 @@ describe("gongmun 순수 로직", () => {
     const min = resolveGongmun({ preset: "minutes" })
     assert.equal(min.bodyHeight, 1400)
     assert.equal(min.lineSpacing, 130)
+  })
+
+  it("공문서 수치 옵션 — NaN·무한대·비정상 범위를 거부", () => {
+    assert.throws(() => resolveGongmun({ bodyPt: Number.NaN }), /bodyPt/)
+    assert.throws(() => resolveGongmun({ bodyPt: 5 }), /bodyPt/)
+    assert.throws(() => resolveGongmun({ lineSpacing: Number.POSITIVE_INFINITY }), /lineSpacing/)
+    assert.throws(() => resolveGongmun({ lineSpacing: 49 }), /lineSpacing/)
+    assert.throws(
+      () => resolveGongmun({ margins: { top: 20 } } as unknown as Parameters<typeof resolveGongmun>[0]),
+      /margins\.bottom/,
+    )
+    assert.throws(() => resolveGongmun({ margins: { top: 20, bottom: 15, left: 110, right: 110 } }), /margins/)
+    assert.throws(() => resolveGongmun({ sizes: { chapter: 61 } }), /sizes\.chapter/)
+    assert.throws(() => resolveGongmun({ approval: ["1", "2", "3", "4", "5", "6", "7"] }), /approval/)
   })
 
   it("mmToHwpunit 환산", () => {
@@ -221,10 +236,28 @@ describe("gongmun 렌더링", () => {
     assert.match(sec, /<\/hp:secPr><hp:ctrl><hp:colPr[^>]*colCount="1"/)
   })
 
-  it("본문 15pt(height 1500)", async () => {
+  it("기안문 본문 12pt(height 1200) — 서울시 실결재 104건 지배값", async () => {
     const buf = await markdownToHwpx("본문", { gongmun: { preset: "official" } })
     const head = await headerXml(buf)
-    assert.match(head, /<hh:charPr id="0" height="1500"/)
+    assert.match(head, /<hh:charPr id="0" height="1200"/)
+  })
+
+  it("계획서 기본 항목부호 — 실측 계획안의 □ → ㅇ → *", async () => {
+    const buf = await markdownToHwpx("- 대항목\n  - 중항목\n    - 참고", { gongmun: { preset: "plan" } })
+    const texts = await sectionTexts(buf)
+    assert.ok(texts.includes("□ 대항목"))
+    assert.ok(texts.includes("ㅇ 중항목"))
+    assert.ok(texts.includes("* 참고"))
+  })
+
+  it("사용자 지정 폰트명 XML 특수문자 — 이스케이프 후 구조 검증 통과", async () => {
+    const buf = await markdownToHwpx("본문", {
+      gongmun: { preset: "report", fonts: { body: 'A&B"<폰트>' } },
+    })
+    const head = await headerXml(buf)
+    assert.ok(head.includes('face="A&amp;B&quot;&lt;폰트&gt;"'))
+    const validation = await validateHwpx(buf)
+    assert.equal(validation.ok, true, validation.issues.map((issue) => issue.message).join("\n"))
   })
 
   it("report 프리셋 불릿 □○- (단일 형제도 표시)", async () => {
@@ -352,6 +385,18 @@ describe("gaejosik 개조식 보고서", () => {
     const withAll = await markdownToHwpx(md, { gongmun: { preset: "개조식" } })
     const sec2 = await (await JSZip.loadAsync(withAll)).file("Contents/section0.xml")!.async("text")
     assert.ok((sec2.match(/pageBreak="1"/g) || []).length >= 2, "표지→목차→본문 쪽나눔 2회")
+  })
+
+  it("보고서에서도 명시한 표지·목차를 생성하고 구조 검증 통과", async () => {
+    const buf = await markdownToHwpx(md, {
+      gongmun: { preset: "report", cover: { date: "2026. 7. 11.", org: "테스트기관" }, toc: true },
+    })
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    assert.ok(sec.includes("목  차"), "비개조식 목차")
+    assert.ok(sec.includes("테스트기관"), "비개조식 표지 기관명")
+    assert.ok((sec.match(/pageBreak="1"/g) || []).length >= 2, "표지→목차→본문 쪽나눔")
+    const validation = await validateHwpx(buf)
+    assert.equal(validation.ok, true, validation.issues.map((issue) => issue.message).join("\n"))
   })
 
   it("기존 프리셋 회귀 없음 (official 항목부호·report 불릿)", async () => {
@@ -566,12 +611,16 @@ describe("공문서 v4 구조 요소 — 쪽번호·제목박스·배너·결재
   it("결재란 — 직위 라벨 + 서명 공란 2행, 우측 배치 (실측 GT12 간이형)", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "official", approval: ["담당", "팀장", "과장"] } })
     const sec = await sectionOf(buf)
+    const hdr = await headerXml(buf)
     const at = sec.indexOf("담당")
     assert.ok(at > 0)
     const tblStart = sec.lastIndexOf("<hp:tbl", at)
     const tbl = sec.slice(tblStart, sec.indexOf("</hp:tbl>", tblStart))
     assert.match(tbl, /rowCnt="2" colCnt="3"/)
     assert.ok(tbl.includes("팀장") && tbl.includes("과장"))
+    const labelChar = tbl.match(/charPrIDRef="(\d+)"><hp:t>담당<\/hp:t>/)?.[1]
+    assert.ok(labelChar, "결재 라벨 charPr")
+    assert.match(hdr, new RegExp(`<hh:charPr id="${labelChar}" height="1000"`), "결재 라벨 10pt")
     // 호스트 문단 우측정렬 (GONGMUN_RIGHT=17)
     const host = sec.slice(sec.lastIndexOf("<hp:p ", tblStart), tblStart)
     assert.ok(host.includes('paraPrIDRef="17"'), "결재란 호스트 RIGHT")
@@ -606,7 +655,11 @@ describe("공문서 v4 구조 요소 — 쪽번호·제목박스·배너·결재
     const at = sec.indexOf(escapeStub("보고서 제목"))
     const tblStart = sec.lastIndexOf("<hp:tbl", at)
     assert.ok(tblStart > 0, "제목이 표 안에")
-    assert.match(sec.slice(tblStart, at), /rowCnt="3" colCnt="1"/)
+    const box = sec.slice(tblStart, at)
+    assert.match(box, /rowCnt="3" colCnt="1"/)
+    const barChar = box.match(/charPrIDRef="(\d+)"><hp:t><\/hp:t>[\s\S]*?<hp:cellSz[^>]*height="382"/)?.[1]
+    assert.ok(barChar, "382HU 색상바의 빈 문단 charPr")
+    assert.match(hdr, new RegExp(`<hh:charPr id="${barChar}" height="100"`), "색상바 스페이서 1pt")
   })
 
   it("표 실측 문법 — 헤더 bold·하변 이중선·외곽 0.4mm·라벨열 음영·호스트 RIGHT", async () => {
@@ -705,5 +758,55 @@ describe("v4.0.1 h2 말머리 (QA-2)", () => {
   it("개조식 h2는 장 헤더가 소비 — h2Marker 영향 없음", async () => {
     const texts = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "개조식", cover: false, toc: false } }))
     assert.ok(!texts.includes("□ 개요"), "개조식 h2 = 로마숫자 장헤더 (□ 아님)")
+  })
+})
+
+describe("v4.0.2 프로덕션 리뷰 회귀", () => {
+  it("헤딩 위계 — 12pt 기안문에서 h4가 h3를 넘지 않는다 (15pt는 종전 유지)", async () => {
+    const head = await headerXml(await markdownToHwpx("### 소제목\n\n#### 소소제목", { gongmun: { preset: "official" } }))
+    const h3 = Number(head.match(/<hh:charPr id="7" height="(\d+)"/)![1])
+    const h4 = Number(head.match(/<hh:charPr id="8" height="(\d+)"/)![1])
+    assert.ok(h4 <= h3, `h4(${h4})가 h3(${h3})보다 크면 위계 역전`)
+    const head15 = await headerXml(await markdownToHwpx("본문", { gongmun: { preset: "report" } }))
+    assert.match(head15, /<hh:charPr id="8" height="1400"/)
+  })
+
+  it("비실측 프리셋 + 표지/목차 — bodyFont 지정이 본문 charPr에 유지된다", async () => {
+    const head = await headerXml(await markdownToHwpx("본문", {
+      gongmun: { preset: "notice", toc: true, bodyFont: "gothic" },
+    }))
+    assert.match(head, /<hh:font id="4" face="맑은 고딕"/, "rich 폰트세트 id 4 = 해석된 본문 폰트")
+    const charPr0 = head.match(/<hh:charPr id="0"[\s\S]*?<\/hh:charPr>/)![0]
+    assert.match(charPr0, /hangul="4"/, "본문 charPr가 id 4를 참조해야 gothic이 렌더됨")
+  })
+
+  it("press 프리셋은 cover/toc 무시 — 머리박스·제목·부제 보존", async () => {
+    const g = resolveGongmun({ preset: "press", cover: true, toc: true })
+    assert.equal(g.cover, null)
+    assert.equal(g.toc, false)
+    const texts = await sectionTexts(await markdownToHwpx("# 제목\n\n내용", {
+      gongmun: { preset: "press", cover: true, press: { sub: ["부제 문구"] } },
+    }))
+    assert.ok(texts.includes("- 부제 문구 -"), `부제 유실 금지: ${texts.join("|")}`)
+  })
+
+  it("bodyTitleBox 단독은 rich 자산을 방출하지 않는다 (표 폰트 불변)", async () => {
+    assert.equal(needsGaejosikAssets(resolveGongmun({ preset: "minutes", bodyTitleBox: true })), false)
+    const head = await headerXml(await markdownToHwpx("| a | b |\n| --- | --- |\n| 1 | 2 |", {
+      gongmun: { preset: "minutes", bodyTitleBox: true },
+    }))
+    assert.ok(!head.includes('face="HY헤드라인M"'), "rich 폰트세트 미방출")
+  })
+
+  it("결재란 라벨 — 전용 100% paraPr(33) 사용 (바 스페이서 70% 재사용 금지)", async () => {
+    const buf = await markdownToHwpx("본문", { gongmun: { preset: "official", approval: ["담당", "팀장"] } })
+    const head = await headerXml(buf)
+    const para33 = head.match(/<hh:paraPr id="33"[\s\S]*?<\/hh:paraPr>/)![0]
+    assert.match(para33, /<hh:lineSpacing[^>]*value="100"/, "라벨 줄간격 100% (실측 결재선)")
+    const zip = await JSZip.loadAsync(buf)
+    const secXml = await zip.file("Contents/section0.xml")!.async("text")
+    assert.ok(secXml.includes('paraPrIDRef="33"'), "라벨 문단이 전용 paraPr 참조")
+    const validation = await validateHwpx(buf)
+    assert.equal(validation.ok, true, validation.issues.map((i) => i.message).join("\n"))
   })
 })

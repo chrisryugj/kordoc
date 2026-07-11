@@ -93,7 +93,7 @@ export function computeBBox(items: NormItem[], pageNum: number): BoundingBox {
 }
 
 /** 아이템 그룹의 대표 스타일 (최빈 폰트 크기) */
-export function dominantStyle(items: NormItem[]): { fontSize: number; fontName: string } | undefined {
+export function dominantStyle(items: NormItem[]): { fontSize: number; fontName?: string } | undefined {
   if (items.length === 0) return undefined
   // 최빈 폰트 크기 찾기
   const freq = new Map<number, number>()
@@ -107,7 +107,7 @@ export function dominantStyle(items: NormItem[]): { fontSize: number; fontName: 
   if (dominantSize === 0) return undefined
   // 대표 폰트명 (빈 문자열은 undefined로)
   const fontName = items.find(i => i.fontSize === dominantSize)?.fontName || undefined
-  return { fontSize: dominantSize, fontName }
+  return fontName ? { fontSize: dominantSize, fontName } : { fontSize: dominantSize }
 }
 
 export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {

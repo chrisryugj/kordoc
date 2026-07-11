@@ -192,7 +192,9 @@ export const GJ_CHAR_TABLE = 22        // 표 셀 본문 — 맑은 고딕 12pt 
 export const GJ_CHAR_TABLE_BOLD = 23   // 표 셀 강조 — 맑은 고딕 12pt bold
 export const GJ_CHAR_BAR = 24          // 표지 장식 바 셀 빈 문단 — 6pt (실측: 셀 높이 818 수납용)
 export const GJ_CHAR_BODY_TITLE = 25   // 본문 첫 페이지 제목 박스 — HY헤드라인M 22pt (실측: GT3 표④)
-const GJ_CHAR_COUNT = 15
+export const GJ_CHAR_TITLE_BAR = 26    // 1페이지형 제목박스 382HU 바 스페이서 — 1pt
+export const GJ_CHAR_APPROVAL = 27     // 결재란 직위 라벨 — 굴림 계열 10pt
+const GJ_CHAR_COUNT = 17
 
 // ─── 개조식 전용 paraPr id — 공통(0~7)+단계(8~15)+CENTER(16)+RIGHT(17)+표셀(18·19) 뒤 20~24 ──
 // v4.0.2부터 id 연속성을 위해 전 공문서 프리셋이 이 블록을 방출한다 (비개조식은 20만 사용)
@@ -209,6 +211,11 @@ export const GJ_PARA_COUNT = 5
 // left는 단계 동일, 내어쓰기 0인 전용 세트.
 export const GONGMUN_LIST_PLAIN_BASE = 25
 
+// ─── 결재란 라벨 셀 paraPr — 33 (부호생략 25~32 뒤) ──
+// 실측 결재선(approval-main): 라벨 lineSp 100%. 1pt 바 스페이서용 GJ_PARA_BAR(70%)를
+// 재사용하면 긴 라벨 줄바꿈 시 줄이 겹친다 — 보이는 텍스트는 전용 100% paraPr로.
+export const GONGMUN_PARA_APPROVAL = GONGMUN_LIST_PLAIN_BASE + GONGMUN_LIST_LEVELS
+
 // ─── 개조식 전용 borderFill id — 기본 2종(1·2) 뒤 3~9 ──
 export const GJ_BF_CHAPTER_NUM = 3   // 장헤더 로마숫자 셀 — #193AAA 음영 + #006699 테두리
 export const GJ_BF_CHAPTER_GAP = 4   // 장헤더 간격 셀 — #006699 좌선만
@@ -219,9 +226,9 @@ export const GJ_BF_TOC_BOX = 8       // 목차 박스 — 0.4mm #514BAC
 export const GJ_BF_TOC_STRIPE = 9    // 목차 배너 라벤더 스트라이프 — #E0E5FA (실측: GT3 표②)
 
 // ─── 공문서 표 헤더행 음영 borderFill (실측: 정부 양식 표 헤더 #E6E6E6) ──
-// 개조식은 전용 3~9 뒤 10, 그 외 공문서 프리셋은 기본 1·2 뒤 3
-export function gongmunTableHeaderBf(gaejosik: boolean): number {
-  return gaejosik ? 10 : 3
+// 개조식 자산(표지·목차 포함)을 쓰면 전용 3~9 뒤 10, 그 외는 기본 1·2 뒤 3
+export function gongmunTableHeaderBf(richAssets: boolean): number {
+  return richAssets ? 10 : 3
 }
 
 // ─── borderFill XML 원자 ─────────────────────────────
@@ -276,13 +283,15 @@ export function pageHidingCtrl(hideHeader: boolean = false): string {
 }
 
 // ─── 비실측 공문서 표 셀 charPr — 11·12 (v4.0.2) ──
-// 실결재 기안문 실측: 표 셀은 본문(15pt)보다 작은 11~12pt가 지배(굴림체12·맑은고딕11).
+// 실결재 기안문 실측: 표 셀은 11~12pt가 지배(굴림체12·맑은고딕11).
 // 본문 크기 셀은 열폭이 부족해 서술 열이 세로로 길어진다 (실렌더 QA).
 // 실측 프리셋은 GJ_CHAR_TABLE(22·23, 맑은 고딕 12pt)을 그대로 쓴다.
 export const GONGMUN_TBL_CHAR = 11
 export const GONGMUN_TBL_CHAR_BOLD = 12
 /** 비실측 공문서 표 셀 크기 — 12pt (실결재 실측 지배값) */
 export const GONGMUN_TBL_PT = 1200
+export const GONGMUN_TITLE_BAR_CHAR = 13
+export const GONGMUN_APPROVAL_CHAR = 14
 
 // ─── 공문서 자동 장평(orphan 축소) ───────────────────
 // 기본 charPr 11종(0~10) 뒤에, 자동 장평이 필요한 문단용 변형 charPr를 붙인다.
@@ -290,10 +299,9 @@ export const GONGMUN_TBL_PT = 1200
 // 실측 폰트 프리셋(개조식·보고서·계획서)은 전용 charPr 15종(11~25)이 먼저 오므로 26부터.
 // 변형 vi번째 장평 r → charPr id = charVariantBase + vi×4 + (0 본문|1 볼드|2 이탤릭|3 볼드이탤릭)
 export const CHAR_VARIANT_BASE = 11
-export function charVariantBase(measured: boolean, isGongmun: boolean = true): number {
+export function charVariantBase(richAssets: boolean, isGongmun: boolean = true): number {
   if (!isGongmun) return CHAR_VARIANT_BASE
-  return measured ? 11 + GJ_CHAR_COUNT : 11 + 2
+  return richAssets ? 11 + GJ_CHAR_COUNT : 11 + 4
 }
 /** 공문서 본문 기본 장평(%) — 실제 공문서 관행 (v3.5.3) */
 export const GONGMUN_BODY_RATIO = 95
-

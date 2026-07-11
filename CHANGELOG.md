@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.3] - 2026-07-11
+
+프로덕션 하드닝 릴리스 — v4.0.0~4.0.2 변경분 전체에 대한 2중 프로덕션 리뷰
+(6페이즈 하드닝 + 8앵글 리뷰·검증 패스)에서 확정된 결함을 수정. v4 계열 첫 npm 발행.
+
+### Changed (프리셋 기본값 — 기존 산출물 기하 변경)
+
+- **기안문(official) 본문 기본 15pt → 12pt**: 서울 정보소통광장 실결재 104건 중 64건
+  지배값. 종전 크기가 필요하면 `--pt 15`(`body_pt: 15`).
+- **계획서(plan) 항목부호 기본 `1. 가. 1)` → `□ → ㅇ → *`**: 실측 추진계획안 계층.
+  법정 번호가 필요하면 `numbering: 'standard'` 명시 (suppressSingle도 standard 전용).
+- 계획서 2단계 부호 기본 `○` → `ㅇ`.
+
+### Added
+
+- **입력 검증 방어선**: `bodyPt`·`lineSpacing`·`margins`·`sizes`·`autoFit.minRatio`의
+  NaN/무한대/비정상 범위와 7개 이상 `approval` 라벨을 라이브러리·CLI·MCP 공통으로
+  명시적 오류 처리 — 잘못된 입력이 XML `NaN` 기하로 번지지 않음.
+- **비개조식 표지·목차**: `cover`/`toc`를 기안문·통지·회의록 등 전 프리셋에서 지원
+  (보도자료 제외 — 머리박스 서식과 양립 불가라 명시적으로 무시).
+- 폰트명 XML 특수문자(`&` `"` `<`) 이스케이프 — 임의 폰트명으로 XML이 깨지지 않음.
+- 배포 메타데이터 회귀 가드 테스트(package/lock/plugin 버전 정합).
+
+### Fixed
+
+- **본문 폰트 유실**: 비실측 프리셋에 표지·목차를 켜면 `--font gothic`·`fonts.body`
+  지정이 무시되고 함초롬바탕으로 렌더되던 결함 (본문 charPr·docframe 두 경로 모두).
+- **헤딩 위계 역전**: 본문 13pt 이하에서 `####`(h4)가 `###`(h3)보다 크게 렌더되던
+  결함 — h4를 h3 이하로 캡.
+- **표 캡션**: 표 셀 안 도형·개체의 캡션이 바깥 표 캡션으로 오귀속되던 결함 + 캡션이
+  보존되는데도 "미지원 제어 요소의 텍스트 손실" 거짓 경고가 쌓이던 결함. ctrl 래핑
+  표 캡션은 보존(#46 후속).
+- **결재란 라벨 줄간격**: 1pt 바 스페이서용 paraPr(70%)를 재사용해 긴 라벨 줄바꿈 시
+  줄이 겹치던 것을 실측 결재선과 같은 전용 100% paraPr(33)로 분리.
+- 여러 줄 셀·중첩표를 담은 HTML 표의 `hp:sz` 높이가 확장된 행 높이 합과 일치(타 뷰어
+  잘림 방지), 382HU 제목박스 바의 1pt 전용 스페이서, `bodyTitleBox` 단독 지정 시
+  표 폰트가 바뀌던 부작용 제거, 보도자료에서 표지·제목·부제가 충돌해 부제가 유실되던
+  조합 차단.
+- xmldom 0.9.10·markdown-it 14.3.0 범프 — 프로덕션 의존성 감사 취약점 0건.
+
 ## [4.0.2] - 2026-07-11
 
 실측 벤치마킹 릴리스 — 부처별 양식 3종 + 실물 8종 + 서울 정보소통광장 실결재 기안문

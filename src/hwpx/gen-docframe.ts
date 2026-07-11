@@ -43,9 +43,9 @@ export function docframeActive(g: ResolvedGongmun): boolean {
   return !!(g.docHead || g.docFoot || g.reportInfo || g.noticeHead || g.press)
 }
 
-/** docframe 전용 charPr 9종 — 실측 프리셋은 휴먼명조(id 4), 그 외 본문 폰트(id 0) */
-export function docframeCharPrXmls(base: number, measured: boolean): string[] {
-  const body = measured ? 4 : 0
+/** docframe 전용 charPr 9종 — rich 폰트세트(실측 프리셋·표지·목차)는 본문=id 4, 그 외 id 0 */
+export function docframeCharPrXmls(base: number, richAssets: boolean): string[] {
+  const body = richAssets ? 4 : 0
   const ids = docframeIds(base)
   return [
     charPr(ids.org, 1800, true, false, body),

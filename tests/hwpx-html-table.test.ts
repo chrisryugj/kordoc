@@ -50,6 +50,15 @@ describe("markdownToHwpx — HTML 표 생성", () => {
     }
   })
 
+  it("중첩표·다중행 셀 확장 높이가 바깥 표 hp:sz에도 반영된다", async () => {
+    const html = NESTED.replace("내역", "내역<br>둘째 줄<br>셋째 줄")
+    const buf = await markdownToHwpx(html)
+    const section = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const outer = section.match(/<hp:tbl[^>]*rowCnt="2"[^>]*>[\s\S]*?<hp:sz[^>]*height="(\d+)"/)!
+    assert.ok(outer, "바깥 HTML 표 hp:sz")
+    assert.ok(Number(outer[1]) > 3000, `기본 2행 높이(3000)보다 확장: ${outer[1]}`)
+  })
+
   it("셀 좌표·병합 스팬이 HWPX XML에 정확히 박힌다", async () => {
     const buf = await markdownToHwpx(MERGED)
     const zip = await JSZip.loadAsync(buf)

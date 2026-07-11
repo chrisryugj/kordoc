@@ -17,7 +17,7 @@
  */
 
 import JSZip from "jszip"
-import { type GongmunOptions, resolveGongmun, usesReportFonts } from "./gongmun.js"
+import { type GongmunOptions, needsGaejosikAssets, resolveGongmun, usesReportFonts } from "./gongmun.js"
 import { type HwpxTheme, resolveTheme, charVariantBase } from "./gen-ids.js"
 import { buildPrvText, parseMarkdownToBlocks } from "./md-runs.js"
 import { generateContainerXml, generateManifest, generateHeaderXml } from "./gen-header.js"
@@ -38,7 +38,7 @@ export interface MarkdownToHwpxOptions {
   theme?: HwpxTheme
   /**
    * 공문서 모드 — 지정 시 한국 행정 공문서 표준 서식으로 렌더링한다.
-   * (공식 여백, 명조 15pt 본문, 항목부호 8단계 행갈굼 정렬, 줄간격 등)
+   * (공식 여백, 프리셋별 본문 크기, 항목부호 체계, 행갈굼 정렬, 줄간격 등)
    * 미지정 시 기존 범용 마크다운 변환 동작 그대로 유지.
    */
   gongmun?: GongmunOptions
@@ -61,24 +61,24 @@ export async function markdownToHwpx(
 ): Promise<ArrayBuffer> {
   const theme = resolveTheme(options?.theme)
   const gongmun = options?.gongmun ? resolveGongmun(options.gongmun) : null
-  const gaejosik = gongmun?.preset === "gaejosik"
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 전용 charPr 블록(11~25)이 먼저 온다 (QA-1)
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
+  const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
   const blocks = parseMarkdownToBlocks(markdown)
   const gongmunList = gongmun ? precomputeGongmunList(blocks, gongmun) : null
   const fit = gongmun && gongmunList ? computeGongmunFitPlan(blocks, gongmun, gongmunList) : null
   // id 배치: 정적 borderFill(기본 2 + 개조식 7 + 공문서 헤더음영 1) → 프로필 → 표 레지스트리.
   // charPr는 기본(+실측 프리셋 전용) + 장평 variant 다음부터 프로필 할당.
-  const staticBfEnd = gongmun ? (gaejosik ? 11 : 4) : 3
+  const staticBfEnd = gongmun ? (richAssets ? 11 : 4) : 3
   const remap = options?.profile
-    ? buildProfileRemap(options.profile, charVariantBase(measured, !!gongmun) + (fit?.variants?.length ?? 0) * 4, staticBfEnd)
+    ? buildProfileRemap(options.profile, charVariantBase(richAssets, !!gongmun) + (fit?.variants?.length ?? 0) * 4, staticBfEnd)
     : null
   // 표 테두리 위계 레지스트리 — 섹션 생성 중 등록된 조합을 header.xml에 함께 방출
   const bfReg = gongmun ? new TableBfRegistry(staticBfEnd + (remap?.borderFillXmls.length ?? 0)) : null
   // docframe(두문·결문·보고정보·공고두문·보도머리) charPr — variant·프로필 다음 id.
   // 기능이 꺼져 있으면 미방출(기존 산출물 불변)
   const dfActive = !!gongmun && docframeActive(gongmun)
-  const dfBase = charVariantBase(measured, !!gongmun) + (fit?.variants?.length ?? 0) * 4 + (remap?.charPrXmls.length ?? 0)
+  const dfBase = charVariantBase(richAssets, !!gongmun) + (fit?.variants?.length ?? 0) * 4 + (remap?.charPrXmls.length ?? 0)
   const dfIds = dfActive ? docframeIds(dfBase) : null
   const chartParts: ChartPart[] = []
   const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds)
@@ -101,7 +101,7 @@ export async function markdownToHwpx(
   zip.file("META-INF/container.xml", generateContainerXml())
   zip.file("Contents/content.hpf", generateManifest(chartParts))
   zip.file("Contents/header.xml", generateHeaderXml(theme, gongmun, fit?.variants ?? [], extraBorderFills,
-    [...(remap?.charPrXmls ?? []), ...(dfActive ? docframeCharPrXmls(dfBase, measured) : [])]))
+    [...(remap?.charPrXmls ?? []), ...(dfActive ? docframeCharPrXmls(dfBase, richAssets) : [])]))
   zip.file("Contents/section0.xml", sectionXml)
   for (const part of chartParts) zip.file(part.name, part.xml)
   // Preview/ — 한글 프로그램의 일부 버전(특히 macOS)이 존재 여부를 확인함

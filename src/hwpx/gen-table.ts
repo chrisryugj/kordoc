@@ -229,7 +229,7 @@ export function generateTable(rows: string[][], theme: ResolvedTheme, style: Gon
 
   const trElements = rows.map((row, rowIdx) => {
     // 부족한 셀은 빈 문자열로 채워 colCnt 맞춤
-    const cells = row.length < colCnt ? [...row, ...Array(colCnt - row.length).fill("")] : row
+    const cells: string[] = row.length < colCnt ? [...row, ...Array<string>(colCnt - row.length).fill("")] : row
     const isHeaderRow = rowIdx === 0
     const cellH = rowHeights[rowIdx]
     const baseCharPr = style ? style.charPr : CHAR_NORMAL
@@ -386,6 +386,8 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   let htmlHeaderRows = 0
   while (htmlHeaderRows < rows.length && rows[htmlHeaderRows].tag === "th") htmlHeaderRows++
 
+  // 표 전체 높이 — 행별 최대 셀높이(rowSpan 셀은 행수로 분배)를 map 안에서 바로 접는다
+  const tableRowHeights = Array<number>(rowCnt).fill(cellH)
   const tcXmls = placed.map((cell, i) => {
     const k = `${cell.r},${cell.c}`
     const isHeader = cell.isHeader
@@ -418,6 +420,10 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     // 프로필 실측 높이가 있으면 존중하되, 내용(중첩표 등)이 더 크면 확장
     const contentH = Math.max(cellH * cell.rowSpan, Math.max(lines.length, 1) * (style ? Math.round(measureH * 1.6) : 800) + nestedH)
     const cellHeight = Math.max(prof?.cellH.get(k) ?? 0, contentH)
+    const perRow = Math.ceil(cellHeight / cell.rowSpan)
+    for (let r = cell.r; r < Math.min(cell.r + cell.rowSpan, rowCnt); r++) {
+      tableRowHeights[r] = Math.max(tableRowHeights[r], perRow)
+    }
     // 테두리 — 프로필 최우선, 다음 위계(병합 셀은 끝 행·열 기준 — TBL-01·02·03), 폴백 기본
     const bf = prof?.cellBf.get(k)
       ?? (reg
@@ -443,8 +449,10 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     trXmls.push(`<hp:tr>${rowTcs.join("")}</hp:tr>`)
   }
 
+  const tableH = tableRowHeights.reduce((sum, height) => sum + height, 0)
+
   return `<hp:tbl id="${tblId}" zOrder="0" numberingType="TABLE" pageBreak="CELL" repeatHeader="${style ? 1 : 0}" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="2" noShading="0">`
-    + `<hp:sz width="${tblW}" widthRelTo="ABSOLUTE" height="${cellH * rowCnt}" heightRelTo="ABSOLUTE" protect="0"/>`
+    + `<hp:sz width="${tblW}" widthRelTo="ABSOLUTE" height="${tableH}" heightRelTo="ABSOLUTE" protect="0"/>`
     + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="0" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
     + `<hp:outMargin left="0" right="0" top="0" bottom="0"/>`
     + `<hp:inMargin left="510" right="510" top="141" bottom="141"/>`

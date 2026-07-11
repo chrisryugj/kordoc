@@ -88,7 +88,7 @@ function getAttr(el: Element, localName: string): string | null {
 }
 
 function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(stripDtd(text), "text/xml")
+  return new DOMParser().parseFromString(stripDtd(text), "text/xml") as unknown as Document
 }
 
 // ─── 스타일 파싱 ────────────────────────────────────────

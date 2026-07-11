@@ -11,6 +11,7 @@
 
 import { charWidthEm1000, SPACE_EM_FIXED } from "./text-metrics.js"
 import { gaejosikMarker, gaejosikLevelIndent, type GaejosikSizeOverrides } from "./gaejosik.js"
+import { KordocError } from "../utils.js"
 
 // ─── 옵션 타입 ──────────────────────────────────────
 
@@ -35,7 +36,7 @@ export interface GongmunOptions {
   preset?: GongmunPresetInput
   /** 본문 글꼴. 'myeongjo'=함초롬바탕(명조, 보고서·대외공문 관행) / 'gothic'=맑은 고딕(전자결재 기본) */
   bodyFont?: GongmunFont
-  /** 본문 글자 크기(pt). 기본 15 */
+  /** 본문 글자 크기(pt). 기본: 기안문 12, 보고서·계획서·통지 15 */
   bodyPt?: number
   /** 본문 줄간격(%). 기본 160 (회의록 130) */
   lineSpacing?: number
@@ -89,7 +90,8 @@ export interface GongmunOptions {
   /**
    * 단일 형제 항목 부호 생략(편람 규정: 항목이 하나면 부호 미부여). 기본 false —
    * 부호 없는 계단 들여쓰기가 실무 눈에 더 어색하다(실무자 QA, v4.0.2).
-   * 규정 엄수가 필요하면 true.
+   * 규정 엄수가 필요하면 true. 법정 번호(standard) 전용 — 불릿 체계(report·gaejosik)엔
+   * 적용되지 않으므로, 기본 numbering이 report인 plan 프리셋은 numbering:'standard' 병기 필요.
    */
   suppressSingle?: boolean
   /** 기안문 두문 — 행정기관명·수신·경유·제목 (별지 제1호서식, official 전용) */
@@ -170,9 +172,11 @@ const PRESET_DEFAULTS: Record<
   GongmunPreset,
   { bodyPt: number; lineSpacing: number; numbering: GongmunNumbering }
 > = {
-  official: { bodyPt: 15, lineSpacing: 160, numbering: "standard" },
+  // 서울시 실결재 104건 중 12pt 64건(13pt 30, 15pt 5) — 지배값을 기본으로 사용.
+  official: { bodyPt: 12, lineSpacing: 160, numbering: "standard" },
   report: { bodyPt: 15, lineSpacing: 160, numbering: "report" },
-  plan: { bodyPt: 15, lineSpacing: 160, numbering: "standard" },
+  // 실측 추진계획안: □ → ㅇ → * 계층.
+  plan: { bodyPt: 15, lineSpacing: 160, numbering: "report" },
   notice: { bodyPt: 15, lineSpacing: 160, numbering: "standard" },
   minutes: { bodyPt: 14, lineSpacing: 130, numbering: "standard" },
   gaejosik: { bodyPt: 15, lineSpacing: 160, numbering: "gaejosik" },
@@ -207,7 +211,55 @@ export function usesReportFonts(preset: GongmunPreset): boolean {
   return preset === "gaejosik" || preset === "report" || preset === "plan"
 }
 
+/** 3단계 부호로 *(참고)를 쓰는 프리셋인지 — 실측: 추진계획안·보도자료 공통 □→ㅇ→* 계층.
+ * levelIndent(내어쓰기 폭)와 GongmunNumberer(마커)가 같은 판정을 공유해야 정렬이 맞는다. */
+export function usesAsteriskThird(preset: GongmunPreset): boolean {
+  return preset === "plan" || preset === "press"
+}
+
+/** 개조식 표지·목차용 정적 font/char/border 자산이 필요한 문서인지.
+ * bodyTitleBox는 표지(cover) 없이는 렌더할 제목이 없어 단독으로는 자산을 요구하지 않는다. */
+export function needsGaejosikAssets(gongmun: ResolvedGongmun): boolean {
+  return usesReportFonts(gongmun.preset) || gongmun.cover !== null || gongmun.toc
+}
+
+function assertFiniteRange(name: string, value: number, min: number, max: number): void {
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new KordocError(`${name} must be a finite number between ${min} and ${max}`)
+  }
+}
+
+/** 공개 API·CLI가 공유하는 공문서 수치 옵션 방어선 — 잘못된 값이 XML의 NaN/Infinity로 번지는 것을 막는다. */
+function validateGongmunOptions(opts: GongmunOptions): void {
+  if (opts.bodyPt !== undefined) assertFiniteRange("bodyPt", opts.bodyPt, 6, 40)
+  if (opts.lineSpacing !== undefined) assertFiniteRange("lineSpacing", opts.lineSpacing, 50, 300)
+  if (typeof opts.autoFit === "object" && opts.autoFit.minRatio !== undefined) {
+    assertFiniteRange("autoFit.minRatio", opts.autoFit.minRatio, 50, 99)
+  }
+  if (opts.margins) {
+    for (const side of ["top", "bottom", "left", "right"] as const) {
+      const value = opts.margins[side]
+      assertFiniteRange(`margins.${side}`, value, 0, 200)
+    }
+    if (opts.margins.left + opts.margins.right >= 210) {
+      throw new KordocError("margins.left + margins.right must be less than 210")
+    }
+    if (opts.margins.top + opts.margins.bottom >= 297) {
+      throw new KordocError("margins.top + margins.bottom must be less than 297")
+    }
+  }
+  if (opts.sizes) {
+    for (const [key, value] of Object.entries(opts.sizes)) {
+      if (value !== undefined) assertFiniteRange(`sizes.${key}`, value, 6, 60)
+    }
+  }
+  if (opts.approval && opts.approval.length > 6) {
+    throw new KordocError("approval must contain at most 6 labels")
+  }
+}
+
 export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
+  validateGongmunOptions(opts)
   const preset = normalizeGongmunPreset(opts.preset)
   const d = PRESET_DEFAULTS[preset]
   const bodyPt = opts.bodyPt ?? d.bodyPt
@@ -231,8 +283,10 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     margins: opts.margins ?? (reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
     centerTitle: opts.centerTitle ?? true,
     autoFitMinRatio,
-    cover: coverOn ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "" } : null,
-    toc: opts.toc ?? gaejosik,
+    // 보도자료는 머리박스가 1페이지 최상단을 차지하는 서식이라 표지·목차와 양립 불가 —
+    // 켜면 머리박스가 표지에 얹히고 25pt 제목·부제가 유실된다 (docHead 프리셋 게이팅과 동일 관례)
+    cover: coverOn && preset !== "press" ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "" } : null,
+    toc: preset !== "press" && (opts.toc ?? gaejosik),
     fonts: opts.fonts ?? {},
     sizes: opts.sizes ?? {},
     // 쪽번호 — 보고서 계열 관행(실측: 2_보고서 양식·추진계획·공고문 전부 하단 중앙)
@@ -249,7 +303,7 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     // h2 말머리 — 실측: 보고서 양식 □ 대항목(QA-2), 공고문 아라비아("1. 사업개요", 바이오헬스 실측)
     h2Marker: opts.h2Marker ?? (preset === "report" || preset === "plan" ? "box" : preset === "notice" ? "number" : "none"),
     // 2단계 부호 — 실결재 기안문·공고문 ㅇ 지배(60건 중 ㅇ134:○5), 보고서 양식 계열 ○
-    bullet2: opts.bullet2 ?? (preset === "notice" || preset === "press" ? "ㅇ" : "○"),
+    bullet2: opts.bullet2 ?? (preset === "plan" || preset === "notice" || preset === "press" ? "ㅇ" : "○"),
     // 단일 형제 부호 생략 — 규정이지만 부호 없는 계단이 실무 눈에 어색 (실무자 QA)
     suppressSingle: opts.suppressSingle ?? false,
     docHead: preset === "official" && opts.docHead ? opts.docHead : null,
@@ -288,8 +342,8 @@ export function circledHangul(n: number): string {
 
 /** 보고서 모드 단계별 불릿(정부 보고서 관행: □ 대 / ○·ㅇ 중 / - 소 / ㆍ 세) */
 const REPORT_BULLETS = ["□", "○", "-", "ㆍ"]
-/** 보도자료 불릿 — 실측(국토부 실물): □ → ㅇ → *(각주 12pt) */
-const PRESS_BULLETS = ["□", "ㅇ", "*", "ㆍ"]
+/** 계획서·보도자료 불릿 — 실측: □ → ㅇ → *(참고) */
+const ASTERISK_BULLETS = ["□", "○", "*", "ㆍ"]
 
 /**
  * 'standard'(법정 8단계) 마커. depth 0~7, n은 해당 단계 형제 중 0-based 순번.
@@ -309,11 +363,11 @@ export function standardMarker(depth: number, n: number): string {
   }
 }
 
-/** 'report' 모드 마커(불릿, 순번 무관). bullet2로 2단계 ㅇ/○ 전환, press는 보도자료 체계 */
-export function reportMarker(depth: number, bullet2: "ㅇ" | "○" = "○", press = false): string {
-  const bullets = press ? PRESS_BULLETS : REPORT_BULLETS
+/** 'report' 모드 마커(불릿, 순번 무관). bullet2로 2단계 ㅇ/○ 전환. */
+export function reportMarker(depth: number, bullet2: "ㅇ" | "○" = "○", asteriskThird = false): string {
+  const bullets = asteriskThird ? ASTERISK_BULLETS : REPORT_BULLETS
   const m = bullets[Math.min(depth, bullets.length - 1)]
-  return depth === 1 && !press ? bullet2 : m
+  return depth === 1 ? bullet2 : m
 }
 
 /**
@@ -355,12 +409,12 @@ export function levelIndent(
   numbering: GongmunNumbering,
   sizes: GaejosikSizeOverrides = {},
   bullet2: "ㅇ" | "○" = "○",
-  press = false,
+  asteriskThird = false,
 ): LevelIndent {
   // 개조식은 실측 양식의 들여쓰기 체계(□ 0 / ○ 1자 / - 1.5자 …)를 따른다.
   if (numbering === "gaejosik") return gaejosikLevelIndent(depth, bodyHeight, sizes, bullet2)
   // 같은 단계는 부호 종류가 일정하므로 대표 부호(순번 0)의 폭으로 내어쓰기를 정한다.
-  const marker = numbering === "report" ? reportMarker(depth, bullet2, press) : standardMarker(depth, 0)
+  const marker = numbering === "report" ? reportMarker(depth, bullet2, asteriskThird) : standardMarker(depth, 0)
   return { left: Math.round(depth * bodyHeight), indent: -markerWidth(marker, bodyHeight) }
 }
 
@@ -400,7 +454,7 @@ export class GongmunNumberer {
   constructor(
     private numbering: GongmunNumbering,
     private bullet2: "ㅇ" | "○" = "○",
-    private press = false,
+    private asteriskThird = false,
   ) {}
 
   /** depth 항목 하나에 대한 마커. suppress=true면 빈 문자열(부호 없음) */
@@ -412,7 +466,7 @@ export class GongmunNumberer {
     if (suppress) return ""
     if (this.numbering === "gaejosik") return gaejosikMarker(depth, this.bullet2)
     return this.numbering === "report"
-      ? reportMarker(depth, this.bullet2, this.press)
+      ? reportMarker(depth, this.bullet2, this.asteriskThird)
       : standardMarker(depth, n)
   }
 

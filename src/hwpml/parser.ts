@@ -40,7 +40,7 @@ export function parseHwpmlDocument(buffer: ArrayBuffer, options?: ParseOptions):
     return { markdown: "", blocks: [], warnings }
   }
 
-  const root = doc.documentElement
+  const root = doc.documentElement as unknown as Element
 
   // ─── 메타데이터 추출 ──────────────────────────────────
   const metadata: DocumentMetadata = {}

@@ -192,6 +192,15 @@ describe("hwpx v3 — 표 캡션", () => {
     assert.equal(tableBlock?.table?.caption, "표 1. 강조 제목", "다중 run 텍스트는 순서대로 연결")
   })
 
+  it("p > run > ctrl 안에 감싼 캡션도 활성 표에 보존된다", async () => {
+    const caption = `<hp:p id="9"><hp:run><hp:ctrl><hp:caption side="BOTTOM"><hp:subList>` +
+      `${para("ctrl 래핑 캡션")}</hp:subList></hp:caption></hp:ctrl></hp:run></hp:p>`
+    const result = await parseHwpxDocument(await makeHwpx(sec(wrapTbl(caption, true))))
+
+    const tableBlock = result.blocks.find(b => b.type === "table")
+    assert.equal(tableBlock?.table?.caption, "ctrl 래핑 캡션")
+  })
+
   it("활성 표 컨텍스트 밖의 캡션은 무음 드롭 없이 문단으로 보존된다 (#46 방어)", async () => {
     // 캡션이 <tbl> 자식이 아닌 섹션 직계로 존재하는 비정상 파일 — 텍스트가 통째 사라지면 안 됨
     const body = `<hp:p id="0"><hp:run>${para("본문")}</hp:run></hp:p>` +
@@ -199,6 +208,30 @@ describe("hwpx v3 — 표 캡션", () => {
     const result = await parseHwpxDocument(await makeHwpx(sec(body)))
 
     assert.ok(result.markdown.includes("고아 캡션 텍스트"), `고아 캡션 보존: ${result.markdown}`)
+  })
+
+  it("셀 문단 안 개체 캡션은 바깥 표 caption으로 오귀속되지 않는다", async () => {
+    const objCaption = `<hp:p id="5" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl>` +
+      `<hp:caption side="BOTTOM"><hp:subList>${para("그림 1. 개체 캡션")}</hp:subList></hp:caption>` +
+      `</hp:ctrl></hp:run></hp:p>`
+    const rows = `<hp:tr>${tc(para("셀 본문") + objCaption, 0, 0)}${tc(para("옆 셀"), 1, 0)}</hp:tr>`
+    const body = `<hp:p id="0"><hp:run><hp:tbl rowCnt="1" colCnt="2">${rows}</hp:tbl></hp:run></hp:p>`
+    const result = await parseHwpxDocument(await makeHwpx(sec(body)))
+
+    const tableBlock = result.blocks.find(b => b.type === "table")
+    assert.equal(tableBlock?.table?.caption, undefined, "개체 캡션이 표 caption으로 오귀속되면 안 됨")
+    assert.ok(result.markdown.includes("그림 1. 개체 캡션"), `개체 캡션 텍스트는 셀에 보존: ${result.markdown}`)
+  })
+
+  it("ctrl 래핑 캡션은 UNSUPPORTED_ELEMENT 거짓 경고를 남기지 않는다", async () => {
+    const caption = `<hp:p id="9"><hp:run><hp:ctrl><hp:caption side="BOTTOM"><hp:subList>` +
+      `${para("ctrl 래핑 캡션")}</hp:subList></hp:caption></hp:ctrl></hp:run></hp:p>`
+    const result = await parseHwpxDocument(await makeHwpx(sec(wrapTbl(caption, true))))
+
+    const falseWarnings = (result.warnings ?? []).filter(w => w.code === "UNSUPPORTED_ELEMENT" && w.message.includes("caption"))
+    assert.deepEqual(falseWarnings, [], "캡션은 보존되므로 텍스트 손실 경고 금지")
+    const tableBlock = result.blocks.find(b => b.type === "table")
+    assert.equal(tableBlock?.table?.caption, "ctrl 래핑 캡션")
   })
 })
 

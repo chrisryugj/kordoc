@@ -7,7 +7,7 @@
 
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { execFileSync, spawn } from "node:child_process"
+import { execFileSync, spawn, spawnSync } from "node:child_process"
 import { mkdtempSync, writeFileSync, existsSync, statSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -65,5 +65,26 @@ test("plugin-5: watch 서브커맨드 뒤 -d 가 루트에 흡수되지 않고 o
     child.kill("SIGKILL")
     rmSync(inDir, { recursive: true, force: true })
     rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test("generate: 잘못된 --pt/--line-spacing은 실패하고 HWPX를 쓰지 않는다", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kordoc-generate-invalid-"))
+  try {
+    const input = join(dir, "input.md")
+    writeFileSync(input, "# 제목\n\n본문")
+    for (const [flag, value] of [["--pt", "abc"], ["--line-spacing", "nope"]]) {
+      const out = join(dir, `${flag.slice(2)}.hwpx`)
+      const result = spawnSync(
+        process.execPath,
+        ["--import", "tsx", CLI, "generate", input, "-o", out, flag, value, "--silent"],
+        { encoding: "utf-8", timeout: 30000 },
+      )
+      assert.notEqual(result.status, 0, `${flag} ${value}는 exit 0이면 안 됨`)
+      assert.ok(!existsSync(out), `${flag} ${value} 입력으로 결과 파일을 쓰면 안 됨`)
+      assert.match(result.stderr, new RegExp(flag.slice(2).replace("-", ""), "i"))
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
