@@ -7,6 +7,7 @@ import type JSZip from "jszip"
 import { KordocError, isPathTraversal } from "../utils.js"
 import type { ExtractedImage, IRBlock, IRCell, ParseWarning } from "../types.js"
 import { MAX_DECOMPRESS_SIZE, MAX_XML_DEPTH } from "./parser-shared.js"
+import { detectImageMime } from "../hwp5/images.js"
 
 // ─── 이미지 추출 ───────────────────────────────────
 
@@ -54,15 +55,24 @@ function collectImageBlocks(blocks: IRBlock[], out: { block: IRBlock; ownerCell?
   }
 }
 
-/** blocks에서 type="image" 블록의 참조를 ZIP에서 실제 바이너리로 변환 */
+/**
+ * blocks에서 type="image" 블록의 참조를 ZIP에서 실제 바이너리로 변환.
+ *
+ * sweepUnreferenced가 참이면(전체 문서 파싱 시) 본문 워크가 못 닿는 BinData
+ * 이미지 — 머리말/꼬리말 안 그림, borderFill imgBrush(셀 배경 이미지) 등 — 를
+ * 문서 끝에 image 블록으로 보강한다. 위치는 부정확하지만 바이트 무음 유실을 막는다.
+ */
 export async function extractImagesFromZip(
   zip: JSZip,
   blocks: IRBlock[],
   decompressed: { total: number },
   warnings?: ParseWarning[],
+  sweepUnreferenced?: boolean,
 ): Promise<ExtractedImage[]> {
   const images: ExtractedImage[] = []
   let imageIndex = 0
+  // 본문 참조로 소비된 ZIP 경로 — 스윕 단계에서 중복 추출 방지
+  const usedPaths = new Set<string>()
 
   const imageBlocks: { block: IRBlock; ownerCell?: IRCell }[] = []
   collectImageBlocks(blocks, imageBlocks)
@@ -115,6 +125,7 @@ export async function extractImagesFromZip(
 
           img = { filename, data, mimeType }
           images.push(img)
+          usedPaths.add(path)
           break
         } catch (err) {
           if (err instanceof KordocError) throw err
@@ -139,6 +150,36 @@ export async function extractImagesFromZip(
     block.imageData = { data: img.data, mimeType: img.mimeType, filename: ref }
     // 셀 내부 이미지 — 셀 평탄화 텍스트의 참조도 파일명으로 갱신
     if (ownerCell) ownerCell.text = ownerCell.text.replace(`![image](${ref})`, `![image](${img.filename})`)
+  }
+
+  // 본문 미참조 BinData 이미지 스윕 — 꼬리말/머리말 안 pic, imgBrush 배경 등.
+  // 확장자 없거나 낯선 확장자는 매직바이트로 판별하고, 이미지가 아니면(OLE 등) 건너뛴다.
+  if (sweepUnreferenced) {
+    const binEntries = zip.file(/(?:^|\/)BinData\//i)
+    for (const file of binEntries) {
+      if (file.dir || usedPaths.has(file.name) || isPathTraversal(file.name)) continue
+      try {
+        const data = await file.async("uint8array")
+        decompressed.total += data.length
+        if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
+
+        const ext = file.name.includes(".") ? (file.name.split(".").pop() || "") : ""
+        let mimeType = imageExtToMime(ext)
+        if (mimeType === "application/octet-stream") {
+          const sniffed = detectImageMime(data)
+          if (!sniffed) continue // 이미지 아님 (OLE 개체 등)
+          mimeType = sniffed
+        }
+        imageIndex++
+        const filename = `image_${String(imageIndex).padStart(3, "0")}.${mimeToExt(mimeType)}`
+        const img: ExtractedImage = { filename, data, mimeType }
+        images.push(img)
+        blocks.push({ type: "image", text: filename, imageData: { data, mimeType, filename: file.name } })
+      } catch (err) {
+        if (err instanceof KordocError) throw err
+        warnings?.push({ message: `이미지 추출 실패: ${file.name}`, code: "SKIPPED_IMAGE" })
+      }
+    }
   }
 
   return images

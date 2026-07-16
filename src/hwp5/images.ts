@@ -88,10 +88,10 @@ function resolveImageBlocks(
   binDataMap: Map<number, { data: Buffer; name: string }>,
   blocks: IRBlock[],
   warnings: ParseWarning[],
+  sweepUnreferenced?: boolean,
 ): ExtractedImage[] {
   const imageBlocks: IRBlock[] = []
   collectImageBlocks(blocks, imageBlocks)
-  if (imageBlocks.length === 0) return []
 
   const images: ExtractedImage[] = []
   const renamed = new Map<number, string>()
@@ -138,6 +138,22 @@ function resolveImageBlocks(
     block.imageData = { data: img.data, mimeType: img.mime, filename: binDataMap.get(storageId)!.name }
   }
 
+  // 본문 미참조 BinData 이미지 스윕 — pic 컨트롤이 닿지 않는 이미지(셀 배경 등)를
+  // 문서 끝에 image 블록으로 보강한다. 이미지가 아닌 스트림(OLE 등)은 건너뛴다.
+  if (sweepUnreferenced) {
+    for (const [storageId, bin] of [...binDataMap.entries()].sort((a, b) => a[0] - b[0])) {
+      if (resolved.has(storageId)) continue
+      const mime = detectImageMime(bin.data)
+      if (!mime) continue
+      imageIndex++
+      const ext = mime.includes("jpeg") ? "jpg" : mime.includes("png") ? "png" : mime.includes("gif") ? "gif" : mime.includes("bmp") ? "bmp" : "bin"
+      const filename = `image_${String(imageIndex).padStart(3, "0")}.${ext}`
+      const data = new Uint8Array(bin.data)
+      images.push({ filename, data, mimeType: mime })
+      blocks.push({ type: "image", text: filename, imageData: { data, mimeType: mime, filename: bin.name } })
+    }
+  }
+
   resolveCellImageSentinels(blocks, renamed)
   return images
 }
@@ -147,6 +163,7 @@ export function extractHwp5Images(
   fileIndex: BinCfbEntry[] | undefined,
   blocks: IRBlock[],
   warnings: ParseWarning[],
+  sweepUnreferenced?: boolean,
 ): ExtractedImage[] {
   // BinData 스토리지의 모든 파일을 FileIndex 순회로 수집 — 엔트리명은 "BIN%04X.ext" 16진
   const binDataMap = new Map<number, { data: Buffer; name: string }>()
@@ -166,7 +183,7 @@ export function extractHwp5Images(
     resolveCellImageSentinels(blocks, new Map())
     return []
   }
-  return resolveImageBlocks(binDataMap, blocks, warnings)
+  return resolveImageBlocks(binDataMap, blocks, warnings, sweepUnreferenced)
 }
 
 /** Lenient CFB: BinData 이미지 추출 */
@@ -174,6 +191,7 @@ export function extractHwp5ImagesLenient(
   lcfb: LenientCfbContainer,
   blocks: IRBlock[],
   warnings: ParseWarning[],
+  sweepUnreferenced?: boolean,
 ): ExtractedImage[] {
   // BinData 엔트리 수집 — 엔트리명 "BIN%04X.ext" 16진
   const binDataMap = new Map<number, { data: Buffer; name: string }>()
@@ -190,5 +208,5 @@ export function extractHwp5ImagesLenient(
     resolveCellImageSentinels(blocks, new Map())
     return []
   }
-  return resolveImageBlocks(binDataMap, blocks, warnings)
+  return resolveImageBlocks(binDataMap, blocks, warnings, sweepUnreferenced)
 }

@@ -134,7 +134,8 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   return out
 }
 
-function encodePng(width: number, height: number, rgba: Uint8Array): Uint8Array {
+/** 8bit RGBA 픽셀 버퍼 → PNG (PDF 이미지 XObject 추출에서도 사용) */
+export function encodePng(width: number, height: number, rgba: Uint8Array): Uint8Array {
   // IHDR: width, height, bit depth 8, color type 6(RGBA), compression 0, filter 0, interlace 0
   const ihdr = new Uint8Array(13)
   const iv = new DataView(ihdr.buffer)

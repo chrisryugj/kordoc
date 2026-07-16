@@ -628,9 +628,20 @@ async function buildImageMap(
   const images: ExtractedImage[] = []
   let imgIdx = 0
 
+  // a:blip(r:embed) + Fallback 밖의 v:imagedata(r:id — w:object OLE 미리보기 등).
+  // mc:Fallback 안 imagedata는 Choice(drawing) blip과 같은 내용의 사본이라 제외한다.
+  const imageRefs: string[] = []
   for (const blip of findElements(doc.documentElement, "blip")) {
     const embedId = getAttr(blip, "embed")
-    if (!embedId || imageMap.has(embedId)) continue
+    if (embedId) imageRefs.push(embedId)
+  }
+  for (const imagedata of collectNonFallbackImagedata(doc.documentElement)) {
+    const embedId = getAttr(imagedata, "id")
+    if (embedId) imageRefs.push(embedId)
+  }
+
+  for (const embedId of imageRefs) {
+    if (imageMap.has(embedId)) continue
     const target = rels.get(embedId)
     if (!target) continue
 
@@ -663,7 +674,7 @@ async function buildImageMap(
 }
 
 /**
- * 문단 내 이미지(a:blip)를 문서 순서대로 image 블록으로 방출.
+ * 문단 내 이미지(a:blip, Fallback 밖 v:imagedata)를 문서 순서대로 image 블록으로 방출.
  * txbxContent(텍스트박스)는 별도 문단으로 처리되므로 하강하지 않고,
  * mc:Fallback(pict 사본)은 blip 중복을 유발하므로 건너뛴다.
  */
@@ -671,8 +682,22 @@ function collectParagraphBlips(node: Element, out: Element[] = [], depth = 0): E
   if (depth > 40) return out
   for (const el of effectiveChildElements(node)) {
     if (matchesLocal(el, "txbxContent") || matchesLocal(el, "Fallback")) continue
-    if (matchesLocal(el, "blip")) out.push(el)
+    if (matchesLocal(el, "blip") || matchesLocal(el, "imagedata")) out.push(el)
     else collectParagraphBlips(el, out, depth + 1)
+  }
+  return out
+}
+
+/** 문서 전체에서 mc:Fallback 서브트리 밖의 v:imagedata 수집 (w:object OLE 미리보기 등) */
+function collectNonFallbackImagedata(node: Element, out: Element[] = [], depth = 0): Element[] {
+  if (depth > 60) return out
+  const children = node.childNodes
+  for (let i = 0; i < children.length; i++) {
+    if (children[i].nodeType !== 1) continue
+    const el = children[i] as Element
+    if (matchesLocal(el, "Fallback")) continue
+    if (matchesLocal(el, "imagedata")) out.push(el)
+    else collectNonFallbackImagedata(el, out, depth + 1)
   }
   return out
 }
@@ -684,7 +709,8 @@ function emitParagraphImages(
   out: IRBlock[],
 ): void {
   for (const blip of collectParagraphBlips(p)) {
-    const embedId = getAttr(blip, "embed")
+    // a:blip은 r:embed, v:imagedata는 r:id
+    const embedId = getAttr(blip, "embed") ?? getAttr(blip, "id")
     if (!embedId) continue
     const filename = imageMap.get(embedId)
     if (!filename) continue

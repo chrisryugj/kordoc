@@ -179,10 +179,10 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
   // 머리말은 문서 맨 앞, 꼬리말은 맨 뒤에 1회 출력
   const blocks: IRBlock[] = [...doc.headerBlocks, ...bodyBlocks, ...doc.footerBlocks]
 
-  // BinData에서 이미지 추출
+  // BinData에서 이미지 추출 — 전체 파싱 시 본문 미참조 BinData 이미지도 스윕
   const images = cfb
-    ? extractHwp5Images(cfb.FileIndex, blocks, warnings)
-    : extractHwp5ImagesLenient(lenientCfb!, blocks, warnings)
+    ? extractHwp5Images(cfb.FileIndex, blocks, warnings, !pageFilter)
+    : extractHwp5ImagesLenient(lenientCfb!, blocks, warnings, !pageFilter)
 
   // 레이아웃 테이블 해체 (heading 감지 전에 수행하여 해체된 텍스트도 heading 감지 대상)
   let flatBlocks = flattenLayoutTables(blocks)

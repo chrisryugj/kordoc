@@ -286,7 +286,7 @@ export interface PageQuality {
   replacementCharRatio: number
   puaRatio: number
   needsOcr: boolean
-  ocrReason?: "low_text" | "high_pua" | "high_control" | "high_replacement"
+  ocrReason?: "low_text" | "high_pua" | "high_control" | "high_replacement" | "garbled_hangul"
 }
 
 /** 문서 단위 품질 요약 (PDF 전용). */

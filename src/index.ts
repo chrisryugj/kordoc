@@ -161,8 +161,8 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
     }
   }
   try {
-    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary } = await parsePdfDocument(buffer, options)
-    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary }
+    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images } = await parsePdfDocument(buffer, options)
+    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images }
   } catch (err) {
     const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
     return { success: false, fileType: "pdf", error: err instanceof Error ? err.message : "PDF 파싱 실패", code: classifyError(err), isImageBased }

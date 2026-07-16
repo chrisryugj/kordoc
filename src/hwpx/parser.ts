@@ -111,8 +111,8 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   // 머리말/꼬리말 — 문서당 1회, 본문 앞/뒤에 자연스럽게 배치
   applyPageText(blocks, shared)
 
-  // 이미지 블록에서 ZIP 바이너리 추출
-  const images = await extractImagesFromZip(zip, blocks, decompressed, warnings)
+  // 이미지 블록에서 ZIP 바이너리 추출 — 전체 파싱 시 본문 미참조 BinData(꼬리말 그림·imgBrush 배경)도 스윕
+  const images = await extractImagesFromZip(zip, blocks, decompressed, warnings, !pageFilter)
 
   // 스타일 기반 헤딩 감지
   detectHwpxHeadings(blocks, styleMap)

@@ -10,11 +10,12 @@
  * text-clean(마크다운 정리), formula-ocr(수식).
  */
 
-import type { InternalParseResult, IRBlock, DocumentMetadata, ParseOptions, ParseWarning, OutlineItem } from "../types.js"
+import type { InternalParseResult, IRBlock, DocumentMetadata, ExtractedImage, ParseOptions, ParseWarning, OutlineItem } from "../types.js"
 import { KordocError } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { blocksToMarkdown } from "../table/builder.js"
 import { extractImageRegions } from "./line-detector.js"
+import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { type PdfTextItem, normalizeItems, filterHiddenText } from "./text-line.js"
 import { extractPageBlocksWithLines, mergeCrossPageTables } from "./page-blocks.js"
@@ -107,6 +108,12 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const pagesWithLargeImage = new Set<number>()
     // 텍스트 없는 큰 이미지 영역: page → count
     const skippedImagePages = new Map<number, number>()
+    // 이미지 XObject 바이트 추출 상태 (문서 단위 중복 억제·상한).
+    // image 블록은 페이지 경계 표 병합(mergeCrossPageTables)의 인접성을 깨지 않도록
+    // 페이지별로 모아뒀다가 병합 후 주입한다.
+    const imageState = createPdfImageState()
+    const extractedImages: ExtractedImage[] = []
+    const pageImageBlocks = new Map<number, IRBlock[]>()
 
     let parsedPages = 0
     for (let i = 1; i <= effectivePageCount; i++) {
@@ -155,6 +162,13 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height)
         for (const b of pageBlocks) blocks.push(b)
 
+        // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
+        try {
+          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings)
+          if (imgBlocks.length > 0) pageImageBlocks.set(i, imgBlocks)
+          extractedImages.push(...pageImages)
+        } catch { /* 이미지 추출 실패가 텍스트 파싱을 막지 않도록 */ }
+
         // 이미지 기반 PDF 감지 + 크기 제한용 문자 수 집계 + 페이지 품질 신호
         let pageText = ""
         for (const b of pageBlocks) {
@@ -183,7 +197,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           const ocrBlocks = await ocrPages(doc, options.ocr, pageFilter, effectivePageCount)
           if (ocrBlocks.length > 0) {
             const ocrMarkdown = ocrBlocks.map(b => b.text || "").filter(Boolean).join("\n\n")
-            return { markdown: ocrMarkdown, blocks: ocrBlocks, metadata, warnings, isImageBased: true, pageQuality, qualitySummary: summarizeDocumentQuality(pageQuality) }
+            return { markdown: ocrMarkdown, blocks: ocrBlocks, metadata, warnings, isImageBased: true, pageQuality, qualitySummary: summarizeDocumentQuality(pageQuality), images: extractedImages.length > 0 ? extractedImages : undefined }
           }
         } catch {
           // OCR 실패 시 일반 경로로 폴백 (아래에서 NEEDS_OCR 경고)
@@ -235,6 +249,9 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // (ODL TableBorderProcessor.checkNeighborTables 포팅)
     mergeCrossPageTables(blocks)
 
+    // 추출 이미지 참조를 페이지 말미 위치에 주입 (표 병합 뒤 — 인접성 보존)
+    injectPageImageBlocks(blocks, pageImageBlocks)
+
     // 수식 OCR (선택) — 기본 텍스트 추출과 별개로 페이지 이미지 렌더 후 수식만 검출/인식.
     // 실패 시 경고만 기록하고 일반 텍스트 추출 결과는 그대로 반환한다.
     if (options?.formulaOcr && formulaBuffer) {
@@ -283,6 +300,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
       isImageBased: isImageBased || undefined,
       pageQuality,
       qualitySummary: summarizeDocumentQuality(pageQuality),
+      images: extractedImages.length > 0 ? extractedImages : undefined,
     }
   } finally {
     await doc.destroy().catch(() => {})

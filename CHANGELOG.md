@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.8] - 2026-07-16
+
+4포맷 이미지 무음 유실 근본수정 — 코퍼스 447파일 전수 실측으로 PDF(추출 자체
+미구현)·HWPX(11장)·HWP5(1장)·DOCX(1장) 유실을 각각 해소. HWPX/HWP5 스윕 후
+코퍼스 이미지 복구율 686/686·92/92 (100%).
+
+### Added
+
+- **PDF 이미지 바이트 추출** (`src/pdf/image-extract.ts` 신규): 종전에는 이미지
+  *영역 좌표*만 계산하고(정보손실 경고용) 바이너리는 전량 유실. 이미지 XObject를
+  pdfjs 디코딩 픽셀(RGB/RGBA/1bpp)로 받아 순수 JS PNG 인코딩(`transcode.ts`
+  `encodePng` 재사용) 후 페이지 말미 위치에 `![image](...)` 참조로 방출한다.
+  코퍼스 52 PDF 중 이미지 보유 45파일에서 731장 추출 확인.
+  - **비동기 디코딩 대기**: pdfjs는 `getOperatorList()` resolve 후에도 워커에서
+    이미지 디코딩이 진행되므로(`buildPaintImageXObject`는 await 안 함) 동기
+    `objs.has()`로는 다수를 놓친다(실측 551→731장). 콜백형 `objs.get()`으로
+    완료를 기다린다(5초 안전망, 디코딩 실패는 pdfjs가 null resolve).
+  - 페이지 경계 표 병합(`mergeCrossPageTables`) 인접성을 깨지 않도록 image
+    블록은 병합 후 주입(`injectPageImageBlocks`). 장식 조각(<8px)·페이지 간
+    동일 내용(로고·워터마크) dedupe, 문서당 200장/128MB 상한.
+
+### Fixed
+
+- **HWPX 본문 미도달 BinData 이미지 유실** (`src/hwpx/images.ts`): 꼬리말/머리말
+  안 `hp:pic`(보도자료 로고·사진 스트립), header.xml `borderFill`의 `hc:imgBrush`
+  (결재문서 셀 배경 이미지) 등 본문 워크가 닿지 않는 BinData가 전량 유실되던 것.
+  전체 파싱 시 미참조 BinData 이미지를 문서 끝 image 블록으로 스윕 보강한다
+  (확장자/매직바이트로 이미지만, OLE 등 비이미지 제외, `pages` 부분 파싱 시 제외).
+- **HWP5 미참조 BinData 이미지 유실** (`src/hwp5/images.ts`): pic 컨트롤이
+  참조하지 않는 BinData 이미지(image 블록 0개인 문서 포함)를 같은 방식으로 스윕.
+- **DOCX w:object v:imagedata 유실** (`src/docx/parser.ts`): OLE 개체 미리보기
+  등 `w:object` 안 `<v:imagedata r:id>` 이미지가 blip 전용 수집에서 빠지던 것.
+  mc:Fallback 밖 imagedata를 이미지 맵·본문 인라인 방출에 포함한다 (Fallback 안
+  사본은 Choice blip과 중복이므로 종전대로 제외).
+- **PDF images 결과 누락** (`src/index.ts`): `parsePdf`가 내부 결과의 `images`를
+  구조분해에서 빠뜨려 API 결과에 이미지가 실리지 않던 것.
+- **`PageQuality.ocrReason` 타입 정합** (`src/types.ts`): v4.0.7이 추가한
+  `garbled_hangul`이 공개 타입 union에 빠져 `tsc --noEmit`이 실패하던 것.
+
 ## [4.0.7] - 2026-07-15
 
 DOCX 하이퍼링크·이미지 무음 유실 근본수정 + PDF 오매핑 mojibake 감지. 외부
