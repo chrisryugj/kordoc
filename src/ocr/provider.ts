@@ -37,15 +37,16 @@ export async function ocrPages(
 
   for (let i = 1; i <= effectivePageCount; i++) {
     if (pageFilter && !pageFilter.has(i)) continue
-    const page = await doc.getPage(i)
     try {
+      // getPage도 try 안 — 한 페이지 로드 실패가 전체 OCR을 폐기하지 않도록 페이지별 격리
+      const page = await doc.getPage(i)
       const imageData = await renderPageToPng(page)
       const text = await provider(imageData, i, "image/png")
       if (text.trim()) {
         blocks.push({ type: "paragraph", text: text.trim(), pageNumber: i })
       }
     } catch {
-      blocks.push({ type: "paragraph" as const, text: `[OCR 실패: 페이지 ${i}]` })
+      blocks.push({ type: "paragraph" as const, text: `[OCR 실패: 페이지 ${i}]`, pageNumber: i })
     }
   }
 

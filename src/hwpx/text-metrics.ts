@@ -172,7 +172,8 @@ export function simulateWrap(
     return w
   }
 
-  const units = text.match(mode === "keep" ? / +|[^ ]+/g : / +|[^ ]/g) ?? []
+  // u 플래그 필수 — 없으면 astral 문자(𝐀·이모지 등)가 서로게이트 반쪽 2개로 쪼개져 폭이 2배로 계산된다
+  const units = text.match(mode === "keep" ? / +|[^ ]+/gu : / +|[^ ]/gu) ?? []
 
   const starts = [0]
   let lineW = 0

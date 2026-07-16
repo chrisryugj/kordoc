@@ -141,15 +141,17 @@ export async function extractImagesFromZip(
       // image 블록을 paragraph로 전환 (참조만 남김 — 사용자 그림설명이 있으면 함께)
       block.type = "paragraph"
       block.text = `[이미지: ${ref}]`
-      if (ownerCell) ownerCell.text = ownerCell.text.replace(`![image](${ref})`, `[이미지: ${ref}]`)
+      // 교체값은 함수로 — 문자열이면 ref 안의 $&, $' 등이 특수 패턴으로 확장된다
+      if (ownerCell) ownerCell.text = ownerCell.text.replace(`![image](${ref})`, () => `[이미지: ${ref}]`)
       continue
     }
 
     // 블록 텍스트를 참조 파일명으로 교체
-    block.text = img.filename
+    const filename = img.filename
+    block.text = filename
     block.imageData = { data: img.data, mimeType: img.mimeType, filename: ref }
-    // 셀 내부 이미지 — 셀 평탄화 텍스트의 참조도 파일명으로 갱신
-    if (ownerCell) ownerCell.text = ownerCell.text.replace(`![image](${ref})`, `![image](${img.filename})`)
+    // 셀 내부 이미지 — 셀 평탄화 텍스트의 참조도 파일명으로 갱신 (교체값 함수 — $ 확장 방지)
+    if (ownerCell) ownerCell.text = ownerCell.text.replace(`![image](${ref})`, () => `![image](${filename})`)
   }
 
   // 본문 미참조 BinData 이미지 스윕 — 꼬리말/머리말 안 pic, imgBrush 배경 등.

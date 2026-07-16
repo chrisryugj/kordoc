@@ -290,6 +290,9 @@ export function detectKoreanListBlocks(blocks: IRBlock[]): void {
   // familyStack: 현재 리스트 run에서 등장한 family 순서 (얕은 → 깊은)
   let familyStack: string[] = []
   let lastTopLevelList: IRBlock | null = null
+  // 직전에 리스트로 변환된 블록 인덱스 — 중첩(children 끌어올림)은 직전 블록이
+  // 같은 리스트 run일 때만 허용 (사이에 낀 본문을 건너뛰면 블록 순서가 재배열됨)
+  let prevListIdx = -2
   const toRemove = new Set<number>()
 
   for (let i = 0; i < blocks.length; i++) {
@@ -330,16 +333,18 @@ export function detectKoreanListBlocks(blocks: IRBlock[]): void {
     if (depth === 0) {
       blocks[i] = listBlock
       lastTopLevelList = listBlock
-    } else if (lastTopLevelList) {
+    } else if (lastTopLevelList && i === prevListIdx + 1) {
       // 하위 항목 → 직전 상위 항목의 children으로 (마크다운 들여쓰기)
+      // 연속성 조건(i === prevListIdx + 1): 사이에 본문이 끼면 끌어올리지 않는다
       if (!lastTopLevelList.children) lastTopLevelList.children = []
       lastTopLevelList.children.push(listBlock)
       toRemove.add(i)
     } else {
-      // 상위 항목 없이 시작된 하위 family — 평면 리스트로
+      // 상위 항목 없이 시작됐거나 본문으로 연속성이 끊긴 하위 family — 평면 리스트로
       blocks[i] = listBlock
       lastTopLevelList = listBlock
     }
+    prevListIdx = i
   }
 
   // 제거는 뒤에서부터
@@ -540,8 +545,10 @@ export function removeHeaderFooterBlocks(
     const blockBottom = ph - b.bbox.y
     const entry: ZoneEntry = { blockIdx: bi, page: b.pageNumber, text: b.text.trim() }
 
-    if (blockBottom <= ph * ZONE_RATIO) bottomEntries.push(entry)
-    else if (blockTop >= ph * (1 - ZONE_RATIO)) topEntries.push(entry)
+    // blockTop/blockBottom은 페이지 상단 기준 거리 — 하단 경계가 상단 12% 안이면
+    // 머리글 영역(top), 상단 경계가 하단 12% 안이면 바닥글 영역(bottom)
+    if (blockBottom <= ph * ZONE_RATIO) topEntries.push(entry)
+    else if (blockTop >= ph * (1 - ZONE_RATIO)) bottomEntries.push(entry)
   }
 
   const removeSet = new Set<number>()

@@ -119,6 +119,8 @@ interface Ctx {
   warnings: string[]
   warned: Set<string>
   stats: { texts: number; images: number; tables: number }
+  /** 셀/표 측정 메모 — 중첩표 지수 재계산 캡 (렌더 1회 공유) */
+  extentMemo: ExtentMemo
 }
 
 const pt = (u: number): string => String(Math.round(u) / 100)
@@ -342,7 +344,7 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
         }
         if (text.trim().length > 0) {
           const attrs: string[] = [`x="${pt(cx)}"`, `y="${pt(y)}"`, `font-size="${pt(st.height)}"`]
-          if (st.fontFamily) attrs.push(`font-family="${st.fontFamily}"`)
+          if (st.fontFamily) attrs.push(`font-family="${escapeXml(st.fontFamily)}"`)
           if ([...text].length > 1 && sw > 50) {
             attrs.push(`textLength="${pt(sw)}"`, `lengthAdjust="${plan.scale < 1 ? "spacingAndGlyphs" : "spacing"}"`)
           }
@@ -553,9 +555,18 @@ interface CellModel {
   marginL: number; marginR: number; marginT: number; marginB: number
 }
 
+/**
+ * 셀/표 측정 메모 — drawTable(rowH·yoff)과 cellContentExtent↔measureTableHeight 상호재귀가
+ * 중첩 단계마다 하위 표를 재측정해 지수적으로 불어나는 것을 캡. 렌더 1회 안에서만 공유
+ * (reflow의 DOM 변형은 드로잉 시작 전에 끝나므로 캐시가 stale해지지 않는다).
+ */
+export interface ExtentMemo { cell: WeakMap<Element, number>; table: WeakMap<Element, number> }
+
 /** 셀 콘텐츠 세로 범위 — 줄(vp+th) + 인라인 개체(중첩표·treatAsChar) + PARA 앵커 개체(anchor+h) 최대값 */
-function cellContentExtent(cell: CellModel): number {
+function cellContentExtent(cell: CellModel, memo?: ExtentMemo): number {
   if (!cell.sub) return 0
+  const hit = memo?.cell.get(cell.el)
+  if (hit !== undefined) return hit
   let ext = 0
   for (const p of elements(cell.sub)) {
     if (ln(p) !== "p") continue
@@ -566,7 +577,7 @@ function cellContentExtent(cell: CellModel): number {
       if (o.inline) {
         // 인라인 개체(중첩 표·treatAsChar 이미지)는 줄 위치에서 개체 높이만큼 아래로 뻗는다.
         // 이를 빼먹으면 중첩 표를 담은 셀 높이가 과소측정돼 표지 중첩표가 겹친다(리뷰: 셀 성장 누락).
-        const h = o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el)) : o.height
+        const h = o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el, memo)) : o.height
         ext = Math.max(ext, baseV + h)
         continue
       }
@@ -578,6 +589,7 @@ function cellContentExtent(cell: CellModel): number {
       ext = Math.max(ext, anchor + num(om, "top") + num(pos, "vertOffset") + o.height)
     }
   }
+  memo?.cell.set(cell.el, ext)
   return ext
 }
 
@@ -604,7 +616,8 @@ function collectCells(tbl: Element): CellModel[] {
       if (!addr || !csz) continue
       cells.push({
         el: tc,
-        ca: num(addr, "colAddr"), ra: num(addr, "rowAddr"),
+        // 음수 주소(uint32 역변환·손상 입력) 방어 — colX/rowY 인덱스 이탈로 NaN 좌표 방지
+        ca: Math.max(0, num(addr, "colAddr")), ra: Math.max(0, num(addr, "rowAddr")),
         cs: Math.max(1, num(span, "colSpan", 1)), rs: Math.max(1, num(span, "rowSpan", 1)),
         w: num(csz, "width"), h: num(csz, "height"),
         bfId: tc.getAttribute("borderFillIDRef"),
@@ -622,16 +635,19 @@ function collectCells(tbl: Element): CellModel[] {
  * 선언 hp:sz는 셀 콘텐츠로 자란 높이를 모르므로, reflow가 표 뒤 문단을 실제 그려질
  * 표 바닥 아래로 배치할 때 이 값을 쓴다. 셀 lineseg가 있어야 성장분이 측정된다.
  */
-export function measureTableHeight(tbl: Element): number {
+export function measureTableHeight(tbl: Element, memo?: ExtentMemo): number {
+  const hit = memo?.table.get(tbl)
+  if (hit !== undefined) return hit
   const cells = collectCells(tbl)
   if (cells.length === 0 || cells.length > 4096) return 0
   const nRows = Math.max(...cells.map(c => c.ra + c.rs))
   const rowH = solveRowHeights(
-    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c) : undefined })),
+    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c, memo) : undefined })),
     nRows,
   )
   let sum = 0
   for (const h of rowH) sum += h
+  memo?.table.set(tbl, sum)
   return sum
 }
 
@@ -647,7 +663,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
   const colCons: SpanConstraint[] = cells.map(c => ({ a: c.ca, b: c.ca + c.cs, size: c.w }))
   const colX = solveBoundaries(colCons, nCols, num(tblSz, "width") || undefined)
   const rowH = solveRowHeights(
-    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c) : undefined })),
+    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c, ctx.extentMemo) : undefined })),
     nRows,
   )
   const rowY: number[] = [0]
@@ -668,7 +684,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
     const { c } = g
     if (!c.sub) continue
     const innerH = g.h - c.marginT - c.marginB
-    const extent = cellContentExtent(c)
+    const extent = cellContentExtent(c, ctx.extentMemo)
     const va = c.sub.getAttribute("vertAlign") ?? "TOP"
     let yoff = 0
     if (va === "CENTER") yoff = Math.max(0, (innerH - extent) / 2)
@@ -749,8 +765,9 @@ function sniffMime(name: string, bytes: Uint8Array): string {
   const lower = name.toLowerCase()
   if (lower.endsWith(".png") || (bytes.length > 4 && bytes[0] === 0x89 && bytes[1] === 0x50)) return "image/png"
   if (lower.endsWith(".bmp") || (bytes.length > 2 && bytes[0] === 0x42 && bytes[1] === 0x4d)) return "image/bmp"
-  if (lower.endsWith(".gif")) return "image/gif"
+  if (lower.endsWith(".gif") || (bytes.length > 3 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46)) return "image/gif"
   if (lower.endsWith(".svg")) return "image/svg+xml"
+  if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg"
   return "image/jpeg"
 }
 
@@ -938,6 +955,7 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
     styles, images, defs: [],
     highlights: (options?.highlights ?? []).map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
     warnings, warned: new Set(), stats: { texts: 0, images: 0, tables: 0 },
+    extentMemo: { cell: new WeakMap(), table: new WeakMap() },
   }
 
   // 구역별 렌더

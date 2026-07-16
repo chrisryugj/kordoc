@@ -122,10 +122,10 @@ function extractFromTable(table: IRTable): FormField[] {
   // 전략 2: 헤더+데이터 행 (첫 행이 전부 라벨이면)
   if (fields.length === 0 && table.rows >= 2 && table.cols >= 2) {
     const headerRow = table.cells[0]
-    const allLabels = headerRow.every(cell => {
-      const t = cell.text.trim()
+    const allLabels = headerRow?.every(cell => {
+      const t = cell?.text.trim() ?? ""
       return t.length > 0 && t.length <= 20
-    })
+    }) ?? false
     if (allLabels) {
       for (let r = 1; r < table.rows; r++) {
         for (let c = 0; c < table.cols; c++) {

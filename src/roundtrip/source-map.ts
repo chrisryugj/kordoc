@@ -100,9 +100,11 @@ export interface SpliceEdit {
 
 // ─── XML 텍스트 유틸 ─────────────────────────────────
 
-/** XML 텍스트 노드 이스케이프 (속성 아님 — & < > 만) */
+/** XML 텍스트 노드 이스케이프 (속성 아님 — & < > 만).
+ *  XML 1.0 불법 C0 제어문자는 제거한다(\t \n \r 보존) — 문서를 못 여는 손상 방지 */
 export function escapeXmlText(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
 /** XML 엔티티 디코딩 */

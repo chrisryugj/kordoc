@@ -2,7 +2,7 @@
 
 import type { IRBlock, IRCell, IRTable, FormField } from "../types.js"
 import { isLabelCell } from "./recognize.js"
-import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isKeywordLabel, fillInCellPatterns, scanInlineSegments, padInsertion, ValueCursor, type FillInput } from "./match.js"
+import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isKeywordLabel, fillInCellPatterns, scanInlineSegments, matchInlineSegment, clampSegmentEnd, padInsertion, ValueCursor, type FillInput } from "./match.js"
 
 /** 필드 채우기 결과 */
 export interface FillResult {
@@ -12,6 +12,8 @@ export interface FillResult {
   filled: FormField[]
   /** 매칭 실패한 라벨 (입력에는 있지만 서식에서 못 찾은 것) */
   unmatched: string[]
+  /** 비치명 경고 (입력 라벨 정규화 충돌 등) — 없으면 생략 */
+  warnings?: string[]
 }
 
 /**
@@ -44,8 +46,9 @@ export function fillFormFields(
   const cloned = structuredClone(blocks)
   const filled: FormField[] = []
   const matchedLabels = new Set<string>()
+  const warnings: string[] = []
 
-  const normalizedValues = normalizeValues(values)
+  const normalizedValues = normalizeValues(values, warnings)
   const cursor = new ValueCursor(normalizedValues)
 
   // 표 수집 — 중첩표 포함 DFS (hwpx 경로 collectTables와 동일하게 depth 16)
@@ -83,7 +86,7 @@ export function fillFormFields(
   }
 
   const unmatched = resolveUnmatched(normalizedValues, matchedLabels, values)
-  return { blocks: cloned, filled, unmatched }
+  return { blocks: cloned, filled, unmatched, ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
 /** 중첩표 포함 표 수집 — 문서 순서 DFS (hwpx 경로 collectTables와 동일 규칙) */
@@ -125,6 +128,29 @@ function coveredPositions(table: IRTable): Set<string> {
   return covered
 }
 
+/**
+ * 헤더+데이터 표 판별 — 첫 행이 전부 라벨이고 둘째 행 첫 앵커 셀이 라벨이 아니면
+ * 첫 행은 열 헤더(전략 2 대상)다. 둘째 행도 라벨로 시작하면 라벨-값 서식
+ * (플레이스홀더 "미기재"류 포함)으로 보고 전략 1이 기존대로 채운다.
+ */
+function isHeaderDataTable(table: IRTable, covered: Set<string>): boolean {
+  if (table.rows < 2) return false
+  const headerRow = table.cells[0]
+  if (!headerRow?.length) return false
+  const allLabels = headerRow.every(cell => {
+    const t = cell?.text.trim() ?? ""
+    return t.length > 0 && t.length <= 20 && isLabelCell(t)
+  })
+  if (!allLabels) return false
+  for (let c = 0; c < table.cols; c++) {
+    if (covered.has(`1,${c}`)) continue
+    const cell = table.cells[1]?.[c]
+    if (!cell) break
+    return !isLabelCell(cell.text)
+  }
+  return true
+}
+
 /** 테이블 셀에서 라벨-값 패턴을 찾아 값 교체 */
 function fillTable(
   table: IRTable,
@@ -139,10 +165,12 @@ function fillTable(
 
   // 전략 1: 인접 라벨-값 셀 패턴 — 값 셀은 라벨 span 뒤 같은 행의 다음 앵커
   // (hwpx 경로의 '다음 tc'와 동일. 병합 플레이스홀더에 쓰면 렌더에서 사라짐)
-  for (let r = 0; r < table.rows; r++) {
+  // 헤더+데이터 표의 헤더 행은 제외 — 헤더 이웃 셀("품명"→"규격")을 값으로 덮는 오염 방지
+  const skipHeaderRow = isHeaderDataTable(table, covered)
+  for (let r = skipHeaderRow ? 1 : 0; r < table.rows; r++) {
     for (let c = 0; c < table.cols; c++) {
       if (covered.has(`${r},${c}`)) continue
-      const labelCell = table.cells[r][c]
+      const labelCell = table.cells[r]?.[c]
       if (!labelCell) continue
 
       if (!isLabelCell(labelCell.text)) continue
@@ -185,10 +213,10 @@ function fillTable(
   // 전략 1에서 이미 채운 필드는 스킵 (matchedLabels 검사)
   if (table.rows >= 2 && table.cols >= 2) {
     const headerRow = table.cells[0]
-    const allLabels = headerRow.every(cell => {
-      const t = cell.text.trim()
+    const allLabels = headerRow?.every(cell => {
+      const t = cell?.text.trim() ?? ""
       return t.length > 0 && t.length <= 20 && isLabelCell(t)
-    })
+    }) ?? false
     if (!allLabels) return
 
     for (let r = 1; r < table.rows; r++) {
@@ -207,7 +235,12 @@ function fillTable(
 
         const newValue = values.consume(matchKey)
         if (newValue === undefined) continue // 배열 값 소진
-        valueCell.text = newValue
+        // 전략 0(인셀 패턴)이 편집한 셀은 폐기하지 않고 앞에 삽입 (전략 1과 동일 계약)
+        if (patternFilledCells?.has(valueCell)) {
+          valueCell.text = newValue + " " + valueCell.text
+        } else {
+          valueCell.text = newValue
+        }
         matchedLabels.add(matchKey)
         filled.push({
           label: headerCell.text.trim(),
@@ -232,24 +265,29 @@ function fillInlineFields(
   const segments = scanInlineSegments(text)
   if (segments.length === 0) return text
 
+  // 확장 라벨("신청인 성명") 정확 매칭 우선 — "성명" 붕괴 방지 (blockedLabels 포함 판정).
+  // 매칭을 선계산해 다음 세그먼트가 확장 매칭이면 이전 값 끝을 그 어절 앞으로 당긴다.
+  const matches = segments.map(seg => matchInlineSegment(seg, values, blockedLabels))
+
   let out = ""
   let pos = 0
-  for (const seg of segments) {
-    const nlabel = normalizeLabel(seg.label)
-    if (blockedLabels?.has(nlabel)) continue
-    const matchKey = findMatchingKey(nlabel, values)
-    if (matchKey === undefined) continue
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
+    const matched = matches[i]
+    if (matched === undefined) continue
+    const matchKey = matched.key
 
     const newValue = values.consume(matchKey)
     if (newValue === undefined) continue // 배열 값 소진
     matchedLabels.add(matchKey)
-    filled.push({ label: seg.label.trim(), value: newValue, row: -1, col: -1, key: matchKey })
+    filled.push({ label: matched.label.trim(), value: newValue, row: -1, col: -1, key: matchKey })
+    const ve = clampSegmentEnd(text, seg, segments[i + 1], matches[i + 1]?.viaExt ?? false)
     out += text.slice(pos, seg.valueStart)
     // 빈 자리 삽입은 콜론·다음 라벨과 붙지 않게 공백 부착
-    out += seg.valueStart === seg.valueEnd
+    out += seg.valueStart === ve
       ? padInsertion(text, seg.valueStart, newValue)
       : newValue
-    pos = seg.valueEnd
+    pos = ve
   }
   out += text.slice(pos)
   return out

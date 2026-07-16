@@ -78,16 +78,103 @@ function parseXml(text: string): Document {
 
 // ─── 공유 문자열 파싱 ──────────────────────────────────
 
+/** si/is 하위 t 텍스트 수집 — rPh(후리가나) 하위 t는 본문이 아니므로 제외 */
+function collectRichText(root: Element): string {
+  let out = ""
+  const walk = (node: Element) => {
+    const children = node.childNodes
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].nodeType !== 1) continue
+      const el = children[i] as Element
+      const local = el.localName || el.tagName?.replace(/^[^:]+:/, "") || ""
+      if (local === "rPh") continue
+      if (local === "t") out += el.textContent ?? ""
+      else walk(el)
+    }
+  }
+  walk(root)
+  return out
+}
+
 function parseSharedStrings(xml: string): string[] {
   const doc = parseXml(xml)
   const strings: string[] = []
   const siList = getElements(doc.documentElement, "si")
   for (const si of siList) {
     // <si><t>text</t></si> 또는 <si><r><t>text</t></r>...</si>
-    const tElements = getElements(si, "t")
-    strings.push(tElements.map(t => t.textContent ?? "").join(""))
+    strings.push(collectRichText(si))
   }
   return strings
+}
+
+// ─── 날짜 서식 판정 ────────────────────────────────────
+
+export type DateKind = "date" | "datetime"
+
+/** ECMA-376 내장 날짜 numFmtId (14~17: 날짜, 18~22·45~47: 시각 포함) */
+const BUILTIN_DATE_FMT: ReadonlyMap<number, DateKind> = new Map<number, DateKind>([
+  [14, "date"], [15, "date"], [16, "date"], [17, "date"],
+  [18, "datetime"], [19, "datetime"], [20, "datetime"], [21, "datetime"], [22, "datetime"],
+  [45, "datetime"], [46, "datetime"], [47, "datetime"],
+])
+
+/**
+ * 커스텀 formatCode의 날짜 패턴 감지.
+ * 따옴표 리터럴·[조건/색상]·\이스케이프를 제거한 뒤 y/m/d/h가 있으면 날짜,
+ * 그중 h/s가 있으면 시간 포함(datetime)으로 분류. 날짜 아니면 null.
+ */
+export function classifyDateFormat(code: string): DateKind | null {
+  const stripped = code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "").replace(/\\./g, "")
+  if (!/[ymdh]/i.test(stripped)) return null
+  return /[hs]/i.test(stripped) ? "datetime" : "date"
+}
+
+/** 내장/커스텀 numFmtId → 날짜 종류 (날짜 아니면 null) */
+export function dateKindOfFmt(fmtId: number, customFormats: Map<number, string>): DateKind | null {
+  const builtin = BUILTIN_DATE_FMT.get(fmtId)
+  if (builtin) return builtin
+  const code = customFormats.get(fmtId)
+  return code !== undefined ? classifyDateFormat(code) : null
+}
+
+/**
+ * Excel 날짜 시리얼 → ISO 문자열 (date1904 반영).
+ * 1900 체계는 존재하지 않는 1900-02-29(시리얼 60) 이전 구간 보정.
+ * 범위 밖(음수·year>9999)이면 null → 호출자가 원시값 유지.
+ */
+export function dateSerialToIso(serial: number, date1904: boolean, kind: DateKind): string | null {
+  if (!isFinite(serial) || serial < 0) return null
+  let days = serial
+  if (date1904) days += 1462
+  else if (days < 60) days += 1
+  // 기준일 1899-12-30 — epoch(1970-01-01)의 시리얼은 25569
+  const ms = Math.round((days - 25569) * 86400000)
+  const d = new Date(ms)
+  if (isNaN(d.getTime()) || d.getUTCFullYear() > 9999) return null
+  const iso = d.toISOString()
+  return kind === "datetime" ? iso.slice(0, 19) : iso.slice(0, 10)
+}
+
+/** styles.xml → cellXfs 인덱스별 날짜 서식 종류 (날짜 아닌 xf는 미포함) */
+function parseStyleDateXfs(xml: string): Map<number, DateKind> {
+  const doc = parseXml(xml)
+  const customFormats = new Map<number, string>()
+  for (const el of getElements(doc.documentElement, "numFmt")) {
+    const id = parseInt(el.getAttribute("numFmtId") ?? "", 10)
+    if (isNaN(id)) continue
+    customFormats.set(id, el.getAttribute("formatCode") ?? "")
+  }
+  const dateXfs = new Map<number, DateKind>()
+  const cellXfsEls = getElements(doc.documentElement, "cellXfs")
+  if (cellXfsEls.length === 0) return dateXfs
+  const xfs = getElements(cellXfsEls[0], "xf")
+  for (let i = 0; i < xfs.length; i++) {
+    const fmtId = parseInt(xfs[i].getAttribute("numFmtId") ?? "", 10)
+    if (isNaN(fmtId)) continue
+    const kind = dateKindOfFmt(fmtId, customFormats)
+    if (kind) dateXfs.set(i, kind)
+  }
+  return dateXfs
 }
 
 // ─── 시트 목록 파싱 ─────────────────────────────────────
@@ -98,7 +185,7 @@ interface SheetInfo {
   rId: string
 }
 
-function parseWorkbook(xml: string): SheetInfo[] {
+function parseWorkbook(xml: string): { sheets: SheetInfo[]; date1904: boolean } {
   const doc = parseXml(xml)
   const sheets: SheetInfo[] = []
   const sheetElements = getElements(doc.documentElement, "sheet")
@@ -109,7 +196,10 @@ function parseWorkbook(xml: string): SheetInfo[] {
       rId: el.getAttribute("r:id") ?? "",
     })
   }
-  return sheets
+  // workbookPr date1904 — 날짜 시리얼 기준 체계
+  const prEls = getElements(doc.documentElement, "workbookPr")
+  const d1904 = prEls.length > 0 ? prEls[0].getAttribute("date1904") : null
+  return { sheets, date1904: d1904 === "1" || d1904 === "true" }
 }
 
 /** workbook.xml.rels 파싱 → rId → target 매핑 */
@@ -137,6 +227,8 @@ interface MergeInfo {
 function parseWorksheet(
   xml: string,
   sharedStrings: string[],
+  dateXfs: Map<number, DateKind>,
+  date1904: boolean,
 ): { grid: string[][]; merges: MergeInfo[]; maxRow: number; maxCol: number } {
   const doc = parseXml(xml)
   const grid: string[][] = []
@@ -145,16 +237,21 @@ function parseWorksheet(
 
   // 데이터 행 파싱
   const rows = getElements(doc.documentElement, "row")
+  let prevRow = -1 // 직전 행 번호 — r 부재 행의 순차 유도용 (ECMA-376: r은 optional)
   for (const rowEl of rows) {
-    const rowNum = parseInt(rowEl.getAttribute("r") ?? "0", 10) - 1
+    const rAttr = rowEl.getAttribute("r")
+    const rowNum = rAttr !== null ? parseInt(rAttr, 10) - 1 : prevRow + 1
     if (rowNum < 0 || rowNum >= MAX_ROWS) continue
+    if (Number.isFinite(rowNum)) prevRow = rowNum
 
     const cells = getElements(rowEl, "c")
+    let prevCol = -1 // 직전 셀 열 — r 부재 셀의 순차 유도용
     for (const cellEl of cells) {
       const ref = cellEl.getAttribute("r")
-      if (!ref) continue
-      const pos = parseCellRef(ref)
-      if (!pos || pos.col >= MAX_COLS) continue
+      const pos = ref !== null ? parseCellRef(ref) : { col: prevCol + 1, row: rowNum }
+      // row도 col처럼 상한 검증 — "A5000000000" 하나로 그리드 폭주 방지
+      if (!pos || !Number.isFinite(pos.row) || pos.row < 0 || pos.row >= MAX_ROWS || pos.col >= MAX_COLS) continue
+      prevCol = pos.col
 
       // 값 추출
       const type = cellEl.getAttribute("t")
@@ -173,13 +270,21 @@ function parseWorksheet(
         } else {
           // 숫자값 부동소수점 아티팩트 정리 (9895607.8000000007 → 9895607.8)
           value = cleanNumericValue(raw)
+          // 날짜 서식 셀(s → cellXfs 날짜 판정)은 시리얼 → ISO 문자열
+          if (type === null || type === "n") {
+            const sAttr = cellEl.getAttribute("s")
+            const kind = sAttr !== null ? dateXfs.get(parseInt(sAttr, 10)) : undefined
+            if (kind) {
+              const iso = dateSerialToIso(parseFloat(raw), date1904, kind)
+              if (iso) value = iso
+            }
+          }
         }
       } else if (type === "inlineStr") {
         // <is><t>text</t></is>
         const isEl = getElements(cellEl, "is")
         if (isEl.length > 0) {
-          const tElements = getElements(isEl[0], "t")
-          value = tElements.map(t => t.textContent ?? "").join("")
+          value = collectRichText(isEl[0])
         }
       }
 
@@ -205,7 +310,15 @@ function parseWorksheet(
     const ref = el.getAttribute("ref")
     if (!ref) continue
     const m = parseMergeRef(ref)
-    if (m) merges.push(m)
+    // 범위 클램프 — 거대 mergeCell 하나로 병합 맵 폭주 방지 (XLS 쪽과 동일)
+    if (m) {
+      merges.push({
+        startCol: Math.min(m.startCol, MAX_COLS - 1),
+        startRow: Math.min(m.startRow, MAX_ROWS - 1),
+        endCol: Math.min(m.endCol, MAX_COLS - 1),
+        endRow: Math.min(m.endRow, MAX_ROWS - 1),
+      })
+    }
   }
 
   return { grid, merges, maxRow, maxCol }
@@ -285,7 +398,8 @@ function sheetToBlocks(
   }
 
   if (cellRows.length > 0) {
-    const table = buildTable(cellRows)
+    // 스프레드시트는 스타일만 있는 잔여 셀이 흔해 후행 빈 열을 텍스트 기준으로 전부 트림 (#47)
+    const table = buildTable(cellRows, { trimTrailingEmptyCols: true })
     if (table.rows > 0) {
       blocks.push({ type: "table", table, pageNumber: sheetIndex + 1 })
     }
@@ -320,9 +434,18 @@ export async function parseXlsxDocument(
   }
 
   // 2. 시트 목록 로드
-  const sheets = parseWorkbook(await workbookFile.async("text"))
+  const { sheets, date1904 } = parseWorkbook(await workbookFile.async("text"))
   if (sheets.length === 0) {
     throw new KordocError("XLSX 파일에 시트가 없습니다")
+  }
+
+  // 2.5 스타일 로드 — 날짜 서식 xf 판정 (실패 시 날짜 변환만 생략)
+  let dateXfs = new Map<number, DateKind>()
+  const stylesFile = zip.file("xl/styles.xml")
+  if (stylesFile) {
+    try {
+      dateXfs = parseStyleDateXfs(await stylesFile.async("text"))
+    } catch { /* 날짜 판정 실패는 무시 — 시리얼 숫자 그대로 출력 */ }
   }
 
   // 3. 관계 매핑 (rId → 파일 경로)
@@ -374,7 +497,7 @@ export async function parseXlsxDocument(
 
     try {
       const sheetXml = await sheetFile.async("text")
-      const { grid, merges, maxRow, maxCol } = parseWorksheet(sheetXml, sharedStrings)
+      const { grid, merges, maxRow, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904)
       const sheetBlocks = sheetToBlocks(sheet.name, grid, merges, maxRow, maxCol, i)
       blocks.push(...sheetBlocks)
     } catch (err) {

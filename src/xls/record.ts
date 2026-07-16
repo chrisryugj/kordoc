@@ -21,6 +21,8 @@ export const OP_EXTSST = 0x00ff
 export const OP_CODEPAGE = 0x0042
 export const OP_DATE1904 = 0x0022
 export const OP_FILEPASS = 0x002f
+export const OP_FORMAT = 0x041e
+export const OP_XF = 0x00e0
 
 // Worksheet 서브스트림 — 셀
 export const OP_NUMBER = 0x0203
@@ -35,6 +37,8 @@ export const OP_BLANK = 0x0201
 export const OP_MULBLANK = 0x00be
 export const OP_MERGECELLS = 0x00e5
 export const OP_ROW = 0x0208
+export const OP_SHRFMLA = 0x04bc
+export const OP_ARRAY = 0x0221
 
 // BOF dt 필드 값
 export const DT_GLOBALS = 0x0005

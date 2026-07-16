@@ -148,8 +148,10 @@ async function printComplete(): Promise<void> {
   for (const line of box) { console.log(line); await sleep(40) }
   console.log()
   console.log(`  ${c.dim}클라이언트를 재시작하면 'kordoc' MCP 서버가 활성화됩니다.${c.reset}`)
-  console.log(`  ${c.dim}8개 도구: parse_document / parse_metadata / parse_pages / parse_table${c.reset}`)
-  console.log(`  ${c.dim}         detect_format / compare_documents / parse_form / fill_form${c.reset}`)
+  console.log(`  ${c.dim}15개 도구: parse_document / parse_metadata / parse_pages / parse_table${c.reset}`)
+  console.log(`  ${c.dim}          detect_format / compare_documents / parse_form / fill_form${c.reset}`)
+  console.log(`  ${c.dim}          place_seal / patch_document / extract_profile / generate_document${c.reset}`)
+  console.log(`  ${c.dim}          render_document / redact_document / parse_chunks${c.reset}`)
   console.log()
 }
 

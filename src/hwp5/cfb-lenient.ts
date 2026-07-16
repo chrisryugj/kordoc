@@ -56,8 +56,13 @@ export function parseLenientCfb(data: Buffer): LenientCfbContainer {
   if (miniSectorSizeShift > 16) throw new Error("유효하지 않은 미니 섹터 크기 시프트: " + miniSectorSizeShift)
   const miniSectorSize = 1 << miniSectorSizeShift  // 보통 64
 
-  const fatSectorCount = data.readUInt32LE(44)
-  if (fatSectorCount > 10000) throw new Error("FAT 섹터 수가 너무 많습니다: " + fatSectorCount)
+  const headerFatSectorCount = data.readUInt32LE(44)
+  if (headerFatSectorCount > 10000) throw new Error("FAT 섹터 수가 너무 많습니다: " + headerFatSectorCount)
+  // 실 파일 크기 sanity — FAT 엔트리는 파일 내 실존 섹터 수를 넘을 수 없다
+  // (헤더 카운트 뻥튀기로 인한 fatTable 할당 증폭 방지: ~130KB 파일이 655MB 할당하던 버그)
+  const maxRealSectors = Math.ceil(Math.max(0, data.length - 512) / sectorSize)
+  const maxFatSectors = Math.max(1, Math.ceil(maxRealSectors / (sectorSize / 4)))
+  const fatSectorCount = Math.min(headerFatSectorCount, maxFatSectors)
   const firstDirSector = data.readUInt32LE(48)
   const miniStreamCutoff = data.readUInt32LE(56)  // 보통 4096
   const firstMiniFatSector = data.readUInt32LE(60)
@@ -96,6 +101,7 @@ export function parseLenientCfb(data: Buffer): LenientCfbContainer {
     visitedDifat.add(difatSector)
 
     const buf = readSectorData(difatSector)
+    if (buf.length < sectorSize) break  // 파일 범위 밖 DIFAT 섹터(빈 버퍼) — readUInt32LE RangeError 방지, lenient 중단
     const entriesPerSector = (sectorSize / 4) - 1  // 마지막 4바이트는 다음 DIFAT 포인터
     for (let i = 0; i < entriesPerSector && fatSectors.length < fatSectorCount; i++) {
       const sid = buf.readUInt32LE(i * 4)

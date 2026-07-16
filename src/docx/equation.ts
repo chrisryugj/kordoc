@@ -102,6 +102,11 @@ const NARY_MAP: Record<string, string> = {
   "⨀": "\\bigodot",
 }
 
+/** OOXML on/off 값 — "0"/"false"/"off"는 false, 그 외(속성 생략 포함)는 true */
+function onOffVal(v: string | null): boolean {
+  return v !== "0" && v !== "false" && v !== "off"
+}
+
 /** 괄호 문자 → LaTeX (좌/우) */
 function mapDelim(ch: string, isLeft: boolean): string {
   const l: Record<string, string> = {
@@ -118,12 +123,27 @@ function mapDelim(ch: string, isLeft: boolean): string {
   return map[ch] ?? ch
 }
 
+/** 첫 `{`가 마지막 `}`와 밸런스 짝인지 — `{x}^{2}` 같은 다중 그룹 오판 방지 */
+function isBalancedWrap(s: string): boolean {
+  let depth = 0
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    if (ch === "{" && s[i - 1] !== "\\") depth++
+    else if (ch === "}" && s[i - 1] !== "\\") {
+      depth--
+      if (depth === 0) return i === s.length - 1
+      if (depth < 0) return false
+    }
+  }
+  return false
+}
+
 /** 내용이 단일 문자거나 단순 원자면 `{}` 없이, 아니면 감싸서 반환 */
 function grp(body: string): string {
   const s = body.trim()
   if (s.length === 0) return "{}"
-  // 이미 `{...}` 로 감싸진 경우 그대로
-  if (s.startsWith("{") && s.endsWith("}")) return s
+  // 이미 `{...}` 로 통짜 감싸진 경우만 그대로 (첫 `{`와 마지막 `}`가 짝일 때)
+  if (s.startsWith("{") && s.endsWith("}") && isBalancedWrap(s)) return s
   return "{" + s + "}"
 }
 
@@ -229,8 +249,8 @@ function nodeToLatex(el: Element): string {
         }
         const sh = firstKid(naryPr, "subHide")
         const ph = firstKid(naryPr, "supHide")
-        if (sh) subHide = (sh.getAttribute("m:val") ?? sh.getAttribute("val")) !== "0"
-        if (ph) supHide = (ph.getAttribute("m:val") ?? ph.getAttribute("val")) !== "0"
+        if (sh) subHide = onOffVal(sh.getAttribute("m:val") ?? sh.getAttribute("val"))
+        if (ph) supHide = onOffVal(ph.getAttribute("m:val") ?? ph.getAttribute("val"))
         const ll = firstKid(naryPr, "limLoc")
         if (ll) limLoc = ll.getAttribute("m:val") ?? ll.getAttribute("val") ?? ""
       }

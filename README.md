@@ -84,6 +84,15 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.1.0 변경사항
+
+- **👁️ `render_document` MCP 도구 신설**: 생성·패치·양식 채움 결과 HWPX를 조판 그대로 **PNG 이미지로 응답에 직접 반환** — AI가 자기가 만든 문서를 눈으로 확인하고 다시 고치는 루프가 MCP 안에서 닫힙니다 (한컴 저장본은 조판 캐시, 생성본은 reflow 조판, 검색어 형광펜 지원).
+- **🕶️ `kordoc redact` + `redact_document` MCP 신설**: 개인정보(주민번호·전화·이메일·카드·계좌, 여권·운전면허 opt-in)를 탐지해 **원본 서식 그대로 마스킹**(`850315-●●●●●●●`)한 HWPX/HWP를 출력합니다. 생년월일·Luhn 검증으로 오탐 축소, 리포트에 원본 개인정보 미포함. 자동 검출 보조 도구 — 최종 공개 전 사람 확인 필수.
+- **📦 `--format chunks` + `parse_chunks` MCP 신설**: RAG용 구조 청크 JSON — 헤딩·개조식 위계(□○- / 1.·가.·1))를 breadcrumb 경로로 보존하고 표는 독립 청크로 분리합니다.
+- **📋 표 오른쪽 끝 빈 열 보존 (#47)**: 서식 문서의 빈 입력란 열이 파싱에서 통째로 삭제되던 것을, 실제 셀 앵커가 없는 유령 열(span 인플레이션)만 트림하도록 수정 — fill 경로와 일치, 생성→파싱 왕복 열 수 동일 (스프레드시트는 기존 정리 유지). 제보 [@jumaniac](https://github.com/jumaniac).
+- **📅 XLSX/XLS 날짜 변환**: 날짜 셀이 시리얼 숫자("45306")로 나오던 것을 ISO("2024-01-15")로 변환합니다 (내장·커스텀 numFmt 감지, date1904 반영).
+- **🛡️ 프로덕션 전면 리뷰 ~80건 수정**: 악성 파일 대응(수식 정규식 ReDoS·HTML 표 span 폭주·HWP3 압축 폭탄·XLSX 그리드 폭주), 표-전용 PDF의 OCR 오판, HWP5 제어문자(하이픈/고정폭 공백) 매핑, DOCX 변경추적 삽입 유실, 양식 채움 라벨 오탐 4종, HWP5 패치 삭제 텍스트 잔존 제로화, MCP 쓰기 경로 검증, PDF 괘선 표 성능(62,500 교차점 3.1s→0.2s) 등 — 자세한 내역은 [CHANGELOG](CHANGELOG.md).
+
 ## v4.0.8 변경사항
 
 - **🖼️ PDF 이미지 추출 신설**: 종전에는 이미지 영역 좌표만 계산하고 바이너리는 전량 유실되던 것을, 이미지 XObject를 디코딩 픽셀로 받아 순수 JS PNG 인코딩으로 추출합니다 (pdfjs 비동기 디코딩 대기 포함 — 코퍼스 52 PDF 중 45파일 731장 실측). 페이지 말미 위치에 `![image](...)` 참조, 로고·워터마크 페이지 간 중복 억제, 페이지 경계 표 병합 비간섭.
@@ -495,10 +504,11 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ```bash
 npm install kordoc
-
-# PDF 파싱이 필요하면 (선택)
-npm install pdfjs-dist
 ```
+
+PDF 파싱(pdfjs-dist)·수식 OCR 등 선택 의존성은 **기본 설치**됩니다 (optionalDependencies).
+설치 용량을 줄이려면 `npm install kordoc --omit=optional` 로 스킵할 수 있습니다 —
+이 경우 PDF 파싱·수식 OCR·인쇄 렌더 등 일부 기능이 제한됩니다.
 
 ## 빠른 시작
 
@@ -509,7 +519,7 @@ import { parse } from "kordoc"
 import { readFileSync } from "fs"
 
 const buffer = readFileSync("사업계획서.hwpx")
-const result = await parse(buffer.buffer)
+const result = await parse(buffer)
 
 if (result.success) {
   console.log(result.markdown)       // 마크다운 텍스트
@@ -552,15 +562,15 @@ import { readFileSync, writeFileSync } from "fs"
 const template = readFileSync("신청서.hwpx")
 
 // HWPX 원본 서식 보존 모드 — 글꼴, 크기, 정렬 100% 유지
-const result = await fillForm(template.buffer, {
+const result = await fillForm(template, {
   성명: "홍길동",
   주민등록번호: "900101-1234567",
   주소: "서울특별시 광진구 능동로 120",
-}, { format: "hwpx-preserve" })
+}, "hwpx-preserve")
 
-writeFileSync("신청서_작성완료.hwpx", Buffer.from(result.buffer!))
-// result.filled → [{ label: "성명", value: "홍길동" }, ...]
-// result.unmatched → 매칭 실패한 키 목록
+writeFileSync("신청서_작성완료.hwpx", Buffer.from(result.output as ArrayBuffer))
+// result.fill.filled → [{ label: "성명", value: "홍길동" }, ...]
+// result.fill.unmatched → 매칭 실패한 키 목록
 ```
 
 ### HWPX 생성 (역변환)
@@ -714,7 +724,7 @@ npx -y kordoc setup
 }
 ```
 
-**11개 도구:**
+**15개 도구:**
 
 | 도구 | 설명 |
 |------|------|
@@ -727,8 +737,12 @@ npx -y kordoc setup
 | `parse_form` | 양식 필드를 JSON으로 추출 |
 | `fill_form` | 양식 템플릿에 값 채우기 (HWPX 원본 서식 보존, 서식/유일성 가드) |
 | `patch_document` | 편집된 마크다운을 원본 HWPX/HWP에 서식 보존 반영 (v3.3) |
+| `extract_profile` | 참조 HWPX에서 표 서식 프로필(JSON) 추출 — generate_document의 profile_path로 재현 |
 | `generate_document` | 마크다운(표·수식·차트 포함) → HWPX 생성, 공문서 프리셋 (v3.5) |
 | `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
+| `render_document` | HWPX를 조판 그대로 PNG 이미지/SVG로 렌더 — 생성·수정 결과를 AI가 눈으로 검증 (v4.1) |
+| `redact_document` | 개인정보(주민번호·전화·이메일·카드·계좌) 탐지 + 서식 보존 마스킹, 리포트 반환 (v4.1) |
+| `parse_chunks` | RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 (v4.1) |
 
 ## API
 
@@ -754,7 +768,7 @@ npx -y kordoc setup
 | `compare(bufferA, bufferB, options?)` | IR 레벨 문서 비교 |
 | `extractFormFields(blocks)` | IRBlock[]에서 양식 필드 인식 |
 | `extractFormSchema(blocks)` | 양식 필드 인식 + 타입/필수/빈값 추론 (v3.1) |
-| `fillForm(buffer, values, options?)` | 양식 템플릿에 값 채우기 (markdown/hwpx/hwpx-preserve) |
+| `fillForm(input, values, outputFormat?)` | 양식 템플릿에 값 채우기 — outputFormat: `"markdown"`(기본)/`"hwpx"`/`"hwpx-preserve"`, 반환 `{ output, format, fill }` |
 | `fillFormFields(blocks, values)` | IRBlock[] 기반 필드 값 교체 |
 | `fillHwpx(buffer, values)` | HWPX XML 직접 조작 (원본 서식 보존) |
 | `patchHwpx(original, editedMarkdown, options?)` | 편집 마크다운 → 원본 HWPX 서식 보존 in-place 패치 (v3.0) |

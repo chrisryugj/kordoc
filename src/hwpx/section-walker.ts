@@ -52,8 +52,9 @@ export function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?:
   return blocks
 }
 
-/** pic/shape 요소에서 이미지 참조 경로 추출 (binaryItemIDRef 또는 href) */
-function extractImageRef(el: Element): string | null {
+/** pic/shape 요소에서 이미지 참조 경로 추출 (binaryItemIDRef 또는 href) — MAX_XML_DEPTH 가드 */
+function extractImageRef(el: Element, depth: number = 0): string | null {
+  if (depth > MAX_XML_DEPTH) return null
   // HWPX: <hp:imgRect> 또는 <hp:img> 내 binaryItemIDRef 속성
   // 또는 하위에서 img 관련 속성 탐색
   const children = el.childNodes
@@ -67,7 +68,7 @@ function extractImageRef(el: Element): string | null {
       if (ref) return ref
     }
     // lineShape > imgRect 같은 중첩 구조
-    const nested = extractImageRef(child)
+    const nested = extractImageRef(child, depth + 1)
     if (nested) return nested
   }
   // 직접 속성 체크
@@ -201,8 +202,10 @@ function walkSection(
             ;(cell.blocks ??= []).push(cellBlock)
           } else if (!tableCtx) {
             // 구분선 문단('─' 연속 — kordoc 생성기의 hr 렌더) → separator 복원.
-            // 재파싱 시 장식 대시가 본문 텍스트로 남던 왕복 비대칭 수정 (v4.0.5 P2)
-            if (/^─{10,}$/.test(text)) {
+            // 재파싱 시 장식 대시가 본문 텍스트로 남던 왕복 비대칭 수정 (v4.0.5 P2).
+            // kordocLayout 채널 있는 자사 생성 문서 한정 — 외래 문서의 실제 '─' 장식
+            // 문단이 separator로 둔갑하는 것 방지
+            if (ctx.shared.kordocLayout && /^─{10,}$/.test(text)) {
               blocks.push({ type: "separator", pageNumber: ctx.sectionNum })
               // p 내부 구조 자식 처리 경로 유지를 위해 아래 공통 처리로 진행
               tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, ctx, depth + 1)
@@ -554,8 +557,10 @@ function extractDrawTextBlocks(drawTextNode: Node, blocks: IRBlock[], ctx: WalkC
       } else {
         const info = extractParagraphInfo(child, ctx.styleMap, ctx)
         let text = info.text.trim()
+        // 텍스트 유무와 무관하게 호출 — 본문 경로와 동일. 빈 번호 문단도 카운터를
+        // 소비하므로 텍스트 있을 때만 호출하면 이후 항목 번호가 낮게 재현된다
+        const ph = resolveParaHeading(child, ctx)
         if (text) {
-          const ph = resolveParaHeading(child, ctx)
           if (ph?.prefix) text = ph.prefix + " " + text
           const block: IRBlock = { type: "paragraph", text, style: info.style ?? undefined, pageNumber: ctx.sectionNum }
           if (info.href) block.href = info.href
@@ -685,7 +690,8 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
     }
   }
 
-  const walk = (node: Node) => {
+  const walk = (node: Node, depth: number = 0) => {
+    if (depth > MAX_XML_DEPTH) return
     const children = node.childNodes
     if (!children) return
     for (let i = 0; i < children.length; i++) {
@@ -706,7 +712,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
 
       const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
       switch (tag) {
-        case "t": walk(child); break  // 자식 순회 (tab 등 하위 요소 처리)
+        case "t": walk(child, depth + 1); break  // 자식 순회 (tab 등 하위 요소 처리)
         case "tab": {
           const leader = child.getAttribute("leader")
           if (leader && leader !== "0") {
@@ -733,7 +739,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
             if (safe) href = safe
           }
           // 하이퍼링크 내 텍스트 추출
-          walk(child)
+          walk(child, depth + 1)
           break
         }
 
@@ -791,11 +797,11 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         case "r": {
           const runCharPr = child.getAttribute("charPrIDRef")
           if (runCharPr && !charPrId) charPrId = runCharPr
-          walk(child)
+          walk(child, depth + 1)
           break
         }
 
-        default: walk(child); break
+        default: walk(child, depth + 1); break
       }
     }
   }
@@ -812,9 +818,10 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   // 멀티라인으로 삽입된 OLE 대체 텍스트도 제거
   cleanText = cleanText.replace(/그림입니다\.?\s*원본\s*그림의\s*(이름|크기)[^\n]*(\n[^\n]*원본\s*그림의\s*(이름|크기)[^\n]*)*/g, "").trim()
   // HWP 도형/개체 대체텍스트 제거 ("사각형입니다.", "개체 입니다." 등)
+  // 행 전체 일치(^…$m)로 한정 — 무앵커면 "붙임 문서는 표 입니다." 같은 본문 중간을 오삭제한다.
   // NOTE: "수식" 은 제거 목록에서 빠져있음 — <hp:equation> 파싱으로 LaTeX 본문이 이미
   // `$...$` 형태로 삽입되기 때문에 여기서 지울 alt-text 는 존재하지 않는다.
-  cleanText = cleanText.replace(/(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|선|직선|곡선|화살표|오각형|육각형|팔각형|별|십자|구름|마름모|도넛|평행사변형|사다리꼴|개체|그리기\s?개체|묶음\s?개체|글상자|표|그림|OLE\s?개체)\s?입니다\.?/g, "").trim()
+  cleanText = cleanText.replace(/^(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|선|직선|곡선|화살표|오각형|육각형|팔각형|별|십자|구름|마름모|도넛|평행사변형|사다리꼴|개체|그리기\s?개체|묶음\s?개체|글상자|표|그림|OLE\s?개체)\s?입니다\.?$/gm, "").trim()
 
   // 스타일 정보 조회
   let style: InlineStyle | undefined

@@ -9,13 +9,20 @@ export const MAX_COLS = 200
 /** 테이블 행 수 상한 — 메모리 폭주 방지 */
 export const MAX_ROWS = 10000
 
-export function buildTable(rows: CellContext[][]): IRTable {
+export interface BuildTableOptions {
+  /** 후행 빈 열을 텍스트 기준으로 전부 트림 (스프레드시트용 — 스타일만 있는 잔여 셀 정리).
+   *  기본 false: 실제 셀 앵커가 있는 빈 열(서식 문서의 입력란)은 보존하고,
+   *  앵커 없는 유령 열(span 인플레이션)만 트림한다 (#47). */
+  trimTrailingEmptyCols?: boolean
+}
+
+export function buildTable(rows: CellContext[][], options?: BuildTableOptions): IRTable {
   if (rows.length > MAX_ROWS) rows = rows.slice(0, MAX_ROWS)
   const numRows = rows.length
 
   // colAddr/rowAddr가 있으면 직접 배치 (HWPX cellAddr, HWP5 colAddr/rowAddr)
   const hasAddr = rows.some(row => row.some(c => c.colAddr !== undefined && c.rowAddr !== undefined))
-  if (hasAddr) return buildTableDirect(rows, numRows)
+  if (hasAddr) return buildTableDirect(rows, numRows, options)
 
   // Pass 1: maxCols 계산 — 2D 배열 사용 (동적 확장)
   let maxCols = 0
@@ -44,6 +51,7 @@ export function buildTable(rows: CellContext[][]): IRTable {
     Array.from({ length: maxCols }, () => ({ text: "", colSpan: 1, rowSpan: 1 }))
   )
   const occupied: boolean[][] = Array.from({ length: numRows }, () => Array(maxCols).fill(false))
+  const anchorCols = new Set<number>()
 
   for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
     let colIdx = 0
@@ -54,6 +62,7 @@ export function buildTable(rows: CellContext[][]): IRTable {
       if (colIdx >= maxCols) break
 
       const cell = rows[rowIdx][cellIdx]
+      anchorCols.add(colIdx)
       grid[rowIdx][colIdx] = {
         text: cell.text.trim(),
         colSpan: cell.colSpan,
@@ -71,11 +80,11 @@ export function buildTable(rows: CellContext[][]): IRTable {
     }
   }
 
-  return trimAndReturn(grid, numRows, maxCols)
+  return trimAndReturn(grid, numRows, maxCols, anchorCols, options)
 }
 
 /** colAddr/rowAddr 절대 좌표 기반 직접 배치 */
-function buildTableDirect(rows: CellContext[][], numRows: number): IRTable {
+function buildTableDirect(rows: CellContext[][], numRows: number, options?: BuildTableOptions): IRTable {
   // 전체 셀에서 maxCols 계산 (MAX_COLS 상한 적용)
   let maxCols = 0
   for (const row of rows) {
@@ -91,12 +100,14 @@ function buildTableDirect(rows: CellContext[][], numRows: number): IRTable {
     Array.from({ length: maxCols }, () => ({ text: "", colSpan: 1, rowSpan: 1 }))
   )
 
+  const anchorCols = new Set<number>()
   for (const row of rows) {
     for (const cell of row) {
       const r = cell.rowAddr ?? 0
       const c = cell.colAddr ?? 0
       if (r >= numRows || c >= maxCols || r < 0 || c < 0) continue
 
+      anchorCols.add(c)
       grid[r][c] = { text: cell.text.trim(), colSpan: cell.colSpan, rowSpan: cell.rowSpan }
 
       // 병합 영역 마킹
@@ -111,15 +122,17 @@ function buildTableDirect(rows: CellContext[][], numRows: number): IRTable {
     }
   }
 
-  return trimAndReturn(grid, numRows, maxCols)
+  return trimAndReturn(grid, numRows, maxCols, anchorCols, options)
 }
 
-/** 빈 후행 열 제거 후 IRTable 반환 */
-function trimAndReturn(grid: IRCell[][], numRows: number, maxCols: number): IRTable {
+/** 빈 후행 열 제거 후 IRTable 반환 — 기본은 앵커 없는 유령 열만, 스프레드시트는 텍스트 기준 전부 (#47) */
+function trimAndReturn(grid: IRCell[][], numRows: number, maxCols: number, anchorCols: Set<number>, options?: BuildTableOptions): IRTable {
   let effectiveCols = maxCols
   while (effectiveCols > 0) {
     const colEmpty = grid.every(row => !row[effectiveCols - 1]?.text?.trim())
     if (!colEmpty) break
+    // 실제 셀 앵커가 있는 빈 열은 서식 문서의 입력란 — 트림하지 않는다 (#47)
+    if (!options?.trimTrailingEmptyCols && anchorCols.has(effectiveCols - 1)) break
     effectiveCols--
   }
   if (effectiveCols < maxCols && effectiveCols > 0) {
@@ -143,21 +156,25 @@ export function convertTableToText(rows: CellContext[][]): string {
 
 /** 마크다운 GFM 특수문자 이스케이프 — remark-gfm 오해석 방지 */
 function escapeGfm(text: string): string {
-  // ~ → \~ (GFM strikethrough 방지), * → \* (emphasis/HR·마스킹 별표 "******" 방지).
+  // ~ → \~ (GFM strikethrough 방지), * → \* (emphasis/HR·마스킹 별표 "******" 방지),
+  // _ → \_ (emphasis 방지), ` → \` (inline code 방지).
   // 단 $...$ / $$...$$ 수식 스팬은 KaTeX 문법이라 이스케이프하면 파스 에러가 나므로 보호한다
   // (스팬을 임시 필러로 가린 뒤 escape → 복원). NUL 필러는 마크다운 본문에 등장하지 않는다.
+  // ![image](image_001.png) 이미지 참조 스팬과 링크 URL부 `](스킴...)`(sanitizeHref 허용
+  // 스킴 한정 — 우연한 "[라벨](식별자)" 평문은 제외)도 동일 보호 — _ 이스케이프 시 문법 파괴.
   const NUL = String.fromCharCode(0) // 마크다운 본문에 없는 안전한 필러 (소스에 raw NUL 미기입)
   const spans: string[] = []
-  const masked = text.replace(/\$\$[^$]*\$\$|\$[^$\n]*\$/g, (m) => {
+  const masked = text.replace(/!\[[^\]]*\]\([^)\n]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\n]*\)|\$\$[^$]*\$\$|\$[^$\n]*\$/gi, (m) => {
     spans.push(m)
     return NUL + (spans.length - 1) + NUL
   })
-  const escaped = masked.replace(/([~*])/g, "\\$1")
+  const escaped = masked.replace(/([~*_`])/g, "\\$1")
   return escaped.replace(new RegExp(NUL + "(\\d+)" + NUL, "g"), (_, n) => spans[Number(n)])
 }
 
-/** HWP 자동생성 도형/개체 대체텍스트 정규식 — 한컴오피스가 삽입하는 모든 알려진 패턴 */
-const HWP_SHAPE_ALT_TEXT_RE = /(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?/g
+/** HWP 자동생성 도형/개체 대체텍스트 정규식 — 한컴오피스가 삽입하는 모든 알려진 패턴.
+ *  행 전체 일치(^…$m)로 한정 — 무앵커면 "붙임 문서는 표 입니다." 같은 본문 중간을 오삭제한다 */
+const HWP_SHAPE_ALT_TEXT_RE = /^(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?$/gm
 
 /** HWP PUA 특수문자 및 도형 대체텍스트 제거 — 모든 포맷 공통 */
 function sanitizeText(text: string): string {
@@ -492,7 +509,9 @@ function cellInnerHtml(cell: IRCell): string {
 }
 
 function containsInlineMath(text: string): boolean {
-  return /(^|[^\\])\$(?=\S)(?:\\.|[^$\n])+?\S\$/.test(text)
+  // 교대 중복 금지: [^$\n\\]가 백슬래시를 제외해 \\.와 겹치지 않는다 —
+  // 겹치면 "$"+백슬래시 연속 입력에서 지수 백트래킹(ReDoS)
+  return /(^|[^\\])\$(?=\S)(?:[^$\n\\]|\\.)+?\S\$/.test(text)
 }
 
 function tableContainsInlineMath(table: IRTable): boolean {

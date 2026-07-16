@@ -169,11 +169,6 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Uint
 
 // ─── 마크다운 이미지 인라이너 ────────────────────────
 
-/** 정규식 메타문자 이스케이프 */
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
 interface InlineImage {
   filename: string
   data: Uint8Array
@@ -197,7 +192,9 @@ export function inlineImagesIntoMarkdown(
   opts?: { compress?: boolean },
 ): string {
   const compress = opts?.compress !== false
-  let out = markdown
+  // 파일명 → data URI 사전 구축 후 단일 패스 치환 — 이미지 k개마다 전문 재스캔하던
+  // O(k²) 제거. 맵에 없는 파일명 참조는 원문 그대로 둔다 (기존 계약 동일).
+  const uris = new Map<string, string>()
   for (const img of images) {
     let bytes = img.data
     let mime = img.mimeType
@@ -208,14 +205,17 @@ export function inlineImagesIntoMarkdown(
         mime = "image/png"
       }
     }
-    const base64 = Buffer.from(bytes).toString("base64")
-    const dataUri = `data:${mime};base64,${base64}`
-    const name = escapeRegExp(img.filename)
-    // FILENAME 과 images/FILENAME 접두사를 모두 정확한 파일명 기준으로 치환
-    const mdRe = new RegExp(`!\\[image\\]\\((?:images/)?${name}\\)`, "g")
-    out = out.replace(mdRe, () => `![image](${dataUri})`)
-    const imgTagRe = new RegExp(`(<img\\b[^>]*\\bsrc=")(?:images/)?${name}(")`, "g")
-    out = out.replace(imgTagRe, (_m, pre: string, post: string) => `${pre}${dataUri}${post}`)
+    uris.set(img.filename, `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`)
   }
+  if (uris.size === 0) return markdown
+  // FILENAME 과 images/FILENAME 접두사를 모두 정확한 파일명 기준으로 치환
+  let out = markdown.replace(/!\[image\]\((?:images\/)?([^()\s]+)\)/g, (m, name: string) => {
+    const uri = uris.get(name)
+    return uri !== undefined ? `![image](${uri})` : m
+  })
+  out = out.replace(/(<img\b[^>]*\bsrc=")(?:images\/)?([^"]*)(")/g, (m, pre: string, name: string, post: string) => {
+    const uri = uris.get(name)
+    return uri !== undefined ? `${pre}${uri}${post}` : m
+  })
   return out
 }

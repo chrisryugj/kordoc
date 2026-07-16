@@ -143,31 +143,44 @@ export function parseMarkdownToBlocks(md: string): MdBlock[] {
     }
 
     // HTML 표 (병합·중첩 — kordoc parse가 병합/중첩표를 내보내는 형식)
+    // 짝이 안 맞으면(닫는 </table> 부재) 수식 블록 관례처럼 일반 파이프라인으로
+    // 폴백 — 문서 잔여 전체가 EOF까지 통째로 삼켜지는 것 방지
     if (/^<table[\s>]/i.test(line.trimStart())) {
       const htmlLines: string[] = []
       let depth = 0
-      while (i < lines.length) {
-        const l = lines[i]
+      let closed = false
+      let j = i
+      while (j < lines.length) {
+        const l = lines[j]
         htmlLines.push(l)
         depth += (l.match(/<table[\s>]/gi) ?? []).length
         depth -= (l.match(/<\/table>/gi) ?? []).length
-        i++
-        if (depth <= 0) break
+        j++
+        if (depth <= 0) { closed = true; break }
       }
-      blocks.push({ type: "html_table", text: htmlLines.join("\n") })
-      continue
+      if (closed) {
+        blocks.push({ type: "html_table", text: htmlLines.join("\n") })
+        i = j
+        continue
+      }
+      // 미종결 — HTML 표 아님. 이 줄부터 일반 블록으로 처리 (통과)
     }
 
     // 테이블
     if (line.trimStart().startsWith("|")) {
       const tableRows: string[][] = []
+      let sepSeen = false
       while (i < lines.length && lines[i].trimStart().startsWith("|")) {
         const row = lines[i]
-        // 구분행 판정 — 각 구분 셀이 `:?-+:?` 꼴(- 최소 1개)이어야 한다. 전부 빈
-        // 데이터 행 `|  |  |`이 구분행으로 오인·스킵되는 것 방지 (벤치 실측, v4.0.5)
-        const sepCells = row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
-        if (sepCells.every(c => /^\s*:?-+:?\s*$/.test(c))) { i++; continue }
-        const cells = row.split("|").slice(1, -1).map(c => c.trim())
+        // 구분행 판정 — GFM처럼 헤더 직후(2행째) 1회만 인정. 각 구분 셀은 `:?-+:?` 꼴
+        // (- 최소 1개 — `:-:` 정렬 표기 허용). 전부 빈 데이터 행 `|  |  |` 오인 방지는
+        // 유지되고(- 필수), 본문 위치의 `| - | - |`('해당없음' 표기)는 데이터 행으로 보존
+        if (tableRows.length === 1 && !sepSeen) {
+          const sepCells = row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|")
+          if (sepCells.every(c => /^\s*:?-+:?\s*$/.test(c))) { sepSeen = true; i++; continue }
+        }
+        // 이스케이프되지 않은 | 로만 분할 + 셀 내 \| → | 복원 (parseGfmTable과 동일)
+        const cells = row.split(/(?<!\\)\|/).slice(1, -1).map(c => c.trim().replace(/\\\|/g, "|"))
         if (cells.length > 0) tableRows.push(cells)
         i++
       }

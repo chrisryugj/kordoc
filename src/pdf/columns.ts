@@ -297,12 +297,14 @@ function buildGridTable(lines: NormItem[][], columns: number[]): string {
     return merged.map(r => r.filter(c => c).join("\t")).join("\n")
   }
 
-  // Step 4: 마크다운 테이블
+  // Step 4: 마크다운 테이블 — 셀 텍스트의 `|`는 열 구분자를 깨뜨리므로 이스케이프,
+  // `\t`는 공백으로 (그리드 경로 builder.ts 셀 조립과 정합)
+  const escCell = (c: string) => c.replace(/\t/g, " ").replace(/\|/g, "\\|")
   const md: string[] = []
-  md.push("| " + merged[0].join(" | ") + " |")
+  md.push("| " + merged[0].map(escCell).join(" | ") + " |")
   md.push("| " + merged[0].map(() => "---").join(" | ") + " |")
   for (let r = 1; r < merged.length; r++) {
-    md.push("| " + merged[r].join(" | ") + " |")
+    md.push("| " + merged[r].map(escCell).join(" | ") + " |")
   }
   return md.join("\n")
 }

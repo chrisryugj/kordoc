@@ -55,6 +55,9 @@ class Surgeon {
   private miniFatSectors: number[] = []
   private dirSectors: number[] = []
   private entries: DirEntry[] = []
+  /** replace()가 FREESECT로 해제한 섹터 — finish()에서 재할당 안 된 것만 0으로 지움 (데이터 잔존 방지) */
+  private freedSectors: number[] = []
+  private freedMiniSectors: number[] = []
 
   constructor(file: Buffer) {
     if (file.length < SECTOR || file.readUInt32LE(0) !== 0xe011cfd0) {
@@ -194,6 +197,10 @@ class Surgeon {
       // FAT가 파일보다 길게 패딩된 영역은 건너뜀 (백킹 바이트 없음)
       if (SECTOR + (i + 1) * SECTOR > this.buf.length) continue
       this.fat[i] = ENDOFCHAIN
+      // 재사용 free 섹터는 즉시 0 초기화 — 부분 기록(mini stream 64B 단위 등) 시
+      // 이전 스트림 바이트가 슬랙에 남는 remanence 방지
+      const off = this.sectorOffset(i)
+      this.buf.fill(0, off, off + SECTOR)
       out.push(i)
     }
     while (out.length < n) {
@@ -302,12 +309,18 @@ class Surgeon {
   replace(path: string, newData: Buffer): void {
     const entry = this.findEntry(path)
 
-    // 1) 기존 체인 해제
+    // 1) 기존 체인 해제 — 해제 섹터는 기록해 finish()에서 바이트를 지운다 (삭제 전 데이터 잔존 방지)
     if (entry.size > 0 && entry.start !== ENDOFCHAIN) {
       if (entry.size < MINI_CUTOFF) {
-        for (const s of this.miniChain(entry.start)) this.miniFat[s] = FREESECT
+        for (const s of this.miniChain(entry.start)) {
+          this.miniFat[s] = FREESECT
+          this.freedMiniSectors.push(s)
+        }
       } else {
-        for (const s of this.chain(entry.start)) this.fat[s] = FREESECT
+        for (const s of this.chain(entry.start)) {
+          this.fat[s] = FREESECT
+          this.freedSectors.push(s)
+        }
       }
     }
 
@@ -339,7 +352,26 @@ class Surgeon {
   }
 
   finish(): Buffer {
+    this.wipeFreedSectors()
     this.flushFat()
     return this.buf
+  }
+
+  /** 해제 후 재할당되지 않고 남은 FREESECT 섹터의 바이트를 0으로 채움 (데이터 remanence 제거) */
+  private wipeFreedSectors(): void {
+    for (const s of this.freedSectors) {
+      if (this.fat[s] !== FREESECT) continue // 새 체인에 재사용됨 — 이미 새 데이터 기록
+      const off = this.sectorOffset(s)
+      this.buf.fill(0, off, off + SECTOR)
+    }
+    if (this.freedMiniSectors.length > 0) {
+      const root = this.rootEntry()
+      const rootChain = root.start === ENDOFCHAIN || root.size === 0 ? [] : this.chain(root.start)
+      for (const s of this.freedMiniSectors) {
+        if (this.miniFat[s] !== FREESECT) continue
+        const off = this.miniOffset(s, rootChain)
+        this.buf.fill(0, off, off + MINI_SECTOR)
+      }
+    }
   }
 }

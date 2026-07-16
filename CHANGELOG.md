@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-07-17
+
+프로덕션 전면 리뷰 회차 — 5축 병렬 감사(HWPX·PDF·바이너리·인터페이스·주변 모듈)로
+확정 결함 ~80건 수정 + 신기능 3종(render_document·redact·chunks) + #47.
+
+### Added
+
+- **`render_document` MCP 도구**: HWPX를 조판 그대로 PNG 이미지(MCP image
+  content)/SVG로 렌더 — 생성·패치·양식 채움 결과를 AI가 눈으로 검증하고 다시
+  고치는 루프가 MCP 안에서 닫힌다. 한컴본은 조판 캐시, 생성본은 reflow.
+  `src/render/rasterize.ts` 신규 (sharp optional, 1400px/8000px/4MB 자동 스케일).
+- **`kordoc redact` CLI + `redact_document` MCP 도구**: 개인정보(주민번호·전화·
+  이메일·카드·계좌 기본, 여권·운전면허 opt-in) 탐지 + 서식 보존 마스킹.
+  HWPX/HWP는 patch로 원본 서식 1바이트 보존, 리포트에 원본 PII 미포함(`masked`만).
+  생년월일·Luhn 검증으로 오탐 축소, base64 이미지 라인 제외. `src/redact.ts` 신규.
+- **`--format chunks` CLI + `parse_chunks` MCP 도구**: RAG용 구조 청크 JSON —
+  헤딩·개조식 위계(□○- / 1.·가.·1))를 breadcrumb 경로로, 표는 독립 청크로.
+  자르기 정책(토큰 상한·오버랩)은 소비자 몫. `src/chunks.ts` 신규.
+- **XLSX/XLS 날짜 셀 변환**: numFmt(내장 14-22·45-47 + 커스텀 y/m/d/h) 감지로
+  날짜 시리얼("45306")을 ISO("2024-01-15")로. date1904·1900 윤년 버그 보정.
+- CLI `fill`에 `--formats`·`--require-unique`·`--mask` (MCP fill_form 파리티).
+
+### Fixed
+
+- **#47 표 오른쪽 끝 빈 열 삭제 — 서식 입력란 소실**: 후행 빈 열 트림을 "셀 앵커
+  없는 유령 열(span 인플레이션)"로 한정. 실제 `<hp:tc>` 앵커가 있는 빈 입력란은
+  보존되어 fill 경로와 일치, 생성→파싱 왕복 열 수 동일. 스프레드시트(XLSX/XLS)는
+  잔여 스타일 셀 정리를 위해 기존 텍스트 기준 트림 유지.
+- **P0**: 인라인 수식 정규식 ReDoS(악성 `$\\\\…` 로 파서 행) · HTML 표
+  colspan/rowspan 무클램프(생성기 OOM) · HWP3 압축 해제 폭탄 무가드 ·
+  XLSX 셀 ref 행/병합 범위 무클램프(그리드 폭주).
+- **P1 파서 정합성**: 표-전용 PDF의 이미지 기반 오판(OCR 켜면 정상 표 폐기) ·
+  PDF 셀 미매핑 텍스트 무음 소멸 · HWP5 제어문자 0x18/0x1e/0x1f 매핑 스왑 ·
+  DOCX 변경추적 삽입(w:ins) 전량 소실 · XLS SST CONTINUE 경계 인덱스 밀림 ·
+  XLSX r 속성 부재 행 무음 드롭 · 도형 대체텍스트 정규식의 본문 오삭제 ·
+  `| - | - |` 데이터 행 소실 · GFM 셀 `\|` 왕복 붕괴 · 미종결 `<table>`이 문서
+  잔여 흡수 · OMML frac 다중그룹 오판.
+- **P1 form**: 헤더행 표 라벨 셀 덮어쓰기 · 인라인 복합 라벨("신청인 성명"/
+  "대리인 성명") 붕괴 · splice 실패 시 배열 값 무음 소실 · 역방향 접두사 임계
+  상향(0.6→0.75).
+- **보안·안정성**: MCP 쓰기 경로(output_path 7곳·image_path·profile_path) 검증
+  신설 · HWP5 patch 삭제 텍스트 섹터 잔존(remanence) 제로화 · watch 동시 폭주
+  무음 유실(대기 큐) · fs.watch error 핸들러 · webhook DNS 재검증 · XML 불법
+  제어문자 스트립 · lenient CFB 할당 증폭 캡.
+- **성능**: PDF vertex 병합 O(V²)→버킷(62,500 vertex 3.1s→0.2s) · XLS SST 선형
+  스캔 제거 · diff 길이비 프리필터 · SVG 중첩표 측정 메모이즈 · 이미지 인라인
+  단일 패스.
+- README fillForm 예제 API 불일치(따라 하면 크래시) · `parse(buffer.buffer)`
+  풀 오염 패턴 · MCP 응답 200k 상한 · MCP·watch `.xls`/`.hml` 지원 · MCP DRM
+  COM fallback filePath 전달 · parse_metadata 헤더 스니핑 512B(HWP3/HWPML 감지).
+
 ## [4.0.8] - 2026-07-16
 
 4포맷 이미지 무음 유실 근본수정 — 코퍼스 447파일 전수 실측으로 PDF(추출 자체

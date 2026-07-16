@@ -10,6 +10,8 @@
  */
 
 import { parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables, type HtmlRowInfo } from "../roundtrip/markdown-units.js"
+import { MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import { clampSpan } from "./parser-shared.js"
 import { CHAR_NORMAL, CHAR_BOLD, CHAR_TABLE_HEADER, PARA_NORMAL, escapeXml, type ResolvedTheme } from "./gen-ids.js"
 import { generateRuns } from "./md-runs.js"
 import { measureTextWidth } from "./text-metrics.js"
@@ -353,8 +355,9 @@ function layoutHtmlRows(rows: HtmlRowInfo[]): { placed: PlacedHtmlCell[]; rowCnt
     let c = 0
     for (const cell of rows[r].cells) {
       while (occupied.has(`${r},${c}`)) c++
-      const colSpan = Math.max(1, cell.colSpan)
-      const rowSpan = Math.max(1, cell.rowSpan)
+      // 파서 쪽(section-walker clampSpan)과 동일 한도 — 무클램프 시 거대 span이 점유 루프를 폭주시킨다
+      const colSpan = clampSpan(cell.colSpan, MAX_COLS)
+      const rowSpan = clampSpan(cell.rowSpan, MAX_ROWS)
       placed.push({ r, c, colSpan, rowSpan, inner: cell.inner, isHeader: rows[r].tag === "th" })
       for (let dr = 0; dr < rowSpan; dr++) {
         for (let dc = 0; dc < colSpan; dc++) occupied.add(`${r + dr},${c + dc}`)

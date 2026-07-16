@@ -45,6 +45,10 @@ function effectiveChildElements(parent: Element | Document): Element[] {
           result.push(...effectiveChildElements(c as Element))
         }
       }
+    } else if (matchesLocal(el, "ins") || matchesLocal(el, "smartTag")) {
+      // w:ins(변경추적 삽입)·w:smartTag도 자식 run을 그대로 노출 — 안 펼치면 run 전량 소실.
+      // w:del은 삭제된 텍스트이므로 계속 제외.
+      result.push(...effectiveChildElements(el))
     } else {
       result.push(el)
     }
@@ -131,6 +135,23 @@ function parseStyles(xml: string): Map<string, StyleInfo> {
     }
 
     styles.set(styleId, { name, basedOn, outlineLevel })
+  }
+
+  // basedOn 체인 해석 — Heading 기반 사용자 스타일의 outlineLevel 상속 (사이클 가드)
+  for (const [styleId, info] of styles) {
+    if (info.outlineLevel !== undefined) continue
+    const seen = new Set<string>([styleId])
+    let cur = info.basedOn
+    while (cur && !seen.has(cur)) {
+      seen.add(cur)
+      const parent = styles.get(cur)
+      if (!parent) break
+      if (parent.outlineLevel !== undefined) {
+        info.outlineLevel = parent.outlineLevel
+        break
+      }
+      cur = parent.basedOn
+    }
   }
   return styles
 }
@@ -256,8 +277,13 @@ interface RunResult {
 }
 
 function extractRun(r: Element): RunResult {
-  const tElements = getChildElements(r, "t")
-  const text = tElements.map(t => t.textContent ?? "").join("")
+  // t/br/cr/tab을 문서 순서대로 수집 — br·cr은 줄바꿈, tab은 공백 (무시하면 텍스트 융합)
+  let text = ""
+  for (const el of effectiveChildElements(r)) {
+    if (matchesLocal(el, "t")) text += el.textContent ?? ""
+    else if (matchesLocal(el, "br") || matchesLocal(el, "cr")) text += "\n"
+    else if (matchesLocal(el, "tab")) text += " "
+  }
 
   let bold = false
   let italic = false

@@ -146,11 +146,24 @@ export async function extractPageImages(
       if (typeof objId !== "string" || pageSeenIds.has(objId)) continue
       pageSeenIds.add(objId)
       dedupeId = objId
-      imgData = await resolveImgData(page, objId)
-    } else if (op === OPS.paintInlineImageXObject) {
-      imgData = argsArray[i]?.[0] as PdfImgData
-    } else {
+    } else if (op !== OPS.paintInlineImageXObject) {
       continue
+    }
+
+    // 상한 도달 검사 — resolveImgData(이미지당 최대 5초 대기) 앞에서 중단해야
+    // 상한 이후 이미지들이 페이지마다 디코딩 대기 시간만 소모하지 않는다
+    if (state.imageIndex >= MAX_IMAGES_PER_DOC || state.totalBytes >= MAX_TOTAL_IMAGE_BYTES) {
+      if (!state.capWarned) {
+        state.capWarned = true
+        warnings.push({ page: pageNumber, message: `이미지 추출 상한 도달 (${MAX_IMAGES_PER_DOC}개/128MB) — 이후 이미지 생략`, code: "SKIPPED_IMAGE" })
+      }
+      continue
+    }
+
+    if (dedupeId) {
+      imgData = await resolveImgData(page, dedupeId)
+    } else {
+      imgData = argsArray[i]?.[0] as PdfImgData
     }
 
     if (!imgData?.data || !imgData.width || !imgData.height) continue
@@ -164,14 +177,6 @@ export async function extractPageImages(
     // 페이지 간 내용 중복 — 로고·워터마크 재추출 방지
     const hash = `${w}x${h}k${imgData.kind ?? "?"}h${fnv1a(imgData.data)}${dedupeId ? "" : "inline"}`
     if (state.seen.has(hash)) continue
-
-    if (state.imageIndex >= MAX_IMAGES_PER_DOC || state.totalBytes >= MAX_TOTAL_IMAGE_BYTES) {
-      if (!state.capWarned) {
-        state.capWarned = true
-        warnings.push({ page: pageNumber, message: `이미지 추출 상한 도달 (${MAX_IMAGES_PER_DOC}개/128MB) — 이후 이미지 생략`, code: "SKIPPED_IMAGE" })
-      }
-      continue
-    }
 
     const rgba = toRgba(imgData)
     if (!rgba) continue // 미지원 픽셀 형태 (bitmap 전용 등)

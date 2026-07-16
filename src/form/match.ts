@@ -191,7 +191,9 @@ export function findMatchingKey(
         bestKey = key
       }
     } else if (key.startsWith(cellLabel)) {
-      if (cellLabel.length >= key.length * 0.6 && cellLabel.length > bestLen) {
+      // 역방향(짧은 셀이 긴 키를 흡수)은 0.75 — 0.6이면 셀 "대리인"이 키
+      // "대리인성명"을 흡수해 성명 값이 대리인 라벨 옆에 들어간다
+      if (cellLabel.length >= key.length * 0.75 && cellLabel.length > bestLen) {
         bestLen = cellLabel.length
         bestKey = key
       }
@@ -266,7 +268,8 @@ export function fillInCellPatterns(
       if (matchKey === undefined) return match
 
       const val = values.peek(matchKey)!
-      const isTruthy = ["☑", "✓", "✔", "v", "V", "true", "1", "yes", "o", "O"].includes(val.trim()) || val.trim() === ""
+      // 계약: 빈 문자열은 "체크 안 함" — 체크 의사는 ☑/true/1 등 명시 값으로만 표현한다
+      const isTruthy = ["☑", "✓", "✔", "v", "V", "true", "1", "yes", "o", "O"].includes(val.trim())
       if (!isTruthy) return match
 
       values.consume(matchKey)
@@ -309,9 +312,17 @@ export interface InlineSegment {
   valueEnd: number
   /** text.slice(valueStart, valueEnd) */
   value: string
+  /**
+   * 직전 어절을 포함한 확장 라벨 ("신청인 성명") — 정확 매칭 후보.
+   * 직전 어절이 이전 라벨의 값("… 강남구 전화:")일 수 있으므로 정확 매칭에만
+   * 쓰고, 접두사 매칭은 핵심 라벨(label)로만 한다. 직전 어절이 없으면 undefined.
+   */
+  extLabel?: string
+  /** 확장 라벨 시작 오프셋 (직전 어절 첫 글자) — extLabel 있을 때만 */
+  extStart?: number
 }
 
-const INLINE_LABEL_RE = /([가-힣A-Za-z]{2,10})\s*[:：]/g
+const INLINE_LABEL_RE = /((?:[가-힣A-Za-z]{1,10} )?)([가-힣A-Za-z]{2,10})\s*[:：]/g
 
 /**
  * 인라인 양식 한 줄을 라벨 단위로 분해 — 한 줄에 라벨이 여러 개인 양식
@@ -321,12 +332,21 @@ const INLINE_LABEL_RE = /([가-힣A-Za-z]{2,10})\s*[:：]/g
  * "http://" 류 URL 스킴의 콜론은 라벨로 보지 않는다.
  */
 export function scanInlineSegments(text: string): InlineSegment[] {
-  const labels: Array<{ label: string; start: number; end: number }> = []
+  const labels: Array<{ label: string; ext?: string; extStart?: number; start: number; end: number }> = []
   INLINE_LABEL_RE.lastIndex = 0
   let m: RegExpExecArray | null
   while ((m = INLINE_LABEL_RE.exec(text)) !== null) {
     if (text[INLINE_LABEL_RE.lastIndex] === "/") continue // "://" — URL 스킴
-    labels.push({ label: m[1], start: m.index, end: INLINE_LABEL_RE.lastIndex })
+    // m[1]=직전 어절(확장 라벨용, 공백 포함), m[2]=핵심 라벨. 세그먼트 좌표는
+    // 핵심 라벨 기준(기존 값 경계 보존) — "신청인 성명:"과 "대리인 성명:"이 같은
+    // "성명"으로 붕괴하지 않게 확장 라벨을 정확 매칭 후보로 함께 넘긴다.
+    labels.push({
+      label: m[2],
+      ext: m[1] ? m[1] + m[2] : undefined,
+      extStart: m[1] ? m.index : undefined,
+      start: m.index + m[1].length,
+      end: INLINE_LABEL_RE.lastIndex,
+    })
   }
 
   const segments: InlineSegment[] = []
@@ -346,9 +366,49 @@ export function scanInlineSegments(text: string): InlineSegment[] {
       valueStart: vs,
       valueEnd: ve,
       value: text.slice(vs, ve),
+      ...(cur.ext !== undefined ? { extLabel: cur.ext, extStart: cur.extStart } : {}),
     })
   }
   return segments
+}
+
+/**
+ * 인라인 세그먼트 매칭 키 결정 — 확장 라벨("신청인 성명") 정확 매칭 우선,
+ * 핵심 라벨("성명")은 기존 findMatchingKey(정확+접두사) 폴백.
+ * 확장 라벨은 직전 어절이 이전 라벨의 값일 수 있어 정확 매칭만 허용한다 (과탐 방지).
+ * @returns 매칭 키 + filled 보고용 라벨 + 확장 매칭 여부. blockedLabels(sfill-2)에 걸리면 undefined.
+ */
+export function matchInlineSegment(
+  seg: InlineSegment,
+  values: { has(key: string): boolean; keys(): Iterable<string> },
+  blockedLabels?: Set<string>,
+): { key: string; label: string; viaExt: boolean } | undefined {
+  const nlabel = normalizeLabel(seg.label)
+  if (seg.extLabel !== undefined) {
+    const nExt = normalizeLabel(seg.extLabel)
+    if (nExt !== nlabel && !blockedLabels?.has(nExt) && values.has(nExt)) {
+      return { key: nExt, label: seg.extLabel, viaExt: true }
+    }
+  }
+  if (blockedLabels?.has(nlabel)) return undefined
+  const key = findMatchingKey(nlabel, values)
+  return key !== undefined ? { key, label: seg.label, viaExt: false } : undefined
+}
+
+/**
+ * 세그먼트 값의 유효 끝 — 다음 세그먼트가 확장 라벨로 매칭됐으면 값 범위가
+ * 그 직전 어절(확장 라벨의 일부, "대리인 성명"의 "대리인")을 삼키지 않게 앞당긴다.
+ */
+export function clampSegmentEnd(
+  text: string,
+  seg: InlineSegment,
+  next: InlineSegment | undefined,
+  nextViaExt: boolean,
+): number {
+  let ve = seg.valueEnd
+  if (nextViaExt && next?.extStart !== undefined && next.extStart < ve) ve = next.extStart
+  while (ve > seg.valueStart && /\s/.test(text[ve - 1])) ve--
+  return ve
 }
 
 /** 빈 자리(valueStart===valueEnd) 삽입 시 콜론·다음 라벨과 붙지 않게 공백 부착 */
@@ -358,14 +418,21 @@ export function padInsertion(text: string, pos: number, value: string): string {
   return lead + value + trail
 }
 
-/** 입력 values 맵을 정규화된 키로 변환 — format 지정(FillInput 객체형)은 여기서 값으로 변환 */
-export function normalizeValues(values: Record<string, FillInput>): Map<string, FillValue> {
+/**
+ * 입력 values 맵을 정규화된 키로 변환 — format 지정(FillInput 객체형)은 여기서 값으로 변환.
+ * @param warnings 정규화 후 키가 충돌하는 라벨("성 명"과 "성명")의 무음 덮어쓰기 경고 수집
+ */
+export function normalizeValues(values: Record<string, FillInput>, warnings?: string[]): Map<string, FillValue> {
   const map = new Map<string, FillValue>()
   for (const [label, raw] of Object.entries(values)) {
     const { value, format } = typeof raw === "object" && !Array.isArray(raw)
       ? raw
       : { value: raw, format: undefined }
-    map.set(normalizeLabel(label), Array.isArray(value)
+    const key = normalizeLabel(label)
+    if (map.has(key)) {
+      warnings?.push(`입력 라벨 "${label}"이 정규화 키 "${key}"에서 다른 라벨과 충돌 — 뒤 값으로 덮어씀`)
+    }
+    map.set(key, Array.isArray(value)
       ? value.map(v => formatFillValue(v, format))
       : formatFillValue(value, format))
   }

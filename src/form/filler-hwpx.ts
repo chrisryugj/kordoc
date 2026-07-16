@@ -24,7 +24,7 @@
 import JSZip from "jszip"
 import { isLabelCell } from "./recognize.js"
 import { KordocError } from "../utils.js"
-import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isKeywordLabel, fillInCellPatterns, scanInlineSegments, padInsertion, ValueCursor, type FillValue , type FillInput } from "./match.js"
+import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isKeywordLabel, fillInCellPatterns, scanInlineSegments, matchInlineSegment, clampSegmentEnd, padInsertion, ValueCursor, type FillValue , type FillInput } from "./match.js"
 import type { FormField } from "../types.js"
 import {
   scanSectionXml, buildParagraphSplices, buildRangeSplices, applySplices, paraTText, paraTextPureT,
@@ -41,6 +41,8 @@ export interface HwpxFillResult {
   filled: FormField[]
   /** 매칭 실패한 라벨 */
   unmatched: string[]
+  /** 비치명 경고 (입력 라벨 정규화 충돌 등) — 없으면 생략 */
+  warnings?: string[]
 }
 
 /** 문단별 편집 원장 — 전략들이 의도를 누적하고 마지막에 splice로 변환 */
@@ -82,7 +84,8 @@ export async function fillHwpx(
     throw new KordocError("HWPX에서 섹션 파일을 찾을 수 없습니다")
   }
 
-  const normalizedValues = normalizeValues(values)
+  const warnings: string[] = []
+  const normalizedValues = normalizeValues(values, warnings)
   const cursor = new ValueCursor(normalizedValues)
   const matchedLabels = new Set<string>()
   /** splice 실패 회수를 위해 null 자리표시 허용 — 마지막에 filter */
@@ -157,8 +160,21 @@ export async function fillHwpx(
 
     // ── 전략 1 + 2: 표 단위 인터리브 (v3.0 DOM 버전과 동일 순서) ──
     for (const table of allTables) {
+      // 헤더+데이터 표(첫 행 전부 라벨 + 둘째 행 첫 셀이 라벨 아님)의 헤더 행은
+      // 전략 1에서 제외 — 헤더 이웃 셀("품명"→"규격") 오염 방지 (IR 경로 isHeaderDataTable과 동일 규칙)
+      const skipHeaderRow = table.rows.length >= 2 && (() => {
+        const first = table.rows[0]
+        const allLabels = first.length > 0 && first.every(cell => {
+          const t = cellLabelText(cell).trim()
+          return t.length > 0 && t.length <= 20 && isLabelCell(t)
+        })
+        if (!allLabels) return false
+        const d0 = table.rows[1][0]
+        return d0 === undefined || !isLabelCell(cellLabelText(d0))
+      })()
+
       // 전략 1: 인접 라벨-값 셀
-      for (let rowIdx = 0; rowIdx < table.rows.length; rowIdx++) {
+      for (let rowIdx = skipHeaderRow ? 1 : 0; rowIdx < table.rows.length; rowIdx++) {
         const cells = table.rows[rowIdx]
         for (let colIdx = 0; colIdx < cells.length - 1; colIdx++) {
           const labelText = cellLabelText(cells[colIdx])
@@ -237,10 +253,35 @@ export async function fillHwpx(
               if (matchKey === undefined) continue
               // 스칼라: 첫 데이터 행만(기존 동작). 배열: 행마다 다음 값 소진(명부형 표)
               if (!cursor.isArray(matchKey) && matchedLabels.has(matchKey)) continue
+
+              const dataCell = dataCells[colIdx]
+              if (patternApplied.has(dataCell)) {
+                // 전략 0이 이미 인셀 패턴을 채움 — fullText로 폐기하지 않고 값을 앞에 삽입
+                // (전략 1의 patternApplied 분기와 동일 계약: filled 기록·소비값 보존)
+                const target = dataCell.paragraphs.find(p => p.tRanges.length > 0) ?? dataCell.paragraphs[0]
+                if (!target) continue
+                const l = led(target)
+                if (l.fullText !== undefined) continue
+                const newValue = cursor.consume(matchKey)
+                if (newValue === undefined) continue // 배열 값 소진
+                l.ranges.push({ start: 0, end: 0, replacement: newValue + " " })
+                l.filledIdx.push(filled.length)
+                l.matchKeys.push(matchKey)
+                matchedLabels.add(matchKey)
+                filled.push({
+                  label: cellLabelText(headerCells[colIdx]).trim(),
+                  value: newValue,
+                  row: rowIdx,
+                  col: colIdx,
+                  key: matchKey,
+                })
+                continue
+              }
+
               const newValue = cursor.consume(matchKey)
               if (newValue === undefined) continue // 배열 값 소진
 
-              const paras = dataCells[colIdx].paragraphs
+              const paras = dataCell.paragraphs
               if (paras.length === 0) continue
               // 나중 쓰기 우선 (v3.0과 동일)
               const l0 = led(paras[0])
@@ -275,23 +316,28 @@ export async function fillHwpx(
       const existing = ledger.get(para)
       if (existing?.fullText !== undefined) continue
       const text = matchText(para)
-      for (const seg of scanInlineSegments(text)) {
-        const nlabel = normalizeLabel(seg.label)
-        if (blockedLabels?.has(nlabel)) continue
-        const matchKey = findMatchingKey(nlabel, cursor)
-        if (matchKey === undefined) continue
+      // 확장 라벨("신청인 성명") 정확 매칭 우선 — "성명" 붕괴 방지 (blockedLabels 포함 판정).
+      // 매칭을 선계산해 다음 세그먼트가 확장 매칭이면 이전 값 끝을 그 어절 앞으로 당긴다.
+      const segments = scanInlineSegments(text)
+      const matches = segments.map(seg => matchInlineSegment(seg, cursor, blockedLabels))
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i]
+        const matched = matches[i]
+        if (matched === undefined) continue
+        const matchKey = matched.key
         const newValue = cursor.consume(matchKey)
         if (newValue === undefined) continue // 배열 값 소진
+        const ve = clampSegmentEnd(text, seg, segments[i + 1], matches[i + 1]?.viaExt ?? false)
         // 빈 자리 삽입은 콜론·다음 라벨과 붙지 않게 공백 부착
-        const replacement = seg.valueStart === seg.valueEnd
+        const replacement = seg.valueStart === ve
           ? padInsertion(text, seg.valueStart, newValue)
           : newValue
         const l = led(para)
-        l.ranges.push({ start: seg.valueStart, end: seg.valueEnd, replacement })
+        l.ranges.push({ start: seg.valueStart, end: ve, replacement })
         matchedLabels.add(matchKey)
         l.filledIdx.push(filled.length)
         l.matchKeys.push(matchKey)
-        filled.push({ label: seg.label.trim(), value: newValue, row: -1, col: -1, key: matchKey })
+        filled.push({ label: matched.label.trim(), value: newValue, row: -1, col: -1, key: matchKey })
       }
     }
 
@@ -354,9 +400,11 @@ export async function fillHwpx(
     }
   }
 
-  // splice 실패로만 쓰인 키는 unmatched로 복원 (다른 곳에 성공 적용됐으면 유지)
+  // splice 실패로만 쓰인 키는 unmatched로 복원 (다른 곳에 성공 적용됐으면 유지).
+  // 배열 값은 실패분의 커서가 이미 전진해 그 값이 무음 소실되므로,
+  // 부분 성공이어도 unmatched로 보고해 호출자가 유실을 알 수 있게 한다.
   for (const k of failedKeys) {
-    if (!succeededKeys.has(k)) matchedLabels.delete(k)
+    if (!succeededKeys.has(k) || cursor.isArray(k)) matchedLabels.delete(k)
   }
 
   const cleanFilled = filled.filter((f): f is FormField => f !== null)
@@ -366,5 +414,6 @@ export async function fillHwpx(
     buffer: out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer,
     filled: cleanFilled,
     unmatched,
+    ...(warnings.length > 0 ? { warnings } : {}),
   }
 }

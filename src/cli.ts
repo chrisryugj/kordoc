@@ -3,7 +3,8 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings } from "./index.js"
+import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings } from "./index.js"
+import type { FillInput } from "./index.js"
 import { parseFormatProfileJson } from "./hwpx/profile-io.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS } from "./hwpx/gongmun-surface.js"
 import type { ParseOptions } from "./types.js"
@@ -20,17 +21,21 @@ program
   .option("-o, --output <path>", "출력 파일 경로 (단일 파일 시)")
   .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")
   .option("-p, --pages <range>", "페이지/섹션 범위 (예: 1-3, 1,3,5)")
-  .option("--format <type>", "출력 형식: markdown (기본) 또는 json", "markdown")
-  .option("--no-header-footer", "PDF 머리글/바닥글 자동 제거")
+  .option("--format <type>", "출력 형식: markdown (기본), json, chunks (RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크)", "markdown")
+  .option("--no-header-footer", "PDF 머리글/바닥글 자동 제거 끄기 (기본: 제거함)")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
   .option("--dedupe-headers", "HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의)")
   .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, HWP5 전용 — 인라인된 경우만 파일 미저장, 그 외 포맷은 저장 유지)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
-    const validFormats = ["markdown", "json"]
+    const validFormats = ["markdown", "json", "chunks"]
     if (!validFormats.includes(opts.format)) {
-      process.stderr.write(`[kordoc] 지원하지 않는 형식: ${opts.format} (markdown 또는 json)\n`)
+      process.stderr.write(`[kordoc] 지원하지 않는 형식: ${opts.format} (markdown, json, chunks)\n`)
       process.exit(1)
+    }
+    // -o는 단일 파일 전용 — 다중 파일에서 무음 무시되지 않게 경고
+    if (opts.output && files.length > 1) {
+      process.stderr.write(`[kordoc] ⚠️ -o/--output 은 단일 파일 전용이라 무시됩니다 — 다중 파일은 -d/--out-dir 를 사용하세요\n`)
     }
     for (let fi = 0; fi < files.length; fi++) {
       const filePath = files[fi]
@@ -87,11 +92,17 @@ program
             .replace(/!\[image\]\(image_/g, "![image](images/image_")
             .replace(/(<img\b[^>]*\bsrc=")image_/g, "$1images/image_")
         }
-        const output = opts.format === "json"
-          ? JSON.stringify(result, (_key, value) =>
-              value instanceof Uint8Array ? Buffer.from(value).toString("base64") : value
-            , 2)
-          : markdown
+        let output: string
+        if (opts.format === "json") {
+          output = JSON.stringify(result, (_key, value) =>
+            value instanceof Uint8Array ? Buffer.from(value).toString("base64") : value
+          , 2)
+        } else if (opts.format === "chunks") {
+          const { blocksToChunks } = await import("./chunks.js")
+          output = JSON.stringify(blocksToChunks(result.blocks), null, 2)
+        } else {
+          output = markdown
+        }
 
         // 이미지 저장 (--out-dir 또는 --output 시) — 실제 인라인된 경우(HWP5)에만 미저장, 그 외엔 저장 유지
         const saveImages = (dir: string) => {
@@ -110,7 +121,7 @@ program
           saveImages(resolve(opts.output, ".."))
         } else if (opts.outDir) {
           mkdirSync(opts.outDir, { recursive: true })
-          const outExt = opts.format === "json" ? ".json" : ".md"
+          const outExt = opts.format === "json" ? ".json" : opts.format === "chunks" ? ".chunks.json" : ".md"
           const outPath = resolve(opts.outDir, fileName.replace(/\.[^.]+$/, outExt))
           writeFileSync(outPath, output, "utf-8")
           if (!opts.silent) process.stderr.write(`  → ${outPath}\n`)
@@ -160,6 +171,9 @@ program
   .option("-j, --json <path>", "채울 필드 JSON 파일 경로")
   .option("-o, --output <path>", "출력 파일 경로 (확장자로 포맷 결정: .md, .hwpx)")
   .option("--format <type>", "출력 포맷: hwpx-preserve (기본, 원본 스타일 보존), hwpx, markdown", "hwpx-preserve")
+  .option("--formats <json>", "필드별 값 서식 JSON (라벨→포맷) — 예: '{\"날짜\":\"yy.mm.dd\",\"주민등록번호\":\"rrn:masked\"}'")
+  .option("--require-unique", "한 키가 서식의 2곳 이상에 매칭되면 채우지 않고 거부 (반복 라벨 양식 오염 방지)")
+  .option("--mask", "채운 값 미노출 — 출력 파일 없이 markdown을 stdout으로 낼 때 본문 대신 안내만 표시")
   .option("--dry-run", "채우지 않고 서식 필드 목록만 출력")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (template: string, opts, command: Command) => {
@@ -227,12 +241,33 @@ program
         process.exit(1)
       }
 
-      // 출력 포맷 결정
+      // 필드별 값 서식 결합 — MCP fill_form(formats)과 동일 의미론 (form/match.js FillInput)
+      let inputs: Record<string, FillInput> = values
+      if (opts.formats) {
+        let formatMap: Record<string, string>
+        try {
+          formatMap = JSON.parse(String(opts.formats))
+        } catch {
+          process.stderr.write(`[kordoc] --formats 는 JSON 객체여야 합니다 (라벨→포맷)\n`)
+          process.exit(1)
+        }
+        inputs = Object.fromEntries(Object.entries(values).map(([k, v]) => {
+          const format = formatMap[k]
+          return [k, format ? { value: v, format } : v]
+        }))
+      }
+
+      // 출력 포맷 결정 — 확장자 오버라이드가 명시 --format 과 충돌하면 경고 후 확장자 우선
       let outputFormat = opts.format as string
       if (opts.output) {
         const ext = extname(opts.output).toLowerCase()
+        const explicitFormat = command.getOptionValueSource("format") === "cli" || program.getOptionValueSource("format") === "cli"
+        const before = outputFormat
         if (ext === ".hwpx") outputFormat = outputFormat === "markdown" ? "hwpx-preserve" : outputFormat
         else if (ext === ".md") outputFormat = "markdown"
+        if (explicitFormat && before !== outputFormat) {
+          process.stderr.write(`[kordoc] ⚠️ --format ${before} 가 출력 확장자(${ext})와 충돌합니다 — 확장자 기준 ${outputFormat} 로 진행\n`)
+        }
       }
 
       // ─── hwpx-preserve: 원본 ZIP 직접 수정 ───
@@ -247,9 +282,14 @@ program
           if (!opts.silent) process.stderr.write(`[kordoc] HWPX가 아니므로 hwpx 모드로 전환합니다\n`)
           outputFormat = "hwpx"
         } else {
-          const hwpxResult = await fillHwpx(arrayBuffer, values)
+          const hwpxResult = opts.requireUnique
+            ? await fillWithUniqueGuard(inputs, (vals, blocked) => fillHwpx(arrayBuffer, vals, blocked))
+            : { ...(await fillHwpx(arrayBuffer, inputs)), rejected: [] as string[] }
           if (!opts.silent) {
             process.stderr.write(`[kordoc] ${hwpxResult.filled.length}개 필드 채움 (원본 스타일 보존)\n`)
+            if (hwpxResult.rejected.length > 0) {
+              process.stderr.write(`[kordoc] ⚠️ 모호 라벨 거부(2곳+ 매칭): ${hwpxResult.rejected.join(", ")}\n`)
+            }
             if (hwpxResult.unmatched.length > 0) {
               process.stderr.write(`[kordoc] ⚠️ 매칭 실패: ${hwpxResult.unmatched.join(", ")}\n`)
             }
@@ -277,9 +317,14 @@ program
         process.stderr.write(`[kordoc] 서식 필드 ${formInfo.fields.length}개 감지 (확신도 ${(formInfo.confidence * 100).toFixed(0)}%)\n`)
       }
 
-      const fillResult = fillFormFields(result.blocks, values)
+      const fillResult = opts.requireUnique
+        ? await fillWithUniqueGuard(inputs, (vals, blocked) => fillFormFields(result.blocks, vals, blocked))
+        : { ...fillFormFields(result.blocks, inputs), rejected: [] as string[] }
       if (!opts.silent) {
         process.stderr.write(`[kordoc] ${fillResult.filled.length}개 필드 채움\n`)
+        if (fillResult.rejected.length > 0) {
+          process.stderr.write(`[kordoc] ⚠️ 모호 라벨 거부(2곳+ 매칭): ${fillResult.rejected.join(", ")}\n`)
+        }
         if (fillResult.unmatched.length > 0) {
           process.stderr.write(`[kordoc] ⚠️ 매칭 실패: ${fillResult.unmatched.join(", ")}\n`)
         }
@@ -301,6 +346,9 @@ program
           mkdirSync(dirname(resolve(opts.output)), { recursive: true })
           writeFileSync(resolve(opts.output), markdown, "utf-8")
           if (!opts.silent) process.stderr.write(`[kordoc] → ${resolve(opts.output)}\n`)
+        } else if (opts.mask) {
+          // 채운 값(주민번호·연락처 등)이 터미널 로그에 남지 않게 본문 대신 안내 (MCP mask_values와 동일 취지)
+          process.stdout.write(`⚠️ --mask 활성 — 개인정보 노출 방지를 위해 본문을 출력하지 않습니다. -o 로 파일 저장 후 확인하세요.\n`)
         } else {
           process.stdout.write(markdown + "\n")
         }
@@ -397,7 +445,7 @@ program
 
 program
   .command("patch <original> <edited>")
-  .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx)")
+  .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx). 미적용(skip) 편집이 있으면 exit 2")
   .option("-o, --output <path>", "출력 경로 (기본: <원본>.patched.hwpx|.hwp)")
   .option("--no-verify", "패치 후 재파싱 자동 검증 생략")
   .option("--silent", "진행 메시지 숨기기")
@@ -665,9 +713,10 @@ program
       if (opts.json) {
         process.stdout.write(JSON.stringify({ findings, summary: { total: findings.length, errors, ok: errors === 0 } }, null, 2) + "\n")
       } else {
-        process.stdout.write(`[kordoc] 표기법 검수: 위반 ${findings.length}건 (error ${errors}, warning ${findings.length - errors})\n`)
+        // 사람용 리포트는 stderr — 기계용(--json)만 stdout (validate와 채널 일관)
+        process.stderr.write(`[kordoc] 표기법 검수: 위반 ${findings.length}건 (error ${errors}, warning ${findings.length - errors})\n`)
         for (const f of findings) {
-          process.stdout.write(`  L${f.line} [${f.severity}] ${f.rule}: "${f.match}" — ${f.message}${f.suggest ? ` → ${f.suggest}` : ""}\n`)
+          process.stderr.write(`  L${f.line} [${f.severity}] ${f.rule}: "${f.match}" — ${f.message}${f.suggest ? ` → ${f.suggest}` : ""}\n`)
         }
       }
       process.exit(errors > 0 ? 1 : 0)
@@ -675,6 +724,104 @@ program
       process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
       process.exit(1)
     }
+  })
+
+program
+  .command("redact <files...>")
+  .description("개인정보 서식 보존 마스킹 — 주민번호·전화·이메일·카드·계좌를 탐지해 HWPX/HWP는 원본 서식 그대로 patch, 그 외 포맷은 마스킹된 마크다운 출력. 자동 검출 보조 도구이므로 결과는 반드시 사람이 최종 확인하세요 (이미지 안 텍스트는 탐지 불가)")
+  .option("--rules <csv>", "적용 룰 (기본: rrn,phone,email,card,account — passport,driver는 opt-in)")
+  .option("--mask-char <ch>", "마스크 문자 1글자 (기본: ●)")
+  .option("-o, --output <path>", "출력 경로 (단일 파일 시)")
+  .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")
+  .option("--dry-run", "탐지 리포트만 출력, 파일 미생성")
+  .option("--json", "리포트를 JSON으로 stdout 출력")
+  .option("--silent", "진행 메시지 숨기기")
+  .action(async (files: string[], opts) => {
+    const { redactMarkdown, DEFAULT_REDACT_RULES, patchHwpx, patchHwp } = await import("./index.js")
+    const rootOpts = program.opts()
+    const output: string | undefined = opts.output ?? rootOpts.output
+    const silent: boolean = opts.silent ?? rootOpts.silent
+    const KNOWN_RULES = new Set(["rrn", "phone", "email", "card", "account", "passport", "driver"])
+    const rules = opts.rules
+      ? String(opts.rules).split(",").map((r: string) => r.trim()).filter(Boolean)
+      : [...DEFAULT_REDACT_RULES]
+    const badRule = rules.find((r: string) => !KNOWN_RULES.has(r))
+    if (badRule) {
+      process.stderr.write(`[kordoc] 알 수 없는 룰: ${badRule} (허용: ${[...KNOWN_RULES].join(", ")})\n`)
+      process.exit(1)
+    }
+    if (output && files.length > 1) {
+      process.stderr.write(`[kordoc] ⚠️ -o/--output 은 단일 파일 전용이라 무시됩니다 — 다중 파일은 -d/--out-dir 를 사용하세요\n`)
+    }
+    const jsonReports: unknown[] = []
+    for (const filePath of files) {
+      const absPath = resolve(filePath)
+      const fileName = basename(absPath)
+      try {
+        const buffer = readFileSync(absPath)
+        const arrayBuffer = toArrayBuffer(buffer)
+        const format = detectFormat(arrayBuffer)
+        const parsed = await parse(arrayBuffer, { filePath: absPath })
+        if (!parsed.success) {
+          process.stderr.write(`[kordoc] FAIL: ${fileName} — ${parsed.error}\n`)
+          process.exitCode = 1
+          continue
+        }
+        const r = redactMarkdown(parsed.markdown, { rules: rules as never, maskChar: opts.maskChar })
+        const byRule = new Map<string, number>()
+        for (const h of r.hits) byRule.set(h.rule, (byRule.get(h.rule) ?? 0) + 1)
+        const ruleSummary = [...byRule.entries()].map(([k, v]) => `${k} ${v}건`).join(", ") || "0건"
+
+        let outPath: string | null = null
+        let patchNote = ""
+        if (!opts.dryRun && r.hits.length > 0) {
+          const patchable = format === "hwpx" || format === "hwp"
+          if (patchable) {
+            const original = new Uint8Array(arrayBuffer)
+            const result = format === "hwp"
+              ? await patchHwp(original, r.text)
+              : await patchHwpx(original, r.text)
+            if (!result.success || !result.data) {
+              process.stderr.write(`[kordoc] 패치 실패: ${fileName} — ${result.error ?? "알 수 없는 오류"}\n`)
+              process.exitCode = 1
+              continue
+            }
+            const ext = format === "hwp" ? ".hwp" : ".hwpx"
+            outPath = resolve(
+              output && files.length === 1
+                ? output
+                : resolve(opts.outDir ?? dirname(absPath), fileName.replace(/\.[^.]+$/, "") + ".redacted" + ext),
+            )
+            mkdirSync(dirname(outPath), { recursive: true })
+            writeFileSync(outPath, result.data)
+            if (result.skipped.length > 0) {
+              patchNote = ` (⚠️ 미적용 ${result.skipped.length}건 — 해당 위치는 원문 잔존, 수동 확인 필요)`
+              process.exitCode = 2
+            }
+          } else {
+            outPath = resolve(
+              output && files.length === 1
+                ? output
+                : resolve(opts.outDir ?? dirname(absPath), fileName.replace(/\.[^.]+$/, "") + ".redacted.md"),
+            )
+            mkdirSync(dirname(outPath), { recursive: true })
+            writeFileSync(outPath, r.text, "utf-8")
+            patchNote = ` (${format}는 서식 보존 미지원 — 마스킹된 마크다운으로 출력)`
+          }
+        }
+        if (opts.json) {
+          jsonReports.push({ file: absPath, format, rules, hits: r.hits, output: outPath })
+        }
+        if (!silent) {
+          process.stderr.write(`[kordoc] ${fileName}: ${ruleSummary}${outPath ? ` → ${outPath}` : opts.dryRun ? " (dry-run)" : ""}${patchNote}\n`)
+          for (const h of r.hits) process.stderr.write(`  - [${h.rule}] ${h.masked}\n`)
+        }
+      } catch (err) {
+        process.stderr.write(`[kordoc] ERROR: ${fileName} — ${sanitizeError(err)}\n`)
+        process.exitCode = 1
+      }
+    }
+    if (opts.json) process.stdout.write(JSON.stringify(files.length === 1 ? jsonReports[0] ?? null : jsonReports, null, 2) + "\n")
   })
 
 program
@@ -750,7 +897,8 @@ program
   .command("mcp")
   .description("MCP 서버 실행 (Claude / Cursor / Windsurf 연동)")
   .action(async () => {
-    await import("./mcp.js")
+    const { startMcpServer } = await import("./mcp.js")
+    await startMcpServer()
   })
 
 program

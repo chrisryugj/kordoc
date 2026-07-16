@@ -24,6 +24,7 @@ function toRoman(n: number): string {
 
 /** 자동번호 카운터 값 → numFormat에 따른 표시 문자열 */
 function formatHeadNumber(n: number, numFormat: string): string {
+  if (n === 0 && numFormat === "DIGIT") return "0" // start="0"은 유효값 — 시퀀스 포맷은 1-based라 아래 클램프 유지
   if (n <= 0) n = 1
   switch (numFormat) {
     case "DIGIT": return String(n)
@@ -89,10 +90,11 @@ export function resolveParaHeading(paraEl: Element, ctx: WalkCtx): ResolvedParaH
   if (!numDef) return headingLevel ? { headingLevel } : null
 
   let counters = ctx.shared.numState.get(numId)
-  if (!counters) { counters = new Array(11).fill(0); ctx.shared.numState.set(numId, counters) }
+  // 미사용 센티널은 -1 — 0을 쓰면 start="0" numbering이 매번 미사용으로 오판돼 증가하지 않는다
+  if (!counters) { counters = new Array(11).fill(-1); ctx.shared.numState.set(numId, counters) }
   const head = numDef.heads.get(level)
-  counters[level] = counters[level] === 0 ? (head?.start ?? 1) : counters[level] + 1
-  for (let l = level + 1; l <= 10; l++) counters[l] = 0
+  counters[level] = counters[level] < 0 ? (head?.start ?? 1) : counters[level] + 1
+  for (let l = level + 1; l <= 10; l++) counters[l] = -1
 
   // ^N 치환 — 참조 레벨의 카운터를 그 레벨의 numFormat으로 변환 (예: "^1." → "1.")
   // 서식 텍스트가 명시적으로 빈 paraHead(한컴 "번호 없음" 개요, 생성기 왕복 포함)는
@@ -101,7 +103,8 @@ export function resolveParaHeading(paraEl: Element, ctx: WalkCtx): ResolvedParaH
   const prefix = fmtText.replace(/\^(10|[1-9])/g, (_, d) => {
     const lv = parseInt(d, 10)
     const refHead = numDef.heads.get(lv)
-    const n = counters![lv] || refHead?.start || 1
+    // 카운터 0은 유효값(start="0") — 미사용(-1)일 때만 start 폴백
+    const n = counters![lv] >= 0 ? counters![lv] : (refHead?.start ?? 1)
     return formatHeadNumber(n, refHead?.numFormat || "DIGIT")
   })
   return { prefix: prefix || undefined, headingLevel }

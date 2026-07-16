@@ -76,9 +76,23 @@ function buildVertices(horizontals: LineSegment[], verticals: LineSegment[]): Ve
 
 /**
  * 근접 Vertex 병합 — 같은 교차점의 미세 위치 차이를 하나로 합침.
+ * O(V²) 회피: 좌표 버킷 그리드로 근접 후보만 비교. mergeTol은 항상
+ * VERTEX_MERGE_FACTOR × (전체 최대 radius) 이하이므로 셀 크기를 그 값으로 잡으면
+ * ±1 셀 이웃만 봐도 기존 전수 비교와 결과(병합 집합·순서)가 동일하다.
  */
 function mergeVertices(vertices: Vertex[]): Vertex[] {
   if (vertices.length <= 1) return vertices
+
+  let maxRadiusAll = 1
+  for (const v of vertices) { if (v.radius > maxRadiusAll) maxRadiusAll = v.radius }
+  const cell = Math.max(VERTEX_MERGE_FACTOR * maxRadiusAll, 1)
+  const buckets = new Map<string, number[]>()
+  for (let i = 0; i < vertices.length; i++) {
+    const key = Math.floor(vertices[i].x / cell) + "," + Math.floor(vertices[i].y / cell)
+    const arr = buckets.get(key)
+    if (arr) arr.push(i)
+    else buckets.set(key, [i])
+  }
 
   const merged: Vertex[] = []
   const used = new Array(vertices.length).fill(false)
@@ -89,7 +103,20 @@ function mergeVertices(vertices: Vertex[]): Vertex[] {
     let maxRadius = vertices[i].radius
     let count = 1
 
-    for (let j = i + 1; j < vertices.length; j++) {
+    // ±1 셀 이웃의 j > i 후보만 — 기존 j 오름차순 스캔과 동일 순서 유지
+    const cx = Math.floor(vertices[i].x / cell)
+    const cy = Math.floor(vertices[i].y / cell)
+    const candidates: number[] = []
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const arr = buckets.get((cx + dx) + "," + (cy + dy))
+        if (!arr) continue
+        for (const j of arr) { if (j > i && !used[j]) candidates.push(j) }
+      }
+    }
+    candidates.sort((a, b) => a - b)
+
+    for (const j of candidates) {
       if (used[j]) continue
       const mergeTol = VERTEX_MERGE_FACTOR * Math.max(maxRadius, vertices[j].radius)
       if (Math.abs(vertices[i].x - vertices[j].x) <= mergeTol &&
@@ -406,7 +433,16 @@ function splitStackedGroup(group: TypedLine[]): TypedLine[][] {
   return bands.filter(b => b.length > 0)
 }
 
-/** 교차하는 선들을 Union-Find로 그룹화 */
+/** 선 bbox 버킷 그리드 셀 크기 (pt) — 근접 후보 열거용 */
+const GROUP_BUCKET_CELL = 100
+
+/**
+ * 교차하는 선들을 Union-Find로 그룹화.
+ * O(L²) 회피: 선 bbox(±CONNECT_TOL)를 좌표 버킷 그리드에 등록하고 같은 셀을
+ * 공유하는 쌍만 교차 판정. 교차 가능한 쌍(bbox 겹침)은 반드시 셀을 공유하므로
+ * 연결 컴포넌트가 동일하고, 그룹 출력 순서(컴포넌트 최소 선 인덱스 순·그룹 내
+ * 인덱스 순)는 union 순서와 무관해 기존과 결과가 같다.
+ */
 function groupConnectedLines(lines: TypedLine[]): TypedLine[][] {
   const parent = lines.map((_, i) => i)
 
@@ -419,10 +455,35 @@ function groupConnectedLines(lines: TypedLine[]): TypedLine[][] {
     if (ra !== rb) parent[ra] = rb
   }
 
+  const cellMap = new Map<string, number[]>()
   for (let i = 0; i < lines.length; i++) {
-    for (let j = i + 1; j < lines.length; j++) {
-      if (linesIntersect(lines[i], lines[j])) {
-        union(i, j)
+    const l = lines[i]
+    const cx1 = Math.floor((Math.min(l.x1, l.x2) - CONNECT_TOL) / GROUP_BUCKET_CELL)
+    const cx2 = Math.floor((Math.max(l.x1, l.x2) + CONNECT_TOL) / GROUP_BUCKET_CELL)
+    const cy1 = Math.floor((Math.min(l.y1, l.y2) - CONNECT_TOL) / GROUP_BUCKET_CELL)
+    const cy2 = Math.floor((Math.max(l.y1, l.y2) + CONNECT_TOL) / GROUP_BUCKET_CELL)
+    for (let cx = cx1; cx <= cx2; cx++) {
+      for (let cy = cy1; cy <= cy2; cy++) {
+        const key = cx + "," + cy
+        const arr = cellMap.get(key)
+        if (arr) arr.push(i)
+        else cellMap.set(key, [i])
+      }
+    }
+  }
+
+  const tested = new Set<number>()
+  for (const arr of cellMap.values()) {
+    for (let a = 0; a < arr.length; a++) {
+      for (let b = a + 1; b < arr.length; b++) {
+        const i = Math.min(arr[a], arr[b])
+        const j = Math.max(arr[a], arr[b])
+        const key = i * lines.length + j
+        if (tested.has(key)) continue
+        tested.add(key)
+        if (linesIntersect(lines[i], lines[j])) {
+          union(i, j)
+        }
       }
     }
   }

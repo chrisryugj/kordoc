@@ -191,6 +191,9 @@ export function patchZipEntries(
     const hview = new DataView(header.buffer, header.byteOffset, header.byteLength)
 
     const method = e.method
+    if (method !== 0 && method !== 8) {
+      throw new KordocError(`지원하지 않는 ZIP 압축 방식(method=${method}): ${e.name} — STORE(0)/DEFLATE(8)만 교체 가능`)
+    }
     const compData = method === 0 ? newData : new Uint8Array(deflateRawSync(newData))
     const crc = crc32(newData)
     const flags = e.flags & ~0x0008 // 데이터 디스크립터 비트 해제 (사이즈를 헤더에 기록)

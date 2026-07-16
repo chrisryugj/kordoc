@@ -37,10 +37,9 @@ const CHAR_LINE = 0x0000        // char: 줄바꿈
 const CHAR_SECTION_BREAK = 0x000a  // char: 강제 줄 나눔(line break, 2바이트). 구역/단 정의는 코드2(extended)라 혼동 주의
 const CHAR_PARA = 0x000d        // char: 문단 끝
 const CHAR_TAB = 0x0009         // inline: 탭
-const CHAR_HYPHEN = 0x001e      // char: 하이픈
-const CHAR_NBSP = 0x001f        // char: 비분리 공백
-const CHAR_FIXED_NBSP = 0x0018  // char: 고정 비분리 공백
-const CHAR_FIXED_WIDTH = 0x0019 // char: 고정폭 공백
+const CHAR_HYPHEN = 0x0018      // char: 하이픈 (스펙 코드 24 — pyhwp HYPHEN, hwp3 SIMPLE_CTRL 24/25와 동일)
+const CHAR_NBSP = 0x001e        // char: 묶음 빈칸(비분리 공백, 스펙 코드 30 — pyhwp NONBREAK_SPACE)
+const CHAR_FIXED_WIDTH = 0x001f // char: 고정폭 빈칸 (스펙 코드 31 — pyhwp FIXWIDTH_SPACE). 25~29(0x19~0x1d)는 예약
 
 // FileHeader 플래그
 export const FLAG_COMPRESSED = 1 << 0
@@ -441,8 +440,7 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
       }
       case CHAR_PARA: break  // 문단 끝
       case CHAR_HYPHEN: result += "-"; break
-      case CHAR_NBSP: result += " "; break
-      case CHAR_FIXED_NBSP: result += "\u00a0"; break  // 진짜 NBSP
+      case CHAR_NBSP: result += "\u00a0"; break  // 진짜 NBSP
       case CHAR_FIXED_WIDTH: result += " "; break  // 고정폭 공백
 
       // ── inline 타입 (2바이트 + 14바이트 확장) ──
@@ -455,7 +453,7 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
         if (ch >= 0x0001 && ch <= 0x001f) {
           // rhwp 기준 3-카테고리 분류:
           // extended(1-3, 11-12, 14-18, 21-23) + inline(4-9, 19-20) → 14바이트 스킵
-          // char(24-31) → 스킵 없음 (이미 switch에서 24,25,30,31 처리됨)
+          // char(24-31) → 스킵 없음 (24,30,31은 switch에서 처리, 25-29는 예약 — 출력 없이 통과)
           const isExtended = isExtendedOnlyCtrlChar(ch)
           const isInline = (ch >= 4 && ch <= 9) || (ch >= 19 && ch <= 20)
           if ((isExtended || isInline) && i + 14 <= data.length) {

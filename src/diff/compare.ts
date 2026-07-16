@@ -67,12 +67,32 @@ function alignBlocks(a: IRBlock[], b: IRBlock[]): [IRBlock | null, IRBlock | nul
   // 대형 문서 보호
   if (m * n > 10_000_000) return fallbackAlign(a, b)
 
+  // 길이비 프리필터용 정규화 길이 — normalizedSimilarity와 같은 공백 정규화 기준
+  const lenOf = (blk: IRBlock): number => {
+    const t = blk.text !== undefined
+      ? blk.text
+      : blk.type === "table" && blk.table ? blk.table.cells.flat().map(c => c?.text ?? "").join(" ") : ""
+    return t.replace(/\s+/g, " ").trim().length
+  }
+  const aLen = a.map(lenOf)
+  const bLen = b.map(lenOf)
+
   // 유사도 매트릭스 캐시
   const simCache = new Map<string, number>()
   const getSim = (i: number, j: number): number => {
     const key = `${i},${j}`
     let v = simCache.get(key)
-    if (v === undefined) { v = blockSimilarity(a[i], b[j]); simCache.set(key, v) }
+    if (v === undefined) {
+      // 길이비 프리필터 — Levenshtein 하한(sim ≤ 1 − 길이차/max)으로 임계 미달이
+      // 확정인 쌍은 계산 없이 0 (전쌍 O(len²) 캡). 표는 dimSim 0.3 가중이 있어
+      // 6/7 초과일 때만 확정 (0.3 + 0.7×(1/7) = 0.4 = 임계).
+      const mx = Math.max(aLen[i], bLen[j])
+      const cut = a[i].type === "table" || b[j].type === "table" ? 6 / 7 : 1 - SIMILARITY_THRESHOLD
+      v = mx > 0 && (mx - Math.min(aLen[i], bLen[j])) / mx > cut
+        ? 0
+        : blockSimilarity(a[i], b[j])
+      simCache.set(key, v)
+    }
     return v
   }
 
@@ -149,9 +169,9 @@ function tableSimilarity(a: IRTable, b: IRTable): number {
   // 구조 유사도 (차원)
   const dimSim = 1 - Math.abs(a.rows * a.cols - b.rows * b.cols) / Math.max(a.rows * a.cols, b.rows * b.cols, 1)
 
-  // 내용 유사도 (셀 텍스트)
-  const textsA = a.cells.flat().map(c => c.text).join(" ")
-  const textsB = b.cells.flat().map(c => c.text).join(" ")
+  // 내용 유사도 (셀 텍스트) — ragged 입력 방어(?.)
+  const textsA = a.cells.flat().map(c => c?.text ?? "").join(" ")
+  const textsB = b.cells.flat().map(c => c?.text ?? "").join(" ")
   const contentSim = normalizedSimilarity(textsA, textsB)
 
   return dimSim * 0.3 + contentSim * 0.7
@@ -167,8 +187,9 @@ function diffTableCells(a: IRTable, b: IRTable): CellDiff[][] {
   for (let r = 0; r < maxRows; r++) {
     const row: CellDiff[] = []
     for (let c = 0; c < maxCols; c++) {
-      const cellA = r < a.rows && c < a.cols ? a.cells[r][c].text : undefined
-      const cellB = r < b.rows && c < b.cols ? b.cells[r][c].text : undefined
+      // 선언 rows/cols보다 실제 cells가 짧은 비정합(ragged) 입력 방어
+      const cellA = r < a.rows && c < a.cols ? a.cells[r]?.[c]?.text : undefined
+      const cellB = r < b.rows && c < b.cols ? b.cells[r]?.[c]?.text : undefined
 
       let type: DiffChangeType
       if (cellA === undefined) type = "added"

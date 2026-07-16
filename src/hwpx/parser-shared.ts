@@ -13,6 +13,15 @@ export const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
 /** 손상 ZIP 복구 시 최대 엔트리 수 */
 export const MAX_ZIP_ENTRIES = 500
 
+/** ZIP bomb 가드 전용 에러 — per-section catch가 XML fatalError(PARTIAL_PARSE로 강등)와
+ *  구분해 이것만 재던진다. KordocError 서브클래스라 sanitizeError allowlist는 그대로 통과 */
+export class ZipBombError extends KordocError {
+  constructor(message: string) {
+    super(message)
+    this.name = "ZipBombError"
+  }
+}
+
 /** colSpan/rowSpan을 안전한 범위로 클램핑 */
 export function clampSpan(val: number, max: number): number {
   return Math.max(1, Math.min(val, max))
@@ -42,7 +51,7 @@ export interface TableState {
 
 /** 섹션 간 공유 상태 — 자동번호 카운터, 머리말/꼬리말, 변경추적 */
 export interface SectionShared {
-  /** numbering id → 레벨별(1..10) 카운터. 0 = 미사용(start값으로 초기화) */
+  /** numbering id → 레벨별(1..10) 카운터. -1 = 미사용(start값으로 초기화 — 0은 start="0"의 유효값) */
   numState: Map<string, number[]>
   pageText: { headers: string[]; footers: string[] }
   track: { deleteDepth: number; warned: boolean }
@@ -99,15 +108,16 @@ export function findChildByLocalName(parent: Element, name: string): Element | n
   return null
 }
 
-/** 노드 내 모든 텍스트를 재귀적으로 추출 */
-export function extractTextFromNode(node: Node): string {
+/** 노드 내 모든 텍스트를 재귀적으로 추출 (MAX_XML_DEPTH 가드 — 악성 심층 XML 스택 오버플로 방지) */
+export function extractTextFromNode(node: Node, depth: number = 0): string {
   let result = ""
+  if (depth > MAX_XML_DEPTH) return result
   const children = node.childNodes
   if (!children) return result
   for (let i = 0; i < children.length; i++) {
     const child = children[i]
     if (child.nodeType === 3) result += child.textContent || ""
-    else if (child.nodeType === 1) result += extractTextFromNode(child)
+    else if (child.nodeType === 1) result += extractTextFromNode(child, depth + 1)
   }
   return result.trim()
 }

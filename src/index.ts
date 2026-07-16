@@ -18,7 +18,7 @@ import { parseXlsDocument } from "./xls/parser.js"
 import { parseDocxDocument } from "./docx/parser.js"
 import { parseHwpmlDocument } from "./hwpml/parser.js"
 import type { ParseResult, ParseOptions } from "./types.js"
-import { classifyError, toArrayBuffer } from "./utils.js"
+import { classifyError, sanitizeError, toArrayBuffer } from "./utils.js"
 import { fillFormFields } from "./form/filler.js"
 import type { FillResult } from "./form/filler.js"
 import type { FillValue, FillInput } from "./form/match.js"
@@ -99,7 +99,8 @@ export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Pr
     const { markdown, blocks, metadata, outline, warnings } = parseHwp3Document(buffer, options)
     return { success: true, fileType: "hwp3", markdown, blocks, metadata, outline, warnings }
   } catch (err) {
-    return { success: false, fileType: "hwp3", error: err instanceof Error ? err.message : "HWP3 파싱 실패", code: classifyError(err) }
+    // 에러 메시지 정제 — KordocError만 그대로, 내부 에러는 일반화 (MCP 노출 일관성)
+    return { success: false, fileType: "hwp3", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 
@@ -111,7 +112,7 @@ export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     const { markdown, blocks, metadata, outline, warnings, images } = await parseHwpxDocument(buffer, options)
     return { success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined }
   } catch (err) {
-    return { success: false, fileType: "hwpx", error: err instanceof Error ? err.message : "HWPX 파싱 실패", code: classifyError(err) }
+    return { success: false, fileType: "hwpx", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 
@@ -143,7 +144,7 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
 
     return { success: true, fileType: "hwp", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined }
   } catch (err) {
-    return { success: false, fileType: "hwp", error: err instanceof Error ? err.message : "HWP 파싱 실패", code: classifyError(err) }
+    return { success: false, fileType: "hwp", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 
@@ -165,7 +166,7 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
     return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images }
   } catch (err) {
     const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
-    return { success: false, fileType: "pdf", error: err instanceof Error ? err.message : "PDF 파싱 실패", code: classifyError(err), isImageBased }
+    return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err), isImageBased }
   }
 }
 
@@ -175,7 +176,7 @@ export async function parseXlsx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     const { markdown, blocks, metadata, warnings } = await parseXlsxDocument(buffer, options)
     return { success: true, fileType: "xlsx", markdown, blocks, metadata, warnings }
   } catch (err) {
-    return { success: false, fileType: "xlsx", error: err instanceof Error ? err.message : "XLSX 파싱 실패", code: classifyError(err) }
+    return { success: false, fileType: "xlsx", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 
@@ -185,7 +186,7 @@ export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Pro
     const { markdown, blocks, metadata, warnings } = await parseXlsDocument(buffer, options)
     return { success: true, fileType: "xls", markdown, blocks, metadata, warnings }
   } catch (err) {
-    return { success: false, fileType: "xls", error: err instanceof Error ? err.message : "XLS 파싱 실패", code: classifyError(err) }
+    return { success: false, fileType: "xls", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 
@@ -195,7 +196,7 @@ export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     const { markdown, blocks, metadata, outline, warnings, images } = await parseDocxDocument(buffer, options)
     return { success: true, fileType: "docx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined }
   } catch (err) {
-    return { success: false, fileType: "docx", error: err instanceof Error ? err.message : "DOCX 파싱 실패", code: classifyError(err) }
+    return { success: false, fileType: "docx", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 
@@ -205,7 +206,7 @@ export async function parseHwpml(buffer: ArrayBuffer, options?: ParseOptions): P
     const { markdown, blocks, metadata, outline, warnings } = parseHwpmlDocument(buffer, options)
     return { success: true, fileType: "hwpml", markdown, blocks, metadata, outline, warnings }
   } catch (err) {
-    return { success: false, fileType: "hwpml", error: err instanceof Error ? err.message : "HWPML 파싱 실패", code: classifyError(err) }
+    return { success: false, fileType: "hwpml", error: sanitizeError(err), code: classifyError(err) }
   }
 }
 
@@ -340,6 +341,10 @@ export { patchHwp } from "./roundtrip/hwp5-patch.js"
 export type { PatchResult, PatchSkip, PatchOptions } from "./types.js"
 export { validateHwpx } from "./validate.js"
 export type { ValidateResult, ValidateIssue } from "./validate.js"
+export { redactText, redactMarkdown, DEFAULT_REDACT_RULES } from "./redact.js"
+export type { RedactRule, RedactHit, RedactTextResult, RedactOptions } from "./redact.js"
+export { blocksToChunks } from "./chunks.js"
+export type { DocChunk, ChunkOptions } from "./chunks.js"
 
 // ─── 에디터 통합 API (v3.1) ─────────────────────────
 

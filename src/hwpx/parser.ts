@@ -22,7 +22,7 @@ import { KordocError, precheckZipSize } from "../utils.js"
 export { precheckZipSize } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { isComFallbackAvailable, isEncryptedHwpx, extractTextViaCom, comResultToParseResult } from "./com-fallback.js"
-import { applyPageText, createSectionShared, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES } from "./parser-shared.js"
+import { applyPageText, createSectionShared, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, ZipBombError } from "./parser-shared.js"
 import { extractHwpxStyles, detectHwpxHeadings } from "./styles.js"
 import { parseSectionXml } from "./section-walker.js"
 import { extractImagesFromZip } from "./images.js"
@@ -98,12 +98,14 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     try {
       const xml = await file.async("text")
       decompressed.total += xml.length * 2
-      if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
+      if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new ZipBombError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
       blocks.push(...parseSectionXml(xml, styleMap, warnings, si + 1, shared))
       parsedSections++
       options?.onProgress?.(parsedSections, totalTarget)
     } catch (secErr) {
-      if (secErr instanceof KordocError) throw secErr
+      // bomb 가드만 전체 실패로 승격 — 한 섹션의 XML fatalError(KordocError)는
+      // PARTIAL_PARSE로 강등해 나머지 섹션 파싱을 계속한다
+      if (secErr instanceof ZipBombError) throw secErr
       warnings.push({ page: si + 1, message: `섹션 ${si + 1} 파싱 실패: ${secErr instanceof Error ? secErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
     }
   }

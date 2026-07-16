@@ -25,6 +25,9 @@ import { JOHAB_UNMAPPED, decodeJohab } from "./johab.js"
 import { Reader } from "./reader.js"
 import { readHeader } from "./records.js"
 
+/** 압축 해제 최대 크기 (100MB) — decompression bomb 방지 (hwp5/record.ts와 동일 캡) */
+const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
+
 const PARA_HEADER_FIXED_SIZE = 43 // follow_prev(1) + char_count(2) + line_count(2) + include_cs(1) + flags(1) + sc_flags(4) + style_idx(1) + rep_char_shape(31)
 const PARA_SHAPE_SIZE = 187 // ParaShape 구조 (rhwp records.rs Hwp3ParaShape::read 합산)
 const LINE_INFO_SIZE = 14 // Hwp3LineInfo (u16 × 7)
@@ -100,8 +103,11 @@ export function parseHwp3Document(
   const warnings: ParseWarning[] = []
   if (header.compressed !== 0) {
     try {
-      body = inflateRawSync(tail)
+      body = inflateRawSync(tail, { maxOutputLength: MAX_DECOMPRESS_SIZE })
     } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === "ERR_BUFFER_TOO_LARGE") {
+        throw new Error(`HWP3 압축 해제 결과가 최대 허용 크기(${MAX_DECOMPRESS_SIZE / 1024 / 1024}MB)를 초과했습니다`)
+      }
       const msg = err instanceof Error ? err.message : String(err)
       throw new Error(`HWP3 압축 해제 실패: ${msg}`)
     }

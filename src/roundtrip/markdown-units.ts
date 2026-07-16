@@ -9,6 +9,8 @@
  */
 
 import type { IRTable } from "../types.js"
+import { MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import { clampSpan } from "../hwpx/parser-shared.js"
 import { mapPuaText } from "../shared/pua.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
 
@@ -182,13 +184,21 @@ function bestSimInRange(arr: string[], from: number, to: number, target: string)
 
 // ─── builder.ts 텍스트 변환 재현 (드리프트 시 자기 검증으로 skip) ─────
 
-/** GFM 특수문자 이스케이프 — builder.ts escapeGfm과 동일 (~ 취소선, * 강조/HR·마스킹 런) */
+/** GFM 특수문자 이스케이프 — builder.ts escapeGfm과 동일 (~ 취소선, * 강조/HR·마스킹 런, _ 강조, ` 코드).
+ *  ![image](image_001.png) 이미지 참조 스팬·링크 URL부는 builder처럼 보호 — _ 이스케이프 시 문법 파괴 */
 export function escapeGfm(text: string): string {
-  return text.replace(/([~*])/g, "\\$1")
+  const NUL = String.fromCharCode(0)
+  const spans: string[] = []
+  const masked = text.replace(/!\[[^\]]*\]\([^)\n]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\n]*\)/gi, (m) => {
+    spans.push(m)
+    return NUL + (spans.length - 1) + NUL
+  })
+  const escaped = masked.replace(/([~*_`])/g, "\\$1")
+  return escaped.replace(new RegExp(NUL + "(\\d+)" + NUL, "g"), (_, n) => spans[Number(n)])
 }
 
-/** builder.ts HWP_SHAPE_ALT_TEXT_RE와 동일 */
-const HWP_SHAPE_ALT_TEXT_RE = /(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?/g
+/** builder.ts HWP_SHAPE_ALT_TEXT_RE와 동일 (행 전체 일치 ^…$m — 본문 중간 오삭제 방지) */
+const HWP_SHAPE_ALT_TEXT_RE = /^(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?$/gm
 
 /** builder.ts sanitizeText와 동일 (PUA 매핑 + 대체텍스트 제거 + 균등배분 정리) */
 export function sanitizeText(text: string): string {
@@ -214,7 +224,7 @@ export function normForMatch(text: string): string {
 
 /** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환) */
 export function unescapeGfm(text: string): string {
-  return text.replace(/\\([~*])/g, "$1")
+  return text.replace(/\\([~*_`])/g, "$1")
 }
 
 /** 스킵 보고용 내용 요약 (최대 80자) */
@@ -310,7 +320,7 @@ export function parseGfmTable(lines: string[]): string[][] {
 
 /** GFM 셀 텍스트 → 평문 */
 export function unescapeGfmCell(text: string): string {
-  return text.replace(/<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|").replace(/\\([~*])/g, "$1")
+  return text.replace(/<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|").replace(/\\([~*_`])/g, "$1")
 }
 
 // ─── HTML 표 — 좌표 추적 렌더 재현 + 파서 ───────────
@@ -433,10 +443,11 @@ export function parseHtmlTable(raw: string): HtmlRowInfo[] | null {
       }
     } else { // td | th
       if (!isClose) {
-        const cs = parseInt(attrs.match(/colspan\s*=\s*"(\d+)"/i)?.[1] || "1", 10)
-        const rs = parseInt(attrs.match(/rowspan\s*=\s*"(\d+)"/i)?.[1] || "1", 10)
+        // 속성값은 큰따옴표·작은따옴표·무따옴표 모두 허용, 파서 쪽(clampSpan)과 동일 한도로 클램핑
+        const cs = parseInt(attrs.match(/colspan\s*=\s*["']?(\d+)/i)?.[1] || "1", 10)
+        const rs = parseInt(attrs.match(/rowspan\s*=\s*["']?(\d+)/i)?.[1] || "1", 10)
         cellStart = m.index + m[0].length
-        cellInfo = { colSpan: isNaN(cs) ? 1 : cs, rowSpan: isNaN(rs) ? 1 : rs }
+        cellInfo = { colSpan: clampSpan(isNaN(cs) ? 1 : cs, MAX_COLS), rowSpan: clampSpan(isNaN(rs) ? 1 : rs, MAX_ROWS) }
       } else if (cellStart >= 0 && cellInfo && currentRow) {
         currentRow.push({ inner: raw.slice(cellStart, m.index), colSpan: cellInfo.colSpan, rowSpan: cellInfo.rowSpan })
         cellStart = -1

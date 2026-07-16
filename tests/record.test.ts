@@ -33,12 +33,13 @@ describe("extractText", () => {
     assert.equal(extractText(buf), "A\nB")
   })
 
-  it("하이픈(0x001E)과 NBSP(0x001F) 처리", () => {
-    const buf = Buffer.alloc(6)
+  it("하이픈(0x0018)·NBSP(0x001E)·고정폭 공백(0x001F) 처리", () => {
+    const buf = Buffer.alloc(8)
     buf.writeUInt16LE("A".charCodeAt(0), 0)
-    buf.writeUInt16LE(0x001e, 2) // hyphen
-    buf.writeUInt16LE(0x001f, 4) // nbsp
-    assert.equal(extractText(buf), "A- ")
+    buf.writeUInt16LE(0x0018, 2) // hyphen
+    buf.writeUInt16LE(0x001e, 4) // non-breaking space
+    buf.writeUInt16LE(0x001f, 6) // fixed-width space
+    assert.equal(extractText(buf), "A-  ")
   })
 
   it("확장 제어문자(14바이트 페이로드) 스킵", () => {

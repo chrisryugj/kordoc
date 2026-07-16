@@ -70,6 +70,15 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.1.0
+
+- **👁️ `render_document` MCP tool (new)**: renders a generated/patched/filled HWPX exactly as typeset and **returns it as a PNG image in the response** — the AI can visually inspect its own output and fix it, closing the generate→render→verify loop inside MCP (typeset cache for Hancom-saved files, reflow engine for generated ones, search-term highlighting).
+- **🕶️ `kordoc redact` + `redact_document` MCP (new)**: detects PII (resident registration no., phone, email, card, account; passport/driver license opt-in) and outputs a **format-preserving masked** HWPX/HWP (`850315-●●●●●●●`). Birthdate/Luhn validation reduces false positives; the report never contains the original PII. An assistive detector — human review before disclosure is required.
+- **📦 `--format chunks` + `parse_chunks` MCP (new)**: structure-preserving chunk JSON for RAG — heading/outline hierarchy (□○- / 1.·가.·1)) becomes breadcrumb paths, tables become standalone chunks.
+- **📋 Trailing empty column preservation (#47)**: blank input columns in form documents were deleted wholesale during parsing; trimming now only removes phantom columns with no actual cell anchors (span inflation) — consistent with the fill path, generate→parse roundtrip keeps the column count (spreadsheets keep the old cleanup). Reported by [@jumaniac](https://github.com/jumaniac).
+- **📅 XLSX/XLS date conversion**: date cells no longer surface as serial numbers ("45306") but as ISO ("2024-01-15") — built-in and custom numFmt detection, date1904 handling.
+- **🛡️ Production-wide review, ~80 fixes**: hostile-file hardening (equation regex ReDoS, HTML table span explosion, HWP3 decompression bomb, XLSX grid blowup), table-only PDFs misjudged as image-based, HWP5 control-char (hyphen/fixed-width space) mapping, DOCX tracked-change insertions lost, four form-fill label mismatch classes, HWP5 patch data remanence zeroed, MCP write-path validation, lined-table PDF performance (62,500 vertices 3.1s→0.2s), and more — see [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v4.0.8
 
 - **🖼️ PDF image extraction (new)**: previously only image *region coordinates* were computed and the bytes were silently lost — image XObjects are now decoded and re-encoded as PNG in pure JS (including waiting for pdfjs's async decoding; 731 images across 45 of 52 corpus PDFs). References are emitted at end-of-page positions, cross-page duplicates (logos/watermarks) are deduped, and cross-page table merging is unaffected.
@@ -166,10 +175,12 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ```bash
 npm install kordoc
-
-# Optional — only if you parse PDFs
-npm install pdfjs-dist
 ```
+
+Optional dependencies for PDF parsing (pdfjs-dist), formula OCR, etc. are **installed by
+default** (optionalDependencies). To slim the install, skip them with
+`npm install kordoc --omit=optional` — PDF parsing, formula OCR, and print rendering
+will then be unavailable.
 
 ## Quick Start
 
@@ -180,7 +191,7 @@ import { parse } from "kordoc"
 import { readFileSync } from "fs"
 
 const buffer = readFileSync("business-plan.hwpx")
-const result = await parse(buffer.buffer)
+const result = await parse(buffer)
 
 if (result.success) {
   console.log(result.markdown)       // markdown text
@@ -223,15 +234,15 @@ import { readFileSync, writeFileSync } from "fs"
 const template = readFileSync("application.hwpx")
 
 // HWPX format-preserving mode — fonts, sizes, alignment 100% intact
-const result = await fillForm(template.buffer, {
+const result = await fillForm(template, {
   성명: "홍길동",
   주민등록번호: "900101-1234567",
   주소: "서울특별시 광진구 능동로 120",
-}, { format: "hwpx-preserve" })
+}, "hwpx-preserve")
 
-writeFileSync("application_filled.hwpx", Buffer.from(result.buffer!))
-// result.filled → [{ label: "성명", value: "홍길동" }, ...]
-// result.unmatched → keys that failed to match
+writeFileSync("application_filled.hwpx", Buffer.from(result.output as ArrayBuffer))
+// result.fill.filled → [{ label: "성명", value: "홍길동" }, ...]
+// result.fill.unmatched → keys that failed to match
 ```
 
 ### Generate HWPX (reverse conversion)
@@ -364,7 +375,7 @@ Detects your AI client interactively and patches its config file — including `
 }
 ```
 
-**11 tools:**
+**15 tools:**
 
 | Tool | Description |
 |------|-------------|
@@ -377,8 +388,12 @@ Detects your AI client interactively and patches its config file — including `
 | `parse_form` | Extract form fields as JSON |
 | `fill_form` | Fill a form template (HWPX format-preserving, format/uniqueness guards) |
 | `patch_document` | Apply edited markdown back into the original HWPX/HWP, format preserved (v3.3) |
+| `extract_profile` | Extract a table format profile (JSON) from a reference HWPX — feed it to generate_document's profile_path |
 | `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (v3.5) |
 | `place_seal` | Place a stamp/signature image over an anchor phrase (v3.16) |
+| `render_document` | Render HWPX exactly as typeset to a PNG image/SVG — lets the AI visually verify generated/edited documents (v4.1) |
+| `redact_document` | Detect PII (resident registration no., phone, email, card, account) + format-preserving masking with a report (v4.1) |
+| `parse_chunks` | Structure-preserving chunk JSON for RAG — heading/outline hierarchy breadcrumbs + standalone table chunks (v4.1) |
 
 ## API
 
@@ -404,7 +419,7 @@ Detects your AI client interactively and patches its config file — including `
 | `compare(bufferA, bufferB, options?)` | IR-level document comparison |
 | `extractFormFields(blocks)` | Recognize form fields from IRBlock[] |
 | `extractFormSchema(blocks)` | Field recognition + type/required/empty inference (v3.1) |
-| `fillForm(buffer, values, options?)` | Fill a form template (markdown/hwpx/hwpx-preserve) |
+| `fillForm(input, values, outputFormat?)` | Fill a form template — outputFormat: `"markdown"` (default) / `"hwpx"` / `"hwpx-preserve"`, returns `{ output, format, fill }` |
 | `fillFormFields(blocks, values)` | Replace field values on IRBlock[] |
 | `fillHwpx(buffer, values)` | Direct HWPX XML manipulation (format-preserving) |
 | `patchHwpx(original, editedMarkdown, options?)` | Edited markdown → in-place format-preserving HWPX patch (v3.0) |

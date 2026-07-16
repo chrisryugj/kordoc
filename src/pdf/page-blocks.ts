@@ -248,6 +248,12 @@ function extractBlocksWithGrids(
     }))
     const cellTextMap = mapTextToCells(textItems, cells)
 
+    // 셀 미배정 아이템 수집 — mapTextToCells는 교차비율 > 0.3만 배정하므로,
+    // 그리드 bbox 안에 있지만 어느 셀에도 못 붙은 아이템(세로쓰기 헤더 등)을
+    // usedItems에 남겨두면 표에도 프로즈에도 없이 무음 소멸한다.
+    const assignedItems = new Set<TextItem>()
+    for (const arr of cellTextMap.values()) for (const it of arr) assignedItems.add(it)
+
     // IRTable 구성
     const numRows = grid.rowYs.length - 1
     const numCols = grid.colXs.length - 1
@@ -274,9 +280,11 @@ function extractBlocksWithGrids(
     // 행≤2 + 열≥3 + 셀 안에 텍스트 줄이 뭉친 표는 줄 centerY 기반 row band로 행 복원
     let finalGrid = irGrid
     let finalRows = numRows
+    let rebuiltUsed = false
     if (numRows <= 2 && numCols >= 3) {
       const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems)
       if (rebuilt) {
+        rebuiltUsed = true
         finalGrid = rebuilt.map(row => row.map(rawText => {
           const cleaned = rawText.replace(/^[\s]*[-–—]\s*\d+\s*[-–—][\s]*$/gm, "").trim()
           return {
@@ -286,6 +294,14 @@ function extractBlocksWithGrids(
           }
         }))
         finalRows = finalGrid.length
+      }
+    }
+
+    // 미배정 아이템을 프로즈 경로로 환원 — 과소분할 재구축(rebuiltUsed)은
+    // textItems 전체(미배정 포함)를 셀에 재배치하므로 그때는 환원하지 않는다(중복 방지)
+    if (!rebuiltUsed) {
+      for (let ti = 0; ti < textItems.length; ti++) {
+        if (!assignedItems.has(textItems[ti])) usedItems.delete(tableItems[ti])
       }
     }
 
@@ -353,6 +369,8 @@ function extractBlocksWithGrids(
     }
 
     // XY-Cut으로 왼쪽 본문과 오른쪽 부서명 등을 분리 후 개별 처리
+    const groupSizes: number[] = []
+    let finalTextBlocks: IRBlock[] = []
     if (remaining.length > 0) {
       const allY = remaining.map(i => i.y)
       const pageH = safeMax(allY) - safeMin(allY)
@@ -362,18 +380,33 @@ function extractBlocksWithGrids(
         if (group.length === 0) continue
         const groupBlocks = extractPageBlocksFallback(group, pageNum)
         for (const b of groupBlocks) textBlocks.push(b)
+        groupSizes.push(groupBlocks.length)
       }
-      const finalTextBlocks = detectListBlocks(textBlocks)
-      for (const b of finalTextBlocks) blocks.push(b)
+      finalTextBlocks = detectListBlocks(textBlocks) // 1:1 변환 — 그룹 경계(groupSizes) 유지
     }
 
-    // Y좌표 기반 정렬
-    blocks.sort((a, b) => {
-      const ay = a.bbox ? (a.bbox.y + a.bbox.height) : 0
-      const by = b.bbox ? (b.bbox.y + b.bbox.height) : 0
-      return by - ay // PDF는 y가 위가 큼 → 내림차순
-    })
-    return mergeAdjacentTableBlocks(blocks)
+    // 그룹 단위 Y-정렬 — 블록 단위 Y-정렬은 XY-Cut이 정한 컬럼 읽기 순서(좌단
+    // 전체 → 우단 전체)를 행 단위로 재인터리브하므로, XY-Cut 그룹을 한 단위로
+    // 묶어 그룹 대표 Y(최상단)로만 정렬하고 그룹 내부 순서는 보존한다.
+    // 표/demote 블록은 각자 단독 단위 (기존과 동일하게 Y 위치로 끼어듦).
+    const units: IRBlock[][] = blocks.map(b => [b])
+    let off = 0
+    for (const size of groupSizes) {
+      const unit = finalTextBlocks.slice(off, off + size)
+      off += size
+      if (unit.length > 0) units.push(unit)
+    }
+    const unitTopY = (u: IRBlock[]) => {
+      let top = 0
+      for (const b of u) {
+        if (b.bbox && b.bbox.y + b.bbox.height > top) top = b.bbox.y + b.bbox.height
+      }
+      return top
+    }
+    units.sort((a, b) => unitTopY(b) - unitTopY(a)) // PDF는 y가 위가 큼 → 내림차순
+    const ordered: IRBlock[] = []
+    for (const u of units) for (const b of u) ordered.push(b)
+    return mergeAdjacentTableBlocks(ordered)
   }
 
   return mergeAdjacentTableBlocks(blocks)

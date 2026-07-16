@@ -172,7 +172,14 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 이미지 기반 PDF 감지 + 크기 제한용 문자 수 집계 + 페이지 품질 신호
         let pageText = ""
         for (const b of pageBlocks) {
-          const t = b.text || ""
+          let t = b.text || ""
+          // 표 블록은 text 없이 table만 가지므로 셀 텍스트도 집계 — 괘선 양식(표-전용)
+          // 문서가 totalChars=0으로 이미지 기반 오판되어 정상 파싱 표가 OCR로
+          // 대체되는 것 방지. 페이지 품질(computePageQuality) 집계도 같은 뿌리.
+          if (b.type === "table" && b.table) {
+            const cellText = b.table.cells.map(row => row.map(c => c.text).join(" ")).join("\n")
+            t = t ? t + "\n" + cellText : cellText
+          }
           totalChars += t.replace(/\s/g, "").length
           totalTextBytes += t.length * 2
           pageText += pageText ? "\n" + t : t

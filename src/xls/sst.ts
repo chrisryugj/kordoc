@@ -40,6 +40,7 @@ function parseString(
   buf: Buffer,
   offset: number,
   segments: number[],
+  segCursor: { idx: number },
 ): ParseStringResult | null {
   if (offset + 3 > buf.length) return null
 
@@ -66,12 +67,23 @@ function parseString(
 
   // 문자 데이터 읽기 — CONTINUE 경계마다 새 flags 재해석
   // segments는 결합 버퍼 기준 경계 오프셋들. 첫 segment는 SST의 끝, 그 다음부터 CONTINUE 경계.
+  // segCursor는 문자열 간 단조 전진 커서 — 매 문자열 선형 스캔(O(n×m)) 방지.
   const charBytes: Buffer[] = []
   let charsRead = 0
 
   while (charsRead < cch) {
-    // 다음 경계 찾기
-    const nextBoundary = segments.find(s => s > off) ?? buf.length
+    // 지나온 경계 스킵 (off는 단조 증가)
+    while (segCursor.idx < segments.length && segments[segCursor.idx] < off) segCursor.idx++
+    // rgb가 CONTINUE 경계 정각에서 시작하면 첫 바이트는 새 flags — 선소비
+    // (미소비 시 flags가 문자로 흡수돼 이후 전체 문자열 인덱스가 밀림)
+    if (segCursor.idx < segments.length && segments[segCursor.idx] === off) {
+      if (off >= buf.length) return null
+      flags = buf.readUInt8(off)
+      highByte = (flags & 0x01) !== 0
+      off += 1
+      segCursor.idx++
+    }
+    const nextBoundary = segCursor.idx < segments.length ? segments[segCursor.idx] : buf.length
 
     const remainChars = cch - charsRead
     const bytesPerChar = highByte ? 2 : 1
@@ -86,14 +98,12 @@ function parseString(
       charBytes.push(highByte ? slice : padToUtf16(slice))
       off += bytesToRead
       charsRead += charsInThisRun
-    }
-
-    if (charsRead < cch) {
-      // 경계 진입 — 새 flags 1바이트
-      if (off >= buf.length) return null
-      flags = buf.readUInt8(off)
-      highByte = (flags & 0x01) !== 0
-      off += 1
+    } else if (nextBoundary < buf.length) {
+      // 경계 직전 잔여 바이트(기형 파일) — 경계로 건너뛰어 진행 보장
+      off = nextBoundary
+    } else {
+      // 더 읽을 데이터가 없음 — 무한 루프 방지
+      return null
     }
   }
 
@@ -137,8 +147,9 @@ export function decodeSST(records: BiffRecord[]): string[] {
 
   const strings: string[] = []
   let off = 8
+  const segCursor = { idx: 0 } // 문자열 간 공유 단조 커서
   for (let i = 0; i < cstUnique && off < combined.length; i++) {
-    const r = parseString(combined, off, segments)
+    const r = parseString(combined, off, segments, segCursor)
     if (!r) break
     strings.push(r.text)
     off += r.consumed
