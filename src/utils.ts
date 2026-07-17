@@ -131,7 +131,9 @@ const SAFE_HREF_RE = /^(?:https?:|mailto:|tel:|#)/i
 export function sanitizeHref(href: string): string | null {
   const trimmed = href.trim()
   if (!trimmed || !SAFE_HREF_RE.test(trimmed)) return null
-  return trimmed
+  // 괄호 percent-encoding — 마크다운 링크 목적지에서 불균형 ')'는 링크를 조기 종료시켜
+  // 문법이 깨진다 (원문 하이퍼링크에 ')'가 박힌 실문서 존재). %28/%29는 의미 동일.
+  return trimmed.replace(/\(/g, "%28").replace(/\)/g, "%29")
 }
 
 // ─── 안전한 min/max (스택 오버플로 방지) ─────────────

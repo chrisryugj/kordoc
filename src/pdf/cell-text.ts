@@ -99,8 +99,14 @@ export function cellTextToString(items: TextItem[]): string {
   }
   lines.push(curLine)
 
+  // 첨자 행 흡수 — 본문 행보다 살짝 떠 있는 작은 심볼 조각(▲·원문자·각주 마커)이
+  // tolerance를 벗어나 별도 행이 된 것을 수직 겹침으로 되돌린다
+  // (text-line.ts mergeSuperscriptLines와 동일 규칙: 조각 ≤3개·각 ≤8자·
+  //  높이가 인접 행의 80% 이하·수직 겹침 ≥ 조각 높이 50%)
+  const merged = mergeSuperscriptRows(lines)
+
   // 각 행을 텍스트로 변환 — 좌표 기반 균등배분 감지 포함
-  const textLines = lines.map(line => {
+  const textLines = merged.map(line => {
     const s = line.sort((a, b) => a.x - b.x)
     if (s.length === 1) return s[0].text
 
@@ -130,6 +136,43 @@ export function cellTextToString(items: TextItem[]): string {
   })
 
   return mergeCellTextLines(textLines)
+}
+
+/** 첨자 행 병합 — cellTextToString 행 그룹핑 결과에 적용 (규칙은 text-line.ts와 동일) */
+function mergeSuperscriptRows(lines: TextItem[][]): TextItem[][] {
+  if (lines.length <= 1) return lines
+  const band = (line: TextItem[]) => {
+    let bottom = Infinity, top = -Infinity
+    for (const i of line) {
+      const h = i.h > 0 ? i.h : i.fontSize
+      if (i.y < bottom) bottom = i.y
+      if (i.y + h > top) top = i.y + h
+    }
+    return { bottom, top, height: top - bottom }
+  }
+  const isFrag = (line: TextItem[]) => {
+    if (line.length > 8) return false
+    let total = 0
+    for (const i of line) total += i.text.trim().length
+    return total > 0 && total <= 10
+  }
+
+  const result: TextItem[][] = [lines[0]]
+  for (let i = 1; i < lines.length; i++) {
+    const prev = result[result.length - 1]
+    const curr = lines[i]
+    const a = band(prev)
+    const b = band(curr)
+    const overlap = Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom)
+    const prevIsFrag = isFrag(prev) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
+    const currIsFrag = isFrag(curr) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
+    if (prevIsFrag || currIsFrag) {
+      result[result.length - 1] = [...prev, ...curr]
+    } else {
+      result.push(curr)
+    }
+  }
+  return result
 }
 
 /**

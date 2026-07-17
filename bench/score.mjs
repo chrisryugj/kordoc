@@ -168,6 +168,9 @@ async function scoreHwpx(file, buf) {
         orderSeq.push({ table: u.tableIdx, pos: r.pos })
       } else if (w > cur.w) { cur.pos = r.pos; cur.w = w }
     } else if (u.kind === "body" || u.kind === "drawText" || u.kind === "caption") {
+      // 중첩표 캡션 — 부모 셀 내부 렌더링이라 평탄화 순서와 push 순서가 어긋남 (중첩표
+      // 셀 제외와 같은 논리, recall은 그대로 채점)
+      if (u.nestedCaption) continue
       // 고유 식별 가능 + 실질 본문(문자/숫자 ≥4)을 가진 유닛만 — 마스킹('******')·중복 제외
       const txt = unitsForAlign[i].text
       const contentLen = (txt.match(/[\p{L}\p{N}]/gu) ?? []).length

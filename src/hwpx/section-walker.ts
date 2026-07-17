@@ -390,6 +390,21 @@ function findKordocMarkedCell(el: Node, depth: number): { cell: Element; name: s
   return null
 }
 
+/** 머리말/꼬리말 subList에 페이지 번호 autoNum(numType=PAGE)이 있는지 검사 */
+function hasPageAutoNum(el: Node, depth = 0): boolean {
+  if (depth > 10) return false
+  const children = el.childNodes
+  if (!children) return false
+  for (let i = 0; i < children.length; i++) {
+    const ch = children[i] as Element
+    if (ch.nodeType !== 1) continue
+    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
+    if (tag === "autoNum" && ch.getAttribute?.("numType") === "PAGE") return true
+    if (hasPageAutoNum(ch, depth + 1)) return true
+  }
+  return false
+}
+
 /** caption/header/footer 등의 subList 내부 문단 텍스트 수집 */
 function collectSubListText(el: Node, ctx: WalkCtx, depth = 0): string {
   if (depth > 10) return ""
@@ -615,6 +630,26 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   let footnote: string | undefined
   let charPrId: string | undefined
 
+  // 하이퍼링크 필드 범위 — fieldBegin/fieldEnd의 텍스트 오프셋을 추적해 필드 extent만
+  // 인라인 [anchor](url)로 방출 (HWP5 fieldRanges와 동일 모델). extent를 못 닫으면
+  // (문단 경계 걸침 등) 기존 문단 전체 href로 폴백.
+  const linkRanges: Array<{ url: string; start: number; end?: number }> = []
+  const openFields: Array<{ rangeIdx?: number }> = []
+  const onFieldBegin = (el: Element) => {
+    const url = extractHyperlinkHref(el)
+    if (url) {
+      linkRanges.push({ url, start: text.length })
+      openFields.push({ rangeIdx: linkRanges.length - 1 })
+      if (!href) href = url
+    } else {
+      openFields.push({})
+    }
+  }
+  const onFieldEnd = () => {
+    const open = openFields.pop()
+    if (open?.rangeIdx !== undefined) linkRanges[open.rangeIdx].end = text.length
+  }
+
   // 문단의 스타일 참조 → charPr로 간접 조회
   // HWPX <p>에는 paraPrIDRef/styleIDRef가 있고, charPrIDRef는 <r> 요소에 있음
   // 여기서는 일단 null — <r> 요소에서 charPrIDRef를 가져옴
@@ -629,9 +664,12 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
       const ktag = (k.tagName || k.localName || "").replace(/^[^:]+:/, "")
       switch (ktag) {
         // 머리말/꼬리말 — 문서당 1회 수집, 본문 앞/뒤 배치
+        // 페이지 번호 크롬(autoNum PAGE + 문자 없는 잔여 텍스트, 예: "- 1 -")은 본문 정보가
+        // 아니므로 방출하지 않는다
         case "header": case "footer": {
           if (!ctx) break
           const t = collectSubListText(k, ctx)
+          if (t && hasPageAutoNum(k) && !/\p{L}/u.test(t)) break
           if (t) {
             const bucket = ktag === "header" ? ctx.shared.pageText.headers : ctx.shared.pageText.footers
             if (!bucket.includes(t)) bucket.push(t)
@@ -646,13 +684,9 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           break
         }
 
-        // 하이퍼링크 — fieldBegin type=HYPERLINK의 Path 파라미터
-        case "fieldBegin": {
-          const url = extractHyperlinkHref(k)
-          if (url && !href) href = url
-          break
-        }
-        case "fieldEnd": break
+        // 하이퍼링크 — fieldBegin type=HYPERLINK의 Path 파라미터 (extent 오프셋 추적)
+        case "fieldBegin": onFieldBegin(k); break
+        case "fieldEnd": onFieldEnd(); break
 
         // 변경추적 — 삭제 구간(deleteBegin~End)의 텍스트는 출력 제외 (최종본 상태 재현)
         case "deleteBegin":
@@ -753,19 +787,15 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         // 제어 요소 — 선별 순회 (머리말/꼬리말/각주/하이퍼링크/변경추적, v3.0)
         case "ctrl": handleCtrl(child); break
 
-        // run 직계 fieldBegin (비표준 경로) — 하이퍼링크 URL만 추출
-        case "fieldBegin": {
-          const url = extractHyperlinkHref(child)
-          if (url && !href) href = url
-          break
-        }
+        // run 직계 fieldBegin (비표준 경로) — 하이퍼링크 URL·extent 추적
+        case "fieldBegin": onFieldBegin(child); break
 
         // run 직계 변경추적 마커 (비표준 경로)
         case "deleteBegin": if (ctx) ctx.shared.track.deleteDepth++; break
         case "deleteEnd": if (ctx && ctx.shared.track.deleteDepth > 0) ctx.shared.track.deleteDepth--; break
         case "insertBegin": case "insertEnd": break
 
-        case "fieldEnd":
+        case "fieldEnd": onFieldEnd(); break
         case "parameters": case "stringParam": case "integerParam":
         case "boolParam": case "floatParam":
         case "secPr":  // 섹션 속성 (페이지 설정 등)
@@ -806,6 +836,23 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
     }
   }
   walk(para)
+
+  // 하이퍼링크 extent 인라인 적용 — 시작 내림차순 치환(HWP5와 동일), 겹침 금지.
+  // anchor가 줄바꿈·리더마커·대괄호를 품으면 문법이 깨지므로 그 필드는 건너뛴다.
+  {
+    const applied: Array<[number, number]> = []
+    const closed = linkRanges
+      .filter(r => r.end !== undefined && r.end > r.start)
+      .sort((a, b) => b.start - a.start)
+    for (const r of closed) {
+      if (applied.some(([s, e]) => r.start < e && r.end! > s)) continue
+      const anchor = text.slice(r.start, r.end!)
+      if (!anchor.trim() || /[\n\x1F\[\]]/.test(anchor)) continue
+      text = text.slice(0, r.start) + `[${anchor}](${r.url})` + text.slice(r.end!)
+      applied.push([r.start, r.end!])
+    }
+    if (applied.length) href = undefined // 문단 전체 href 중복 방지
+  }
 
   // 목차 리더 마커(\x1F) 이후 텍스트(페이지번호) 제거
   const leaderIdx = text.indexOf("\x1F")

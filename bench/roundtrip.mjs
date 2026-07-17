@@ -21,7 +21,7 @@ import { join, relative, basename } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parse, markdownToHwpx } from "../dist/index.js"
 import { mdToPlain, normKey } from "./lib/normalize.mjs"
-import { collectIrGrids, scoreTables } from "./lib/table-score.mjs"
+import { collectIrGrids, scoreTables, irAnchors } from "./lib/table-score.mjs"
 
 const root = fileURLToPath(new URL(".", import.meta.url))
 const args = process.argv.slice(2)
@@ -45,7 +45,9 @@ const docFilter = (args.find(a => a.startsWith("--doc=")) ?? "").split("=")[1] ?
 // 2026-07-11 v4.0.6 상향: 인라인 강조 run-span 왕복(자사 파일 채널)으로 fixture
 // basic fwd 0.525→1·law 0.943→1, corpus fwd/bwd micro 1.0 도달 — fwd 0.999→0.9995,
 // bwd 0.998→0.9995, tableExact 0.72→0.85(v4.0.5 0.8797 반영) 잠금.
-const GATES = { fwdCovMicro: 0.9995, bwdCovMicro: 0.9995, tableExact: 0.85, cellExact: 0.99, genErrors: 0, headingErrors: 0, equationErrors: 0, lineErrors: 0 }
+// 2026-07-17 만점 잠금: 빈 행 GFM 보존 + 의도적 평탄화 표 whitelist(isIntentionalUnwrap)로
+// corpus 75건 fwd/bwd/tableExact/cellExact 전부 1.0 도달 — 새 플로어가 기준.
+const GATES = { fwdCovMicro: 1, bwdCovMicro: 1, tableExact: 1, cellExact: 1, genErrors: 0, headingErrors: 0, equationErrors: 0, lineErrors: 0 }
 
 const round = (x, d = 6) => (x === null || x === undefined ? null : +x.toFixed(d))
 
@@ -72,14 +74,52 @@ async function roundtrip(m0, genOpts) {
   return { ok: true, m1: res1.markdown, blocks1: res1.blocks }
 }
 
+// tableToMarkdown이 의도적으로 표가 아닌 형태로 방출하는 표 — 왕복 표 모수에서 제외
+// (whitelist): 빈 표(방출 생략)·1×1(구조화 텍스트 언랩)·병합/중첩 없는 1열 표(라인 언랩).
+// 조건은 src/table/builder.ts tableToMarkdown 분기 미러 — HTML 경로(병합·중첩, 수식 제외)를
+// 타는 표는 표로 방출되므로 모수 유지.
+const CELL_MATH_RE = /(^|[^\\])\$(?=\S)(?:[^$\n\\]|\\.)+?\S\$/
+function isIntentionalUnwrap(t) {
+  if (t.rows === 0 || t.cols === 0) return true
+  const flat = t.cells.flat()
+  const hasMerge = flat.some(c => c.rowSpan > 1 || c.colSpan > 1)
+  const hasNested = flat.some(c => c.blocks?.some(b => b.type === "table" && b.table))
+  const hasMath = flat.some(c => CELL_MATH_RE.test(c.text ?? ""))
+  if ((hasMerge || hasNested) && !hasMath) return false // HTML 표로 방출 — 왕복 대상
+  if (t.rows === 1 && t.cols === 1) return true
+  if (t.cols === 1 && t.rows >= 2) return true
+  return flat.every(c => !(c.text ?? "").trim()) // 전셀 빈 GFM 표 — 재파싱 시 열 트림으로 소실
+}
+
+/** blocks의 IRTable을 post-order(자식 먼저)로 수집 — collectIrGrids와 동일 경계 */
+function collectRefTables(blocks, out = []) {
+  const visit = (t, depth = 0) => {
+    if (depth > 12) return
+    for (const row of t.cells) {
+      for (const c of row) {
+        for (const b of c.blocks ?? []) if (b.type === "table" && b.table) visit(b.table, depth + 1)
+      }
+    }
+    if (!isIntentionalUnwrap(t)) out.push(t)
+  }
+  for (const b of blocks) {
+    if (b.type === "table" && b.table) visit(b.table)
+  }
+  return out
+}
+
 function scoreRound(m0, blocks0, rt) {
   const p0 = normKey(mdToPlain(m0).text)
   const p1 = normKey(mdToPlain(rt.m1).text)
   const b0 = trigramBag(p0), b1 = trigramBag(p1)
   const fwd = coverage(b0, b1)
   const bwd = coverage(b1, b0)
-  // 표: 원 파싱 IR 그리드를 참조로 재파싱 그리드를 채점 (기존 채점기 재사용)
-  const refGrids = collectIrGrids(blocks0).map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors }))
+  // 표: 원 파싱 IR 그리드를 참조로 재파싱 그리드를 채점 (기존 채점기 재사용).
+  // 의도적 평탄화 표(whitelist)는 ref 모수 제외 — isIntentionalUnwrap 참조.
+  const refGrids = collectRefTables(blocks0).map(t => {
+    const g = irAnchors(t)
+    return { rows: g.rows, cols: g.cols, cells: g.anchors }
+  })
   const tbl = scoreTables(refGrids, collectIrGrids(rt.blocks1))
   const h0 = (m0.match(/^#{1,6} /gm) ?? []).length
   const h1 = (rt.m1.match(/^#{1,6} /gm) ?? []).length

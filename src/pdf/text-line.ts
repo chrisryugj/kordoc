@@ -164,8 +164,11 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     for (let j = deduped.length - 1; j >= 0; j--) {
       const prev = deduped[j]
       if (prev.y - sorted[i].y > 3) break // 이전 아이템이 너무 높음 → 중단
+      // x 허용치는 글리프 폭 비례 — 고정 ±3px는 좁은 글리프(괄호 w≈3)에서 나란히
+      // 놓인 진짜 두 글자("경북))")까지 삼킨다. 가짜 볼드 오프셋은 폭의 절반 미만.
+      const xTol = Math.min(3, Math.max(0.5, sorted[i].w * 0.5))
       if (Math.abs(prev.y - sorted[i].y) <= 3 &&
-          prev.text === sorted[i].text && Math.abs(prev.x - sorted[i].x) <= 3) {
+          prev.text === sorted[i].text && Math.abs(prev.x - sorted[i].x) <= xTol) {
         isDup = true
         break
       }
@@ -258,8 +261,14 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
     }
     return { bottom, top, height: top - bottom }
   }
-  const isFrag = (line: NormItem[]) =>
-    line.length <= 3 && line.every(i => i.text.trim().length <= 8)
+  // 조각 판정 — 글자 단위로 흩어진 소형 라벨("과기정통부" 1자×5)도 흡수하도록
+  // 아이템 수 대신 총 글자수로 제한 (높이비·수직겹침 가드가 과병합을 막는다)
+  const isFrag = (line: NormItem[]) => {
+    if (line.length > 8) return false
+    let total = 0
+    for (const i of line) total += i.text.trim().length
+    return total > 0 && total <= 10
+  }
 
   const result: NormItem[][] = [lines[0]]
   for (let i = 1; i < lines.length; i++) {

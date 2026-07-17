@@ -36,7 +36,10 @@ const docFilter = (args.find(a => a.startsWith("--doc=")) ?? "").split("=")[1] ?
 // (goe str 0.984→1.0 — 파서 무죄, 추출기 순서 비대칭이었음)
 // 이전 세대 픽스: 한셀(HCell) xlsx 접두 네임스페이스 인식 · HML P 앵커 표 소실 해소.
 // 잔여 미달 (수용): kats "형용사또는명사" 소량 · hml bizinfo 0.973 (글상자/도형 텍스트)
-const GATES = { parseErrors: 0, docxRecall: 0.998, xlsxStrRecall: 0.999, hmlRecall: 0.995 }
+// 2026-07-17 만점 잠금: HML 병합 헤더 셀 소실 수리(parseTable 이중 그리딩 제거) +
+// docx OMML whitelist 대칭 + 중첩 링크 언랩 + xlsx num 토큰 multiset·toPrecision(15)
+// 정규화로 4지표 전부 1.0 — 새 플로어가 기준. numRecall도 게이트 승격.
+const GATES = { parseErrors: 0, docxRecall: 1, xlsxStrRecall: 1, hmlRecall: 1, xlsxNumRecall: 1 }
 
 // 유닛 정렬 상한 — 초대형 스프레드시트(개표결과 25만+ 셀)는 align이 수십 분 걸려
 // recall 모수에서 제외(스모크만). 초과 문서는 unitCapped로 보고.
@@ -72,6 +75,9 @@ async function docxUnits(buf) {
         else if (c.tag === "tab") parts.push(" ")
         else if (c.tag === "br" || c.tag === "cr") parts.push("\n")
         else if (c.tag === "instrtext" || c.tag === "deltext" || c.tag === "fldchar") continue
+        // OMML 수식 — 파서는 $LaTeX$로 방출·mdToPlain이 수식 span 제거 (HWPX 수식
+        // whitelist와 동일 정책) → GT도 수식 서브트리를 recall 모수에서 제외
+        else if (c.tag === "omath" || c.tag === "omathpara") continue
         else if (c.tag === "fallback" || c.tag === "txbxcontent") continue
         else walkRun(c)
       }
@@ -243,6 +249,37 @@ function recallOf(unitTexts, md) {
   return { recall: total ? matched / total : 1, refChars: total, matched, misses: misses.slice(0, 5) }
 }
 
+/** 숫자 셀 recall — 셀 토큰 multiset 대조. normKey가 인접 숫자 셀을 한 자리수-run으로
+ * 이어붙여 substring 정렬이 유닛을 쪼개는 거짓 miss(goe 0.984, IR 대조 무손실 실측)를
+ * 차단한다. 숫자 셀은 파서가 v 원문을 셀 토큰으로 방출하므로 정확 토큰 대조가 진실. */
+function numRecallOf(unitTexts, md) {
+  if (unitTexts.length === 0) return { recall: 1, refChars: 0, matched: 0, misses: [] }
+  // 파서는 숫자 셀을 parseFloat(x.toPrecision(15)).toString()로 방출(IEEE 754 오차 제거,
+  // src/xlsx/parser.ts) — GT의 float 꼬리("3046.9300999999996")도 같은 왕복으로 정규화
+  const canon = s => {
+    const x = Number(s)
+    return Number.isFinite(x) ? parseFloat(x.toPrecision(15)).toString() : s
+  }
+  const freq = new Map()
+  for (const tok of md.split(/[|\n]|<\/?(?:t[dhr]|table|thead|tbody)\b[^>]*>|<br\s*\/?>/i)) {
+    const t = tok.trim()
+    if (t) { const k = canon(t); freq.set(k, (freq.get(k) ?? 0) + 1) }
+  }
+  let total = 0, matched = 0
+  const missFreq = new Map()
+  for (const raw of unitTexts) {
+    const t = canon(raw.trim())
+    if (!t) continue
+    total += t.length
+    const n = freq.get(t) ?? 0
+    if (n > 0) { matched += t.length; freq.set(t, n - 1) }
+    else missFreq.set(t, (missFreq.get(t) ?? 0) + 1)
+  }
+  const misses = [...missFreq].map(([text, cnt]) => ({ text: text.slice(0, 50), miss: text.length * cnt }))
+  misses.sort((a, b) => b.miss - a.miss)
+  return { recall: total ? matched / total : 1, refChars: total, matched, misses: misses.slice(0, 5) }
+}
+
 // ─── 메인 ──────────────────────────────────────────
 const t0 = performance.now()
 const base = join(root, "corpus", "formats")
@@ -285,7 +322,7 @@ for (const kind of ["docx", "xlsx", "hml"]) {
           if (strUnits.length + numUnits.length > UNIT_CAP) { row.unitCapped = strUnits.length + numUnits.length }
           else {
             const rs = recallOf(strUnits, res.markdown)
-            const rn = recallOf(numUnits, res.markdown)
+            const rn = numRecallOf(numUnits, res.markdown)
             row.strRecall = round(rs.recall); row.numRecall = round(rn.recall)
             row.refChars = rs.refChars + rn.refChars; row.topMisses = rs.misses
             agg.xlsxStr.m += rs.matched; agg.xlsxStr.t += rs.refChars
@@ -321,6 +358,7 @@ const gates = {
   docxRecall: { value: round(rate(agg.docx)), threshold: GATES.docxRecall, pass: rate(agg.docx) >= GATES.docxRecall },
   xlsxStrRecall: { value: round(rate(agg.xlsxStr)), threshold: GATES.xlsxStrRecall, pass: rate(agg.xlsxStr) >= GATES.xlsxStrRecall },
   hmlRecall: { value: round(rate(agg.hml)), threshold: GATES.hmlRecall, pass: rate(agg.hml) >= GATES.hmlRecall },
+  xlsxNumRecall: { value: round(rate(agg.xlsxNum)), threshold: GATES.xlsxNumRecall, pass: rate(agg.xlsxNum) >= GATES.xlsxNumRecall },
   population: {
     value: `docx ${kindCount("docx")}/xlsx ${kindCount("xlsx")}/hml ${kindCount("hml")}`,
     threshold: `≥ ${MIN_POP.docx}/${MIN_POP.xlsx}/${MIN_POP.hml}`,

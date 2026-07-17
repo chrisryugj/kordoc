@@ -637,8 +637,14 @@ function tableToMarkdown(table: IRTable): string {
   let pendingLabelRow: string[] | null = null
   for (let r = 0; r < display.length; r++) {
     const row = display[r]
-    const isEmptyPlaceholder = row.every(cell => cell === "")
-    if (isEmptyPlaceholder) continue
+    if (row.every(cell => cell === "")) {
+      // rowSpan 잔류 행(병합 커버 셀 포함 — 병합+수식 GFM 경로)만 제거.
+      // 앵커 셀이 전부 빈 텍스트인 진짜 빈 행은 문서 구조 — 보존해야 왕복이 성립한다.
+      if (row.some((_, c) => skip.has(`${r},${c}`))) continue
+      if (pendingLabelRow) { uniqueRows.push(pendingLabelRow); pendingLabelRow = null }
+      uniqueRows.push(row)
+      continue
+    }
 
     // 첫 열만 값이 있고 나머지 모두 빈 행 → 다음 데이터 행의 첫 열에 전파
     // 단, colSpan으로 인한 빈 열(skip 셀)은 "진짜 빈"이 아니므로 제외

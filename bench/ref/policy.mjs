@@ -47,19 +47,22 @@ export const BLACKLIST = [
 ]
 
 // ─── 게이트 (명세 §6) ───────────────────────────────
+// 2026-07-17 전 지표 만점 잠금: 꼬리 결함 전량 수리(페이지번호 꼬리말·수식 whitelist
+// 대칭·중첩표 캡션 순서·하이퍼링크 extent·href 괄호 인코딩)로 HWPX 347건 전 지표 1.0,
+// HWP5쌍 유사도/커버 1.0 도달 — 새 플로어가 기준 (회귀 절대 불가).
 export const GATES = {
   hwpx: {
-    recallMicro: 0.999, recallDoc: 0.99, missRun: 20,
-    phantom: 0.005, blacklistHits: 0,
-    // contentNED/cellExact 상향(0.999/0.995 → 0.9995/0.999): 자동부호(NUMBER/BULLET)
-    // 장식 관용 도입으로 85건 전건 1.0 도달 (2026-07-03) — 만점 잠금
-    tableExact: 0.99, cellF1: 0.999, contentNED: 0.9995, cellExact: 0.999,
-    orderDoc: 0.98, orderAvg: 0.995,
-    eqPresence: 0.99, footnotePresence: 0.999, headerViolations: 0,
+    recallMicro: 1, recallDoc: 1, missRun: 20,
+    phantom: 0, blacklistHits: 0,
+    tableExact: 1, cellF1: 1, contentNED: 1, cellExact: 1,
+    orderDoc: 1, orderAvg: 1,
+    eqPresence: 1, footnotePresence: 1, headerViolations: 0,
   },
-  pdf: { coverage: 0.985 },
+  // PDF 커버리지 0.99914 실측(0.99857→, 첨자·중복글리프·헤더오검출 수리) — 잔여는
+  // 구조 해석 충돌 영역(과소분할 일정표·서식 rowspan 그리드)이라 0.999로 잠금
+  pdf: { coverage: 0.999 },
   // HWP5 2차 트랙 (같은 newsId의 hwp↔hwpx 쌍 상호 정렬) — v3.0에서 정식 게이트 승격
-  hwp: { pairSimilarity: 0.99, pairCoverage: 0.99 },
+  hwp: { pairSimilarity: 1, pairCoverage: 1 },
 }
 
 /** 정책 드롭 카운터 생성 — 문서별 리포트용 */

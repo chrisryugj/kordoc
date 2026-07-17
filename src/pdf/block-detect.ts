@@ -574,12 +574,26 @@ export function removeHeaderFooterBlocks(
       }
     }
 
-    // 제거 대상: 텍스트 반복 패턴 매칭
+    // 제거 대상: 텍스트 반복 패턴 매칭.
+    // 단 같은 페이지의 비후보 블록과 y대역이 겹치면(후보 높이의 ≥50%) 러닝헤더가
+    // 아니라 본문 라인의 일부다 — "붙임 N" 태그가 제목과 같은 줄에 있는 첨부 표제를
+    // 3페이지 반복 + 숫자 정규화가 헤더로 오검출해 통째로 삼키는 사고 방지.
     for (const e of entries) {
       const norm = e.text.replace(/\d+/g, "#")
-      if (repeatedPatterns.has(norm)) {
-        removeSet.add(e.blockIdx)
+      if (!repeatedPatterns.has(norm)) continue
+      const cand = blocks[e.blockIdx]
+      const cb = cand.bbox!
+      let sharesLine = false
+      for (let bi = 0; bi < blocks.length; bi++) {
+        if (bi === e.blockIdx) continue
+        const o = blocks[bi]
+        if (!o.bbox || o.bbox.page !== cb.page) continue
+        const oNorm = o.text?.trim().replace(/\d+/g, "#")
+        if (oNorm && repeatedPatterns.has(oNorm)) continue // 후보끼리(제목+날짜 헤더)는 무시
+        const overlap = Math.min(cb.y + cb.height, o.bbox.y + o.bbox.height) - Math.max(cb.y, o.bbox.y)
+        if (overlap >= cb.height * 0.5) { sharesLine = true; break }
       }
+      if (!sharesLine) removeSet.add(e.blockIdx)
     }
   }
 

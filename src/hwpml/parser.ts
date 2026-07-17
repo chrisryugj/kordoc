@@ -301,8 +301,8 @@ function parseTable(
       const cellEl = rowCells[j] as Element
       if (cellEl.nodeType !== 1 || localName(cellEl) !== "CELL") continue
 
-      const colAddr = parseInt(cellEl.getAttribute("ColAddr") ?? "0", 10)
-      const rowAddr = parseInt(cellEl.getAttribute("RowAddr") ?? "0", 10)
+      const colAddr = parseInt(cellEl.getAttribute("ColAddr") ?? "0", 10) || 0
+      const rowAddr = parseInt(cellEl.getAttribute("RowAddr") ?? "0", 10) || 0
       // colSpan/rowSpan 클램핑: NaN, 음수, 과대값 방어
       const colSpan = Math.min(Math.max(1, parseInt(cellEl.getAttribute("ColSpan") ?? "1", 10) || 1), MAX_TABLE_COLS)
       const rowSpan = Math.min(Math.max(1, parseInt(cellEl.getAttribute("RowSpan") ?? "1", 10) || 1), MAX_TABLE_ROWS)
@@ -316,26 +316,14 @@ function parseTable(
 
   if (cells.length === 0) return
 
-  // 그리드 배치 (HWP5와 동일한 방식 — colAddr/rowAddr 사용)
-  const grid: (CellContext | null)[][] = Array.from({ length: rowCount }, () => Array(colCount).fill(null))
+  // 셀은 colAddr/rowAddr 절대좌표를 가지므로 buildTable direct 모드에 그대로 위임.
+  // (구 구현은 주소 없는 filler를 채운 수동 그리드를 넘겼는데, direct 모드가 filler의
+  // 기본 주소 (0,0)으로 첫 셀을 덮어써 병합 헤더 텍스트가 증발했다)
+  const cellRows: CellContext[][] = Array.from({ length: rowCount }, () => [])
   for (const cell of cells) {
-    const r = cell.rowAddr ?? 0
-    const c = cell.colAddr ?? 0
-    if (isNaN(r) || isNaN(c) || r >= rowCount || c >= colCount) continue
-    grid[r][c] = cell
-    for (let dr = 0; dr < cell.rowSpan; dr++) {
-      for (let dc = 0; dc < cell.colSpan; dc++) {
-        if (dr === 0 && dc === 0) continue
-        if (r + dr < rowCount && c + dc < colCount) {
-          grid[r + dr][c + dc] = { text: "", colSpan: 1, rowSpan: 1 }
-        }
-      }
-    }
+    const r = Math.min(Math.max(cell.rowAddr ?? 0, 0), rowCount - 1)
+    cellRows[r].push(cell)
   }
-
-  const cellRows: CellContext[][] = grid.map(row =>
-    row.map(cell => cell ?? { text: "", colSpan: 1, rowSpan: 1 })
-  )
 
   const table = buildTable(cellRows, { keepAnchoredEmptyCols: keep })
 

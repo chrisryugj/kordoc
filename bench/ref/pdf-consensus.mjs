@@ -208,6 +208,20 @@ const bagSize = bag => { let s = 0; for (const n of bag.values()) s += n; return
  * @param kordocPlainText kordoc 마크다운의 평문 (mdToPlain 적용 후)
  * @param needsOcrPages   kordoc pageQuality 기준 OCR 필요 페이지 집합(1-based) — 모수 격리 (pitfall #14)
  */
+/**
+ * 페이지 번호 라인 제거 — 파서 cleanPdfText가 "- 2 -"·"1 / 5"·단독 숫자 라인을
+ * 페이지 크롬으로 무조건 제거하므로(의도적 아티팩트) 참조도 대칭으로 제거.
+ * dropRepeatedLines는 3페이지 미만 문서에서 무동작이라 별도 필터가 필요하다.
+ */
+function dropPageNumberLines(pages) {
+  const isPageNum = l => {
+    const t = l.trim()
+    if (!t) return false
+    return /^[-–—]\s*[-–—]?\d+[-–—]?\s*[-–—]?$/.test(t) || /^\d+\s*\/\s*\d+$/.test(t) || /^\d{1,4}$/.test(t)
+  }
+  return pages.map(pg => pg.split("\n").filter(l => !isPageNum(l)).join("\n"))
+}
+
 export async function pdfCrossCoverage(filePath, buffer, kordocPlainText, needsOcrPages = new Set()) {
   const [popplerPages, pdfjsPagesArr] = await Promise.all([
     pdftotextPages(filePath),
@@ -221,8 +235,8 @@ export async function pdfCrossCoverage(filePath, buffer, kordocPlainText, needsO
   const filterOcr = pages =>
     pages ? pages.filter((_, i) => !needsOcrPages.has(i + 1)) : null
 
-  const a = popplerPages ? dropRepeatedLines(filterOcr(popplerPages)) : null
-  const b = pdfjsPagesArr ? dropRepeatedLines(filterOcr(pdfjsPagesArr)) : null
+  const a = popplerPages ? dropPageNumberLines(dropRepeatedLines(filterOcr(popplerPages))) : null
+  const b = pdfjsPagesArr ? dropPageNumberLines(dropRepeatedLines(filterOcr(pdfjsPagesArr))) : null
 
   let consensus
   let weak = false

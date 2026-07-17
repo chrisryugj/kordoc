@@ -11,16 +11,22 @@ import { normText, normKey } from "./normalize.mjs"
 /**
  * IR 셀의 "자기 텍스트" — blocks가 있으면 문단 블록만 join (중첩표 평탄화 텍스트·
  * ![image] 참조가 섞인 하위 호환 cell.text 대신). 중첩표 텍스트는 자식 그리드에서 채점.
+ * 수식 $…$/$$…$$은 제거 — ref 추출기가 셀 텍스트에서 수식을 제외하므로(존재는
+ * eqPresence로 별도 채점, whitelist) mdToPlain 본문 경로와 대칭.
  */
 function cellOwnText(cell) {
-  if (cell.blocks?.length) {
-    return cell.blocks
-      .filter(b => b.type !== "table" && b.type !== "image")
-      .map(b => b.text ?? "")
-      .filter(Boolean)
-      .join("\n")
-  }
-  return cell.text ?? ""
+  const raw = cell.blocks?.length
+    ? cell.blocks
+        .filter(b => b.type !== "table" && b.type !== "image")
+        .map(b => b.text ?? "")
+        .filter(Boolean)
+        .join("\n")
+    : cell.text ?? ""
+  return raw
+    .replace(/\$\$[^$]+\$\$/g, " ")
+    .replace(/(^|[^\\$])\$(?!\s)((?:\\.|[^$\n])+?)\$/g, "$1 ")
+    // 인라인 링크 [anchor](url) → anchor — ref 셀은 가시 텍스트만 모델링 (mdToPlain 대칭)
+    .replace(/\[([^\[\]]*)\]\((?:https?:|mailto:|tel:|#)[^)\s]*\)/gi, "$1")
 }
 
 /** IRTable.cells[][] → 앵커 셀 목록 (tableToHtml과 동일한 skip-set 워크) */

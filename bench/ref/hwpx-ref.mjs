@@ -221,10 +221,14 @@ export async function extractRef(buffer) {
   const specials = { equations: 0, footnotes: [], endnotes: [], headers: [], footers: [] }
   let nextUnitId = 0
 
-  const pushUnit = (kind, text, tableIdx) => {
+  const pushUnit = (kind, text, tableIdx, nestedCaption) => {
     const t = text.trim()
     if (!t) return
-    units.push({ id: nextUnitId++, kind, text: t, tableIdx })
+    const u = { id: nextUnitId++, kind, text: t, tableIdx }
+    // 중첩표 캡션 — 파서가 부모 셀 내부에 렌더링하므로 문서 평탄화 순서와 유닛 push
+    // 순서(post-order 즉시 처리)가 어긋난다. 중첩표 셀과 같은 논리로 순서 모수 제외.
+    if (nestedCaption) u.nestedCaption = true
+    units.push(u)
   }
 
   // ── 문단 텍스트 수집 (인라인 요소 + ctrl 카테고리 라우팅 + 구조 자식 분리) ──
@@ -363,7 +367,7 @@ export async function extractRef(buffer) {
           if (c.tag === "p" || c.tag === "para") {
             const { text, structural } = collectPara(c)
             if (text.trim()) hasCaption = true
-            pushUnit("caption", text)
+            pushUnit("caption", text, undefined, depth > 0)
             processStructural(structural, depth)
           } else capWalk(c)
         }

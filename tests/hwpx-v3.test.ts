@@ -108,7 +108,7 @@ describe("hwpx v3 — <hp:ctrl> 선별 순회", () => {
 })
 
 describe("hwpx v3 — 하이퍼링크 URL (fieldBegin HYPERLINK)", () => {
-  it("stringParam name=Path의 URL이 block.href로 연결된다 (실파일 구조)", async () => {
+  it("stringParam name=Path의 URL이 필드 extent만 인라인 링크로 연결된다 (실파일 구조)", async () => {
     const body = `<hp:p id="0"><hp:run><hp:t>신청방법: </hp:t>` +
       `<hp:ctrl><hp:fieldBegin id="1" type="HYPERLINK" name=""><hp:parameters cnt="2">` +
       `<hp:integerParam name="Prop">0</hp:integerParam>` +
@@ -117,7 +117,10 @@ describe("hwpx v3 — 하이퍼링크 URL (fieldBegin HYPERLINK)", () => {
       `<hp:run><hp:t>예약 누리집</hp:t><hp:ctrl><hp:fieldEnd beginIDRef="1"/></hp:ctrl></hp:run></hp:p>`
     const result = await parseHwpxDocument(await makeHwpx(sec(body)))
 
-    assert.equal(result.blocks[0].href, "https://www.nie.re.kr/view.do?menuNo=600010&edcId=E1")
+    // extent가 닫힌 하이퍼링크는 문단 전체 href가 아니라 필드 범위만 인라인 링크 (HWP5와 동일 모델)
+    assert.equal(result.blocks[0].href, undefined)
+    assert.ok(result.blocks[0].text?.includes("[예약 누리집](https://www.nie.re.kr/view.do?menuNo=600010&edcId=E1)"),
+      `인라인 링크: ${result.blocks[0].text}`)
     assert.ok(result.markdown.includes("(https://www.nie.re.kr/view.do?menuNo=600010&edcId=E1)"),
       `마크다운 링크: ${result.markdown}`)
   })
