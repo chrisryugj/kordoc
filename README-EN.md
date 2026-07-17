@@ -13,6 +13,12 @@ HWP 3.x/5.x, HWPX, HWPML, PDF, XLS, XLSX, DOCX — parse, compare, analyze, and 
 
 ![kordoc demo](./demo.gif)
 
+### 🎬 Watch
+
+[<img src="https://img.youtube.com/vi/Q13GmgDcIw0/mqdefault.jpg" width="320" alt="kordoc demo video" />](https://youtu.be/Q13GmgDcIw0)
+
+> Narration is in Korean.
+
 ---
 
 ## ⚡ 30-Second Setup (AI Agent Integration)

@@ -13,6 +13,10 @@ HWP 3.x/5.x, HWPX, HWPML, PDF, XLS, XLSX, DOCX — 관공서에서 쏟아지는 
 
 ![kordoc 데모](./demo.gif)
 
+### 🎬 영상으로 보기
+
+[<img src="https://img.youtube.com/vi/Q13GmgDcIw0/mqdefault.jpg" width="320" alt="kordoc 시연 영상" />](https://youtu.be/Q13GmgDcIw0)
+
 ---
 
 ## ⚡ 30초 설치 (AI 에이전트 연동)
