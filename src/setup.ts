@@ -8,15 +8,29 @@
 
 import { createInterface } from "node:readline/promises"
 import { readFile, writeFile, mkdir } from "node:fs/promises"
+import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
-import { resolve, dirname } from "node:path"
+import { resolve, dirname, delimiter } from "node:path"
 import { homedir, platform } from "node:os"
 import { stdin, stdout } from "node:process"
+import { promisify } from "node:util"
 
 interface ClientConfig {
   readonly name: string
   readonly configPath: string
   readonly format: "mcpServers" | "servers" | "context_servers"
+  readonly setupMethod?: "codex"
+}
+
+const execFileAsync = promisify(execFile)
+
+/** PATH에 있는 실행 파일을 확인한다. Windows에서는 PATHEXT 확장자도 고려한다. */
+function commandExists(command: string): boolean {
+  const pathEntries = (process.env["PATH"] ?? "").split(delimiter).filter(Boolean)
+  const extensions = platform() === "win32"
+    ? (process.env["PATHEXT"] ?? ".EXE;.CMD;.BAT;.COM").split(";")
+    : [""]
+  return pathEntries.some((entry) => extensions.some((ext) => existsSync(resolve(entry, `${command}${ext}`))))
 }
 
 function detectClients(): readonly ClientConfig[] {
@@ -47,6 +61,7 @@ function detectClients(): readonly ClientConfig[] {
   if (zedPath) clients.push({ name: "Zed", configPath: zedPath, format: "context_servers" })
 
   clients.push({ name: "Antigravity", configPath: resolve(home, ".gemini/antigravity/mcp_config.json"), format: "mcpServers" })
+  clients.push({ name: "Codex", configPath: resolve(home, ".codex/config.toml"), format: "mcpServers", setupMethod: "codex" })
 
   return clients
 }
@@ -80,6 +95,14 @@ function buildZedEntry(): Record<string, unknown> {
     ? { path: "cmd", args: ["/c", "npx", "-y", "kordoc", "mcp"] }
     : { path: "npx", args: ["-y", "kordoc", "mcp"] }
   return { command: base }
+}
+
+/** Codex의 TOML 설정을 직접 파싱하지 않고, 공식 CLI로 MCP 서버를 등록한다. */
+async function setupCodex(): Promise<void> {
+  const entry = buildServerEntry()
+  const command = entry["command"] as string
+  const args = entry["args"] as string[]
+  await execFileAsync("codex", ["mcp", "add", "kordoc", "--", command, ...args])
 }
 
 // ─── ANSI ─────────────────────────────────────────────────────────────
@@ -164,7 +187,7 @@ export async function runSetup(): Promise<void> {
     stepHeader(1, 2, "MCP 클라이언트 선택")
     const clients = detectClients()
     clients.forEach((cl, i) => {
-      const exists = existsSync(cl.configPath)
+      const exists = cl.setupMethod === "codex" ? commandExists("codex") : existsSync(cl.configPath)
       const badge = exists ? `${c.green} [감지됨]${c.reset}` : ""
       const num = `${c.cyan}${String(i + 1).padStart(2)}${c.reset}`
       console.log(`  ${num}) ${c.white}${cl.name}${c.reset}${badge}`)
@@ -197,6 +220,11 @@ export async function runSetup(): Promise<void> {
       const client = clients[idx]
       await sleep(150)
       try {
+        if (client.setupMethod === "codex") {
+          await setupCodex()
+          successLine(client.name, client.configPath)
+          continue
+        }
         const config = await readJsonFile(client.configPath)
         const key = client.format
         const serverEntry = key === "context_servers" ? buildZedEntry() : entry

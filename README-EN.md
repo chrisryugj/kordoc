@@ -26,7 +26,7 @@ npx -y kordoc setup
 ```
 
 An interactive wizard:
-1. Pick your AI client (Claude Desktop / Cursor / Claude Code / Windsurf / VS Code / Gemini CLI / Zed / Antigravity — installed ones show `[detected]`)
+1. Pick your AI client (Claude Desktop / Cursor / Claude Code / Windsurf / VS Code / Gemini CLI / Zed / Antigravity / Codex — installed ones show `[detected]`)
 2. Patches the config file automatically → restart the client
 
 Windows gets automatic `cmd /c npx` wrapping. No manual JSON editing. After restart, 15 document tools (`parse_document`, `parse_table`, `fill_form`, `patch_document`, `generate_document`, `place_seal`, …) are live.
@@ -361,7 +361,7 @@ npx kordoc watch ./inbox -d ./converted             # folder watch mode
 npx kordoc watch ./docs --webhook https://api/hook  # webhook notification
 ```
 
-## MCP Server (Claude / Cursor / Windsurf)
+## MCP Server (Claude / Cursor / Windsurf / Codex)
 
 **Automatic setup (recommended)**:
 
@@ -370,6 +370,14 @@ npx -y kordoc setup
 ```
 
 Detects your AI client interactively and patches its config file — including `cmd /c npx` wrapping on Windows. See [30-Second Setup](#-30-second-setup-ai-agent-integration).
+
+For Codex, the wizard registers the server through `codex mcp add` rather than editing its TOML config directly.
+
+**Manual setup for Codex**:
+
+```bash
+codex mcp add kordoc -- npx -y kordoc mcp
+```
 
 **Manual registration (macOS / Linux)**:
 
