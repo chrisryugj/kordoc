@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.2.2] - 2026-07-19
 
 rhwp 최신판 정합 회차 — 원저장소(edwardkim/rhwp)의 1만 건 실문서 서베이·실측 패치에서
 파서 스코프에 해당하는 2건을 이식.

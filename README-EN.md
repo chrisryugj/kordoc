@@ -72,6 +72,11 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.2.2
+
+- **~~Strikethrough~~ extraction (HWP5·HWPX)**: deletion marks in legislative amendment documents now survive as markdown `~~strikethrough~~`. Detection uses a strike-**shape** whitelist — Hancom stores the strikethrough bits as a default even on non-struck text (measured in upstream rhwp), so only real line kinds count and unknown values fail closed. HWPX supports partial-run strikes; HWP5 works at paragraph level.
+- **ZIP decompression limit 100→256MB**: large real-world documents with a single 75MB section XML (found in rhwp's 10k-document survey) were being rejected as ZIP bombs — limit raised.
+
 ## What's New in v4.2.1
 
 - **🖼️ Direct image input (PNG/JPG/WebP)**: convert screenshots and scanned images without wrapping them in a PDF — `kordoc form.png` / `parse(buffer)` / MCP `parse_document`. Images have no text layer, so the built-in OCR is applied automatically (no flag needed; decoding uses the optional dependency `sharp`).
