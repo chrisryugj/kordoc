@@ -35,6 +35,24 @@ function inlineTbl(id: number, cellText: string): string {
     `<hp:cellSz width="1000" height="300"/></hp:tc></hp:tr></hp:tbl>`
 }
 
+/** float(treatAsChar="0") 1×1 표 — 텍스트 흐름 불참 개체 */
+function floatTbl(id: number, cellText: string): string {
+  return `<hp:tbl id="${id}" rowCnt="1" colCnt="1">` +
+    `<hp:pos treatAsChar="0" vertRelTo="PARA" horzRelTo="COLUMN"/>` +
+    `<hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>${cellText}</hp:t></hp:run></hp:p></hp:subList>` +
+    `<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>` +
+    `<hp:cellSz width="1000" height="300"/></hp:tc></hp:tr></hp:tbl>`
+}
+
+/** 셀 안에 임의 문단(중첩표·텍스트 혼재)을 담는 최상위 인라인 표 */
+function outerTbl(id: number, cellPara: string): string {
+  return `<hp:tbl id="${id}" rowCnt="1" colCnt="1">` +
+    `<hp:pos treatAsChar="1" vertRelTo="PARA" horzRelTo="PARA"/>` +
+    `<hp:tr><hp:tc><hp:subList>${cellPara}</hp:subList>` +
+    `<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>` +
+    `<hp:cellSz width="4000" height="400"/></hp:tc></hp:tr></hp:tbl>`
+}
+
 function shape(b: { type: string; text?: string; table?: { cells: { text: string }[][] } }): string {
   if (b.type === "table") return `table(${b.table!.cells[0][0].text})`
   return `${b.type}(${b.text})`
@@ -100,5 +118,45 @@ describe("#49 — IRCell.blocks 셀 안 표·텍스트 교대 배치 순서 (라
     const cell = outer!.table!.cells[0][1]
     assert.ok(cell.blocks)
     assert.deepEqual(cell.blocks.map(shape), ["paragraph(안내문)", "table(세부표)"])
+  })
+})
+
+describe("#52 — IRCell.text 평탄화가 blocks 문서 순서를 따른다 (실문서 단일 run)", () => {
+  it("셀 한 run에 [표] 텍스트 [표] 텍스트 — text가 blocks 순서로 평탄화된다", async () => {
+    // 실문서 기간 입력란 구조: 셀 문단의 한 run 안에 표·텍스트가 혼재
+    const cellPara = `<hp:p id="2" paraPrIDRef="0"><hp:run charPrIDRef="0">` +
+      inlineTbl(200, "0000-00-00") + `<hp:t> 부터 </hp:t>` +
+      inlineTbl(201, "0000-00-00") + `<hp:t> 까지</hp:t>` + `</hp:run></hp:p>`
+    const body = `<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0">` +
+      outerTbl(100, cellPara) + `</hp:run></hp:p>`
+    const r = await parseHwpxDocument(await makeHwpx(sec(body)))
+    const cell = r.blocks.find((b) => b.type === "table")!.table!.cells[0][0]
+    assert.ok(cell.blocks)
+    assert.deepEqual(
+      cell.blocks.map(shape),
+      ["table(0000-00-00)", "paragraph(부터)", "table(0000-00-00)", "paragraph(까지)"]
+    )
+    // 하위 호환 text = blocks의 평탄화 (문서 순서) — 종전엔 "부터 까지\n0000...\n0000..."로 역전
+    assert.equal(cell.text, "0000-00-00\n부터\n0000-00-00\n까지")
+  })
+})
+
+describe("#53 — 같은 문단에 inline 표가 있어도 float 표는 앞선 텍스트를 추월하지 않는다", () => {
+  it("[텍스트] [float표] [inline표] — 텍스트가 float 표 앞에 남는다", async () => {
+    const body = `<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0">` +
+      `<hp:t>신청서제목</hp:t>` + floatTbl(300, "일반현황") + inlineTbl(301, "접수번호") +
+      `</hp:run></hp:p>`
+    const r = await parseHwpxDocument(await makeHwpx(sec(body)))
+    assert.deepEqual(
+      r.blocks.map(shape),
+      ["paragraph(신청서제목)", "table(일반현황)", "table(접수번호)"]
+    )
+  })
+
+  it("[텍스트] [float표] (inline 표 없음) — 종전과 동일하게 정상 (회귀 방지)", async () => {
+    const body = `<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0">` +
+      `<hp:t>신청서제목</hp:t>` + floatTbl(300, "일반현황") + `</hp:run></hp:p>`
+    const r = await parseHwpxDocument(await makeHwpx(sec(body)))
+    assert.deepEqual(r.blocks.map(shape), ["paragraph(신청서제목)", "table(일반현황)"])
   })
 })

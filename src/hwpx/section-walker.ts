@@ -185,10 +185,8 @@ function walkSection(
         // 인라인 표 포함 문단 (#49/#50) — 문단 텍스트를 통째로 먼저 push하면 원문에서
         // 표가 앞설 때 순서가 역전된다. 표 경계 조각을 walkParagraphChildren의 onTbl
         // 콜백으로 표 직전마다 방출해 문서 순서를 보존한다 (treatAsChar inline 표 배치).
-        // IRCell.text 평탄화는 기존 그대로 문단 전체 선append (하위 호환).
         if (segments) {
           const cell = tableCtx?.cell ?? null
-          if (text && cell) cell.text += (cell.text ? "\n" : "") + (footnote ? `${text} (주: ${footnote})` : text)
           const segs = [...segments]
           if (ph?.prefix) {
             const fi = segs.findIndex(s => s)
@@ -206,11 +204,18 @@ function walkSection(
               if (href) block.href = href
               if (footnote) block.footnoteText = footnote
             }
-            if (cell) (cell.blocks ??= []).push(block)
-            else blocks.push(block)
+            if (cell) {
+              // IRCell.text 평탄화는 blocks 순서를 따라야 한다 (#52, 타입 계약). 종전엔
+              // 문단 텍스트를 통째로 선append해 중첩표 평탄화(completeTable)보다 앞서
+              // 역전됐다 — 세그먼트를 표와 교대로 나온 자리에서 이어붙여 문서 순서 보존.
+              cell.text += (cell.text ? "\n" : "") + s
+              ;(cell.blocks ??= []).push(block)
+            } else blocks.push(block)
           }
           tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, ctx, depth + 1, flush)
           while (segIdx < segs.length) flush()
+          // 셀 각주(주석) — 세그먼트 평탄화 뒤 종전과 동일하게 보존 (희소 경로)
+          if (footnote && cell) cell.text += (cell.text ? "\n" : "") + `(주: ${footnote})`
           break
         }
         if (text) {
@@ -518,9 +523,12 @@ function walkParagraphChildren(
       const localTag = tag.replace(/^[^:]+:/, "")
 
       if (localTag === "tbl") {
-        // 표 앞 텍스트 조각 선방출 — 문서 순서 보존 (#49/#50).
-        // extractParagraphInfo의 \x1E 마커와 동일 조건(inline 표만)이어야 인덱스 정합
-        if (onTbl && isInlineTbl(el)) onTbl()
+        // 표 앞 텍스트 조각 선방출 — 문서 순서 보존 (#49/#50/#53). inline·float 표
+        // 모두 직전에 방출한다: float 표는 흐름 불참이지만 자기보다 앞선 텍스트를
+        // 추월하면 안 된다 (#53 — 같은 문단에 inline 표가 있을 때, 텍스트 조각이 다음
+        // inline 표 직전까지 미뤄져 그 사이 float 표가 텍스트를 건너뛰던 역전 수정).
+        // flush는 세그먼트 소진(빈/undefined)에 안전한 no-op이라 float가 여럿이어도 무해.
+        if (onTbl) onTbl()
         // kordoc 왕복 채널 (v4.0.5 P2) — walkSection tbl 케이스와 동일 판독.
         // 최상위(셀 밖) 표에서만: heading 복원 또는 파생물(목차·제목반복) 스킵
         if (!tableCtx) {

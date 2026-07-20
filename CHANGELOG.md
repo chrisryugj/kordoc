@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.4] - 2026-07-21
+
+4.2.3 인라인 표 순서 회차의 후속 결함 2건(#52·#53, @jumaniac 제보) 수정 —
+같은 회차에서 놓친 셀 텍스트 평탄화 순서와 인라인 표 공존 시 float 표 추월 퇴행.
+
+### Fixed
+
+- **`IRCell.text` 평탄화 문서 순서 (#52)**: 셀 한 run에 표·텍스트가 혼재할 때 문단
+  텍스트를 통째로 `cell.text`에 선(先)append해 중첩표 평탄화 텍스트가 그 뒤에 붙어
+  순서가 역전되던 것 수정 — `cell.blocks`는 정상이나 `text`만 `types.ts`의 "text =
+  blocks의 평탄화" 계약을 위반했다. 선append를 제거하고 각 세그먼트를 표와 교대로
+  나온 자리에 이어붙인다.
+- **인라인 표 공존 시 float 표의 텍스트 추월 (#53, 퇴행)**: 같은 문단에 인라인 표가
+  있으면 float 표가 앞선 텍스트를 추월하던 4.2.0→4.2.3 퇴행 수정. `walkParagraphChildren`가
+  텍스트 조각 방출을 인라인 표에만 하던 것을 모든 표 직전으로 확장한다(잔여 세그먼트
+  없으면 no-op이라 float 다수여도 안전). 자기참조 벤치 GT(`hwpx-ref`)도 동일 모델로 동기화.
+
 ## [4.2.3] - 2026-07-19
 
 인라인 표 순서 보존 회차 — 한 문단·한 셀 안에서 글자취급(treatAsChar) 표와 텍스트가

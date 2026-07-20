@@ -248,7 +248,7 @@ export async function extractRef(buffer) {
           // 글자취급(inline) 표는 경계 마커 — 파서와 동일하게 표 전후 텍스트를
           // 문서 순서 유닛으로 분할한다 (#49/#50). float 표는 종전대로 텍스트 뒤
           const inline = ch.children.some(c => typeof c !== "string" && c.tag === "pos" && c.attrs?.treataschar === "1")
-          structural.push({ type: "tbl", node: ch, inline })
+          structural.push({ type: "tbl", node: ch })
           if (inline && !leaderCut) text += "\x1E"
           continue
         }
@@ -482,11 +482,12 @@ export async function extractRef(buffer) {
       if (ch.tag === "p" || ch.tag === "para") {
         const { text, segs, structural } = collectPara(ch)
         if (segs) {
-          // 인라인 표 포함 문단 — 파서 walkSection 분할 방출과 동일 모델 (#49/#50):
-          // 각 인라인 표 직전에 해당 텍스트 조각, 잔여 조각은 뒤에. float·도형은 DOM 위치
+          // 인라인 표 포함 문단 — 파서 walkSection 분할 방출과 동일 모델 (#49/#50/#53):
+          // 표(inline·float) 직전마다 해당 텍스트 조각을 방출, 잔여 조각은 뒤에. float 표는
+          // 흐름 불참이지만 앞선 텍스트를 추월하지 않는다 (#53). 도형은 DOM 위치.
           let si = 0
           for (const s of structural) {
-            if (s.type === "tbl" && s.inline) pushUnit("body", segs[si++] ?? "")
+            if (s.type === "tbl") pushUnit("body", segs[si++] ?? "")
             processStructural([s], 0)
           }
           while (si < segs.length) pushUnit("body", segs[si++] ?? "")
