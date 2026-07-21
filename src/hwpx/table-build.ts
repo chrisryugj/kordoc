@@ -108,7 +108,14 @@ export function completeTable(
     // 하위 호환: IRCell.text는 blocks의 평탄화 텍스트를 포함한다
     let flat = convertTableToText(newTable.rows)
     if (newTable.caption) flat = newTable.caption + (flat ? "\n" + flat : "")
-    if (flat) cell.text += (cell.text ? "\n" : "") + flat
+    if (flat) {
+      // 글자취급(treatAsChar="1") 표는 앞뒤 텍스트와 같은 줄에 놓인다 — 인라인 줄이
+      // 열려 있으면 공백으로 잇는다 (#52 후속). 블록/float 표(inline=false)나 문단
+      // 첫 항목(lineOpen=false)은 종전대로 `\n`으로 분리한다.
+      const inlineJoin = newTable.inline === true && cell.lineOpen === true
+      cell.text += (cell.text ? (inlineJoin ? " " : "\n") : "") + flat
+      cell.lineOpen = newTable.inline === true
+    }
   } else {
     // 부모 표의 셀 밖(비정상 경로) 또는 최상위 — 블록으로 추가
     blocks.push(block)

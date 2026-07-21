@@ -187,6 +187,9 @@ function walkSection(
         // 콜백으로 표 직전마다 방출해 문서 순서를 보존한다 (treatAsChar inline 표 배치).
         if (segments) {
           const cell = tableCtx?.cell ?? null
+          // 문단 시작 — 인라인 줄은 아직 닫힘. 첫 항목은 이전 문단과 `\n`으로 분리되고,
+          // 이후 같은 문단의 글자취급 표·텍스트끼리는 공백으로 이어진다 (#52 후속)
+          if (cell) cell.lineOpen = false
           const segs = [...segments]
           if (ph?.prefix) {
             const fi = segs.findIndex(s => s)
@@ -208,7 +211,11 @@ function walkSection(
               // IRCell.text 평탄화는 blocks 순서를 따라야 한다 (#52, 타입 계약). 종전엔
               // 문단 텍스트를 통째로 선append해 중첩표 평탄화(completeTable)보다 앞서
               // 역전됐다 — 세그먼트를 표와 교대로 나온 자리에서 이어붙여 문서 순서 보존.
-              cell.text += (cell.text ? "\n" : "") + s
+              // 텍스트 조각은 인라인 흐름 — 줄이 열려 있으면(직전이 글자취급 표·텍스트)
+              // 공백으로 잇고, 아니면 `\n`(문단 첫 항목). 원문 " 부터 "가 cleanParaText로
+              // 트림돼 공백 정보가 사라지므로 공백 연결로 원문 한 줄을 재현한다 (#52 후속).
+              cell.text += (cell.text ? (cell.lineOpen ? " " : "\n") : "") + s
+              cell.lineOpen = true
               ;(cell.blocks ??= []).push(block)
             } else blocks.push(block)
           }
@@ -540,9 +547,10 @@ function walkParagraphChildren(
             continue
           }
         }
-        // 테이블은 walkSection으로 위임
+        // 테이블은 walkSection으로 위임. inline 플래그로 완료 시 부모 셀 텍스트를
+        // 같은 줄(공백)로 이을지 결정한다 (#52 후속 — 글자취급 표는 앞뒤 텍스트와 한 줄)
         if (tableCtx) tableStack.push(tableCtx)
-        const newTable: TableState = { rows: [], currentRow: [], cell: null }
+        const newTable: TableState = { rows: [], currentRow: [], cell: null, inline: isInlineTbl(el) }
         walkSection(el, blocks, newTable, tableStack, ctx, d + 1)
         tableCtx = completeTable(newTable, tableStack, blocks, ctx)
       } else if (localTag === "caption" && !inShape) {

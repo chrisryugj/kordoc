@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.5] - 2026-07-22
+
+4.2.4 인라인 표 순서 수정의 후속(#52, @jumaniac 제보) — 평탄화 구분자 시각 충실도.
+
+### Fixed
+
+- **글자취급 표 경계 평탄화 구분자 (#52 후속)**: 4.2.4가 `IRCell.text` 평탄화 순서를
+  바로잡으면서 글자취급(`treatAsChar="1"`) 표 경계까지 `\n`으로 분리해, 원문에서 앞뒤
+  텍스트와 같은 줄에 놓이는 인라인 표가 두 줄로 평탄화되던 것 수정(`"▦∼▦ 연락처 :"`가
+  4.2.4에서 `"▦∼\n▦ 연락처 :"`로 갈라지던 회귀). 글자취급 표·인라인 텍스트 경계는
+  공백으로 잇고, 블록·float 표와 문단 경계는 종전대로 `\n`. 순서·블록 구조는 불변
+  (#49/#50/#53 회귀 없음, 인라인 흐름 상태를 `lineOpen`으로 추적).
+
 ## [4.2.4] - 2026-07-21
 
 4.2.3 인라인 표 순서 회차의 후속 결함 2건(#52·#53, @jumaniac 제보) 수정 —

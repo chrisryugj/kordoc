@@ -41,6 +41,12 @@ export interface CellCtxEx extends CellContext {
   /** 중첩표/이미지 등 구조 콘텐츠 존재 — true일 때만 IRCell.blocks로 attach */
   hasStructure?: boolean
   isHeader?: boolean
+  /**
+   * cell.text 평탄화 조립용 임시 상태 (#52 후속) — 인라인 흐름(글자취급 표·같은 문단
+   * 텍스트)이 "열려" 있어 다음 인라인 항목을 `\n`이 아니라 공백으로 이어야 하는지.
+   * 문단 경계·블록/float 표에서 닫힌다(false). 최종 IRCell로는 나가지 않는 워크 전용 필드.
+   */
+  lineOpen?: boolean
 }
 
 export interface TableState {
@@ -49,6 +55,11 @@ export interface TableState {
   cell: CellCtxEx | null
   /** hp:caption 텍스트 — IRTable.caption으로 전달 (v3.0) */
   caption?: string
+  /**
+   * 글자취급(treatAsChar="1") 표 여부 — 부모 셀 텍스트 평탄화 시 앞뒤 텍스트와 같은 줄로
+   * 공백 연결할지 판단 (#52 후속). 블록/float 표(기본 undefined)는 종전대로 `\n`.
+   */
+  inline?: boolean
 }
 
 /** 섹션 간 공유 상태 — 자동번호 카운터, 머리말/꼬리말, 변경추적 */
