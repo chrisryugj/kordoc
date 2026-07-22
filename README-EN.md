@@ -72,6 +72,10 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.2.6
+
+- **📐 Left-aligned body for outline/report documents**: Body items (□/○/-) in outline (gaejosik) and report gongmun documents are now left-aligned instead of justified. When word-keeping meets justification, a line that breaks early (e.g. a 25-char line stretched to a 34-char column because the next word is long) got excessively wide inter-word gaps, making paragraphs look broken. This matches the left-aligned convention of the official Korean administrative style guide. Narrative-body justification for official drafts (official preset) is unchanged.
+
 ## What's New in v4.2.3
 
 - **Inline table/text order preservation (#49·#50)**: when an inline (treatAsChar) table and text alternate within one paragraph or one cell (date-range form fields like `[date] from [date] to`), text was pulled ahead of the tables, reversing the reading order. Both top-level `blocks` and `IRCell.blocks` now follow document order, and the generator emits cells in the same order for symmetric roundtrips. Floating/page-anchored tables stay out of the text flow as before. (reported by @jumaniac)

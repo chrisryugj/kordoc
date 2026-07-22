@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.6] - 2026-07-22
+
+개조식·보고서 공문서 본문의 양쪽정렬을 왼쪽정렬로 — 항목 줄 어절 간격 벌어짐 수정.
+
+### Fixed
+
+- **개조식·보고서 본문 왼쪽정렬 (□/○/-)**: 개조식(gaejosik)·보고서(report) numbering의
+  본문 리스트 문단을 양쪽정렬(JUSTIFY)에서 왼쪽정렬(LEFT)로 변경. 어절유지(BREAK_WORD)와
+  양쪽정렬이 겹치면 짧게 끊긴 항목 줄(예: 다음 어절이 길어 조기 개행된 25자 줄을 34자
+  폭으로 확장)의 어절 간격이 정상 대비 ~2.8배로 벌어져 "깨진 듯" 보이던 문제. 행정업무
+  운영편람 개조식 예시가 왼쪽정렬인 근거와도 일치. 기안문(standard numbering, official
+  등)의 서술형 본문은 종전 양쪽정렬 유지. 코퍼스 게이트(recall 1.0·실렌더 59/59·reflow
+  100%) 무회귀.
+
 ## [4.2.5] - 2026-07-22
 
 4.2.4 인라인 표 순서 수정의 후속(#52, @jumaniac 제보) — 평탄화 구분자 시각 충실도.

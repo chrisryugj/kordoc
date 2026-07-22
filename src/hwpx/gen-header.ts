@@ -212,6 +212,11 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
     paraPr(6, { align: "LEFT", lineSpacing: ls, indent: 600, keepWord: true }),
     paraPr(7, { align: "LEFT", lineSpacing: ls, indent: 600, keepWord: true }),
   ]
+  // 개조식·보고서 본문 리스트 정렬: LEFT (왼쪽정렬)
+  // 편람 개조식 예시는 왼쪽정렬 — 어절유지(BREAK_WORD)+양쪽정렬이면 짧게 끊긴 항목 줄의
+  // 어절 간격이 과하게 벌어져(실측 25자→34자폭 확장 시 공백 ~2.8배) 깨진 듯 보임.
+  // 서술형 본문의 기안문(standard)은 종전 양쪽정렬 유지.
+  const listAlign = gongmun.numbering === "gaejosik" || gongmun.numbering === "report" ? "LEFT" : "JUSTIFY"
   // 항목 단계별 paraPr (8 ~ 8+7): left/내어쓰기 indent
   for (let d = 0; d < GONGMUN_LIST_LEVELS; d++) {
     const { left, indent } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset))
@@ -223,7 +228,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
       : 0
     // □ 대항목은 다음 문단과 같은 쪽에 — 쪽 하단 고아 표제 방지 (장헤더와 동일 관행)
     const keepNext = (gongmun.numbering === "gaejosik" || gongmun.numbering === "report") && d === 0
-    base.push(paraPr(GONGMUN_LIST_BASE + d, { align: "JUSTIFY", lineSpacing: ls, left, indent, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext }))
+    base.push(paraPr(GONGMUN_LIST_BASE + d, { align: listAlign, lineSpacing: ls, left, indent, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext }))
   }
   // 가운데정렬 본문 단락(발신명의 등)
   base.push(paraPr(GONGMUN_CENTER, { align: "CENTER", lineSpacing: ls, keepWord: true }))
@@ -238,7 +243,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
     const cham = gaejosikChamIndent(gongmun.bodyHeight, gongmun.sizes)
     const toc = gaejosikTocItemIndent(gongmun.bodyHeight, gongmun.sizes)
     base.push(
-      paraPr(GJ_PARA_CHAM, { align: "JUSTIFY", lineSpacing: ls, left: cham.left, indent: cham.indent, spaceBefore: gaejosikSpaceBefore(3, gongmun.bodyHeight), keepWord: true }),
+      paraPr(GJ_PARA_CHAM, { align: "LEFT", lineSpacing: ls, left: cham.left, indent: cham.indent, spaceBefore: gaejosikSpaceBefore(3, gongmun.bodyHeight), keepWord: true }),
       paraPr(GJ_PARA_COVER, { align: "CENTER", lineSpacing: 130, keepWord: true }),
       paraPr(GJ_PARA_TOC_ITEM, { align: "LEFT", lineSpacing: 160, left: toc.left, indent: toc.indent, spaceBefore: 1800, keepWord: true }),
       // 장 헤더는 다음 문단과 같은 쪽에 — 쪽 하단 고아 헤더 방지 (실렌더 확인 이슈)
@@ -254,7 +259,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
     const sectionGap = gongmun.numbering === "gaejosik" || gongmun.numbering === "report"
       ? gaejosikSpaceBefore(d, gongmun.bodyHeight)
       : 0
-    base.push(paraPr(GONGMUN_LIST_PLAIN_BASE + d, { align: "JUSTIFY", lineSpacing: ls, left, indent: 0, spaceBefore: sectionGap, keepWord: true }))
+    base.push(paraPr(GONGMUN_LIST_PLAIN_BASE + d, { align: listAlign, lineSpacing: ls, left, indent: 0, spaceBefore: sectionGap, keepWord: true }))
   }
   // 결재란 라벨 셀 — 실측 결재선 lineSp 100% (GJ_PARA_BAR 70%는 스페이서 전용)
   base.push(paraPr(GONGMUN_PARA_APPROVAL, { align: "CENTER", lineSpacing: 100, keepWord: true }))
@@ -267,7 +272,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
       ? gaejosikSpaceBefore(depth, gongmun.bodyHeight)
       : 0
     const keepNext = (gongmun.numbering === "gaejosik" || gongmun.numbering === "report") && depth === 0
-    base.push(paraPr(GONGMUN_LIST_VARIANT_BASE + vi, { align: "JUSTIFY", lineSpacing: ls, left, indent: -widthHu, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext }))
+    base.push(paraPr(GONGMUN_LIST_VARIANT_BASE + vi, { align: listAlign, lineSpacing: ls, left, indent: -widthHu, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext }))
   }
   assertSequentialIds(base, "paraPr", 0)
   return `<hh:paraProperties itemCnt="${base.length}">\n${base.join("\n")}\n    </hh:paraProperties>`
