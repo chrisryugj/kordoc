@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.7] - 2026-07-22
+
+빈 표 셀 채우기 시 공백만 있던 원문 문자가 조용히 사라지던 문제 수정 (#54).
+
+### Fixed
+
+- **빈 셀 공백 보존 (#54)**: `applyCellEdit`로 IR상 빈 표 셀에 값을 채울 때, 그 셀
+  문단의 원문 텍스트 노드가 XML 공백만 포함하면 `buildParagraphSplices`가 그 공백
+  `hp:t`를 통째 교체 대상으로 삼아 제거하던 문제 — 요청한 삽입 경계 밖의 원문(공백
+  문자)이 patch 성공 보고와 함께 소실됐다. 이제 raw t-도메인이 공백만일 때는 t 맨 앞에
+  zero-length 삽입(`buildRangeSplices`)으로 값을 넣어 기존 공백을 뒤에 보존하고, 삽입
+  경계를 유일하게 정할 수 없으면(엔티티/내부 태그로 t-좌표 불일치) 성공 대신 skip한다
+  (fail-closed). 비-공백 셀 교체·빈 t·자기닫힘 t/run 삽입 경로는 무회귀. (@Raphael-KR 제보)
+
 ## [4.2.6] - 2026-07-22
 
 개조식·보고서 공문서 본문의 양쪽정렬을 왼쪽정렬로 — 항목 줄 어절 간격 벌어짐 수정.

@@ -10,7 +10,7 @@
 
 import type { IRTable, PatchSkip } from "../types.js"
 import {
-  buildParagraphSplices,
+  buildParagraphSplices, buildRangeSplices, paraTText,
   type SectionScan, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
 import {
@@ -395,8 +395,22 @@ export function applyCellEdit(
     if (newLines.length === 0) return 0
     const target = cell.paragraphs[0]
     if (!target) return skip("빈 셀에 문단이 없어 텍스트 삽입 불가")
-    const sp = buildParagraphSplices(target, newLines.join(" "), ctx.scans[target.sectionIndex]?.xml)
-    if (sp === null) return skip("셀 문단에 텍스트 노드를 만들 수 없음")
+    const value = newLines.join(" ")
+    const xml = ctx.scans[target.sectionIndex]?.xml
+    // 문단 raw t-도메인이 공백만일 때(IR상 빈 셀이나 XML엔 공백 문자 존재):
+    // buildParagraphSplices는 그 공백 t를 통째 교체 대상으로 삼아 제거한다 —
+    // 요청한 삽입 경계 밖의 원문 손실(#54). t 맨 앞에 zero-length 삽입해 보존한다.
+    const rawT = xml ? paraTText(target, xml) : null
+    let sp: SpliceEdit[] | null
+    if (xml && rawT !== null && rawT.length > 0 && rawT.trim() === "") {
+      sp = buildRangeSplices(target, xml, 0, 0, value)
+      // 삽입 경계를 유일하게 정할 수 없으면(엔티티/내부 태그로 t-좌표 불일치) 조용한
+      // 성공 대신 정직하게 skip — 원문 손실 방지(fail-closed)
+      if (sp === null) return skip("빈 셀 공백 보존 삽입 경계 모호 — 원문 손실 방지로 미적용")
+    } else {
+      sp = buildParagraphSplices(target, value, xml)
+      if (sp === null) return skip("셀 문단에 텍스트 노드를 만들 수 없음")
+    }
     splices.push(...sp)
     sectionIndex = target.sectionIndex
     if (newLines.length > 1) {
