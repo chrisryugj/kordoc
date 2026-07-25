@@ -1,5 +1,7 @@
 # kordoc
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fchrisryugj%2Fkordoc.svg)](https://mcptoplist.com/server/glama%2Fchrisryugj%2Fkordoc)
+
 **모두 파싱해버리겠다.**
 
 [![npm version](https://img.shields.io/npm/v/kordoc.svg)](https://www.npmjs.com/package/kordoc)
