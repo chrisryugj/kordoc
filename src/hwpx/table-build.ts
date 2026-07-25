@@ -15,6 +15,8 @@ import type { CellCtxEx, TableState, WalkCtx } from "./parser-shared.js"
 function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boolean): IRTable {
   const table = buildTable(state.rows, { keepAnchoredEmptyCols })
   if (state.caption) table.caption = state.caption
+  // 캡션 안 중첩표는 구조도 병행 제공 — caption 문자열은 하위 호환 평탄화로 유지 (#55)
+  if (state.captionBlocks?.length) table.captionBlocks = state.captionBlocks
 
   // 서수 폴백용 앵커 목록 (row-major, 병합 커버 칸 제외) — 소스 tc 수와 1:1일 때만 신뢰
   const anchors: IRCell[] = []

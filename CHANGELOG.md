@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.8] - 2026-07-25
+
+캡션 안 표를 셀(`IRCell.blocks`)과 같은 구조 계약으로 제공 (#55).
+
+### Added
+
+- **캡션 구조 보존 `IRTable.captionBlocks` (#55)**: v4.0.6(#46)에서 캡션 안 중첩표를
+  `caption` 문자열 평탄화로 살렸지만, 같은 문서에서 셀 안 표는 구조(`IRCell.blocks`)로
+  그려지는데 캡션 안 표만 문자열로 남는 IR 비대칭이 있었다 — 구조 대조 검증에서 캡션
+  쪽만 제외해야 했다. 이제 캡션에 표가 있으면 `captionBlocks`에 문단·표 블록을 원문
+  순서대로 함께 싣는다. `IRCell.blocks`와 같은 계약(구조는 blocks, `text`/`caption`은
+  하위 호환용 평탄화)이라 breaking 없음 — 표가 없는 평문 캡션은 종전대로 문자열만
+  제공하고(무게 억제), 마크다운 출력·왕복 경로는 무변경. (@jumaniac 제안)
+
 ## [4.2.7] - 2026-07-22
 
 빈 표 셀 채우기 시 공백만 있던 원문 문자가 조용히 사라지던 문제 수정 (#54).

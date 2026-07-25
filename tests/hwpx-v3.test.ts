@@ -245,6 +245,49 @@ describe("hwpx v3 — 표 캡션", () => {
     assert.equal(tableBlock?.table?.caption, "앞 텍스트\n표 내용\n뒤 텍스트", "문단·표 문서 순서 유지")
   })
 
+  it("캡션 안 중첩표가 IRTable.captionBlocks에 구조로 보존된다 (#55)", async () => {
+    const innerTbl = `<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl rowCnt="2" colCnt="2">` +
+      `<hp:tr>${tc(para("기여분야"), 0, 0)}${tc(para("내 용"), 1, 0)}</hp:tr>` +
+      `<hp:tr>${tc(para("1. 기술마케팅"), 0, 1)}${tc(para("수요기술 발굴"), 1, 1)}</hp:tr>` +
+      `</hp:tbl></hp:run></hp:p>`
+    const caption = `<hp:caption side="BOTTOM" fullSz="0"><hp:subList>` +
+      `${para("주1) 기여분야")}${innerTbl}</hp:subList></hp:caption>`
+    const result = await parseHwpxDocument(await makeHwpx(sec(wrapTbl(caption, true))))
+
+    const table = result.blocks.find(b => b.type === "table")?.table
+    // 하위 호환 — caption 평탄화 문자열은 종전 그대로
+    assert.equal(table?.caption, "주1) 기여분야\n기여분야 / 내 용\n1. 기술마케팅 / 수요기술 발굴")
+    const capBlocks = table?.captionBlocks
+    assert.ok(capBlocks, "captionBlocks가 채워져야 함")
+    assert.deepEqual(capBlocks?.map(b => b.type), ["paragraph", "table"], "문단·표 문서 순서 보존")
+    const inner = capBlocks?.[1]?.table
+    assert.equal(inner?.rows, 2, "중첩표 행 수")
+    assert.equal(inner?.cols, 2, "중첩표 열 수")
+    assert.equal(inner?.cells[1]?.[1]?.text, "수요기술 발굴", "중첩표 셀 텍스트")
+  })
+
+  it("ctrl 래핑 캡션 안 중첩표도 captionBlocks로 보존된다 (#55)", async () => {
+    const innerTbl = `<hp:p id="1"><hp:run><hp:tbl rowCnt="1" colCnt="2">` +
+      `<hp:tr>${tc(para("ⓐ"), 0, 0)}${tc(para("ⓑ"), 1, 0)}</hp:tr></hp:tbl></hp:run></hp:p>`
+    const caption = `<hp:p id="9"><hp:run><hp:ctrl><hp:caption side="BOTTOM"><hp:subList>` +
+      `${para("주2) 산식")}${innerTbl}</hp:subList></hp:caption></hp:ctrl></hp:run></hp:p>`
+    const result = await parseHwpxDocument(await makeHwpx(sec(wrapTbl(caption, true))))
+
+    const table = result.blocks.find(b => b.type === "table")?.table
+    const inner = table?.captionBlocks?.find(b => b.type === "table")?.table
+    assert.equal(inner?.cols, 2, "ctrl 래핑 경로도 구조 보존")
+    assert.equal(inner?.cells[0]?.[1]?.text, "ⓑ")
+  })
+
+  it("표 없는 평문 캡션에는 captionBlocks를 달지 않는다 (#55 — 무게 억제)", async () => {
+    const caption = `<hp:caption side="TOP"><hp:subList>${para("표 1. 평문 캡션")}</hp:subList></hp:caption>`
+    const result = await parseHwpxDocument(await makeHwpx(sec(wrapTbl(caption))))
+
+    const table = result.blocks.find(b => b.type === "table")?.table
+    assert.equal(table?.caption, "표 1. 평문 캡션")
+    assert.equal(table?.captionBlocks, undefined, "구조 없는 캡션은 blocks 미부착")
+  })
+
   it("활성 표 컨텍스트 밖의 캡션은 무음 드롭 없이 문단으로 보존된다 (#46 방어)", async () => {
     // 캡션이 <tbl> 자식이 아닌 섹션 직계로 존재하는 비정상 파일 — 텍스트가 통째 사라지면 안 됨
     const body = `<hp:p id="0"><hp:run>${para("본문")}</hp:run></hp:p>` +

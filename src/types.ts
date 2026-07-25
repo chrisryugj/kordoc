@@ -102,6 +102,12 @@ export interface IRTable {
   hasHeader: boolean
   /** 표 캡션 (예: "표 1. 부서별 예산") — v3.0 */
   caption?: string
+  /**
+   * 캡션 내부 블록 콘텐츠 — v4.2.8 (#55).
+   * 캡션 안 중첩표·문단을 구조 그대로, 원문 순서대로 보존한다 (IRCell.blocks와 같은 계약).
+   * 표가 있을 때만 채워지며, caption은 하위 호환용 평탄화 문자열로 계속 제공된다.
+   */
+  captionBlocks?: IRBlock[]
 }
 
 export interface IRCell {

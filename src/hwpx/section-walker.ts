@@ -117,13 +117,14 @@ function walkSection(
 
       // 표/도표 캡션 — IRTable.caption으로 보존 (v3.0, 기존 무음 드롭 수정)
       case "caption": {
-        const capText = collectSubListText(el, ctx)
-        if (capText) {
+        const cap = collectSubListContent(el, ctx)
+        if (cap.text) {
           if (tableCtx) {
-            tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + capText
+            tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + cap.text
+            if (cap.hasStructure) (tableCtx.captionBlocks ??= []).push(...cap.blocks)
           } else {
             // 활성 표 컨텍스트 밖의 캡션 — 무음 드롭 대신 문단으로 보존 (#46)
-            blocks.push({ type: "paragraph", text: capText, pageNumber: ctx.sectionNum })
+            blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.sectionNum })
           }
         }
         break
@@ -448,48 +449,84 @@ function hasPageAutoNum(el: Node, depth = 0): boolean {
   return false
 }
 
+/** subList 내부 수집 결과 — 평탄화 텍스트와 구조 블록을 병행 제공 (#55) */
+interface SubListContent {
+  text: string
+  /** 원문 순서의 문단/표 블록 — hasStructure일 때만 소비된다 */
+  blocks: IRBlock[]
+  /** 표가 하나라도 있었는지 (평문 캡션에 blocks를 달지 않기 위한 게이트) */
+  hasStructure: boolean
+}
+
 /** caption/header/footer 등의 subList 내부 문단 텍스트 수집 */
 function collectSubListText(el: Node, ctx: WalkCtx, depth = 0): string {
-  if (depth > 10) return ""
+  return collectSubListContent(el, ctx, depth).text
+}
+
+/**
+ * subList 내부를 텍스트와 블록으로 동시 수집 — 캡션 안 중첩표를 구조로도 보존하기
+ * 위해 collectSubListText를 확장 (#55). 텍스트 조립 규칙은 종전과 동일.
+ */
+function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0): SubListContent {
+  const out: SubListContent = { text: "", blocks: [], hasStructure: false }
+  if (depth > 10) return out
   const parts: string[] = []
   const children = el.childNodes
-  if (!children) return ""
+  if (!children) return out
   for (let i = 0; i < children.length; i++) {
     const ch = children[i] as Element
     if (ch.nodeType !== 1) continue
     const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
     if (tag === "p" || tag === "para") {
       const t = extractParagraphInfo(ch, ctx.styleMap, ctx).text
-      if (t) parts.push(t)
+      if (t) {
+        parts.push(t)
+        out.blocks.push({ type: "paragraph", text: t, pageNumber: ctx.sectionNum })
+      }
       // 문단 run 안의 중첩표 (hp:p > hp:run > hp:tbl — HWPX 표준 배치)
       const tbls: Element[] = []
       findTopLevelTbls(ch, tbls)
       for (const tbl of tbls) {
-        const flat = flattenSubListTable(tbl, ctx, depth)
-        if (flat) parts.push(flat)
+        const built = buildSubListTable(tbl, ctx, depth)
+        if (built.text) parts.push(built.text)
+        if (built.block) {
+          out.blocks.push(built.block)
+          out.hasStructure = true
+        }
       }
     } else if (tag === "tbl") {
-      const flat = flattenSubListTable(ch, ctx, depth)
-      if (flat) parts.push(flat)
+      const built = buildSubListTable(ch, ctx, depth)
+      if (built.text) parts.push(built.text)
+      if (built.block) {
+        out.blocks.push(built.block)
+        out.hasStructure = true
+      }
     } else {
-      const t = collectSubListText(ch, ctx, depth + 1)
-      if (t) parts.push(t)
+      const sub = collectSubListContent(ch, ctx, depth + 1)
+      if (sub.text) parts.push(sub.text)
+      out.blocks.push(...sub.blocks)
+      if (sub.hasStructure) out.hasStructure = true
     }
   }
-  return parts.join("\n").trim()
+  out.text = parts.join("\n").trim()
+  return out
 }
 
 /**
- * 캡션/머리말 내 중첩표 평탄화 — 셀 텍스트를 표 평탄화 규칙(" / " 구분·행별
- * 줄바꿈)으로 순서 보존 이어붙임. 스킵하면 캡션 표 내용이 통째로 무음 유실됨 (#46)
+ * 캡션/머리말 내 중첩표 구성 — 셀 텍스트를 표 평탄화 규칙(" / " 구분·행별 줄바꿈)으로
+ * 순서 보존 이어붙이고(#46), 같은 표를 IRBlock으로도 만들어 구조를 남긴다 (#55).
+ * 스킵하면 캡션 표 내용이 통째로 무음 유실됨.
  */
-function flattenSubListTable(el: Element, ctx: WalkCtx, depth: number): string {
+function buildSubListTable(el: Element, ctx: WalkCtx, depth: number): { text: string; block: IRBlock | null } {
   const sink: IRBlock[] = []
   const st: TableState = { rows: [], currentRow: [], cell: null }
   walkSection(el, sink, st, [], ctx, depth + 1)
   let flat = convertTableToText(st.rows)
   if (st.caption) flat = st.caption + (flat ? "\n" + flat : "")
-  return flat
+  // completeTable은 부모 표가 없으면 IRTable 블록을 sink에 넣는다 (셀 blocks·제목셀 재부착 포함)
+  const built: IRBlock[] = []
+  completeTable(st, [], built, ctx)
+  return { text: flat, block: built.find(b => b.type === "table") ?? null }
 }
 
 /** 노드 하위의 최상위 tbl 수집 — tbl 내부 미진입 (셀 안 중첩표는 표 워커가 처리) */
@@ -556,11 +593,14 @@ function walkParagraphChildren(
       } else if (localTag === "caption" && !inShape) {
         // ctrl 래핑 표 캡션 — 도형(rect 등) 자체 캡션은 기존 텍스트 추출 경로에 맡긴다.
         // 셀 안이면 표 caption이 아니라 개체 캡션이므로 셀 텍스트로 귀속 (오귀속 방지)
-        const capText = collectSubListText(el, ctx)
-        if (capText) {
-          if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, [{ type: "paragraph", text: capText, pageNumber: ctx.sectionNum }])
-          else if (tableCtx) tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + capText
-          else blocks.push({ type: "paragraph", text: capText, pageNumber: ctx.sectionNum })
+        const cap = collectSubListContent(el, ctx)
+        if (cap.text) {
+          if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, [{ type: "paragraph", text: cap.text, pageNumber: ctx.sectionNum }])
+          else if (tableCtx) {
+            tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + cap.text
+            if (cap.hasStructure) (tableCtx.captionBlocks ??= []).push(...cap.blocks)
+          }
+          else blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.sectionNum })
         }
       } else if (localTag === "pic" || localTag === "shape" || localTag === "drawingObject") {
         // 글상자 텍스트 + 이미지 병행 추출 — 셀 안이면 위치 보존을 위해 IRCell.blocks로
