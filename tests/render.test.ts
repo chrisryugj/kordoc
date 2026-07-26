@@ -10,7 +10,7 @@ import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { toInt32, solveBoundaries, solveRowHeights } from "../src/render/layout.js"
 import { renderHwpxToSvg } from "../src/render/index.js"
-import { buildPara } from "../src/render/svg-render.js"
+import { buildPara, escapeXml } from "../src/render/svg-render.js"
 import { markdownToHwpx } from "../src/hwpx/generator.js"
 import { createXmlParser } from "../src/hwpx/parser-shared.js"
 import JSZip from "jszip"
@@ -283,5 +283,27 @@ describe("render: 실파일 e2e (corpus 존재 시)", { skip: !existsSync(CORPUS
     // 두 사진은 서로 다른 열 셀 — x 간격이 셀 폭(238pt)급으로 벌어져야 함
     assert.ok(Math.abs(xs[0] - xs[1]) > 150, `사진 x 좌표가 같은 셀에 몰림: ${xs}`)
     assert.ok(!geometry(r.svg).includes("NaN"))
+  })
+})
+
+describe("render: XML 1.0 비허용 제어문자 방어 (rhwp #3382 동종)", () => {
+  it("C0 제어문자를 제거해 산출 SVG가 well-formed XML을 유지한다", () => {
+    // 제어문자를 그대로 흘리면 "PCDATA invalid Char value 3"으로 뷰어가 렌더를 중단한다.
+    assert.equal(escapeXml("a\x03b"), "ab")
+    for (const c of ["\x00", "\x08", "\x0B", "\x0C", "\x0E", "\x1F"]) {
+      assert.equal(escapeXml(`x${c}y`), "xy", `제어문자 U+${c.charCodeAt(0).toString(16)}`)
+    }
+  })
+  it("탭·개행·복귀는 XML 1.0 허용 문자라 유지한다", () => {
+    assert.equal(escapeXml("a\tb\nc\rd"), "a\tb\nc\rd")
+  })
+  it("기존 마크업 이스케이프·한글·이모지는 무회귀", () => {
+    assert.equal(escapeXml('<a & b>"'), "&lt;a &amp; b&gt;&quot;")
+    assert.equal(escapeXml("한글 A😀"), "한글 A😀")
+  })
+  it("제어문자가 섞인 텍스트도 산출 SVG가 XML 파서를 통과한다", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><text>${escapeXml("사업\x03개요")}</text></svg>`
+    const doc = createXmlParser().parseFromString(svg, "text/xml")
+    assert.equal(doc.getElementsByTagName("text")[0]?.textContent, "사업개요")
   })
 })

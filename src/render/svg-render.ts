@@ -85,8 +85,13 @@ function findFirst(el: Element, name: string, depth = 0): Element | null {
   return null
 }
 
-function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+export function escapeXml(s: string): string {
+  return s
+    // XML 1.0 금지 C0 제어문자 제거(탭 0x09·개행 0x0A·CR 0x0D는 유지) — 남기면 산출 SVG가
+    // 불법 XML이라 뷰어·브라우저가 그 페이지 렌더를 통째로 중단한다("PCDATA invalid Char value").
+    // gen-ids.escapeXml·source-map.escapeXmlText와 같은 계약 (rhwp #3382 동종)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
 // ─── 내부 모델 ────────────────────────────────────

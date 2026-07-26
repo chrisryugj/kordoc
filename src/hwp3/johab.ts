@@ -60,10 +60,12 @@ export function decodeJohab(ch: number): number {
 
     const cho = CHO_MAP[choIdx]
     const jung = JUNG_MAP[jungIdx]
-    let jong = JONG_MAP[jongIdx]
+    const jong = JONG_MAP[jongIdx]
 
-    if (cho !== -1 && jung !== -1) {
-      if (jong === -1) jong = 0
+    // jong === -1 은 예약/무효 종성 인덱스(0·18·30·31) — '받침 없음'(인덱스 1 → 값 0) 과
+    // 구분해야 한다. 종전엔 -1 을 0 으로 치환해 원문에 없던 완성형 음절을 조용히 합성했다
+    // (rhwp #2924 정합). 무효면 아래 한자/기호 lookup → JOHAB_UNMAPPED 경로로 넘긴다.
+    if (cho !== -1 && jung !== -1 && jong !== -1) {
       // 0xAC00 + (cho * 21 * 28) + (jung * 28) + jong
       return 0xac00 + cho * 588 + jung * 28 + jong
     }

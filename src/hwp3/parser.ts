@@ -41,18 +41,20 @@ const INLINE_CHAR_SHAPE_SIZE = 31 // Hwp3CharShape (rep_char_shape 와 동일)
 //   18~21 (각종 번호)  : extra=6 byte, hchar=4
 //   22  (메일머지)     : extra=22 byte, hchar=12
 //   23  (글자겹침)     : extra=8 byte, hchar=5
-//   24,25 (하이픈)     : extra=4 byte, hchar=3
+//   24  (하이픈)       : extra=4 byte, hchar=3 — spec §10.18 표 59, 실제 하이픈 글리프
+//   25  (차례 표시)    : extra=4 byte, hchar=3 — spec §10.19 표 60, 제목/표/그림 차례 표식.
+//                       비가시 마크라 글리프를 방출하지 않는다 (rhwp #2765 정합 — 종전엔
+//                       하이픈(24)과 같은 항목이라 차례 표식마다 잉여 '-' 가 본문에 삽입)
 //   26  (찾아보기)     : extra=244 byte, hchar=123 (1 + 122 추가)
 //   28  (개요번호)     : extra=62 byte, hchar=32 (1 + 31 추가)
 //   30  (묶음빈칸)     : extra=2 byte, hchar=2
 //   31  (고정폭빈칸)   : extra=2 byte, hchar=2
-//   7,8 (날짜)         : extra=6 byte, hchar=4
-//   default (10/11/12/15/16/17/27/29 등): 8 byte 헤더 + 종류별 추가
+//   default (7/8/10/11/12/15/16/17/27/29 등): 8 byte 헤더 + 종류별 추가
+//     7,8 (날짜 형식/코드) 은 84/96 byte 가변폭 구조체라 simple 이 아니다 — 8 byte 헤더
+//     뒤 76/88 byte 를 더 소비해야 한다 (rhwp #2844 정합, 아래 switch 참조)
 type CtrlSimple = { extraBytes: number; extraHchar: number; emit: string | null }
 const SIMPLE_CTRL: ReadonlyMap<number, CtrlSimple> = new Map([
   [9, { extraBytes: 6, extraHchar: 3, emit: "\t" }],
-  [7, { extraBytes: 6, extraHchar: 3, emit: "￼" }],
-  [8, { extraBytes: 6, extraHchar: 3, emit: "￼" }],
   [18, { extraBytes: 6, extraHchar: 3, emit: " " }], // AutoNumber → 공백 (HWP5 패턴)
   [19, { extraBytes: 6, extraHchar: 3, emit: "￼" }],
   [20, { extraBytes: 6, extraHchar: 3, emit: "￼" }],
@@ -60,7 +62,7 @@ const SIMPLE_CTRL: ReadonlyMap<number, CtrlSimple> = new Map([
   [22, { extraBytes: 22, extraHchar: 11, emit: "￼" }],
   [23, { extraBytes: 8, extraHchar: 4, emit: "￼" }],
   [24, { extraBytes: 4, extraHchar: 2, emit: "-" }],
-  [25, { extraBytes: 4, extraHchar: 2, emit: "-" }],
+  [25, { extraBytes: 4, extraHchar: 2, emit: null }], // 차례 표식 — 비가시 (rhwp #2765)
   [26, { extraBytes: 244, extraHchar: 122, emit: "￼" }],
   [28, { extraBytes: 62, extraHchar: 31, emit: "￼" }],
   [30, { extraBytes: 2, extraHchar: 1, emit: " " }],
@@ -258,7 +260,7 @@ function parseCharStream(reader: Reader, charCount: number, ctx: ParaContext): s
       continue
     }
 
-    // ch=10/11/12/14/15/16/17/27/29 등: 8 byte 추가 헤더 + 종류별 추가 처리
+    // ch=5/6/7/8/10/11/14~17/29 + 예약(0~4/12/27): 8 byte 추가 헤더 + 종류별 추가 처리
     // 8 byte = u32 header_val1 + u16 ch2 + 2 byte (hchar 정렬)
     const headerVal1 = reader.readU32() // size 또는 type-specific
     reader.readU16() // ch2 (sanity, ch와 같아야 함)
@@ -274,12 +276,8 @@ function parseCharStream(reader: Reader, charCount: number, ctx: ParaContext): s
         // 그림: 348 byte info + n_ext byte
         parsePicture(reader, ctx)
         break
-      case 12:
-        // 선: 84 byte info
-        reader.skip(84)
-        break
       case 14:
-        // 선 (alternate path) — rhwp mod.rs line 943: 84 byte info
+        // 선 (spec 표 31): 84 byte info
         reader.skip(84)
         break
       case 15: {
@@ -310,14 +308,29 @@ function parseCharStream(reader: Reader, charCount: number, ctx: ParaContext): s
         // (rhwp dcf64b4 #877 정합 — 34 byte 미소비 시 이후 문단 전체 오염)
         reader.skip(34)
         break
+      case 7:
+        // 날짜 형식 (spec §10.3 표 37): 84 byte total = 8 byte 헤더 + 76
+        //   2..82 hchar array[40] 형식 문자열, 82..84 닫는 ch=7
+        // (rhwp #2844 정합 — 종전 simple 6 byte 처리는 76 byte desync 를 남겨
+        //  날짜 필드 뒤 문단 전체를 오염시켰다. 공문서는 날짜가 거의 항상 들어간다.)
+        reader.skip(76)
+        break
+      case 8:
+        // 날짜 코드 (spec §10.4 표 38): 96 byte total = 8 byte 헤더 + 88
+        //   2..82 형식, 82..90 날짜 word[4], 90..94 시각 word[2], 94..96 닫는 ch=8
+        reader.skip(88)
+        break
       case 29:
         // 상호참조: header_val1 size raw skip (1MB 이상 비정상)
         if (headerVal1 < 1_000_000) reader.skip(headerVal1)
         break
       default:
-        // ch=2/3/4/27 등: rhwp mod.rs:1011 의 "알 수 없음" 분기에서
+        // ch=0~4/12/27 등 예약 코드 (spec 표 31): rhwp 의 "알 수 없음" 분기에서
         // header_val1 을 길이로 사용하지 않는다고 명시 ("ch=3 실증: 헤더 직후가 정상 단락
         // 내용이므로 추가 skip 없음"). 즉 8 byte 헤더만 소비하고 다음 char 로.
+        // (spec 표 32 는 예약 코드를 8+n byte 로 규정하지만, rhwp 실측이 이와 어긋나
+        //  실증 쪽을 따른다. ch=12 는 '선' 이 아니라 예약 — 종전 84 byte skip 은
+        //  선(14) 의 info 크기를 잘못 적용한 것이라 오히려 desync 를 만들었다.)
         // 경고는 첫 등장만 기록 — 본문에 페이지번호/필드코드가 많이 깔린 paragraph 가
         // 전형적인 케이스라 logging 폭주 방지.
         if (!ctx.warnings.some(w => w.code === "UNSUPPORTED_ELEMENT")) {

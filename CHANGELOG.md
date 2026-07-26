@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.9] - 2026-07-26
+
+HWP3 파서 rhwp 최신판(v0.8.0) 정합 4종 — 날짜 필드 desync·차례 표식 오염·유령 음절·예약 코드.
+
+### Fixed
+
+- **날짜 형식(ch=7)·날짜 코드(ch=8) 스트림 소비 (rhwp #2844)**: 두 코드를 6바이트짜리 simple
+  control로 처리해, 실제 구조(spec §10.3 표 37 = 84바이트, §10.4 표 38 = 96바이트) 대비
+  76/88바이트를 덜 소비하던 문제 — 날짜 필드 뒤 문단 전체가 desync로 오염됐다. 8바이트 헤더
+  경로로 옮기고 나머지를 소비한다. 공문서는 날짜가 거의 항상 들어가 실피해가 컸다.
+- **제목/표/그림 차례 표식(ch=25) 잉여 하이픈 (rhwp #2765)**: 하이픈(ch=24)과 같은 항목이라
+  차례 표식마다 본문에 `-`가 삽입되던 문제. spec §10.19 표 60의 비가시 표식이므로 글리프를
+  방출하지 않는다(바이트·hchar 소비량은 동일 유지). 하이픈(24)은 종전대로 `-`.
+- **조합형 무효 종성 인덱스 (rhwp #2924)**: 예약/무효 종성 인덱스(0·18·30·31)를 '받침 없음'
+  으로 치환해 원문에 없던 완성형 음절을 조용히 합성하던 문제. 무효면 한자/기호 lookup →
+  `JOHAB_UNMAPPED` 경로로 넘긴다. 받침 없음(인덱스 1)·정상 받침은 무회귀.
+- **ch=12는 '선'이 아니라 예약 코드 (spec 표 31)**: 선(ch=14)의 info 84바이트를 12에도 적용해
+  84바이트를 과소비하던 문제. 표 31상 12는 예약이고 선은 14다. 8바이트 헤더만 소비한다.
+- **SVG 렌더의 XML 1.0 비허용 제어문자 (rhwp #3382 동종)**: `render/svg-render.ts`의
+  `escapeXml`이 `& < > "`만 처리해 C0 제어문자(0x00-0x08·0x0B·0x0C·0x0E-0x1F)를 그대로
+  방출하던 문제 — 산출 SVG가 불법 XML이 되어 브라우저·뷰어가 그 페이지 렌더를 통째로
+  중단한다("PCDATA invalid Char value"). 생성기(`gen-ids.escapeXml`)·왕복
+  (`source-map.escapeXmlText`)이 이미 쓰던 필터 계약을 렌더 경로에도 맞췄다. 탭·개행·복귀는
+  XML 1.0 허용 문자라 유지. 테스트를 위해 `escapeXml`을 export한다.
+
+### 검증
+
+테스트 1,333(신규 12 — 5종 전부 수정 전 실패 확인, 대조군 ch=24·ch=14·정상 받침·탭/개행
+보존·마크업 이스케이프 무회귀), 게이트 roundtrip·formats·fuzz(crash 0·hang 0)·pdf-table
+PASS. score는 코퍼스 구본(85/347) 모수 하한으로 baseline과 동일 FAIL, verify-reflow는
+`bench/corpus/seoul` 부재로 미실행.
+
 ## [4.2.8] - 2026-07-25
 
 캡션 안 표를 셀(`IRCell.blocks`)과 같은 구조 계약으로 제공 (#55).
