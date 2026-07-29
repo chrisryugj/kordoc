@@ -91,6 +91,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   // 자사 생성 파일 왕복 채널 게이트 — 인라인 강조 span·인용 복원은 default 레이아웃 한정
   shared.kordocLayout = await readKordocLayout(zip)
   shared.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
+  shared.keepEmptyParagraphs = options?.keepEmptyParagraphs
   let parsedSections = 0
   for (let si = 0; si < sectionPaths.length; si++) {
     if (pageFilter && !pageFilter.has(si + 1)) continue

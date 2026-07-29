@@ -6,6 +6,7 @@
  */
 
 import type { HwpNumbering } from "./record.js"
+import { hangulOrdinal, circledNumber, circledHangul, romanNumeral } from "../shared/numbering.js"
 
 // ─── 7수준 카운터 상태기계 ───────────────────────────
 
@@ -51,7 +52,7 @@ export type NumFmt =
   | "ganada" | "circledGanada" | "jamo" | "circledJamo" | "hangulNum" | "hanjaNum"
 
 /** HWP 표 43 (문단 머리 번호 형식 코드) → NumFmt */
-export function headFormatToNumFmt(code: number): NumFmt {
+function headFormatToNumFmt(code: number): NumFmt {
   switch (code) {
     case 1: return "circled"
     case 2: return "romanUpper"
@@ -83,28 +84,11 @@ export function shapeFormatToNumFmt(code: number): NumFmt {
   }
 }
 
-const CIRCLED_DIGITS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
-const GANADA = "가나다라마바사아자차카타파하"
-const CIRCLED_GANADA = "㉮㉯㉰㉱㉲㉳㉴㉵㉶㉷㉸㉹㉺㉻"
 const JAMO = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ"
 const CIRCLED_JAMO = "㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭"
 
 function fromTable(n: number, table: string): string {
   return n >= 1 && n <= table.length ? table[n - 1] : String(n)
-}
-
-function formatRoman(n: number, upper: boolean): string {
-  if (n <= 0 || n > 3999) return String(n)
-  const values = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
-  const symbols = upper
-    ? ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"]
-    : ["m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"]
-  let result = ""
-  let num = n
-  for (let i = 0; i < values.length; i++) {
-    while (num >= values[i]) { result += symbols[i]; num -= values[i] }
-  }
-  return result
 }
 
 function formatLatin(n: number, upper: boolean): string {
@@ -143,16 +127,16 @@ const HANGUL_UNITS = ["", "십", "백", "천", "만"]
 const HANJA_DIGITS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
 const HANJA_UNITS = ["", "十", "百", "千", "萬"]
 
-/** 번호 → 문자열 (rhwp format_number 포팅) */
+/** 번호 → 문자열 (rhwp format_number 포팅 — 시퀀스 폴백은 shared/numbering 정본 규칙) */
 export function formatNumber(n: number, fmt: NumFmt): string {
   switch (fmt) {
-    case "circled": return fromTable(n, CIRCLED_DIGITS)
-    case "romanUpper": return formatRoman(n, true)
-    case "romanLower": return formatRoman(n, false)
+    case "circled": return n >= 1 ? circledNumber(n - 1) : String(n)
+    case "romanUpper": return romanNumeral(n, true)
+    case "romanLower": return romanNumeral(n, false)
     case "latinUpper": return formatLatin(n, true) || String(n)
     case "latinLower": return formatLatin(n, false) || String(n)
-    case "ganada": return fromTable(n, GANADA)
-    case "circledGanada": return fromTable(n, CIRCLED_GANADA)
+    case "ganada": return n >= 1 ? hangulOrdinal(n - 1) : String(n)
+    case "circledGanada": return n >= 1 ? circledHangul(n - 1) : String(n)
     case "jamo": return fromTable(n, JAMO)
     case "circledJamo": return fromTable(n, CIRCLED_JAMO)
     case "hangulNum": return formatEastAsianNumber(n, HANGUL_DIGITS, HANGUL_UNITS, "영")

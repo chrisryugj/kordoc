@@ -117,7 +117,7 @@ export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): P
 export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings } = parseHwp3Document(buffer, options)
-    return { success: true, fileType: "hwp3", markdown, blocks, metadata, outline, warnings }
+    return { success: true, fileType: "hwp3", markdown, blocks, metadata, outline, warnings, pageCount: metadata?.pageCount }
   } catch (err) {
     // 에러 메시지 정제 — KordocError만 그대로, 내부 에러는 일반화 (MCP 노출 일관성)
     return { success: false, fileType: "hwp3", error: sanitizeError(err), code: classifyError(err) }
@@ -130,7 +130,7 @@ export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Pr
 export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parseHwpxDocument(buffer, options)
-    return { success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined }
+    return { success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }
   } catch (err) {
     return { success: false, fileType: "hwpx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -155,6 +155,7 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
             blocks: com.blocks,
             metadata: com.metadata,
             warnings: com.warnings,
+            pageCount,
           }
         }
       } catch {
@@ -162,7 +163,7 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
       }
     }
 
-    return { success: true, fileType: "hwp", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined }
+    return { success: true, fileType: "hwp", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }
   } catch (err) {
     return { success: false, fileType: "hwp", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -183,7 +184,7 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
   }
   try {
     const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images } = await parsePdfDocument(buffer, options)
-    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images }
+    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pageCount: metadata?.pageCount }
   } catch (err) {
     const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
     return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err), isImageBased }
@@ -194,7 +195,7 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
 export async function parseXlsx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, warnings } = await parseXlsxDocument(buffer, options)
-    return { success: true, fileType: "xlsx", markdown, blocks, metadata, warnings }
+    return { success: true, fileType: "xlsx", markdown, blocks, metadata, warnings, pageCount: metadata?.pageCount }
   } catch (err) {
     return { success: false, fileType: "xlsx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -204,7 +205,7 @@ export async function parseXlsx(buffer: ArrayBuffer, options?: ParseOptions): Pr
 export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, warnings } = await parseXlsDocument(buffer, options)
-    return { success: true, fileType: "xls", markdown, blocks, metadata, warnings }
+    return { success: true, fileType: "xls", markdown, blocks, metadata, warnings, pageCount: metadata?.pageCount }
   } catch (err) {
     return { success: false, fileType: "xls", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -214,7 +215,7 @@ export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Pro
 export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parseDocxDocument(buffer, options)
-    return { success: true, fileType: "docx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined }
+    return { success: true, fileType: "docx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }
   } catch (err) {
     return { success: false, fileType: "docx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -224,7 +225,7 @@ export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Pr
 export async function parseHwpml(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const { markdown, blocks, metadata, outline, warnings } = parseHwpmlDocument(buffer, options)
-    return { success: true, fileType: "hwpml", markdown, blocks, metadata, outline, warnings }
+    return { success: true, fileType: "hwpml", markdown, blocks, metadata, outline, warnings, pageCount: metadata?.pageCount }
   } catch (err) {
     return { success: false, fileType: "hwpml", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -332,6 +333,10 @@ export type { FillValue, FillInput } from "./form/match.js"
 export type { FillResult } from "./form/filler.js"
 export { fillHwpx } from "./form/filler-hwpx.js"
 export type { HwpxFillResult } from "./form/filler-hwpx.js"
+export { extractClickHereFields } from "./form/click-here.js"
+export type { ClickHereField } from "./form/click-here.js"
+export { BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate, readBuiltinTemplateSample } from "./form/templates.js"
+export type { BuiltinTemplate } from "./form/templates.js"
 export { placeSealHwpx } from "./form/seal.js"
 export type { SealOp, SealPlacement, PlaceSealResult } from "./form/seal.js"
 export { markdownToHwpx } from "./hwpx/generator.js"

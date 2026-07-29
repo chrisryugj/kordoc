@@ -33,7 +33,7 @@ export function decodeCompressed(buf: Buffer): string {
  * Node.js TextDecoder가 ICU 빌드일 때만 'euc-kr' 지원.
  * 미지원 환경에서는 latin1 폴백 (한글 깨짐, 영숫자만 보존).
  */
-export function decodeCp949(buf: Buffer): string {
+function decodeCp949(buf: Buffer): string {
   try {
     // Node 18+ ICU 빌드: 'euc-kr', 'cp949' 모두 지원
     return new TextDecoder("euc-kr", { fatal: false }).decode(buf)
@@ -49,7 +49,7 @@ export function decodeCp949(buf: Buffer): string {
  *   1252 = Windows-1252
  *   기타 = latin1 폴백
  */
-export function decodeByCodePage(buf: Buffer, codePage: number): string {
+function decodeByCodePage(buf: Buffer, codePage: number): string {
   if (codePage === 1200) return decodeUtf16Le(buf)
   if (codePage === 949) return decodeCp949(buf)
   if (codePage === 1252 || codePage === 65001) {

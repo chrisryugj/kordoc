@@ -4,23 +4,11 @@
  */
 
 import type { WalkCtx } from "./parser-shared.js"
-import { hangulOrdinal, circledNumber, circledHangul } from "./gongmun.js"
+import { hangulOrdinal, circledNumber, circledHangul, romanNumeral } from "../shared/numbering.js"
 
 // ─── 자동번호 포맷 ───────────────────────────────────
 
 const HANGUL_JAMO_SEQ = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ"
-
-/** 1-based 숫자 → 로마 숫자 (대문자) */
-function toRoman(n: number): string {
-  if (n <= 0 || n >= 4000) return String(n)
-  const table: [number, string][] = [
-    [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"],
-    [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"],
-  ]
-  let out = ""
-  for (const [v, s] of table) { while (n >= v) { out += s; n -= v } }
-  return out
-}
 
 /** 자동번호 카운터 값 → numFormat에 따른 표시 문자열 */
 function formatHeadNumber(n: number, numFormat: string): string {
@@ -39,8 +27,8 @@ function formatHeadNumber(n: number, numFormat: string): string {
     case "LATIN_SMALL": return String.fromCharCode(0x61 + ((n - 1) % 26))
     case "CIRCLED_LATIN_CAPITAL": return n <= 26 ? String.fromCodePoint(0x24b6 + n - 1) : String.fromCharCode(0x41 + ((n - 1) % 26))
     case "CIRCLED_LATIN_SMALL": return n <= 26 ? String.fromCodePoint(0x24d0 + n - 1) : String.fromCharCode(0x61 + ((n - 1) % 26))
-    case "ROMAN_CAPITAL": return toRoman(n)
-    case "ROMAN_SMALL": return toRoman(n).toLowerCase()
+    case "ROMAN_CAPITAL": return romanNumeral(n, true)
+    case "ROMAN_SMALL": return romanNumeral(n, false)
     default: return String(n)
   }
 }

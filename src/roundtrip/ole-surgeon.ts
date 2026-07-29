@@ -48,6 +48,8 @@ export function replaceOleStream(file: Buffer, path: string, newData: Buffer): B
 
 class Surgeon {
   private buf: Buffer
+  /** 논리 파일 길이 — buf는 성장 시 기하급수 capacity로 재할당되므로 buf.length와 다를 수 있음 */
+  private len: number
   private fat: number[] = []
   /** FAT 배열을 구성하는 섹터 번호들 (DIFAT 순서) */
   private fatSectors: number[] = []
@@ -69,6 +71,7 @@ class Surgeon {
     // 섹터 경계로 패딩된 사본에서 작업
     const padded = Math.ceil((file.length - SECTOR) / SECTOR) * SECTOR + SECTOR
     this.buf = Buffer.alloc(padded)
+    this.len = padded
     file.copy(this.buf)
     this.loadFat()
     this.loadMiniFat()
@@ -129,7 +132,7 @@ class Surgeon {
 
   private sectorOffset(n: number): number {
     const off = SECTOR + n * SECTOR
-    if (n >= 0xfffffffa || off + SECTOR > this.buf.length) throw new OleSurgeonError(`섹터 범위 초과: ${n}`)
+    if (n >= 0xfffffffa || off + SECTOR > this.len) throw new OleSurgeonError(`섹터 범위 초과: ${n}`)
     return off
   }
 
@@ -195,7 +198,7 @@ class Surgeon {
     for (let i = 0; i < this.fat.length && out.length < n; i++) {
       if (this.fat[i] !== FREESECT) continue
       // FAT가 파일보다 길게 패딩된 영역은 건너뜀 (백킹 바이트 없음)
-      if (SECTOR + (i + 1) * SECTOR > this.buf.length) continue
+      if (SECTOR + (i + 1) * SECTOR > this.len) continue
       this.fat[i] = ENDOFCHAIN
       // 재사용 free 섹터는 즉시 0 초기화 — 부분 기록(mini stream 64B 단위 등) 시
       // 이전 스트림 바이트가 슬랙에 남는 remanence 방지
@@ -205,21 +208,36 @@ class Surgeon {
     }
     while (out.length < n) {
       // FAT 확장이 파일 끝에 FAT 섹터를 추가할 수 있으므로 인덱스는 확장 후 재계산
-      this.ensureFatCapacity((this.buf.length - SECTOR) / SECTOR + 2)
-      const idx = (this.buf.length - SECTOR) / SECTOR
-      this.buf = Buffer.concat([this.buf, Buffer.alloc(SECTOR)])
+      this.ensureFatCapacity((this.len - SECTOR) / SECTOR + 2)
+      const idx = this.appendSector()
       this.fat[idx] = ENDOFCHAIN
       out.push(idx)
     }
     return out
   }
 
+  /**
+   * 파일 끝에 빈 섹터 1개 추가 — 새 섹터 번호 반환.
+   * 섹터마다 Buffer.concat(전체 복사)하면 대형 스트림 삽입이 O(n²)이라,
+   * capacity를 기하급수(×2)로 재할당하고 논리 길이(len)만 늘린다 (amortized O(n)).
+   * Buffer.alloc은 0으로 채워지고 len 너머엔 아무도 쓰지 않으므로 새 섹터는 항상 0.
+   */
+  private appendSector(): number {
+    const idx = (this.len - SECTOR) / SECTOR
+    if (this.len + SECTOR > this.buf.length) {
+      const grown = Buffer.alloc(Math.max(this.buf.length * 2, this.len + SECTOR))
+      this.buf.copy(grown, 0, 0, this.len)
+      this.buf = grown
+    }
+    this.len += SECTOR
+    return idx
+  }
+
   /** FAT 배열이 sectorCount개 엔트리를 담도록 확장 (FAT 섹터 추가 + DIFAT 갱신) */
   private ensureFatCapacity(sectorCount: number): void {
     while (this.fat.length < sectorCount) {
       // 새 FAT 섹터는 파일 끝에 추가 (할당 재귀 방지)
-      const idx = (this.buf.length - SECTOR) / SECTOR
-      this.buf = Buffer.concat([this.buf, Buffer.alloc(SECTOR)])
+      const idx = this.appendSector()
       for (let i = 0; i < 128; i++) this.fat.push(FREESECT)
       this.fat[idx] = FATSECT
       this.fatSectors.push(idx)
@@ -354,7 +372,8 @@ class Surgeon {
   finish(): Buffer {
     this.wipeFreedSectors()
     this.flushFat()
-    return this.buf
+    // 기하급수 성장으로 capacity가 논리 길이보다 클 수 있음 — 논리 길이만 반환
+    return this.len === this.buf.length ? this.buf : this.buf.subarray(0, this.len)
   }
 
   /** 해제 후 재할당되지 않고 남은 FREESECT 섹터의 바이트를 0으로 채움 (데이터 remanence 제거) */

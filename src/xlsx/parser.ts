@@ -445,7 +445,13 @@ export async function parseXlsxDocument(
   if (stylesFile) {
     try {
       dateXfs = parseStyleDateXfs(await stylesFile.async("text"))
-    } catch { /* 날짜 판정 실패는 무시 — 시리얼 숫자 그대로 출력 */ }
+    } catch {
+      // 날짜 판정 실패해도 파싱은 계속 — 대신 날짜 셀이 시리얼 숫자로 노출됨을 경고로 남긴다
+      warnings.push({
+        code: "PARTIAL_PARSE",
+        message: "xl/styles.xml 날짜 서식 판정 실패 — 날짜 셀이 시리얼 숫자로 출력될 수 있습니다",
+      })
+    }
   }
 
   // 3. 관계 매핑 (rId → 파일 경로)

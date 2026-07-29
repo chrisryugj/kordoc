@@ -39,7 +39,8 @@ function mimeToExt(mime: string): string {
   return "bin"
 }
 
-/** 이미지 블록 재귀 수집 — 표 셀 내부(IRCell.blocks)에 중첩된 이미지 포함 (v3.0) */
+/** 이미지 블록 재귀 수집 — 표 셀 내부(IRCell.blocks)에 중첩된 이미지 포함 (v3.0).
+ *  hwp5 쪽과 안전장치 합집합: depth 가드 + children 순회 (둘 다 수행) */
 function collectImageBlocks(blocks: IRBlock[], out: { block: IRBlock; ownerCell?: IRCell }[], ownerCell?: IRCell, depth = 0): void {
   if (depth > MAX_XML_DEPTH) return
   for (const block of blocks) {
@@ -52,6 +53,7 @@ function collectImageBlocks(blocks: IRBlock[], out: { block: IRBlock; ownerCell?
         }
       }
     }
+    if (block.children?.length) collectImageBlocks(block.children, out, ownerCell, depth + 1)
   }
 }
 

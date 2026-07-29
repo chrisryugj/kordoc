@@ -136,7 +136,7 @@ export function decodeHcharString(bytes: Uint8Array): string {
  * HWP3 byte sequence (1바이트 ASCII < 0x80, 2바이트 johab >= 0x80) 를 string 으로 디코딩.
  * NUL byte 만나면 종료. link_print_file/description 같은 짧은 byte string 영역에 사용.
  */
-export function decodeHwp3String(bytes: Uint8Array): string {
+function decodeHwp3String(bytes: Uint8Array): string {
   let out = ""
   let i = 0
   while (i < bytes.length) {

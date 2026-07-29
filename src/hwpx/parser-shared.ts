@@ -29,11 +29,9 @@ export function clampSpan(val: number, max: number): number {
   return Math.max(1, Math.min(val, max))
 }
 
-/** XML DOM 재귀 최대 깊이 — 악성 파일의 스택 오버플로 방지.
- *  좌표계가 다른 hwp5 MAX_NEST_DEPTH(8, 표 중첩 단계)·filler/소스맵 16
- *  (표 중첩 단계)과 달리 이건 "XML 요소" 깊이라 표 1단이 여러 depth를
- *  소모한다 — 상수 통일 금지 (의미가 다름) */
-export const MAX_XML_DEPTH = 200
+// XML DOM 헬퍼 정본은 src/shared/xml.ts — 하위호환 재수출 (section-walker, render/* 등이
+// 이 모듈에서 import). MAX_XML_DEPTH 의미(요소 깊이 ≠ 표 중첩 단계)는 정본 주석 참조.
+export { MAX_XML_DEPTH, findChildByLocalName, extractTextFromNode } from "../shared/xml.js"
 
 /** 셀 컨텍스트 확장 — 중첩표/이미지/다중문단 블록과 제목셀 여부를 IRCell로 전달 (v3.0) */
 export interface CellCtxEx extends CellContext {
@@ -47,6 +45,12 @@ export interface CellCtxEx extends CellContext {
    * 문단 경계·블록/float 표에서 닫힌다(false). 최종 IRCell로는 나가지 않는 워크 전용 필드.
    */
   lineOpen?: boolean
+  /**
+   * keepEmptyParagraphs 조립용 임시 상태 (#57) — 이 셀에서 문단(빈 문단 포함)을 하나라도
+   * 봤는지. 선두 빈 문단은 cell.text가 계속 ""라 truthiness로 구분할 수 없어 별도 추적한다.
+   * 옵션 off일 땐 미사용. 최종 IRCell로는 나가지 않는 워크 전용 필드.
+   */
+  paraSeen?: boolean
 }
 
 export interface TableState {
@@ -75,6 +79,8 @@ export interface SectionShared {
   kordocLayout?: string | null
   /** 표 후행 빈 열(앵커 있는 입력란) 보존 — ParseOptions.keepTrailingEmptyCols (#47) */
   keepTrailingEmptyCols?: boolean
+  /** 빈 문단 보존 — ParseOptions.keepEmptyParagraphs (#57) */
+  keepEmptyParagraphs?: boolean
 }
 
 export function createSectionShared(): SectionShared {
@@ -112,29 +118,3 @@ export function applyPageText(blocks: IRBlock[], shared: SectionShared): void {
   }
 }
 
-/** 자식 중 지정된 localName(접두사 제거)을 가진 첫 번째 Element 반환 */
-export function findChildByLocalName(parent: Element, name: string): Element | null {
-  const children = parent.childNodes
-  if (!children) return null
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag === name) return ch
-  }
-  return null
-}
-
-/** 노드 내 모든 텍스트를 재귀적으로 추출 (MAX_XML_DEPTH 가드 — 악성 심층 XML 스택 오버플로 방지) */
-export function extractTextFromNode(node: Node, depth: number = 0): string {
-  let result = ""
-  if (depth > MAX_XML_DEPTH) return result
-  const children = node.childNodes
-  if (!children) return result
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i]
-    if (child.nodeType === 3) result += child.textContent || ""
-    else if (child.nodeType === 1) result += extractTextFromNode(child, depth + 1)
-  }
-  return result.trim()
-}

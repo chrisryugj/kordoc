@@ -21,6 +21,7 @@
 
 import { inflateRawSync } from "zlib"
 import type { DocumentMetadata, IRBlock, InternalParseResult, ParseOptions, ParseWarning } from "../types.js"
+import { KordocError } from "../utils.js"
 import { JOHAB_UNMAPPED, decodeJohab } from "./johab.js"
 import { Reader } from "./reader.js"
 import { readHeader } from "./records.js"
@@ -91,10 +92,10 @@ export function parseHwp3Document(
   const headReader = new Reader(Buffer.from(buffer))
   const header = readHeader(headReader)
 
+  // KordocError 라야 sanitizeError 가 메시지를 보존하고 classifyError 가 ENCRYPTED 로 분류한다
+  // (plain Error + e.code 는 둘 다 무시되어 PARSE_ERROR/일반 문구로 뭉개졌다)
   if (header.encrypted !== 0) {
-    const e: Error & { code?: string } = new Error("HWP3 본문이 암호로 보호되어 있어 추출할 수 없습니다.")
-    e.code = "ENCRYPTED"
-    throw e
+    throw new KordocError("암호화된 HWP3 문서 — 본문이 암호로 보호되어 있어 추출할 수 없습니다.")
   }
 
   // InfoBlock skip — 폰트/스타일 메타데이터, 텍스트 추출엔 불필요.
@@ -109,10 +110,10 @@ export function parseHwp3Document(
       body = inflateRawSync(tail, { maxOutputLength: MAX_DECOMPRESS_SIZE })
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === "ERR_BUFFER_TOO_LARGE") {
-        throw new Error(`HWP3 압축 해제 결과가 최대 허용 크기(${MAX_DECOMPRESS_SIZE / 1024 / 1024}MB)를 초과했습니다`)
+        throw new KordocError(`HWP3 압축 해제 결과가 최대 허용 크기(${MAX_DECOMPRESS_SIZE / 1024 / 1024}MB)를 초과했습니다`)
       }
       const msg = err instanceof Error ? err.message : String(err)
-      throw new Error(`HWP3 압축 해제 실패: ${msg}`)
+      throw new KordocError(`HWP3 압축 해제 실패: ${msg}`)
     }
   } else {
     body = tail

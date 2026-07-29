@@ -14,6 +14,10 @@ export interface BuildTableOptions {
    *  앵커 없는 유령 열(span 인플레이션)은 이 옵션과 무관하게 트림.
    *  기본 false: 종전대로 텍스트 기준 전부 트림 (마크다운 가독성·벤치 계약). */
   keepAnchoredEmptyCols?: boolean
+  /** 셀 텍스트를 trim하지 않고 선/후행 개행(빈 문단 줄)을 보존한다 (#57).
+   *  ParseOptions.keepEmptyParagraphs 연동 — 파서가 문단별로 이미 정돈한 텍스트를
+   *  `\n` 결합해 넘기는 경로 전용. 기본 false: 종전대로 trim. */
+  keepEmptyParagraphs?: boolean
 }
 
 export function buildTable(rows: CellContext[][], options?: BuildTableOptions): IRTable {
@@ -64,7 +68,7 @@ export function buildTable(rows: CellContext[][], options?: BuildTableOptions): 
       const cell = rows[rowIdx][cellIdx]
       anchorCols.add(colIdx)
       grid[rowIdx][colIdx] = {
-        text: cell.text.trim(),
+        text: options?.keepEmptyParagraphs ? cell.text : cell.text.trim(),
         colSpan: cell.colSpan,
         rowSpan: cell.rowSpan,
       }
@@ -108,7 +112,7 @@ function buildTableDirect(rows: CellContext[][], numRows: number, options?: Buil
       if (r >= numRows || c >= maxCols || r < 0 || c < 0) continue
 
       anchorCols.add(c)
-      grid[r][c] = { text: cell.text.trim(), colSpan: cell.colSpan, rowSpan: cell.rowSpan }
+      grid[r][c] = { text: options?.keepEmptyParagraphs ? cell.text : cell.text.trim(), colSpan: cell.colSpan, rowSpan: cell.rowSpan }
 
       // 병합 영역 마킹
       for (let dr = 0; dr < cell.rowSpan; dr++) {

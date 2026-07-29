@@ -286,6 +286,93 @@ describe("render: 실파일 e2e (corpus 존재 시)", { skip: !existsSync(CORPUS
   })
 })
 
+describe("render: TAC 인라인 표 outMargin 좌/우 가로 배선 (rhwp #3396 동종)", () => {
+  // 한글 문자 규칙: TAC 표의 가로 전진폭 = om좌 + 표폭 + om우, 괘선(표 자체)은 pen + om좌.
+  // om 유무 두 렌더의 x 델타로 검증 — 폰트 폭 테이블에 무의존. om좌≠om우(비대칭)로 좌우 뒤바뀜도 잡는다.
+  const OM_L = 850 // 8.5pt
+  const OM_R = 283 // 2.83pt
+
+  /** Tier-1(조판 캐시 명시) 문서: [앞표식][TAC 표(셀칸)][뒤표식] 한 줄. omL=null이면 outMargin 요소 자체 생략 */
+  async function renderTacDoc(omL: number | null, omR: number, paraPrId = "0"): Promise<string> {
+    const base = await markdownToHwpx("기준")
+    const zip = await JSZip.loadAsync(base)
+    const secName = Object.keys(zip.files).find(n => /section0\.xml$/.test(n))!
+    let sec = await zip.file(secName)!.async("string")
+    const seg = (horzsize: number) =>
+      `<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"` +
+      ` textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="${horzsize}" flags="393216"/></hp:linesegarray>`
+    const tbl =
+      `<hp:tbl id="777" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" repeatHeader="0" rowCnt="1" colCnt="1" cellSpacing="0" borderFillIDRef="1" noAdjust="0">` +
+      `<hp:sz width="6000" widthRelTo="ABSOLUTE" height="2000" heightRelTo="ABSOLUTE" protect="0"/>` +
+      `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>` +
+      (omL === null ? "" : `<hp:outMargin left="${omL}" right="${omR}" top="0" bottom="0"/>`) +
+      `<hp:inMargin left="0" right="0" top="0" bottom="0"/>` +
+      `<hp:tr><hp:tc name="" header="0" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="1">` +
+      `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">` +
+      `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>셀칸</hp:t></hp:run>${seg(6000)}</hp:p>` +
+      `</hp:subList>` +
+      `<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>` +
+      `<hp:cellSz width="6000" height="2000"/><hp:cellMargin left="0" right="0" top="0" bottom="0"/>` +
+      `</hp:tc></hp:tr></hp:tbl>`
+    const host =
+      `<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"><hp:run charPrIDRef="0">` +
+      `<hp:t>앞표식</hp:t>${tbl}<hp:t>뒤표식</hp:t></hp:run>${seg(42520)}</hp:p>`
+    sec = sec.replace(/<\/hs:sec>|<\/hp:sec>/, m => `${host}${m}`)
+    zip.file(secName, sec)
+    if (paraPrId !== "0") {
+      // 우정렬 paraPr 주입 — parseRenderStyles는 트리 전체를 걸으므로 위치 무관
+      const headName = Object.keys(zip.files).find(n => /header\.xml$/.test(n))!
+      let head = await zip.file(headName)!.async("string")
+      head = head.replace(
+        /<\/hh:head>/,
+        `<hh:paraPr id="${paraPrId}"><hh:align horizontal="RIGHT"/></hh:paraPr></hh:head>`,
+      )
+      zip.file(headName, head)
+    }
+    const buf = await zip.generateAsync({ type: "nodebuffer" })
+    return (await renderHwpxToSvg(new Uint8Array(buf))).svg
+  }
+
+  const textX = (svg: string, marker: string): number => {
+    const m = [...svg.matchAll(/<text x="([\d.-]+)"[^>]*>([^<]*)<\/text>/g)].find(mm => mm[2].includes(marker))
+    assert.ok(m, `"${marker}" 텍스트가 렌더에 없음`)
+    return parseFloat(m![1])
+  }
+
+  it("JUSTIFY host — 괘선은 pen+om좌, 후속 텍스트는 om좌+om우만큼 추가 전진", async () => {
+    const svg0 = await renderTacDoc(0, 0)
+    const svg1 = await renderTacDoc(OM_L, OM_R)
+    // 표 앞 텍스트는 불변
+    assert.equal(textX(svg1, "앞표식"), textX(svg0, "앞표식"))
+    // (b) 표 자체(셀 텍스트 = 표 x + cellMargin 0) = pen + om좌
+    const dCell = textX(svg1, "셀칸") - textX(svg0, "셀칸")
+    assert.ok(Math.abs(dCell - OM_L / 100) < 0.02, `표 x 시프트 ${dCell}pt (기대 ${OM_L / 100}pt = om좌)`)
+    // (a) 후속 텍스트 전진폭 = om좌 + 표폭 + om우 → om합만큼 추가로 밀린다
+    const dAfter = textX(svg1, "뒤표식") - textX(svg0, "뒤표식")
+    assert.ok(Math.abs(dAfter - (OM_L + OM_R) / 100) < 0.02, `후속 텍스트 시프트 ${dAfter}pt (기대 ${(OM_L + OM_R) / 100}pt = om합)`)
+  })
+
+  it("RIGHT host — 전체 폭에 om 포함: 시작이 om합만큼 왼쪽, 표 우단은 om우만큼 안쪽, 우단 텍스트 불변", async () => {
+    const svg0 = await renderTacDoc(0, 0, "77")
+    const svg1 = await renderTacDoc(OM_L, OM_R, "77")
+    // (c) 정렬용 전체 폭에 om 포함 → 줄 시작이 om합만큼 왼쪽으로
+    const dFront = textX(svg0, "앞표식") - textX(svg1, "앞표식")
+    assert.ok(Math.abs(dFront - (OM_L + OM_R) / 100) < 0.02, `우정렬 시작 시프트 ${dFront}pt (기대 ${(OM_L + OM_R) / 100}pt)`)
+    // 표는 om우만큼 안쪽 (rhwp 오라클: 우정렬 표 우측 괘선 = 우여백 − om우)
+    const dCell = textX(svg0, "셀칸") - textX(svg1, "셀칸")
+    assert.ok(Math.abs(dCell - OM_R / 100) < 0.02, `우정렬 표 시프트 ${dCell}pt (기대 ${OM_R / 100}pt = om우)`)
+    // 줄 끝(우단) 텍스트는 그대로 우여백에 붙는다
+    const dAfter = textX(svg1, "뒤표식") - textX(svg0, "뒤표식")
+    assert.ok(Math.abs(dAfter) < 0.02, `우단 텍스트가 움직임: ${dAfter}pt`)
+  })
+
+  it("om=0 문서는 outMargin 요소 유무와 무관하게 SVG 바이트 동일 (무회귀)", async () => {
+    // 모든 가산이 +0이라 om 미배선 시절과 같은 좌표 — 요소가 아예 없는 문서(num(null)=0
+    // 폴백)와도 바이트 동일해야 한다
+    assert.equal(await renderTacDoc(0, 0), await renderTacDoc(null, 0))
+  })
+})
+
 describe("render: XML 1.0 비허용 제어문자 방어 (rhwp #3382 동종)", () => {
   it("C0 제어문자를 제거해 산출 SVG가 well-formed XML을 유지한다", () => {
     // 제어문자를 그대로 흘리면 "PCDATA invalid Char value 3"으로 뷰어가 렌더를 중단한다.

@@ -23,6 +23,7 @@
 
 import JSZip from "jszip"
 import { isLabelCell } from "./recognize.js"
+import { fillClickHereInXml } from "./click-here.js"
 import { KordocError } from "../utils.js"
 import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isKeywordLabel, fillInCellPatterns, scanInlineSegments, matchInlineSegment, clampSegmentEnd, padInsertion, ValueCursor, type FillValue , type FillInput } from "./match.js"
 import type { FormField } from "../types.js"
@@ -96,8 +97,28 @@ export async function fillHwpx(
   const replacements = new Map<string, Uint8Array>()
   const encoder = new TextEncoder()
 
+  // ── 전략 F: 누름틀(CLICK_HERE) 우선 매칭 — 표준 서식(기안문 등) 지원 ──
+  // 필드 name과 정규화 정확 일치한 키는 여기서 채워지고 라벨 매칭에서 제외된다
+  // (누름틀은 서식 제작자의 명시적 계약이라 라벨 추정보다 우선).
+  // 모든 섹션을 먼저 훑은 뒤에 키를 제거해야 섹션2+의 동명 누름틀이 굶지 않는다.
+  const sectionXmls = new Map<string, string>()
+  const fieldModified = new Set<string>()
+  const fieldMatchedKeys = new Set<string>()
+  for (const p of sectionPaths) {
+    const xml = await zip.file(p)!.async("text")
+    const outcome = fillClickHereInXml(xml, cursor, blockedLabels)
+    sectionXmls.set(p, outcome.xml ?? xml)
+    if (outcome.xml !== null) fieldModified.add(p)
+    for (const f of outcome.filled) filled.push(f)
+    for (const k of outcome.matchedKeys) fieldMatchedKeys.add(k)
+  }
+  for (const k of fieldMatchedKeys) {
+    matchedLabels.add(k)
+    normalizedValues.delete(k)
+  }
+
   for (let si = 0; si < sectionPaths.length; si++) {
-    const xml = await zip.file(sectionPaths[si])!.async("text")
+    const xml = sectionXmls.get(sectionPaths[si])!
     const scan = scanSectionXml(xml, si)
 
     const ledger = new Map<ScanParagraph, ParaEditLedger>()
@@ -392,9 +413,9 @@ export async function fillHwpx(
       splices.push(...paraSplices)
     }
 
-    if (splices.length > 0) {
-      // 텍스트가 바뀐 섹션은 줄 레이아웃 캐시(linesegarray)를 전부 비워 한컴 변조
-      // 경고·구버전 줄배치 렌더를 막는다 (patchHwpx와 동일 — 뷰어가 열 때 재계산)
+    if (splices.length > 0 || fieldModified.has(sectionPaths[si])) {
+      // 텍스트가 바뀐 섹션(누름틀 채움 포함)은 줄 레이아웃 캐시(linesegarray)를 전부
+      // 비워 한컴 변조 경고·구버전 줄배치 렌더를 막는다 (patchHwpx와 동일 — 뷰어가 열 때 재계산)
       splices.push(...allLinesegRemovalSplices(xml))
       replacements.set(sectionPaths[si], encoder.encode(applySplices(xml, splices)))
     }

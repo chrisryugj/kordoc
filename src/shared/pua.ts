@@ -80,7 +80,7 @@ const SUPPLEMENTARY_MAP: Record<number, string> = {
 }
 
 /** 단일 코드포인트 매핑 — 매핑 없으면 원본 유지 */
-export function mapPuaChar(code: number): string | undefined {
+function mapPuaChar(code: number): string | undefined {
   if (code >= 0xf020 && code <= 0xf0ff) {
     return BMP_SYMBOL_MAP[code - 0xf000]
   }
@@ -88,11 +88,6 @@ export function mapPuaChar(code: number): string | undefined {
     return SUPPLEMENTARY_MAP[code]
   }
   return undefined
-}
-
-/** BMP PUA 영역 여부 (U+E000~U+F8FF) */
-export function isBmpPua(code: number): boolean {
-  return code >= 0xe000 && code <= 0xf8ff
 }
 
 /**

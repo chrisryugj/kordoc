@@ -230,7 +230,9 @@ function walkSection(
           if (tableCtx?.cell) {
             const cell = tableCtx.cell
             if (footnote) text += ` (주: ${footnote})`
-            cell.text += (cell.text ? "\n" : "") + text
+            // 선두 빈 문단 뒤(keepEmptyParagraphs)엔 cell.text가 ""라도 문단 경계 `\n` 필요 (#57)
+            cell.text += ((cell.text || cell.paraSeen) ? "\n" : "") + text
+            cell.paraSeen = true
             const cellBlock: IRBlock = { type: "paragraph", text, pageNumber: ctx.sectionNum }
             // 왕복 채널 — 셀 문단도 인라인 강조 span 복원 (v4.0.4: 최상위 한정 확장,
             // v4.0.5: gongmun·외래 확장). GFM 셀 방출이 마커를 재방출하고 generateRuns가
@@ -295,6 +297,19 @@ function walkSection(
           } else {
             // 표 내부지만 셀 밖(비정상 경로) — 무음 드롭 대신 본문 문단으로 보존
             blocks.push({ type: "paragraph", text, pageNumber: ctx.sectionNum })
+          }
+        } else if (ctx.shared.keepEmptyParagraphs && !hasObjectDescendant(el)) {
+          // 빈 문단 보존 (#57, opt-in) — 본문은 text:"" 문단 블록, 셀은 빈 줄로 순서대로.
+          // 개체(표·그림·글상자) 문단은 개체 출력이 따로 방출되므로 제외 (이중 줄 방지).
+          // 기본(off)은 종전 동작 그대로 — 조판용 여백 문단이 지워진다.
+          if (tableCtx?.cell) {
+            const cell = tableCtx.cell
+            if (cell.text || cell.paraSeen) cell.text += "\n"
+            cell.paraSeen = true
+            cell.lineOpen = false // 문단 경계 — 인라인 흐름 닫힘
+            ;(cell.blocks ??= []).push({ type: "paragraph", text: "", pageNumber: ctx.sectionNum })
+          } else if (!tableCtx) {
+            blocks.push({ type: "paragraph", text: "", pageNumber: ctx.sectionNum })
           }
         }
         // <p> 내부의 <tbl>만 별도 처리 — extractParagraphInfo가 이미 텍스트를 추출했으므로
@@ -635,6 +650,24 @@ function walkParagraphChildren(
   return tableCtx
 }
 
+/** 개체 요소 태그 — 빈 문단 보존(#57) 제외 판정용. walkParagraphChildren이 별도 방출하는 것들 */
+const OBJECT_TAGS = new Set(["tbl", "pic", "shape", "drawingObject", "drawText"])
+
+/** 문단 하위에 표·그림·글상자 등 개체가 있는지 — 있으면 "빈 문단"이 아니라 개체 문단 (#57) */
+function hasObjectDescendant(node: Node, depth = 0): boolean {
+  if (depth > MAX_XML_DEPTH) return false
+  const kids = node.childNodes
+  if (!kids) return false
+  for (let i = 0; i < kids.length; i++) {
+    const ch = kids[i] as Element
+    if (ch.nodeType !== 1) continue
+    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
+    if (OBJECT_TAGS.has(tag)) return true
+    if (hasObjectDescendant(ch, depth + 1)) return true
+  }
+  return false
+}
+
 /**
  * 글자취급(treatAsChar) 인라인 표 여부 — <hp:pos treatAsChar="1"> (#49/#50).
  * inline 표만 같은 줄 텍스트와 문서 순서로 읽는다 (reflow 개체 흐름 모델과 동일 구분)
@@ -931,7 +964,14 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
               const latex = hmlToLatex(raw).trim()
               if (latex) text += " $" + latex + "$ "
             } catch {
-              // 변환 실패 시 조용히 드롭 — 텍스트 품질이 우선
+              // 변환 실패 시 드롭 — 깨진 대체 텍스트 누출 방지. 드롭 사실은 경고로 남긴다
+              if (ctx?.warnings) {
+                ctx.warnings.push({
+                  page: ctx.sectionNum,
+                  message: `수식 LaTeX 변환 실패 — 수식 텍스트 제외: ${raw.trim().slice(0, 40)}`,
+                  code: "PARTIAL_PARSE",
+                })
+              }
             }
           }
           break

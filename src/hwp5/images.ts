@@ -41,18 +41,24 @@ function normalizeBinPayload(data: Buffer): Buffer {
 /** BinData 스토리지 엔트리명 — "BIN%04X.ext" (storage_id는 16진!) */
 const BIN_ENTRY_RE = /(?:^|\/)BIN([0-9A-Fa-f]{4,8})(?:\.[^./\\]*)?$/
 
-/** 블록 트리(셀 내부 blocks 포함)에서 image 블록 수집 */
-function collectImageBlocks(blocks: IRBlock[], out: IRBlock[]): void {
+/** 블록 트리 재귀 깊이 상한 — hwpx collectImageBlocks(MAX_XML_DEPTH)와 동일 값.
+ *  손상/악성 문서의 자기참조·초심층 트리 스택 오버플로 방지 */
+const MAX_BLOCK_DEPTH = 200
+
+/** 블록 트리(셀 내부 blocks 포함)에서 image 블록 수집.
+ *  hwpx 쪽과 안전장치 합집합: depth 가드 + children 순회 (둘 다 수행) */
+function collectImageBlocks(blocks: IRBlock[], out: IRBlock[], depth = 0): void {
+  if (depth > MAX_BLOCK_DEPTH) return
   for (const b of blocks) {
     if (b.type === "image") out.push(b)
     if (b.table) {
       for (const row of b.table.cells) {
         for (const cell of row) {
-          if (cell.blocks) collectImageBlocks(cell.blocks, out)
+          if (cell.blocks) collectImageBlocks(cell.blocks, out, depth + 1)
         }
       }
     }
-    if (b.children) collectImageBlocks(b.children, out)
+    if (b.children) collectImageBlocks(b.children, out, depth + 1)
   }
 }
 

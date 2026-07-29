@@ -1,13 +1,13 @@
 /** HWPML 2.x 파서 — XML 기반 한컴 문서 (.hwp with XML content) */
 
 import { DOMParser } from "@xmldom/xmldom"
-import type { IRBlock, InternalParseResult, ParseOptions, ParseWarning, DocumentMetadata, OutlineItem } from "../types.js"
+import type { IRBlock, IRCell, IRTable, InternalParseResult, ParseOptions, ParseWarning, DocumentMetadata, OutlineItem } from "../types.js"
 import { blocksToMarkdown, buildTable } from "../table/builder.js"
 import { parsePageRange } from "../page-range.js"
-import { stripDtd } from "../utils.js"
+import { KordocError, stripDtd } from "../utils.js"
 import type { CellContext } from "../types.js"
+import { MAX_XML_DEPTH, localName, findChildByLocalName as findChild, rawTextContent as textContent } from "../shared/xml.js"
 
-const MAX_XML_DEPTH = 200
 const MAX_TABLE_ROWS = 5000
 const MAX_TABLE_COLS = 500
 const MAX_HWPML_BYTES = 50 * 1024 * 1024  // 50MB 상한
@@ -20,7 +20,7 @@ interface ParaShapeInfo {
 /** HWPML 문서 파싱 진입점 */
 export function parseHwpmlDocument(buffer: ArrayBuffer, options?: ParseOptions): InternalParseResult {
   if (buffer.byteLength > MAX_HWPML_BYTES) {
-    throw new Error(`HWPML 파일 크기 초과 (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB > 50MB)`)
+    throw new KordocError(`HWPML 파일 크기 초과 (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB > 50MB)`)
   }
   const text = new TextDecoder("utf-8").decode(buffer).replace(/^\uFEFF/, "")
 
@@ -276,18 +276,49 @@ function collectCharText(node: Element, parts: string[], depth: number = 0): voi
 function parseTable(
   el: Element,
   blocks: IRBlock[],
-  paraShapeMap: Map<string, ParaShapeInfo>,
+  _paraShapeMap: Map<string, ParaShapeInfo>,
   sectionNum: number,
   warnings: ParseWarning[],
   keep: boolean,
 ): void {
+  const table = buildHmlTable(el, warnings, keep, 0)
+  if (!table) return
+
+  // 표 캡션(SHAPEOBJECT > CAPTION) — 파서가 이제껏 버리던 도형 캡션 텍스트를
+  // 별도 문단으로 보존한다. collectCharText가 SHAPEOBJECT를 통째로 스킵해
+  // 표 주석("※ …참조" 등)이 소실됐다. Side=Top/Left면 표 앞, 그 외는 뒤.
+  const caption = extractShapeCaption(el)
+  if (caption.text && caption.before) {
+    blocks.push({ type: "paragraph", text: caption.text, pageNumber: sectionNum })
+  }
+  blocks.push({ type: "table", table, pageNumber: sectionNum })
+  if (caption.text && !caption.before) {
+    blocks.push({ type: "paragraph", text: caption.text, pageNumber: sectionNum })
+  }
+}
+
+/** 셀 안 중첩표 최대 단계 — hwp5 MAX_NEST_DEPTH와 같은 취지의 표 중첩 상한 */
+const MAX_TABLE_NEST = 8
+
+/**
+ * TABLE 요소 → IRTable. 셀 안 중첩표는 hwpx table-build 방식대로 IRCell.blocks에
+ * IRBlock(type:'table')로 구조 보존하고, IRCell.text에는 하위 호환용 평탄화
+ * 텍스트를 그대로 남긴다 (종전 전면 평탄화의 구조 소실 해소).
+ */
+function buildHmlTable(
+  el: Element,
+  warnings: ParseWarning[],
+  keep: boolean,
+  tableDepth: number,
+): IRTable | null {
   const cells: CellContext[] = []
+  const structured: { ctx: CellContext; cellBlocks: IRBlock[] }[] = []
   const rowCount = parseInt(el.getAttribute("RowCount") ?? "0", 10)
   const colCount = parseInt(el.getAttribute("ColCount") ?? "0", 10)
-  if (isNaN(rowCount) || isNaN(colCount) || rowCount === 0 || colCount === 0) return
+  if (isNaN(rowCount) || isNaN(colCount) || rowCount === 0 || colCount === 0) return null
   if (rowCount > MAX_TABLE_ROWS || colCount > MAX_TABLE_COLS) {
     warnings.push({ message: `테이블 크기 초과 (${rowCount}x${colCount}) — 스킵`, code: "TRUNCATED_TABLE" })
-    return
+    return null
   }
 
   // <ROW> → <CELL> 순회
@@ -307,14 +338,21 @@ function parseTable(
       const colSpan = Math.min(Math.max(1, parseInt(cellEl.getAttribute("ColSpan") ?? "1", 10) || 1), MAX_TABLE_COLS)
       const rowSpan = Math.min(Math.max(1, parseInt(cellEl.getAttribute("RowSpan") ?? "1", 10) || 1), MAX_TABLE_ROWS)
 
-      // 셀 텍스트: PARALIST > P 재귀 추출
+      // 셀 텍스트: PARALIST > P 재귀 추출 (blocks 유무와 무관하게 종전 평탄화 유지)
       const cellText = extractCellText(cellEl)
+      const ctx: CellContext = { text: cellText, colSpan, rowSpan, colAddr, rowAddr }
+      cells.push(ctx)
 
-      cells.push({ text: cellText, colSpan, rowSpan, colAddr, rowAddr })
+      // 중첩표가 있는 셀만 blocks 구성 — 평문 셀은 text 평탄화로 충분 (blocks 무게 억제)
+      if (tableDepth < MAX_TABLE_NEST && cellHasNestedTable(cellEl, 0)) {
+        const cellBlocks: IRBlock[] = []
+        collectCellBlocks(cellEl, cellBlocks, warnings, keep, 0, tableDepth)
+        if (cellBlocks.some(b => b.type === "table")) structured.push({ ctx, cellBlocks })
+      }
     }
   }
 
-  if (cells.length === 0) return
+  if (cells.length === 0) return null
 
   // 셀은 colAddr/rowAddr 절대좌표를 가지므로 buildTable direct 모드에 그대로 위임.
   // (구 구현은 주소 없는 filler를 채운 수동 그리드를 넘겼는데, direct 모드가 filler의
@@ -327,17 +365,119 @@ function parseTable(
 
   const table = buildTable(cellRows, { keepAnchoredEmptyCols: keep })
 
-  // 표 캡션(SHAPEOBJECT > CAPTION) — 파서가 이제껏 버리던 도형 캡션 텍스트를
-  // 별도 문단으로 보존한다. collectCharText가 SHAPEOBJECT를 통째로 스킵해
-  // 표 주석("※ …참조" 등)이 소실됐다. Side=Top/Left면 표 앞, 그 외는 뒤.
-  const caption = extractShapeCaption(el)
-  if (caption.text && caption.before) {
-    blocks.push({ type: "paragraph", text: caption.text, pageNumber: sectionNum })
+  // 중첩표 blocks 부착 — HML CELL은 절대좌표가 항상 있으므로 좌표 우선,
+  // 좌표 셀의 텍스트가 다르면(빌더 정규화 등) 텍스트+스팬 매칭 폴백.
+  // 못 찾으면 미부착 — 평탄화 텍스트가 이미 내용을 보존하므로 유실은 없다.
+  if (structured.length > 0) {
+    const claimed = new Set<IRCell>()
+    for (const { ctx, cellBlocks } of structured) {
+      let target: IRCell | undefined = table.cells[ctx.rowAddr ?? -1]?.[ctx.colAddr ?? -1]
+      if (!target || claimed.has(target) || target.text !== ctx.text) {
+        target = undefined
+        outer: for (const irRow of table.cells) {
+          for (const cand of irRow) {
+            if (!claimed.has(cand) && cand.text === ctx.text && cand.colSpan === ctx.colSpan && cand.rowSpan === ctx.rowSpan) {
+              target = cand
+              break outer
+            }
+          }
+        }
+      }
+      if (!target) continue
+      claimed.add(target)
+      target.blocks = cellBlocks
+    }
   }
-  blocks.push({ type: "table", table, pageNumber: sectionNum })
-  if (caption.text && !caption.before) {
-    blocks.push({ type: "paragraph", text: caption.text, pageNumber: sectionNum })
+
+  return table
+}
+
+/** 셀 하위에 TABLE 존재 여부 (각주류 제외) — blocks 구성 여부 사전 판별 */
+function cellHasNestedTable(node: Element, depth: number): boolean {
+  if (depth > 20) return false
+  const children = node.childNodes
+  for (let i = 0; i < children.length; i++) {
+    const el = children[i] as Element
+    if (el.nodeType !== 1) continue
+    const tag = localName(el)
+    if (tag === "TABLE") return true
+    if (tag === "FOOTNOTE" || tag === "ENDNOTE" || tag === "HEADER" || tag === "FOOTER") continue
+    if (cellHasNestedTable(el, depth + 1)) return true
   }
+  return false
+}
+
+/** 셀 내부를 DOM 순서대로 IRBlock 목록으로 — 문단 텍스트 + 중첩표(구조 보존) */
+function collectCellBlocks(
+  node: Element,
+  out: IRBlock[],
+  warnings: ParseWarning[],
+  keep: boolean,
+  depth: number,
+  tableDepth: number,
+): void {
+  if (depth > 20) return
+  const children = node.childNodes
+  for (let i = 0; i < children.length; i++) {
+    const el = children[i] as Element
+    if (el.nodeType !== 1) continue
+    const tag = localName(el)
+
+    if (tag === "P") {
+      const t = extractParagraphText(el)
+      if (t) out.push({ type: "paragraph", text: t })
+      collectNestedTableBlocks(el, out, warnings, keep, depth + 1, tableDepth)
+    } else if (tag === "TABLE") {
+      pushNestedTableBlock(el, out, warnings, keep, tableDepth)
+    } else {
+      collectCellBlocks(el, out, warnings, keep, depth + 1, tableDepth)
+    }
+  }
+}
+
+/** P 하위의 TABLE만 찾아 구조 블록으로 — 각주류는 extractParagraphText가 이미 수집 */
+function collectNestedTableBlocks(
+  node: Element,
+  out: IRBlock[],
+  warnings: ParseWarning[],
+  keep: boolean,
+  depth: number,
+  tableDepth: number,
+): void {
+  if (depth > 20) return
+  const children = node.childNodes
+  for (let i = 0; i < children.length; i++) {
+    const el = children[i] as Element
+    if (el.nodeType !== 1) continue
+    const tag = localName(el)
+    if (tag === "TABLE") {
+      pushNestedTableBlock(el, out, warnings, keep, tableDepth)
+      continue
+    }
+    if (tag === "FOOTNOTE" || tag === "ENDNOTE" || tag === "HEADER" || tag === "FOOTER") continue
+    collectNestedTableBlocks(el, out, warnings, keep, depth + 1, tableDepth)
+  }
+}
+
+/** 중첩 TABLE → IRBlock(type:'table'). 빌드 불가(빈 표·크기 초과)면 평탄화 텍스트 폴백 */
+function pushNestedTableBlock(
+  el: Element,
+  out: IRBlock[],
+  warnings: ParseWarning[],
+  keep: boolean,
+  tableDepth: number,
+): void {
+  const nested = buildHmlTable(el, warnings, keep, tableDepth + 1)
+  if (nested) {
+    const cap = extractShapeCaption(el)
+    if (cap.text) nested.caption = cap.text
+    out.push({ type: "table", table: nested })
+    return
+  }
+  const parts: string[] = []
+  collectCellText(el, parts, 0)
+  const flat = parts.filter(Boolean).join("\n").trim()
+  if (flat) out.push({ type: "paragraph", text: flat })
 }
 
 /** 표의 SHAPEOBJECT > CAPTION 텍스트 + 배치(Side) 추출 */
@@ -398,33 +538,7 @@ function collectNestedTableText(node: Element, parts: string[], depth: number): 
 }
 
 // ─── XML 유틸 ────────────────────────────────────────────
-
-function localName(el: Element): string {
-  return (el.tagName || el.localName || "").replace(/^[^:]+:/, "")
-}
-
-function findChild(parent: Element, tag: string): Element | null {
-  const children = parent.childNodes
-  for (let i = 0; i < children.length; i++) {
-    const el = children[i] as Element
-    if (el.nodeType === 1 && localName(el) === tag) return el
-  }
-  return null
-}
-
-function textContent(el: Element): string {
-  const children = el.childNodes
-  const parts: string[] = []
-  for (let i = 0; i < children.length; i++) {
-    const node = children[i]
-    if (node.nodeType === 3) {  // TEXT_NODE
-      parts.push(node.nodeValue || "")
-    } else if (node.nodeType === 1) {
-      parts.push(textContent(node as Element))
-    }
-  }
-  return parts.join("")
-}
+// localName/findChild(=findChildByLocalName)/textContent(=rawTextContent)는 shared/xml.ts 공용
 
 function countSections(body: Element): number {
   let count = 0

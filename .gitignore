@@ -21,6 +21,11 @@ reply-*.md
 
 # 실제 문서 fixture — 개인 문서이므로 저장소에 포함하지 않음
 tests/fixtures/sample.*
+tests/fixtures/real/
+
+# 로컬 임시 산출물 — git status 오염 방지
+*.tgz
+demo/package-lock.json.localbackup
 
 # dummy fixture는 커밋 (CI용 — 프로그래밍 생성 문서)
 !tests/fixtures/dummy.*

@@ -12,6 +12,7 @@
 import { charWidthEm1000, SPACE_EM_FIXED } from "./text-metrics.js"
 import { gaejosikMarker, gaejosikLevelIndent, type GaejosikSizeOverrides } from "./gaejosik.js"
 import { KordocError } from "../utils.js"
+import { hangulOrdinal, circledNumber, circledHangul } from "../shared/numbering.js"
 
 // ─── 옵션 타입 ──────────────────────────────────────
 
@@ -341,39 +342,9 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
 
 // ─── 항목부호 시퀀스 생성 ────────────────────────────
 
-// 가나다 초성 14자(쌍자음 제외) — 0xAC00 음절 조합용 초성 인덱스
-const HANGUL_INITIALS = [0, 2, 3, 5, 6, 7, 9, 11, 12, 14, 15, 16, 17, 18]
-// 단모음 순 중성 인덱스: ㅏ ㅓ ㅗ ㅜ ㅡ ㅣ (편람: 가→…→하→거→…→허→고→…)
-const HANGUL_MEDIALS = [0, 4, 8, 13, 18, 20]
-
-/** 0-based n → 가, 나, 다, … 하, 거, 너, … (단모음 연속) */
-export function hangulOrdinal(n: number): string {
-  const cols = HANGUL_INITIALS.length // 14
-  const vowel = HANGUL_MEDIALS[Math.min(Math.floor(n / cols), HANGUL_MEDIALS.length - 1)]
-  const init = HANGUL_INITIALS[n % cols]
-  return String.fromCodePoint(0xac00 + init * 588 + vowel * 28)
-}
-
-/**
- * 0-based n → ① ② … ⑳ ㉑ … ㊿ (U+2460~ / U+3251~ / U+32B1~, 50까지).
- * 초과(실무 도달 불가)는 순환 대신 '(51)' 괄호수 — 파서 자동번호 폴백
- * (para-heading CIRCLED_DIGIT)과 같은 규칙이라 왕복 시 마커가 어긋나지 않는다 (v4.0.4)
- */
-export function circledNumber(n: number): string {
-  if (n < 20) return String.fromCodePoint(0x2460 + n)        // ①~⑳
-  if (n < 35) return String.fromCodePoint(0x3251 + (n - 20)) // ㉑~㉟
-  if (n < 50) return String.fromCodePoint(0x32b1 + (n - 35)) // ㊱~㊿
-  return `(${n + 1})`
-}
-
-/**
- * 0-based n → ㉮ ㉯ ㉰ … ㉻ (U+326E~, 14자). 15번째+는 순환 대신 가나다 서수 —
- * 파서 자동번호 폴백(para-heading CIRCLED_HANGUL_SYLLABLE)과 동일 규칙 (v4.0.4).
- * 순환(mod 14)이면 15번째가 ㉮로 되돌아가 형제 순번 재유도가 모호해진다
- */
-export function circledHangul(n: number): string {
-  return n < 14 ? String.fromCodePoint(0x326e + n) : hangulOrdinal(n)
-}
+// 시퀀스 포맷터 정본은 src/shared/numbering.ts — 여기서는 재수출로 하위호환 유지
+// (gen-gongmun-fit, section-walker, parser, tests가 이 모듈에서 import)
+export { hangulOrdinal, circledNumber, circledHangul }
 
 /** 보고서 모드 단계별 불릿(정부 보고서 관행: □ 대 / ○·ㅇ 중 / - 소 / ㆍ 세) */
 const REPORT_BULLETS = ["□", "○", "-", "ㆍ"]

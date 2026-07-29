@@ -206,15 +206,16 @@ describe("P3-11 index.ts parse 실패 메시지 정제", () => {
       assert.notEqual(res.error, "문서 처리 중 오류가 발생했습니다", "KordocError 메시지는 살아있어야")
     }
   })
-  it("비KordocError(내부 에러)는 일반화되고 code 는 유지", async () => {
-    // HWPML 50MB 상한 위반 → 파서가 plain Error throw → sanitizeError 로 일반화
+  it("파서 진단 에러(KordocError)는 메시지 보존 + code 분류 — HWPML 크기 상한", async () => {
+    // HWPML 50MB 상한 위반 — 사용자 조치 가능한 진단이라 KordocError 로 메시지 보존
+    // (plain Error 일반화 계약 자체는 위 describeError "일반 에러는 일반화" 케이스가 고정)
     const head = '<?xml version="1.0" encoding="UTF-8"?><HWPML>'
     const big = head + " ".repeat(51 * 1024 * 1024)
     const res = await parse(toAB(new TextEncoder().encode(big)))
     assert.equal(res.success, false)
     if (!res.success) {
       assert.equal(res.fileType, "hwpml")
-      assert.equal(res.error, "문서 처리 중 오류가 발생했습니다", "plain Error 메시지는 일반화")
+      assert.match(res.error, /HWPML 파일 크기 초과/, "진단 메시지는 살아있어야")
       assert.equal(res.code, "DECOMPRESSION_BOMB", "code 분류는 유지 (classifyError 는 원본 기준)")
     }
   })

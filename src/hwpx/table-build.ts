@@ -12,8 +12,8 @@ import type { CellCtxEx, TableState, WalkCtx } from "./parser-shared.js"
  * buildTable이 CellContext의 확장 필드를 복사하지 않으므로 cellAddr 좌표
  * (없으면 텍스트+스팬 매칭)로 결과 IRCell을 찾아 재부착한다.
  */
-function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boolean): IRTable {
-  const table = buildTable(state.rows, { keepAnchoredEmptyCols })
+function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boolean, keepEmptyParagraphs?: boolean): IRTable {
+  const table = buildTable(state.rows, { keepAnchoredEmptyCols, keepEmptyParagraphs })
   if (state.caption) table.caption = state.caption
   // 캡션 안 중첩표는 구조도 병행 제공 — caption 문자열은 하위 호환 평탄화로 유지 (#55)
   if (state.captionBlocks?.length) table.captionBlocks = state.captionBlocks
@@ -54,7 +54,8 @@ function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boole
 
       // 1순위: cellAddr 절대좌표 (HWPX 표준은 항상 cellAddr 제공)
       let target: IRCell | undefined
-      const trimmed = src.text.trim()
+      // keepEmptyParagraphs면 buildTable이 trim하지 않으므로 원문 그대로 비교 (#57)
+      const trimmed = keepEmptyParagraphs ? src.text : src.text.trim()
       if (src.rowAddr !== undefined && src.colAddr !== undefined) {
         const cand = table.cells[src.rowAddr]?.[src.colAddr]
         if (cand && cand.text === trimmed && !claimed.has(cand)) target = cand
@@ -101,7 +102,7 @@ export function completeTable(
     if (newTable.caption) blocks.push({ type: "paragraph", text: newTable.caption, pageNumber: ctx.sectionNum })
     return parentTable
   }
-  const ir = buildTableWithCellMeta(newTable, ctx.shared.keepTrailingEmptyCols)
+  const ir = buildTableWithCellMeta(newTable, ctx.shared.keepTrailingEmptyCols, ctx.shared.keepEmptyParagraphs)
   const block: IRBlock = { type: "table", table: ir, pageNumber: ctx.sectionNum }
   if (parentTable?.cell) {
     const cell = parentTable.cell

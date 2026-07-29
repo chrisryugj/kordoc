@@ -201,7 +201,9 @@ export async function ensureSingleModel(spec: ModelSpec, onProgress?: ProgressHa
   }
   try {
     await unlink(localPath)
-  } catch {}
+  } catch {
+    // 재다운로드 전 손상/잔존 파일 정리 best-effort — 애초에 없으면 실패해도 무방
+  }
   await downloadToFile(spec, localPath, onProgress)
 }
 
@@ -261,7 +263,9 @@ async function downloadToFile(
   } catch (e) {
     try {
       await unlink(partPath)
-    } catch {}
+    } catch {
+      // .part 임시파일 정리 best-effort — 본 에러(스트리밍 실패)를 가리지 않도록 무시
+    }
     throw new Error(`${spec.name} 스트리밍 실패: ${(e as Error).message}`)
   }
 
@@ -279,14 +283,18 @@ async function downloadToFile(
   } catch (e) {
     try {
       await unlink(partPath)
-    } catch {}
+    } catch {
+      // .part 임시파일 정리 best-effort — 본 에러(SHA 계산 실패)를 가리지 않도록 무시
+    }
     throw new Error(`${spec.name} SHA 계산 실패: ${(e as Error).message}`)
   }
 
   if (actual !== spec.sha256) {
     try {
       await unlink(partPath)
-    } catch {}
+    } catch {
+      // 오염된 .part 정리 best-effort — 본 에러(SHA mismatch)를 가리지 않도록 무시
+    }
     throw new Error(
       `${spec.name} SHA256 mismatch: expected ${spec.sha256}, got ${actual} — 모델 URL 이 오염되었거나 전송 중 손상되었습니다.`,
     )

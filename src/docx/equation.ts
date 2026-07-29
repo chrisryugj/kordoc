@@ -16,41 +16,13 @@
  *   - isOmmlRoot(el)         — 엘리먼트가 OMML 최상위인지 판별.
  */
 
-/** localName 비교 — 네임스페이스 prefix 제거 */
-function lname(el: Element): string {
-  return el.localName || el.tagName?.replace(/^[^:]+:/, "") || ""
-}
-
-/** 자식 중 localName 매칭 엘리먼트들 (직계만) */
-function kids(parent: Element, name: string): Element[] {
-  const out: Element[] = []
-  const nodes = parent.childNodes
-  if (!nodes) return out
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i]
-    if (n.nodeType !== 1) continue
-    const el = n as Element
-    if (lname(el) === name) out.push(el)
-  }
-  return out
-}
-
-/** 직계 자식 첫 매칭 또는 null */
-function firstKid(parent: Element, name: string): Element | null {
-  const list = kids(parent, name)
-  return list[0] ?? null
-}
-
-/** 자식 엘리먼트 순회 (직계만, Element only) */
-function eachChild(parent: Element): Element[] {
-  const out: Element[] = []
-  const nodes = parent.childNodes
-  if (!nodes) return out
-  for (let i = 0; i < nodes.length; i++) {
-    if (nodes[i].nodeType === 1) out.push(nodes[i] as Element)
-  }
-  return out
-}
+// XML DOM 헬퍼는 shared/xml.ts 공용 — lname/kids/firstKid/eachChild 별칭으로 사용
+import {
+  localName as lname,
+  childrenByLocalName as kids,
+  findChildByLocalName as firstKid,
+  elementChildren as eachChild,
+} from "../shared/xml.js"
 
 /** <m:r> 내부 <m:t> 텍스트 집계. 특수 연산자에 백슬래시 매핑. */
 function runToLatex(r: Element): string {

@@ -413,7 +413,9 @@ describe("번호 포맷터 (rhwp format_number 포팅)", () => {
     assert.equal(formatNumber(2, "jamo"), "ㄴ")
     assert.equal(formatNumber(12, "hangulNum"), "십이")
     assert.equal(formatNumber(3, "hanjaNum"), "三")
-    assert.equal(formatNumber(21, "circled"), "21") // 범위 밖 → 숫자 폴백
+    assert.equal(formatNumber(21, "circled"), "㉑") // 정본(shared/numbering)은 ㊿(50)까지
+    assert.equal(formatNumber(51, "circled"), "(51)") // 50 초과 → 괄호수 폴백 (gongmun 규칙)
+    assert.equal(formatNumber(15, "ganada"), "거") // 14 초과 → 단모음 연속 (편람 규칙)
   })
 
   it("NumberingState: 하위 수준 리셋 + numberingId 히스토리 복원", () => {

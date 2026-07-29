@@ -3,10 +3,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
-import { readFileSync, writeFileSync, realpathSync, openSync, readSync, closeSync, statSync, mkdirSync, existsSync } from "fs"
+import { realpathSync, openSync, readSync, closeSync, existsSync } from "fs"
+import { readFile, writeFile, mkdir, stat } from "fs/promises"
 import { pathToFileURL } from "url"
 import { resolve, isAbsolute, extname, dirname, basename } from "path"
-import { parse, detectFormat, detectZipFormat, blocksToMarkdown, compare, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, PRESET_ALIAS } from "./index.js"
+import { parse, detectFormat, detectZipFormat, detectOle2Format, blocksToMarkdown, compare, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, PRESET_ALIAS, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
 import { fillWithUniqueGuard, type FillInput } from "./form/match.js"
 import type { GongmunOptions } from "./index.js"
 import {
@@ -100,12 +101,12 @@ export function capResponseText(text: string, maxChars = MAX_RESPONSE_CHARS): st
 /** 최대 파일 크기 — metadata 전용 (50MB, 전체 파싱보다 보수적) */
 const MAX_METADATA_FILE_SIZE = 50 * 1024 * 1024
 
-/** 파일 읽기 + 크기 검증 공통 로직 */
-function readValidatedFile(filePath: string, maxSize = MAX_FILE_SIZE, allowedExts: ReadonlySet<string> = ALLOWED_EXTENSIONS): { buffer: ArrayBuffer; resolved: string } {
+/** 파일 읽기 + 크기 검증 공통 로직 — MCP는 장수 stdio 프로세스라 비동기 I/O (이벤트루프 블로킹 방지) */
+async function readValidatedFile(filePath: string, maxSize = MAX_FILE_SIZE, allowedExts: ReadonlySet<string> = ALLOWED_EXTENSIONS): Promise<{ buffer: ArrayBuffer; resolved: string }> {
   const resolved = safePath(filePath, allowedExts)
   let fileSize: number
   try {
-    fileSize = statSync(resolved).size
+    fileSize = (await stat(resolved)).size
   } catch (err: any) {
     throw new KordocError(`파일 상태 읽기 실패 [${err?.code ?? "UNKNOWN"}]: ${resolved}`)
   }
@@ -114,7 +115,7 @@ function readValidatedFile(filePath: string, maxSize = MAX_FILE_SIZE, allowedExt
   }
   let raw: Buffer
   try {
-    raw = readFileSync(resolved)
+    raw = await readFile(resolved)
   } catch (err: any) {
     throw new KordocError(`파일 읽기 실패 [${err?.code ?? "UNKNOWN"}]: ${resolved}`)
   }
@@ -146,12 +147,22 @@ server.tool(
   "한국 문서 파일(HWP, HWPX, PDF, XLSX, DOCX)과 이미지(PNG/JPG/WebP)를 마크다운으로 변환합니다. 파일 경로를 입력하면 포맷을 자동 감지하여 텍스트를 추출합니다. 이미지는 OCR(내장 PP-OCRv5)이 자동 적용되고 표 괘선도 복원됩니다.",
   {
     file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP)"),
-    ocr: z.boolean().optional()
-      .describe("스캔/이미지 PDF 텍스트 OCR (내장 PP-OCRv5 korean, 첫 사용 시 ~18MB 자동 다운로드). 텍스트층이 없거나 깨진 페이지만 인식하고 정상 페이지는 그대로 둡니다. parse 결과에 NEEDS_OCR 경고가 있으면 이 옵션으로 재시도하세요"),
+    ocr: z.union([z.boolean(), z.literal("force")]).optional()
+      .describe("스캔/이미지 PDF 텍스트 OCR (내장 PP-OCRv5 korean, 첫 사용 시 ~18MB 자동 다운로드). true=텍스트층이 없거나 깨진 페이지만 인식하고 정상 페이지는 그대로 둡니다. \"force\"=텍스트층이 있어도 무시하고 전 페이지 강제 재인식. parse 결과에 NEEDS_OCR 경고가 있으면 이 옵션으로 재시도하세요"),
+    remove_header_footer: z.boolean().optional()
+      .describe("PDF 머리글/바닥글 자동 제거 (기본 true — false로 끄기, CLI --no-header-footer 대응)"),
+    formula_ocr: z.boolean().optional()
+      .describe("PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드, CLI --formula-ocr 대응)"),
+    dedupe_running_headers: z.boolean().optional()
+      .describe("HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의, CLI --dedupe-headers 대응)"),
+    keep_trailing_empty_cols: z.boolean().optional()
+      .describe("표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림, CLI --keep-empty-cols 대응)"),
+    keep_empty_paragraphs: z.boolean().optional()
+      .describe("빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄 (#57, 기본 off, CLI --keep-empty-paragraphs 대응)"),
   },
-  async ({ file_path, ocr }) => {
+  async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs }) => {
     try {
-      const { buffer, resolved } = readValidatedFile(file_path)
+      const { buffer, resolved } = await readValidatedFile(file_path)
       const format = detectFormat(buffer)
 
       if (format === "unknown") {
@@ -166,7 +177,15 @@ server.tool(
       // 만으로 클라이언트 도구 응답 한도(Claude Code 기본 25k 토큰)를 넘겨 호출 자체가
       // 깨진다(v3.18.0 회귀). 자체 완결형 마크다운이 필요하면 CLI `--inline-images`.
       // filePath 전달 — 배포용 HWP의 COM fallback에 필요 (CLI와 동일)
-      const result = await parse(buffer, { filePath: resolved, ...(ocr ? { ocr: true } : {}) })
+      const result = await parse(buffer, {
+        filePath: resolved,
+        ...(ocr !== undefined ? { ocr } : {}),
+        ...(remove_header_footer !== undefined ? { removeHeaderFooter: remove_header_footer } : {}),
+        ...(formula_ocr ? { formulaOcr: true } : {}),
+        ...(dedupe_running_headers ? { dedupeRunningHeaders: true } : {}),
+        ...(keep_trailing_empty_cols ? { keepTrailingEmptyCols: true } : {}),
+        ...(keep_empty_paragraphs ? { keepEmptyParagraphs: true } : {}),
+      })
 
       if (!result.success) {
         return {
@@ -218,7 +237,7 @@ server.tool(
 
 server.tool(
   "detect_format",
-  "파일의 포맷을 매직 바이트로 감지합니다 (hwpx, hwp, pdf, xlsx, docx, unknown).",
+  "파일의 포맷을 매직 바이트로 감지합니다 (hwpx, hwp, hwp3, hwpml, pdf, xls, xlsx, docx, unknown).",
   {
     file_path: z.string().min(1).describe("감지할 파일의 절대 경로"),
   },
@@ -230,8 +249,13 @@ server.tool(
       // hwpx/xlsx/docx 세분화 (parse_metadata와 판정 일치, v4.0.6)
       // 크기 상한은 parse_document와 동일(500MB) — 50MB 초과 ZIP 감지 실패 방지
       if (format === "hwpx") {
-        const { buffer } = readValidatedFile(file_path)
+        const { buffer } = await readValidatedFile(file_path)
         format = await detectZipFormat(buffer)
+      } else if (format === "hwp") {
+        // OLE2 도 동일하게 세분화 — .xls(Excel 97-2003)를 'hwp'로 보고하던 누락 (parse()와 판정 일치)
+        const { buffer } = await readValidatedFile(file_path)
+        const ole2Format = detectOle2Format(buffer)
+        if (ole2Format !== "unknown") format = ole2Format
       }
       return {
         content: [{ type: "text", text: `${file_path}: ${format}` }],
@@ -266,15 +290,16 @@ server.tool(
       }
 
       // metadata 전용 크기 제한 (50MB)
-      const { buffer } = readValidatedFile(file_path, MAX_METADATA_FILE_SIZE)
+      const { buffer } = await readValidatedFile(file_path, MAX_METADATA_FILE_SIZE)
 
       let metadata
-      // ZIP 기반 포맷(hwpx)은 내부 구조로 세분화 (XLSX/DOCX 구분)
-      let effectiveFormat = format
+      // ZIP(hwpx→xlsx/docx)·OLE2(hwp→xls) 모두 내부 구조로 세분화 — parse()와 판정 일치
+      let effectiveFormat: ReturnType<typeof detectFormat> = format
       if (format === "hwpx") {
-        const { detectZipFormat } = await import("./detect.js")
         const zipFormat = await detectZipFormat(buffer)
-        if (zipFormat === "xlsx" || zipFormat === "docx") effectiveFormat = zipFormat as any
+        if (zipFormat === "xlsx" || zipFormat === "docx") effectiveFormat = zipFormat
+      } else if (format === "hwp") {
+        if (detectOle2Format(buffer) === "xls") effectiveFormat = "xls"
       }
       switch (effectiveFormat) {
         case "hwp":
@@ -293,13 +318,18 @@ server.tool(
           break
         case "hwp3":
         case "hwpml":
+        case "xls":
         case "xlsx":
         case "docx": {
-          // HWP3/HWPML/XLSX/DOCX는 전용 metadata 추출기가 없으므로 전체 파싱 후 metadata 반환
+          // 전용 metadata 추출기가 없는 포맷은 전체 파싱 후 metadata 반환
           const result = await parse(buffer)
           metadata = result.success ? result.metadata : undefined
           break
         }
+        default:
+          // image 등 — 헤더성 메타데이터 없음. 무음 undefined 대신 포맷만 정직하게 반환.
+          metadata = undefined
+          break
       }
 
       return {
@@ -325,7 +355,8 @@ server.tool(
   },
   async ({ file_path, pages }) => {
     try {
-      const { buffer } = readValidatedFile(file_path)
+      const resolved = safePath(file_path)
+      const { buffer } = await readValidatedFile(file_path)
       const format = detectFormat(buffer)
 
       if (format === "unknown") {
@@ -335,7 +366,8 @@ server.tool(
         }
       }
 
-      const result = await parse(buffer, { pages })
+      // filePath 전달 — 배포용 HWP의 COM fallback에 필요 (parse_document·parse_chunks와 동일)
+      const result = await parse(buffer, { pages, filePath: resolved })
 
       if (!result.success) {
         return {
@@ -373,7 +405,7 @@ server.tool(
   },
   async ({ file_path, table_index }) => {
     try {
-      const { buffer } = readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path)
       const format = detectFormat(buffer)
 
       if (format === "unknown") {
@@ -433,8 +465,8 @@ server.tool(
   },
   async ({ file_path_a, file_path_b }) => {
     try {
-      const { buffer: bufA } = readValidatedFile(file_path_a)
-      const { buffer: bufB } = readValidatedFile(file_path_b)
+      const { buffer: bufA } = await readValidatedFile(file_path_a)
+      const { buffer: bufB } = await readValidatedFile(file_path_b)
 
       const result = await compare(bufA, bufB)
       const { stats, diffs } = result
@@ -474,7 +506,7 @@ server.tool(
   },
   async ({ file_path }) => {
     try {
-      const { buffer } = readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path)
       // 서식 입력란(빈 후행 열)이 필드로 잡히도록 보존 (#47)
       const result = await parse(buffer, { keepTrailingEmptyCols: true })
 
@@ -512,9 +544,10 @@ export function buildFillInputs(fields: Record<string, string>, formats?: Record
 
 server.tool(
   "fill_form",
-  "한국 서식 문서의 빈칸을 채워서 새 문서로 출력합니다. hwpx-preserve를 사용하면 원본 서식(테두리, 폰트, 병합 등)을 100% 유지합니다.",
+  "한국 서식 문서의 빈칸을 채워서 새 문서로 출력합니다. hwpx-preserve를 사용하면 원본 서식(테두리, 폰트, 병합 등)을 100% 유지합니다. HWPX 누름틀(CLICK_HERE) 필드는 이름으로 정확 매칭되어 우선 채워집니다. file_path 대신 template으로 내장 정부 표준 기안문 서식을 쓸 수 있습니다 — gian(일반기안문, 별지 제1호서식: 행정기관명·수신자·경유·제목·본문·붙임·발신명의·기안자·검토자·결재권자 등 23필드) / gian-simple(간이기안문, 별지 제2호서식: 내부결재용 13필드).",
   {
-    file_path: z.string().min(1).describe("서식 템플릿 문서의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX)"),
+    file_path: z.string().min(1).optional().describe("서식 템플릿 문서의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX). template 사용 시 생략"),
+    template: z.enum(["gian", "gian-simple", "일반기안문", "간이기안문"]).optional().describe("내장 정부 표준 서식 이름 — file_path 대신 사용. gian=일반기안문(별지 제1호서식), gian-simple=간이기안문(별지 제2호서식)"),
     fields: z.record(z.string(), z.string()).describe("채울 필드 맵 (라벨 → 값). 예: {\"성명\": \"홍길동\", \"전화번호\": \"010-1234-5678\"}"),
     formats: z.record(z.string(), z.string()).optional().describe("필드별 값 서식 (라벨 → 포맷). 정준값 하나로 서식마다 다른 모양을 채울 때: date:yy.mm.dd / phone:hyphen·dot·digits / rrn:hyphen·masked / mask:###-## / 자유 패턴(yyyy년 m월 d일, ###-####-####)"),
     require_unique: z.boolean().optional().describe("한 키가 서식의 2곳 이상에 매칭되면 채우지 않고 거부 — 반복 라벨 양식에서 남의 블록 오염 방지 (배열 값은 예외)"),
@@ -522,12 +555,31 @@ server.tool(
     output_format: z.enum(["markdown", "hwpx", "hwpx-preserve"]).default("hwpx-preserve").describe("출력 포맷: hwpx-preserve (원본 스타일 보존, HWPX 전용), hwpx (새 HWPX 생성), markdown"),
     output_path: z.string().optional().describe("출력 파일 저장 경로 (선택). 지정 시 파일로 저장, 미지정 시 텍스트로 반환"),
   },
-  async ({ file_path, fields, formats, require_unique, mask_values, output_format, output_path }) => {
+  async ({ file_path, template, fields, formats, require_unique, mask_values, output_format, output_path }) => {
     try {
       // 출력 경로 사전 검증 (포맷별 확장자 allowlist) — 채우기 전에 실패시킨다
       const outExts = output_format === "markdown" ? new Set([".md", ".markdown", ".txt"]) : new Set([".hwpx"])
       const outPath = output_path ? safeOutputPath(output_path, outExts) : undefined
-      const { buffer } = readValidatedFile(file_path)
+
+      // 입력 소스 — 내장 템플릿(template) 또는 파일 경로(file_path) 중 하나
+      let buffer: ArrayBuffer
+      if (template) {
+        const t = resolveBuiltinTemplate(template)
+        if (!t) {
+          return {
+            content: [{ type: "text", text: `알 수 없는 내장 템플릿: ${template} (사용 가능: ${BUILTIN_TEMPLATES.map(x => `${x.id}(${x.aliases[0]})`).join(", ")})` }],
+            isError: true,
+          }
+        }
+        buffer = readBuiltinTemplate(t)
+      } else if (file_path) {
+        buffer = (await readValidatedFile(file_path)).buffer
+      } else {
+        return {
+          content: [{ type: "text", text: "file_path 또는 template 중 하나를 지정해주세요" }],
+          isError: true,
+        }
+      }
 
       // ─── hwpx-preserve: 원본 ZIP 직접 수정 (스타일 보존) ───
       if (output_format === "hwpx-preserve") {
@@ -573,8 +625,8 @@ server.tool(
           .map(f => `  - ${f.label}: ${mask_values ? `[${[...f.value].length}자]` : f.value}`).join("\n")
 
         if (outPath) {
-          mkdirSync(dirname(outPath), { recursive: true })
-          writeFileSync(outPath, Buffer.from(hwpxResult.buffer))
+          await mkdir(dirname(outPath), { recursive: true })
+          await writeFile(outPath, Buffer.from(hwpxResult.buffer))
           return {
             content: [{ type: "text", text: `[${summary}]\n\n채워진 필드:\n${filledList}\n\nHWPX 파일 저장 (원본 서식 유지): ${outPath}` }],
           }
@@ -623,8 +675,8 @@ server.tool(
       if (output_format === "hwpx") {
         const hwpxBuffer = await markdownToHwpx(markdown)
         if (outPath) {
-          mkdirSync(dirname(outPath), { recursive: true })
-          writeFileSync(outPath, Buffer.from(hwpxBuffer))
+          await mkdir(dirname(outPath), { recursive: true })
+          await writeFile(outPath, Buffer.from(hwpxBuffer))
           return {
             content: [{ type: "text", text: `[${summary}]\n\nHWPX 파일 저장: ${outPath}` }],
           }
@@ -636,8 +688,8 @@ server.tool(
 
       // markdown
       if (outPath) {
-        mkdirSync(dirname(outPath), { recursive: true })
-        writeFileSync(outPath, markdown, "utf-8")
+        await mkdir(dirname(outPath), { recursive: true })
+        await writeFile(outPath, markdown, "utf-8")
         return {
           content: [{ type: "text", text: `[${summary}]\n\n마크다운 파일 저장: ${outPath}\n\n${previewMd}` }],
         }
@@ -673,7 +725,7 @@ server.tool(
   async ({ file_path, image_path, anchor, occurrence, size_mm, mode, dx_mm, dy_mm, output_path }) => {
     try {
       const outPath = safeOutputPath(output_path, new Set([".hwpx"]))
-      const { buffer } = readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path)
       const format = detectFormat(buffer)
       if (format !== "hwpx") {
         return {
@@ -683,18 +735,19 @@ server.tool(
       }
       // 이미지 경로도 문서와 동일하게 검증 (realpath + 확장자 allowlist)
       const imgResolved = safePath(image_path, IMAGE_EXTENSIONS)
-      if (statSync(imgResolved).size > 500 * 1024 * 1024) {
-        return { content: [{ type: "text", text: `도장 이미지가 너무 큽니다 (${(statSync(imgResolved).size / 1024 / 1024).toFixed(0)}MB) — 500MB 이하여야 합니다.` }], isError: true }
+      const imgSize = (await stat(imgResolved)).size
+      if (imgSize > 500 * 1024 * 1024) {
+        return { content: [{ type: "text", text: `도장 이미지가 너무 큽니다 (${(imgSize / 1024 / 1024).toFixed(0)}MB) — 500MB 이하여야 합니다.` }], isError: true }
       }
-      const image = new Uint8Array(readFileSync(imgResolved))
+      const image = new Uint8Array(await readFile(imgResolved))
       const ext = extname(imgResolved).slice(1).toLowerCase() as "png" | "jpg" | "jpeg" | "bmp" | "gif"
       const { placeSealHwpx } = await import("./form/seal.js")
       const result = await placeSealHwpx(buffer, [{
         anchor, occurrence, image, ext,
         sizeMm: size_mm, mode, dxMm: dx_mm, dyMm: dy_mm,
       }])
-      mkdirSync(dirname(outPath), { recursive: true })
-      writeFileSync(outPath, Buffer.from(result.buffer))
+      await mkdir(dirname(outPath), { recursive: true })
+      await writeFile(outPath, Buffer.from(result.buffer))
       const p0 = result.placed[0]
       const warnLines = (p0.warnings ?? []).map(w => `\n⚠️ ${w}`).join("")
       return {
@@ -725,7 +778,7 @@ server.tool(
   async ({ file_path, edited_markdown, output_path }) => {
     try {
       const out = safeOutputPath(output_path, new Set([".hwpx", ".hwp"]))
-      const { buffer } = readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path)
       const format = detectFormat(buffer)
       let isHwpx = format === "hwpx"
       if (isHwpx) {
@@ -751,8 +804,8 @@ server.tool(
         }
       }
 
-      mkdirSync(dirname(out), { recursive: true })
-      writeFileSync(out, Buffer.from(result.data))
+      await mkdir(dirname(out), { recursive: true })
+      await writeFile(out, Buffer.from(result.data))
 
       const v = result.verification?.stats
       const lossless = v ? (v.modified === 0 && v.added === 0 && v.removed === 0) : undefined
@@ -797,7 +850,7 @@ server.tool(
       const outPath = output_path
         ? safeOutputPath(output_path, new Set([format === "png" ? ".png" : ".svg"]))
         : undefined
-      const { buffer } = readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx"]))
+      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx"]))
       const { renderHwpxToSvg } = await import("./render/index.js")
       // reflow는 조판 캐시가 있으면 무시되므로 항상 켠다 — 한컴본·생성본 모두 커버
       const result = await renderHwpxToSvg(buffer, { highlights, reflow: true, reflowMode: reflow_mode })
@@ -806,16 +859,16 @@ server.tool(
         ...result.warnings.map(w => `⚠️ ${w}`),
       ]
       if (format === "svg") {
-        mkdirSync(dirname(outPath!), { recursive: true })
-        writeFileSync(outPath!, result.svg, "utf-8")
+        await mkdir(dirname(outPath!), { recursive: true })
+        await writeFile(outPath!, result.svg, "utf-8")
         summary.push(`저장: ${outPath}`)
         return { content: [{ type: "text", text: summary.join("\n") }] }
       }
       const { rasterizeSvg } = await import("./render/rasterize.js")
       const raster = await rasterizeSvg(result.svg, result.width, result.height)
       if (outPath) {
-        mkdirSync(dirname(outPath), { recursive: true })
-        writeFileSync(outPath, raster.png)
+        await mkdir(dirname(outPath), { recursive: true })
+        await writeFile(outPath, raster.png)
         summary.push(`저장: ${outPath}`)
       }
       summary.push(`이미지 ${raster.widthPx}x${raster.heightPx}px — 잘림·겹침·빈칸·페이지 넘침이 보이면 원인 텍스트를 수정해 다시 생성/패치하세요.`)
@@ -849,7 +902,7 @@ server.tool(
   },
   async ({ file_path, rules, mask_char, output_path, dry_run }) => {
     try {
-      const { buffer } = readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path)
       const format = detectFormat(buffer)
       const patchable = format === "hwpx" || format === "hwp"
       if (!dry_run && !output_path) {
@@ -877,8 +930,8 @@ server.tool(
           if (!result.success || !result.data) {
             return { content: [{ type: "text", text: `마스킹 패치 실패: ${result.error ?? "알 수 없는 오류"}` }], isError: true }
           }
-          mkdirSync(dirname(outPath!), { recursive: true })
-          writeFileSync(outPath!, Buffer.from(result.data))
+          await mkdir(dirname(outPath!), { recursive: true })
+          await writeFile(outPath!, Buffer.from(result.data))
           lines.push(`저장: ${outPath} (원본 서식 보존)`)
           if (result.skipped.length > 0) {
             lines.push(`⚠️ 미적용 ${result.skipped.length}건 — 해당 위치는 원문이 남아 있으니 반드시 수동 확인:`)
@@ -886,8 +939,8 @@ server.tool(
           }
           lines.push("render_document로 마스킹 결과를 눈으로 확인하세요.")
         } else {
-          mkdirSync(dirname(outPath!), { recursive: true })
-          writeFileSync(outPath!, r.text, "utf-8")
+          await mkdir(dirname(outPath!), { recursive: true })
+          await writeFile(outPath!, r.text, "utf-8")
           lines.push(`저장: ${outPath} (${format}는 서식 보존 미지원 — 마스킹된 마크다운)`)
         }
       } else if (!dry_run) {
@@ -913,7 +966,7 @@ server.tool(
   },
   async ({ file_path, granularity, include_table_cells }) => {
     try {
-      const { buffer } = readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path)
       const parsed = await parse(buffer, { filePath: file_path })
       if (!parsed.success) {
         return { content: [{ type: "text", text: `파싱 실패: ${parsed.error}` }], isError: true }
@@ -941,11 +994,11 @@ server.tool(
   async ({ hwpx_path, output_path }) => {
     try {
       const out = safeOutputPath(output_path, PROFILE_EXTENSIONS)
-      const { buffer } = readValidatedFile(hwpx_path)
+      const { buffer } = await readValidatedFile(hwpx_path)
       const { hwpxToProfile } = await import("./index.js")
       const profile = await hwpxToProfile(buffer)
-      mkdirSync(dirname(out), { recursive: true })
-      writeFileSync(out, JSON.stringify(profile, null, 2))
+      await mkdir(dirname(out), { recursive: true })
+      await writeFile(out, JSON.stringify(profile, null, 2))
       return {
         content: [{ type: "text", text: `서식 프로필 추출 완료: 표 ${profile.tables.length}개 → ${out}\n(generate_document의 profile_path로 사용)` }],
       }
@@ -1017,12 +1070,12 @@ server.tool(
       let profile: import("./hwpx/gen-profile.js").FormatProfile | undefined
       if (profile_path) {
         const { parseFormatProfileJson } = await import("./hwpx/profile-io.js")
-        profile = parseFormatProfileJson(readFileSync(safePath(profile_path, PROFILE_EXTENSIONS), "utf-8"))
+        profile = parseFormatProfileJson(await readFile(safePath(profile_path, PROFILE_EXTENSIONS), "utf-8"))
       }
       const out = safeOutputPath(output_path, new Set([".hwpx"]))
       const buf = await markdownToHwpx(markdown, gongmun || profile ? { ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}) } : undefined)
-      mkdirSync(dirname(out), { recursive: true })
-      writeFileSync(out, Buffer.from(buf))
+      await mkdir(dirname(out), { recursive: true })
+      await writeFile(out, Buffer.from(buf))
 
       const mode = gongmun ? `공문서:${gongmun.preset}` : "범용"
       const tableCount = (markdown.match(/^\s*\|.*\|\s*$/gm) || []).length > 0

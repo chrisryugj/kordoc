@@ -10,6 +10,7 @@
  */
 
 import type { IRBlock, ParseOptions, ParseWarning } from "../types.js"
+import { KordocError } from "../utils.js"
 import { getOcrEngine } from "./engine.js"
 import { ensureOcrModels } from "./models.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
@@ -70,10 +71,11 @@ async function decodeToRgba(
   }
   let sharp: SharpFactory
   try {
-    const mod = (await import("sharp")) as unknown as { default?: SharpFactory } & SharpFactory
+    const mod = (await import("sharp")) as unknown as SharpFactory | { default?: SharpFactory }
     sharp = typeof mod === "function" ? mod : (mod.default ?? (mod as unknown as SharpFactory))
   } catch (e) {
-    throw new Error(
+    // KordocError + "optional dependency" 문구 → sanitizeError 메시지 보존 + MISSING_DEPENDENCY 분류
+    throw new KordocError(
       "이미지 파싱에는 optional dependency 'sharp' 가 필요합니다. " +
         `\`npm install sharp\` 후 다시 실행하세요. 원인: ${(e as Error).message}`,
     )
@@ -83,7 +85,7 @@ async function decodeToRgba(
 }
 
 /** OcrProvider 계약용 mime 판별 */
-function detectImageMime(buffer: ArrayBuffer): string {
+function detectImageMime(buffer: ArrayBuffer): "image/png" | "image/jpeg" | "image/webp" {
   const b = new Uint8Array(buffer, 0, Math.min(12, buffer.byteLength))
   if (b[0] === 0xff && b[1] === 0xd8) return "image/jpeg"
   if (b[0] === 0x52 && b[1] === 0x49) return "image/webp"

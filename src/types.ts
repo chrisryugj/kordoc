@@ -116,7 +116,9 @@ export interface IRCell {
   rowSpan: number
   /**
    * 셀 내부 블록 콘텐츠 — v3.0.
-   * 중첩 표·이미지·다중 문단을 구조 그대로, 문서(원문) 순서대로 보존한다.
+   * 중첩 표·이미지 등 구조 콘텐츠(또는 왕복 채널 span 문단)가 있는 셀에만 채워지며,
+   * 그 안의 문단·표·이미지를 문서(원문) 순서대로 보존한다. 다중 문단뿐인 평문 셀은
+   * blocks 없이 text 평탄화(문단을 `\n`으로 결합)로만 제공된다 (blocks 무게 억제, #57).
    * 표와 텍스트가 한 줄에 번갈아 놓인 셀도 배치 순서를 따른다 (v4.2.3, #49).
    * blocks가 있으면 text는 blocks의 평탄화 텍스트(하위 호환용)다.
    */
@@ -175,6 +177,12 @@ export interface ParseOptions {
    *  기본 false: 마크다운 가독성을 위해 후행 빈 열을 트림.
    *  양식 인식 경로(parse_form·fill)는 내부적으로 항상 켠다. */
   keepTrailingEmptyCols?: boolean
+  /** 빈 문단(텍스트 없는 hp:p) 보존 (#57). 기본 false: 종전대로 빈 문단 제거.
+   *  켜면 본문은 `text: ""` paragraph 블록으로, 표 셀은 빈 줄로 순서대로 보존해
+   *  "원문 문단 수 = 줄 수" 대응을 유지한다 (행 줄맞춤 서식 문서용).
+   *  개체(표·이미지·글상자)만 있는 문단은 개체 출력이 따로 있어 대상이 아니다.
+   *  현재 HWPX 경로 적용. */
+  keepEmptyParagraphs?: boolean
   /** 원본 파일 경로 (DRM COM fallback에 필요, 내부 전용) */
   filePath?: string
   /**
@@ -443,11 +451,12 @@ export interface FormResult {
 
 // ─── OCR 프로바이더 ─────────────────────────────────
 
-/** 사용자 제공 OCR 함수 — 페이지 이미지를 받아 텍스트 반환 */
+/** 사용자 제공 OCR 함수 — 페이지 이미지를 받아 텍스트 반환.
+ *  PDF 경로는 항상 "image/png", 이미지 직접 입력 경로는 원본 mime 그대로 전달. */
 export type OcrProvider = (
   pageImage: Uint8Array,
   pageNumber: number,
-  mimeType: "image/png"
+  mimeType: "image/png" | "image/jpeg" | "image/webp"
 ) => Promise<string>
 
 // ─── Watch 모드 ─────────────────────────────────────

@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings } from "./index.js"
+import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
 import type { FillInput } from "./index.js"
 import { parseFormatProfileJson } from "./hwpx/profile-io.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS } from "./hwpx/gongmun-surface.js"
@@ -28,6 +28,7 @@ program
   .option("--ocr-force", "전 페이지 강제 OCR (텍스트층이 있어도 무시하고 재인식)")
   .option("--dedupe-headers", "HWP5 레이아웃 표 페이지 반복 러닝 헤더 중복 제거 (기본 off — 붙임별 재번호 오삭제 주의)")
   .option("--keep-empty-cols", "표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림)")
+  .option("--keep-empty-paragraphs", "빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄로 (#57, 기본 off: 빈 문단 제거)")
   .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, HWP5 전용 — 인라인된 경우만 파일 미저장, 그 외 포맷은 저장 유지)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
@@ -69,6 +70,7 @@ program
         else if (opts.ocr) parseOptions.ocr = true
         if (opts.dedupeHeaders) parseOptions.dedupeRunningHeaders = true
         if (opts.keepEmptyCols) parseOptions.keepTrailingEmptyCols = true
+        if (opts.keepEmptyParagraphs) parseOptions.keepEmptyParagraphs = true
         if (opts.inlineImages) parseOptions.inlineImages = true
         if (!opts.silent) {
           parseOptions.onProgress = (current: number, total: number) => {
@@ -171,18 +173,20 @@ program
   })
 
 program
-  .command("fill <template>")
-  .description("서식 문서의 빈칸을 채워서 출력 — kordoc fill 신청서.hwpx -f '성명=홍길동,전화=010-1234-5678' -o 결과.hwpx")
+  .command("fill [file]")
+  .description("서식 문서의 빈칸을 채워서 출력 — kordoc fill 신청서.hwpx -f '성명=홍길동,전화=010-1234-5678' -o 결과.hwpx / 내장 기안문 서식은 kordoc fill --template gian")
   .option("-f, --fields <pairs>", "채울 필드 (key=value 쉼표 구분 또는 JSON)")
   .option("-j, --json <path>", "채울 필드 JSON 파일 경로")
   .option("-o, --output <path>", "출력 파일 경로 (확장자로 포맷 결정: .md, .hwpx)")
   .option("--format <type>", "출력 포맷: hwpx-preserve (기본, 원본 스타일 보존), hwpx, markdown", "hwpx-preserve")
   .option("--formats <json>", "필드별 값 서식 JSON (라벨→포맷) — 예: '{\"날짜\":\"yy.mm.dd\",\"주민등록번호\":\"rrn:masked\"}'")
+  .option("--template <name>", "내장 표준 서식 사용 (파일 경로 불필요): gian(일반기안문) | gian-simple(간이기안문). 위치 인자 'templates:일반기안문' 표기도 동일")
+  .option("--list-templates", "내장 표준 서식 목록 + 누름틀 필드 나열")
   .option("--require-unique", "한 키가 서식의 2곳 이상에 매칭되면 채우지 않고 거부 (반복 라벨 양식 오염 방지)")
   .option("--mask", "채운 값 미노출 — 출력 파일 없이 markdown을 stdout으로 낼 때 본문 대신 안내만 표시")
   .option("--dry-run", "채우지 않고 서식 필드 목록만 출력")
   .option("--silent", "진행 메시지 숨기기")
-  .action(async (template: string, opts, command: Command) => {
+  .action(async (file: string | undefined, opts, command: Command) => {
     try {
       // 루트 커맨드의 동명 옵션(-o/--output·--format·--silent)이 서브커맨드 뒤에서도 루트로 흡수되는 commander 동작 보완
       const rootOpts = program.opts()
@@ -191,17 +195,46 @@ program
       if (command.getOptionValueSource("format") === "default" && program.getOptionValueSource("format") === "cli") {
         opts.format = rootOpts.format
       }
-      const absPath = resolve(template)
-      const fileSize = statSync(absPath).size
-      if (fileSize > 500 * 1024 * 1024) {
-        process.stderr.write(`[kordoc] 파일이 너무 큽니다 (${(fileSize / 1024 / 1024).toFixed(1)}MB)\n`)
-        process.exit(1)
+
+      // --list-templates: 내장 서식 목록 + 누름틀 필드
+      if (opts.listTemplates) {
+        const list = []
+        for (const t of BUILTIN_TEMPLATES) {
+          const fields = await extractClickHereFields(readBuiltinTemplate(t))
+          list.push({ id: t.id, aliases: t.aliases, title: t.title, fields: fields.map(f => f.name) })
+        }
+        process.stdout.write(JSON.stringify(list, null, 2) + "\n")
+        return
       }
 
-      const buffer = readFileSync(absPath)
-      const arrayBuffer = toArrayBuffer(buffer)
+      // 입력 소스 결정 — 내장 템플릿(--template 또는 'templates:이름' 위치 인자) 우선
+      const templateName = opts.template ?? (file && /^templates?:/i.test(file) ? file : undefined)
+      let arrayBuffer: ArrayBuffer
+      let inputName: string
+      if (templateName) {
+        const t = resolveBuiltinTemplate(templateName)
+        if (!t) {
+          process.stderr.write(`[kordoc] 알 수 없는 내장 템플릿: ${templateName} (사용 가능: ${BUILTIN_TEMPLATES.map(x => `${x.id}(${x.aliases[0]})`).join(", ")})\n`)
+          process.exit(1)
+        }
+        arrayBuffer = readBuiltinTemplate(t)
+        inputName = t.file
+      } else if (file) {
+        const absPath = resolve(file)
+        const fileSize = statSync(absPath).size
+        if (fileSize > 500 * 1024 * 1024) {
+          process.stderr.write(`[kordoc] 파일이 너무 큽니다 (${(fileSize / 1024 / 1024).toFixed(1)}MB)\n`)
+          process.exit(1)
+        }
+        arrayBuffer = toArrayBuffer(readFileSync(absPath))
+        inputName = basename(absPath)
+      } else {
+        process.stderr.write(`[kordoc] 서식 파일 경로 또는 --template 을 지정해주세요 (목록: kordoc fill --list-templates)\n`)
+        process.exit(1)
+        return
+      }
 
-      if (!opts.silent) process.stderr.write(`[kordoc] ${basename(absPath)} 파싱 중...\n`)
+      if (!opts.silent) process.stderr.write(`[kordoc] ${inputName} 파싱 중...\n`)
 
       // --dry-run: 필드 목록만 출력 — 서식 입력란(빈 후행 열)이 목록에 나오도록 보존 (#47)
       if (opts.dryRun) {
@@ -211,11 +244,18 @@ program
           process.exit(1)
         }
         const formInfo = extractFormFields(result.blocks)
-        if (formInfo.fields.length === 0) {
+        // 누름틀(CLICK_HERE) 필드도 함께 나열 — 표준 서식은 라벨 표 없이 누름틀만 있을 수 있다
+        const clickHereFields = detectFormat(arrayBuffer) === "hwpx"
+          ? await extractClickHereFields(arrayBuffer)
+          : []
+        if (formInfo.fields.length === 0 && clickHereFields.length === 0) {
           process.stderr.write(`[kordoc] 서식 필드를 찾을 수 없습니다.\n`)
           process.exit(1)
         }
-        process.stdout.write(JSON.stringify(formInfo, null, 2) + "\n")
+        process.stdout.write(JSON.stringify(
+          clickHereFields.length > 0 ? { ...formInfo, clickHereFields } : formInfo,
+          null, 2,
+        ) + "\n")
         return
       }
 
@@ -832,10 +872,10 @@ program
 
 program
   .command("render <file>")
-  .description("레이아웃 보존 렌더 — 한컴 저장 HWPX의 조판 캐시를 SVG로 (전체 페이지 세로 스택) — kordoc render 문서.hwpx -o 문서.svg")
+  .description("레이아웃 보존 렌더 — HWPX를 SVG로 (전체 페이지 세로 스택). 한컴 저장본은 조판 캐시 그대로, 캐시 없는 생성본·편집본은 순수 TS 조판(reflow, 기본 켬) — kordoc render 문서.hwpx -o 문서.svg")
   .option("-o, --output <path>", "출력 SVG 경로 (기본: <입력>.svg)")
   .option("--highlight <terms>", "검색어 형광펜 (쉼표 구분)")
-  .option("--reflow", "조판 캐시 없는 HWPX도 순수 TS 조판으로 렌더 (markdownToHwpx 산출물·편집본)")
+  .option("--no-reflow", "순수 TS 조판 끄기 (조판 캐시 없는 문서가 빈 페이지로 나올 수 있음)")
   .option("--reflow-mode <mode>", "reflow 줄바꿈 모드: keep(어절) | charAll(글자)", "keep")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (file: string, opts) => {

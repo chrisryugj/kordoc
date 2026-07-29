@@ -54,13 +54,36 @@ const CUT_VCHAIN_GAP = 1.0
  * 수평선과 수직선의 교차점(Vertex)을 생성.
  * ODL의 TableBorderBuilder.addLine()이 교차점을 자동 생성하는 것과 동일.
  * 각 Vertex는 교차하는 선들의 lineWidth로 radius를 계산 → 동적 tolerance.
+ *
+ * O(H×V) 회피: 수직선을 y-대역 버킷에 등록하고 각 수평선은 자기 y가 속한 버킷의
+ * 후보만 검사 — 세로로 떨어진 다른 표의 수직선과의 교차 검사(전수 이중루프의 낭비
+ * 대부분)를 건너뛴다. 수직선은 [y1-tol, y2+tol]을 덮는 모든 버킷에 인덱스 오름차순
+ * 으로 등록되므로, h 순회 × 버킷 내 v 오름차순 = 기존 이중루프와 vertex 배열 순서가
+ * 동일하다 (mergeVertices의 병합 결과가 순서에 민감).
  */
+/** 수직선 y-대역 버킷 크기 (pt) */
+const VERTEX_BUCKET_CELL = 100
+
 function buildVertices(horizontals: LineSegment[], verticals: LineSegment[]): Vertex[] {
   const vertices: Vertex[] = []
   const tol = CONNECT_TOL
 
+  const buckets = new Map<number, Array<LineSegment>>()
+  for (const v of verticals) {
+    const b1 = Math.floor((v.y1 - tol) / VERTEX_BUCKET_CELL)
+    const b2 = Math.floor((v.y2 + tol) / VERTEX_BUCKET_CELL)
+    for (let b = b1; b <= b2; b++) {
+      const arr = buckets.get(b)
+      if (arr) arr.push(v)
+      else buckets.set(b, [v])
+    }
+  }
+
   for (const h of horizontals) {
-    for (const v of verticals) {
+    // h.y1 ∈ [v.y1-tol, v.y2+tol] 인 v는 h.y1의 버킷에 반드시 등록되어 있음
+    const cand = buckets.get(Math.floor(h.y1 / VERTEX_BUCKET_CELL))
+    if (!cand) continue
+    for (const v of cand) {
       // 수평선의 X범위에 수직선의 X가 포함되고
       // 수직선의 Y범위에 수평선의 Y가 포함되면 → 교차
       if (v.x1 >= h.x1 - tol && v.x1 <= h.x2 + tol &&
@@ -176,6 +199,21 @@ export function buildTableGrids(
   }
   const grids: TableGrid[] = []
 
+  // 그룹별 vertex bbox 필터의 O(그룹수×V) 회피 — y 정렬 후 그룹 y범위만 이진탐색 스캔.
+  // groupVertices는 최대 radius와 clusterCoordinates(내부 정렬) 입력으로만 쓰여
+  // 순서 무관 — 전수 filter와 같은 다중집합이면 결과 동일.
+  const byY = [...vertices].sort((a, b) => a.y - b.y)
+  const vertexYs = byY.map(v => v.y)
+  const lowerBoundY = (key: number): number => {
+    let lo = 0, hi = vertexYs.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (vertexYs[mid] < key) lo = mid + 1
+      else hi = mid
+    }
+    return lo
+  }
+
   for (const { lines: group, fromSplit } of groups) {
     const hLines = group.filter(l => l.type === "h")
     const vLines = group.filter(l => l.type === "v")
@@ -193,12 +231,16 @@ export function buildTableGrids(
       y2: gy2 + CONNECT_TOL,
     }
 
-    const groupVertices = fromSplit
-      ? mergeVertices(buildVertices(hLines, vLines))
-      : vertices.filter(v =>
-          v.x >= groupBbox.x1 && v.x <= groupBbox.x2 &&
-          v.y >= groupBbox.y1 && v.y <= groupBbox.y2
-        )
+    let groupVertices: Vertex[]
+    if (fromSplit) {
+      groupVertices = mergeVertices(buildVertices(hLines, vLines))
+    } else {
+      groupVertices = []
+      for (let k = lowerBoundY(groupBbox.y1); k < byY.length && vertexYs[k] <= groupBbox.y2; k++) {
+        const v = byY[k]
+        if (v.x >= groupBbox.x1 && v.x <= groupBbox.x2) groupVertices.push(v)
+      }
+    }
 
     // 그룹 vertex의 대표 radius
     const groupRadius = groupVertices.length > 0

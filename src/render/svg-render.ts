@@ -105,7 +105,10 @@ export interface ParaChar { ch: string; prId: string | null }
 /** 렌더 대상 개체 태그 — 이 외(도형류)는 경고 후 생략 */
 const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", "ellipse", "polygon", "curv", "line", "arc", "ole", "textart"])
 
-interface ParaObj { el: Element; tag: string; index: number; inline: boolean; width: number; height: number }
+/** omL/omR: TAC 인라인 표의 outMargin 좌/우(HWPUNIT) — 한글은 TAC 표를 "outMargin 포함
+ * 폭의 문자"로 배치한다: 가로 전진폭 = om좌 + 표폭 + om우, 괘선(표 자체)은 pen + om좌
+ * (rhwp #3396 동종 — 오라클 실측이 표뿐이라 표 외 개체는 0). */
+interface ParaObj { el: Element; tag: string; index: number; inline: boolean; width: number; height: number; omL: number; omR: number }
 
 export interface ParaModel { chars: ParaChar[]; segs: Seg[]; objs: ParaObj[]; paraPrId: string | null }
 
@@ -201,10 +204,14 @@ export function buildPara(p: Element): ParaModel {
           // 그리기 도형은 hp:sz가 없다 — curSz(>0) → orgSz 폴백
           const w = num(sz, "width") || num(findChildByLocalName(ch, "curSz"), "width") || num(findChildByLocalName(ch, "orgSz"), "width")
           const h = num(sz, "height") || num(findChildByLocalName(ch, "curSz"), "height") || num(findChildByLocalName(ch, "orgSz"), "height")
+          const inline = pos?.getAttribute("treatAsChar") === "1"
+          // TAC 표만 outMargin 좌/우를 가로 배선 (ParaObj.omL 주석 — rhwp #3396 동종)
+          const om = inline && cn === "tbl" ? findChildByLocalName(ch, "outMargin") : null
           objs.push({
             el: ch, tag: cn, index: chars.length,
-            inline: pos?.getAttribute("treatAsChar") === "1",
+            inline,
             width: w, height: h,
+            omL: num(om, "left"), omR: num(om, "right"),
           })
           // 확장 컨트롤(GSO 등)은 문자 스트림에서 8슬롯 — 실측: 데모 코퍼스 1,132개
           // 멀티라인 문단에서 textpos 가 8슬롯 블록 중간에 걸린 경계 0건
@@ -241,12 +248,12 @@ function charW(c: ParaChar, styles: RenderStyles): number {
   return measureTextWidth(c.ch, st.height, st.ratio, { spacingPct: st.spacing })
 }
 
-/** 줄 자연폭 = 텍스트 조각 + 인라인 개체 폭 (개체 폭은 스케일 불변) */
+/** 줄 자연폭 = 텍스트 조각 + 인라인 개체 폭 (개체 폭은 스케일 불변, TAC 표는 outMargin 좌/우 포함) */
 function lineNaturalWidth(m: ParaModel, styles: RenderStyles, start: number, end: number): { text: number; obj: number } {
   let text = 0
   for (let i = start; i < end && i < m.chars.length; i++) text += charW(m.chars[i], styles)
   let obj = 0
-  for (const o of m.objs) if (o.inline && o.index >= start && o.index < end) obj += o.width
+  for (const o of m.objs) if (o.inline && o.index >= start && o.index < end) obj += o.omL + o.width + o.omR
   return { text, obj }
 }
 
@@ -277,11 +284,11 @@ function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
   return plans
 }
 
-/** 줄 안 [start, upto) 구간의 전진폭 (텍스트×스케일 + 인라인 개체) */
+/** 줄 안 [start, upto) 구간의 전진폭 (텍스트×스케일 + 인라인 개체 — TAC 표는 outMargin 좌/우 포함) */
 function advanceTo(m: ParaModel, styles: RenderStyles, plan: LinePlan, upto: number): number {
   let x = 0
   for (let i = plan.start; i < upto && i < m.chars.length; i++) x += charW(m.chars[i], styles) * plan.scale
-  for (const o of m.objs) if (o.inline && o.index >= plan.start && o.index < upto) x += o.width
+  for (const o of m.objs) if (o.inline && o.index >= plan.start && o.index < upto) x += o.omL + o.width + o.omR
   return x
 }
 
@@ -317,7 +324,7 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
       // 필러 슬롯(컨트롤·서로게이트 자리)은 그리지 않고 건너뛴다 —
       // 인라인 개체의 폭 전진은 개체 첫 슬롯에서 1회 수행
       if (m.chars[i].ch === "") {
-        for (const o of m.objs) if (o.inline && o.index === i) cursor += o.width
+        for (const o of m.objs) if (o.inline && o.index === i) cursor += o.omL + o.width + o.omR
         i++
         continue
       }
@@ -408,7 +415,8 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
       }
       const plan = plans[planIdx]
       if (segPages && segPages[planIdx] !== undefined) ctx.page = segPages[planIdx]
-      const x = ox + plan.seg.horzpos + plan.xoff + advanceTo(m, ctx.styles, plan, o.index)
+      // TAC 표 괘선은 pen + outMargin좌 (advanceTo는 o.index 앞까지라 자신의 om 미포함)
+      const x = ox + plan.seg.horzpos + plan.xoff + advanceTo(m, ctx.styles, plan, o.index) + o.omL
       // 개체가 줄보다 낮으면 baseline 위에 얹고, 줄을 채우는 개체(th==h)는 줄 상단
       const yTop = oy + plan.seg.vertpos + Math.max(0, plan.seg.baseline - o.height)
       drawObject(o, x, yTop, baseV, areaW, ctx, depth)
@@ -476,7 +484,7 @@ function drawObject(o: ParaObj, x: number, y: number, baseV: number, areaW: numb
       if (!OBJ_TAGS.has(tag)) continue
       const sz = findChildByLocalName(ch, "sz")
       const off = findChildByLocalName(ch, "offset")
-      const sub: ParaObj = { el: ch, tag, index: 0, inline: true, width: num(sz, "width"), height: num(sz, "height") }
+      const sub: ParaObj = { el: ch, tag, index: 0, inline: true, width: num(sz, "width"), height: num(sz, "height"), omL: 0, omR: 0 }
       drawObject(sub, x + num(off, "x"), y + num(off, "y"), baseV, areaW, ctx, depth + 1)
     }
   } else if (o.tag === "equation") {

@@ -1,6 +1,6 @@
 {
   "name": "kordoc",
-  "version": "4.2.9",
+  "version": "4.3.0",
   "description": "Parse Korean documents (HWP3-5, HWPX, HWPML, PDF, XLS(X), DOCX) to Markdown — CLI + MCP server with lossless patch/roundtrip, form-filler, document diff, print & layout-preserving SVG renderer",
   "type": "module",
   "exports": {
@@ -18,15 +18,18 @@
     "kordoc-mcp": "./dist/mcp.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "bench:gate": "node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate",
     "bench:visual": "node bench/visual/verify-visual.mjs --gate",
-    "prepublishOnly": "npm run test && npm run build && npm run bench:gate"
+    "sync-meta": "node scripts/sync-meta.mjs",
+    "prepublishOnly": "node scripts/sync-meta.mjs --check && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs"
   },
   "keywords": [
     "hwp",

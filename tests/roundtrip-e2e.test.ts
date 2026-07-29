@@ -24,6 +24,13 @@ const DIRS = ["seoul", "korea-kr", "misc", "review"]
 const MARKER = "라운드트립검증"
 const SWEEP_LIMIT = process.env.KORDOC_E2E_FULL ? Infinity : 12
 
+// 코퍼스 완본 보유 기기(맥미니, hwpx 347)에서만 강제. 부분/부재 코퍼스 기기는 skip —
+// 구본 코퍼스에선 GFM 표 후보 부재 등으로 상시 FAIL 해 `--ignore-scripts` 우회가
+// 관행화됐었다. 하한은 bench/gate-if-corpus.mjs 모수 하한과 동일 취지 (170).
+const CORPUS_COMPLETE = ["seoul", "korea-kr", "misc", "review"]
+  .flatMap(d => { try { return corpusFiles(d) } catch { return [] } }).length >= 170
+const CORPUS_SKIP = !CORPUS_COMPLETE && "bench corpus 완본 없음 (hwpx 모수 하한 170 미달)"
+
 // ─── 헬퍼 ────────────────────────────────────────────
 
 function toAB(u8: Uint8Array): ArrayBuffer {
@@ -124,7 +131,7 @@ async function assertFullRoundtrip(c: CleanApply): Promise<void> {
 
 // ─── 1) 문단 수정 — 디렉토리별 1건씩 (3건) ──────────
 
-describe("patchHwpx e2e: 문단 수정 (디렉토리별 실파일)", { skip: !existsSync(CORPUS) }, () => {
+describe("patchHwpx e2e: 문단 수정 (디렉토리별 실파일)", { skip: CORPUS_SKIP }, () => {
   for (const dir of DIRS) {
     it(`${dir} — 평문 문단 수정 → 재파싱 일치 + 바이트 보존 + unzip -t`, async () => {
       const paths = corpusFiles(dir)
@@ -142,7 +149,7 @@ describe("patchHwpx e2e: 문단 수정 (디렉토리별 실파일)", { skip: !ex
 
 // ─── 2) 헤딩 수정 ───────────────────────────────────
 
-describe("patchHwpx e2e: 헤딩 수정", { skip: !existsSync(CORPUS) }, () => {
+describe("patchHwpx e2e: 헤딩 수정", { skip: CORPUS_SKIP }, () => {
   it("헤딩 텍스트 수정 → 레벨 보존 + 재파싱 일치", async () => {
     // 공문서 코퍼스 144건 전수에 outline 헤딩이 0건이라(보도자료·결재문서는
     // 굵은글씨/번호 사용) 코퍼스 우선 + 합성 HWPX 폴백으로 검증한다.
@@ -172,7 +179,7 @@ describe("patchHwpx e2e: 헤딩 수정", { skip: !existsSync(CORPUS) }, () => {
 
 // ─── 3) 표 셀 수정 — GFM / HTML ─────────────────────
 
-describe("patchHwpx e2e: 표 셀 수정", { skip: !existsSync(CORPUS) }, () => {
+describe("patchHwpx e2e: 표 셀 수정", { skip: CORPUS_SKIP }, () => {
   it("GFM 데이터 행 셀 수정 → 해당 셀만 반영", async () => {
     const paths = DIRS.flatMap(corpusFiles)
     const { result, candidates } = await findCleanApply(paths, md => {
@@ -215,7 +222,7 @@ describe("patchHwpx e2e: 표 셀 수정", { skip: !existsSync(CORPUS) }, () => {
 
 // ─── 4) 다중 섹션 문서 ──────────────────────────────
 
-describe("patchHwpx e2e: 다중 섹션", { skip: !existsSync(CORPUS) }, () => {
+describe("patchHwpx e2e: 다중 섹션", { skip: CORPUS_SKIP }, () => {
   it("section1.xml 있는 문서 — 말미 문단 수정이 올바른 섹션에 적용", async () => {
     const paths = DIRS.flatMap(corpusFiles)
     let target: string | undefined
@@ -243,7 +250,7 @@ describe("patchHwpx e2e: 다중 섹션", { skip: !existsSync(CORPUS) }, () => {
 
 // ─── 5) 코퍼스 스윕 — 무손상 불변식 ─────────────────
 
-describe("patchHwpx e2e: 코퍼스 스윕", { skip: !existsSync(CORPUS) }, () => {
+describe("patchHwpx e2e: 코퍼스 스윕", { skip: CORPUS_SKIP }, () => {
   it("무변경 패치 → 원본 바이트 그대로 (전 파일)", async () => {
     let checked = 0
     for (const dir of DIRS) {

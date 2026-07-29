@@ -160,8 +160,10 @@ import type { ErrorCode } from "./types.js"
 export function classifyError(err: unknown): ErrorCode {
   if (!(err instanceof Error)) return "PARSE_ERROR"
   const msg = err.message
-  if (msg.includes("암호화")) return "ENCRYPTED"
+  // DRM 을 암호화보다 먼저 — "DRM 암호화된 HWPX…" 류 메시지가 ENCRYPTED 로 떨어지지 않도록
   if (msg.includes("DRM")) return "DRM_PROTECTED"
+  if (msg.includes("암호화") || msg.includes("암호로 보호")) return "ENCRYPTED"
+  if (msg.includes("optional dependency")) return "MISSING_DEPENDENCY"
   if (msg.includes("ZIP bomb") || msg.includes("ZIP 비압축 크기 초과") || msg.includes("ZIP 엔트리 수 초과")) return "ZIP_BOMB"
   if (msg.includes("bomb") || msg.includes("크기 초과") || msg.includes("압축 해제")) return "DECOMPRESSION_BOMB"
   if (msg.includes("이미지 기반")) return "IMAGE_BASED_PDF"

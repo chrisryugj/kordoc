@@ -5,6 +5,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] - 2026-07-29
+
+프로덕션 전면 리뷰 기반 대규모 정비 — 정부 표준 기안문 서식 내장(누름틀 채우기), 빈 문단
+보존 옵션(#57), 기능 버그 7건, rhwp 렌더 정합 포팅, 성능 2건(최대 637배), 중복 통합
+(수식·번호·XML 헬퍼), MCP 전면 비동기화, 발행 게이트 복원.
+
+### Added
+
+- **🏛️ 정부 표준 기안문 서식 내장 + 누름틀 채우기**: 「행정 효율과 협업 촉진에 관한 규정
+  시행규칙」 별지 제1호(일반기안문, 누름틀 23곳)·제2호(간이기안문, 13곳) 서식을
+  `templates/`로 번들 — `kordoc fill --template gian|gian-simple`, `--list-templates`,
+  MCP `fill_form`의 `template` 파라미터로 파일 경로 없이 사용. 신설 누름틀 경로
+  (`fieldBegin type="CLICK_HERE"` name 정확 일치 → splice 치환, 서식/charPr 보존,
+  `\n`→`<hp:lineBreak/>`)는 안내문을 비교조차 하지 않아 안내문=실값 충돌 침묵 유실이
+  구조적으로 불가능. 누름틀 우선 매칭 후 남은 키는 기존 라벨 매칭과 공존.
+  서식 자산은 rhwp(MIT) 결정적 생성본 — `THIRD_PARTY/rhwp-forms.txt` 어트리뷰션.
+- **빈 문단 보존 옵션 (#57)**: `keepEmptyParagraphs` / CLI `--keep-empty-paragraphs` /
+  MCP `keep_empty_paragraphs` — 본문은 `text:""` paragraph 블록, 표 셀은 빈 줄로 순서
+  보존해 "원문 문단 수 = 줄 수" 대응 유지 (행 줄맞춤 서식 문서용). 기본 off(현행 유지,
+  #47 전례). 개체만 있는 문단은 대상 아님. (@jumaniac 제보)
+- **MCP `parse_document` 파싱 옵션 5종 노출** (CLI 파리티): `ocr:"force"`,
+  `remove_header_footer`, `formula_ocr`, `dedupe_running_headers`,
+  `keep_trailing_empty_cols`.
+- **hwpml 중첩표 구조 보존**: HWPML 셀 안 중첩표를 평탄화 텍스트가 아닌
+  `IRCell.blocks`(hwpx table-build 계약)로 보존.
+- **합성 성능 벤치 `bench/perf-synth.mjs`** — 대형 입력(조각 2만·적층 표 50)에서
+  클러스터/괘선 표 경로 실측.
+
+### Fixed
+
+- **에러 계약 7건 (전면 리뷰)**: ① HWPX DRM이 메시지 순서 탓에 `ENCRYPTED`로
+  오분류되던 것 → `DRM_PROTECTED` ② 암호화 XLS가 `success:true`+빈 markdown으로
+  실패를 숨기던 것 → `ENCRYPTED` 실패 ③ HWP3 암호화·압축 해제·HWPML 크기 초과·sharp
+  미설치 진단 메시지가 plain Error라 "문서 처리 중 오류"로 뭉개지던 것 → KordocError
+  보존 (+`optional dependency`→`MISSING_DEPENDENCY` 분류) ④ MCP `parse_pages`만
+  `filePath` 누락 — 배포용 HWP COM 폴백 불발 ⑤ MCP `detect_format`/`parse_metadata`의
+  OLE2 세분화 누락 — `.xls`를 `hwp`로 오판·시그니처 에러 ⑥ `parse_metadata`에
+  xls/image case 부재 — 무음 `undefined` ⑦ 최상위 `pageCount`가 image 외 전 포맷에서
+  미전파 — MCP "페이지: N" 표시 사문화.
+- **TAC 인라인 표 outMargin 가로 배선 (rhwp #3396 포팅)**: 글자취급 인라인 표의 가로
+  전진폭에 outMargin 좌/우가 빠져 우정렬 host 문단 등이 시프트되던 결함 — 전진·배치·
+  줄폭 4개소 배선. 코퍼스 60건 스윕: 결재란 보유 20건 정당 시프트(델타=om값 정확 일치),
+  나머지 40건 바이트 동일.
+- **OcrProvider mime 계약**: 이미지 직접 입력이 jpeg/webp를 넘기는데 타입은
+  `"image/png"` 리터럴만 선언 — union으로 확장.
+
+### Changed
+
+- **CLI `render` reflow 기본 켬** (`--no-reflow`로 끔) — MCP `render_document`와 정합.
+  조판 캐시 있는 문서는 종전과 동일(reflow 무시), 캐시 없는 생성본이 이제 CLI에서도
+  기본 렌더됨.
+- **수식 변환기 통합 (274→91줄)**: hwp5 독자 엔진을 hwpx 정본(`hmlToLatex`)에 위임 —
+  같은 수식이 포맷에 따라 다른 LaTeX가 나오던 갈림 해소. `matrix{A # B # C}`의 `#`를
+  열 구분으로 오역하던 것을 EqEdit 스펙대로 행 구분(`\\`)으로 수정.
+- **번호 서식 엔진 통합**: `src/shared/numbering.ts` 신설 — hwp5 원숫자 20자 컷을
+  gongmun 기준(㉑~㊿ 50한도)으로 통일. XML DOM 헬퍼도 `src/shared/xml.ts`로 승격해
+  hwpml·docx 복제 3벌 제거.
+- **MCP 핸들러 전면 비동기 I/O**: readFileSync/writeFileSync 등 ~35개소를
+  `fs/promises`로 — 장수 stdio 프로세스가 수십 MB 문서 I/O 중 멈추던 블로킹 제거.
+- **발행 게이트 복원**: `prepublishOnly` = sync-meta 드리프트 검사 + typecheck + test +
+  build + `bench/gate-if-corpus.mjs`(코퍼스 부재 기기는 bench만 SKIP) — 코퍼스 없는
+  기기에서 상시 FAIL → `--ignore-scripts` 우회 관행을 제거. 코퍼스 의존 e2e 테스트도
+  모수 하한(170) 미달 시 suite 단위 skip. CI에 `tsc --noEmit` 타입체크 추가 (종전엔
+  cli.ts·mcp.ts 본문이 어디서도 타입체크되지 않았다). `scripts/sync-meta.mjs`로
+  plugin.json 버전·engine-spec SSOT 자동 동기화.
+
+### Performance
+
+- **ole-surgeon 섹터 할당 O(n²) 제거**: 512B마다 `Buffer.concat` 전체 복사 → 기하급수
+  capacity — +4MB 스트림 삽입 1,967ms→3.1ms (**637배**), 출력 바이트 동일.
+- **PDF 괘선 표 `buildVertices` 버킷화**: 수평×수직 전수 이중루프 → y-대역 버킷 —
+  대형 적층 표 99→73ms, 스냅샷 해시 동일.
+
+### 검증
+
+테스트 1,349 pass / 0 fail (신규: 누름틀 11·빈 문단 5·TAC outMargin 3·LIKE 등),
+typecheck 클린, build 성공. TAC 배선 코퍼스 60건 스윕 무회귀. 이번 릴리스부터
+`npm publish`가 우회 플래그 없이 게이트 전 구간을 통과한다.
+
 ## [4.2.9] - 2026-07-26
 
 HWP3 파서 rhwp 최신판(v0.8.0) 정합 4종 — 날짜 필드 desync·차례 표식 오염·유령 음절·예약 코드.

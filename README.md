@@ -86,6 +86,15 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.3.0 변경사항
+
+- **🏛️ 정부 표준 기안문 서식 내장 + 누름틀 채우기**: 별지 제1호(일반기안문, 누름틀 23곳)·제2호(간이기안문, 13곳) 서식을 번들 — `kordoc fill --template gian` / `--list-templates` / MCP `fill_form`의 `template` 파라미터로 파일 없이 표준 기안문을 채워 만듭니다. 누름틀(CLICK_HERE) 필드 채우기 신설 (서식·안내문 보존, 안내문 충돌 침묵 유실 구조적 차단).
+- **📄 빈 문단 보존 옵션 (#57)**: `--keep-empty-paragraphs` — 행 줄맞춤 서식 문서(원규 번호표 등)에서 빈 문단이 사라져 값이 다른 항목에 붙던 문제의 opt-in 해법. 본문은 빈 블록, 표 셀은 빈 줄로 "원문 문단 수 = 줄 수" 대응 유지. (@jumaniac 제보)
+- **🐛 에러 계약·MCP 정합 7건**: 암호화 XLS가 성공으로 위장하던 것, HWPX DRM 오분류, HWP3/HWPML/sharp 진단 메시지 소실, MCP `parse_pages` 배포용 HWP 폴백 불발, `.xls`를 `hwp`로 오판, `pageCount` 미전파 등 — 전면 리뷰에서 발굴·일괄 수리.
+- **📐 TAC 인라인 표 outMargin 정합 (rhwp 포팅)**: 결재란 등 글자취급 표의 가로 여백이 무시돼 문단이 밀리던 렌더 결함 수리 — 실코퍼스 60건 스윕 검증.
+- **⚡ 성능**: HWP 바이너리 패치의 섹터 할당 O(n²) 제거(+4MB 삽입 **637배** 가속), PDF 괘선 표 감지 버킷화. MCP 핸들러 전면 비동기화로 대용량 문서 I/O 중 서버 멈춤 제거.
+- **🧰 내부 정비**: 수식 변환기 hwp5→hwpx 정본 통합(포맷별 LaTeX 갈림 해소), 번호서식·XML 헬퍼 공용화, CI 타입체크 신설, 발행 게이트 복원(`--ignore-scripts` 관행 제거).
+
 ## v4.2.6 변경사항
 
 - **📐 개조식·보고서 본문 왼쪽정렬**: 개조식·보고서 공문서의 본문 항목(□/○/-)을 양쪽정렬에서 왼쪽정렬로 바꿨습니다. 어절 유지 + 양쪽정렬이 겹치면 다음 어절이 길어 짧게 끊긴 줄(예: 25자 줄을 34자 폭으로)의 어절 간격이 과하게 벌어져 문단이 깨진 것처럼 보이던 문제입니다. 「행정업무운영편람」 개조식 예시의 왼쪽정렬 관례와도 일치합니다. 기안문(official) 등 서술형 본문의 양쪽정렬은 그대로 유지합니다.
@@ -191,7 +200,7 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ## v3.15.0 변경사항
 
-- **🖋️ reflow 렌더 (캐시 없는 파일도 조판)**: `markdownToHwpx` 산출물·AI 생성본·편집본처럼 조판 캐시(linesegarray)가 없어 렌더가 거부되던 HWPX를 `renderHwpxToSvg(buf, { reflow: true })` / `kordoc render --reflow`로 순수 TS 조판합니다. 검증된 줄나눔 엔진(실측 98% 일치) + 실측 세로 모델로 lineseg를 합성해 기존 렌더 파이프(정렬·표·이미지·형광펜·다페이지)를 재사용합니다. 단문단·표 셀·표 밀어내기·자동 페이지 분할. 한컴 저장본은 캐시 재생 그대로(무회귀).
+- **🖋️ reflow 렌더 (캐시 없는 파일도 조판)**: `markdownToHwpx` 산출물·AI 생성본·편집본처럼 조판 캐시(linesegarray)가 없어 렌더가 거부되던 HWPX를 `renderHwpxToSvg(buf, { reflow: true })` / `kordoc render`(CLI는 기본 켬, `--no-reflow`로 끔)로 순수 TS 조판합니다. 검증된 줄나눔 엔진(실측 98% 일치) + 실측 세로 모델로 lineseg를 합성해 기존 렌더 파이프(정렬·표·이미지·형광펜·다페이지)를 재사용합니다. 단문단·표 셀·표 밀어내기·자동 페이지 분할. 한컴 저장본은 캐시 재생 그대로(무회귀).
 - **🔺 그리기 도형 렌더**: 사각형·타원·선·다각형·호를 SVG로 그립니다(선 색·굵기·점선, 채움, 크기 스케일). 조직도·화살표 등 "원본과 다르게 보이던" 큰 원인을 해결했습니다.
 - **🚀 persistent 렌더 워커**: `kordoc render-worker`가 프로세스를 유지하며 연속 렌더 요청(stdin NDJSON)을 처리해 node 콜드스타트를 없앱니다(미리보기 앱 연동용).
 
@@ -599,6 +608,31 @@ writeFileSync("신청서_작성완료.hwpx", Buffer.from(result.output as ArrayB
 // result.fill.unmatched → 매칭 실패한 키 목록
 ```
 
+### 내장 정부 표준 기안문 서식 + 누름틀 채우기
+
+「행정 효율과 협업 촉진에 관한 규정 시행규칙」 별지 서식 기반 **표준 기안문 HWPX가
+패키지에 내장**되어, 파일 없이 이름만으로 실물 배치 품질의 공문서를 만들 수 있습니다
+(서식 자산: [rhwp](https://github.com/edwardkim/rhwp) tools/forms, MIT — THIRD_PARTY/rhwp-forms.txt):
+
+| 이름 | 서식 | 용도 | 누름틀 |
+|------|------|------|--------|
+| `gian` (일반기안문) | 별지 제1호서식 | 대외 시행문·협조문 | 23곳 — 행정기관명·수신자·경유·제목·본문·붙임·발신명의·기안자·검토자·결재권자·시행번호 등 |
+| `gian-simple` (간이기안문) | 별지 제2호서식 | 내부결재 보고서·계획서 (결재란 표) | 13곳 — 생산등록번호·결재직위1~4·제목·요약설명·작성일 등 |
+
+```bash
+npx kordoc fill --list-templates                    # 내장 서식 목록 + 필드 나열
+npx kordoc fill --template gian -j 값.json -o 기안문.hwpx
+npx kordoc fill templates:간이기안문 -f '제목=…' -o 보고.hwpx   # 위치 인자 표기도 동일
+```
+
+채우기 엔진이 **누름틀(CLICK_HERE 필드)을 이름으로 정확 매칭해 우선 채우고**, 남은
+키는 기존 라벨 매칭으로 처리합니다 — 누름틀이 있는 어떤 HWPX 서식(메일머지 양식 등)에도
+동작합니다. `본문`처럼 `\n`이 든 값은 문단 내 줄바꿈으로 들어가고, 안내문과 동일한 값을
+채워도 유실되지 않으며, 원본 charPr(서식)은 그대로 보존됩니다. API로는
+`extractClickHereFields(buf)`(필드 조사)와 `readBuiltinTemplate(resolveBuiltinTemplate("gian")!)`
+(서식 로드) → `fillHwpx(buf, 값)` 조합입니다. MCP `fill_form` 도구도 `template` 파라미터로
+같은 서식을 씁니다.
+
 ### HWPX 생성 (역변환)
 
 ```typescript
@@ -654,7 +688,8 @@ writeFileSync("결재문서.svg", r.svg)
 const g = await renderHwpxToSvg(generatedHwpx, { reflow: true }) // 조판 캐시 없는 생성본
 ```
 
-CLI로도: `kordoc render 결재문서.hwpx -o 결재문서.svg` (`--reflow`·`--highlight 예산,집행`),
+CLI로도: `kordoc render 결재문서.hwpx -o 결재문서.svg` — 조판 캐시 없는 문서는 기본으로
+reflow 조판되며 `--no-reflow`로 끌 수 있습니다 (`--highlight 예산,집행` 지원),
 연속 렌더는 `kordoc render-worker`(stdin NDJSON, 미리보기 앱 연동용)
 
 ### 페이지 범위 지정
@@ -717,13 +752,15 @@ npx kordoc 검토서.hwpx --format json               # JSON (blocks + metadata 
 npx kordoc 보고서.hwpx --pages 1-3                  # 페이지 범위
 npx kordoc fill 신청서.hwpx -f '성명=홍길동,주소=서울' -o 결과.hwpx  # 양식 채우기
 npx kordoc fill 신청서.hwpx -j values.json -o 결과.hwpx             # JSON 파일로 채우기
-npx kordoc fill 신청서.hwpx --dry-run                               # 필드 목록만 확인
+npx kordoc fill 신청서.hwpx --dry-run                               # 필드 목록만 확인 (누름틀 포함)
+npx kordoc fill --template gian -j 값.json -o 기안문.hwpx            # 내장 표준 기안문 서식 채우기
+npx kordoc fill --list-templates                                    # 내장 서식 목록 + 필드
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서         # 마크다운 → 공문서 HWPX
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx      # 서식 보존 라운드트립 패치 (.hwp도 자동 분기)
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx  # 도장/서명 날인
 npx kordoc validate 산출물.hwpx                      # HWPX 구조 검증 (ZIP·필수 파트·XML)
 npx kordoc lint 보고서.hwpx                          # 공문서 표기법 검수 13룰 (v4.0.1)
-npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더 (--reflow 지원)
+npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더 (캐시 없는 문서는 자동 reflow 조판, --no-reflow로 끔)
 npx kordoc watch ./수신함 -d ./변환결과              # 폴더 감시 모드
 npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 ```

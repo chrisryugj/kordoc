@@ -365,18 +365,10 @@ export async function parseXlsDocument(
   const globals = processGlobals(records)
   const warnings: ParseWarning[] = []
 
+  // 다른 포맷(HWP5/HWP3/HWPX)과 동일하게 throw → success:false + ENCRYPTED.
+  // 종전엔 success:true + 빈 markdown 을 돌려줘 호출자가 실패를 감지 못했다.
   if (globals.encrypted) {
-    return {
-      markdown: "",
-      blocks: [],
-      metadata: { pageCount: globals.sheets.length },
-      warnings: [
-        {
-          message: "XLS 파일이 암호화되어 있어 파싱할 수 없습니다",
-          code: "PARTIAL_PARSE",
-        },
-      ],
-    }
+    throw new KordocError("XLS 파일이 암호화되어 있어 파싱할 수 없습니다")
   }
 
   // 날짜 서식 셀 변환 훅 — 숫자 시리얼 → ISO 문자열

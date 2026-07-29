@@ -269,7 +269,8 @@ describe("PDF: blocks + metadata", { skip: !existsSync(FIXTURE_PDF) && "PDF fixt
     if (result.success) {
       assert.ok(Array.isArray(result.blocks), "blocks 배열")
       assert.ok(result.blocks.length > 0, "blocks 비어있지 않음")
-      assert.ok(result.blocks.every(b => b.type === "paragraph" || b.type === "table" || b.type === "heading"), "유효한 블록 타입")
+      const VALID_TYPES = ["paragraph", "table", "heading", "list", "image", "separator"]
+      assert.ok(result.blocks.every(b => VALID_TYPES.includes(b.type)), "유효한 블록 타입")
     }
   })
 
