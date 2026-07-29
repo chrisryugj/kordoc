@@ -172,4 +172,24 @@ describe("BUILTIN_TEMPLATES — 이름 해석과 자산 로드", () => {
       assert.equal(result.filled.length, Object.keys(sample).length, `${t.id} filled`)
     }
   })
+
+  // XML 1.0 금지 제어문자(C0, tab/LF/CR 제외)가 하나라도 있으면 한글 2024가
+  // "파일이 손상되었습니다"로 열기를 거부한다 — v4.3.0 일반기안문 header.xml에
+  // 0x01 2바이트가 섞여 실기기에서 확인된 회귀. rhwp 자산 재복사 시에도 잡는다.
+  it("번들 서식과 fill 산출물의 모든 XML에 금지 제어문자가 없다", async () => {
+    const FORBIDDEN = /[\x00-\x08\x0b\x0c\x0e-\x1f]/
+    for (const t of BUILTIN_TEMPLATES) {
+      const filled = await fillHwpx(readBuiltinTemplate(t), readBuiltinTemplateSample(t))
+      for (const [label, buf] of [["서식", readBuiltinTemplate(t)], ["fill 산출물", filled.buffer]] as const) {
+        const zip = await JSZip.loadAsync(buf)
+        for (const name of Object.keys(zip.files)) {
+          if (!name.endsWith(".xml")) continue
+          const xml = await zip.file(name)!.async("text")
+          const m = FORBIDDEN.exec(xml)
+          assert.equal(m, null,
+            `${t.id} ${label} ${name}: 오프셋 ${m?.index}에 제어문자 0x${m?.[0].charCodeAt(0).toString(16)} — 한글이 파일 손상으로 거부`)
+        }
+      }
+    }
+  })
 })

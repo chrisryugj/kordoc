@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.1] - 2026-07-30
+
+### Fixed
+
+- **일반기안문 서식이 한글 2024에서 "파일이 손상되었습니다"로 열리지 않던 문제**:
+  v4.3.0에 번들된 `templates/일반기안문_서식.hwpx`의 `header.xml`에 XML 1.0 금지
+  제어문자(0x01) 2바이트가 섞여 있어(rhwp 서식 자산 유래) 한글이 열기를 거부 —
+  `fill --template gian` 산출물 전부가 영향. 제어문자 제거로 실기기(한글 2024)
+  열림 확인. 간이기안문은 영향 없음.
+- 재발 방지: 번들 서식과 fill 산출물의 전체 XML 엔트리에 금지 제어문자
+  (C0, tab/LF/CR 제외)가 없는지 검사하는 회귀 테스트 추가 — rhwp 자산 재복사
+  시에도 게이트에서 잡는다.
+
+### Verified
+
+- v5.1 HWPX 스킬의 "linesegarray 전체 삭제 시 음수 spacing 캐시 소실로 양식 파괴"
+  주장에 대한 실기기 대조 실험(한글 2024, 음수 spacing 셀 포함 보고서 양식):
+  전체 삭제·targeted 삭제·미삭제 세 변형 모두 경고 없이 열리고 렌더가 픽셀
+  단위로 동일 — 현행 섹션 단위 전체 삭제(`allLinesegRemovalSplices`) 유지.
+
 ## [4.3.0] - 2026-07-29
 
 프로덕션 전면 리뷰 기반 대규모 정비 — 정부 표준 기안문 서식 내장(누름틀 채우기), 빈 문단
