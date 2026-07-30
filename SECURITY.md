@@ -65,6 +65,8 @@ kordoc is a **document parser library**, not a sandbox. It trusts the Node.js ru
 
 ## Known Limitations
 
-- `cfb` is bundled via `noExternal` — users cannot independently update it
+- `cfb` is declared `noExternal` in `tsup.config.ts`, but the actual build emits
+  `require("cfb")` (the CJS require is not inlined by esbuild). It ships as a normal
+  runtime dependency, so users can update it independently.
 - HWPX format detection is ZIP-based (any ZIP file returns `"hwpx"` from `detectFormat`)
 - MCP server has no directory restriction by default (any `.hwp`/`.hwpx`/`.pdf`/`.xlsx`/`.docx` on the filesystem can be read)

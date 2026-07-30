@@ -913,10 +913,16 @@ import type {
 [MIT](./LICENSE)
 
 이 프로젝트는 아래 오픈소스를 포함합니다:
-- **rhwp** (MIT, edwardkim) — HWP5 배포용 복호화 및 lenient CFB 파싱 알고리즘
+- **rhwp** (MIT, edwardkim) — HWP5 배포용 복호화 및 lenient CFB 파싱 알고리즘,
+  `templates/` 의 기안문 서식
+- **claw-hwp** (MIT, DoHyun468) — OOXML chartSpace 조립, 도장 부유 배치 메트릭,
+  secure-fill 포맷엔진, validate 검사셋
 - **OpenDataLoader PDF** (Apache 2.0, Hancom Inc.) — PDF 테이블 감지 알고리즘
+- **hml-equation-parser** (Apache 2.0, Open Bapul) — HML 수식 파싱
+- **PaddleOCR** (Apache 2.0, PaddlePaddle) — OCR 엔진 파생
 - **cfb** (Apache 2.0, SheetJS) — HWP5 OLE2 컨테이너 파싱
 - **pdfjs-dist** (Apache 2.0, Mozilla) — PDF 텍스트 추출
 - **JSZip** (MIT, Stuart Knightley 외) — ZIP 기반 포맷 파싱
 
-자세한 내용은 [NOTICE](./NOTICE) 파일을 참조하세요.
+전체 고지는 [NOTICE](./NOTICE), 라이선스 전문은 `THIRD_PARTY/` 를 참조하세요.
+둘 다 npm 배포 패키지에 함께 포함됩니다.

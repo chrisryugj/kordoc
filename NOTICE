@@ -158,7 +158,7 @@ https://www.apache.org/licenses/LICENSE-2.0
 claw-hwp
 https://github.com/DoHyun468/claw-hwp
 
-Copyright RECON Labs
+Copyright (c) 2026 DoHyun468
 Licensed under the MIT License
 
 Used in:
@@ -167,6 +167,10 @@ Used in:
 - src/form/seal.ts — 도장 부유 배치의 폰트 메트릭 위치 산정(전각/반각 em 폭,
   정렬 이동 보정)과 부유 개체 속성 규칙(treatAsChar=0 + flowWithText=0 +
   allowOverlap=1)을 cell-patch.js placeSealInPlace에서 이식
+- src/form/match.ts — secure-fill 포맷엔진과 require_occurrence 규칙 이식
+- src/validate.ts — validate.py 의 실측 검사셋 이식
+
+라이선스 전문: THIRD_PARTY/claw-hwp.LICENSE
 
 You may obtain a copy of the MIT License at:
 https://opensource.org/licenses/MIT
