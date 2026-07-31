@@ -183,6 +183,9 @@ export interface ParseOptions {
    *  개체(표·이미지·글상자)만 있는 문단은 개체 출력이 따로 있어 대상이 아니다.
    *  현재 HWPX 경로 적용. */
   keepEmptyParagraphs?: boolean
+  /** 비밀번호로 보호된 문서의 열기 암호.
+   *  HWPX(ODF AES-256-CBC)·HWP3(DES) 지원. 한컴 DRM(문서 보안)은 별개라 해당 없음. */
+  password?: string
   /** 원본 파일 경로 (DRM COM fallback에 필요, 내부 전용) */
   filePath?: string
   /**

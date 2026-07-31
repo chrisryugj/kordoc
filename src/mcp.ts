@@ -159,8 +159,10 @@ server.tool(
       .describe("표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림, CLI --keep-empty-cols 대응)"),
     keep_empty_paragraphs: z.boolean().optional()
       .describe("빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄 (#57, 기본 off, CLI --keep-empty-paragraphs 대응)"),
+    password: z.string().optional()
+      .describe("암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5 지원. 파싱이 ENCRYPTED로 실패하면 이 옵션으로 재시도하세요. 한컴 DRM 보호 문서는 해당 없음)"),
   },
-  async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs }) => {
+  async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, password }) => {
     try {
       const { buffer, resolved } = await readValidatedFile(file_path)
       const format = detectFormat(buffer)
@@ -185,6 +187,7 @@ server.tool(
         ...(dedupe_running_headers ? { dedupeRunningHeaders: true } : {}),
         ...(keep_trailing_empty_cols ? { keepTrailingEmptyCols: true } : {}),
         ...(keep_empty_paragraphs ? { keepEmptyParagraphs: true } : {}),
+        ...(password ? { password } : {}),
       })
 
       if (!result.success) {

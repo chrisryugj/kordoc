@@ -30,6 +30,7 @@ program
   .option("--keep-empty-cols", "표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림)")
   .option("--keep-empty-paragraphs", "빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄로 (#57, 기본 off: 빈 문단 제거)")
   .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, HWP5 전용 — 인라인된 경우만 파일 미저장, 그 외 포맷은 저장 유지)")
+  .option("--password <pw>", "암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5. 한컴 DRM 문서는 해당 없음)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
     const validFormats = ["markdown", "json", "chunks"]
@@ -72,6 +73,7 @@ program
         if (opts.keepEmptyCols) parseOptions.keepTrailingEmptyCols = true
         if (opts.keepEmptyParagraphs) parseOptions.keepEmptyParagraphs = true
         if (opts.inlineImages) parseOptions.inlineImages = true
+        if (opts.password) parseOptions.password = opts.password as string
         if (!opts.silent) {
           parseOptions.onProgress = (current: number, total: number) => {
             process.stderr.write(`\r[kordoc] ${filePrefix}${fileName} (${format}) [${current}/${total}]`)

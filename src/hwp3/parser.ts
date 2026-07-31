@@ -25,6 +25,7 @@ import { KordocError } from "../utils.js"
 import { JOHAB_UNMAPPED, decodeJohab } from "./johab.js"
 import { Reader } from "./reader.js"
 import { readHeader } from "./records.js"
+import { decryptHwp3Document, isEncryptedHwp3 } from "./crypto.js"
 
 /** 압축 해제 최대 크기 (100MB) — decompression bomb 방지 (hwp5/record.ts와 동일 캡) */
 const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
@@ -83,20 +84,28 @@ export interface Hwp3ParseOptions extends ParseOptions {
 
 /**
  * HWP3 buffer → InternalParseResult.
- * encrypted 본문은 복호화 못하고 ENCRYPTED 코드로 throw.
+ * 암호 문서는 options.password 로 복호한다 — 없으면 ENCRYPTED 코드로 throw.
  */
 export function parseHwp3Document(
   buffer: ArrayBuffer,
-  _options?: Hwp3ParseOptions,
+  options?: Hwp3ParseOptions,
 ): InternalParseResult {
-  const headReader = new Reader(Buffer.from(buffer))
-  const header = readHeader(headReader)
+  let source = Buffer.from(buffer)
 
+  // 암호 문서는 복호해서 평문 바이트로 바꾼 뒤 아래 경로를 그대로 탄다.
   // KordocError 라야 sanitizeError 가 메시지를 보존하고 classifyError 가 ENCRYPTED 로 분류한다
   // (plain Error + e.code 는 둘 다 무시되어 PARSE_ERROR/일반 문구로 뭉개졌다)
-  if (header.encrypted !== 0) {
-    throw new KordocError("암호화된 HWP3 문서 — 본문이 암호로 보호되어 있어 추출할 수 없습니다.")
+  if (isEncryptedHwp3(source)) {
+    if (!options?.password) {
+      throw new KordocError(
+        "암호로 보호된 HWP3 문서입니다. password 옵션에 열기 암호를 지정하세요.",
+      )
+    }
+    source = decryptHwp3Document(source, options.password)
   }
+
+  const headReader = new Reader(source)
+  const header = readHeader(headReader)
 
   // InfoBlock skip — 폰트/스타일 메타데이터, 텍스트 추출엔 불필요.
   headReader.skip(header.infoBlockLength)

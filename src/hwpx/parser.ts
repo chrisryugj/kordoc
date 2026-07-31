@@ -22,6 +22,7 @@ import { KordocError, precheckZipSize } from "../utils.js"
 export { precheckZipSize } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { isComFallbackAvailable, isEncryptedHwpx, extractTextViaCom, comResultToParseResult } from "./com-fallback.js"
+import { decryptHwpxInPlace } from "./crypto.js"
 import { applyPageText, createSectionShared, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, ZipBombError } from "./parser-shared.js"
 import { extractHwpxStyles, detectHwpxHeadings } from "./styles.js"
 import { parseSectionXml } from "./section-walker.js"
@@ -51,19 +52,28 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     throw new KordocError("ZIP 엔트리 수 초과 (ZIP bomb 의심)")
   }
 
-  // ── DRM 감지: manifest.xml에 encryption-data가 있으면 COM fallback ──
+  // ── 암호 감지: manifest.xml에 encryption-data가 있으면 비밀번호 복호 → COM fallback ──
   const manifestFile = zip.file("META-INF/manifest.xml")
   if (manifestFile) {
     const manifestXml = await manifestFile.async("text")
     if (isEncryptedHwpx(manifestXml)) {
-      // 파일 경로가 options에 있으면 COM fallback 시도
-      if (isComFallbackAvailable() && options?.filePath) {
-        const { pages, pageCount, warnings } = extractTextViaCom(options.filePath)
-        if (pages.some(p => p && p.trim().length > 0)) {
-          return comResultToParseResult(pages, pageCount, warnings)
+      // 비밀번호가 주어졌으면 제자리 복호 — 이후 경로는 평문 문서와 완전히 같다
+      if (options?.password) {
+        await decryptHwpxInPlace(zip, manifestXml, options.password)
+      } else {
+        // 파일 경로가 options에 있으면 COM fallback 시도
+        if (isComFallbackAvailable() && options?.filePath) {
+          const { pages, pageCount, warnings } = extractTextViaCom(options.filePath)
+          if (pages.some(p => p && p.trim().length > 0)) {
+            return comResultToParseResult(pages, pageCount, warnings)
+          }
         }
+        // 메시지에 "DRM"을 넣지 않는다 — classifyError가 DRM_PROTECTED(비밀번호로 못 여는
+        // 문서보안)로 분류해, 정작 암호만 주면 열리는 문서를 호출자가 포기하게 만든다.
+        throw new KordocError(
+          "암호로 보호된 HWPX 파일입니다. password 옵션에 열기 암호를 지정하세요.",
+        )
       }
-      throw new KordocError("DRM 암호화된 HWPX 파일입니다. Windows + 한컴 오피스 설치 시 자동 추출됩니다.")
     }
   }
 

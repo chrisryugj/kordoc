@@ -17,6 +17,7 @@ import { parseLenientCfb, type LenientCfbContainer } from "./cfb-lenient.js"
 import { buildTable, blocksToMarkdown, convertTableToText, flattenLayoutTables, dedupeRunningHeaders, MAX_COLS, MAX_ROWS } from "../table/builder.js"
 import type { CellContext, IRBlock, IRCell, IRTable, DocumentMetadata, InternalParseResult, ParseOptions, ParseWarning, OutlineItem, InlineStyle } from "../types.js"
 import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
+import { assertDecryptedDocInfo, assertSupportedEncryptVersion, decryptPasswordStream, readEncryptVersion } from "./pw-crypto.js"
 import { KordocError, sanitizeHref } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 
@@ -115,7 +116,7 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
   }
 
   // CFB 래퍼: strict/lenient 통합 인터페이스
-  const findStream = (path: string): Buffer | null => {
+  const readRawStream = (path: string): Buffer | null => {
     if (cfb) {
       const entry = CFB.find(cfb, path)
       return entry?.content ? Buffer.from(entry.content) : null
@@ -123,12 +124,28 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
     return lenientCfb!.findStream(path)
   }
 
-  const headerData = findStream("/FileHeader")
+  const headerData = readRawStream("/FileHeader")
   if (!headerData) throw new KordocError("FileHeader 스트림 없음")
   const header = parseFileHeader(headerData)
   if (header.signature !== "HWP Document File") throw new KordocError("HWP 시그니처 불일치")
-  if (header.flags & FLAG_ENCRYPTED) throw new KordocError("암호화된 HWP는 지원하지 않습니다")
   if (header.flags & FLAG_DRM) throw new KordocError("DRM 보호된 HWP는 지원하지 않습니다")
+
+  // 비밀번호 암호 문서 — FileHeader 외 모든 스트림이 AES-CFB 로 암호화되어 있다.
+  // 복호를 findStream 래퍼에 끼워 넣어 이후 경로가 평문 문서와 같아지게 한다.
+  const encrypted = (header.flags & FLAG_ENCRYPTED) !== 0
+  if (encrypted) {
+    if (!options?.password) {
+      throw new KordocError("암호로 보호된 HWP 문서입니다. password 옵션에 열기 암호를 지정하세요.")
+    }
+    assertSupportedEncryptVersion(readEncryptVersion(headerData))
+  }
+  const password = encrypted ? options!.password! : undefined
+  const findStream = (path: string): Buffer | null => {
+    const raw = readRawStream(path)
+    if (!raw || !password) return raw
+    return decryptPasswordStream(raw, password)
+  }
+
   const compressed = (header.flags & FLAG_COMPRESSED) !== 0
   const distribution = (header.flags & FLAG_DISTRIBUTION) !== 0
 
@@ -137,14 +154,31 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
   }
   if (cfb) extractHwp5Metadata(cfb, metadata)
 
+  // 암호 문서는 여기서 비밀번호를 검증한다 — DocInfo·섹션 파싱은 실패를 경고로 흡수해서,
+  // 오답으로 나온 난수 데이터가 "성공했는데 내용이 쓰레기"인 결과로 흘러가기 때문이다.
+  if (encrypted) {
+    const rawDocInfo = findStream("/DocInfo")
+    if (!rawDocInfo) throw new KordocError("DocInfo 스트림 없음")
+    let docInfoData: Buffer
+    try {
+      docInfoData = compressed ? decompressStream(rawDocInfo) : rawDocInfo
+    } catch {
+      throw new KordocError("비밀번호가 일치하지 않거나 암호화 데이터가 손상되었습니다.")
+    }
+    assertDecryptedDocInfo(docInfoData, readRecords)
+  }
+
   // DocInfo 파싱 (스타일 정보 추출)
-  const docInfo = cfb
+  // 암호 문서는 복호를 거치는 findStream 경로로 — cfb 직접 접근은 암호문을 읽는다
+  const docInfo = cfb && !encrypted
     ? parseDocInfoStream(cfb, compressed)
     : parseDocInfoFromStream(findStream("/DocInfo"), compressed)
 
   const sections = distribution
     ? (cfb ? findViewTextSections(cfb, compressed) : findViewTextSectionsLenient(lenientCfb!, compressed))
-    : (cfb ? findSections(cfb) : findSectionsLenient(lenientCfb!, compressed))
+    : encrypted
+      ? findSectionsVia(findStream)
+      : (cfb ? findSections(cfb) : findSectionsLenient(lenientCfb!, compressed))
   if (sections.length === 0) throw new KordocError("섹션 스트림을 찾을 수 없습니다")
 
   metadata.pageCount = sections.length
@@ -404,6 +438,17 @@ function findViewTextSections(cfb: CfbContainer, compressed: boolean): Buffer[] 
   }
 
   return sections.sort((a, b) => a.idx - b.idx).map(s => s.content)
+}
+
+/** 스트림 리더로 BodyText 섹션 수집 — 압축 해제는 호출부가 맡는다(findSections와 같은 계약) */
+function findSectionsVia(read: (path: string) => Buffer | null): Buffer[] {
+  const sections: Buffer[] = []
+  for (let i = 0; i < MAX_SECTIONS; i++) {
+    const raw = read(`/BodyText/Section${i}`)
+    if (!raw) break
+    sections.push(raw)
+  }
+  return sections
 }
 
 function findSections(cfb: CfbContainer): Buffer[] {
