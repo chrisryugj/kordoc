@@ -332,6 +332,9 @@ allFiles.sort()
 
 for (const file of allFiles) {
   const rel = relative(join(root, "corpus"), file)
+  // 채점 정렬의 알려진 거짓 미스 픽스처 — 파서는 무손실인데 유닛 경계가 어긋난다
+  // (corpus/known-false-miss/README.md). 정렬 개선 시 회귀 확인용으로 보관만.
+  if (rel.startsWith("known-false-miss")) continue
   if (docFilter && !rel.includes(docFilter)) continue
   const ext = extname(file).slice(1).toLowerCase()
   if (only && ext !== only) continue

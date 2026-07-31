@@ -24,7 +24,7 @@
 import JSZip from "jszip"
 import { isLabelCell } from "./recognize.js"
 import { fillClickHereInXml } from "./click-here.js"
-import { KordocError } from "../utils.js"
+import { KordocError, precheckZipSize } from "../utils.js"
 import { normalizeLabel, findMatchingKey, normalizeValues, resolveUnmatched, isKeywordLabel, fillInCellPatterns, scanInlineSegments, matchInlineSegment, clampSegmentEnd, padInsertion, ValueCursor, type FillValue , type FillInput } from "./match.js"
 import type { FormField } from "../types.js"
 import {
@@ -75,6 +75,7 @@ export async function fillHwpx(
   blockedLabels?: Set<string>,
 ): Promise<HwpxFillResult> {
   const u8 = new Uint8Array(hwpxBuffer)
+  precheckZipSize(hwpxBuffer) // 파싱 경로와 같은 ZIP bomb 가드 — fill 은 parse 없이 직행할 수 있다
   const zip = await JSZip.loadAsync(hwpxBuffer)
   // v3.0과 동일한 글롭 — filler 매칭은 라벨 기반(국소적)이라 manifest 비등재
   // 섹션을 포함해도 안전하고, 빼면 그 섹션의 양식이 조용히 누락된다

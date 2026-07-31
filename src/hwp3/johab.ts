@@ -41,6 +41,45 @@ function lookupSymbol(ch: number): number | null {
 /** 매핑 실패를 명확히 알리기 위한 sentinel. 호출자가 string 에 추가하지 않도록 skip. */
 export const JOHAB_UNMAPPED = -1
 
+/** 옛한글 아래아 중성 인덱스 (KSSM 조합형) */
+const JUNG_ARAEA = 30
+/** HANGUL JUNGSEONG ARAEA (U+119E) */
+const ARAEA_JAMO = 0x119e
+
+/**
+ * 아래아(ㆍ) 음절을 초성·아래아·종성 자모열로 푼다. 아래아가 아니면 null.
+ *
+ * HWP3 은 'ᄒᆞᆫ'(한글 97 안내문의 'ᄒᆞᆫ글') 같은 음절을 hchar 하나로 저장하지만,
+ * 완성형 영역에는 대응 음절이 없어 `decodeJohab` 은 UNMAPPED 를 반환한다 — 그러면
+ * 파서가 조용히 건너뛰어 글자가 사라진다. 한컴의 HWP5/HWPX 변환본도 자모열로
+ * 보존하므로 같은 표현을 쓴다 (rhwp decode_johab_araea_jamo 포팅).
+ */
+function decodeAraeaSyllable(ch: number): string | null {
+  if (ch < 0x8000) return null
+  if (((ch >> 5) & 0x1f) !== JUNG_ARAEA) return null
+
+  const cho = CHO_MAP[(ch >> 10) & 0x1f]
+  const jong = JONG_MAP[ch & 0x1f]
+  if (cho === -1 || jong === -1) return null
+
+  // 초성은 U+1100 계열, 종성은 U+11A7 기준 (jong 0 = 받침 없음)
+  const out = String.fromCodePoint(0x1100 + cho) + String.fromCodePoint(ARAEA_JAMO)
+  return jong === 0 ? out : out + String.fromCodePoint(0x11a7 + jong)
+}
+
+/**
+ * HWP3 hchar (u16) → 텍스트. 매핑 실패면 null (호출자가 건너뛴다).
+ *
+ * 대부분 한 글자지만 아래아 음절은 자모 2~3개가 되므로 문자열을 반환한다.
+ * 단일 코드포인트가 필요한 곳은 `decodeJohab` 을 그대로 쓴다.
+ */
+export function decodeJohabText(ch: number): string | null {
+  const araea = decodeAraeaSyllable(ch)
+  if (araea) return araea
+  const cp = decodeJohab(ch)
+  return cp === JOHAB_UNMAPPED ? null : String.fromCodePoint(cp)
+}
+
 /**
  * HWP3 hchar (u16) → 유니코드 코드포인트. 매핑 실패 시 JOHAB_UNMAPPED.
  *
@@ -130,8 +169,7 @@ export function decodeHcharString(bytes: Uint8Array): string {
   while (i + 1 < bytes.length) {
     const ch = bytes[i] | (bytes[i + 1] << 8) // LE u16
     if (ch === 0) break
-    const cp = decodeJohab(ch)
-    if (cp !== JOHAB_UNMAPPED) out += String.fromCodePoint(cp)
+    out += decodeJohabText(ch) ?? ""
     i += 2
   }
   return out
@@ -152,8 +190,7 @@ function decodeHwp3String(bytes: Uint8Array): string {
       i += 1
     } else if (i + 1 < bytes.length) {
       const ch = (b1 << 8) | bytes[i + 1]
-      const cp = decodeJohab(ch)
-      if (cp !== JOHAB_UNMAPPED) out += String.fromCodePoint(cp)
+      out += decodeJohabText(ch) ?? ""
       i += 2
     } else {
       i += 1

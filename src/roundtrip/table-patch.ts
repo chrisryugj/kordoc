@@ -402,6 +402,12 @@ export function applyCellEdit(
     // 요청한 삽입 경계 밖의 원문 손실(#54). t 맨 앞에 zero-length 삽입해 보존한다.
     const rawT = xml ? paraTText(target, xml) : null
     let sp: SpliceEdit[] | null
+    // rawT === null 은 t 안에 엔티티(`&#32;` 등)나 태그가 있다는 뜻 — 통째 교체하면
+    // IR 에 안 잡힌 그 원문이 사라진다(#54와 같은 손실이 엔티티 표기에서 재현).
+    // 삽입 경계를 t-좌표로 특정할 수 없으므로 조용한 성공 대신 정직하게 skip 한다.
+    if (xml && rawT === null) {
+      return skip("빈 셀 문단에 엔티티·태그가 있어 삽입 경계를 특정할 수 없음 — 원문 손실 방지로 미적용")
+    }
     if (xml && rawT !== null && rawT.length > 0 && rawT.trim() === "") {
       sp = buildRangeSplices(target, xml, 0, 0, value)
       // 삽입 경계를 유일하게 정할 수 없으면(엔티티/내부 태그로 t-좌표 불일치) 조용한

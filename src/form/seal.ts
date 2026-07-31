@@ -21,7 +21,7 @@
  */
 
 import JSZip from "jszip"
-import { KordocError } from "../utils.js"
+import { KordocError, precheckZipSize } from "../utils.js"
 import {
   scanSectionXml, applySplices,
   type ScanParagraph, type ScanCell, type ScanTable, type SectionScan, type SpliceEdit,
@@ -291,6 +291,7 @@ function buildFloatPicXml(
 export async function placeSealHwpx(hwpxBuffer: ArrayBuffer, ops: SealOp[]): Promise<PlaceSealResult> {
   if (ops.length === 0) throw new KordocError("place_seal: 배치할 도장이 없습니다")
   const u8 = new Uint8Array(hwpxBuffer)
+  precheckZipSize(hwpxBuffer) // 파싱 경로와 같은 ZIP bomb 가드
   const zip = await JSZip.loadAsync(hwpxBuffer)
 
   const sectionPaths = Object.keys(zip.files)

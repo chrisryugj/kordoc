@@ -28,8 +28,15 @@ const PUA_BMP = {
 }
 const PUA_SUPP = {
   0xf003b: "↓", 0xf02ef: "·", 0xf0854: "《", 0xf0855: "》",
-  0xf00da: "▸", 0xf080f: "━", 0xf0827: "■",
+  0xf00da: "▸", 0xf080f: "━", 0xf0827: "■", 0xf03c5: "□",
+  // 한컴 PDF 대조로 확정된 표 (rhwp 44cabad9 verified_hancom_pua)
+  0xf012b: "(인)", 0xf02fc: "►", 0xf031c: "■", 0xf03a0: "↵",
+  0xf03ef: "한", 0xf03f0: "글", 0xf03f1: "과", 0xf03f2: "컴", 0xf03f3: "퓨", 0xf03f4: "터",
 }
+
+// 사각 안 숫자 ①~⑳ (rhwp b74b5098) — 파서가 텍스트 표면에서 표준 원문자로 옮긴다
+const BOXED_NUM_START = 0xf02b1
+const BOXED_NUM_END = 0xf02c4
 
 function mapPua(s) {
   if (!/[\uF020-\uF0FF\u{F0000}-\u{F09FF}]/u.test(s)) return s
@@ -37,7 +44,9 @@ function mapPua(s) {
   for (const ch of s) {
     const code = ch.codePointAt(0)
     if (code >= 0xf020 && code <= 0xf0ff) out += PUA_BMP[code - 0xf000] ?? ch
-    else if (code >= 0xf0000 && code <= 0xf09ff) out += PUA_SUPP[code] ?? ch
+    else if (code >= BOXED_NUM_START && code <= BOXED_NUM_END) {
+      out += String.fromCodePoint(0x2460 + (code - BOXED_NUM_START))
+    } else if (code >= 0xf0000 && code <= 0xf09ff) out += PUA_SUPP[code] ?? ch
     else out += ch
   }
   return out

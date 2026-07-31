@@ -84,6 +84,12 @@ program
         if (!result.success) {
           process.stderr.write(` FAIL\n`)
           process.stderr.write(`  → ${result.error}\n`)
+          // --format json 은 프로그램이 소비하는 출력이다 — 실패도 JSON 으로 내야
+          // 호출자가 원인 코드(ENCRYPTED 등)를 보고 분기할 수 있다. 사람이 읽는
+          // 포맷에서는 종전대로 stderr 안내만 남긴다.
+          if (opts.format === "json") {
+            process.stdout.write(JSON.stringify(result, null, 2) + "\n")
+          }
           process.exitCode = 1
           continue
         }

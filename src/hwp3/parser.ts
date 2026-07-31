@@ -22,7 +22,7 @@
 import { inflateRawSync } from "zlib"
 import type { DocumentMetadata, IRBlock, InternalParseResult, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError } from "../utils.js"
-import { JOHAB_UNMAPPED, decodeJohab } from "./johab.js"
+import { decodeJohabText } from "./johab.js"
 import { Reader } from "./reader.js"
 import { readHeader } from "./records.js"
 import { decryptHwp3Document, isEncryptedHwp3 } from "./crypto.js"
@@ -255,9 +255,9 @@ function parseCharStream(reader: Reader, charCount: number, ctx: ParaContext): s
       continue
     }
     if (ch >= 32) {
-      // 일반 hchar (ASCII < 0x80 영역도 u16 으로 들어옴)
-      const cp = decodeJohab(ch)
-      if (cp !== JOHAB_UNMAPPED) out += String.fromCodePoint(cp)
+      // 일반 hchar (ASCII < 0x80 영역도 u16 으로 들어옴).
+      // 아래아 음절은 자모 2~3개가 되므로 문자열 단위로 받는다
+      out += decodeJohabText(ch) ?? ""
       continue
     }
 

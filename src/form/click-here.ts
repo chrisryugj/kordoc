@@ -17,6 +17,7 @@ import { escapeXmlText, decodeXmlEntities } from "../roundtrip/source-map.js"
 import { applySplices, type SpliceEdit } from "../roundtrip/source-map.js"
 import { normalizeLabel, type ValueCursor } from "./match.js"
 import type { FormField } from "../types.js"
+import { precheckZipSize } from "../utils.js"
 
 /** 문서에서 발견한 누름틀 필드 */
 export interface ClickHereField {
@@ -199,6 +200,7 @@ export function fillClickHereInXml(
  * 표준 서식(기안문 등)이 요구하는 필드를 채우기 전에 조사하는 용도.
  */
 export async function extractClickHereFields(hwpxBuffer: ArrayBuffer): Promise<ClickHereField[]> {
+  precheckZipSize(hwpxBuffer) // 파싱 경로와 같은 ZIP bomb 가드
   const zip = await JSZip.loadAsync(hwpxBuffer)
   const sectionPaths = Object.keys(zip.files)
     .filter(name => /[Ss]ection\d+\.xml$/i.test(name))
