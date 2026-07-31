@@ -67,7 +67,9 @@ const BMP_SYMBOL_MAP: Record<number, string> = {
   0x59: "✡", // ✡
 }
 
-/** Supplementary PUA-A (U+F0000대) — 한컴 자체 영역 매핑 */
+/** Supplementary PUA-A (U+F0000대) — 한컴 자체 영역 매핑.
+ *  매핑 없는 코드는 호출부가 **삭제**하므로(sanitizeText) 누락은 곧 글자 증발이다.
+ *  범위 추정으로 채우지 말 것 — PUA는 글꼴별 사적 영역이라 한컴 PDF 대조로 확인된 것만 넣는다. */
 const SUPPLEMENTARY_MAP: Record<number, string> = {
   0xf003b: "↓", // ↓
   0xf02ef: "·", // ·
@@ -77,12 +79,33 @@ const SUPPLEMENTARY_MAP: Record<number, string> = {
   0xf080f: "━", // ━
   0xf0827: "■", // ■
   0xf03c5: "□", // □ 글머리 — HWP3→HWP5 한컴 변환본 보존 코드, 한컴오피스 표시값 (rhwp #1105)
+  // 아래 5종 — rhwp 44cabad9 verified_hancom_pua 표 (한컴 PDF 대조 확정)
+  0xf012b: "(인)", // 결재·서명란
+  0xf02fc: "►", // 2025 행정업무운영 편람 callout 글머리
+  0xf031c: "■", // 2025 행정업무운영 편람 목차 글머리
+  0xf03a0: "↵", // 하이퍼텍스트 안내문의 Enter 키 픽토그램
+  // 머리말 회사명 6자 (HWP3 johab 0x37C0~0x37C5의 HWP5/HWPX 변환본 대응 코드)
+  0xf03ef: "한",
+  0xf03f0: "글",
+  0xf03f1: "과",
+  0xf03f2: "컴",
+  0xf03f3: "퓨",
+  0xf03f4: "터",
 }
+
+/** 사각 안 숫자 ①~⑳ (U+F02B1~F02C4) — 한컴 전용 글리프.
+ *  렌더는 사각 글리프를 위해 원문 유지가 맞지만, 마크다운은 폰트 없는 소비자(RAG·grep)가
+ *  읽으므로 둘러싸인 숫자로 옮긴다 (rhwp b74b5098 / #3385 — 실문서에서 5건 유출 확인). */
+const BOXED_NUMBER_START = 0xf02b1
+const BOXED_NUMBER_END = 0xf02c4
 
 /** 단일 코드포인트 매핑 — 매핑 없으면 원본 유지 */
 function mapPuaChar(code: number): string | undefined {
   if (code >= 0xf020 && code <= 0xf0ff) {
     return BMP_SYMBOL_MAP[code - 0xf000]
+  }
+  if (code >= BOXED_NUMBER_START && code <= BOXED_NUMBER_END) {
+    return String.fromCodePoint(0x2460 + (code - BOXED_NUMBER_START))
   }
   if (code >= 0xf0000 && code <= 0xf09ff) {
     return SUPPLEMENTARY_MAP[code]
