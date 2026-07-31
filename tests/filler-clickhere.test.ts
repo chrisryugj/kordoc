@@ -183,7 +183,8 @@ describe("BUILTIN_TEMPLATES — 이름 해석과 자산 로드", () => {
       for (const [label, buf] of [["서식", readBuiltinTemplate(t)], ["fill 산출물", filled.buffer]] as const) {
         const zip = await JSZip.loadAsync(buf)
         for (const name of Object.keys(zip.files)) {
-          if (!name.endsWith(".xml")) continue
+          // .hpf(content.hpf)도 XML 필수 파트 — 확장자만 걸러내면 이쪽 오염을 놓친다
+          if (!name.endsWith(".xml") && !name.endsWith(".hpf")) continue
           const xml = await zip.file(name)!.async("text")
           const m = FORBIDDEN.exec(xml)
           assert.equal(m, null,

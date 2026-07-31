@@ -445,8 +445,10 @@ export function hmlToLatex(hmlEqStr: string): string {
   let tokens = s.split(" ")
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]
-    if (t in CONVERT_MAP) tokens[i] = CONVERT_MAP[t]
-    else if (t in MIDDLE_CONVERT_MAP) tokens[i] = MIDDLE_CONVERT_MAP[t]
+    // hasOwn 필수 — `in`은 Object.prototype 키(constructor·toString 등)에도 걸려
+    // 수식 토큰이 그 이름이면 함수가 치환값이 된다 (출력에 native code 주입/무음 삭제)
+    if (Object.hasOwn(CONVERT_MAP, t)) tokens[i] = CONVERT_MAP[t]
+    else if (Object.hasOwn(MIDDLE_CONVERT_MAP, t)) tokens[i] = MIDDLE_CONVERT_MAP[t]
     else {
       // EqEdit 리터럴 따옴표("int" 등 — 명령 해석 차단용) → \text{...}로 복원.
       // 생성기(equation-generate.ts)의 \text→"..." 출력과 고정점을 이룬다.

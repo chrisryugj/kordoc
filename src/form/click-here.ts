@@ -182,7 +182,7 @@ export function fillClickHereInXml(
     const replacement = valueXml(value, region.prefix)
     const current = xml.slice(region.start, region.end)
     matchedKeys.add(key)
-    filled.push({ label: region.name, value, row: -1, col: -1, key })
+    filled.push({ label: region.name, value, row: -1, col: -1, key, source: "clickhere" })
     if (current === replacement) continue // 이미 같은 내용 — 바이트 보존
     splices.push({ start: region.start, end: region.end, replacement })
   }

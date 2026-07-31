@@ -441,6 +441,10 @@ export interface FormField {
   col: number
   /** 매칭된 입력 키(정규화) — 모호 라벨 거부 가드(fillWithUniqueGuard)의 집계 기준 */
   key?: string
+  /** 매칭 근거. `clickhere`(누름틀 name 정확 일치)는 서식 제작자가 선언한 계약이라
+   *  여러 곳에 같은 이름이 있어도 "모호"가 아니다 — 모호 라벨 거부 집계에서 제외된다.
+   *  (머리말·본문에 같은 이름의 누름틀을 두는 서식이 실제로 있다) */
+  source?: "clickhere"
 }
 
 export interface FormResult {

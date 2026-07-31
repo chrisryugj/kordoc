@@ -52,6 +52,14 @@ export function elementChildren(parent: Element): Element[] {
   return out
 }
 
+/** 텍스트를 담는 노드 타입 — TEXT_NODE(3)과 CDATA_SECTION_NODE(4).
+ *  CDATA 를 빠뜨리면 `<hp:t><![CDATA[본문]]></hp:t>` 로 저장된 문서의 텍스트가
+ *  경고 없이 통째로 사라진다 (rhwp f4c7de75 와 같은 결함). 한컴 저장본은 CDATA 를
+ *  쓰지 않지만 제3자 도구 산출물·특수문자 다수 문단에서는 유효한 XML 표현이다. */
+function isTextNode(node: Node): boolean {
+  return node.nodeType === 3 || node.nodeType === 4
+}
+
 /** 노드 내 모든 텍스트를 재귀적으로 추출 (요소 단위 trim — hwpx 기존 시맨틱).
  *  MAX_XML_DEPTH 가드 — 악성 심층 XML 스택 오버플로 방지 */
 export function extractTextFromNode(node: Node, depth: number = 0): string {
@@ -61,7 +69,7 @@ export function extractTextFromNode(node: Node, depth: number = 0): string {
   if (!children) return result
   for (let i = 0; i < children.length; i++) {
     const child = children[i]
-    if (child.nodeType === 3) result += child.textContent || ""
+    if (isTextNode(child)) result += child.textContent || ""
     else if (child.nodeType === 1) result += extractTextFromNode(child, depth + 1)
   }
   return result.trim()
@@ -75,7 +83,7 @@ export function rawTextContent(node: Node, depth: number = 0): string {
   const parts: string[] = []
   for (let i = 0; i < children.length; i++) {
     const child = children[i]
-    if (child.nodeType === 3) parts.push(child.nodeValue || "")
+    if (isTextNode(child)) parts.push(child.nodeValue || "")
     else if (child.nodeType === 1) parts.push(rawTextContent(child, depth + 1))
   }
   return parts.join("")

@@ -871,7 +871,8 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
     if (!children) return
     for (let i = 0; i < children.length; i++) {
       const child = children[i] as Element
-      if (child.nodeType === 3) {
+      // CDATA(4)도 텍스트 — 빠뜨리면 CDATA로 저장된 문단이 통째로 사라진다 (shared/xml.ts isTextNode 참조)
+      if (child.nodeType === 3 || child.nodeType === 4) {
         const t = child.textContent || ""
         if (isInDeletedRange(ctx)) {
           if (t && ctx && !ctx.shared.track.warned) {
@@ -1103,7 +1104,7 @@ function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, requireMix
         const tkids = rc.childNodes
         for (let k = 0; k < (tkids?.length ?? 0); k++) {
           const tk = tkids![k]
-          if (tk.nodeType === 3) text += tk.textContent || ""
+          if (tk.nodeType === 3 || tk.nodeType === 4) text += tk.textContent || ""
           else if (tk.nodeType === 1) return null // tab/br 등 — 평문 경로
         }
       } else if (rtag === "secPr" || rtag === "colPr") {

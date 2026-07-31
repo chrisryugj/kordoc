@@ -42,11 +42,12 @@ const STRUCTURAL_FOLD = new Set(["over", "root", "of"])
 /** 어절 단위 사전 정규화 — 정본 키 우선, 없으면 소문자 별칭/정본 키로 폴드 */
 function normalizeWords(input: string): string {
   return input.replace(/(?<![\\A-Za-z0-9])([A-Za-z][A-Za-z0-9]*)(?![A-Za-z0-9])/g, word => {
-    if (word in CONVERT_MAP || word in MIDDLE_CONVERT_MAP) return word
+    // hasOwn 필수 — `in`은 Object.prototype 키에도 걸린다 (hwpx/equation.ts 동일 주석 참조)
+    if (Object.hasOwn(CONVERT_MAP, word) || Object.hasOwn(MIDDLE_CONVERT_MAP, word)) return word
     const lower = word.toLowerCase()
     if (STRUCTURAL_FOLD.has(lower)) return lower
-    if (lower in WORD_ALIASES) return WORD_ALIASES[lower]
-    if (lower !== word && (lower in CONVERT_MAP || lower in MIDDLE_CONVERT_MAP)) return lower
+    if (Object.hasOwn(WORD_ALIASES, lower)) return WORD_ALIASES[lower]
+    if (lower !== word && (Object.hasOwn(CONVERT_MAP, lower) || Object.hasOwn(MIDDLE_CONVERT_MAP, lower))) return lower
     return word
   })
 }

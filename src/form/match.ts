@@ -453,7 +453,11 @@ export async function fillWithUniqueGuard<R extends { filled: Array<{ key?: stri
   const first = await run(values)
   const counts = new Map<string, number>()
   for (const f of first.filled) {
-    if (f.key) counts.set(f.key, (counts.get(f.key) ?? 0) + 1)
+    // 누름틀(clickhere)은 이름 정확 일치라 다중 등장이 곧 서식의 설계다 — 집계에서 뺀다.
+    // 세지 않으면 동명 누름틀 2곳짜리 서식이 통째로 rejected 되어 한 곳도 안 채워진다.
+    if (f.key && (f as { source?: string }).source !== "clickhere") {
+      counts.set(f.key, (counts.get(f.key) ?? 0) + 1)
+    }
   }
   const isArrayValue = (normKey: string): boolean => {
     for (const [label, raw] of Object.entries(values)) {

@@ -95,6 +95,10 @@ function decodeHwp3Extra(ch: number): number {
   if (ch >= 0x3590 && ch <= 0x3599) return 0x2160 + (ch - 0x3590)
   // 원문자 ①~⑩
   if (ch >= 0x36e7 && ch <= 0x36f0) return 0x2460 + (ch - 0x36e7)
+  // 머리말 회사명 그래픽 글자 "한글과컴퓨터" 6자 (rhwp 44cabad9 — HWP3 원본 0x37C0~0x37C5,
+  // 같은 문서의 HWPX 변환본 U+F03EF~F03F4, 한컴 PDF 표시값 3자 대조로 확정).
+  // rhwp 는 PUA 를 보존하고 렌더러가 표시값으로 펼치지만, kordoc 은 표시값 직행 정책.
+  if (ch >= 0x37c0 && ch <= 0x37c5) return "한글과컴퓨터".codePointAt(ch - 0x37c0)!
   switch (ch) {
     case 0x0081: return 0x201c // 왼쪽 큰따옴표
     case 0x0082: return 0x201d // 오른쪽 큰따옴표
@@ -107,6 +111,7 @@ function decodeHwp3Extra(ch: number): number {
     case 0x35e1: return 0x2500 // ─ 상자 그리기 가로선
     case 0x3479: return 0x25b7 // ▷
     case 0x347a: return 0x25b6 // ▶
+    case 0x2f67: return 0x25b8 // ▸ 표 셀 글머리표 (rhwp 16db8260 — HWP5 변환본·한컴 PDF 대조)
     default: return JOHAB_UNMAPPED
   }
 }

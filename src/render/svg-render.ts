@@ -167,7 +167,7 @@ function pushTextSlots(t: Element, chars: ParaChar[], prId: string | null, depth
   if (!kids) return
   for (let i = 0; i < kids.length; i++) {
     const c = kids[i]
-    if (c.nodeType === 3) {
+    if (c.nodeType === 3 || c.nodeType === 4) {  // CDATA(4) 포함 — 누락 시 해당 런이 렌더에서 사라진다
       for (const cp of c.textContent ?? "") {
         chars.push({ ch: cp, prId })
         if (cp.length === 2) chars.push({ ch: "", prId }) // UTF-16 두 번째 유닛 슬롯
