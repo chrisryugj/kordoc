@@ -351,9 +351,10 @@ function parseTableLike(reader: Reader, ctx: ParaContext): string {
   // 84 byte info_buf
   const info = reader.readBytes(84)
   const cellCount = info.readUInt16LE(80) || 1
-  // 방어: cellCount 가 비정상적으로 크면 stream 어긋남으로 간주, 추가 처리 포기.
-  // 한 표에 cell 256 개 초과는 사실상 없음 (HWP3 spec 상 행/열 한계도 그 미만).
-  if (cellCount > 256) {
+  // 방어: 셀 정보(27 byte × n)가 잔여 스트림보다 크면 손상된 헤더로 간주.
+  // 종전의 고정 상한 256 은 실존 문서를 죽였다 — rhwp samples/hwp3-sample16 에
+  // 367 셀 표가 실재한다 (rhwp 는 개수 상한 없이 버퍼 크기 캡만 둔다).
+  if (27 * cellCount > reader.remaining()) {
     ctx.warnings.push({
       code: "PARTIAL_PARSE",
       message: `HWP3 표 cell_count=${cellCount} 비정상 — 표 본문 추출 포기`,
@@ -373,9 +374,21 @@ function parseTableLike(reader: Reader, ctx: ParaContext): string {
   return "" // 표 자리에는 빈 문자열 (셀 텍스트는 이미 ctx.paragraphs 에 포함됨)
 }
 
-/** ch=11 그림 — info 348 byte + n_ext bytes (info[0..4] 가 n_ext). */
-function parsePicture(reader: Reader, _ctx: ParaContext): void {
+/**
+ * ch=11 그림 — info 348 byte + n_ext bytes (info[0..4] 가 n_ext) + 캡션 paragraph list.
+ *
+ * spec §10.7 그림: 식별 정보(8) → 그림 정보(348+n) → **캡션 문단 리스트**.
+ * 캡션이 없어도 빈 문단 sentinel(43 byte)이 항상 뒤따른다 (rhwp 의 ch==11 분기도
+ * pic_type 과 무관하게 무조건 캡션 리스트를 파싱한다 — 표(ch=10)와 같은 계약).
+ *
+ * 종전엔 이 리스트를 소비하지 않아 그림 하나당 최소 43 byte 가 어긋났고, 어긋난
+ * 자리가 char_count=0 으로 읽히면 문단 리스트가 "정상 종료"로 판정돼 **경고 없이**
+ * 본문 나머지를 통째로 버렸다 (rhwp samples/hwp3-sample10: 본문 4MB 중 99.7% 유실).
+ */
+function parsePicture(reader: Reader, ctx: ParaContext): void {
   const info = reader.readBytes(348)
   const nExt = info.readUInt32LE(0)
   if (nExt > 0 && nExt < 100 * 1024 * 1024) reader.skip(nExt)
+  // 캡션 텍스트는 표 셀과 같이 ctx 에 별도 paragraph 로 수집된다
+  parseParagraphList(reader, ctx)
 }

@@ -220,3 +220,75 @@ describe("회귀 rhwp-6: 조합형 무효 종성 인덱스 (#2924)", () => {
     assert.equal(decodeJohab(johab(2, 3, 2)), 0xac01) // '각'
   })
 })
+
+describe("회귀 rhwp-8: 그림(ch=11) 뒤 캡션 문단 리스트 소비 (spec §10.7)", () => {
+  // 스펙 §10.7 그림 구조 = 식별정보(8) → 그림정보(348+n) → **캡션 문단 리스트**.
+  // 캡션이 없어도 빈 문단 sentinel(43 byte)이 항상 뒤따른다. 이걸 안 읽으면 그림
+  // 하나당 최소 43 byte 가 어긋나고, 어긋난 자리가 char_count=0 으로 읽히면
+  // 리스트가 "정상 종료"로 판정돼 **경고 없이** 본문 나머지를 통째로 버린다.
+  // (실측: rhwp samples/hwp3-sample10 본문 4MB 중 99.7% 무증상 유실)
+  it("캡션 없는 그림 뒤 텍스트가 보존된다", () => {
+    const stream = Buffer.concat([
+      u16seq([A, 11]),
+      objHeader(11, 0),
+      Buffer.alloc(348), // 그림 정보 — 선두 u32 = nExt = 0
+      Buffer.alloc(43), // 캡션 리스트: 빈 문단 sentinel
+      u16seq([B]),
+    ])
+    const r = parseHwp3Document(buildHwp3(buildBody(stream, 6)))
+    assert.equal(r.markdown, "AB")
+    assert.ok(!r.warnings?.some(w => w.code === "PARTIAL_PARSE"), "desync 없이 파싱돼야 함")
+  })
+
+  it("캡션 텍스트도 결과에 수집된다", () => {
+    const caption = Buffer.concat([
+      (() => {
+        const h = Buffer.alloc(43)
+        h[0] = 1 // followPrev=1
+        h.writeUInt16LE(1, 1) // charCount=1
+        return h
+      })(),
+      u16seq(["C".charCodeAt(0)]),
+      Buffer.alloc(43), // 캡션 리스트 종료 sentinel
+    ])
+    const stream = Buffer.concat([
+      u16seq([A, 11]),
+      objHeader(11, 0),
+      Buffer.alloc(348),
+      caption,
+      u16seq([B]),
+    ])
+    const r = parseHwp3Document(buildHwp3(buildBody(stream, 6)))
+    assert.match(r.markdown, /C/)
+    assert.match(r.markdown, /AB/)
+  })
+})
+
+describe("회귀 rhwp-9: 표 cell_count 고정 상한(256) 제거", () => {
+  // 종전 `cellCount > 256` 가드는 실존 문서를 죽였다 — rhwp samples/hwp3-sample16 에
+  // 367 셀 표가 실재한다. rhwp 는 개수 상한 없이 버퍼 크기 캡만 둔다.
+  it("300 셀 표 뒤 텍스트가 보존된다", () => {
+    const cells = 300
+    const info = Buffer.alloc(84)
+    info.writeUInt16LE(cells, 80)
+    const stream = Buffer.concat([
+      u16seq([A, 10]),
+      objHeader(10, 0),
+      info,
+      Buffer.alloc(27 * cells), // 셀 정보
+      Buffer.concat(Array.from({ length: cells + 1 }, () => Buffer.alloc(43))), // 셀 리스트 n개 + 캡션
+      u16seq([B]),
+    ])
+    const r = parseHwp3Document(buildHwp3(buildBody(stream, 6)))
+    assert.equal(r.markdown, "AB")
+    assert.ok(!r.warnings?.some(w => w.code === "PARTIAL_PARSE"), "정상 표를 죽이면 안 됨")
+  })
+
+  it("잔여 스트림을 넘는 cell_count 는 여전히 거부한다", () => {
+    const info = Buffer.alloc(84)
+    info.writeUInt16LE(60000, 80) // 27 × 60000 = 1.6MB ≫ 잔여
+    const stream = Buffer.concat([u16seq([A, 10]), objHeader(10, 0), info, u16seq([B])])
+    const r = parseHwp3Document(buildHwp3(buildBody(stream, 6)))
+    assert.ok(r.warnings?.some(w => w.code === "PARTIAL_PARSE"), "손상 헤더는 걸러야 함")
+  })
+})
