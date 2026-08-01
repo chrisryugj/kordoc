@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.4.0] - 2026-08-01
+
+비밀번호 문서 열기(#59) 신설 + "성공했는데 글자가 없다"류 무증상 텍스트 유실 일괄 수리
+(HWP3 캡션 desync·CDATA·PUA/johab 미매핑·아래아) + npm 배포본 라이선스 고지 복원.
+
+### Added
+
+- **🔑 비밀번호 문서 열기 (#59)**: 열기 암호가 걸린 **HWPX·HWP3·HWP5**를
+  CLI `--password` / API·MCP `password`로 엽니다. 세 포맷의 암호화가 전부 다름 —
+  HWPX는 ODF 표준(AES-256-CBC + PBKDF2, 단 한컴은 PKCS#7 패딩을 안 붙이는 변형),
+  HWP3는 단일 DES-ECB(Node/OpenSSL3에 단일 DES가 없어 `des-ede3-ecb` 동일키 우회,
+  rhwp known-answer로 키 유도 고정), HWP5는 EncryptVersion 4의 비트 단위 CFB.
+  틀린 비밀번호는 성공으로 위장하지 않고 `ENCRYPTED`로 실패. HWPX 복호 결과는 평문
+  대조본과 바이트 동일 실측. (한컴 DRM 문서보안은 별개, @jangster77 제보)
+- **CLI `--format json`이 실패도 JSON으로**: stdout에 원인 코드(`ENCRYPTED` 등)를
+  담아 프로그램 소비자가 분기 가능 — 암호 문서에서 비밀번호 입력을 띄우는 류의 연동용.
+  사람이 읽는 포맷은 종전대로 stderr 안내.
+
+### Fixed
+
+- **HWP3 그림 캡션 리스트 미소비 — 본문 무증상 대량 유실**: 그림(ch=11) 뒤 캡션 문단
+  리스트(캡션이 없어도 43B sentinel이 항상 존재, 스펙 §10.7)를 읽지 않아 그림당
+  스트림이 어긋났고, 어긋난 자리가 `char_count=0`으로 읽히면 "정상 종료"로 판정돼
+  **경고 0건**으로 나머지를 통째 버렸습니다 — 945KB 문서가 0자. rhwp 정답지 대조
+  6종 복구(최대 1,003,199자, 94.8~99.7%). 표 cell_count 고정 상한 256도 실존 문서
+  (367셀 표)를 죽여 잔여 스트림 기준 판정으로 교체.
+- **CDATA 텍스트 소실**: `<hp:t><![CDATA[본문]]></hp:t>`를 경고 없이 버림 — 텍스트
+  수집이 TEXT_NODE만 보고 CDATA_SECTION_NODE를 흘렸고, 공용 XML 헬퍼라
+  **HWPX·HWPML·DOCX 세 포맷**에 걸침. 본문 walk·스타일 span·SVG 렌더까지 5개소 수리.
+- **매핑 누락 = 글자 증발 — 한컴 검증 PUA 11종 + HWP3 johab 2종**: 결재란
+  `(인)`(U+F012B), 2025 행정업무운영 편람 글머리표 ►·■, 사각 안 숫자 ①~⑳,
+  머리말 "한글과컴퓨터" 6자, 표 셀 글머리표 ▸ — rhwp가 한컴 PDF 대조로 확정한
+  표만 반영(인접 코드 범위 추정 금지: PUA는 대조 없이 채우면 없는 뜻을 지어냄).
+- **HWP3 아래아(옛한글) 음절 소실**: 완성형에 대응 음절이 없는 hchar('ᄒᆞᆫ글 97'의
+  첫 음절 등)를 조용히 건너뛰던 것을 한컴 HWP5/HWPX 변환본과 같은 자모열
+  (초성 + ᆞ U+119E + 종성)로 보존 — 같은 문서의 HWPX 경로 출력과 일치.
+- **빈 셀 채우기가 엔티티 원문을 지우던 것 (#54 잔존분)**: IR상 빈 셀에
+  엔티티(`&#32;`)·태그가 있으면 통째 교체 분기로 떨어져 IR에 안 잡힌 원문이 소실 —
+  조용한 성공 대신 skip하는 fail-closed 계약으로 통일.
+- **누름틀 동명 다중등장 + `require_unique`**: 머리말·본문에 같은 이름의 누름틀이
+  있으면 한 곳도 채우지 않고 전부 rejected되던 것.
+- **수식 토큰 프로토타입 체인 오염**: 토큰이 `constructor`·`toString`이면 출력이
+  오염되던 결함.
+- **fill 계열 ZIP 폭탄 가드**: `fillHwpx`·`extractClickHereFields`·`placeSealHwpx`가
+  `precheckZipSize` 없이 JSZip에 직행 — parse를 안 거치는 MCP `fill_form`·라이브러리
+  직접 호출에서 무제한 팽창이 가능했던 것을 차단.
+
+### License
+
+- **npm 배포본 라이선스 고지 포함**: 배포 tarball `files`가 dist·templates뿐이라
+  NOTICE·THIRD_PARTY가 npm 수령자에게 전달되지 않던 것을 수리 — Apache-2.0·
+  claw-hwp(MIT) 전문 동봉, claw-hwp 저작권자를 upstream 원문과 일치시키고,
+  `scripts/check-notices.mjs`를 prepublishOnly에 배선해 재발 시 발행이 멈춥니다.
+
+### 검증
+
+테스트 1,387 pass / 0 fail, HWPX 게이트 PASS. 벤치 코퍼스 확충(hwpx 85→291),
+채점 미러(`bench/lib/normalize.mjs`) PUA 정합 복원(phantom 0.000031→0.000007),
+반복 문자 정렬 거짓 미스 3건은 `corpus/known-false-miss/`로 분리 보존.
+
 ## [4.3.1] - 2026-07-30
 
 ### Fixed
