@@ -38,7 +38,8 @@ export interface OcrItem {
   confidence: number
 }
 
-/** det 입력 긴 변 (공식 resize_long) */
+/** det 입력 긴 변 (공식 resize_long) — 1920 보존 실험은 recall Δ median +0.04pp에
+ *  속도 -25%로 기각 (bench/ocr-accuracy.mjs 실측, 2026-08-02) */
 const DET_LONG_SIDE = 960
 const DET_THRESH = 0.3
 const DET_BOX_THRESH = 0.6

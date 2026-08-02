@@ -52,8 +52,10 @@ npx -y kordoc@^4 사업계획서.hwp -o 사업계획서.md
 
 - 병합·중첩 표는 GFM 으로 표현이 안 되므로 HTML `<table>`(colspan/rowspan)로 나온다 — 그대로 다루면 된다.
 - 수식은 `$...$` / `$$...$$` LaTeX 로 나온다.
-- PDF 는 텍스트층 품질 신호를 같이 계산한다 — 추출 텍스트가 깨져 보이면(`needsOcr`) OCR 이 필요한
-  스캔/손상 PDF 라는 뜻이니 사용자에게 알린다 (kordoc 은 OCR 을 내장하지 않는다).
+- PDF 는 텍스트층 품질 신호를 같이 계산한다 — 추출 텍스트가 깨져 보이면(`needsOcr`) 스캔/손상
+  PDF 라는 뜻이니 `--ocr`(CLI) / `ocr: true`(MCP)로 재시도한다 — 내장 OCR(PP-OCRv5 korean,
+  로컬 추론·API 키 불필요, 첫 사용 시 모델 ~18MB 자동 다운로드)이 깨진 페이지만 다시 읽는다.
+  이미지 파일(PNG/JPG/WebP)은 플래그 없이 자동 OCR.
 - 대용량·다수 파일은 `-d 디렉토리` 모드로 한 번에.
 
 ### 2) 공문서 생성 — Markdown 규약

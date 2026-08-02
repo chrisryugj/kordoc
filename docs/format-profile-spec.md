@@ -32,11 +32,12 @@
 
 ```jsonc
 {
-  "schema_version": "0.2.0",
+  "schema_version": "0.3.0",
   "tables": [
     {
       "table_index": 0,          // 문서 내 표 등장 순서 (0-기준, top-level 표만)
       "anchor_text": "구분",      // 첫 셀(0,0) 텍스트 정규화 앵커 (0.2.0, §3 매칭 1순위 키)
+      "anchor_row": ["구분", "내용", "비고"],  // 첫 행 전체 지문 (0.3.0 — (0,0)이 빈 크로스탭 매칭용)
       "rows": 3, "cols": 3,
       "width_hwpunit": "49042",  // <hp:tbl><hp:sz width>
       "col_widths_hwpunit": ["16819", "15970", "16253"],  // 길이가 cols와 일치해야 적용(§6)
@@ -58,7 +59,8 @@
       },
       "used_char_prs": {
         "22": { "height_hwpunit": "1200", "textColor": "#000000",
-                "bold": false, "italic": false, "underline": false, "fontRef_hangul": "2" }
+                "bold": false, "italic": false, "underline": false, "fontRef_hangul": "2",
+                "fontName_hangul": "함초롬바탕" }  // 글꼴 이름 (0.3.0 — 원본 글꼴 목록 없이 재현)
       }
     }
   ]

@@ -23,6 +23,9 @@ import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
 
 /** 허용 파일 확장자 */
 export const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx"])
+/** 파싱 계열 도구(parse_*·detect_format) 입력 확장자 — 문서 + 이미지(자동 OCR).
+ *  이미지 3종은 detect.ts 매직바이트 지원 범위와 동일. 쓰기·패치 계열은 ALLOWED_EXTENSIONS 유지 */
+export const PARSE_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, ".png", ".jpg", ".jpeg", ".webp"])
 /** 도장/서명 이미지 허용 확장자 (place_seal image_path) */
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp"])
 /** 서식 프로필 허용 확장자 (generate_document profile_path) */
@@ -164,7 +167,7 @@ server.tool(
   },
   async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, password }) => {
     try {
-      const { buffer, resolved } = await readValidatedFile(file_path)
+      const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
       const format = detectFormat(buffer)
 
       if (format === "unknown") {
@@ -246,17 +249,17 @@ server.tool(
   },
   async ({ file_path }) => {
     try {
-      const resolved = safePath(file_path)
+      const resolved = safePath(file_path, PARSE_EXTENSIONS)
       let format: string = detectFormatFromHeader(resolved)
       // 16바이트 헤더로는 모든 ZIP이 'hwpx'로 나온다 — 파일을 읽어 내부 구조로
       // hwpx/xlsx/docx 세분화 (parse_metadata와 판정 일치, v4.0.6)
       // 크기 상한은 parse_document와 동일(500MB) — 50MB 초과 ZIP 감지 실패 방지
       if (format === "hwpx") {
-        const { buffer } = await readValidatedFile(file_path)
+        const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
         format = await detectZipFormat(buffer)
       } else if (format === "hwp") {
         // OLE2 도 동일하게 세분화 — .xls(Excel 97-2003)를 'hwp'로 보고하던 누락 (parse()와 판정 일치)
-        const { buffer } = await readValidatedFile(file_path)
+        const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
         const ole2Format = detectOle2Format(buffer)
         if (ole2Format !== "unknown") format = ole2Format
       }
@@ -282,7 +285,7 @@ server.tool(
   },
   async ({ file_path }) => {
     try {
-      const resolved = safePath(file_path)
+      const resolved = safePath(file_path, PARSE_EXTENSIONS)
       const format = detectFormatFromHeader(resolved)
 
       if (format === "unknown") {
@@ -293,7 +296,7 @@ server.tool(
       }
 
       // metadata 전용 크기 제한 (50MB)
-      const { buffer } = await readValidatedFile(file_path, MAX_METADATA_FILE_SIZE)
+      const { buffer } = await readValidatedFile(file_path, MAX_METADATA_FILE_SIZE, PARSE_EXTENSIONS)
 
       let metadata
       // ZIP(hwpx→xlsx/docx)·OLE2(hwp→xls) 모두 내부 구조로 세분화 — parse()와 판정 일치
@@ -358,8 +361,8 @@ server.tool(
   },
   async ({ file_path, pages }) => {
     try {
-      const resolved = safePath(file_path)
-      const { buffer } = await readValidatedFile(file_path)
+      const resolved = safePath(file_path, PARSE_EXTENSIONS)
+      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
       const format = detectFormat(buffer)
 
       if (format === "unknown") {
@@ -408,7 +411,7 @@ server.tool(
   },
   async ({ file_path, table_index }) => {
     try {
-      const { buffer } = await readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
       const format = detectFormat(buffer)
 
       if (format === "unknown") {
@@ -969,7 +972,7 @@ server.tool(
   },
   async ({ file_path, granularity, include_table_cells }) => {
     try {
-      const { buffer } = await readValidatedFile(file_path)
+      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
       const parsed = await parse(buffer, { filePath: file_path })
       if (!parsed.success) {
         return { content: [{ type: "text", text: `파싱 실패: ${parsed.error}` }], isError: true }

@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.4.1] - 2026-08-02
+
+문서 현행화 + MCP 이미지 입력 수리 + OCR 정확도 첫 실측.
+
+### Fixed
+
+- **MCP 파싱 도구의 이미지 입력 차단 해제**: `parse_document` 설명은 이미지(PNG/JPG/WebP)
+  지원을 안내하는데 확장자 allowlist가 이미지를 거부해 **MCP 경로에서만** 막혀 있었다
+  (CLI·라이브러리는 정상). 파싱 계열 6종(`parse_document`·`parse_pages`·`parse_table`·
+  `parse_chunks`·`parse_metadata`·`detect_format`)에 `PARSE_EXTENSIONS`(문서 + png/jpg/
+  jpeg/webp) 적용 — 쓰기·패치 계열은 종전 allowlist 유지. MCP 실호출 재현·수리 확인.
+
+### Added
+
+- **`bench/ocr-accuracy.mjs` — 내장 OCR 정확도 실측 신설**: 코퍼스 PDF의 클린 텍스트층을
+  정답 삼아 같은 페이지의 216dpi 렌더를 강제 OCR(`ocr:"force"`)로 대조. 41문서 82페이지
+  실측(M-series CPU) —
+  | 지표 | 값 |
+  |---|---|
+  | 문자 recall (micro) | **90.0%** (래스터에 글꼴이 안 그려진 1건 제외 시 94.0%) |
+  | 문자 precision (micro) | **95.1%** |
+  | 한글 음절 recall | median **99.9%**, 37/41 문서 ≥95% |
+  | CER | micro 25.5% · median 17.5% (읽기 순서 차이에 민감) |
+  | 표 구조 (텍스트층 표 65개 대비) | 매칭 63.1% · cellF1 0.50 |
+  | 속도 | **0.96s/페이지** |
+  주의: 정답이 클린 렌더라 실스캔 노이즈·스큐는 미반영(상한치). 측정 함정 2종을 함께
+  발견해 채점에 반영 — ① 목차 점선 리더(`·····`)는 텍스트층에만 있는 장식이라 대조 제외
+  ② 비내장 글꼴(HY견명조 등)은 pdfium 래스터에 한글이 아예 안 그려져 OCR 아닌 렌더
+  충실도를 재게 됨(한글 recall 0% 1건은 이 경우). det 입력 1920 보존 실험은 recall Δ
+  median +0.04pp·속도 -25%로 기각 — 현행 960 유지.
+
+### Docs
+
+- 플러그인 스킬의 "OCR을 내장하지 않는다" 문구 현행화(v4.2.0 내장 이후 미갱신) —
+  `--ocr`/`ocr:true` 재시도 안내로 교체. README v2.9.0 절에 내장 OCR 이후 상황 주석,
+  표 복원 소개 문구를 실측치(HWPX 1,673표 무손실·PDF 대조 완전일치 65.2%) 기반으로 교체,
+  서식 프로필 스펙 예시를 0.3.0(`anchor_row`·`fontName_hangul`)으로 갱신.
+
 ## [4.4.0] - 2026-08-01
 
 비밀번호 문서 열기(#59) 신설 + "성공했는데 글자가 없다"류 무증상 텍스트 유실 일괄 수리
