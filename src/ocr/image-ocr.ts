@@ -49,7 +49,15 @@ export async function parseImageDocument(
     }
   })
   const engine = await getOcrEngine()
-  const items = await engine.recognizePage(data, width, height)
+  const stats = { droppedLowConf: 0 }
+  const items = await engine.recognizePage(data, width, height, stats)
+  if (stats.droppedLowConf > 0) {
+    warnings.push({
+      page: 1,
+      message: `저신뢰 OCR 라인 ${stats.droppedLowConf}개 폐기 (인식 결손 가능)`,
+      code: "OCR_LOW_CONF",
+    })
+  }
   if (items.length === 0) {
     warnings.push({ page: 1, message: "이미지에서 텍스트를 인식하지 못했습니다", code: "OCR_FAILED" })
     return { blocks: [], warnings }

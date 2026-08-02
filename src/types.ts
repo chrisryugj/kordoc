@@ -250,6 +250,7 @@ export type WarningCode =
   | "NEEDS_OCR"
   | "OCR_FAILED"
   | "OCR_APPLIED"
+  | "OCR_LOW_CONF"
   | "COM_EMPTY"
   | "DRM_COM_FALLBACK"
 

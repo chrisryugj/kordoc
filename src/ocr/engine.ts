@@ -129,14 +129,22 @@ export class OcrEngine {
   /**
    * 페이지 RGBA 픽셀 → 텍스트 라인 인식.
    * 반환 좌표는 입력 픽셀 기준. 라인은 위→아래, 좌→우 정렬.
+   * @param stats 저신뢰(conf<0.5) 폐기 라인 카운트 출력 — 종전엔 무음 폐기라 관측 불가
    */
-  async recognizePage(rgba: Uint8Array, width: number, height: number): Promise<OcrItem[]> {
+  async recognizePage(
+    rgba: Uint8Array,
+    width: number,
+    height: number,
+    stats?: { droppedLowConf: number },
+  ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
     const boxes = await this.detect(rgba, width, height)
     const items: OcrItem[] = []
     for (const b of boxes) {
       const r = await this.recognizeLine(rgba, width, height, b)
-      if (r && r.confidence >= TEXT_SCORE && r.text.trim()) items.push(r)
+      if (!r || !r.text.trim()) continue
+      if (r.confidence >= TEXT_SCORE) items.push(r)
+      else if (stats) stats.droppedLowConf++
     }
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items

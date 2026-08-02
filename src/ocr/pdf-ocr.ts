@@ -103,7 +103,15 @@ async function ocrOnePage(
   const rgba = bgraToRgba(bgra)
 
   if (mode === "builtin") {
-    const items = await engine!.recognizePage(rgba, rw, rh)
+    const stats = { droppedLowConf: 0 }
+    const items = await engine!.recognizePage(rgba, rw, rh, stats)
+    if (stats.droppedLowConf > 0) {
+      warnings.push({
+        page: pageNo,
+        message: `페이지 ${pageNo}: 저신뢰 OCR 라인 ${stats.droppedLowConf}개 폐기 (인식 결손 가능)`,
+        code: "OCR_LOW_CONF",
+      })
+    }
     // 래스터에서 표 괘선 감지 — 스캔본 병합셀 서식도 선 기반 표 파이프라인을 탄다
     const scale = rh / pdfH
     const ruling = detectRulingLines(rgba, rw, rh, scale)
