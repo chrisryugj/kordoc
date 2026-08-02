@@ -58,9 +58,12 @@ export const GATES = {
     orderDoc: 1, orderAvg: 1,
     eqPresence: 1, footnotePresence: 1, headerViolations: 0,
   },
-  // PDF 커버리지 0.99914 실측(0.99857→, 첨자·중복글리프·헤더오검출 수리) — 잔여는
-  // 구조 해석 충돌 영역(과소분할 일정표·서식 rowspan 그리드)이라 0.999로 잠금
-  pdf: { coverage: 0.999 },
+  // PDF 커버리지 재기준 0.9955 (2026-08-02): 구 코퍼스 실측 0.99914에 0.999로 잠갔으나,
+  // OCR 정확도 벤치용 신규 pdf 41문서(예산서·성과계획서 등 밀집 표 문서) 편입으로 모수가
+  // 바뀌어 micro 0.99593 실측 — 코드 회귀 아님(파서 무변경 상태에서 확인, 하락분 전원이
+  // 신규 문서). 새 모수의 실측치 바로 아래로 다시 잠근다(래칫 유지). 잔여는 종전과 같은
+  // 구조 해석 충돌 영역 + 신규 문서의 각주 별표·성과지표 표(eval-perf 목표치/측정산식 열).
+  pdf: { coverage: 0.9955 },
   // HWP5 2차 트랙 (같은 newsId의 hwp↔hwpx 쌍 상호 정렬) — v3.0에서 정식 게이트 승격
   hwp: { pairSimilarity: 1, pairCoverage: 1 },
 }

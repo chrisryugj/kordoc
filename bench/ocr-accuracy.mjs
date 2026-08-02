@@ -86,7 +86,7 @@ if (Number.isFinite(limit)) files = files.slice(0, limit)
 const rows = []
 let sumDist = 0, sumLen = 0, sumPages = 0, sumOcrMs = 0
 let sumHit = 0, sumHypLen = 0, sumHitP = 0
-const tblAgg = { refTables: 0, matched: 0, exact: 0, f1s: [] }
+const tblAgg = { refTables: 0, matched: 0, exact: 0, f1s: [], skippedRef: 0 }
 
 for (const f of files) {
   // pdfjs가 넘긴 ArrayBuffer를 detach하므로 파스마다 새 사본
@@ -116,17 +116,26 @@ for (const f of files) {
   // 한글 음절만의 recall — 래스터에 글꼴이 안 그려진 페이지(비내장 폰트 치환 실패)를 드러낸다
   const hg = charBagPR(hangulOnly(a), hangulOnly(b))
 
-  const refGrids = collectIrGrids(gt.blocks).map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors }))
+  // 구조 채점 불가 ref 제외 — 비어있지 않은 셀 <3 이면 표 "구조"가 없다: 장식 벡터
+  // 그리드(클립아트 창문 격자 — goe p3 5x6에 2셀)·단일 텍스트박스(1x1 제목/목차 박스).
+  // 텍스트 자체는 recall/CER 트랙이 이미 채점하므로 이중 감점도 아니다. 문서명이 아닌
+  // 구조 기준이며 제외 수는 skippedRefTables로 노출 (무음 컷 금지).
+  const allRef = collectIrGrids(gt.blocks).map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors }))
+  const refGrids = allRef.filter(g => g.cells.filter(a => a.text.trim()).length >= 3)
+  const skippedRef = allRef.length - refGrids.length
   const hyp = collectIrGrids(ocr.blocks)
   let tbl = null
   if (refGrids.length) {
     const s = scoreTables(refGrids, hyp)
     const matched = refGrids.length - s.unmatchedRef
-    tbl = { ref: refGrids.length, matched, exact: s.exactCount, cellF1: s.cellF1 }
+    tbl = { ref: refGrids.length, matched, exact: s.exactCount, cellF1: s.cellF1, skippedRef }
     tblAgg.refTables += refGrids.length
     tblAgg.matched += matched
     tblAgg.exact += s.exactCount
+    tblAgg.skippedRef += skippedRef
     if (s.cellF1 != null) tblAgg.f1s.push(s.cellF1)
+  } else if (skippedRef > 0) {
+    tblAgg.skippedRef += skippedRef
   }
 
   sumDist += dist; sumLen += a.length
@@ -153,6 +162,8 @@ const summary = {
     matchedRate: +(tblAgg.matched / tblAgg.refTables).toFixed(4),
     exactRate: +(tblAgg.exact / tblAgg.refTables).toFixed(4),
     cellF1Mean: tblAgg.f1s.length ? +(tblAgg.f1s.reduce((x, y) => x + y, 0) / tblAgg.f1s.length).toFixed(4) : null,
+    // 구조 채점 불가로 모수에서 뺀 ref (비어있지 않은 셀 <3 — 장식 그리드·단일 텍스트박스)
+    skippedRefTables: tblAgg.skippedRef,
   } : null,
   note: "정답=같은 PDF의 클린 텍스트층, 입력=216dpi 렌더 강제 OCR — 실스캔 노이즈/스큐 미반영(상한치)",
 }
