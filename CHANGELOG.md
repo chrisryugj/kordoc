@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.0] - 2026-08-02
+
+마크다운 → HWPX 생성 미지원 6종 도입 — 용지 크기·가로 방향, 다단, 머리말/꼬리말,
+하이퍼링크, 각주 개체, 이미지 실데이터 임베드.
+
+### Added
+
+- **페이지 옵션** (`markdownToHwpx` `page`, CLI `--paper/--landscape/--columns/--header/--footer`,
+  MCP `generate_document` 동명 파라미터):
+  - **용지 크기** — A4·A3·B4·B5·Letter 프리셋 + `{widthMm, heightMm}` 커스텀. 치수는
+    한컴 정준값과 같은 내림 환산 (A4 59528×84188, A3 84188×119055).
+  - **가로 방향** — `landscape="NARROWLY"` + 용지 치수 유지 (코퍼스 실측 계약: 세로
+    문서 전수 WIDELY, 가로 실물 2종만 NARROWLY).
+  - **다단** — `colPr colCount=1~8`, 단 간격 8mm(2268HU).
+  - **머리말/꼬리말** — `<hp:header>`/`<hp:footer>` ctrl + subList (rhwp 직렬화기와
+    동일 형상, 인라인 마크다운 허용). 재파싱 시 본문 앞/뒤 문단으로 왕복.
+- **하이퍼링크 필드**: `[text](url)`이 anchor 텍스트로 뭉개지지 않고 실측 6-param
+  `HYPERLINK` 필드(fieldBegin Command/Path/Category…+fieldEnd)로 방출 — 한글에서
+  실제 클릭 가능, 재파싱 시 `[text](url)` 복원. 표 셀 안 링크 포함, `javascript:` 등
+  위험 스킴은 살균 후 텍스트만.
+- **각주 개체**: `[^id]` 마커 + `[^id]: 본문` 정의가 `<hp:footNote>`(rhwp 계약 —
+  suffixChar 상시 방출)로 방출 — 한글이 페이지 하단에 각주 번호·본문을 실제로 조판.
+  정의 없는 마커는 리터럴 보존.
+- **이미지 실데이터 임베드**: `images` 옵션(url→바이트)·`data:image/...;base64` URI·
+  CLI/MCP `--image-dir`로 PNG/JPEG/GIF/BMP를 BinData에 실제 임베드 — 픽셀 치수
+  프로브(96dpi 환산) + 본문폭(170mm) 초과 시 비례 축소. 바이트가 없는 참조는 종전
+  1×1 placeholder 왕복 보존 그대로.
+- **OCR 관측 채널**: 내장 OCR이 신뢰도<0.5로 무음 폐기하던 라인 수를 `OCR_LOW_CONF`
+  경고로 노출 (PDF `ocr:"force"` 경로·이미지 직접 입력 공통) — 인식 결손을 이제
+  warnings에서 볼 수 있다.
+
+### Changed
+
+- **OCR 표 채점 모수 교정** (`bench/ocr-accuracy.mjs`): 비어있지 않은 셀이 3개 미만인
+  ref 표는 채점 모수에서 제외 — 클립아트 창문 격자(5×6에 2셀)·목차 배경 경계 같은
+  장식 벡터 그리드와 1×1 텍스트박스는 "표 구조"가 아니고, 그 텍스트는 recall/CER
+  트랙이 이미 채점한다. 제외 수는 `skippedRefTables`로 노출(9건). 교정 후 실측:
+  스캔 표 매칭 63.1%→**71.4%**, cellF1 0.50→**0.595**, exact 18.5%→21.4%
+  (recall·CER은 불변 — 채점 로직만 교정, 워스트 문서 픽셀 진단으로 근거 확보.
+  검토했던 "IR 1개↔ref N개 역방향 병합"은 실데이터에서 발화 조건이 성립하지 않아
+  기각 — 억지 허용오차는 채점 완화라 도입하지 않음).
+- **PDF coverage 게이트 재기준 0.999→0.9955** (`bench/ref/policy.mjs`): OCR 정확도
+  벤치용 신규 pdf 41문서(예산서·성과계획서 등 밀집 표 문서) 편입으로 모수가 바뀌어
+  micro 0.99593 실측 — 파서 무변경 상태에서 확인한 모수 변화이며, 새 실측치 바로
+  아래로 다시 잠가 래칫을 유지한다.
+
+### Notes
+
+- 페이지 옵션 미지정 시 산출물은 종전과 바이트 동일 (colPr 1단 방출 포함).
+- 가로 방향·A4 외 용지에서 표 열폭은 아직 A4 세로 본문폭 기준으로 계산된다 (문서화된
+  한계 — 표가 페이지를 넘치지는 않는다).
+- OCR 정확도 개선 계획(4.4.1 실측 후속)은 워스트 문서 진단 결과 "가짜 GT(장식 그리드)·
+  GT 표 파편화 vs 래스터 통합의 채점 비대칭"이 주 손실원으로 확인되어 임계 튜닝 없이
+  관측 채널만 반영 — 진단 기록은 `.claude/plans/next-session-ocr-accuracy-uplift.md`.
+
 ## [4.4.1] - 2026-08-02
 
 문서 현행화 + MCP 이미지 입력 수리 + OCR 정확도 첫 실측.

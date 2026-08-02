@@ -72,6 +72,15 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.5.0
+
+- **📄 Page options**: paper size (A4·A3·B4·B5·Letter·custom mm), **landscape orientation**, **multi-column** (1–8), and **header/footer text** — API `page`, CLI `--paper/--landscape/--columns/--header/--footer`, MCP `generate_document` parameters. Headers/footers use the same `<hp:header>`/`<hp:footer>` structure as real Hancom files.
+- **🔗 Hyperlink generation**: `[text](url)` now emits a real 6-param `HYPERLINK` field (clickable in Hancom Office) instead of collapsing to plain text — and round-trips back to `[text](url)` on re-parse. Works inside table cells; dangerous schemes are sanitized.
+- **📎 Footnote objects**: `[^1]` markers with `[^1]: body` definitions emit real `<hp:footNote>` objects that Hancom typesets at the bottom of the page.
+- **🖼️ Real image embedding**: supply bytes via the `images` option, `data:` URIs, or CLI/MCP `--image-dir` to embed PNG/JPEG/GIF/BMP into BinData — pixel dimensions auto-converted (96dpi) and capped to body width. References without bytes keep the previous placeholder round-trip behavior.
+- **🔍 OCR low-confidence observability**: lines silently dropped by the built-in OCR (confidence < 0.5) are now reported via an `OCR_LOW_CONF` warning.
+- **📏 Scanned-table benchmark correction**: reference "tables" that carry no table structure (decorative vector grids from clipart, single-cell text boxes — fewer than 3 non-empty cells) are excluded from the scoring population, with the excluded count reported transparently. Corrected measurement: scanned-table match **71.4%**, cellF1 **0.595** (char recall/CER unchanged from v4.4.1).
+
 ## What's New in v4.2.6
 
 - **📐 Left-aligned body for outline/report documents**: Body items (□/○/-) in outline (gaejosik) and report gongmun documents are now left-aligned instead of justified. When word-keeping meets justification, a line that breaks early (e.g. a 25-char line stretched to a 34-char column because the next word is long) got excessively wide inter-word gaps, making paragraphs look broken. This matches the left-aligned convention of the official Korean administrative style guide. Narrative-body justification for official drafts (official preset) is unchanged.
