@@ -341,6 +341,7 @@ export { placeSealHwpx } from "./form/seal.js"
 export type { SealOp, SealPlacement, PlaceSealResult } from "./form/seal.js"
 export { markdownToHwpx } from "./hwpx/generator.js"
 export type { HwpxTheme, MarkdownToHwpxOptions } from "./hwpx/generator.js"
+export type { PageOptions } from "./hwpx/gen-page.js"
 export type {
   FormatProfile, TableProfile, CellProfile, BorderFillDef, BorderDef, CharPrDef,
 } from "./hwpx/generator.js"

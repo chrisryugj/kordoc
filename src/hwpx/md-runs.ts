@@ -8,6 +8,52 @@ import {
   PARA_NORMAL, PARA_CODE,
   escapeXml,
 } from "./gen-ids.js"
+import { sanitizeHref } from "../utils.js"
+
+// ─── 인라인 문서 컨텍스트 — 하이퍼링크·각주 (v4.5.0) ──
+//
+// markdownToHwpx가 문서 시작에 beginInlineDoc으로 열고 끝에 endInlineDoc으로 닫는다.
+// 컨텍스트가 없으면(직접 호출 경로) 종전 동작 그대로 — 링크는 anchor 텍스트로,
+// [^id]는 리터럴로 남는다. 카운터는 문서마다 리셋돼 출력이 결정적이다.
+
+/** HYPERLINK 필드 공통 fieldid — 실측 저장본 공통값 (nrich·seoul2) */
+const HYPERLINK_FIELDID = 627600491
+const FIELD_ID_BASE = 1_800_000_000
+const FOOTNOTE_INST_BASE = 1_850_000_000
+
+interface InlineDocCtx {
+  footnotes: Map<string, string>
+  fieldSeq: number
+  noteSeq: number
+  /** 각주 본문 렌더 중 — 중첩 각주 마커는 리터럴 유지 (자기참조 재귀 차단) */
+  inNote: boolean
+}
+
+let inlineDoc: InlineDocCtx | null = null
+
+/** 문서 단위 인라인 채널 시작 — 각주 정의 주입 + 필드/각주 카운터 리셋 */
+export function beginInlineDoc(footnotes: Map<string, string>): void {
+  inlineDoc = { footnotes, fieldSeq: 0, noteSeq: 0, inNote: false }
+}
+
+export function endInlineDoc(): void {
+  inlineDoc = null
+}
+
+/**
+ * 각주 정의 수집 — `[^id]: 본문` 줄을 걷어내고 map으로 반환.
+ * 본문 마커 `[^id]`는 parseInlineMarkdown이 footNote 개체로 방출한다.
+ */
+export function extractFootnoteDefs(md: string): { md: string; defs: Map<string, string> } {
+  const defs = new Map<string, string>()
+  const out = md.replace(/\r\n?/g, "\n").split("\n").filter(line => {
+    const m = /^\[\^([^\]\s]+)\]:\s?(.*)$/.exec(line)
+    if (!m) return true
+    defs.set(m[1], m[2].trim())
+    return false
+  }).join("\n")
+  return { md: defs.size > 0 ? out : md, defs }
+}
 
 
 /** Preview/PrvText.txt — 문서 앞부분 텍스트 스냅샷 (최대 1KB) */
@@ -248,6 +294,10 @@ interface InlineSpan {
   bold: boolean
   italic: boolean
   code: boolean
+  /** 하이퍼링크 대상 (살균 후) — 연속 동일 href span이 한 필드 extent */
+  href?: string
+  /** 각주 본문 — 이 위치에 footNote 개체 방출 (text는 빈 문자열) */
+  note?: string
 }
 
 export function parseInlineMarkdown(text: string): InlineSpan[] {
@@ -259,12 +309,56 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
     literals.push(c)
     return `\x00${literals.length - 1}\x00`  // 인덱스 내장 — 전처리가 일부 구간을 버려도 정렬 유지
   })
-  // 전처리: 마크다운 링크/이미지 → 텍스트만 추출
-  text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")   // ![alt](url) → alt
-  text = text.replace(/\[([^\]]*)\]\(([^)]*)\)/g, (_, t, u) => t || u) // [text](url) → text or url
+  // 전처리: 이미지 → alt 텍스트 (블록 단위 이미지는 gen-section이 pic으로 방출)
+  text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
   // 전처리: ~~취소선~~ → 텍스트만
   text = text.replace(/~~([^~]+)~~/g, "$1")
 
+  let spans: InlineSpan[]
+  if (inlineDoc) {
+    // 링크·각주 채널 (v4.5.0) — [text](url)은 href span 그룹으로, [^id]는 note span으로.
+    // 세그먼트 단위로 강조를 파싱하므로 링크 경계를 걸치는 강조(**a [b](u)**)는 리터럴 유지.
+    spans = []
+    const re = /\[\^([^\]\s]+)\]|\[([^\]]*)\]\(([^)]*)\)/g
+    let last = 0
+    for (const m of text.matchAll(re)) {
+      const idx = m.index!
+      if (idx > last) spans.push(...emphasisSpans(text.slice(last, idx)))
+      if (m[1] !== undefined) {
+        const def = inlineDoc.inNote ? undefined : inlineDoc.footnotes.get(m[1])
+        if (def !== undefined) spans.push({ text: "", bold: false, italic: false, code: false, note: def })
+        else spans.push(...emphasisSpans(m[0])) // 정의 없는 마커 — 리터럴 보존
+      } else {
+        const anchor = m[2] || m[3]
+        const href = sanitizeHref(m[3].trim()) ?? undefined
+        const sub = emphasisSpans(anchor)
+        if (href) for (const s of sub) s.href = href
+        spans.push(...sub)
+      }
+      last = idx + m[0].length
+    }
+    if (last < text.length) spans.push(...emphasisSpans(text.slice(last)))
+    if (spans.length === 0) spans.push({ text, bold: false, italic: false, code: false })
+  } else {
+    // 종전 경로 — 링크는 텍스트만 추출
+    text = text.replace(/\[([^\]]*)\]\(([^)]*)\)/g, (_, t, u) => t || u)
+    spans = emphasisSpans(text)
+    if (spans.length === 0) spans.push({ text, bold: false, italic: false, code: false })
+  }
+  // 센티널 → 리터럴 복원. 인라인 코드 안은 CommonMark처럼 이스케이프 처리가
+  // 없으므로 백슬래시까지 원문 그대로 되살린다.
+  for (const span of spans) {
+    if (!span.text.includes("\x00")) continue
+    span.text = span.text.replace(/\x00(\d+)\x00/g, (_, i) => {
+      const c = literals[+i] ?? ""
+      return span.code ? "\\" + c : c
+    })
+  }
+  return spans
+}
+
+/** 강조(`code` ** * __ _) 토크나이즈 — 마스킹된 세그먼트 텍스트 전용 */
+function emphasisSpans(text: string): InlineSpan[] {
   const spans: InlineSpan[] = []
   // 패턴: `code`, ***bolditalic***, **bold**, *italic*, __bold__, _italic_
   // 언더스코어 강조는 GFM처럼 단어 내부 비활성 (post_id·__init__ 오염 방지, v4.0.5):
@@ -294,18 +388,6 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
   if (lastIdx < text.length) {
     spans.push({ text: text.slice(lastIdx), bold: false, italic: false, code: false })
   }
-  if (spans.length === 0) {
-    spans.push({ text, bold: false, italic: false, code: false })
-  }
-  // 센티널 → 리터럴 복원. 인라인 코드 안은 CommonMark처럼 이스케이프 처리가
-  // 없으므로 백슬래시까지 원문 그대로 되살린다.
-  for (const span of spans) {
-    if (!span.text.includes("\x00")) continue
-    span.text = span.text.replace(/\x00(\d+)\x00/g, (_, i) => {
-      const c = literals[+i] ?? ""
-      return span.code ? "\\" + c : c
-    })
-  }
   return spans
 }
 
@@ -318,13 +400,70 @@ function spanToCharPrId(span: InlineSpan): number {
 }
 
 
+/** HYPERLINK fieldBegin ctrl — 실측 저장본(seoul2 36266445) 6-param 형상 미러 */
+function hyperlinkBeginXml(fid: number, href: string): string {
+  // Command의 ':'는 '\:' 이스케이프 (실측: "http\://www.nrich.go.kr;1;0;0;")
+  const cmd = escapeXml(href.replace(/:/g, "\\:"))
+  const path = escapeXml(href)
+  return `<hp:ctrl><hp:fieldBegin id="${fid}" type="HYPERLINK" name="" editable="0" dirty="0" zorder="-1" fieldid="${HYPERLINK_FIELDID}">` +
+    `<hp:parameters cnt="6" name=""><hp:integerParam name="Prop">0</hp:integerParam>` +
+    `<hp:stringParam name="Command">${cmd};1;0;0</hp:stringParam>` +
+    `<hp:stringParam name="Path">${path}</hp:stringParam>` +
+    `<hp:stringParam name="Category">HWPHYPERLINK_TYPE_URL</hp:stringParam>` +
+    `<hp:stringParam name="TargetType">HWPHYPERLINK_TARGET_BOOKMARK</hp:stringParam>` +
+    `<hp:stringParam name="DocOpenType">HWPHYPERLINK_JUMP_CURRENTTAB</hp:stringParam>` +
+    `</hp:parameters></hp:fieldBegin></hp:ctrl>`
+}
+
+/** footNote ctrl — rhwp render_note_sublist 형상 (suffixChar 41=')' 상시 방출 계약) */
+function footnoteXml(note: string, mapCharId?: (id: number) => number): string {
+  const d = inlineDoc!
+  const n = ++d.noteSeq
+  d.inNote = true
+  let body: string
+  try {
+    body = generateRuns(note, CHAR_NORMAL, mapCharId)
+  } finally {
+    d.inNote = false
+  }
+  return `<hp:ctrl><hp:footNote number="${n}" suffixChar="41" instId="${FOOTNOTE_INST_BASE + n}">` +
+    `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">` +
+    `<hp:p paraPrIDRef="0" styleIDRef="0">${body}</hp:p>` +
+    `</hp:subList></hp:footNote></hp:ctrl>`
+}
+
 export function generateRuns(text: string, defaultCharPr: number = CHAR_NORMAL, mapCharId?: (id: number) => number): string {
   const spans = parseInlineMarkdown(text)
-  return spans.map(span => {
-    let charId = span.code || span.bold || span.italic ? spanToCharPrId(span) : defaultCharPr
-    if (mapCharId) charId = mapCharId(charId)
-    return `<hp:run charPrIDRef="${charId}"><hp:t>${escapeXml(span.text)}</hp:t></hp:run>`
-  }).join("")
+  const mapped = (id: number) => (mapCharId ? mapCharId(id) : id)
+  const out: string[] = []
+  // 연속 동일 href span 묶음을 fieldBegin/fieldEnd ctrl-run으로 감싼다 (extent = anchor)
+  let openHref: string | null = null
+  let openFid = 0
+  const closeField = () => {
+    if (openHref === null) return
+    out.push(`<hp:run charPrIDRef="${mapped(defaultCharPr)}"><hp:ctrl><hp:fieldEnd beginIDRef="${openFid}" fieldid="${HYPERLINK_FIELDID}"/></hp:ctrl></hp:run>`)
+    openHref = null
+  }
+  for (const span of spans) {
+    if (span.note !== undefined && inlineDoc) {
+      closeField()
+      out.push(`<hp:run charPrIDRef="${mapped(defaultCharPr)}">${footnoteXml(span.note, mapCharId)}</hp:run>`)
+      continue
+    }
+    const href = inlineDoc ? (span.href ?? null) : null
+    if (href !== openHref) {
+      closeField()
+      if (href !== null) {
+        openFid = FIELD_ID_BASE + ++inlineDoc!.fieldSeq
+        openHref = href
+        out.push(`<hp:run charPrIDRef="${mapped(defaultCharPr)}">${hyperlinkBeginXml(openFid, href)}</hp:run>`)
+      }
+    }
+    const charId = span.code || span.bold || span.italic ? spanToCharPrId(span) : defaultCharPr
+    out.push(`<hp:run charPrIDRef="${mapped(charId)}"><hp:t>${escapeXml(span.text)}</hp:t></hp:run>`)
+  }
+  closeField()
+  return out.join("")
 }
 
 export function generateParagraph(text: string, paraPrId: number = PARA_NORMAL, charPrId: number = CHAR_NORMAL, mapCharId?: (id: number) => number, styleId: number = 0): string {

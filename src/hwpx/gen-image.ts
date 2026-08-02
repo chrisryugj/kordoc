@@ -43,7 +43,56 @@ export interface ImagePart {
   itemId: string
   mime: string
   data: Uint8Array
+  /** 실데이터 표기 크기 (HWPUNIT) — 없으면 placeholder 크기(1130) */
+  wHU?: number
+  hHU?: number
 }
+
+/** 매직바이트 → mime/확장자 (HWPX가 소화하는 래스터 포맷만 — webp 등은 미지원 폴백) */
+function sniffImage(b: Uint8Array): { mime: string; ext: string } | null {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { mime: "image/png", ext: "png" }
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { mime: "image/jpeg", ext: "jpg" }
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return { mime: "image/gif", ext: "gif" }
+  if (b.length >= 2 && b[0] === 0x42 && b[1] === 0x4d) return { mime: "image/bmp", ext: "bmp" }
+  return null
+}
+
+/** 픽셀 치수 프로브 (PNG/JPEG/GIF/BMP) — 실패 시 null (placeholder 크기 폴백) */
+export function probeImageSize(b: Uint8Array): { w: number; h: number } | null {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength)
+  try {
+    if (b[0] === 0x89 && b[1] === 0x50) {
+      // PNG — IHDR은 시그니처(8)+길이(4)+"IHDR"(4) 뒤 고정 오프셋
+      return { w: dv.getUint32(16), h: dv.getUint32(20) }
+    }
+    if (b[0] === 0xff && b[1] === 0xd8) {
+      // JPEG — SOF0~SOF15(0xC0~0xCF, C4/C8/CC 제외) 마커의 height/width
+      let i = 2
+      while (i + 9 < b.length) {
+        if (b[i] !== 0xff) { i++; continue }
+        const marker = b[i + 1]
+        if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+          return { w: dv.getUint16(i + 7), h: dv.getUint16(i + 5) }
+        }
+        i += 2 + dv.getUint16(i + 2)
+      }
+      return null
+    }
+    if (b[0] === 0x47 && b[1] === 0x49) {
+      // GIF — logical screen descriptor (LE)
+      return { w: dv.getUint16(6, true), h: dv.getUint16(8, true) }
+    }
+    if (b[0] === 0x42 && b[1] === 0x4d) {
+      // BMP — BITMAPINFOHEADER (LE, height는 절대값)
+      return { w: dv.getUint32(18, true), h: Math.abs(dv.getInt32(22, true)) }
+    }
+  } catch { /* 손상 헤더 — 크기 미상 */ }
+  return null
+}
+
+/** px → HWPUNIT (96dpi 기준: 1px = 75HU), 본문폭(170mm) 초과 시 비례 축소 */
+const PX_TO_HU = 75
+const MAX_IMG_W_HU = 48189 // 170mm — 공문서 본문폭과 동일한 보수적 상한
 
 /**
  * 문서 단위 이미지 레지스트리 — url 기준 dedupe, 안전한 상대 파일명만 수용.
@@ -54,11 +103,21 @@ export class ImageRegistry {
   private ids = new Set<string>()
   readonly parts: ImagePart[] = []
   private picSeq = 0
+  private binSeq = 0
+
+  /** @param supplied url → 실데이터 바이트 (markdownToHwpx images 옵션) */
+  constructor(private readonly supplied?: Map<string, Uint8Array>) {}
 
   /** url 등록(중복 시 기존 파트) — 수용 불가면 null */
   take(url: string): ImagePart | null {
     const cached = this.byUrl.get(url)
     if (cached !== undefined) return cached
+    // 실데이터 경로 (v4.5.0) — images 옵션 바이트 또는 data: URI를 실제로 임베드
+    const real = this.takeReal(url)
+    if (real) {
+      this.byUrl.set(url, real)
+      return real
+    }
     let part: ImagePart | null = null
     // 파일명만 허용 — 경로 구분자·스킴 배제 (ZIP 경로 주입 방지)
     const m = /^([A-Za-z0-9._-]+)\.([A-Za-z0-9]+)$/.exec(url)
@@ -81,6 +140,40 @@ export class ImageRegistry {
     return part
   }
 
+  /** 실데이터 등록 — images 맵 바이트·data: URI. 포맷 미상(webp 등)은 null → placeholder 폴백 */
+  private takeReal(url: string): ImagePart | null {
+    let bytes = this.supplied?.get(url)
+    if (!bytes && url.startsWith("data:")) {
+      const m = /^data:image\/[a-z+]+;base64,([A-Za-z0-9+/=\s]+)$/i.exec(url)
+      if (m) {
+        try { bytes = new Uint8Array(Buffer.from(m[1].replace(/\s+/g, ""), "base64")) } catch { /* 손상 base64 */ }
+      }
+    }
+    if (!bytes || bytes.length === 0) return null
+    const sniffed = sniffImage(bytes)
+    if (!sniffed) return null
+    // ZIP 파트명 — 안전한 원본 파일명이면 유지, 아니면(경로·data URI) 순번 파일명
+    const safe = /^([A-Za-z0-9._-]+)\.([A-Za-z0-9]+)$/.exec(url)
+    const base = safe && !url.includes("..") ? safe[1] : `image${++this.binSeq}`
+    let itemId = base.replace(/[^A-Za-z0-9_]/g, "_")
+    let n = 1
+    while (this.ids.has(itemId)) itemId = `${base.replace(/[^A-Za-z0-9_]/g, "_")}_${n++}`
+    this.ids.add(itemId)
+    const dim = probeImageSize(bytes)
+    let wHU: number | undefined, hHU: number | undefined
+    if (dim && dim.w > 0 && dim.h > 0) {
+      wHU = dim.w * PX_TO_HU
+      hHU = dim.h * PX_TO_HU
+      if (wHU > MAX_IMG_W_HU) {
+        hHU = Math.round(hHU * (MAX_IMG_W_HU / wHU))
+        wHU = MAX_IMG_W_HU
+      }
+    }
+    const part: ImagePart = { name: `BinData/${itemId}.${sniffed.ext}`, itemId, mime: sniffed.mime, data: bytes, wHU, hHU }
+    this.parts.push(part)
+    return part
+  }
+
   /** manifest <opf:item> 조각들 (실측: isEmbeded="1") */
   manifestItems(): string[] {
     return this.parts.map((p) => `<opf:item id="${p.itemId}" href="${p.name}" media-type="${p.mime}" isEmbeded="1"/>`)
@@ -89,18 +182,20 @@ export class ImageRegistry {
   /** 인라인 <hp:pic> XML — 실측 저장본 미러, treatAsChar=1 (셀·문단 안 배치) */
   inlinePicXml(part: ImagePart): string {
     const id = PIC_ID_BASE + ++this.picSeq
-    const s = 1130 // ≈4mm — placeholder 표기 크기
+    // placeholder는 ≈4mm 정사각, 실데이터는 실치수(96dpi 환산·본문폭 캡)
+    const w = part.wHU ?? 1130
+    const h = part.hHU ?? 1130
     // xmlns:hc는 pic 요소에 인라인 선언 — 섹션 루트는 hs/hp만 선언하므로(기존 산출물
     // 바이트 보존) hc: 자식(transMatrix·img 등)이 여기서 네임스페이스를 얻는다
     return `<hp:pic id="${id}" zOrder="0" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="${id}" reverse="0" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">`
-      + `<hp:offset x="0" y="0"/><hp:orgSz width="${s}" height="${s}"/><hp:curSz width="${s}" height="${s}"/>`
-      + `<hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="0" centerX="${s / 2}" centerY="${s / 2}" rotateimage="1"/>`
+      + `<hp:offset x="0" y="0"/><hp:orgSz width="${w}" height="${h}"/><hp:curSz width="${w}" height="${h}"/>`
+      + `<hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="0" centerX="${Math.floor(w / 2)}" centerY="${Math.floor(h / 2)}" rotateimage="1"/>`
       + `<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>`
-      + `<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="${s}" y="0"/><hc:pt2 x="${s}" y="${s}"/><hc:pt3 x="0" y="${s}"/></hp:imgRect>`
-      + `<hp:imgClip left="0" right="${s}" top="0" bottom="${s}"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>`
-      + `<hp:imgDim dimwidth="${s}" dimheight="${s}"/>`
+      + `<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="${w}" y="0"/><hc:pt2 x="${w}" y="${h}"/><hc:pt3 x="0" y="${h}"/></hp:imgRect>`
+      + `<hp:imgClip left="0" right="${w}" top="0" bottom="${h}"/><hp:inMargin left="0" right="0" top="0" bottom="0"/>`
+      + `<hp:imgDim dimwidth="${w}" dimheight="${h}"/>`
       + `<hc:img binaryItemIDRef="${part.itemId}" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/><hp:effects/>`
-      + `<hp:sz width="${s}" widthRelTo="ABSOLUTE" height="${s}" heightRelTo="ABSOLUTE" protect="0"/>`
+      + `<hp:sz width="${w}" widthRelTo="ABSOLUTE" height="${h}" heightRelTo="ABSOLUTE" protect="0"/>`
       + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
       + `<hp:outMargin left="0" right="0" top="0" bottom="0"/>`
       + `</hp:pic>`

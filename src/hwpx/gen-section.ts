@@ -33,6 +33,7 @@ import { generateEquationParagraph } from "./equation-generate.js"
 import { parseChartFence, buildChartSpaceXml, buildChartElementXml } from "./chart-gen.js"
 import { A4_W_HU, A4_H_HU, CHART_TABLE_ID_BASE } from "./geometry.js"
 import { ImageRegistry, splitImageRefs } from "./gen-image.js"
+import { type ResolvedPage, columnColPrXml, headerFooterCtrl } from "./gen-page.js"
 
 /** 생성 중 수집된 차트 파트 — 호출부(generator)가 ZIP·manifest에 등재 */
 export interface ChartPart {
@@ -44,7 +45,7 @@ export interface ChartPart {
 
 // ─── 섹션 속성 (공문서 표준 여백) ────────────────────
 
-function generateSecPr(gongmun: ResolvedGongmun | null): string {
+function generateSecPr(gongmun: ResolvedGongmun | null, page: ResolvedPage | null = null): string {
   // A4: 210mm × 297mm → 59528 × 84188 HWPUNIT (1mm ≈ 283.46 HWPUNIT)
   // 비공문서(기존): 위 30 / 아래 15 / 좌 20 / 우 15mm, 머리말·꼬리말 10mm.
   // 공문서 표준(편람 서식 작성방법 해설·시행규칙 별표4): 위 20 / 아래 10 / 좌 20 / 우 20mm,
@@ -66,7 +67,7 @@ function generateSecPr(gongmun: ResolvedGongmun | null): string {
     `<hp:grid lineGrid="0" charGrid="0" wonggojiFormat="0"/>` +
     `<hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/>` +
     `<hp:visibility hideFirstHeader="0" hideFirstFooter="0" hideFirstMasterPage="0" border="SHOW_ALL" fill="SHOW_ALL" hideFirstPageNum="0" hideFirstEmptyLine="0" showLineNumber="0"/>` +
-    `<hp:pagePr landscape="WIDELY" width="${A4_W_HU}" height="${A4_H_HU}" gutterType="LEFT_ONLY">` +
+    `<hp:pagePr landscape="${page?.landscape ?? "WIDELY"}" width="${page?.widthHU ?? A4_W_HU}" height="${page?.heightHU ?? A4_H_HU}" gutterType="LEFT_ONLY">` +
       `<hp:margin header="${m.header}" footer="${m.footer}" gutter="0" left="${m.left}" right="${m.right}" top="${m.top}" bottom="${m.bottom}"/>` +
     `</hp:pagePr>` +
     `<hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr>` +
@@ -76,9 +77,13 @@ function generateSecPr(gongmun: ResolvedGongmun | null): string {
   // 영역을 좌우 10mm(2835HU)씩 좁게 잡아 본문이 우측 여백에 못 미치고, 컬럼보다
   // 넓은 treatAsChar 표(제목박스·데이터표·목차박스)는 우측 여백을 침범한다
   // (v4.1.0 GAP-01 — COM 실렌더 실측: colPr 주입만으로 본문 190mm 정합·초과 0 확인).
-  const colPr = `<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>`
+  // columns=1이면 columnColPrXml이 종전 하드코딩과 동일 바이트를 방출한다.
+  const colPr = columnColPrXml(page?.columns ?? 1)
+  // 머리말/꼬리말 (v4.5.0) — 첫 문단 첫 run에 ctrl로 방출 (rhwp 형상)
+  const hf = (page?.header ? headerFooterCtrl("header", page.header, 1) : "") +
+    (page?.footer ? headerFooterCtrl("footer", page.footer, 2) : "")
   // 쪽번호 — 실측(GT3·GT6·GT7·GT9·GT11): 하단 중앙 "- 1 -". secPr·colPr과 같은 run에 배치
-  return secPr + colPr + (gongmun?.pageNumbers ? pageNumCtrl() : "")
+  return secPr + colPr + hf + (gongmun?.pageNumbers ? pageNumCtrl() : "")
 }
 
 // ─── SectionOpener — "첫 run이 secPr/colPr/쪽번호를 나른다" 계약의 단일 지점 ──
@@ -87,7 +92,7 @@ function generateSecPr(gongmun: ResolvedGongmun | null): string {
 // 주입이 프리앰블·차트·수식·표·HTML표·일반 문단 여섯 곳에 복붙돼 있었다 (P0-2).
 class SectionOpener {
   private pending = true
-  constructor(private readonly gongmun: ResolvedGongmun | null) {}
+  constructor(private readonly gongmun: ResolvedGongmun | null, private readonly page: ResolvedPage | null = null) {}
 
   /** 아직 secPr를 나를 첫 문단이 안 나왔는가 */
   get isFirst(): boolean { return this.pending }
@@ -97,7 +102,7 @@ class SectionOpener {
     this.pending = false
     return xml.replace(
       /<hp:run charPrIDRef="(\d+)">/,
-      `<hp:run charPrIDRef="$1">${generateSecPr(this.gongmun)}`,
+      `<hp:run charPrIDRef="$1">${generateSecPr(this.gongmun, this.page)}`,
     )
   }
 
@@ -108,14 +113,14 @@ class SectionOpener {
   emitCarrier(paraXmls: string[]): void {
     if (!this.pending) return
     this.pending = false
-    const secRun = `<hp:run charPrIDRef="0">${generateSecPr(this.gongmun)}<hp:t></hp:t></hp:run>`
+    const secRun = `<hp:run charPrIDRef="0">${generateSecPr(this.gongmun, this.page)}<hp:t></hp:t></hp:run>`
     paraXmls.push(`<hp:p paraPrIDRef="0" styleIDRef="0">${secRun}</hp:p>`)
   }
 
   /** 빈 문서 폴백 — secPr를 실은 빈 단락 XML */
   emptyDoc(): string {
     this.pending = false
-    return `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">${generateSecPr(this.gongmun)}<hp:t></hp:t></hp:run></hp:p>`
+    return `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0">${generateSecPr(this.gongmun, this.page)}<hp:t></hp:t></hp:run></hp:p>`
   }
 }
 
@@ -497,6 +502,7 @@ export function blocksToSectionXml(
   remap: ProfileRemap | null = null,
   dfIds: DocframeIds | null = null,
   images: ImageRegistry | null = null,
+  page: ResolvedPage | null = null,
 ): string {
   // 문서 생성마다 전역 표 id 카운터 리셋 — 같은 프로세스 연속 생성에도 결정적 출력
   resetTableIds(); resetGjTableIds(); resetExtraTableIds()
@@ -529,7 +535,7 @@ export function blocksToSectionXml(
     // 개조식 장식표(표지·목차·장헤더·제목박스) 폭 스케일용 본문폭 — margins 오버라이드 대응
     gjBodyW: gongmun ? mmToHwpunit(210 - gongmun.margins.left - gongmun.margins.right) : GAEJOSIK_BASE_WIDTH,
     chamMap: (id: number) => (id === CHAR_BOLD ? GJ_CHAR_CHAM_BOLD : id),
-    opener: new SectionOpener(gongmun),
+    opener: new SectionOpener(gongmun, page),
     paraXmls: [],
     // 표 방출 순번 — 생성 성공 여부와 무관하게 '시도' 기준으로 센다. 실패한 표가 이후
     // 표들의 순번을 밀면 앵커 없는 프로필(손편집·구버전)의 table_index 매칭이 어긋난다.

@@ -19,7 +19,8 @@
 import JSZip from "jszip"
 import { type GongmunOptions, needsGaejosikAssets, resolveGongmun, usesReportFonts } from "./gongmun.js"
 import { type HwpxTheme, resolveTheme, charVariantBase } from "./gen-ids.js"
-import { buildPrvText, parseMarkdownToBlocks } from "./md-runs.js"
+import { buildPrvText, parseMarkdownToBlocks, beginInlineDoc, endInlineDoc, extractFootnoteDefs } from "./md-runs.js"
+import { type PageOptions, resolvePage } from "./gen-page.js"
 import { generateContainerXml, generateManifest, generateHeaderXml, staticBorderFillNext, staticFontNext } from "./gen-header.js"
 import { computeGongmunFitPlan, precomputeGongmunList } from "./gen-gongmun-fit.js"
 import { blocksToSectionXml, type ChartPart } from "./gen-section.js"
@@ -50,6 +51,17 @@ export interface MarkdownToHwpxOptions {
    * 미지정 시 기본 서식 — 공문서 모드는 실측 정부 표 문법, 그 외 단일 SOLID 테두리.
    */
   profile?: FormatProfile
+  /**
+   * 페이지 설정 (v4.5.0) — 용지 크기·가로 방향, 다단(columns), 머리말/꼬리말.
+   * 미지정 시 기존과 동일한 A4 세로 1단.
+   */
+  page?: PageOptions
+  /**
+   * 이미지 실데이터 (v4.5.0) — `![alt](url)`의 url을 키로 바이트를 넘기면 BinData에
+   * 실제로 임베드한다 (PNG/JPEG/GIF/BMP, 크기는 96dpi 환산·본문폭 캡). `data:image/...`
+   * URI는 이 맵 없이도 임베드. 바이트가 없는 url은 종전 placeholder 참조 보존.
+   */
+  images?: Record<string, Uint8Array | ArrayBuffer>
 }
 
 
@@ -62,10 +74,16 @@ export async function markdownToHwpx(
 ): Promise<ArrayBuffer> {
   const theme = resolveTheme(options?.theme)
   const gongmun = options?.gongmun ? resolveGongmun(options.gongmun) : null
+  const page = resolvePage(options?.page)
+  // 인라인 채널(하이퍼링크·각주, v4.5.0) — 각주 정의 걷어내고 문서 컨텍스트 오픈.
+  // 섹션 조립이 끝나면 finally에서 닫는다 (모듈 상태 잔류 방지)
+  const { md, defs } = extractFootnoteDefs(markdown)
+  beginInlineDoc(defs)
+  try {
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 전용 charPr 블록(11~25)이 먼저 온다 (QA-1)
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
   const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
-  const blocks = parseMarkdownToBlocks(markdown)
+  const blocks = parseMarkdownToBlocks(md)
   const gongmunList = gongmun ? precomputeGongmunList(blocks, gongmun) : null
   const fit = gongmun && gongmunList ? computeGongmunFitPlan(blocks, gongmun, gongmunList) : null
   // id 배치: 정적 borderFill(기본 2 + 개조식 7 + 공문서 헤더음영 1) → 프로필 → 표 레지스트리.
@@ -83,10 +101,14 @@ export async function markdownToHwpx(
   const dfBase = charVariantBase(richAssets, !!gongmun) + (fit?.variants?.length ?? 0) * 4 + (remap?.charPrXmls.length ?? 0)
   const dfIds = dfActive ? docframeIds(dfBase) : null
   const chartParts: ChartPart[] = []
-  // 이미지 placeholder 레지스트리 (v4.0.5) — ![alt](url)·<img>를 1×1 placeholder
-  // <hp:pic>로 방출해 참조·표 구조를 왕복 보존 (종전 alt 텍스트 각인은 열 붕괴 원인)
-  const images = new ImageRegistry()
-  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images)
+  // 이미지 레지스트리 (v4.0.5 placeholder → v4.5.0 실데이터) — images 옵션 바이트·
+  // data: URI는 실제 임베드, 그 외 참조는 1×1 placeholder로 왕복 보존
+  const supplied = options?.images
+    ? new Map(Object.entries(options.images).map(([k, v]) =>
+        [k, v instanceof Uint8Array ? v : new Uint8Array(v)] as const))
+    : undefined
+  const images = new ImageRegistry(supplied)
+  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, page)
 
   // 프로필이 있었는데 한 표에도 못 붙었으면 진단 경고 — 매칭은 보수적(불일치=미적용)이라
   // 마크다운을 크게 고쳐 쓴 경우 전멸할 수 있는데, 그걸 조용히 삼키지 않는다. 1회만.
@@ -115,4 +137,7 @@ export async function markdownToHwpx(
   zip.file("Preview/PrvText.txt", buildPrvText(blocks))
 
   return await zip.generateAsync({ type: "arraybuffer" })
+  } finally {
+    endInlineDoc()
+  }
 }

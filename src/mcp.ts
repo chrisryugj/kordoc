@@ -4,9 +4,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import { realpathSync, openSync, readSync, closeSync, existsSync } from "fs"
-import { readFile, writeFile, mkdir, stat } from "fs/promises"
+import { readFile, writeFile, mkdir, stat, realpath } from "fs/promises"
 import { pathToFileURL } from "url"
-import { resolve, isAbsolute, extname, dirname, basename } from "path"
+import { resolve, isAbsolute, extname, dirname, basename, join } from "path"
 import { parse, detectFormat, detectZipFormat, detectOle2Format, blocksToMarkdown, compare, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, PRESET_ALIAS, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
 import { fillWithUniqueGuard, type FillInput } from "./form/match.js"
 import type { GongmunOptions } from "./index.js"
@@ -1057,8 +1057,14 @@ server.tool(
       sub: z.array(z.string()).optional(),
       contact: z.object(Object.fromEntries(PRESS_CONTACT_KEYS.map(k => [k, z.string().optional()]))).optional(),
     }).optional().describe("보도자료 옵션 — release=보도시점/distribute=배포일(머리박스)/sub=부제 배열('- … -')/contact=담당 부서·담당자·연락처 표"),
+    paper: z.enum(["A4", "A3", "B4", "B5", "Letter"]).optional().describe("용지 크기 (v4.5.0). 기본 A4"),
+    landscape: z.boolean().optional().describe("용지 가로 방향 (v4.5.0). 기본 세로"),
+    columns: z.number().int().min(1).max(8).optional().describe("다단 개수 (v4.5.0). 기본 1단"),
+    header: z.string().optional().describe("머리말 텍스트 — 모든 쪽 상단, 인라인 마크다운 허용 (v4.5.0)"),
+    footer: z.string().optional().describe("꼬리말 텍스트 — 모든 쪽 하단 (v4.5.0)"),
+    image_dir: z.string().optional().describe("마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드 (v4.5.0, PNG/JPEG/GIF/BMP). 미지정 시 참조만 placeholder로 보존"),
   },
-  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, fonts, sizes, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press }) => {
+  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, fonts, sizes, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
     try {
       // 조립은 gongmun-surface SSOT(buildGongmunOptions) — CLI와 의미론 공유 (v4.0.4)
       let gongmun: GongmunOptions | undefined
@@ -1079,7 +1085,35 @@ server.tool(
         profile = parseFormatProfileJson(await readFile(safePath(profile_path, PROFILE_EXTENSIONS), "utf-8"))
       }
       const out = safeOutputPath(output_path, new Set([".hwpx"]))
-      const buf = await markdownToHwpx(markdown, gongmun || profile ? { ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}) } : undefined)
+      // 페이지 옵션 (v4.5.0)
+      const page = paper || landscape || columns || header || footer
+        ? {
+          ...(paper ? { size: paper } : {}),
+          ...(landscape ? { orientation: "landscape" as const } : {}),
+          ...(columns ? { columns } : {}),
+          ...(header ? { header } : {}),
+          ...(footer ? { footer } : {}),
+        }
+        : undefined
+      // 이미지 실데이터 (v4.5.0) — 안전한 파일명 참조만 디렉토리에서 읽는다
+      let images: Record<string, Uint8Array> | undefined
+      if (image_dir) {
+        const dir = await realpath(resolve(image_dir))
+        for (const m of markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
+          const url = m[1]
+          if (!/^[A-Za-z0-9._-]+\.[A-Za-z0-9]+$/.test(url) || url.includes("..")) continue
+          try {
+            images ??= {}
+            images[url] = new Uint8Array(await readFile(join(dir, url)))
+          } catch { /* 파일 없음 — placeholder 유지 */ }
+        }
+      }
+      const buf = await markdownToHwpx(markdown, gongmun || profile || page || images
+        ? {
+          ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}),
+          ...(page ? { page } : {}), ...(images ? { images } : {}),
+        }
+        : undefined)
       await mkdir(dirname(out), { recursive: true })
       await writeFile(out, Buffer.from(buf))
 

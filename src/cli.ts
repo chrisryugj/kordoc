@@ -609,6 +609,12 @@ program
   .option("--press-head <spec>", "보도자료 머리: release=보도시점,distribute=배포일,dept=담당부서,manager=담당자,phone=연락처")
   .option("--press-sub <items>", "보도자료 부제 (세미콜론 구분, 제목 아래 '- … -')")
   .option("--plain", "공문서 모드 끄기 (범용 마크다운 변환)")
+  .option("--paper <size>", "용지: A4·A3·B4·B5·Letter 또는 '210x297'(mm)")
+  .option("--landscape", "용지 가로 방향")
+  .option("--columns <n>", "다단 개수 (1~8)")
+  .option("--header <text>", "머리말 텍스트 (모든 쪽, 인라인 마크다운 허용)")
+  .option("--footer <text>", "꼬리말 텍스트")
+  .option("--image-dir <dir>", "마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (markdown: string, opts) => {
     try {
@@ -718,7 +724,43 @@ program
         if (!silent) process.stderr.write(`[kordoc] 서식 프로필 적용: 표 ${profile.tables.length}개 (${opts.profile})\n`)
       }
 
-      const buf = await markdownToHwpx(md, gongmun || profile ? { ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}) } : undefined)
+      // 페이지 옵션 (v4.5.0) — 용지·방향·다단·머리말/꼬리말
+      let page: import("./index.js").PageOptions | undefined
+      if (opts.paper || opts.landscape || opts.columns || opts.header || opts.footer) {
+        let size: import("./index.js").PageOptions["size"]
+        if (opts.paper) {
+          const wh = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/i.exec(String(opts.paper).trim())
+          size = wh ? { widthMm: Number(wh[1]), heightMm: Number(wh[2]) } : (String(opts.paper) as "A4")
+        }
+        page = {
+          ...(size !== undefined ? { size } : {}),
+          ...(opts.landscape ? { orientation: "landscape" as const } : {}),
+          ...(opts.columns ? { columns: Number(opts.columns) } : {}),
+          ...(opts.header ? { header: String(opts.header) } : {}),
+          ...(opts.footer ? { footer: String(opts.footer) } : {}),
+        }
+      }
+      // 이미지 실데이터 (v4.5.0) — 참조 url이 안전한 파일명이고 디렉토리에 실재할 때만
+      let imageBytes: Record<string, Uint8Array> | undefined
+      if (opts.imageDir) {
+        const dir = resolve(String(opts.imageDir))
+        for (const m of md.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
+          const url = m[1]
+          if (!/^[A-Za-z0-9._-]+\.[A-Za-z0-9]+$/.test(url) || url.includes("..")) continue
+          try {
+            const bytes = readFileSync(resolve(dir, url))
+            ;(imageBytes ??= {})[url] = new Uint8Array(bytes)
+          } catch { /* 파일 없음 — placeholder 유지 */ }
+        }
+        if (!silent) process.stderr.write(`[kordoc] 이미지 임베드: ${Object.keys(imageBytes ?? {}).length}개 (${dir})\n`)
+      }
+
+      const buf = await markdownToHwpx(md, gongmun || profile || page || imageBytes
+        ? {
+          ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}),
+          ...(page ? { page } : {}), ...(imageBytes ? { images: imageBytes } : {}),
+        }
+        : undefined)
       const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
       mkdirSync(dirname(outPath), { recursive: true })
       writeFileSync(outPath, Buffer.from(buf))
