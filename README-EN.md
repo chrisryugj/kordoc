@@ -72,6 +72,10 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.6.1
+
+- **📰 Two-column reading order fix (#64)**: PDFs typeset in two columns (exam papers, magazine layouts) came out with left/right columns interleaved row by row. A new geometry-only column detector (no prose assumptions like justification or long lines) restores the natural order — full left column, then full right column, with full-width elements (headers, page-number boxes) acting as band boundaries. Applies to the default mode, `--no-tables`, and the OCR path. Measured on the 2026 CSAT papers: with `--no-tables`, Physics I and Ethics both recover 20/20 questions with 0 order inversions (previously 13 questions / 3 inversions), Korean 44/45 with 0. Three row-structure guards (calibrated against the regression corpus) prevent false positives on ordinary documents — the PDF coverage gate stays at baseline. (reported with block dumps by @choa712)
+
 ## What's New in v4.6.0
 
 - **🚫 PDF table-detection opt-out (#64)**: `--no-tables` (CLI) / `tables: false` (API·MCP). Visual bordered boxes (instruction/choice boxes on two-column exam papers) were picked up as line-based tables, pulling surrounding body text into cells and reversing reading order — with no way to turn detection off. The opt-out path skips line grids, cluster tables, multi-column alignment and Korean special tables, emitting natural reading-order paragraphs only. Default is unchanged (detection on). (reported by @choa712)

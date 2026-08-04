@@ -12,6 +12,7 @@ import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdg
 import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem } from "./cluster-detector.js"
 import { type NormItem, collapseEvenSpacing, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
 import { xyCutOrder } from "./xy-cut.js"
+import { detectColumnGutter, orderByGutter, type ColRect } from "./two-column.js"
 import { detectColumns, extractWithColumns } from "./columns.js"
 import { shouldDemoteTable, demoteTableToText, detectListBlocks, detectSpecialKoreanTables } from "./block-detect.js"
 
@@ -352,6 +353,9 @@ function extractBlocksWithGrids(
 
   // 테이블에 속하지 않은 나머지 텍스트 → 일반 블록
   let remaining = items.filter(i => !usedItems.has(i))
+  const groupSizes: number[] = []
+  let finalTextBlocks: IRBlock[] = []
+  let gutterX: number | null = null
   if (remaining.length > 0) {
     remaining.sort((a, b) => b.y - a.y || a.x - b.x)
 
@@ -374,11 +378,45 @@ function extractBlocksWithGrids(
       }
       remaining = remaining.filter((_, idx) => !usedClusterIndices.has(idx))
     }
+  }
 
-    // XY-Cut으로 왼쪽 본문과 오른쪽 부서명 등을 분리 후 개별 처리
-    const groupSizes: number[] = []
-    let finalTextBlocks: IRBlock[] = []
-    if (remaining.length > 0) {
+  // 2단 지면 감지 (#64) — 남은 텍스트 아이템과 표 블록 bbox를 합친 기하 신호.
+  // 시험지처럼 텍스트가 대부분 표에 흡수된 페이지도 표 bbox만으로 판단된다.
+  {
+    const rects: ColRect[] = remaining.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))
+    for (const b of blocks) {
+      if (b.bbox) rects.push({ x: b.bbox.x, y: b.bbox.y, w: b.bbox.width, h: b.bbox.height })
+    }
+    gutterX = detectColumnGutter(rects)
+  }
+
+  if (remaining.length > 0) {
+    if (gutterX !== null) {
+      // 2단 지면: 거터 기준 좌/우/걸침으로 가른 뒤, 각 단 안에서는 기존과 동일하게
+      // XY-Cut 그룹 단위로 처리한다 — 단 전체를 한 덩어리로 넘기면 클러스터 표
+      // 감지가 문항 사이를 건너뛰며 선지 행들을 거대 표로 흡수한다(granularity 보존).
+      const gx = gutterX
+      const allY = remaining.map(i => i.y)
+      const pageH = safeMax(allY) - safeMin(allY)
+      const gapThreshold = Math.max(15, pageH * 0.03)
+      const sides = [
+        remaining.filter(i => i.x + i.w <= gx),
+        remaining.filter(i => i.x < gx && i.x + i.w > gx),
+        remaining.filter(i => i.x >= gx),
+      ]
+      const textBlocks: IRBlock[] = []
+      for (const side of sides) {
+        if (side.length === 0) continue
+        for (const group of xyCutOrder(side, gapThreshold)) {
+          if (group.length === 0) continue
+          const groupBlocks = extractPageBlocksFallback(group, pageNum)
+          for (const b of groupBlocks) textBlocks.push(b)
+          groupSizes.push(groupBlocks.length)
+        }
+      }
+      finalTextBlocks = detectListBlocks(textBlocks)
+    } else {
+      // XY-Cut으로 왼쪽 본문과 오른쪽 부서명 등을 분리 후 개별 처리
       const allY = remaining.map(i => i.y)
       const pageH = safeMax(allY) - safeMin(allY)
       const groups = xyCutOrder(remaining, Math.max(15, pageH * 0.03))
@@ -391,32 +429,51 @@ function extractBlocksWithGrids(
       }
       finalTextBlocks = detectListBlocks(textBlocks) // 1:1 변환 — 그룹 경계(groupSizes) 유지
     }
-
-    // 그룹 단위 Y-정렬 — 블록 단위 Y-정렬은 XY-Cut이 정한 컬럼 읽기 순서(좌단
-    // 전체 → 우단 전체)를 행 단위로 재인터리브하므로, XY-Cut 그룹을 한 단위로
-    // 묶어 그룹 대표 Y(최상단)로만 정렬하고 그룹 내부 순서는 보존한다.
-    // 표/demote 블록은 각자 단독 단위 (기존과 동일하게 Y 위치로 끼어듦).
-    const units: IRBlock[][] = blocks.map(b => [b])
-    let off = 0
-    for (const size of groupSizes) {
-      const unit = finalTextBlocks.slice(off, off + size)
-      off += size
-      if (unit.length > 0) units.push(unit)
-    }
-    const unitTopY = (u: IRBlock[]) => {
-      let top = 0
-      for (const b of u) {
-        if (b.bbox && b.bbox.y + b.bbox.height > top) top = b.bbox.y + b.bbox.height
-      }
-      return top
-    }
-    units.sort((a, b) => unitTopY(b) - unitTopY(a)) // PDF는 y가 위가 큼 → 내림차순
-    const ordered: IRBlock[] = []
-    for (const u of units) for (const b of u) ordered.push(b)
-    return mergeAdjacentTableBlocks(ordered)
   }
 
-  return mergeAdjacentTableBlocks(blocks)
+  // 그룹 단위 Y-정렬 — 블록 단위 Y-정렬은 XY-Cut이 정한 컬럼 읽기 순서(좌단
+  // 전체 → 우단 전체)를 행 단위로 재인터리브하므로, XY-Cut 그룹을 한 단위로
+  // 묶어 그룹 대표 Y(최상단)로만 정렬하고 그룹 내부 순서는 보존한다.
+  // 표/demote 블록은 각자 단독 단위 (기존과 동일하게 Y 위치로 끼어듦).
+  const units: IRBlock[][] = blocks.map(b => [b])
+  let off = 0
+  for (const size of groupSizes) {
+    const unit = finalTextBlocks.slice(off, off + size)
+    off += size
+    if (unit.length > 0) units.push(unit)
+  }
+  const unitTopY = (u: IRBlock[]) => {
+    let top = 0
+    for (const b of u) {
+      if (b.bbox && b.bbox.y + b.bbox.height > top) top = b.bbox.y + b.bbox.height
+    }
+    return top
+  }
+  if (gutterX !== null && units.length > 1) {
+    // 밴드 정렬 (#64): 거터를 가로지르는 유닛(전폭 표·머리글·쪽번호)을 위→아래
+    // 밴드 경계로 삼고, 밴드 안에서 좌단 전체(위→아래) → 우단 전체 순으로 배열.
+    const gx = gutterX
+    const unitRect = (u: IRBlock[]): ColRect => {
+      let minX = Infinity, minY = Infinity, maxR = -Infinity, maxT = -Infinity
+      for (const b of u) {
+        if (!b.bbox) continue
+        if (b.bbox.x < minX) minX = b.bbox.x
+        if (b.bbox.y < minY) minY = b.bbox.y
+        if (b.bbox.x + b.bbox.width > maxR) maxR = b.bbox.x + b.bbox.width
+        if (b.bbox.y + b.bbox.height > maxT) maxT = b.bbox.y + b.bbox.height
+      }
+      // bbox 없는 유닛(방어) — 거터 걸침으로 취급해 맨 뒤 경계로 밀림
+      if (!Number.isFinite(minX)) return { x: gx - 1, y: 0, w: 2, h: 0 }
+      return { x: minX, y: minY, w: maxR - minX, h: maxT - minY }
+    }
+    const ordered: IRBlock[] = []
+    for (const u of orderByGutter(units, unitRect, gx)) for (const b of u) ordered.push(b)
+    return mergeAdjacentTableBlocks(ordered)
+  }
+  units.sort((a, b) => unitTopY(b) - unitTopY(a)) // PDF는 y가 위가 큼 → 내림차순
+  const ordered: IRBlock[] = []
+  for (const u of units) for (const b of u) ordered.push(b)
+  return mergeAdjacentTableBlocks(ordered)
 }
 
 /**
@@ -611,7 +668,12 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     // 2단계: 레거시 컬럼 감지 (3+ 열)
     // 2단 조판 본문(속기록류)은 들여쓰기 x-피크가 3+ 열로 오인돼 페이지 전체가
     // 행 인터리브 탭 텍스트로 뭉개진다 → 단 분리 경로에 위임
-    const proseCutX = fullPage ? findTwoColumnProseCutX(items) : null
+    let proseCutX = fullPage ? findTwoColumnProseCutX(items) : null
+    // 프로즈 전용 검출이 불발하는 2단 지면(시험지 등 — 마커 다량·짧은 선지 줄)은
+    // 기하 전용 거터 검출로 보강 (#64)
+    if (proseCutX === null && fullPage) {
+      proseCutX = detectColumnGutter(items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize })))
+    }
     const allYLines = mergeSuperscriptLines(groupByY(items))
     const columns = proseCutX !== null || !detectTables ? null : detectColumns(allYLines)
 
