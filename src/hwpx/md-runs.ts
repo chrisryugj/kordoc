@@ -357,18 +357,25 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
   return spans
 }
 
-/** 강조(`code` ** * __ _) 토크나이즈 — 마스킹된 세그먼트 텍스트 전용 */
-function emphasisSpans(text: string): InlineSpan[] {
+// 패턴: `code`, ***bolditalic***, **bold**, *italic*, __bold__, _italic_
+// **/***/* 는 안쪽에 더 짧은 별 run 을 허용 — **굵게 *기울임*** 같은 중첩 강조가
+// 매칭에서 통째로 탈락해 별 하나짜리 두 개로 오인되던 것을 방지 (#61). 중첩 내용은
+// emphasisSpans 재귀로 분해해 겉 강조 플래그를 OR 한다.
+// 언더스코어 강조는 GFM처럼 단어 내부 비활성 (post_id·__init__ 오염 방지, v4.0.5):
+// 여는 _ 는 앞이 공백/구두점/문두 + 뒤가 비공백, 닫는 _ 는 앞이 비공백 + 뒤가
+// 공백/구두점/문미일 때만. (?<!_)/(?!_)는 _ run을 원자로 취급(_init_ 부분매칭 방지),
+// \x00 은 이스케이프 센티널(마스킹된 구두점)이라 경계로 인정.
+const INLINE_REGEX = /(`[^`]+`|\*{3}(?:[^*]|\*(?!\*\*))+\*{3}|\*{2}(?:[^*]|\*(?!\*))+\*{2}|\*(?:[^*]|\*{2}(?:[^*]|\*(?!\*))+\*{2})+\*|(?<![^\s\p{P}\p{S}\x00])(?<!_)_{2}(?=\S)[^_]+(?<=\S)_{2}(?!_)(?![^\s\p{P}\p{S}\x00])|(?<![^\s\p{P}\p{S}\x00])(?<!_)_(?=\S)[^_]+(?<=\S)_(?!_)(?![^\s\p{P}\p{S}\x00]))/gu
+
+/**
+ * 강조(`code` ** * __ _) 토크나이즈 — 마스킹된 세그먼트 텍스트 전용.
+ * 강조 중첩은 한 단계씩 재귀로 벗긴다 — depth 는 병리적 입력 폭주 방지용 상한.
+ */
+function emphasisSpans(text: string, depth = 0): InlineSpan[] {
   const spans: InlineSpan[] = []
-  // 패턴: `code`, ***bolditalic***, **bold**, *italic*, __bold__, _italic_
-  // 언더스코어 강조는 GFM처럼 단어 내부 비활성 (post_id·__init__ 오염 방지, v4.0.5):
-  // 여는 _ 는 앞이 공백/구두점/문두 + 뒤가 비공백, 닫는 _ 는 앞이 비공백 + 뒤가
-  // 공백/구두점/문미일 때만. (?<!_)/(?!_)는 _ run을 원자로 취급(_init_ 부분매칭 방지),
-  // \x00 은 이스케이프 센티널(마스킹된 구두점)이라 경계로 인정. */** 강조는 종전 그대로.
-  const regex = /(`[^`]+`|\*{3}[^*]+\*{3}|\*{2}[^*]+\*{2}|\*[^*]+\*|(?<![^\s\p{P}\p{S}\x00])(?<!_)_{2}(?=\S)[^_]+(?<=\S)_{2}(?!_)(?![^\s\p{P}\p{S}\x00])|(?<![^\s\p{P}\p{S}\x00])(?<!_)_(?=\S)[^_]+(?<=\S)_(?!_)(?![^\s\p{P}\p{S}\x00]))/gu
   let lastIdx = 0
 
-  for (const match of text.matchAll(regex)) {
+  for (const match of text.matchAll(INLINE_REGEX)) {
     const idx = match.index!
     if (idx > lastIdx) {
       spans.push({ text: text.slice(lastIdx, idx), bold: false, italic: false, code: false })
@@ -376,12 +383,24 @@ function emphasisSpans(text: string): InlineSpan[] {
     const raw = match[0]
     if (raw.startsWith("`")) {
       spans.push({ text: raw.slice(1, -1), bold: false, italic: false, code: true })
-    } else if (raw.startsWith("***") || raw.startsWith("___")) {
-      spans.push({ text: raw.slice(3, -3), bold: true, italic: true, code: false })
-    } else if (raw.startsWith("**") || raw.startsWith("__")) {
-      spans.push({ text: raw.slice(2, -2), bold: true, italic: false, code: false })
     } else {
-      spans.push({ text: raw.slice(1, -1), bold: false, italic: true, code: false })
+      let inner: string
+      let bold = false
+      let italic = false
+      if (raw.startsWith("***") || raw.startsWith("___")) {
+        inner = raw.slice(3, -3); bold = true; italic = true
+      } else if (raw.startsWith("**") || raw.startsWith("__")) {
+        inner = raw.slice(2, -2); bold = true
+      } else {
+        inner = raw.slice(1, -1); italic = true
+      }
+      if (depth < 3 && /[`*_]/.test(inner)) {
+        for (const child of emphasisSpans(inner, depth + 1)) {
+          spans.push(child.code ? child : { ...child, bold: child.bold || bold, italic: child.italic || italic })
+        }
+      } else {
+        spans.push({ text: inner, bold, italic, code: false })
+      }
     }
     lastIdx = idx + raw.length
   }

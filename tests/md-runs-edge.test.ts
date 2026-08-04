@@ -114,3 +114,53 @@ describe("v4.0.5 언더스코어 단어내부 강조 회귀", () => {
     assert.deepEqual(spans.filter(s => s.bold).map(s => s.text), ["볼드"])
   })
 })
+
+describe("중첩 강조 회귀 — **a *b* c** 가 별 리터럴로 오염되던 문제", () => {
+  const flags = (s: { bold: boolean; italic: boolean; code: boolean }) =>
+    `${s.bold ? "B" : ""}${s.italic ? "I" : ""}${s.code ? "C" : ""}`
+
+  it("굵게 안 기울임: **굵게 *기울임* 다시**", () => {
+    const spans = parseInlineMarkdown("**굵게 *기울임* 다시**")
+    assert.deepEqual(spans.map(s => [s.text, flags(s)]), [
+      ["굵게 ", "B"], ["기울임", "BI"], [" 다시", "B"],
+    ])
+  })
+
+  it("기울임 안 굵게: *기울임 **굵게** 다시*", () => {
+    const spans = parseInlineMarkdown("*기울임 **굵게** 다시*")
+    assert.deepEqual(spans.map(s => [s.text, flags(s)]), [
+      ["기울임 ", "I"], ["굵게", "BI"], [" 다시", "I"],
+    ])
+  })
+
+  it("별 강조 안 언더스코어 (교차 중첩): **a _u_ b** · __a *i* b__", () => {
+    assert.deepEqual(parseInlineMarkdown("**a _u_ b**").map(s => [s.text, flags(s)]), [
+      ["a ", "B"], ["u", "BI"], [" b", "B"],
+    ])
+    assert.deepEqual(parseInlineMarkdown("__a *i* b__").map(s => [s.text, flags(s)]), [
+      ["a ", "B"], ["i", "BI"], [" b", "B"],
+    ])
+  })
+
+  it("굵게 안 인라인 코드는 코드 서식 유지: **`code` 안**", () => {
+    assert.deepEqual(parseInlineMarkdown("**`code` 안**").map(s => [s.text, flags(s)]), [
+      ["code", "C"], [" 안", "B"],
+    ])
+  })
+
+  it("기존 단독 강조·***셋다***·이스케이프 불변", () => {
+    assert.deepEqual(parseInlineMarkdown("***셋다***").map(s => [s.text, flags(s)]), [["셋다", "BI"]])
+    assert.deepEqual(parseInlineMarkdown("평문 **굵게** 뒤 *기울임*").map(s => [s.text, flags(s)]), [
+      ["평문 ", ""], ["굵게", "B"], [" 뒤 ", ""], ["기울임", "I"],
+    ])
+    assert.deepEqual(parseInlineMarkdown("\\*리터럴\\* **굵게**").map(s => [s.text, flags(s)]), [
+      ["*리터럴* ", ""], ["굵게", "B"],
+    ])
+  })
+
+  it("미닫힘 굵게는 종전 폴백 그대로 (파싱 폭주 없음)", () => {
+    const spans = parseInlineMarkdown("**미닫힘 *기울임*")
+    assert.equal(spans.map(s => s.text).join(""), "*미닫힘 기울임*")
+    assert.ok(spans.every(s => !s.bold))
+  })
+})
