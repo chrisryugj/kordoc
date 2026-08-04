@@ -121,9 +121,15 @@ export function precheckZipSize(
   }
 }
 
-/** XXE/Billion Laughs 방지 — DOCTYPE 제거 (내부 DTD 서브셋 포함) */
+/**
+ * XML 파싱 전 프롤로그 정리 — 선두 BOM 제거 + DOCTYPE 제거(XXE/Billion Laughs 방지).
+ *
+ * BOM: 일부 OpenXML 라이터가 `[Content_Types].xml`·`.rels` 앞에 EF BB BF를 붙인다.
+ * XML 스펙상 적법(엔티티는 BOM으로 시작할 수 있음)이고 엑셀·리브레오피스는 여는데,
+ * xmldom은 "선언이 문서 시작이 아님" fatalError로 파일 전체를 거부했다 (#63).
+ */
 export function stripDtd(xml: string): string {
-  return xml.replace(/<!DOCTYPE\s[^[>]*(\[[\s\S]*?\])?\s*>/gi, "")
+  return xml.replace(/^\uFEFF/, "").replace(/<!DOCTYPE\s[^[>]*(\[[\s\S]*?\])?\s*>/gi, "")
 }
 
 /** 하이퍼링크 URL 살균 — javascript: 등 XSS 위험 스킴 차단 */

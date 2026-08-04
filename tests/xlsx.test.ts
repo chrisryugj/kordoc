@@ -171,3 +171,36 @@ describe("XLSX 파서", () => {
     assert.equal(result.metadata?.author, "작성자")
   })
 })
+
+describe("BOM 선행 XML 파트 (#63)", () => {
+  /** 모든 .xml/.rels 파트 앞에 UTF-8 BOM 을 붙여 재압축 — 일부 OpenXML 라이터 실사례 */
+  async function prependBom(buffer: ArrayBuffer): Promise<ArrayBuffer> {
+    const zip = await JSZip.loadAsync(buffer)
+    for (const path of Object.keys(zip.files)) {
+      if (!/\.(xml|rels)$/i.test(path)) continue
+      zip.file(path, "﻿" + await zip.files[path].async("text"))
+    }
+    return await zip.generateAsync({ type: "arraybuffer" })
+  }
+
+  it("BOM + <?xml?> 조합이 PARSE_ERROR 로 거부되지 않는다", async () => {
+    const buffer = await prependBom(await createXlsx({
+      sheets: [{ name: "매출", rows: [["항목", "금액"], ["가", "100"]] }],
+    }))
+    const result = await parse(buffer)
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.equal(result.fileType, "xlsx")
+    assert.ok(result.markdown.includes("## 매출"))
+    assert.ok(result.markdown.includes("항목"))
+    assert.ok(result.markdown.includes("100"))
+  })
+
+  it("BOM 이 시트명·셀 텍스트로 새어나오지 않는다", async () => {
+    const buffer = await prependBom(await createXlsx())
+    const result = await parse(buffer)
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.ok(!result.markdown.includes("﻿"), "본문에 BOM 잔류")
+  })
+})
