@@ -170,6 +170,8 @@ export function classifyError(err: unknown): ErrorCode {
   if (msg.includes("DRM")) return "DRM_PROTECTED"
   if (msg.includes("암호화") || msg.includes("암호로 보호")) return "ENCRYPTED"
   if (msg.includes("optional dependency")) return "MISSING_DEPENDENCY"
+  // V8 문자열 한계 초과 — 이미지 base64 총량이 큰 문서의 JSON 직렬화 (#65)
+  if (msg.includes("Invalid string length") || msg.includes("Cannot create a string longer")) return "OUTPUT_TOO_LARGE"
   if (msg.includes("ZIP bomb") || msg.includes("ZIP 비압축 크기 초과") || msg.includes("ZIP 엔트리 수 초과")) return "ZIP_BOMB"
   if (msg.includes("bomb") || msg.includes("크기 초과") || msg.includes("압축 해제")) return "DECOMPRESSION_BOMB"
   if (msg.includes("이미지 기반")) return "IMAGE_BASED_PDF"

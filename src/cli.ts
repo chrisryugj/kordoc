@@ -9,7 +9,7 @@ import { parseFormatProfileJson } from "./hwpx/profile-io.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS } from "./hwpx/gongmun-surface.js"
 import type { ParseOptions } from "./types.js"
 import type { FormatProfile } from "./hwpx/gen-profile.js"
-import { VERSION, toArrayBuffer, sanitizeError } from "./utils.js"
+import { VERSION, toArrayBuffer, sanitizeError, classifyError } from "./utils.js"
 
 const program = new Command()
 
@@ -30,6 +30,7 @@ program
   .option("--keep-empty-cols", "표 오른쪽 끝 빈 열(서식 입력란) 보존 (#47, 기본 off: 후행 빈 열 트림)")
   .option("--keep-empty-paragraphs", "빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄로 (#57, 기본 off: 빈 문단 제거)")
   .option("--inline-images", "이미지를 base64 data URI 로 마크다운에 인라인 (BMP→PNG 압축, HWP5 전용 — 인라인된 경우만 파일 미저장, 그 외 포맷은 저장 유지)")
+  .option("--image-refs", "--format json 에서 이미지 바이트를 인라인하지 않고 파일 참조(images/<파일명>)만 남김 (#65 — 이미지가 수백 장인 문서의 직렬화 한계 회피, -o/-d 와 함께 사용)")
   .option("--password <pw>", "암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5. 한컴 DRM 문서는 해당 없음)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {
@@ -47,6 +48,7 @@ program
       const absPath = resolve(filePath)
       const fileName = basename(absPath)
       const filePrefix = files.length > 1 ? `[${fi + 1}/${files.length}] ` : ""
+      let detectedFormat: ReturnType<typeof detectFormat> = "unknown"
 
       try {
         const fileSize = statSync(absPath).size
@@ -58,6 +60,7 @@ program
         const buffer = readFileSync(absPath)
         const arrayBuffer = toArrayBuffer(buffer)
         const format = detectFormat(arrayBuffer)
+        detectedFormat = format
 
         if (!opts.silent) {
           process.stderr.write(`[kordoc] ${filePrefix}${fileName} (${format}) ...`)
@@ -80,6 +83,7 @@ program
           }
         }
         const result = await parse(arrayBuffer, parseOptions)
+        detectedFormat = result.fileType  // ZIP 세분화(xlsx·docx) 반영 — 실패 JSON 의 fileType
 
         if (!result.success) {
           process.stderr.write(` FAIL\n`)
@@ -108,11 +112,29 @@ program
             .replace(/!\[image\]\(image_/g, "![image](images/image_")
             .replace(/(<img\b[^>]*\bsrc=")image_/g, "$1images/image_")
         }
-        let output: string
-        if (opts.format === "json") {
-          output = JSON.stringify(result, (_key, value) =>
+        // json 직렬화 — refsOnly면 이미지 바이트를 빼고 저장 경로만 남긴다.
+        // 이미지가 수백 장인 문서는 base64 총량이 V8 문자열 한계를 넘어 RangeError 로
+        // 터졌고, 그 예외가 성공 로그 뒤 비-JSON 출력이 되어 파이프라인이 깨졌다 (#65).
+        const serializeJson = (refsOnly: boolean): string => {
+          const payload = refsOnly && result.images?.length
+            ? { ...result, images: result.images.map(img => ({ filename: img.filename, mimeType: img.mimeType, path: `images/${img.filename}` })) }
+            : result
+          return JSON.stringify(payload, (_key, value) =>
             value instanceof Uint8Array ? Buffer.from(value).toString("base64") : value
           , 2)
+        }
+        let output: string
+        if (opts.format === "json") {
+          const savesImages = Boolean((opts.output && files.length === 1) || opts.outDir) && !imagesInlined
+          try {
+            output = serializeJson(Boolean(opts.imageRefs) && savesImages)
+          } catch (err) {
+            // 한계 초과 — 이미지를 어차피 파일로 저장하는 실행이면 참조 모드로 자동 강등한다.
+            // 저장 위치가 없으면(stdout) 구제할 방법이 없으므로 실패 JSON 계약으로 넘긴다.
+            if (!savesImages || !result.images?.length) throw err
+            output = serializeJson(true)
+            process.stderr.write(`  ⚠️ 이미지 base64 인라인이 직렬화 한계를 넘어 파일 참조로 대체했습니다 (${result.images.length}개 → images/)\n`)
+          }
         } else if (opts.format === "chunks") {
           const { blocksToChunks } = await import("./chunks.js")
           output = JSON.stringify(blocksToChunks(result.blocks), null, 2)
@@ -147,6 +169,16 @@ program
         }
       } catch (err) {
         process.stderr.write(`\n[kordoc] ERROR: ${fileName} — ${sanitizeError(err)}\n`)
+        // 파싱 이후(출력·직렬화) 단계에서 터져도 --format json 은 실패 JSON 을 내야
+        // 호출자가 원인 코드로 분기할 수 있다 — 종전엔 성공 로그 뒤 비-JSON 이었다 (#65)
+        if (opts.format === "json") {
+          process.stdout.write(JSON.stringify({
+            success: false,
+            fileType: detectedFormat,
+            error: sanitizeError(err),
+            code: classifyError(err),
+          }, null, 2) + "\n")
+        }
         process.exitCode = 1
       }
     }
