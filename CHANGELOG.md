@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.6.0] - 2026-08-04
+
+외부 제보 4건 수리 — 중첩 강조, BOM 선행 XML, 이미지 다량 문서의 JSON 출력,
+PDF 표 감지 opt-out.
+
+### Added
+
+- **PDF 표 감지 opt-out** (#64, @choa712 제보): `parse(buf, { tables: false })` ·
+  CLI `--no-tables` · MCP `parse_document`의 `tables`. 시각적 테두리 박스(2단 시험지의
+  안내문·보기 상자)가 선 기반 표로 잡히면 주변 본문이 셀 매핑으로 끌려 들어가 문항
+  순서가 뒤집히는데, 표 감지를 끌 방법 자체가 없었다. 끈 경로는 선 그리드·클러스터 표·
+  다열 정렬·한국어 특수표를 모두 건너뛰고 자연 읽기순 문단만 낸다 (OCR 경로 포함).
+  기본값은 종전 그대로 `true`.
+- **`--image-refs`** (#65): `--format json` 에서 이미지 바이트를 base64 로 인라인하지 않고
+  저장 경로(`images/<파일명>`)만 남긴다. `-o`/`-d` 로 이미지가 실제로 저장되는 실행에서만
+  유효하다.
+- **`OUTPUT_TOO_LARGE` 에러 코드**: 결과 직렬화가 런타임 문자열 한계를 넘은 경우.
+
+### Fixed
+
+- **중첩 인라인 강조** (#61 · PR #62, @LeeYudok 제보·수정): `**굵게 *기울임* 다시**` 처럼
+  강조 안에 강조가 들어간 마크다운이 `markdownToHwpx` 에서 별 리터럴 노출·굵게 소실·
+  서식 역전으로 깨지던 문제. 강조 정규식이 안쪽의 더 짧은 별 run 을 허용하도록 확장하고,
+  매칭 내부를 재귀(상한 3)로 분해해 겉 강조 플래그를 OR 한다. 단독 강조·이스케이프·
+  snake_case 비활성·미닫힘 폴백은 종전 출력 그대로.
+- **선두 BOM 이 붙은 XML 파트** (#63, @soyesenna 제보): 일부 OpenXML 라이터가
+  `[Content_Types].xml`·`.rels` 앞에 EF BB BF 를 붙이는데(XML 스펙상 적법 — 엑셀·
+  리브레오피스는 정상적으로 연다), xmldom 이 "선언이 문서 시작이 아님" fatalError 로
+  파일 전체를 `PARSE_ERROR` 거부했다. XML 프롤로그 정리 지점에서 BOM 을 함께 걷어낸다 —
+  xlsx·docx·hwpx·hwpml 파싱 진입점이 모두 이 경로를 지난다.
+- **이미지 다량 문서의 `--format json`** (#65, @choa712 제보): 이미지가 수백 장인
+  HWP(27~53MB)에서 base64 총량이 V8 문자열 한계를 넘어 `JSON.stringify` 가 RangeError 로
+  터졌고, 예외가 파싱 "OK" 로그 뒤 바깥 catch 로 빠져 stdout 이 비었다 — 파이프라인의
+  JSON.parse 가 원인 코드 없이 깨졌다. 이제 ① 저장 경로가 있으면 참조 모드로 자동 강등,
+  ② 파싱 이후 단계 예외도 `--format json` 이면 실패 JSON(success·fileType·code)을 낸다.
+
+### Notes
+
+- #64 의 "박스 오탐 자체를 줄이는 휴리스틱 확장"은 이번 릴리스에 포함하지 않았다.
+  공개 수능 문제지(국어 20p) 실측으로는 표 감지를 꺼도 문항 순서 지표가 거의 그대로였고
+  (역전 21→19), 재현에 쓰인 4p 문제지가 없어 원인 분리를 못 했다. 표 감지 오탐과
+  2단 읽기순 중 무엇이 지배적인지 가려낸 뒤 손대는 편이 안전하다.
+
 ## [4.5.0] - 2026-08-02
 
 마크다운 → HWPX 생성 미지원 6종 도입 — 용지 크기·가로 방향, 다단, 머리말/꼬리말,

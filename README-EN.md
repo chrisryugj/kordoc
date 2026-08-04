@@ -72,6 +72,13 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.6.0
+
+- **🚫 PDF table-detection opt-out (#64)**: `--no-tables` (CLI) / `tables: false` (API·MCP). Visual bordered boxes (instruction/choice boxes on two-column exam papers) were picked up as line-based tables, pulling surrounding body text into cells and reversing reading order — with no way to turn detection off. The opt-out path skips line grids, cluster tables, multi-column alignment and Korean special tables, emitting natural reading-order paragraphs only. Default is unchanged (detection on). (reported by @choa712)
+- **🖼️ JSON output for image-heavy documents (#65)**: HWP files with hundreds of images overflowed the runtime string limit during base64 serialization, so `--format json` ended in **non-JSON** output with no failure contract. Now `--image-refs` keeps only saved paths instead of bytes, oversized runs downgrade to reference mode automatically, and any post-parse failure still emits failure JSON with a cause code (`OUTPUT_TOO_LARGE`, …). (reported by @choa712)
+- **🔤 Nested inline emphasis (#61)**: `**bold *italic* again**` produced literal asterisks, lost bold, and inverted styles — a common pattern in LLM-authored markdown, so the `generate_document` path was heavily exposed. (reported and fixed by @LeeYudok, PR #62)
+- **📄 BOM-prefixed XML parts (#63)**: a UTF-8 BOM before the XML declaration in `[Content_Types].xml`/`.rels` (written by some OpenXML writers, and opened fine by Excel/LibreOffice) made xmldom reject the whole xlsx/docx with `PARSE_ERROR`. (reported by @soyesenna)
+
 ## What's New in v4.5.0
 
 - **📄 Page options**: paper size (A4·A3·B4·B5·Letter·custom mm), **landscape orientation**, **multi-column** (1–8), and **header/footer text** — API `page`, CLI `--paper/--landscape/--columns/--header/--footer`, MCP `generate_document` parameters. Headers/footers use the same `<hp:header>`/`<hp:footer>` structure as real Hancom files.
