@@ -164,8 +164,10 @@ server.tool(
       .describe("빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄 (#57, 기본 off, CLI --keep-empty-paragraphs 대응)"),
     password: z.string().optional()
       .describe("암호로 보호된 문서의 열기 암호 (#59, HWPX·HWP3·HWP5 지원. 파싱이 ENCRYPTED로 실패하면 이 옵션으로 재시도하세요. 한컴 DRM 보호 문서는 해당 없음)"),
+    tables: z.boolean().optional()
+      .describe("PDF 표 감지 (기본 true — false로 끄기, CLI --no-tables 대응). 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑습니다 (#64)"),
   },
-  async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, password }) => {
+  async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, password, tables }) => {
     try {
       const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
       const format = detectFormat(buffer)
@@ -191,6 +193,7 @@ server.tool(
         ...(keep_trailing_empty_cols ? { keepTrailingEmptyCols: true } : {}),
         ...(keep_empty_paragraphs ? { keepEmptyParagraphs: true } : {}),
         ...(password ? { password } : {}),
+        ...(tables === false ? { tables: false } : {}),
       })
 
       if (!result.success) {

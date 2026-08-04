@@ -67,7 +67,7 @@ export async function parseImageDocument(
   const pdfH = height / IMAGE_SCALE
   const ruling = detectRulingLines(data, width, height, IMAGE_SCALE)
   const extraLines = rulingToPdfLines(ruling, IMAGE_SCALE, pdfH)
-  return { blocks: ocrItemsToBlocks(items, 1, pdfW, pdfH, IMAGE_SCALE, extraLines), warnings }
+  return { blocks: ocrItemsToBlocks(items, 1, pdfW, pdfH, IMAGE_SCALE, extraLines, options?.tables !== false), warnings }
 }
 
 /** sharp 로 RGBA 디코딩 — 미설치는 MISSING_DEPENDENCY 로 분류되도록 안내 메시지 throw */

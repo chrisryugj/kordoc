@@ -38,6 +38,7 @@ export async function runPdfOcr(
   mode: OcrMode,
   warnings: ParseWarning[],
   onProgress?: (current: number, total: number) => void,
+  detectTables = true,
 ): Promise<Map<number, IRBlock[]>> {
   const result = new Map<number, IRBlock[]>()
   if (targets.size === 0) return result
@@ -67,7 +68,7 @@ export async function runPdfOcr(
       onProgress?.(++done, targets.size)
       try {
         const blocks = await withTimeout(
-          ocrOnePage(page, pageNo, mode, engine, warnings),
+          ocrOnePage(page, pageNo, mode, engine, warnings, detectTables),
           PAGE_TIMEOUT_MS,
           `OCR 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`,
         )
@@ -93,6 +94,7 @@ async function ocrOnePage(
   mode: OcrMode,
   engine: Awaited<ReturnType<typeof getOcrEngine>> | null,
   warnings: ParseWarning[],
+  detectTables: boolean,
 ): Promise<IRBlock[]> {
   const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
   const rendered = await page.render({
@@ -116,7 +118,7 @@ async function ocrOnePage(
     const scale = rh / pdfH
     const ruling = detectRulingLines(rgba, rw, rh, scale)
     const extraLines = rulingToPdfLines(ruling, scale, pdfH)
-    return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines)
+    return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables)
   }
 
   // 사용자 프로바이더 — PNG 인코딩 후 호출, 페이지당 paragraph (종전 계약)
@@ -156,6 +158,7 @@ export function ocrItemsToBlocks(
   pdfH: number,
   scale: number,
   extraLines?: { horizontals: LineSegment[]; verticals: LineSegment[] },
+  detectTables = true,
 ): IRBlock[] {
   const norm: NormItem[] = items.map(it => {
     const h = it.h / scale
@@ -171,7 +174,7 @@ export function ocrItemsToBlocks(
       isHidden: false,
     }
   })
-  return extractPageBlocksWithLines(norm, pageNumber, { fnArray: [], argsArray: [] }, pdfW, pdfH, extraLines)
+  return extractPageBlocksWithLines(norm, pageNumber, { fnArray: [], argsArray: [] }, pdfW, pdfH, extraLines, detectTables)
 }
 
 async function tryImport<T>(name: string, loader: () => Promise<T>): Promise<T> {

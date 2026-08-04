@@ -160,7 +160,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           if (uncovered > 0) skippedImagePages.set(i, uncovered)
         }
 
-        const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height)
+        const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height, undefined, options?.tables !== false)
         for (const b of pageBlocks) blocks.push(b)
 
         // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
@@ -222,7 +222,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         try {
           const { runPdfOcr } = await import("../ocr/pdf-ocr.js")
           const mode = typeof options.ocr === "function" ? options.ocr : ("builtin" as const)
-          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options.onProgress)
+          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options.onProgress, options.tables !== false)
           if (ocrPageBlocks.size > 0) {
             // 페이지 단위 교체: OCR 성공 페이지의 기존(깨진/빈) 블록 제거 후 병합
             for (const p of ocrPageBlocks.keys()) ocrDone.add(p)

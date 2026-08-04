@@ -23,6 +23,7 @@ program
   .option("-p, --pages <range>", "페이지/섹션 범위 (예: 1-3, 1,3,5)")
   .option("--format <type>", "출력 형식: markdown (기본), json, chunks (RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크)", "markdown")
   .option("--no-header-footer", "PDF 머리글/바닥글 자동 제거 끄기 (기본: 제거함)")
+  .option("--no-tables", "PDF 표 감지 끄기 — 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑는다 (#64)")
   .option("--formula-ocr", "PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드)")
   .option("--ocr", "스캔/이미지 PDF 텍스트 OCR (내장 PP-OCRv5 korean, 첫 사용 시 모델 ~18MB 자동 다운로드 — OCR 필요 페이지만 인식)")
   .option("--ocr-force", "전 페이지 강제 OCR (텍스트층이 있어도 무시하고 재인식)")
@@ -69,6 +70,7 @@ program
         const parseOptions: ParseOptions = { filePath: absPath }
         if (opts.pages) parseOptions.pages = opts.pages as string
         if (opts.headerFooter === false) parseOptions.removeHeaderFooter = false
+        if (opts.tables === false) parseOptions.tables = false
         if (opts.formulaOcr) parseOptions.formulaOcr = true
         if (opts.ocrForce) parseOptions.ocr = "force"
         else if (opts.ocr) parseOptions.ocr = true

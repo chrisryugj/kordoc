@@ -26,6 +26,7 @@ export function extractPageBlocksWithLines(
   pageWidth: number,
   pageHeight: number,
   extraLines?: { horizontals: LineSegment[]; verticals: LineSegment[] },
+  detectTables = true,
 ): IRBlock[] {
   if (items.length === 0) return []
 
@@ -53,15 +54,15 @@ export function extractPageBlocksWithLines(
   markStrikethroughItems(items, horizontals)
   wrapStrikethroughRuns(items)
 
-  // 2단계: 선으로 테이블 그리드 구성
-  const grids = buildTableGrids(horizontals, verticals)
+  // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
+  const grids = detectTables ? buildTableGrids(horizontals, verticals) : []
 
   if (grids.length > 0) {
     return extractBlocksWithGrids(items, pageNum, grids, horizontals, verticals)
   }
 
   // Fallback: 기존 휴리스틱 (선이 없는 PDF)
-  return extractPageBlocksFallback(items, pageNum, true)
+  return extractPageBlocksFallback(items, pageNum, true, detectTables)
 }
 
 // ─── 취소선 감지 (ODL StrikethroughProcessor 포팅) ─────
@@ -561,8 +562,11 @@ function splitTwoColumnProse(items: NormItem[], cutX: number): NormItem[][] {
  *
  * fullPage: 페이지 전체 아이템으로 호출됐을 때만 true — 2단 조판 본문 감지는
  * 전체 지면 기준 신호라, XY-Cut 그룹(부분 집합) 재호출에서는 오발화하므로 끈다.
+ *
+ * detectTables: false 면 표 감지(클러스터·다열 정렬·한국어 특수표)를 모두 끄고
+ * 자연 읽기순 텍스트만 낸다 (#64 opt-out).
  */
-export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fullPage = false): IRBlock[] {
+export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fullPage = false, detectTables = true): IRBlock[] {
   if (items.length === 0) return []
 
   const blocks: IRBlock[] = []
@@ -572,7 +576,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
     fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore,
   }))
-  const clusterResults = detectClusterTables(clusterItems, pageNum)
+  const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum) : []
 
   if (clusterResults.length > 0) {
     const ciToIdx = new Map<ClusterItem, number>()
@@ -609,7 +613,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     // 행 인터리브 탭 텍스트로 뭉개진다 → 단 분리 경로에 위임
     const proseCutX = fullPage ? findTwoColumnProseCutX(items) : null
     const allYLines = mergeSuperscriptLines(groupByY(items))
-    const columns = proseCutX !== null ? null : detectColumns(allYLines)
+    const columns = proseCutX !== null || !detectTables ? null : detectColumns(allYLines)
 
     if (columns && columns.length >= 3) {
       const tableText = extractWithColumns(allYLines, columns)
@@ -631,7 +635,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
         if (group.length === 0) continue
         const yLines = mergeSuperscriptLines(groupByY(group))
 
-        const groupColumns = detectColumns(yLines)
+        const groupColumns = detectTables ? detectColumns(yLines) : null
         if (groupColumns && groupColumns.length >= 3) {
           const tableText = extractWithColumns(yLines, groupColumns)
           const bbox = computeBBox(group, pageNum)
@@ -649,5 +653,5 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
   }
 
   // 한국어 특수 테이블 감지 (구분/항목/종류 패턴)
-  return detectSpecialKoreanTables(blocks)
+  return detectTables ? detectSpecialKoreanTables(blocks) : blocks
 }
