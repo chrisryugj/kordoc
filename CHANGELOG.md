@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.0] - 2026-08-05
+
+PDF 밑줄 보존 — 개정문·심사보고서·계획서의 밑줄 강조 복원.
+
+### Added
+
+- **PDF 밑줄 감지** (`src/pdf/underline.ts`): baseline 바로 아래 밀착한 얇은
+  수평선을 텍스트와 상관해 `<u>…</u>` 인라인 HTML로 보존한다. PDF에는 밑줄
+  폰트 플래그가 없어 밑줄이 별도 그래픽(선/얇은 사각형)으로 그려지는데, 기존
+  파서는 이를 전부 버렸다 (취소선 `~~`는 v3.0부터 보존 — 그 짝). CJK 밑줄이
+  전각 박스 하단(~0.67em)까지 내려가는 조판 특성 반영
+  (firecrawl/pdf-inspector underline 휴리스틱 참조, MIT). 표 괘선·장식 오탐
+  방어 5겹 — ① 수직선 접촉(표 그리드/폼 박스), ② 동일 스팬 반복(수평 괘선만
+  쓰는 서식), ③ 매칭 런 union 밀착(containment+coverage — 셀 패딩·빈 열까지
+  걸치는 행 괘선 배제), ④ 런 사이 컬럼급 구멍(표 행), ⑤ 상하변 마주봄(라운드
+  배지/칩의 하변 — 곡선 모서리라 수직선 접촉 방어를 비껴가는 케이스). 코퍼스
+  실측: 48문서 중 32문서에서 부서명·각주 강조·절 제목·본문 부분 강조 밑줄 복원
+  (원문 렌더 대조 검증), PDF 커버리지 게이트 베이스라인 동등(0.99581)·표 GT
+  게이트 동등. 벤치 정규화(`bench/lib/normalize.mjs`)는 `<u>` 태그를 `<img>`·표
+  태그와 동일하게 채점 전 제거(서식 마커는 콘텐츠가 아님 — 양쪽 동일 적용 대칭).
+
 ## [4.6.1] - 2026-08-04
 
 2단 지면(시험지·잡지형) 읽기 순서 수리 — #64 후속.
