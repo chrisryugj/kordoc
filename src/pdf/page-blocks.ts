@@ -15,6 +15,7 @@ import { xyCutOrder } from "./xy-cut.js"
 import { detectColumnGutter, orderByGutter, type ColRect } from "./two-column.js"
 import { detectColumns, extractWithColumns } from "./columns.js"
 import { shouldDemoteTable, demoteTableToText, detectListBlocks, detectSpecialKoreanTables } from "./block-detect.js"
+import { markUnderlineItems, wrapUnderlineRuns } from "./underline.js"
 
 /**
  * 선 기반 테이블 감지를 우선 시도, 실패 시 기존 휴리스틱 fallback.
@@ -54,6 +55,11 @@ export function extractPageBlocksWithLines(
   // 1.7단계: 취소선 감지 — 텍스트 중심을 가로지르는 얇은 수평선 (ODL StrikethroughProcessor)
   markStrikethroughItems(items, horizontals)
   wrapStrikethroughRuns(items)
+
+  // 1.75단계: 밑줄 감지 — baseline 바로 아래에 밀착한 얇은 수평선.
+  // 개정문 추가·변경 표시, 제목 강조 보존용 (pdf-inspector underline 휴리스틱 참조)
+  markUnderlineItems(items, horizontals, verticals)
+  wrapUnderlineRuns(items)
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
   const grids = detectTables ? buildTableGrids(horizontals, verticals) : []

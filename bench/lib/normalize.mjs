@@ -59,6 +59,10 @@ export function normText(s) {
   if (!s) return ""
   return mapPua(s)
     .normalize("NFC")
+    // 밑줄 태그 <u>…</u> — PDF 파서가 보존하는 서식 마커(v4.7.0)로 콘텐츠가 아니다.
+    // hwpx GT는 밑줄을 방출하지 않으므로 태그를 남기면 서식 보존이 감점되는 역전이
+    // 생긴다. <img>/표 태그와 동일하게 채점 전 제거 — 양쪽 동일 적용이라 대칭.
+    .replace(/<\/?u>/g, "")
     // 매핑 안 된 Supplementary PUA — 파서가 의도 제거 (builder sanitizeText와 대칭)
     .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
     // zero-width, BOM, soft hyphen, 제어문자(\x1F 리더탭 마커 포함; \n \t는 아래 공백 처리)

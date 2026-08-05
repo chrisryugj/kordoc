@@ -32,6 +32,8 @@ export interface NormItem {
   hasSpaceBefore?: boolean
   /** 취소선이 그어진 텍스트 (신구조문대비표 삭제 표시 등) */
   strike?: boolean
+  /** 밑줄이 그어진 텍스트 (개정문 추가·변경 표시, 제목 강조 등) */
+  underline?: boolean
 }
 
 // ═══════════════════════════════════════════════════════

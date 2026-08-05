@@ -52,6 +52,8 @@ export function cleanPdfText(text: string): string {
     .replace(/\\~\\~/g, "~~")
     // 인접 취소선 run이 붙어 생긴 빈 마크(~~~~) 정리
     .replace(/~~~~/g, "")
+    // 내용이 사라져 빈 밑줄 쌍(<u></u>) 정리 (escapeGfm은 <>를 건드리지 않아 복원 불필요)
+    .replace(/<u>\s*<\/u>/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
 }

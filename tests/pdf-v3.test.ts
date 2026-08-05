@@ -422,6 +422,19 @@ describe("합성 PDF 통합 — 취소선/NEEDS_OCR", () => {
     assert.ok(!result.markdown.includes("~~normal"))
   })
 
+  it("baseline 바로 아래 얇은 선 → <u>밑줄</u> 출력", async () => {
+    const { parsePdfDocument } = await import("../src/pdf/parser.js")
+    const pdf = buildSyntheticPdf(
+      "BT /F1 12 Tf 100 700 Td (UNDERLINED TEXT) Tj ET\n" +
+      "0.5 w\n98 697.5 m 180 697.5 l S\n" +
+      "BT /F1 12 Tf 100 650 Td (normal text here) Tj ET",
+    )
+    const result = await parsePdfDocument(pdf)
+    assert.ok(result.markdown.includes("<u>UNDERLINED TEXT</u>"), result.markdown)
+    assert.ok(result.markdown.includes("normal text here"))
+    assert.ok(!result.markdown.includes("<u>normal"))
+  })
+
   it("이미지 전용 PDF → NEEDS_OCR 경고 + isImageBased (무경고 빈 출력 방지)", async () => {
     const { parsePdfDocument } = await import("../src/pdf/parser.js")
     const pdf = buildSyntheticPdf(
@@ -460,6 +473,12 @@ describe("cleanPdfText — 취소선", () => {
   it("단일 ~는 이스케이프 유지", () => {
     const result = cleanPdfText("기간: 1월\\~3월")
     assert.ok(result.includes("\\~"))
+  })
+
+  it("내용이 사라진 빈 밑줄 쌍(<u></u>)은 제거, 정상 쌍은 유지", () => {
+    const result = cleanPdfText("앞<u></u>뒤 <u>개정 조문</u>")
+    assert.equal(result.includes("<u></u>"), false)
+    assert.ok(result.includes("<u>개정 조문</u>"), result)
   })
 })
 
