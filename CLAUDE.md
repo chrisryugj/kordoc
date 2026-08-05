@@ -83,6 +83,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/cell-text.ts` | 텍스트→셀 매핑 + 셀 텍스트 조립 |
 | `src/pdf/undersegmented.ts` | 과소분할 표 재구성 (row band 재유도) |
 | `src/pdf/underline.ts` | 밑줄 감지 — baseline 밀착 수평선↔텍스트 상관, `<u>` 보존 (표 괘선·배지 오탐 방어 5겹) |
+| `src/pdf/links.ts` | 링크 어노테이션(/Annots /URI) → [text](url) 래핑 (sanitizeHref 살균, 줄 단위) |
 | `src/pdf/image-regions.ts` | 이미지 XObject 영역 추출 |
 | `src/pdf/image-extract.ts` | 이미지 XObject 바이트 추출 — 비동기 디코딩 대기 + 순수 JS PNG 인코딩, 표 병합 후 페이지 말미 주입 |
 | `src/pdf/line-types.ts` | 선 감지 공유 타입/상수 |

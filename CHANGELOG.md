@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.1] - 2026-08-05
+
+밑줄 보존을 전 포맷으로 확장 + PDF 링크 어노테이션 추출.
+
+### Added
+
+- **HWPX·HWP5 밑줄 md 방출**: v4.7.0 이 PDF 에서 복원한 밑줄을 HWPX(charPr
+  span 단위)·HWP5(대표 스타일 문단 단위)도 `<u>…</u>` 로 방출한다 — IRSpan/
+  InlineStyle 에 `underline` 추가, 강조 조합은 `<u>**…**</u>`/`<u>~~…~~</u>` 로
+  중첩. 판별자는 밑줄 **종류**(HWPX `type="BOTTOM"` / HWP5 attr bit 2-3 == 1) —
+  한컴은 밑줄 없는 charPr 에도 `type="NONE"` 요소를 넣으므로(코퍼스 352파일
+  실측: NONE 15,603 / BOTTOM 156) 존재 여부만 믿으면 오탐, 윗줄(TOP)·미지 값은
+  fail-closed. 생성 경로(md→hwpx)는 취소선과 동일하게 `<u>` 마커를 평문화.
+- **PDF 링크 어노테이션 추출** (`src/pdf/links.ts`): `/Annots` 의 Link(`/URI`)
+  rect 를 텍스트와 상관해 `[text](url)` 로 방출. sanitizeHref 스킴 화이트리스트
+  (https/mailto/tel)·괄호 percent-encoding·겹침 어노테이션 이중 래핑 방지.
+  여러 줄에 걸친 링크는 줄마다 같은 url 로 래핑.
+- **외부 벤치 스크립트** (`bench/odl-bench.mjs`): opendataloader-bench(200
+  PDF, TEDS/NID/MHS) 예측 생성기 — 측정용, 게이트 아님. 실측(2026-08-05):
+  overall 0.669 · NID 0.822 · TEDS 0.553 · MHS 0.300 (국제 영문 위주 코퍼스 —
+  한국 공문서 특화 튜닝 그대로의 결과, 상세는 스크립트 헤더).
+
+### Fixed
+
+- `package-lock.json` 버전 동기화 (v4.7.0 릴리스에서 package.json 만 범프되어
+  release-metadata 테스트가 잡던 드리프트).
+
 ## [4.7.0] - 2026-08-05
 
 PDF 밑줄 보존 — 개정문·심사보고서·계획서의 밑줄 강조 복원.
