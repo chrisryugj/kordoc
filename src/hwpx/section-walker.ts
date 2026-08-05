@@ -1124,8 +1124,9 @@ function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, requireMix
       if (cp?.bold) span.bold = true
       if (cp?.italic) span.italic = true
       if (cp?.strike) span.strike = true
+      if (cp?.underline) span.underline = true
     }
-    if (span.bold || span.italic || span.strike || span.code) styled = true
+    if (span.bold || span.italic || span.strike || span.underline || span.code) styled = true
     spans.push(span)
   }
   if (!styled || spans.length === 0) return null
@@ -1134,15 +1135,15 @@ function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, requireMix
   const merged: IRSpan[] = []
   for (const s of spans) {
     const last = merged[merged.length - 1]
-    if (last && !!last.bold === !!s.bold && !!last.italic === !!s.italic && !!last.strike === !!s.strike && !!last.code === !!s.code) {
+    if (last && !!last.bold === !!s.bold && !!last.italic === !!s.italic && !!last.strike === !!s.strike && !!last.underline === !!s.underline && !!last.code === !!s.code) {
       last.text += s.text
     } else {
       merged.push(s)
     }
   }
-  // requireMixed(구조적 서식 억제)는 bold/italic 에만 적용 — 취소선은 전체 문단이
-  // 통째로 그어진 경우(법령 개정문 삭제 조문)가 정상 패턴이라 억제하지 않는다
-  if (requireMixed && !merged.some((s) => s.strike) && !merged.some((s) => !(s.bold || s.italic || s.code))) return null
+  // requireMixed(구조적 서식 억제)는 bold/italic 에만 적용 — 취소선·밑줄은 전체 문단이
+  // 통째로 그어진 경우(법령 개정문 삭제 조문·개정 표시)가 정상 패턴이라 억제하지 않는다
+  if (requireMixed && !merged.some((s) => s.strike || s.underline) && !merged.some((s) => !(s.bold || s.italic || s.code))) return null
   return merged
 }
 

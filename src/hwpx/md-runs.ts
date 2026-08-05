@@ -313,6 +313,8 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
   text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
   // 전처리: ~~취소선~~ → 텍스트만
   text = text.replace(/~~([^~]+)~~/g, "$1")
+  // 전처리: <u>밑줄</u> → 텍스트만 (취소선과 동일 정책 — 서식 마커는 생성 시 평문화)
+  text = text.replace(/<u>([^<]*)<\/u>/g, "$1")
 
   let spans: InlineSpan[]
   if (inlineDoc) {

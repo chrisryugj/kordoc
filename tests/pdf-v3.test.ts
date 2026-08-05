@@ -435,6 +435,33 @@ describe("합성 PDF 통합 — 취소선/NEEDS_OCR", () => {
     assert.ok(!result.markdown.includes("<u>normal"))
   })
 
+  it("Link 어노테이션(/Annots /URI) → [text](url) 출력", async () => {
+    const { parsePdfDocument } = await import("../src/pdf/parser.js")
+    const content = "BT /F1 12 Tf 100 700 Td (HOMEPAGE) Tj ET"
+    const objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R /Annots [6 0 R] >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+      "<< /Type /Annot /Subtype /Link /Rect [98 696 180 714] /Border [0 0 0] /A << /S /URI /URI (https://www.korea.kr) >> >>",
+    ]
+    let pdf = "%PDF-1.4\n"
+    const offsets: number[] = []
+    for (let i = 0; i < objects.length; i++) {
+      offsets.push(pdf.length)
+      pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`
+    }
+    const xrefPos = pdf.length
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+    for (const o of offsets) pdf += String(o).padStart(10, "0") + " 00000 n \n"
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`
+    const buf = Buffer.from(pdf, "latin1")
+    const result = await parsePdfDocument(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer)
+    // pdfjs 가 URL 정규화로 트레일링 슬래시를 붙인다
+    assert.ok(result.markdown.includes("[HOMEPAGE](https://www.korea.kr/)"), result.markdown)
+  })
+
   it("이미지 전용 PDF → NEEDS_OCR 경고 + isImageBased (무경고 빈 출력 방지)", async () => {
     const { parsePdfDocument } = await import("../src/pdf/parser.js")
     const pdf = buildSyntheticPdf(

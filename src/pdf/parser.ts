@@ -21,6 +21,7 @@ import { type PdfTextItem, normalizeItems, filterHiddenText } from "./text-line.
 import { extractPageBlocksWithLines, mergeCrossPageTables } from "./page-blocks.js"
 import { computeMedianFontSizeFromFreq, detectHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText } from "./text-clean.js"
+import { applyLinkAnnotations } from "./links.js"
 import { applyFormulaOcr } from "./formula-ocr.js"
 // polyfill 먼저 (ES 모듈 호이스팅되므로 별도 파일 필수)
 import "./polyfill.js"
@@ -137,6 +138,12 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         for (const item of visible) {
           if (item.fontSize > 0) fontSizeFreq.set(item.fontSize, (fontSizeFreq.get(item.fontSize) || 0) + 1)
         }
+
+        // 링크 어노테이션(/Annots /URI) → [text](url) 래핑 — 실패해도 텍스트 파싱 진행
+        try {
+          const annots = await page.getAnnotations()
+          applyLinkAnnotations(visible, annots)
+        } catch { /* 어노테이션 파싱 실패 무시 */ }
 
         // 선 기반 테이블 감지를 위한 operatorList
         const opList = await page.getOperatorList()

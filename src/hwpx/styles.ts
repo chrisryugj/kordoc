@@ -16,6 +16,7 @@ export interface HwpxCharProperty {
   bold?: boolean
   italic?: boolean
   strike?: boolean
+  underline?: boolean
   fontName?: string
 }
 
@@ -146,6 +147,12 @@ function parseCharProperties(doc: Document, map: Map<string, HwpxCharProperty>):
           // shape whitelist — placeholder("3D"/"NONE" 등)는 취소선 아님
           const shape = k.getAttribute("shape") || ""
           if (isRealStrikeShape(shape)) prop.strike = true
+        }
+        else if (localTag === "underline") {
+          // 판별자는 type — 한컴은 밑줄 없는 charPr 에도 type="NONE" 요소를 넣는다
+          // (코퍼스 352파일 실측: NONE 15,603 / BOTTOM 156, TOP·CENTER 미관측).
+          // BOTTOM 만 인정 — TOP(윗줄)·미지 값은 fail-closed
+          if (k.getAttribute("type") === "BOTTOM") prop.underline = true
         }
       }
 

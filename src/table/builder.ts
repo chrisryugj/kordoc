@@ -344,7 +344,8 @@ function spansToMarkdown(spans: IRSpan[]): string {
     if (!s.text) continue
     let marker = s.code ? "`" : s.bold && s.italic ? "***" : s.bold ? "**" : s.italic ? "*" : ""
     if (s.strike && !s.code) marker = `~~${marker}` // 닫힘은 아래 close 에서 역순 조합 (~~**…**~~)
-    if (!marker) {
+    const uWrap = !!s.underline && !s.code // 밑줄은 태그 쌍이라 역순 조합 불가 — 별도 최외곽 래핑
+    if (!marker && !uWrap) {
       out += escapeGfm(s.text)
       continue
     }
@@ -354,8 +355,10 @@ function spansToMarkdown(spans: IRSpan[]): string {
       out += s.text
       continue
     }
-    const close = [...marker].reverse().join("")
-    out += m[1] + marker + (s.code ? core : escapeGfm(core)) + close + m[3]
+    let open = marker
+    let close = [...marker].reverse().join("")
+    if (uWrap) { open = "<u>" + open; close = close + "</u>" } // <u>~~**…**~~</u>
+    out += m[1] + open + (s.code ? core : escapeGfm(core)) + close + m[3]
   }
   return out
 }

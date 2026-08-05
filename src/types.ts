@@ -21,6 +21,8 @@ export interface IRSpan {
   bold?: boolean
   italic?: boolean
   strike?: boolean
+  /** 밑줄 — 개정문 추가·변경 표시 등. GFM 문법이 없어 <u>…</u> 인라인 HTML 로 방출 */
+  underline?: boolean
   code?: boolean
 }
 
@@ -90,6 +92,8 @@ export interface InlineStyle {
   italic?: boolean
   /** 취소선 — 법령 개정문 등의 삭제 표시. 판정은 취소선 모양 whitelist (비트만 믿으면 오탐) */
   strike?: boolean
+  /** 밑줄 — 판정은 밑줄 종류 BOTTOM 한정 (NONE 이 기본 잡음, 코퍼스 실측) */
+  underline?: boolean
   fontSize?: number
   fontName?: string
 }

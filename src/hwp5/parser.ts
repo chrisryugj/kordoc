@@ -749,9 +749,13 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
       const style = resolveCharStyle(charShapeIds, ctx.docInfo)
       if (style) {
         block.style = style
-        // 취소선 문단(법령 개정문 삭제 조문 등)은 ~~…~~ 로 방출 — 대표(최빈) 스타일
-        // 기준이라 문단 전체가 그어진 경우만 잡는다 (부분 취소선은 미지원)
-        if (style.strike) block.text = headMarker ? `${headMarker} ~~${trimmed}~~` : `~~${trimmed}~~`
+        // 취소선·밑줄 문단(법령 개정문 삭제·개정 표시 등)은 ~~…~~ / <u>…</u> 로 방출 —
+        // 대표(최빈) 스타일 기준이라 문단 전체가 그어진 경우만 잡는다 (부분 서식은 미지원)
+        if (style.strike || style.underline) {
+          let deco = style.strike ? `~~${trimmed}~~` : trimmed
+          if (style.underline) deco = `<u>${deco}</u>`
+          block.text = headMarker ? `${headMarker} ${deco}` : deco
+        }
       }
     }
     if (footnotes.length > 0) block.footnoteText = footnotes.join("; ")
@@ -1257,8 +1261,9 @@ function resolveCharStyle(charShapeIds: number[], docInfo: HwpDocInfo): InlineSt
   if (cs.attrFlags & 0x01) style.italic = true
   if (cs.attrFlags & 0x02) style.bold = true
   if (hasRealStrike(cs.attrFlags)) style.strike = true
+  if (hasRealUnderline(cs.attrFlags)) style.underline = true
 
-  return (style.fontSize || style.bold || style.italic || style.strike) ? style : undefined
+  return (style.fontSize || style.bold || style.italic || style.strike || style.underline) ? style : undefined
 }
 
 /**
@@ -1271,4 +1276,14 @@ export function hasRealStrike(attrFlags: number): boolean {
   const strikeBits = (attrFlags >> 18) & 0x07
   const shapeId = (attrFlags >> 26) & 0x0f
   return strikeBits !== 0 && shapeId <= 12
+}
+
+/**
+ * CharShape attr 의 밑줄 판정 — bit 2-3 밑줄 종류 (0=없음, 1=글자 아래, 3=글자 위;
+ * rhwp doc_info 직렬화와 동일 레이아웃). 취소선과 달리 종류 비트 자체가 판별자다
+ * (HWPX 실측: 밑줄 없는 charPr 는 type="NONE"=비트 0). BOTTOM(1)만 인정 —
+ * 윗줄(3)·미지 값은 fail-closed.
+ */
+export function hasRealUnderline(attrFlags: number): boolean {
+  return ((attrFlags >> 2) & 0x03) === 1
 }
