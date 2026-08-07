@@ -72,6 +72,20 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.7.2
+
+- **🔒 Air-gapped deployment**: `KORDOC_OFFLINE=1` blocks every outbound request (OCR model download, watch webhook) *before* it is sent, and `KORDOC_ROOT=<dir>` confines the MCP server's reads and writes to that directory subtree — both opt-in, so unset behaviour is unchanged. Build an offline install bundle with `node scripts/pack-offline.mjs [--with-ocr] [--with-models]`, and move OCR models across the air gap with `kordoc models --export/--import` (SHA-256 verified). See [docs/offline-deployment.md](docs/offline-deployment.md) for the procedure and security-review evidence.
+- **🧹 Dependency hygiene**: `npm audit --omit=dev` reports 0 vulnerabilities (sharp ^0.35.0, adm-zip ^0.6.0 override, MCP SDK chain advisories cleared).
+
+## What's New in v4.7.1
+
+- **✏️ Underline preservation across formats**: the underlines v4.7.0 recovers from PDFs are now emitted from HWPX and HWP 5.x as `<u>…</u>` too. Detection keys on the underline *kind*, not its presence — Hancom writes `type="NONE"` even on non-underlined runs.
+- **🔗 PDF link annotations**: `/Annots` Link entries (`/URI`) are correlated with text and emitted as `[text](url)`, with scheme allowlist sanitization.
+
+## What's New in v4.7.0
+
+- **✏️ PDF underline detection**: thin horizontal lines hugging the baseline are correlated with text and preserved as `<u>…</u>`. PDFs carry no underline font flag, so previous versions dropped them entirely. Five layers of false-positive defense against table rules and decorative badges. Measured: 32 of 48 corpus documents recover emphasis underlines.
+
 ## What's New in v4.6.1
 
 - **📰 Two-column reading order fix (#64)**: PDFs typeset in two columns (exam papers, magazine layouts) came out with left/right columns interleaved row by row. A new geometry-only column detector (no prose assumptions like justification or long lines) restores the natural order — full left column, then full right column, with full-width elements (headers, page-number boxes) acting as band boundaries. Applies to the default mode, `--no-tables`, and the OCR path. Measured on the 2026 CSAT papers: with `--no-tables`, Physics I and Ethics both recover 20/20 questions with 0 order inversions (previously 13 questions / 3 inversions), Korean 44/45 with 0. Three row-structure guards (calibrated against the regression corpus) prevent false positives on ordinary documents — the PDF coverage gate stays at baseline. (reported with block dumps by @choa712)

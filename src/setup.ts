@@ -11,9 +11,11 @@ import { readFile, writeFile, mkdir } from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
 import { resolve, dirname, delimiter } from "node:path"
+import { fileURLToPath } from "node:url"
 import { homedir, platform } from "node:os"
 import { stdin, stdout } from "node:process"
 import { promisify } from "node:util"
+import { getAccessRoot, isOfflineMode } from "./shared/offline.js"
 
 interface ClientConfig {
   readonly name: string
@@ -83,18 +85,48 @@ async function writeJsonFile(path: string, data: Record<string, unknown>): Promi
  * `kordoc` 은 `npx kordoc mcp` 로 MCP 서버 실행, 또는 `kordoc-mcp` bin 직접 실행.
  * npx 래핑이 범용적이므로 `npx -y kordoc mcp` 로 통일.
  */
-function buildServerEntry(): Record<string, unknown> {
-  if (platform() === "win32") {
-    return { command: "cmd", args: ["/c", "npx", "-y", "kordoc", "mcp"] }
+/**
+ * 폐쇄망(KORDOC_OFFLINE)에서는 `npx -y` 가 레지스트리에 접근하므로 설치된 dist 를
+ * node 로 직접 실행한다. 이 파일과 형제인 mcp.js 가 곧 설치본의 MCP 엔트리.
+ */
+function localMcpCommand(): { command: string; args: string[] } | null {
+  if (!isOfflineMode()) return null
+  try {
+    const mcpPath = fileURLToPath(new URL("./mcp.js", import.meta.url))
+    if (!existsSync(mcpPath)) return null
+    return { command: process.execPath, args: [mcpPath] }
+  } catch {
+    return null
   }
-  return { command: "npx", args: ["-y", "kordoc", "mcp"] }
+}
+
+/** 등록된 MCP 서버 프로세스에도 폐쇄망 제한을 물려준다 (설정 파일이 곧 감사 근거) */
+function buildServerEnv(): Record<string, string> | undefined {
+  if (!isOfflineMode()) return undefined
+  const root = getAccessRoot()
+  return { KORDOC_OFFLINE: "1", ...(root ? { KORDOC_ROOT: root } : {}) }
+}
+
+function buildServerEntry(): Record<string, unknown> {
+  const env = buildServerEnv()
+  const local = localMcpCommand()
+  const base = local
+    ? local
+    : platform() === "win32"
+      ? { command: "cmd", args: ["/c", "npx", "-y", "kordoc", "mcp"] }
+      : { command: "npx", args: ["-y", "kordoc", "mcp"] }
+  return env ? { ...base, env } : base
 }
 
 function buildZedEntry(): Record<string, unknown> {
-  const base = platform() === "win32"
-    ? { path: "cmd", args: ["/c", "npx", "-y", "kordoc", "mcp"] }
-    : { path: "npx", args: ["-y", "kordoc", "mcp"] }
-  return { command: base }
+  const local = localMcpCommand()
+  const base = local
+    ? { path: local.command, args: local.args }
+    : platform() === "win32"
+      ? { path: "cmd", args: ["/c", "npx", "-y", "kordoc", "mcp"] }
+      : { path: "npx", args: ["-y", "kordoc", "mcp"] }
+  const env = buildServerEnv()
+  return { command: env ? { ...base, env } : base }
 }
 
 /** Codex의 TOML 설정을 직접 파싱하지 않고, 공식 CLI로 MCP 서버를 등록한다. */

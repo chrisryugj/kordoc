@@ -16,6 +16,7 @@ import {
   BODY_PT_RANGE, LINE_SPACING_RANGE, SIZE_PT_RANGE, APPROVAL_MAX,
 } from "./hwpx/gongmun-surface.js"
 import { VERSION, toArrayBuffer, sanitizeError, classifyError, KordocError } from "./utils.js"
+import { assertWithinRoot, getAccessRoot, isOfflineMode } from "./shared/offline.js"
 import { extractHwp5MetadataOnly } from "./hwp5/parser.js"
 import { extractHwpxMetadataOnly } from "./hwpx/parser.js"
 // pdfjs-dist는 optional — dynamic import로 지연 로드
@@ -46,6 +47,7 @@ export function safePath(filePath: string, allowedExts: ReadonlySet<string> = AL
     throw new KordocError(`경로 처리 오류 [${err?.code ?? "UNKNOWN"}]`)
   }
   if (!isAbsolute(real)) throw new KordocError("절대 경로만 허용됩니다")
+  assertWithinRoot(real)
   const ext = extname(real).toLowerCase()
   if (!allowedExts.has(ext)) throw new KordocError(`지원하지 않는 확장자입니다: ${ext} (허용: ${[...allowedExts].join(", ")})`)
   return real
@@ -62,12 +64,16 @@ export function safeOutputPath(outputPath: string, allowedExts: ReadonlySet<stri
   // 부모 디렉토리가 이미 있으면 심볼릭 링크 해석 후 정규화 (없으면 저장 시 생성)
   const parent = dirname(resolved)
   if (existsSync(parent)) {
+    let real: string
     try {
-      return resolve(realpathSync(parent), basename(resolved))
+      real = resolve(realpathSync(parent), basename(resolved))
     } catch (err: any) {
       throw new KordocError(`출력 경로 처리 오류 [${err?.code ?? "UNKNOWN"}]: ${parent}`)
     }
+    assertWithinRoot(real)
+    return real
   }
+  assertWithinRoot(resolved)
   return resolved
 }
 
@@ -1102,6 +1108,7 @@ server.tool(
       let images: Record<string, Uint8Array> | undefined
       if (image_dir) {
         const dir = await realpath(resolve(image_dir))
+        assertWithinRoot(dir)
         for (const m of markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
           const url = m[1]
           if (!/^[A-Za-z0-9._-]+\.[A-Za-z0-9]+$/.test(url) || url.includes("..")) continue
@@ -1148,6 +1155,12 @@ let serverStarted = false
 export async function startMcpServer(): Promise<void> {
   if (serverStarted) return
   serverStarted = true
+  // 폐쇄망 배포 감사용 — 적용된 제한을 기동 시 1회 stderr 에 남긴다 (stdout 은 MCP 프로토콜 전용)
+  const root = getAccessRoot()
+  if (isOfflineMode() || root) {
+    const flags = [isOfflineMode() ? "offline" : null, root ? `root=${root}` : null].filter(Boolean)
+    process.stderr.write(`[kordoc-mcp] 제한 모드: ${flags.join(", ")}\n`)
+  }
   const transport = new StdioServerTransport()
   await server.connect(transport)
 }

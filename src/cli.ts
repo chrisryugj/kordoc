@@ -1149,4 +1149,44 @@ program
     }
   })
 
+program
+  .command("models")
+  .description("OCR/수식 모델 오프라인 사이드로드 — 폐쇄망 반입용 내보내기/가져오기 (SHA-256 검증)")
+  .option("--status", "캐시에 설치된 모델 상태를 JSON 으로 출력")
+  .option("--export <dir>", "로컬 캐시 → 번들 디렉토리로 내보내기 (온라인 PC에서 실행)")
+  .option("--import <dir>", "번들 디렉토리 → 로컬 캐시로 설치 (내부망 PC에서 실행)")
+  .action(async (opts) => {
+    try {
+      const { exportModels, importModels, modelCacheStatus } = await import("./shared/model-bundle.js")
+      if (opts.status) {
+        process.stdout.write(JSON.stringify(await modelCacheStatus(), null, 2) + "\n")
+        return
+      }
+      const dir = opts.export ?? opts.import
+      if (!dir) {
+        process.stderr.write("[kordoc] --status / --export <dir> / --import <dir> 중 하나가 필요합니다\n")
+        process.exit(1)
+      }
+      if (opts.export && opts.import) {
+        process.stderr.write("[kordoc] --export 와 --import 는 함께 쓸 수 없습니다\n")
+        process.exit(1)
+      }
+      const result = opts.export ? await exportModels(dir) : await importModels(dir)
+      for (const f of result.files) {
+        const mark = f.status === "copied" ? "+" : f.status === "invalid" ? "!" : "-"
+        process.stderr.write(`  ${mark} ${f.group}/${f.filename}${f.reason ? ` — ${f.reason}` : ""}\n`)
+      }
+      const verb = opts.export ? "내보내기" : "설치"
+      const copied = result.files.filter((f) => f.status === "copied").length
+      process.stderr.write(
+        `[kordoc-models] ${verb} ${result.ok ? `완료 (${copied}개)` : "실패 — 위 ! / - 항목 확인"}: ${dir}\n`,
+      )
+      if (!result.ok) process.exit(1)
+      process.stdout.write("ok\n")
+    } catch (err) {
+      process.stderr.write(`[kordoc] 모델 사이드로드 실패: ${sanitizeError(err)}\n`)
+      process.exit(1)
+    }
+  })
+
 program.parse()

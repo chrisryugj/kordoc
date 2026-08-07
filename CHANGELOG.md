@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.7.2] - 2026-08-07
+
+폐쇄망(내부망) 배포 대응 — 아웃바운드 통신 킬스위치, 파일 접근 루트 제한,
+모델 오프라인 사이드로드, 오프라인 설치 번들.
+
+### Added
+
+- **`KORDOC_OFFLINE=1`**: 모든 아웃바운드 통신(OCR 모델 다운로드, watch webhook)을
+  요청 발신 전에 차단한다. 감사 지점을 `src/shared/offline.ts` 한 곳으로 모아, 새
+  통신 경로가 생겨도 이 관문을 통과하도록 강제한다.
+- **`KORDOC_ROOT=<디렉토리>`**: MCP 서버의 파일 읽기·쓰기를 해당 디렉토리 하위로
+  제한한다(opt-in — 미설정 시 기존 동작 유지). 판정은 realpath 기준이라 심볼릭
+  링크로 벗어날 수 없고, 형제 prefix 디렉토리도 통과하지 않는다.
+- **`kordoc models --export/--import/--status`**: OCR·수식 모델을 SHA-256 검증과 함께
+  디렉토리로 내보내고 반입한다. 오염된 반입 매체의 모델은 캐시에 설치되지 않는다.
+- **`scripts/pack-offline.mjs`**: 런타임 의존성이 설치된 상태의 오프라인 tarball을
+  생성한다(`--with-ocr`, `--with-models`). 내부망에서 압축만 풀면 실행되며 npm
+  레지스트리가 필요 없다. 설치 안내 `INSTALL.md` 동봉.
+- **`docs/offline-deployment.md`**: 폐쇄망 배포 절차 + 보안성 검토용 근거(아웃바운드
+  통신 전량 목록과 재현 가능한 검증 명령, 데이터 흐름, 체크리스트).
+
+### Changed
+
+- 폐쇄망 모드에서 `kordoc setup` 은 MCP 를 `npx -y kordoc mcp` 대신 설치된
+  `dist/mcp.js` 절대경로로 등록하고, `KORDOC_OFFLINE`·`KORDOC_ROOT` 를 설정 파일의
+  `env` 에 함께 기록한다.
+- MCP 서버가 기동 시 적용된 제한을 stderr 에 1회 표기한다.
+- SECURITY.md 를 현행 코드 기준으로 재작성(지원 버전, 리소스 한도 실측값, 아웃바운드
+  통신 목록, 모델 무결성). 번들에 인라인된 `cfb` 관련 옛 제약 서술은 폐기.
+
+### Security
+
+- 의존성 취약점 정리 — `npm audit --omit=dev` 0건. `sharp` ^0.35.0 상향(libvips CVE
+  4건), `adm-zip` ^0.6.0 override(onnxruntime-node 경유 4GB 할당 이슈), MCP SDK 체인의
+  `ip-address`·`fast-uri`·`hono` 권고 해소. 남은 `esbuild` low 는 빌드 전용 의존성.
+
 ## [4.7.1] - 2026-08-05
 
 밑줄 보존을 전 포맷으로 확장 + PDF 링크 어노테이션 추출.

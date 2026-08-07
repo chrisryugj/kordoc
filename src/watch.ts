@@ -5,6 +5,7 @@ import { lookup } from "dns/promises"
 import { basename, resolve, extname, sep } from "path"
 import { parse, detectFormat } from "./index.js"
 import { toArrayBuffer } from "./utils.js"
+import { assertNetworkAllowed } from "./shared/offline.js"
 import type { WatchOptions, ParseOptions } from "./types.js"
 
 export const SUPPORTED_EXTENSIONS = new Set([".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx"])
@@ -244,6 +245,7 @@ export function isPrivateIp(ip: string): boolean {
 async function sendWebhook(url: string | undefined, payload: Record<string, unknown>): Promise<void> {
   if (!url) return
   try {
+    assertNetworkAllowed("webhook 전송", "폐쇄망에서 알림이 필요하면 --output 결과 파일을 감시하는 내부 작업으로 대체하세요")
     validateWebhookUrl(url)
     // DNS 해석 후 사설 IP 재검증 — 문자열 검사만으로는 내부망 도메인을 못 거른다
     const hostname = new URL(url).hostname.replace(/^\[|\]$/g, "")

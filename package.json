@@ -1,6 +1,6 @@
 {
   "name": "kordoc",
-  "version": "4.7.1",
+  "version": "4.7.2",
   "description": "Parse Korean documents (HWP3-5, HWPX, HWPML, PDF, XLS(X), DOCX) to Markdown — CLI + MCP server with lossless patch/roundtrip, form-filler, document diff, print & layout-preserving SVG renderer",
   "type": "module",
   "exports": {
@@ -85,7 +85,11 @@
     "@hyzyla/pdfium": "^2.1.0",
     "onnxruntime-node": "^1.24.0",
     "pdfjs-dist": "^4.10.38",
-    "sharp": "^0.34.0"
+    "sharp": "^0.35.0"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.0",
+    "sharp": "^0.35.0"
   },
   "devDependencies": {
     "@huggingface/transformers": "^4.1.0",
@@ -95,7 +99,7 @@
     "onnxruntime-node": "^1.24.0",
     "pdfjs-dist": "^4.10.38",
     "puppeteer-core": "^24.42.0",
-    "sharp": "^0.34.0",
+    "sharp": "^0.35.0",
     "tsup": "^8.4.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"

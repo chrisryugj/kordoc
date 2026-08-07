@@ -106,6 +106,8 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**) |
 | `src/ocr/ruling-lines.ts` | 래스터 괘선 감지 — 페이지 픽셀 이진화+런렝스로 표 수평/수직 선 추출 → 선 기반 표 파이프라인 공급 (오탐 방어 3겹: 최소길이 20pt·두께 상한 2.5pt·양측 잉크 포위 제외) |
 | `src/ocr/image-ocr.ts` | 이미지(PNG/JPG/WebP) 직접 입력 OCR — sharp 디코딩 → 내장 엔진 상시 적용 + 괘선 감지 (216dpi 가정 좌표 환산) |
+| `src/shared/offline.ts` | 폐쇄망 게이트 — `KORDOC_OFFLINE` 아웃바운드 킬스위치(`assertNetworkAllowed`), `KORDOC_ROOT` 파일 접근 루트 제한(`assertWithinRoot`, realpath 기준). **새 네트워크 호출은 반드시 여기를 경유** |
+| `src/shared/model-bundle.ts` | OCR·수식 모델 오프라인 사이드로드 (`kordoc models --export/--import`) — SHA 스펙이 SSOT, manifest 없음 |
 | `src/page-range.ts` | 페이지 범위 문자열 파싱 (`"1-3,5"` → `Set<number>`) |
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |
 | `src/cli.ts` | Commander 기반 CLI |
@@ -150,5 +152,8 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 - **colPr 필수 (생성 경로)**: 섹션 첫 run에 secPr 뒤 `<hp:colPr colCount="1">`이 없으면
   한글이 컬럼 영역을 좌우 10mm씩 좁게 잡는다 — 본문 우측 미달 + 광폭 treatAsChar 표의
   우측 여백 침범 (v4.0.2 GAP-01, COM 실렌더 실측). 새 섹션 생성 경로 추가 시 누락 금지
+- **아웃바운드는 2곳뿐** (`src/pdf/formula/models.ts` 모델 다운로드, `src/watch.ts` webhook).
+  둘 다 `assertNetworkAllowed()` 뒤에 있다 — 세 번째를 만들지 말 것. 폐쇄망 배포의 근거
+  문서(`docs/offline-deployment.md`)가 "fetch 는 2건"을 재현 가능한 grep 으로 주장한다
 - **본문폭급 표(48180)는 outMargin 좌우 0**: 283이면 진행폭(w+566)이 컬럼폭을 넘어 1mm
   침범 — 실물(t2)도 표지 표만 0. `gen-gaejosik.ts table()`이 w 기준 자동 분기 (v4.0.2)

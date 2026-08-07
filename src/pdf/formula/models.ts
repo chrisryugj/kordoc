@@ -16,6 +16,7 @@ import { homedir } from "os"
 import { join, dirname } from "path"
 import { pipeline } from "stream/promises"
 import { Readable } from "stream"
+import { assertNetworkAllowed } from "../../shared/offline.js"
 
 export interface ModelSpec {
   name: string
@@ -227,6 +228,12 @@ async function downloadToFile(
   localPath: string,
   onProgress?: ProgressHandler,
 ): Promise<void> {
+  // 폐쇄망 모드에서는 요청 자체를 보내지 않는다 (사이드로드 안내로 대체)
+  assertNetworkAllowed(
+    `${spec.name} 모델 다운로드`,
+    "온라인 PC에서 `kordoc models --export <디렉토리>` 로 내보낸 뒤 이 PC에서 `kordoc models --import <디렉토리>` 하거나, KORDOC_MODEL_CACHE 로 모델 캐시 경로를 지정하세요",
+  )
+
   // 먼저 .part 로 받고 검증 후 rename — 중단된 다운로드가 "정상 파일"로 오인되는 걸 방지
   const partPath = `${localPath}.part`
   await mkdir(dirname(localPath), { recursive: true })
