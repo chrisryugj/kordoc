@@ -145,8 +145,14 @@ export interface DocumentMetadata {
   createdAt?: string
   /** 수정일시 (ISO 8601) */
   modifiedAt?: string
-  /** 페이지/섹션 수 */
+  /** 페이지/섹션 수 — pageMode="layout"이면 실제 페이지 수, "section"이면 섹션 수 */
   pageCount?: number
+  /**
+   * 페이지 경계 신뢰도 (#66) — "layout": 조판 정보 기반 실제 페이지
+   * (한컴 저장본 HWP/HWPX·PDF·COM), "section": 섹션 단위 근사
+   * (조판 캐시 없는 생성 파일). HWP/HWPX/PDF에서만 설정된다.
+   */
+  pageMode?: "layout" | "section"
   /** 문서 포맷 버전 (예: HWP "5.1.0.1") */
   version?: string
   /** 설명 */
@@ -267,6 +273,8 @@ export type WarningCode =
   | "OCR_LOW_CONF"
   | "COM_EMPTY"
   | "DRM_COM_FALLBACK"
+  /** pages 옵션 요청됐으나 조판 캐시가 없어 섹션 단위 근사로 적용됨 (#66) */
+  | "PAGE_BOUNDARY_APPROXIMATE"
 
 /** 문서 구조 (헤딩 트리) */
 export interface OutlineItem {

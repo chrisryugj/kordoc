@@ -91,29 +91,29 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   const sectionPaths = await resolveSectionPaths(zip)
   if (sectionPaths.length === 0) throw new KordocError("HWPX에서 섹션 파일을 찾을 수 없습니다")
 
-  metadata.pageCount = sectionPaths.length
-
-  // 페이지 범위 필터링 (섹션 단위 근사치)
-  const pageFilter = options?.pages ? parsePageRange(options.pages, sectionPaths.length) : null
-  const totalTarget = pageFilter ? pageFilter.size : sectionPaths.length
-  const blocks: IRBlock[] = []
+  // (#66) 실제 페이지 경계: 조판 캐시(linesegarray)가 있으면 pages 필터를 실제 페이지로
+  // 적용해야 하므로 섹션을 미리 스킵할 수 없다 — 전 섹션 파싱 후 모드 확정, 블록 단위 필터.
+  let allBlocks: IRBlock[] = []
   const shared = createSectionShared()
   // 자사 생성 파일 왕복 채널 게이트 — 인라인 강조 span·인용 복원은 default 레이아웃 한정
   shared.kordocLayout = await readKordocLayout(zip)
   shared.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
   shared.keepEmptyParagraphs = options?.keepEmptyParagraphs
+  // 섹션 근사 폴백 시 블록 pageNumber를 섹션 번호로 되돌리기 위한 구간 기록
+  const sectionRanges: Array<{ sectionNum: number; start: number; end: number }> = []
   let parsedSections = 0
   for (let si = 0; si < sectionPaths.length; si++) {
-    if (pageFilter && !pageFilter.has(si + 1)) continue
     const file = zip.file(sectionPaths[si])
     if (!file) continue
     try {
       const xml = await file.async("text")
       decompressed.total += xml.length * 2
       if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new ZipBombError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
-      blocks.push(...parseSectionXml(xml, styleMap, warnings, si + 1, shared))
+      const start = allBlocks.length
+      allBlocks.push(...parseSectionXml(xml, styleMap, warnings, si + 1, shared))
+      sectionRanges.push({ sectionNum: si + 1, start, end: allBlocks.length })
       parsedSections++
-      options?.onProgress?.(parsedSections, totalTarget)
+      options?.onProgress?.(parsedSections, sectionPaths.length)
     } catch (secErr) {
       // bomb 가드만 전체 실패로 승격 — 한 섹션의 XML fatalError(KordocError)는
       // PARTIAL_PARSE로 강등해 나머지 섹션 파싱을 계속한다
@@ -122,11 +122,32 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     }
   }
 
+  // 페이지 모드 확정 — 전 섹션의 조판 캐시가 신뢰 가능할 때만 실제 페이지(layout)
+  const layoutPages = shared.pageState.allUsable && parsedSections > 0
+  metadata.pageMode = layoutPages ? "layout" : "section"
+  metadata.pageCount = layoutPages ? Math.max(shared.pageState.base, 1) : sectionPaths.length
+  if (!layoutPages) {
+    // 섹션 근사 — 종전(v4.7.2까지) 의미 그대로 pageNumber = 섹션 번호
+    for (const r of sectionRanges) {
+      for (let b = r.start; b < r.end; b++) allBlocks[b].pageNumber = r.sectionNum
+    }
+  }
+
+  // 페이지 범위 필터 — layout: 실제 페이지, section: 섹션 번호 (종전 섹션 스킵과 동일 결과)
+  if (options?.pages) {
+    const pageFilter = parsePageRange(options.pages, metadata.pageCount)
+    allBlocks = allBlocks.filter(b => b.pageNumber != null && pageFilter.has(b.pageNumber))
+    if (!layoutPages) {
+      warnings.push({ code: "PAGE_BOUNDARY_APPROXIMATE", message: "조판 캐시가 없어 pages 필터를 섹션 단위 근사로 적용했습니다" })
+    }
+  }
+  const blocks = allBlocks
+
   // 머리말/꼬리말 — 문서당 1회, 본문 앞/뒤에 자연스럽게 배치
   applyPageText(blocks, shared)
 
   // 이미지 블록에서 ZIP 바이너리 추출 — 전체 파싱 시 본문 미참조 BinData(꼬리말 그림·imgBrush 배경)도 스윕
-  const images = await extractImagesFromZip(zip, blocks, decompressed, warnings, !pageFilter)
+  const images = await extractImagesFromZip(zip, blocks, decompressed, warnings, !options?.pages)
 
   // 스타일 기반 헤딩 감지
   detectHwpxHeadings(blocks, styleMap)

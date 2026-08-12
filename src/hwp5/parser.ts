@@ -20,6 +20,7 @@ import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.j
 import { assertDecryptedDocInfo, assertSupportedEncryptVersion, decryptPasswordStream, readEncryptVersion } from "./pw-crypto.js"
 import { KordocError, sanitizeHref } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
+import { detectHwp5SectionPages, type Hwp5SectionPageDetect } from "./page-boundary.js"
 
 import { createRequire } from "module"
 const require = createRequire(import.meta.url)
@@ -181,34 +182,67 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
       : (cfb ? findSections(cfb) : findSectionsLenient(lenientCfb!, compressed))
   if (sections.length === 0) throw new KordocError("섹션 스트림을 찾을 수 없습니다")
 
-  metadata.pageCount = sections.length
-
-  // 페이지 범위 필터링 (섹션 단위 근사치)
-  const pageFilter = options?.pages ? parsePageRange(options.pages, sections.length) : null
-  const totalTarget = pageFilter ? pageFilter.size : sections.length
-
-  const bodyBlocks: IRBlock[] = []
-  const doc = createHwp5DocState()
-  doc.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
+  // (#66) 1단계: 섹션 레코드 확보 + 실제 페이지 프리패스 — 조판 캐시(PARA_LINE_SEG)가
+  // 전 섹션에서 신뢰 가능하면 layout 모드(실제 페이지), 아니면 종전 섹션 근사.
+  const sectionRecords: (HwpRecord[] | null)[] = []
+  const sectionDetects: (Hwp5SectionPageDetect | null)[] = []
   let totalDecompressed = 0
-  let parsedSections = 0
   for (let si = 0; si < sections.length; si++) {
-    if (pageFilter && !pageFilter.has(si + 1)) continue
     try {
-      const sectionData = sections[si]
       // 배포용 문서는 findViewTextSections에서 이미 복호화+압축해제 완료
-      const data = (!distribution && compressed) ? decompressStream(Buffer.from(sectionData)) : Buffer.from(sectionData)
+      const data = (!distribution && compressed) ? decompressStream(Buffer.from(sections[si])) : Buffer.from(sections[si])
       totalDecompressed += data.length
       if (totalDecompressed > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
       const records = readRecords(data)
-      const sectionBlocks = parseSection(records, docInfo, warnings, si + 1, doc)
+      sectionRecords.push(records)
+      sectionDetects.push(detectHwp5SectionPages(records))
+    } catch (secErr) {
+      if (secErr instanceof KordocError) throw secErr
+      sectionRecords.push(null)
+      sectionDetects.push(null)
+      warnings.push({ page: si + 1, message: `섹션 ${si + 1} 파싱 실패: ${secErr instanceof Error ? secErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
+    }
+  }
+
+  const layoutPages = sectionDetects.length > 0 && sectionDetects.every(d => d != null && d.usable)
+  metadata.pageMode = layoutPages ? "layout" : "section"
+  metadata.pageCount = layoutPages
+    ? Math.max(sectionDetects.reduce((sum, d) => sum + (d?.pages ?? 0), 0), 1)
+    : sections.length
+  const pageFilter = options?.pages ? parsePageRange(options.pages, metadata.pageCount) : null
+  if (pageFilter && !layoutPages) {
+    warnings.push({ code: "PAGE_BOUNDARY_APPROXIMATE", message: "조판 캐시가 없어 pages 필터를 섹션 단위 근사로 적용했습니다" })
+  }
+
+  // 2단계: 본문 파싱 — layout 모드는 전 섹션 파싱 후 블록 단위 필터,
+  // 섹션 근사는 종전(v4.7.2까지)처럼 섹션 스킵
+  let bodyBlocks: IRBlock[] = []
+  const doc = createHwp5DocState()
+  doc.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
+  let parsedSections = 0
+  let pageBase = 0
+  for (let si = 0; si < sections.length; si++) {
+    const records = sectionRecords[si]
+    if (!records) continue
+    const detect = sectionDetects[si]!
+    if (!layoutPages && pageFilter && !pageFilter.has(si + 1)) continue
+    try {
+      const sectionBlocks = parseSection(records, docInfo, warnings, si + 1, doc,
+        layoutPages ? { base: pageBase, pageAtPara: detect.pageAtPara } : undefined)
       bodyBlocks.push(...sectionBlocks)
       parsedSections++
-      options?.onProgress?.(parsedSections, totalTarget)
+      options?.onProgress?.(parsedSections, sections.length)
     } catch (secErr) {
       if (secErr instanceof KordocError) throw secErr
       warnings.push({ page: si + 1, message: `섹션 ${si + 1} 파싱 실패: ${secErr instanceof Error ? secErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
+    } finally {
+      pageBase += detect.pages
     }
+  }
+
+  // layout 모드 페이지 필터 — 실제 페이지 기준 블록 필터링
+  if (pageFilter && layoutPages) {
+    bodyBlocks = bodyBlocks.filter(b => b.pageNumber != null && pageFilter.has(b.pageNumber))
   }
 
   // 머리말은 문서 맨 앞, 꼬리말은 맨 뒤에 1회 출력
@@ -572,6 +606,13 @@ interface Hwp5Ctx {
   sectionNum: number
   doc: Hwp5DocState
   depth: number
+  /** 현재 페이지 (#66) — layout 모드에서 top-level 문단마다 갱신, 셀/중첩은 호스트 상속.
+   *  섹션 근사 모드에선 sectionNum 고정 */
+  page: number
+  /** 프리패스 페이지 맵 — base: 이전 섹션 누적 페이지, pageAtPara: top-level 문단 순번별 페이지 */
+  pageMap?: { base: number; pageAtPara: number[] }
+  /** 지금까지 만난 top-level 문단 수 (pageAtPara 인덱스) */
+  topOrdinal: number
 }
 
 /** 섹션 레코드 → IRBlock[] (테스트에서 직접 사용 가능하도록 export) */
@@ -581,8 +622,12 @@ export function parseSection(
   warnings: ParseWarning[],
   sectionNum: number,
   doc?: Hwp5DocState,
+  pageMap?: { base: number; pageAtPara: number[] },
 ): IRBlock[] {
-  const ctx: Hwp5Ctx = { docInfo, warnings, sectionNum, doc: doc ?? createHwp5DocState(), depth: 0 }
+  const ctx: Hwp5Ctx = {
+    docInfo, warnings, sectionNum, doc: doc ?? createHwp5DocState(), depth: 0,
+    page: pageMap ? pageMap.base + 1 : sectionNum, pageMap, topOrdinal: 0,
+  }
   return parseParagraphList(records, 0, records.length, ctx)
 }
 
@@ -596,6 +641,12 @@ function parseParagraphList(records: HwpRecord[], start: number, end: number, ct
   while (i < end) {
     if (records[i].tagId === TAG_PARA_HEADER) {
       const baseLevel = records[i].level
+      // 실제 페이지 갱신 (#66) — 프리패스의 top-level 문단 열거와 같은 순서(level 0)
+      if (baseLevel === 0 && ctx.depth === 0 && ctx.pageMap) {
+        const pg = ctx.pageMap.pageAtPara[ctx.topOrdinal]
+        if (pg !== undefined) ctx.page = ctx.pageMap.base + pg + 1
+        ctx.topOrdinal++
+      }
       let j = i + 1
       while (j < end && records[j].level > baseLevel) j++
       blocks.push(...parseParagraph(records, i, j, ctx))
@@ -742,7 +793,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     const block: IRBlock = {
       type: headingLevel > 0 ? "heading" : "paragraph",
       text: headMarker ? `${headMarker} ${trimmed}` : trimmed,
-      pageNumber: ctx.sectionNum,
+      pageNumber: ctx.page,
     }
     if (headingLevel > 0) block.level = headingLevel
     if (ctx.docInfo && charShapeIds.length > 0) {
@@ -762,7 +813,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     blocks.push(block)
   } else if (footnotes.length > 0) {
     // 본문 없는 각주 anchor — 각주 내용 자체를 문단으로 보존
-    blocks.push({ type: "paragraph", text: `(주: ${footnotes.join("; ")})`, pageNumber: ctx.sectionNum })
+    blocks.push({ type: "paragraph", text: `(주: ${footnotes.join("; ")})`, pageNumber: ctx.page })
   }
 
   // 컨트롤 파생 블록 (표/이미지/글상자) — 컨트롤 순서대로
@@ -778,7 +829,7 @@ function applyCtrlEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
   switch (ctrl.id) {
     case CTRL_TBL: {
       const table = parseTableControl(ctrl, records, ctx)
-      if (table) ctrl.afterBlocks = [{ type: "table", table, pageNumber: ctx.sectionNum }]
+      if (table) ctrl.afterBlocks = [{ type: "table", table, pageNumber: ctx.page }]
       return
     }
     case CTRL_GSO: {
@@ -833,7 +884,7 @@ function applyCtrlEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
       return
     }
     case CTRL_OLE: {
-      ctx.warnings.push({ page: ctx.sectionNum, message: "스킵된 OLE 개체", code: "SKIPPED_OLE" })
+      ctx.warnings.push({ page: ctx.page, message: "스킵된 OLE 개체", code: "SKIPPED_OLE" })
       return
     }
     // 숨은 설명/단 정의/쪽번호 위치/감추기/찾아보기/책갈피/글자겹침/덧말 — 본문 텍스트 없음 또는 의도적 스킵
@@ -927,7 +978,7 @@ function applyHeaderFooterEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hw
   const key = (isHeader ? "h:" : "f:") + text
   if (ctx.doc.headerTexts.has(key)) return
   ctx.doc.headerTexts.add(key)
-  const block: IRBlock = { type: "paragraph", text, pageNumber: ctx.sectionNum }
+  const block: IRBlock = { type: "paragraph", text, pageNumber: ctx.page }
   if (isHeader) ctx.doc.headerBlocks.push(block)
   else ctx.doc.footerBlocks.push(block)
 }
@@ -1230,12 +1281,12 @@ function pictureToImageBlock(data: Buffer, ctx: Hwp5Ctx): IRBlock | null {
 
   const item = ctx.docInfo?.binData[binDataId - 1]
   if (item?.kind === "link") {
-    ctx.warnings.push({ page: ctx.sectionNum, message: `외부 연결 이미지 (binDataId ${binDataId})`, code: "SKIPPED_IMAGE" })
+    ctx.warnings.push({ page: ctx.page, message: `외부 연결 이미지 (binDataId ${binDataId})`, code: "SKIPPED_IMAGE" })
     return null
   }
   // DocInfo BIN_DATA가 없으면 binDataId == storageId 관례에 폴백
   const storageId = item && item.storageId > 0 ? item.storageId : binDataId
-  return { type: "image", text: String(storageId), pageNumber: ctx.sectionNum }
+  return { type: "image", text: String(storageId), pageNumber: ctx.page }
 }
 
 // ─── 스타일 ──────────────────────────────────────────

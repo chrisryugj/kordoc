@@ -363,7 +363,7 @@ server.tool(
 
 server.tool(
   "parse_pages",
-  "문서의 특정 페이지/섹션 범위만 파싱합니다. PDF는 정확한 페이지, HWP/HWPX는 섹션 단위 근사치입니다.",
+  "문서의 특정 페이지 범위만 파싱합니다. PDF와 한컴 저장본 HWP/HWPX는 실제 페이지 기준(metadata.pageMode=layout), 조판 캐시가 없는 생성 파일은 섹션 단위 근사(pageMode=section)입니다.",
   {
     file_path: z.string().min(1).describe("파싱할 문서 파일의 절대 경로"),
     pages: z.string().min(1).describe("페이지 범위 (예: '1-3', '1,3,5-7')"),
@@ -395,6 +395,7 @@ server.tool(
         `포맷: ${result.fileType.toUpperCase()}`,
         `범위: ${pages}`,
         result.pageCount ? `페이지: ${result.pageCount}` : null,
+        result.metadata?.pageMode === "section" ? "기준: 섹션 근사" : null,
       ].filter(Boolean).join(" | ")
 
       return {

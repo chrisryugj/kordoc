@@ -86,6 +86,10 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.7.3 변경사항
+
+- **📄 HWP/HWPX 실제 페이지 경계 복원 (#66)**: 한컴 저장본의 조판 캐시(HWPX `linesegarray` / HWP5 `PARA_LINE_SEG`)로 실제 페이지를 복원합니다 — `pageCount`·블록별 `pageNumber` 가 섹션 근사가 아닌 **실제 쪽 번호**가 되고, `parse(buffer, { pages: "3-5" })` 가 실제 3~5쪽을 반환합니다. 신호 4종(vertpos 역행·명시 쪽나눔·분할 표의 셀 흐름 리셋·분할 직후 이중 카운트 억제)을 결합해 실코퍼스 hwp↔hwpx↔pdf 쌍 대조에서 페이지 수 전수 일치. 조판 캐시가 없는 생성 파일은 종전대로 섹션 근사로 동작하며, 새 메타데이터 **`pageMode: "layout" | "section"`** 으로 구분됩니다(근사 상태에서 `pages` 필터 사용 시 `PAGE_BOUNDARY_APPROXIMATE` 경고). RAG 페이지 인용·뷰어 동기화용. (@sorbetsharkroundhand 제안)
+
 ## v4.7.2 변경사항
 
 - **🔒 폐쇄망(내부망) 배포 대응**: `KORDOC_OFFLINE=1` 로 모든 아웃바운드 통신(OCR 모델 다운로드·watch webhook)을 요청 발신 전에 차단하고, `KORDOC_ROOT=<디렉토리>` 로 MCP 서버의 파일 읽기·쓰기를 해당 디렉토리 하위로 제한합니다(둘 다 opt-in — 미설정 시 기존 동작 그대로). 인터넷 없는 망에 반입하는 오프라인 설치 번들은 `node scripts/pack-offline.mjs [--with-ocr] [--with-models]` 로 만들고, OCR 모델은 `kordoc models --export/--import` 로 SHA-256 검증과 함께 옮깁니다. 절차와 보안성 검토용 근거는 [docs/offline-deployment.md](docs/offline-deployment.md) 참조.
@@ -572,7 +576,7 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 - **문서 비교 (Diff)** — IR 레벨 블록 비교로 신구대조표 생성. HWP↔HWPX 크로스 포맷 지원.
 - **양식 인식** — 공문서 테이블에서 label-value 쌍 자동 추출. 성명, 소속, 전화번호 등.
 - **구조화 파싱** — `IRBlock[]`과 `DocumentMetadata`에 직접 접근. 마크다운 넘어선 데이터 활용.
-- **페이지 범위** — `parse(buffer, { pages: "1-3" })` — 필요한 페이지만 빠르게.
+- **페이지 범위** — `parse(buffer, { pages: "1-3" })` — 필요한 페이지만 빠르게. 한컴 저장본은 실제 쪽 번호 기준(`metadata.pageMode: "layout"`), 조판 캐시 없는 생성 파일은 섹션 근사(`"section"`).
 - **Markdown → HWPX** — 역변환. AI가 생성한 내용을 바로 공문서로.
 - **OCR** — 스캔/이미지 PDF 텍스트 추출. 내장 엔진(`ocr: true`, PP-OCRv5 korean) 또는 외부 프로바이더(Tesseract, Claude Vision 등).
 - **Watch 모드** — `kordoc watch ./수신함 -d ./변환결과 --webhook https://...`

@@ -75,7 +75,10 @@ export function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
       totalDecompressed += content.length * 2
       if (totalDecompressed > MAX_DECOMPRESS_SIZE) throw new KordocError("압축 해제 크기 초과")
       sectionNum++
-      blocks.push(...parseSectionXml(content, undefined, warnings, sectionNum, shared))
+      const secBlocks = parseSectionXml(content, undefined, warnings, sectionNum, shared)
+      // 복구 경로는 조판 캐시를 신뢰하지 않는다 — 섹션 근사 고정 (#66)
+      for (const b of secBlocks) b.pageNumber = sectionNum
+      blocks.push(...secBlocks)
     } catch {
       continue
     }

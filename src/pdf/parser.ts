@@ -88,8 +88,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const pageCount = doc.numPages
     if (pageCount === 0) throw new KordocError("PDF에 페이지가 없습니다.")
 
-    // 메타데이터 추출 (best-effort)
-    const metadata: DocumentMetadata = { pageCount }
+    // 메타데이터 추출 (best-effort) — PDF는 항상 실제 페이지 단위 (#66)
+    const metadata: DocumentMetadata = { pageCount, pageMode: "layout" }
     await extractPdfMetadata(doc, metadata)
 
     const blocks: IRBlock[] = []

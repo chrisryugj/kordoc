@@ -99,11 +99,11 @@ export function completeTable(
 ): TableState | null {
   const parentTable = tableStack.length > 0 ? tableStack.pop()! : null
   if (newTable.rows.length === 0) {
-    if (newTable.caption) blocks.push({ type: "paragraph", text: newTable.caption, pageNumber: ctx.sectionNum })
+    if (newTable.caption) blocks.push({ type: "paragraph", text: newTable.caption, pageNumber: ctx.page })
     return parentTable
   }
   const ir = buildTableWithCellMeta(newTable, ctx.shared.keepTrailingEmptyCols, ctx.shared.keepEmptyParagraphs)
-  const block: IRBlock = { type: "table", table: ir, pageNumber: ctx.sectionNum }
+  const block: IRBlock = { type: "table", table: ir, pageNumber: ctx.page }
   if (parentTable?.cell) {
     const cell = parentTable.cell
     ;(cell.blocks ??= []).push(block)

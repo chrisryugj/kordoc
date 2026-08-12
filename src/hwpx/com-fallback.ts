@@ -138,7 +138,8 @@ export function comResultToParseResult(
   }
 
   const markdown = lines.join("\n\n")
-  const metadata: DocumentMetadata = { pageCount }
+  // COM GetPageText는 실제 페이지 단위 (#66)
+  const metadata: DocumentMetadata = { pageCount, pageMode: "layout" }
 
   warnings.push({
     message: "DRM 문서: 한컴 COM API로 텍스트 추출 (서식/표 정보 제한적)",

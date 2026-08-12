@@ -25,6 +25,7 @@ import {
 import type { HwpxStyleMap } from "./styles.js"
 import { resolveParaHeading } from "./para-heading.js"
 import { completeTable } from "./table-build.js"
+import { detectHwpxSectionPages } from "./page-boundary.js"
 
 // ─── 섹션 XML 파싱 ──────────────────────────────────
 
@@ -36,6 +37,16 @@ export function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?:
   const ctx: WalkCtx = { styleMap, warnings, sectionNum, shared: shared ?? createSectionShared() }
   // 변경추적 삭제 구간은 섹션 경계를 넘지 않음 — 비정상 파일에서 본문 전체 소실 방지
   ctx.shared.track.deleteDepth = 0
+
+  // 실제 페이지 프리패스 (#66) — 조판 캐시로 top-level 문단별 페이지 배정.
+  // 신뢰 불가(usable=false) 섹션이 하나라도 있으면 호출자(parser.ts)가 섹션 근사로 되돌린다.
+  const detect = detectHwpxSectionPages(doc.documentElement as unknown as Element)
+  const ps = ctx.shared.pageState
+  if (!detect.usable) ps.allUsable = false
+  ctx.paraPage = detect.paraPage
+  ctx.pageBase = ps.base
+  ctx.page = ps.base + 1
+  ps.base += detect.pages
 
   // secPr outlineShapeIDRef — 개요 문단의 자동번호 정의 참조
   for (const tagName of ["hp:secPr", "secPr"]) {
@@ -103,7 +114,7 @@ function walkSection(
           const chan = kordocTableChannel(el, ctx)
           if (chan) {
             if (chan.kind === "heading" && chan.text) {
-              blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.sectionNum })
+              blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.page })
             }
             break
           }
@@ -124,7 +135,7 @@ function walkSection(
             if (cap.hasStructure) (tableCtx.captionBlocks ??= []).push(...cap.blocks)
           } else {
             // 활성 표 컨텍스트 밖의 캡션 — 무음 드롭 대신 문단으로 보존 (#46)
-            blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.sectionNum })
+            blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.page })
           }
         }
         break
@@ -172,6 +183,9 @@ function walkSection(
         break
 
       case "p": {
+        // 실제 페이지 갱신 (#66) — 프리패스 맵은 top-level 문단만 담아 중첩 문단은 자연 상속
+        const paraPg = ctx.paraPage?.get(el)
+        if (paraPg !== undefined && ctx.pageBase !== undefined) ctx.page = ctx.pageBase + paraPg + 1
         const { text: rawText, href, footnote, style, segments } = extractParagraphInfo(el, ctx.styleMap, ctx)
         let text = rawText
         let headingLevel: number | undefined
@@ -201,7 +215,7 @@ function walkSection(
           const flush = () => {
             const s = segs[segIdx++]
             if (!s) return
-            const block: IRBlock = { type: "paragraph", text: s, pageNumber: ctx.sectionNum }
+            const block: IRBlock = { type: "paragraph", text: s, pageNumber: ctx.page }
             if (first && !cell) {
               first = false
               if (style) block.style = style
@@ -233,7 +247,7 @@ function walkSection(
             // 선두 빈 문단 뒤(keepEmptyParagraphs)엔 cell.text가 ""라도 문단 경계 `\n` 필요 (#57)
             cell.text += ((cell.text || cell.paraSeen) ? "\n" : "") + text
             cell.paraSeen = true
-            const cellBlock: IRBlock = { type: "paragraph", text, pageNumber: ctx.sectionNum }
+            const cellBlock: IRBlock = { type: "paragraph", text, pageNumber: ctx.page }
             // 왕복 채널 — 셀 문단도 인라인 강조 span 복원 (v4.0.4: 최상위 한정 확장,
             // v4.0.5: gongmun·외래 확장). GFM 셀 방출이 마커를 재방출하고 generateRuns가
             // 되읽는다. 자사 default 외에는 혼합 가드 — 전체 볼드 셀은 헤더행·라벨열의
@@ -252,12 +266,12 @@ function walkSection(
             // kordocLayout 채널 있는 자사 생성 문서 한정 — 외래 문서의 실제 '─' 장식
             // 문단이 separator로 둔갑하는 것 방지
             if (ctx.shared.kordocLayout && /^─{10,}$/.test(text)) {
-              blocks.push({ type: "separator", pageNumber: ctx.sectionNum })
+              blocks.push({ type: "separator", pageNumber: ctx.page })
               // p 내부 구조 자식 처리 경로 유지를 위해 아래 공통 처리로 진행
               tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, ctx, depth + 1)
               break
             }
-            const block: IRBlock = { type: headingLevel ? "heading" : "paragraph", text, pageNumber: ctx.sectionNum }
+            const block: IRBlock = { type: headingLevel ? "heading" : "paragraph", text, pageNumber: ctx.page }
             if (headingLevel) block.level = headingLevel
             if (style) block.style = style
             if (href) block.href = href
@@ -296,7 +310,7 @@ function walkSection(
             blocks.push(block)
           } else {
             // 표 내부지만 셀 밖(비정상 경로) — 무음 드롭 대신 본문 문단으로 보존
-            blocks.push({ type: "paragraph", text, pageNumber: ctx.sectionNum })
+            blocks.push({ type: "paragraph", text, pageNumber: ctx.page })
           }
         } else if (ctx.shared.keepEmptyParagraphs && !hasObjectDescendant(el)) {
           // 빈 문단 보존 (#57, opt-in) — 본문은 text:"" 문단 블록, 셀은 빈 줄로 순서대로.
@@ -307,9 +321,9 @@ function walkSection(
             if (cell.text || cell.paraSeen) cell.text += "\n"
             cell.paraSeen = true
             cell.lineOpen = false // 문단 경계 — 인라인 흐름 닫힘
-            ;(cell.blocks ??= []).push({ type: "paragraph", text: "", pageNumber: ctx.sectionNum })
+            ;(cell.blocks ??= []).push({ type: "paragraph", text: "", pageNumber: ctx.page })
           } else if (!tableCtx) {
-            blocks.push({ type: "paragraph", text: "", pageNumber: ctx.sectionNum })
+            blocks.push({ type: "paragraph", text: "", pageNumber: ctx.page })
           }
         }
         // <p> 내부의 <tbl>만 별도 처리 — extractParagraphInfo가 이미 텍스트를 추출했으므로
@@ -333,7 +347,7 @@ function walkSection(
       // 메모 — 본문 혼입 차단 (v3.0)
       case "memogroup": case "memo": {
         if (ctx.warnings && extractTextFromNode(el)) {
-          ctx.warnings.push({ page: ctx.sectionNum, message: "메모 텍스트 본문 제외: memogroup", code: "HIDDEN_TEXT_FILTERED" })
+          ctx.warnings.push({ page: ctx.page, message: "메모 텍스트 본문 제외: memogroup", code: "HIDDEN_TEXT_FILTERED" })
         }
         break
       }
@@ -354,7 +368,7 @@ function handleShape(el: Element, sink: IRBlock[], ctx: WalkCtx): void {
   const drawTextChild = findDescendant(el, "drawText")
 
   if (imgRef) {
-    const block: IRBlock = { type: "image", text: imgRef, pageNumber: ctx.sectionNum }
+    const block: IRBlock = { type: "image", text: imgRef, pageNumber: ctx.page }
     // 사용자 입력 그림 설명(alt) — builder가 image alt 출력을 지원할 때까지 IR에 보존,
     // 이미지 추출 실패 시 대체 문단의 각주로 표시된다
     const alt = userShapeComment(el)
@@ -368,12 +382,12 @@ function handleShape(el: Element, sink: IRBlock[], ctx: WalkCtx): void {
   const capEl = findChildByLocalName(el, "caption")
   if (capEl) {
     const capText = collectSubListText(capEl, ctx)
-    if (capText) sink.push({ type: "paragraph", text: capText, pageNumber: ctx.sectionNum })
+    if (capText) sink.push({ type: "paragraph", text: capText, pageNumber: ctx.page })
   }
 
   if (!imgRef && !drawTextChild && ctx.warnings && ctx.sectionNum) {
     const localTag = (el.tagName || el.localName || "").replace(/^[^:]+:/, "")
-    ctx.warnings.push({ page: ctx.sectionNum, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
+    ctx.warnings.push({ page: ctx.page, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
   }
 }
 
@@ -496,7 +510,7 @@ function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0): SubListConten
       const t = extractParagraphInfo(ch, ctx.styleMap, ctx).text
       if (t) {
         parts.push(t)
-        out.blocks.push({ type: "paragraph", text: t, pageNumber: ctx.sectionNum })
+        out.blocks.push({ type: "paragraph", text: t, pageNumber: ctx.page })
       }
       // 문단 run 안의 중첩표 (hp:p > hp:run > hp:tbl — HWPX 표준 배치)
       const tbls: Element[] = []
@@ -594,7 +608,7 @@ function walkParagraphChildren(
           const chan = kordocTableChannel(el, ctx)
           if (chan) {
             if (chan.kind === "heading" && chan.text) {
-              blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.sectionNum })
+              blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.page })
             }
             continue
           }
@@ -610,12 +624,12 @@ function walkParagraphChildren(
         // 셀 안이면 표 caption이 아니라 개체 캡션이므로 셀 텍스트로 귀속 (오귀속 방지)
         const cap = collectSubListContent(el, ctx)
         if (cap.text) {
-          if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, [{ type: "paragraph", text: cap.text, pageNumber: ctx.sectionNum }])
+          if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, [{ type: "paragraph", text: cap.text, pageNumber: ctx.page }])
           else if (tableCtx) {
             tableCtx.caption = (tableCtx.caption ? tableCtx.caption + "\n" : "") + cap.text
             if (cap.hasStructure) (tableCtx.captionBlocks ??= []).push(...cap.blocks)
           }
-          else blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.sectionNum })
+          else blocks.push({ type: "paragraph", text: cap.text, pageNumber: ctx.page })
         }
       } else if (localTag === "pic" || localTag === "shape" || localTag === "drawingObject") {
         // 글상자 텍스트 + 이미지 병행 추출 — 셀 안이면 위치 보존을 위해 IRCell.blocks로
@@ -712,7 +726,7 @@ function extractDrawTextBlocks(drawTextNode: Node, blocks: IRBlock[], ctx: WalkC
         const ph = resolveParaHeading(child, ctx)
         if (text) {
           if (ph?.prefix) text = ph.prefix + " " + text
-          const block: IRBlock = { type: "paragraph", text, style: info.style ?? undefined, pageNumber: ctx.sectionNum }
+          const block: IRBlock = { type: "paragraph", text, style: info.style ?? undefined, pageNumber: ctx.page }
           if (info.href) block.href = info.href
           if (info.footnote) block.footnoteText = info.footnote
           blocks.push(block)
@@ -841,7 +855,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         // 숨은 설명 — 본문 혼입 차단
         case "hiddenComment": {
           if (ctx?.warnings && extractTextFromNode(k)) {
-            ctx.warnings.push({ page: ctx.sectionNum, message: "숨은 설명 텍스트 제외: hiddenComment", code: "HIDDEN_TEXT_FILTERED" })
+            ctx.warnings.push({ page: ctx.page, message: "숨은 설명 텍스트 제외: hiddenComment", code: "HIDDEN_TEXT_FILTERED" })
           }
           break
         }
@@ -858,7 +872,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         // 미지원 요소 — 텍스트를 가졌으면 무음 손실 대신 경고
         default: {
           if (ctx?.warnings && extractTextFromNode(k)) {
-            ctx.warnings.push({ page: ctx.sectionNum, message: `미지원 제어 요소의 텍스트 손실: ${ktag}`, code: "UNSUPPORTED_ELEMENT" })
+            ctx.warnings.push({ page: ctx.page, message: `미지원 제어 요소의 텍스트 손실: ${ktag}`, code: "UNSUPPORTED_ELEMENT" })
           }
         }
       }
@@ -877,7 +891,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         if (isInDeletedRange(ctx)) {
           if (t && ctx && !ctx.shared.track.warned) {
             ctx.shared.track.warned = true
-            ctx.warnings?.push({ page: ctx.sectionNum, message: "변경추적 삭제 텍스트 출력 제외", code: "HIDDEN_TEXT_FILTERED" })
+            ctx.warnings?.push({ page: ctx.page, message: "변경추적 삭제 텍스트 출력 제외", code: "HIDDEN_TEXT_FILTERED" })
           }
         } else {
           // \x1E는 인라인 표 경계 마커로 예약 — 원문 혼입 방지 (#49/#50)
@@ -968,7 +982,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
               // 변환 실패 시 드롭 — 깨진 대체 텍스트 누출 방지. 드롭 사실은 경고로 남긴다
               if (ctx?.warnings) {
                 ctx.warnings.push({
-                  page: ctx.sectionNum,
+                  page: ctx.page,
                   message: `수식 LaTeX 변환 실패 — 수식 텍스트 제외: ${raw.trim().slice(0, 40)}`,
                   code: "PARTIAL_PARSE",
                 })

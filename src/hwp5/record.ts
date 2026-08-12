@@ -9,6 +9,8 @@ export const TAG_PARA_HEADER = 0x0042
 export const TAG_PARA_TEXT = 0x0043
 export const TAG_CHAR_SHAPE = 0x0044
 export const TAG_PARA_SHAPE = 0x0045
+/** 0x45의 스펙상 정체 — 본문 문단의 줄 조판 정보(HWPTAG_BEGIN+53). TAG_PARA_SHAPE는 역사적 오명 */
+export const TAG_PARA_LINE_SEG = 0x0045
 export const TAG_CTRL_HEADER = 0x0047
 export const TAG_LIST_HEADER = 0x0048
 export const TAG_TABLE = 0x004d

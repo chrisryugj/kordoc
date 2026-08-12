@@ -81,10 +81,18 @@ export interface SectionShared {
   keepTrailingEmptyCols?: boolean
   /** 빈 문단 보존 — ParseOptions.keepEmptyParagraphs (#57) */
   keepEmptyParagraphs?: boolean
+  /** 실제 페이지 경계 상태 (#66) — base: 이전 섹션까지 누적 페이지 수,
+   *  allUsable: 지금까지 파싱한 전 섹션이 조판 캐시(linesegarray)를 신뢰 가능 */
+  pageState: { base: number; allUsable: boolean }
 }
 
 export function createSectionShared(): SectionShared {
-  return { numState: new Map(), pageText: { headers: [], footers: [] }, track: { deleteDepth: 0, warned: false } }
+  return {
+    numState: new Map(),
+    pageText: { headers: [], footers: [] },
+    track: { deleteDepth: 0, warned: false },
+    pageState: { base: 0, allUsable: true },
+  }
 }
 
 /** walk 함수들이 공유하는 파싱 컨텍스트 — 개별 optional 파라미터를 하나로 묶어 시그니처 안정화 */
@@ -95,6 +103,12 @@ export interface WalkCtx {
   shared: SectionShared
   /** secPr outlineShapeIDRef — 개요(OUTLINE) 문단이 사용하는 numbering id */
   outlineNumId?: string
+  /** 현재 페이지 (#66) — top-level 문단 진입 시 paraPage로 갱신, 셀/중첩은 호스트 상속 */
+  page?: number
+  /** 섹션 프리패스 결과: top-level <hp:p> → 섹션 내 0-based 페이지 */
+  paraPage?: Map<Element, number>
+  /** 이전 섹션까지 누적 페이지 수 (전역 페이지 = pageBase + 섹션 내 페이지 + 1) */
+  pageBase?: number
 }
 
 /** xmldom DOMParser 생성 — onError 콜백으로 malformed XML 경고 수집 */
