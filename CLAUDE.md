@@ -13,7 +13,7 @@ npm 패키지로 배포되며, 3가지 인터페이스 제공: 라이브러리 A
 npm run build          # tsup으로 ESM+CJS 듀얼 빌드 → dist/
 npm run dev            # watch 모드
 npm test               # node --test + tsx 로더 (tests/*.test.ts)
-npm run bench:gate     # 코퍼스 회귀 게이트 체인 (score·roundtrip·pdf-table·formats·fuzz·reflow) — prepublishOnly에 배선
+npm run bench:gate     # 코퍼스 회귀 게이트 체인 (score·roundtrip·pdf-table·formats·fuzz·reflow·pages) — prepublishOnly에 배선
 npm run bench:visual   # 한컴 실렌더 시각 오라클 (macOS GUI 전용, 발행 전 수동 1회 — bench/visual/, 순수 로직은 hash-lib.mjs)
 ```
 

@@ -28,7 +28,7 @@
     "dev": "tsup --watch",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "bench:gate": "node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate",
+    "bench:gate": "node bench/verify-pages.mjs --gate && node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate",
     "bench:visual": "node bench/visual/verify-visual.mjs --gate",
     "sync-meta": "node scripts/sync-meta.mjs",
     "prepublishOnly": "node scripts/sync-meta.mjs --check && node scripts/check-notices.mjs && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs"
