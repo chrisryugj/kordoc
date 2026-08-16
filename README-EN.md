@@ -72,6 +72,16 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.8.0
+
+- **📑 Per-page markdown in `--format json` (#68)**: JSON results now carry `pages: [{ pageNumber, markdown }]` by default, built from the real page boundaries introduced in v4.7.3 (`pageMode: "layout"`). Use it for RAG page citations or viewer page sync without re-parsing — the projection reuses the `pageNumber` already on each block, costing under 1% of parse time (24-page PDF: parse 399ms, pages 2.5ms). `--pages 3-5` narrows `pages` to those pages, and formats that do not number pages (DOCX, …) simply omit the field rather than claiming everything is page 1. The library exposes the same projection as `blocksToPages(blocks)`. (suggested by @sorbetsharkroundhand)
+
+  A table spanning several pages is still one block anchored to its starting page, so the continuation pages carry an empty `markdown`. The entries are kept so array length still equals the page count; per-page table splitting is a separate feature.
+
+## What's New in v4.7.3
+
+- **📄 Real page boundaries for HWP/HWPX (#66)**: page boundaries are recovered from Hangul's layout cache (HWPX `linesegarray` / HWP5 `PARA_LINE_SEG`), so `pageCount` and each block's `pageNumber` are real page numbers rather than a section approximation, and `parse(buffer, { pages: "3-5" })` returns actual pages 3–5. Files without a layout cache keep the section approximation, distinguished by the new `metadata.pageMode: "layout" | "section"` (filtering under the approximation raises a `PAGE_BOUNDARY_APPROXIMATE` warning).
+
 ## What's New in v4.7.2
 
 - **🔒 Air-gapped deployment**: `KORDOC_OFFLINE=1` blocks every outbound request (OCR model download, watch webhook) *before* it is sent, and `KORDOC_ROOT=<dir>` confines the MCP server's reads and writes to that directory subtree — both opt-in, so unset behaviour is unchanged. Build an offline install bundle with `node scripts/pack-offline.mjs [--with-ocr] [--with-models]`, and move OCR models across the air gap with `kordoc models --export/--import` (SHA-256 verified). See [docs/offline-deployment.md](docs/offline-deployment.md) for the procedure and security-review evidence.
@@ -398,7 +408,7 @@ Signal keys: `textChars`, `hangulRatio`, `controlCharRatio`, `replacementCharRat
 npx kordoc business-plan.hwpx                       # print to terminal
 npx kordoc report.hwp -o report.md                  # save to file
 npx kordoc *.pdf -d ./converted/                    # batch conversion
-npx kordoc review.hwpx --format json                # JSON (blocks + metadata)
+npx kordoc review.hwpx --format json                # JSON (blocks + pages + metadata)
 npx kordoc report.hwpx --pages 1-3                  # page range
 npx kordoc fill form.hwpx -f '성명=홍길동,주소=서울' -o filled.hwpx   # fill a form
 npx kordoc fill form.hwpx -j values.json -o filled.hwpx              # fill from JSON

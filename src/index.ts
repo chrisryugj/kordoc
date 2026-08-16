@@ -25,6 +25,7 @@ import type { FillValue, FillInput } from "./form/match.js"
 import { fillHwpx } from "./form/filler-hwpx.js"
 import type { HwpxFillResult } from "./form/filler-hwpx.js"
 import { blocksToMarkdown } from "./table/builder.js"
+import { blocksToPages } from "./page-markdown.js"
 import { markdownToHwpx } from "./hwpx/generator.js"
 
 // ─── 메인 API ────────────────────────────────────────
@@ -68,6 +69,22 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
   }
   const format = detectFormat(buffer)
 
+  const result = await dispatch(format, buffer, opts)
+  // 페이지별 마크다운(#68)은 파서가 채운 pageNumber 의 사영이라 여기서 한 번에
+  // 붙인다. 포맷별 파서를 직접 부르는 호출자는 `blocksToPages(result.blocks)` 로
+  // 같은 값을 얻는다.
+  if (result.success && !result.pages) {
+    const pages = blocksToPages(result.blocks)
+    if (pages) return { ...result, pages }
+  }
+  return result
+}
+
+async function dispatch(
+  format: ReturnType<typeof detectFormat>,
+  buffer: ArrayBuffer,
+  opts: ParseOptions | undefined,
+): Promise<ParseResult> {
   switch (format) {
     case "hwpx": {
       // ZIP 기반 포맷 세분화: HWPX, XLSX, DOCX 구분
@@ -393,7 +410,7 @@ export type { RenderSvgOptions, RenderSvgResult } from "./render/index.js"
 export { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
 export type {
   ParseResult, ParseSuccess, ParseFailure, FileType,
-  PageQuality, DocumentQualitySummary,
+  PageMarkdown, PageQuality, DocumentQualitySummary,
   IRBlock, IRBlockType, IRTable, IRCell, CellContext,
   BoundingBox, InlineStyle, ImageData, ExtractedImage,
   DocumentMetadata, ParseOptions, ErrorCode,
@@ -403,4 +420,5 @@ export type {
   OcrProvider, WatchOptions,
 } from "./types.js"
 export { blocksToMarkdown } from "./table/builder.js"
+export { blocksToPages } from "./page-markdown.js"
 export { VERSION } from "./utils.js"

@@ -86,6 +86,24 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.8.0 변경사항
+
+- **📑 `--format json` 에 페이지별 마크다운 (#68)**: JSON 결과에 `pages: [{ pageNumber, markdown }]` 이 기본으로 들어갑니다. v4.7.3 의 실제 페이지 경계(`pageMode: "layout"`)를 그대로 써서, RAG 인용 각주나 뷰어 페이지 동기화에 쪽 단위 본문을 바로 쓸 수 있습니다. 문서를 다시 파싱하지 않고 이미 만든 블록의 `pageNumber` 로 가르기 때문에 비용은 파싱 시간의 1% 미만입니다(24쪽 PDF 기준 parse 399ms / pages 2.5ms). `--pages 3-5` 를 쓰면 `pages` 에도 3~5쪽만 담기고, 페이지 번호를 매기지 않는 포맷(DOCX 등)에서는 `pages` 자체가 없습니다. 라이브러리에서는 `blocksToPages(blocks)` 로도 같은 값을 얻습니다. (@sorbetsharkroundhand 제안)
+
+  ```jsonc
+  {
+    "markdown": "# 전체 문서…",
+    "pages": [
+      { "pageNumber": 1, "markdown": "# 1페이지…" },
+      { "pageNumber": 2, "markdown": "2페이지…" }
+    ],
+    "blocks": [/* … */],
+    "metadata": { "pageCount": 2, "pageMode": "layout" }
+  }
+  ```
+
+  여러 페이지에 걸친 표는 현 IR 구조상 시작 페이지의 한 블록이라, 표가 이어지는 중간 페이지의 `markdown` 은 빈 문자열입니다(항목 자체는 남깁니다 — 배열 길이 = 쪽수).
+
 ## v4.7.3 변경사항
 
 - **📄 HWP/HWPX 실제 페이지 경계 복원 (#66)**: 한컴 저장본의 조판 캐시(HWPX `linesegarray` / HWP5 `PARA_LINE_SEG`)로 실제 페이지를 복원합니다 — `pageCount`·블록별 `pageNumber` 가 섹션 근사가 아닌 **실제 쪽 번호**가 되고, `parse(buffer, { pages: "3-5" })` 가 실제 3~5쪽을 반환합니다. 신호 4종(vertpos 역행·명시 쪽나눔·분할 표의 셀 흐름 리셋·분할 직후 이중 카운트 억제)을 결합해 실코퍼스 hwp↔hwpx↔pdf 쌍 대조에서 페이지 수 전수 일치. 조판 캐시가 없는 생성 파일은 종전대로 섹션 근사로 동작하며, 새 메타데이터 **`pageMode: "layout" | "section"`** 으로 구분됩니다(근사 상태에서 `pages` 필터 사용 시 `PAGE_BOUNDARY_APPROXIMATE` 경고). RAG 페이지 인용·뷰어 동기화용. (@sorbetsharkroundhand 제안)
@@ -800,7 +818,7 @@ for (const p of r.pageQuality ?? []) {
 npx kordoc 사업계획서.hwpx                          # 터미널 출력
 npx kordoc 보고서.hwp -o 보고서.md                  # 파일 저장
 npx kordoc *.pdf -d ./변환결과/                     # 일괄 변환
-npx kordoc 검토서.hwpx --format json               # JSON (blocks + metadata 포함)
+npx kordoc 검토서.hwpx --format json               # JSON (blocks + pages + metadata 포함)
 npx kordoc 보고서.hwpx --pages 1-3                  # 페이지 범위
 npx kordoc fill 신청서.hwpx -f '성명=홍길동,주소=서울' -o 결과.hwpx  # 양식 채우기
 npx kordoc fill 신청서.hwpx -j values.json -o 결과.hwpx             # JSON 파일로 채우기

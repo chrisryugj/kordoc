@@ -331,10 +331,29 @@ export interface ParseSuccess extends ParseResultBase {
   warnings?: ParseWarning[]
   /** 추출된 이미지 목록 — 마크다운에서 파일명으로 참조됨 */
   images?: ExtractedImage[]
+  /**
+   * 페이지별 마크다운 (#68) — `blocks` 의 `pageNumber` 로 갈라 페이지마다 다시
+   * 마크다운을 만든 것. 페이지 경계의 신뢰도는 `metadata.pageMode` 를 따른다
+   * ("layout" = 실제 페이지, "section" = 섹션 근사). `pages` 옵션으로 범위를
+   * 줄이면 그 범위만 담긴다. 페이지 번호를 매기지 않는 포맷(DOCX 등)에서는 없고,
+   * XLSX 는 `pageCount` 와 같은 의미로 시트 한 장이 한 쪽이다.
+   *
+   * 여러 페이지에 걸친 표는 시작 페이지 한 블록이라, 표가 이어지는 중간
+   * 페이지의 `markdown` 은 빈 문자열일 수 있다 (현 IR 구조의 한계).
+   */
+  pages?: PageMarkdown[]
   /** 페이지별 텍스트 품질 신호 — PDF에서만 제공 */
   pageQuality?: PageQuality[]
   /** 문서 단위 품질 요약 — PDF에서만 제공 */
   qualitySummary?: DocumentQualitySummary
+}
+
+/** 페이지 한 장의 마크다운 (#68). ParseSuccess.pages 항목. */
+export interface PageMarkdown {
+  /** 원본 페이지 번호 (1-based) */
+  pageNumber: number
+  /** 그 페이지 블록만으로 만든 마크다운. 블록이 없으면 빈 문자열 */
+  markdown: string
 }
 
 /** 페이지별 텍스트 품질 신호 (PDF 전용). 자세한 설명은 src/pdf/quality.ts */

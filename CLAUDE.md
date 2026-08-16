@@ -109,6 +109,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/shared/offline.ts` | 폐쇄망 게이트 — `KORDOC_OFFLINE` 아웃바운드 킬스위치(`assertNetworkAllowed`), `KORDOC_ROOT` 파일 접근 루트 제한(`assertWithinRoot`, realpath 기준). **새 네트워크 호출은 반드시 여기를 경유** |
 | `src/shared/model-bundle.ts` | OCR·수식 모델 오프라인 사이드로드 (`kordoc models --export/--import`) — SHA 스펙이 SSOT, manifest 없음 |
 | `src/page-range.ts` | 페이지 범위 문자열 파싱 (`"1-3,5"` → `Set<number>`) |
+| `src/page-markdown.ts` | 페이지별 마크다운 사영 (#68) — `IRBlock.pageNumber` 로 갈라 페이지마다 `blocksToMarkdown()`. `parse()` 가 `ParseSuccess.pages` 로 붙인다 |
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |
 | `src/cli.ts` | Commander 기반 CLI |
 | `src/mcp.ts` | MCP 서버 (Claude/Cursor 연동, 15개 도구) |

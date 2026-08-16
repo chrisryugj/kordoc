@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.8.0] - 2026-08-16
+
+`--format json` 결과에 페이지별 마크다운을 기본 포함 (#68, @sorbetsharkroundhand 제안).
+
+### Added
+
+- **`ParseSuccess.pages`**: `[{ pageNumber, markdown }]` 배열. `parse()` 가 이미 만든
+  `IRBlock.pageNumber` 로 블록을 갈라 페이지마다 `blocksToMarkdown()` 을 돌린 사영이라,
+  문서를 다시 파싱하지 않는다. 실측 비용은 파싱 시간의 1% 미만
+  (24쪽 PDF 기준 parse 399ms / pages 2.5ms). 페이지 경계의 신뢰도는 v4.7.3 의
+  `metadata.pageMode` 를 그대로 따른다 — `"layout"` 이면 실제 쪽, `"section"` 이면 섹션 근사.
+- **`blocksToPages(blocks)`** 공개 API: 포맷별 파서(`parsePdf` 등)를 직접 부르는 호출자가
+  같은 값을 직접 얻을 수 있다.
+
+### 동작 세부
+
+- `--pages 3-5` 로 범위를 줄이면 `pages` 에도 3~5쪽만 담긴다.
+- 페이지 번호를 매기지 않는 포맷(DOCX 등)에서는 `pages` 자체가 없다 — 전부 1쪽이라는
+  없는 사실을 만들지 않는다. XLSX 는 종전 `pageCount` 와 같은 의미로 **시트**가 한 쪽이다.
+- 여러 페이지에 걸친 표는 현 IR 구조상 시작 페이지의 한 블록이라, 표가 이어지는 중간
+  페이지의 `markdown` 은 빈 문자열이다. 이때도 항목 자체는 남긴다 — 빼 버리면 소비자가
+  배열 길이로 쪽수를 셀 수 없다. 페이지별 표 분할은 별도 기능으로 둔다.
+- 페이지 번호가 없는 블록은 **직전 블록의 페이지에 이어붙인다.** 어느 쪽에도 안 실려
+  조용히 사라지는 블록이 없도록. 실코퍼스(hwpx·hwp·pdf·xlsx) 대조에서 페이지 마크다운
+  합집합의 문자 보존율 100%.
+- `--format json` 페이로드의 **텍스트 분량은 대략 2배**가 된다(전체 마크다운 + 페이지별
+  사본). 이미지 바이트와 달리 본문 텍스트라 #65 의 직렬화 한계와는 자릿수가 다르지만,
+  JSON 을 그대로 저장·전송하는 파이프라인이면 감안할 것.
+
+## [4.7.3] - 2026-08-13
+
+### Added
+
+- **HWP/HWPX 실제 페이지 경계 복원 (#66)**: 한컴 저장본의 조판 캐시(HWPX `linesegarray` /
+  HWP5 `PARA_LINE_SEG`)로 실제 페이지를 복원한다. `pageCount`·블록별 `pageNumber` 가 섹션
+  근사가 아닌 실제 쪽 번호가 되고, `parse(buffer, { pages: "3-5" })` 가 실제 3~5쪽을 낸다.
+  신호 4종(vertpos 역행·명시 쪽나눔·분할 표의 셀 흐름 리셋·분할 직후 이중 카운트 억제) 결합.
+- **`metadata.pageMode`** (`"layout" | "section"`): 페이지 경계의 신뢰도. 조판 캐시가 없는
+  생성 파일은 종전대로 섹션 근사로 동작하며, 근사 상태에서 `pages` 필터를 쓰면
+  `PAGE_BOUNDARY_APPROXIMATE` 경고가 붙는다.
+
 ## [4.7.2] - 2026-08-07
 
 폐쇄망(내부망) 배포 대응 — 아웃바운드 통신 킬스위치, 파일 접근 루트 제한,
