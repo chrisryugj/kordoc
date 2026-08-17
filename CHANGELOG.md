@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.8.1] - 2026-08-17
+
+`kordoc lint` 가 문서 파일을 텍스트로 읽어 검수하던 것을 차단하고, 문서에서 빠져 있던 CLI 기능을 채웠다.
+
+### Fixed
+
+- **`kordoc lint <문서파일>` 이 압축 바이트를 본문으로 검수** — lint 는 입력을 UTF-8 텍스트로 읽는다. hwpx(ZIP)를 그대로 넘기면 압축 바이트가 본문으로 둔갑해 위반이 수백~수천 건 나왔다(README 가 예제로 싣고 있던 `kordoc lint 보고서.hwpx` 실측 1,193건). "검사 못 함"보다 "검수 결과처럼 보이는 쓰레기"가 나쁘므로, `detectFormat` 으로 판정해 텍스트가 아닌 입력은 읽기 전에 거절하고 파이프 사용법을 안내한다. stdin(`-`)은 종전대로 동작한다
+
+### Docs
+
+- README(한/영)에 문서화되지 않았던 CLI 기능 반영 — `fill --formats`·`--require-unique`·`--mask`, `redact --mask-char`, `render --reflow-mode`, `check-ocr-models`·`check-formula-models`. 두 `check-*` 커맨드는 이름과 달리 **없으면 내려받는다**(수식 모델 ~155MB)는 주의 병기
+- 영문 README 에 통째로 빠져 있던 `redact`·`profile`·`models` 커맨드 추가 — 한글판과 동기화
+- 라이선스 절에 Pix2Text(YOLOv8 AGPL-3.0 주의) 추가 — NOTICE·THIRD_PARTY 에는 있으나 README 에만 누락돼 있던 고지
+- 지원 포맷에 이미지(PNG/JPG/WebP) 행 신설, `parseImage`·고급 함수 8종·타입 18종 표 보강
+- v3.6.0 항목에 잘못 복제돼 있던 "서식 프로필"(실제 도입은 v3.18.0) 삭제
+- 서식 프로필 기여자 표기를 실제 GitHub 핸들로 정정 — `@chiclooc-rgb` → [@ai-localgov-officer](https://github.com/ai-localgov-officer) (PR #42·이슈 #41 의 author)
+
 ## [4.8.0] - 2026-08-16
 
 `--format json` 결과에 페이지별 마크다운을 기본 포함 (#68, @sorbetsharkroundhand 제안).
