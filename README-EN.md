@@ -414,7 +414,7 @@ npx kordoc fill form.hwpx -f '성명=홍길동,주소=서울' -o filled.hwpx   #
 npx kordoc fill form.hwpx -j values.json -o filled.hwpx              # fill from JSON
 npx kordoc fill form.hwpx --dry-run                                  # list fields only
 npx kordoc generate report.md -o report.hwpx --preset 보고서          # markdown → official HWPX
-npx kordoc lint report.hwpx                                          # 13-rule official-notation linter (v4.0.1)
+npx kordoc lint report.md                                            # 13-rule official-notation linter — input is md/txt ('-' = stdin), exits 1 on errors
 npx kordoc patch original.hwpx edited.md -o patched.hwpx  # format-preserving roundtrip patch (.hwp auto-detected)
 npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx  # place a stamp/signature
 npx kordoc validate output.hwpx                     # HWPX structure validation (ZIP, required parts, XML)

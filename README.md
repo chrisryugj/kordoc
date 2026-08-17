@@ -82,6 +82,9 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 *   **📊 차트 생성 (v3.16)**: 마크다운의 ```chart 펜스(type/cat/계열 라인)가 한컴 네이티브 차트(OOXML chartSpace)로 생성됩니다 — 막대·선·원·도넛·영역·분산·방사형 등 20종, 계열/조각 색 지정 가능.
 *   **🔴 도장/서명 자동 날인 (v3.16)**: "(인)"·"서명 또는 인" 같은 앵커 문구를 찾아 도장 PNG를 글 앞 부유로 배치합니다. 표/페이지를 키우지 않아 날인 후 서식이 밀리지 않습니다 (`kordoc seal`).
 *   **✏️ 양식 자동 채우기**: 공문서 양식 템플릿(신청서, 보고서)에 값을 넣으면 자동으로 빈칸을 채웁니다. 원본 서식(글꼴, 크기, 정렬)을 100% 보존합니다.
+*   **👓 내장 OCR — API 키 없이 (v4.2)**: 스캔본·이미지 PDF와 PNG/JPG/WebP 이미지를 **로컬 CPU 추론**(PP-OCRv5 korean)으로 읽습니다. 외부 서비스도 API 키도 없이, 텍스트층이 깨진 페이지만 골라 OCR 하고, 래스터 괘선까지 찾아 스캔본에서도 표를 복원합니다.
+*   **📑 RAG·인용 대응 (v4.1~4.8)**: 헤딩·개조식 위계를 breadcrumb으로 보존한 구조 청크(`--format chunks`)와, 조판 캐시로 복원한 **실제 쪽 번호** 기준 페이지별 마크다운(`pages`)을 냅니다 — 답변에 "몇 쪽" 각주를 붙일 수 있습니다.
+*   **🕶️ 개인정보 마스킹 (v4.1)**: 주민번호·전화·이메일·카드·계좌를 탐지해 **원본 서식 그대로** 가린 문서를 냅니다 (`kordoc redact`). 자동 검출 보조 도구이므로 공개 전 사람 확인은 필수입니다.
 *   **🤖 AI 에이전트 연동 (MCP)**: `Claude Desktop`, `Cursor`, `Codex`와 같은 도구에서 직접 `kordoc`을 호출해 문서를 읽고 코딩할 수 있습니다.
 
 ---
@@ -356,7 +359,6 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 - **📐 실측 텍스트 메트릭 엔진**: 함초롬바탕 정품 TTF에서 글자 폭을 전수 추출해 한글 프로그램 없이 줄폭·줄바꿈을 계산합니다. 실제 결재문서의 조판 결과와 대조해 **줄바꿈점 98% 일치** 검증.
 - **🪗 자동 장평(`autoFit`)**: 한두 글자가 다음 줄로 넘어가는(orphan) 문단만 골라 장평을 95→90%로 줄여 한 줄에 담습니다. 공문서 작성 관행 그대로.
 - **📊 HTML 표 생성**: 병합(colspan/rowspan)·중첩 표가 든 마크다운도 `markdownToHwpx`로 구조 그대로 HWPX 표가 됩니다 — parse↔generate 표 라운드트립 완성.
-- **🎨 서식 프로필**: 표의 위상뿐 아니라 **테두리·음영·열 실측폭·셀 글꼴까지** 원본 없이 재현합니다. `hwpxToProfile(hwpx)`로 서식만 JSON으로 추출하고, `markdownToHwpx(md, { profile })`로 다른 문서에 그 서식을 입힙니다 — 원본 유출 없이 기관 서식만 공유·재현(이슈 #41, 스키마: [`docs/format-profile-spec.md`](docs/format-profile-spec.md)).
 - **🗂️ 다중값 채우기**: `fillForm` 값에 배열(`string[]`)을 주면 같은 라벨의 등장 순서대로 하나씩 소진 — 반복 양식·명부형 표(헤더+여러 행) 채우기.
 - **🛡️ 무결성 픽스**: 채우기/패치 후 한컴이 "문서가 변조되었습니다" 경고를 띄우던 문제(줄 레이아웃 캐시 잔존), 생성 표 테두리가 보이지 않던 문제(borderFill id 규약) 수정.
 
@@ -611,9 +613,12 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 npm install kordoc
 ```
 
-PDF 파싱(pdfjs-dist)·수식 OCR 등 선택 의존성은 **기본 설치**됩니다 (optionalDependencies).
+PDF 파싱(pdfjs-dist)·OCR(onnxruntime·sharp·pdfium) 등 선택 의존성은 **기본 설치**됩니다 (optionalDependencies).
 설치 용량을 줄이려면 `npm install kordoc --omit=optional` 로 스킵할 수 있습니다 —
-이 경우 PDF 파싱·수식 OCR·인쇄 렌더 등 일부 기능이 제한됩니다.
+이 경우 PDF 파싱·OCR·PNG 래스터 등 일부 기능이 제한됩니다.
+
+`markdownToPdf`/`blocksToPdf`(인쇄 렌더)만 `puppeteer-core` 를 **선택적 peer 의존성**으로 쓰며
+자동 설치되지 않습니다 — 쓰려면 `npm install puppeteer-core` 를 따로 하세요.
 
 ## 빠른 시작
 
@@ -629,9 +634,15 @@ const result = await parse(buffer)
 if (result.success) {
   console.log(result.markdown)       // 마크다운 텍스트
   console.log(result.blocks)         // IRBlock[] 구조화 데이터
-  console.log(result.metadata)       // { title, author, createdAt, ... }
+  console.log(result.metadata)       // { title, author, createdAt, pageMode, ... }
+  console.log(result.pages)          // [{ pageNumber, markdown }] — 쪽 단위 본문 (v4.8)
 }
 ```
+
+`pages` 는 블록에 쪽 번호가 붙는 포맷(HWP·HWPX·PDF, XLS(X)는 시트=한 쪽)에서만 나옵니다 —
+DOCX 처럼 쪽을 매기지 않는 포맷에서는 없는 사실을 만들지 않고 필드 자체를 생략합니다.
+경계의 신뢰도는 `metadata.pageMode` (`"layout"` = 조판 캐시 기반 실제 쪽 /
+`"section"` = 섹션 근사)로 구분합니다.
 
 ### 문서 비교 (신구대조표)
 
@@ -819,7 +830,11 @@ npx kordoc 사업계획서.hwpx                          # 터미널 출력
 npx kordoc 보고서.hwp -o 보고서.md                  # 파일 저장
 npx kordoc *.pdf -d ./변환결과/                     # 일괄 변환
 npx kordoc 검토서.hwpx --format json               # JSON (blocks + pages + metadata 포함)
+npx kordoc 검토서.pdf --format chunks              # RAG용 구조 청크 JSON (breadcrumb + 표 독립 청크)
 npx kordoc 보고서.hwpx --pages 1-3                  # 페이지 범위
+npx kordoc 스캔본.pdf --ocr                         # 내장 OCR (필요 페이지 자동 판정, --ocr-force로 전 페이지)
+npx kordoc 잠긴문서.hwpx --password '암호'           # 열기 암호가 걸린 HWPX/HWP3/HWP5
+npx kordoc 시험지.pdf --no-tables                   # PDF 표 감지 끄기 (2단 시험지 등 읽기순 우선)
 npx kordoc fill 신청서.hwpx -f '성명=홍길동,주소=서울' -o 결과.hwpx  # 양식 채우기
 npx kordoc fill 신청서.hwpx -j values.json -o 결과.hwpx             # JSON 파일로 채우기
 npx kordoc fill 신청서.hwpx --dry-run                               # 필드 목록만 확인 (누름틀 포함)
@@ -829,11 +844,18 @@ npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서         # 
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx      # 서식 보존 라운드트립 패치 (.hwp도 자동 분기)
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx  # 도장/서명 날인
 npx kordoc validate 산출물.hwpx                      # HWPX 구조 검증 (ZIP·필수 파트·XML)
-npx kordoc lint 보고서.hwpx                          # 공문서 표기법 검수 13룰 (v4.0.1)
+npx kordoc lint 보고서.md                            # 공문서 표기법 검수 13룰 — 입력은 md/txt('-'=stdin), error 있으면 exit 1
+npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx       # 개인정보 탐지 + 서식 보존 마스킹 (v4.1)
+npx kordoc profile 기관서식.hwpx                     # 표 서식 프로필(JSON) 추출 → generate --profile 로 재현
 npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더 (캐시 없는 문서는 자동 reflow 조판, --no-reflow로 끔)
+npx kordoc models --status                          # OCR 모델 상태 (--export/--import 로 폐쇄망 사이드로드)
 npx kordoc watch ./수신함 -d ./변환결과              # 폴더 감시 모드
 npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 ```
+
+> `kordoc lint` 는 **텍스트(마크다운/txt)를 검사합니다** — HWPX 를 바로 넘기면 안 됩니다.
+> 생성물을 검수하려면 원고 마크다운을 넘기거나, `kordoc 문서.hwpx | kordoc lint -` 로 파이프하세요.
+> (공문서 생성 시에는 `generate` 가 같은 13룰 경고를 함께 냅니다.)
 
 ## MCP 서버 (Claude / Cursor / Windsurf / Codex)
 
@@ -914,7 +936,8 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `parseXls(buffer, options?)` | XLS (Excel 97~2003, BIFF8) 전용 |
 | `parseDocx(buffer, options?)` | DOCX 전용 |
 | `parseHwpml(buffer, options?)` | HWPML (XML 기반 HWP) 전용 |
-| `detectFormat(buffer)` | `"hwpx" \| "hwp" \| "hwp3" \| "hwpml" \| "pdf" \| "xlsx" \| "xls" \| "docx" \| "unknown"` |
+| `parseImage(buffer, options?)` | 이미지(PNG/JPG/WebP) 전용 — 내장 OCR 상시 적용 (v4.2.1) |
+| `detectFormat(buffer)` | `"hwpx" \| "hwp" \| "hwp3" \| "hwpml" \| "pdf" \| "xlsx" \| "xls" \| "docx" \| "image" \| "unknown"` |
 
 ### 고급 함수
 
@@ -926,18 +949,25 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `fillForm(input, values, outputFormat?)` | 양식 템플릿에 값 채우기 — outputFormat: `"markdown"`(기본)/`"hwpx"`/`"hwpx-preserve"`, 반환 `{ output, format, fill }` |
 | `fillFormFields(blocks, values)` | IRBlock[] 기반 필드 값 교체 |
 | `fillHwpx(buffer, values)` | HWPX XML 직접 조작 (원본 서식 보존) |
+| `extractClickHereFields(buffer)` | HWPX 누름틀(CLICK_HERE) 필드 조사 — 이름·안내문 목록 (v4.3) |
+| `resolveBuiltinTemplate(name)` / `readBuiltinTemplate(t)` | 내장 표준 기안문 서식 조회·로드 (`gian`/`gian-simple`, v4.3) |
 | `patchHwpx(original, editedMarkdown, options?)` | 편집 마크다운 → 원본 HWPX 서식 보존 in-place 패치 (v3.0) |
 | `patchHwp(original, editedMarkdown, options?)` | 편집 마크다운 → 원본 HWP 5.x 바이너리 서식 보존 패치 (v3.0.1) |
 | `openHwpxDocument(bytes, options?)` | 에디터용 블록 단위 증분 패치 세션 `HwpxSession` (v3.1) |
 | `patchHwpxBlocks(bytes, edits, options?)` | 세션 없이 블록 편집 1회 패치 (v3.1) |
-| `markdownToHwpx(markdown, options?)` | Markdown → HWPX 역변환 (테마 옵션 지원) |
-| `markdownToPdf(markdown, options?)` | Markdown → PDF 생성 (Print Renderer) |
-| `blocksToPdf(blocks, options?)` | IRBlock[] → PDF 생성 |
-| `renderHtml(blocks, options?)` | IRBlock[] → 인쇄용 HTML |
+| `markdownToHwpx(markdown, options?)` | Markdown → HWPX 역변환 (테마·서식 프로필·페이지 옵션 지원) |
+| `hwpxToProfile(buffer)` | 참조 HWPX → 표 서식 프로필 JSON — `markdownToHwpx(md, { profile })` 로 재현 (v3.18) |
+| `markdownToPdf(markdown, options?)` | Markdown → PDF 생성 (Print Renderer — `puppeteer-core` 별도 설치 필요) |
+| `blocksToPdf(blocks, options?)` | IRBlock[] → PDF 생성 (동일하게 `puppeteer-core` 필요) |
+| `renderHtml(blocks, options?)` | IRBlock[] → 인쇄용 HTML (puppeteer 불필요) |
 | `renderHwpxToSvg(buffer, options?)` | HWPX → 레이아웃 보존 SVG — 다페이지·형광펜·도형, 캐시 없으면 `reflow` (v3.10~15) |
 | `placeSealHwpx(buffer, seals)` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
 | `validateHwpx(buffer)` | HWPX 구조 검증 — ZIP·mimetype·필수 파트·XML 웰폼드 (v3.16) |
+| `lintGongmunText(text)` | 공문서 표기법 검수 13룰 — 텍스트/마크다운 입력 (v4.0.1) |
+| `redactMarkdown(text, options?)` / `redactText(...)` | 개인정보 탐지 + 마스킹 (기본 룰: 주민번호·전화·이메일·카드·계좌, v4.1) |
+| `blocksToChunks(blocks, options?)` | RAG용 구조 청크 — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 (v4.1) |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown 문자열 |
+| `blocksToPages(blocks)` | IRBlock[] → `[{ pageNumber, markdown }]` 페이지별 마크다운 (v4.8) |
 
 ### 타입
 
@@ -947,11 +977,17 @@ import type {
   IRBlock, IRBlockType, IRTable, IRCell, CellContext,
   DocumentMetadata, ParseOptions, ErrorCode, OutlineItem,
   DiffResult, BlockDiff, CellDiff, DiffChangeType,
-  FormField, FormResult, FillResult, HwpxFillResult, FillOutputFormat, FillFormOutput,
+  FormField, FormResult, FormFieldType, FormFieldSchema, FormSchemaResult,
+  FillResult, HwpxFillResult, FillOutputFormat, FillFormOutput,
+  ClickHereField, BuiltinTemplate,
   PatchOptions, PatchResult, PatchSkip,
-  HwpxTheme, MarkdownToHwpxOptions,
+  HwpxTheme, MarkdownToHwpxOptions, PageOptions,
   PrintPreset, PrintOptions, PageMargin,
   RenderSvgOptions, RenderSvgResult,
+  SealOp, SealPlacement, PlaceSealResult,
+  ValidateResult, ValidateIssue,
+  RedactRule, RedactOptions, RedactHit, RedactTextResult,
+  DocChunk, ChunkOptions, GongmunLintFinding,
   OcrProvider, WatchOptions,
 } from "kordoc"
 ```
@@ -960,18 +996,21 @@ import type {
 
 | 포맷 | 엔진 | 특징 |
 |------|------|------|
-| **HWPX** (한컴 2020+) | ZIP + XML DOM | 매니페스트, 중첩 테이블, 병합 셀, 손상 ZIP 복구 |
-| **HWP 5.x** (한컴 레거시) | OLE2 + CFB | 배포용 복호화, 손상 CFB 복구, 각주/하이퍼링크, 21종 제어문자, 이미지 추출 |
-| **HWP 3.x** (1996~2002) | 단일 binary | 상용조합형→유니코드, 5,893자 한자/기호 lookup, nested paragraph 추출 |
+| **HWPX** (한컴 2020+) | ZIP + XML DOM | 매니페스트, 중첩 테이블, 병합 셀, 손상 ZIP 복구, 조판 캐시 기반 실제 페이지 경계, 열기 암호 |
+| **HWP 5.x** (한컴 레거시) | OLE2 + CFB | 배포용 복호화, 열기 암호, 손상 CFB 복구, 각주/하이퍼링크, 21종 제어문자, 이미지 추출, 실제 페이지 경계 |
+| **HWP 3.x** (1996~2002) | 단일 binary | 상용조합형→유니코드, 5,893자 한자/기호 lookup, nested paragraph 추출, 아래아(옛한글), 열기 암호 |
 | **HWPML 2.x** (XML 기반 HWP) | XML DOM | HeadingType 기반 헤딩 감지, 병합 셀, DoS 방어 |
-| **PDF** | pdfjs-dist | 선 기반 테이블, XY-Cut 읽기 순서, 헤딩 감지, OCR, 텍스트 품질 신호 |
-| **XLSX** (Excel) | ZIP + XML DOM | 공유 문자열, 병합 셀, 다중 시트, 수식 표시 |
+| **PDF** | pdfjs-dist | 선 기반 테이블, XY-Cut 읽기 순서, 2단 지면, 헤딩 감지, OCR, 밑줄·링크, 이미지 추출, 텍스트 품질 신호 |
+| **XLSX** (Excel) | ZIP + XML DOM | 공유 문자열, 병합 셀, 다중 시트, 수식 표시, 날짜 셀 ISO 변환 |
 | **XLS** (Excel 97~2003) | OLE2 + BIFF8 | Workbook 스트림, SST 공유 문자열, 셀/시트 추출 |
-| **DOCX** (Word) | ZIP + XML DOM | 스타일 heading, 번호 매기기, 각주, 이미지 추출 |
+| **DOCX** (Word) | ZIP + XML DOM | 스타일 heading, 번호 매기기, 각주, 하이퍼링크, 이미지 추출 |
+| **이미지** (PNG/JPG/WebP) | sharp + 내장 OCR | 스크린샷·스캔 이미지 직접 입력, 래스터 괘선 감지로 표 복원 |
 
 ## 보안
 
 프로덕션급 보안 강화: ZIP bomb 방지, XXE/Billion Laughs 방지, 압축 폭탄 방지, 경로 순회 차단, MCP 에러 정제, 파일 크기 제한(500MB). 자세한 내용은 [SECURITY.md](./SECURITY.md) 참조.
+
+**폐쇄망(내부망) 배포** — `KORDOC_OFFLINE=1` 로 모든 아웃바운드 통신(OCR 모델 다운로드·watch webhook)을 차단하고, `KORDOC_ROOT=<디렉토리>` 로 MCP 서버의 파일 접근을 해당 디렉토리 하위로 제한합니다(둘 다 opt-in). 절차·근거는 [docs/offline-deployment.md](docs/offline-deployment.md) 참조. (v4.7.2)
 
 ## 만든 사람
 
@@ -989,7 +1028,10 @@ import type {
   secure-fill 포맷엔진, validate 검사셋
 - **OpenDataLoader PDF** (Apache 2.0, Hancom Inc.) — PDF 테이블 감지 알고리즘
 - **hml-equation-parser** (Apache 2.0, Open Bapul) — HML 수식 파싱
-- **PaddleOCR** (Apache 2.0, PaddlePaddle) — OCR 엔진 파생
+- **PaddleOCR** (Apache 2.0, PaddlePaddle) — 텍스트 OCR 엔진 파생 (PP-OCRv5 korean)
+- **Pix2Text** (MIT, breezedeus) — 수식 OCR(MFD/MFR) 알고리즘 포팅. 모델은 런타임
+  다운로드이며 재배포하지 않습니다 — MFD 가중치의 기반인 Ultralytics YOLOv8 은
+  AGPL-3.0 이므로, 수식 OCR 에 의존하는 상용·비공개 제품은 해당 조건을 별도 확인하세요
 - **cfb** (Apache 2.0, SheetJS) — HWP5 OLE2 컨테이너 파싱
 - **pdfjs-dist** (Apache 2.0, Mozilla) — PDF 텍스트 추출
 - **JSZip** (MIT, Stuart Knightley 외) — ZIP 기반 포맷 파싱
