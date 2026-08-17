@@ -837,7 +837,20 @@ program
   .option("--json", "JSON 출력")
   .action((file: string, opts) => {
     try {
-      const text = file === "-" ? readFileSync(0, "utf-8") : readFileSync(resolve(file), "utf-8")
+      const raw = file === "-" ? readFileSync(0) : readFileSync(resolve(file))
+      // 문서 파일을 UTF-8 텍스트로 읽으면 압축 바이트가 본문으로 둔갑해 위반 수백~수천 건이
+      // 쏟아진다("보고서.hwpx" 실측 1,193건) — 검수 결과처럼 보이는 쓰레기가 최악이라 먼저 막는다.
+      const kind = detectFormat(
+        raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer
+      )
+      if (kind !== "unknown") {
+        process.stderr.write(
+          `[kordoc] lint 는 텍스트(마크다운/txt)를 검사합니다 — ${kind} 문서는 받지 않습니다.\n` +
+          `  원고 마크다운을 넘기거나, 문서 본문을 파이프하세요: kordoc ${file} | kordoc lint -\n`
+        )
+        process.exit(1)
+      }
+      const text = raw.toString("utf-8")
       const findings = lintGongmunText(text)
       const errors = findings.filter((f) => f.severity === "error").length
       if (opts.json) {
