@@ -840,19 +840,29 @@ npx kordoc fill 신청서.hwpx -j values.json -o 결과.hwpx             # JSON 
 npx kordoc fill 신청서.hwpx --dry-run                               # 필드 목록만 확인 (누름틀 포함)
 npx kordoc fill --template gian -j 값.json -o 기안문.hwpx            # 내장 표준 기안문 서식 채우기
 npx kordoc fill --list-templates                                    # 내장 서식 목록 + 필드
+npx kordoc fill 신청서.hwpx -j 값.json --formats '{"날짜":"yy.mm.dd"}'  # 필드별 값 서식 (라벨→포맷)
+npx kordoc fill 신청서.hwpx -j 값.json --require-unique              # 한 키가 2곳 이상 매칭되면 거부 (반복 라벨 오염 방지)
+npx kordoc fill 신청서.hwpx -j 값.json --mask                        # 채운 값 미노출 (stdout 에 본문 대신 안내만)
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서         # 마크다운 → 공문서 HWPX
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx      # 서식 보존 라운드트립 패치 (.hwp도 자동 분기)
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx  # 도장/서명 날인
 npx kordoc validate 산출물.hwpx                      # HWPX 구조 검증 (ZIP·필수 파트·XML)
 npx kordoc lint 보고서.md                            # 공문서 표기법 검수 13룰 — 입력은 md/txt('-'=stdin), error 있으면 exit 1
 npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx       # 개인정보 탐지 + 서식 보존 마스킹 (v4.1)
+npx kordoc redact 민원서류.hwpx --mask-char '*' -o 마스킹.hwpx   # 마스크 문자 지정 (기본 ●)
 npx kordoc profile 기관서식.hwpx                     # 표 서식 프로필(JSON) 추출 → generate --profile 로 재현
 npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더 (캐시 없는 문서는 자동 reflow 조판, --no-reflow로 끔)
+npx kordoc render 결재문서.hwpx --reflow-mode charAll -o 미리보기.svg  # reflow 줄바꿈: keep(어절, 기본) | charAll(글자)
 npx kordoc models --status                          # OCR 모델 상태 (--export/--import 로 폐쇄망 사이드로드)
+npx kordoc check-ocr-models --status-only           # OCR 모델 상태만 JSON 출력 (옵션 빼면 없는 모델을 받는다)
+npx kordoc check-formula-models --status-only       # 수식 OCR 모델(MFD+MFR+tokenizer, ~155MB) 상태만 출력
 npx kordoc watch ./수신함 -d ./변환결과              # 폴더 감시 모드
 npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 ```
 
+> `check-ocr-models` · `check-formula-models` 는 이름과 달리 **없거나 SHA 가 안 맞으면 내려받습니다**.
+> 상태만 보려면 `--status-only` 를 붙이세요 (수식 모델은 ~155MB).
+>
 > `kordoc lint` 는 **텍스트(마크다운/txt)를 검사합니다** — HWPX 를 바로 넘기면 안 됩니다.
 > 생성물을 검수하려면 원고 마크다운을 넘기거나, `kordoc 문서.hwpx | kordoc lint -` 로 파이프하세요.
 > (공문서 생성 시에는 `generate` 가 같은 13룰 경고를 함께 냅니다.)

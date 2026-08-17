@@ -413,15 +413,31 @@ npx kordoc report.hwpx --pages 1-3                  # page range
 npx kordoc fill form.hwpx -f '성명=홍길동,주소=서울' -o filled.hwpx   # fill a form
 npx kordoc fill form.hwpx -j values.json -o filled.hwpx              # fill from JSON
 npx kordoc fill form.hwpx --dry-run                                  # list fields only
+npx kordoc fill form.hwpx -j values.json --formats '{"날짜":"yy.mm.dd"}'  # per-field value formatting (label → format)
+npx kordoc fill form.hwpx -j values.json --require-unique             # refuse if one key matches 2+ spots (repeated-label safety)
+npx kordoc fill form.hwpx -j values.json --mask                       # don't echo filled values to stdout
 npx kordoc generate report.md -o report.hwpx --preset 보고서          # markdown → official HWPX
 npx kordoc lint report.md                                            # 13-rule official-notation linter — input is md/txt ('-' = stdin), exits 1 on errors
 npx kordoc patch original.hwpx edited.md -o patched.hwpx  # format-preserving roundtrip patch (.hwp auto-detected)
 npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx  # place a stamp/signature
 npx kordoc validate output.hwpx                     # HWPX structure validation (ZIP, required parts, XML)
-npx kordoc render approval.hwpx -o preview.svg      # layout-preserving SVG render (--reflow supported)
+npx kordoc redact complaint.hwpx -o redacted.hwpx   # PII detection + format-preserving masking (v4.1)
+npx kordoc redact complaint.hwpx --mask-char '*' -o redacted.hwpx  # mask character (default ●)
+npx kordoc profile agency-form.hwpx                 # extract table format profile (JSON) → reuse via generate --profile
+npx kordoc render approval.hwpx -o preview.svg      # layout-preserving SVG render (documents without a layout cache are reflowed; --no-reflow disables)
+npx kordoc render approval.hwpx --reflow-mode charAll -o preview.svg  # reflow line breaking: keep (word, default) | charAll (character)
+npx kordoc models --status                          # model cache status (--export/--import for air-gapped sideloading)
+npx kordoc check-ocr-models --status-only           # OCR model status as JSON (without the flag, missing models are downloaded)
+npx kordoc check-formula-models --status-only       # formula OCR models (MFD + MFR + tokenizer, ~155MB) status only
 npx kordoc watch ./inbox -d ./converted             # folder watch mode
 npx kordoc watch ./docs --webhook https://api/hook  # webhook notification
 ```
+
+> `check-ocr-models` and `check-formula-models` **download** what is missing or fails its SHA check,
+> despite the name. Pass `--status-only` to inspect without downloading (formula models are ~155MB).
+>
+> `kordoc lint` inspects **text (markdown/txt)** — do not hand it an HWPX. To lint a generated document,
+> lint the source markdown, or pipe: `kordoc report.hwpx | kordoc lint -`.
 
 ## MCP Server (Claude / Cursor / Windsurf / Codex)
 

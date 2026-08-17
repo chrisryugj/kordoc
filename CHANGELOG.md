@@ -1303,7 +1303,7 @@ v3.17.0→v3.18.0 릴리스 범위 프로덕션 리뷰(적대 검증 에이전�
 ## [3.18.0] - 2026-07-09
 
 ### Added
-- **서식 프로필(format profile)**: 표의 위상(병합)뿐 아니라 **borderFill(테두리·음영)·열 실측폭·셀 글꼴**까지 원본 문서 없이 재현. `markdownToHwpx(md, { profile })`로 서식을 입히고, `hwpxToProfile(hwpx)`로 레퍼런스 hwpx에서 서식만 JSON으로 추출 — 원본 유출 없이 기관 서식만 공유·재현(이슈 #41, 스키마 `docs/format-profile-spec.md`). 표별 로컬 id를 문서 전역 id로 리맵해 `gongmun` preset과 병용해도 charPr id 충돌 없음. profile 미지정 시 출력 바이트 불변(하위호환). 스키마·문서 초안·비식별 예시 기여: @chiclooc-rgb (PR #42).
+- **서식 프로필(format profile)**: 표의 위상(병합)뿐 아니라 **borderFill(테두리·음영)·열 실측폭·셀 글꼴**까지 원본 문서 없이 재현. `markdownToHwpx(md, { profile })`로 서식을 입히고, `hwpxToProfile(hwpx)`로 레퍼런스 hwpx에서 서식만 JSON으로 추출 — 원본 유출 없이 기관 서식만 공유·재현(이슈 #41, 스키마 `docs/format-profile-spec.md`). 표별 로컬 id를 문서 전역 id로 리맵해 `gongmun` preset과 병용해도 charPr id 충돌 없음. profile 미지정 시 출력 바이트 불변(하위호환). 스키마·문서 초안·비식별 예시 기여: @ai-localgov-officer (PR #42).
 
 ## [3.17.0] - 2026-07-06
 
