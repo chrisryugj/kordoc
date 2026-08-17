@@ -272,7 +272,9 @@ function reflowBlockFlow(
     }
     const paraH = res.paraBottom - startV
     // 페이지 넘김: 문단이 현재 페이지를 넘치고, 문단 자체는 한 페이지에 들어가면 다음 페이지로.
-    if (bodyH > 0 && startV > 0 && res.paraBottom > bodyH && paraH <= bodyH) {
+    // 명시적 쪽 나눔(hp:p pageBreak="1" — 한컴 '쪽 나누기' 저장 속성)도 같은 경로로 존중한다.
+    const explicitBreak = bodyH > 0 && startV > 0 && p.getAttribute("pageBreak") === "1"
+    if (explicitBreak || (bodyH > 0 && startV > 0 && res.paraBottom > bodyH && paraH <= bodyH)) {
       shiftParaVert(p, -startV) // 새 페이지 상단(로컬 0)으로 이동 → 프리패스가 vertpos 역행 감지
       cursorV = paraH
     } else {

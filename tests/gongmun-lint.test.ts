@@ -56,4 +56,17 @@ describe("공문서 표기법 검수", () => {
     // COLON_SPACE 양쪽 공백 케이스도 검출
     assert.ok(rulesOf("원장 : 김갑동").includes("COLON_SPACE"), "양쪽 공백 쌍점 검출")
   })
+
+  it("v4.9.0 — AI 문체 흔적(줄표·강조 남발)", () => {
+    // 줄표 3종(em·en·horizontal bar) 검출, 하이픈·표 구분선은 무위반
+    assert.ok(rulesOf("병목은 구축이 아니라 정착 — 활용부터").includes("AI_EM_DASH"), "em dash 검출")
+    assert.ok(rulesOf("100–200만 원").includes("AI_EM_DASH"), "en dash 검출")
+    assert.ok(rulesOf("결론 ― 타당함").includes("AI_EM_DASH"), "horizontal bar 검출")
+    assert.equal(rulesOf("| --- | --- |\n하이픈-연결어").filter((r) => r === "AI_EM_DASH").length, 0, "하이픈·표 구분선 오탐 금지")
+    // 강조 남발 — 한 줄 3회 이상만 경고, 2회 이하·리드어 1회는 정상 관행
+    assert.ok(rulesOf("**현황** 및 **문제** 및 **대안** 제시").includes("AI_BOLD_OVERUSE"), "볼드 3회 검출")
+    assert.equal(rulesOf("**검토 대상**: 계획안 2건과 **예산**").filter((r) => r === "AI_BOLD_OVERUSE").length, 0, "볼드 2회는 무위반")
+    // 펜스 내부는 다른 룰과 동일하게 스킵
+    assert.equal(rulesOf("```\na — b\n```").filter((r) => r === "AI_EM_DASH").length, 0, "펜스 내부 스킵")
+  })
 })

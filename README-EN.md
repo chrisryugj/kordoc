@@ -72,6 +72,11 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.9.0
+
+- **🧹 AI-slop lint for official documents (`AI_*` rules)**: the gongmun style linter now flags stylistic traces that generative-AI drafts leave in official documents — dash usage (`AI_EM_DASH`: — – ―) and three or more bold spans on one line (`AI_BOLD_OVERUSE`). Both are advisory warnings shared by `kordoc lint` and the `generate` warning channel, kept separate from the 13 handbook-derived rules. Distilled from producing a real district review report as official HWPX. Writing guidance (dashes → commas/parentheses, one emphasis per point, loanwords → administrative terms) is reflected in `.claude/skills/gongmunseo/`.
+- **📄 Renderer honors explicit page breaks (`pageBreak="1"`)**: the reflow renderer previously ignored `<hp:p pageBreak="1">` (how Hangul stores a manual page break) and kept flowing; it now starts a new page at that paragraph, so gaejosik chapter banners and post-processed documents render with the same page boundaries as Hangul.
+
 ## What's New in v4.8.0
 
 - **📑 Per-page markdown in `--format json` (#68)**: JSON results now carry `pages: [{ pageNumber, markdown }]` by default, built from the real page boundaries introduced in v4.7.3 (`pageMode: "layout"`). Use it for RAG page citations or viewer page sync without re-parsing — the projection reuses the `pageNumber` already on each block, costing under 1% of parse time (24-page PDF: parse 399ms, pages 2.5ms). `--pages 3-5` narrows `pages` to those pages, and formats that do not number pages (DOCX, …) simply omit the field rather than claiming everything is page 1. The library exposes the same projection as `blocksToPages(blocks)`. (suggested by @sorbetsharkroundhand)

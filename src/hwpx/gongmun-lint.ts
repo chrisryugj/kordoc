@@ -61,6 +61,12 @@ const RULES: LintRule[] = [
   // 쌍점 — URL(https:// 등)·시각(13:20)은 제외
   { code: "COLON_SPACE", severity: "warning", pattern: /\S\s+:(?!\/\/)|\S:(?!\/\/)[^\s\d]/g,
     message: "쌍점은 앞말에 붙이고 뒤는 한 칸 띄움", suggest: "예) 원장: 김갑동" },
+  // ── AI 문체 흔적(슬롭) — 편람 원전 외 kordoc 자체 룰 (v4.9.0) ──────────────
+  // 생성형 AI 초안이 공문서로 흘러들 때 남는 기계 문체를 걸러낸다. 조언용 warning.
+  { code: "AI_EM_DASH", severity: "warning", pattern: /[—–―]/g,
+    message: "줄표(— – ―)는 공문서 표기 관행에 맞지 않음(생성형 AI 문체 흔적)", suggest: "쉼표·괄호·가운뎃점(·)으로 풀어쓰기" },
+  { code: "AI_BOLD_OVERUSE", severity: "warning", pattern: /(?:\*\*[^*\n]+\*\*[^*\n]*){3}/g,
+    message: "한 줄에 강조(**) 3회 이상 — 강조 남발은 생성형 AI 문체 흔적", suggest: "리드어·핵심 수치 한 곳만 강조" },
 ]
 
 /**
