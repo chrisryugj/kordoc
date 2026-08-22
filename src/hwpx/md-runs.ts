@@ -86,6 +86,13 @@ export interface MdBlock {
   marker?: string
 }
 
+/**
+ * 붙임 머리 — 실측 표기는 "붙임", "붙 임"(글자 사이 띄움), "붙임  :" 세 꼴이다.
+ * 편람은 붙임 뒤 쌍점을 쓰지 않지만(gongmun-lint BUNIM_COLON) 실물에 존재하므로
+ * 검출은 받아들이고 교정은 표기법 검수에 맡긴다.
+ */
+const BUNIM_HEAD = /^붙\s*임(?:\s|:|$)/
+
 /** 이스케이프(\$$) 아닌 "$$" 위치 탐색 — 백슬래시 홀수 개 선행이면 이스케이프로 본다 */
 function findMathDelim(s: string, from: number): number {
   let i = s.indexOf("$$", from)
@@ -106,12 +113,14 @@ export function parseMarkdownToBlocks(md: string): MdBlock[] {
   let i = 0
   // 리스트 들여쓰기 스택 — depth별 물리 들여쓰기(칸 수)를 보관. 리스트 run이 끊기면 초기화 (v4.0.5)
   const listStack: number[] = []
+  // 붙임 블록 안인지 — 붙임 머리부터 빈 줄까지 (리스트 재해석 중지 구간)
+  let inBunim = false
 
   while (i < lines.length) {
     const line = lines[i]
 
     // 빈 줄 스킵
-    if (!line.trim()) { i++; continue }
+    if (!line.trim()) { inBunim = false; i++; continue }
 
     // Display math block: $$ ... $$ — 같은 줄 닫힘/멀티라인/닫는 $$ 뒤 잔여 텍스트를
     // 모두 처리하고, 미종결이면 아래 일반 파이프라인으로 폴백한다 (문서 통삼킴 방지,
@@ -251,6 +260,28 @@ export function parseMarkdownToBlocks(md: string): MdBlock[] {
       }
       if (joined.length) blocks.push({ type: "blockquote", text: joined.join("\n") })
       continue
+    }
+
+    // ── 붙임 블록 (v4.10) ──────────────────────────────────────────────
+    // 실측(코퍼스 343건): 붙임은 본문과 한 줄 띄우고(95%), 여러 건이면 '1. 2. 3.' 번호를
+    // 그대로 쓴다 — 항목부호(ㆍ·○)로 치환된 사례는 0건이다. 아래 리스트 판정에 걸리면
+    // 들여쓴 '2. …' 줄이 depth 리스트로 잡혀 번호가 부호로 바뀌며 사라지므로(실측 결함:
+    // "2. 건축물대장…" → "ㆍ 건축물대장…"), 붙임 줄부터 빈 줄까지는 리스트 재해석을 멈춘다.
+    if (BUNIM_HEAD.test(line.trim())) inBunim = true
+    if (inBunim) {
+      // 붙임 머리 앞은 빈 문단 한 줄 — 실측 관행(간격은 문단 속성이 아니라 빈 줄로 만든다)
+      if (BUNIM_HEAD.test(line.trim())) {
+        const prevBlock = blocks[blocks.length - 1]
+        if (blocks.length && !(prevBlock.type === "paragraph" && !prevBlock.text)) {
+          blocks.push({ type: "paragraph", text: "" })
+        }
+      }
+      // 둘째 항목부터의 선행 공백은 지우지 않는다 — 실측 123건 중 122건(99%)이 '2.' 앞에
+      // 공백을 넣어 '붙임  1.'의 번호와 세로로 맞춘다(대개 6칸: '붙임'2자+2타 ≈ 2.94em,
+      // 공백 6칸 3.0em). paraPr 내어쓰기로 맞춘 사례는 사실상 없다. 후행 공백만 정리한다.
+      blocks.push({ type: "paragraph", text: line.replace(/\s+$/, "") })
+      listStack.length = 0
+      i++; continue
     }
 
     // 리스트 — 선두 탭은 2칸 상당으로 확장(이 코드베이스 그리드가 2칸 — CommonMark 4칸과 다름).

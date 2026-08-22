@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
+import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
 import type { FillInput } from "./index.js"
 import { parseFormatProfileJson } from "./hwpx/profile-io.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS } from "./hwpx/gongmun-surface.js"
@@ -750,6 +750,11 @@ program
       if (gongmun && !silent) {
         for (const w of gongmunLintWarnings(md, 5)) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
       }
+      // 개조식 문체 검수 — 보고서·계획서·개조식 프리셋만. 기안문(경어)·통지·보도자료는
+      // 문체 관행이 달라 적용하지 않는다 (범위를 좁히는 것이 오탐을 막는다)
+      if (gongmun && !silent && usesGaejosikMunche(gongmun.preset)) {
+        for (const w of muncheLintWarnings(md, 5)) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
+      }
 
       // 서식 프로필 (이슈 #41) — 경계 zod 검증 후 라이브러리에 전달 (MCP와 공유 스키마)
       let profile: FormatProfile | undefined
@@ -835,6 +840,7 @@ program
   .command("lint <file>")
   .description("공문서 표기법 검수 — 날짜·시간·금액·붙임 등 행정업무운영 편람 표기법 (md/txt, '-'=stdin). error 있으면 exit 1")
   .option("--json", "JSON 출력")
+  .option("--munche", "개조식 문체 검수 병행 — 서술형 종결·당위·수사·항목 길이 (보고서·계획서 원고용)")
   .action((file: string, opts) => {
     try {
       const raw = file === "-" ? readFileSync(0) : readFileSync(resolve(file))
@@ -852,14 +858,27 @@ program
       }
       const text = raw.toString("utf-8")
       const findings = lintGongmunText(text)
+      // 문체 검수는 옵트인 — 축이 다르고(표기법 vs 종결·수사), 개조식이 아닌 원고에는
+      // 적용하면 안 되기 때문에 기본 동작은 종전 그대로 둔다
+      const munche = opts.munche ? lintMuncheText(text) : []
       const errors = findings.filter((f) => f.severity === "error").length
+        + munche.filter((f) => f.severity === "error").length
       if (opts.json) {
-        process.stdout.write(JSON.stringify({ findings, summary: { total: findings.length, errors, ok: errors === 0 } }, null, 2) + "\n")
+        const total = findings.length + munche.length
+        process.stdout.write(JSON.stringify(
+          { findings, ...(opts.munche ? { munche } : {}), summary: { total, errors, ok: errors === 0 } }, null, 2) + "\n")
       } else {
         // 사람용 리포트는 stderr — 기계용(--json)만 stdout (validate와 채널 일관)
-        process.stderr.write(`[kordoc] 표기법 검수: 위반 ${findings.length}건 (error ${errors}, warning ${findings.length - errors})\n`)
+        process.stderr.write(`[kordoc] 표기법 검수: 위반 ${findings.length}건 (error ${findings.filter((f) => f.severity === "error").length}, warning ${findings.filter((f) => f.severity !== "error").length})\n`)
         for (const f of findings) {
           process.stderr.write(`  L${f.line} [${f.severity}] ${f.rule}: "${f.match}" — ${f.message}${f.suggest ? ` → ${f.suggest}` : ""}\n`)
+        }
+        if (opts.munche) {
+          const me = munche.filter((f) => f.severity === "error").length
+          process.stderr.write(`[kordoc] 문체 검수: 위반 ${munche.length}건 (error ${me}, warning ${munche.length - me})\n`)
+          for (const f of munche) {
+            process.stderr.write(`  L${f.line} [${f.severity}] ${f.rule}: "${f.match}" — ${f.message}${f.suggest ? ` → ${f.suggest}` : ""}\n`)
+          }
         }
       }
       process.exit(errors > 0 ? 1 : 0)

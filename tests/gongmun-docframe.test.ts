@@ -27,13 +27,56 @@ describe("bullet2 ㅇ/○ (GAP-06)", () => {
   })
 })
 
-describe("report 리스트 문단 위 간격 실측값 (GAP-05)", () => {
-  it("□3000/○2000/-1200 — t2 양식 저장값", async () => {
+describe("report 리스트 문단 위 간격 — 코퍼스 실측", () => {
+  // 종전 기대값 □3000/○2000/-1200 은 「2_보고서 양식」 한 파일의 저장값이었다(GAP-05).
+  // 코퍼스 555건 실측은 정반대 — □ 582문단·○ 799문단 모두 prev=0 이 88%이고 2000·3000 은
+  // 상위 6위에도 없다(2위 300). 줄간격 160%에 10pt 가 더해져 항목 사이가 1.4줄로 벌어지던
+  // 것을 실측 최빈값으로 되돌렸다(□만 절 구분 위해 실측 2위 300 유지). gaejosik.ts 참조.
+  it("□300/○0/-0 — 실측 최빈값", async () => {
     const buf = await markdownToHwpx("- a\n  - b\n    - c", { gongmun: { preset: "report" } })
     const head = await part(buf, "Contents/header.xml")
     // 리스트 paraPr 8·9·10의 prev(문단 위) — gaejosikSpaceBefore와 동일 스케일
     const prevs = [...head.matchAll(/<hh:paraPr id="(8|9|10)"[\s\S]*?<hc:prev value="(\d+)"/g)].map((m) => [m[1], m[2]])
-    assert.deepEqual(prevs, [["8", "3000"], ["9", "2000"], ["10", "1200"]])
+    assert.deepEqual(prevs, [["8", "300"], ["9", "0"], ["10", "0"]])
+  })
+})
+
+describe("붙임 블록 — 실측 관행 보존", () => {
+  // 실측(코퍼스 343건): 붙임은 본문과 한 줄 띄우고(95%), 여러 건이면 '1. 2. 3.' 번호를
+  // 그대로 쓰며(부호 치환 0건), 둘째 항목은 선행 공백으로 첫 번호와 세로를 맞춘다(122/123).
+  it("들여쓴 '2.' 가 항목부호로 치환되지 않고 번호·선행공백을 유지한다", async () => {
+    const md = "○ 본문 항목\n\n붙임  1. 첫째 자료 1부.\n      2. 둘째 자료 1부.  끝.\n"
+    const sec = await part(await markdownToHwpx(md, { gongmun: { preset: "report" } }), "Contents/section0.xml")
+    const body = [...sec.matchAll(/<hp:t>([\s\S]*?)<\/hp:t>/g)].map((m) => m[1])
+    assert.ok(body.some((t) => t.startsWith("붙임  1.")), `붙임 머리: ${JSON.stringify(body)}`)
+    assert.ok(body.some((t) => /^\s{2,}2\./.test(t)), `둘째 항목 선행공백 보존: ${JSON.stringify(body)}`)
+    assert.ok(!body.some((t) => /^[ㆍ·]\s*둘째/.test(t)), `번호가 부호로 치환되면 안 됨: ${JSON.stringify(body)}`)
+  })
+
+  it("붙임 머리 앞에 빈 문단을 한 줄 넣는다", async () => {
+    const md = "○ 본문 항목\n\n붙임  자료 1부.  끝.\n"
+    const sec = await part(await markdownToHwpx(md, { gongmun: { preset: "report" } }), "Contents/section0.xml")
+    const paras = [...sec.matchAll(/<hp:p\b[^>]*>([\s\S]*?)<\/hp:p>/g)].map((m) =>
+      [...m[1].matchAll(/<hp:t>([\s\S]*?)<\/hp:t>/g)].map((t) => t[1]).join(""))
+    const at = paras.findIndex((t) => t.startsWith("붙임"))
+    assert.ok(at > 0, `붙임 문단을 찾지 못함: ${JSON.stringify(paras)}`)
+    assert.equal(paras[at - 1].trim(), "", `붙임 앞은 빈 문단: ${JSON.stringify(paras)}`)
+  })
+})
+
+describe("h3·h4 소제목 들여쓰기", () => {
+  // □(h2) 대항목이 내어쓰기로 부호를 왼쪽에 내밀기 때문에, left 가 없던 h3 는 실렌더에서
+  // 대항목보다 왼쪽에 놓여 계층이 사라졌다. h2 부호폭만큼 들여써 제목 글자와 맞춘다.
+  it("h3 는 h2 부호폭만큼 들여쓴다", async () => {
+    const buf = await markdownToHwpx("## 대항목\n\n### 소제목\n", { gongmun: { preset: "report" } })
+    const head = await part(buf, "Contents/header.xml")
+    const leftOf = (id: string) => {
+      const m = new RegExp(`<hh:paraPr id="${id}"[\\s\\S]*?<hc:left value="(-?\\d+)"`).exec(head)
+      return m ? Number(m[1]) : null
+    }
+    const h3 = leftOf("3")
+    assert.ok(h3 !== null && h3 > 0, `h3 left 가 0 이면 계층이 사라진다 (실제 ${h3})`)
+    assert.ok((leftOf("4") ?? 0) > h3, "h4 는 h3 보다 더 들여쓴다")
   })
 })
 

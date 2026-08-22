@@ -367,6 +367,8 @@ export { normalizeGongmunPreset, PRESET_ALIAS, incompatibleGongmunWarnings } fro
 export { isKnownFont, unknownFontWarnings } from "./hwpx/font-catalog.js"
 export { lintGongmunText, gongmunLintWarnings } from "./hwpx/gongmun-lint.js"
 export type { GongmunLintFinding } from "./hwpx/gongmun-lint.js"
+export { lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "./hwpx/munche-lint.js"
+export type { MuncheLintFinding, MuncheLineKind } from "./hwpx/munche-lint.js"
 export {
   charWidthEm1000, measureTextWidth, simulateWrap, simulateWrapKeepWord, fitRatioForFewerLines,
   SPACE_EM_FIXED, SPACE_EM_FONT,

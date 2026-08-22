@@ -82,7 +82,8 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/equation-generate.ts` | Markdown display math → EqEdit script + `<hp:equation>` XML (equation.ts 토큰맵과 왕복 정합) |
 | `src/hwpx/gongmun.ts` | 공문서 모드 순수 로직 — 항목부호 8단계 시퀀스(가나다·단모음연속·원숫자), 단계별 들여쓰기(`levelIndent`), 단일형제 부호생략, 프리셋 해석(7종 — 기안문·보고서·계획서·통지·회의록·개조식·보도자료), bullet2 ㅇ/○ (v4.0.2) |
 | `src/hwpx/gaejosik.ts` | 개조식(정부 표준 보고서) 순수 로직 — □○-※ 부호·크기 체계·실측 색/기하 상수 (docs/gongmunseo-engine-spec.md (f)장) |
-| `src/hwpx/gongmun-lint.ts` | 공문서 표기법 검수 13룰(편람 — 날짜·시간·금액·붙임·쌍점 등) — generate 경고 채널 + `kordoc lint` (v4.0.1) |
+| `src/hwpx/gongmun-lint.ts` | 공문서 표기법 검수 13룰(편람 — 날짜·시간·금액·붙임·쌍점 등) + AI 슬롭 2룰(v4.9.0) — generate 경고 채널 + `kordoc lint` (v4.0.1) |
+| `src/hwpx/munche-lint.ts` | 개조식 **문체** 검수 12룰(서술형 종결·당위·수사·대구·항목/결론 길이·리드문) — 보고서·계획서·개조식 프리셋 generate 경고 + `kordoc lint --munche`. 표기법(gongmun-lint)과 축이 다름, 실측 근거는 docs/gaejosik-munche.md (v4.9.1) |
 | `src/hwpx/gen-docframe.ts` | 공문서 골격(v4.0.2) — 기안문 두문·결문(별지 제1호서식), 보고정보 행, 공고문 공고번호·발신명의, 보도자료 머리박스·담당 표. charPr는 variant·프로필 뒤 동적 id, 미사용 시 미방출 (spec (h)장) |
 | `src/hwpx/gen-gaejosik.ts` | 개조식 XML 조립 — 표지(파랑 바)·목차(1×7 스트라이프 배너+테두리 박스)·로마숫자 장 헤더 표·본문 첫 페이지 제목 반복 박스 (기하는 sizes 비례 스케일) |
 | `src/hwp5/parser.ts` | HWP 5.x(OLE2) 바이너리 파싱, 배포용 복호화, 각주/하이퍼링크 |

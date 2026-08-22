@@ -199,15 +199,21 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
   // 실측 정합: 실제 공문서(GT6/GT7 등)는 개요 스타일을 정의만 하고 쓰지 않는다.
   // h2 말머리(□/번호) 문단 — 실측 □ 대항목: 문단 위 15pt(=body×2)·내어쓰기 부호 실폭
   // (부처별 양식 3종, QA-2). 부호폭 기준 크기 1600 = buildCharProperties h2와 동기.
+  const h2MarkerWidth = markerWidth(gongmun.h2Marker === "box" ? "□" : "1.", 1600)
   const h2Geom = gongmun.h2Marker !== "none"
-    ? { spaceBefore: Math.round(gongmun.bodyHeight * 2), spaceAfter: 0, indent: -markerWidth(gongmun.h2Marker === "box" ? "□" : "1.", 1600) }
+    ? { spaceBefore: Math.round(gongmun.bodyHeight * 2), spaceAfter: 0, indent: -h2MarkerWidth }
     : { spaceBefore: 600, spaceAfter: 150 }
+  // h2 제목 글자가 시작하는 자리 — 부호를 안 쓰면(none) 들여쓸 기준이 없으므로 0
+  const h3Left = gongmun.h2Marker !== "none" ? h2MarkerWidth : 0
   const base = [
     paraPr(0, { lineSpacing: ls, keepWord: true }),
     paraPr(1, { align: titleAlign, spaceBefore: 400, spaceAfter: 400, lineSpacing: ls, keepWord: true }),
     paraPr(2, { align: "LEFT", ...h2Geom, lineSpacing: ls, keepWord: true }),
-    paraPr(3, { align: "LEFT", spaceBefore: 400, spaceAfter: 100, lineSpacing: ls, keepWord: true }),
-    paraPr(4, { align: "LEFT", spaceBefore: 300, spaceAfter: 100, lineSpacing: ls, keepWord: true }),
+    // h3·h4 소제목("가." "1)")은 h2(□) 대항목의 하위다 — 종전에는 left가 없어 h2 부호가
+    // 내어쓰기로 왼쪽에 나간 뒤 소제목이 본문 경계에서 시작해, 실렌더상 소제목이 대항목보다
+    // 왼쪽에 놓이며 계층이 사라졌다(실렌더 확인). h2 부호폭만큼 들여써 h2 제목 글자와 맞춘다.
+    paraPr(3, { align: "LEFT", left: h3Left, spaceBefore: 400, spaceAfter: 100, lineSpacing: ls, keepWord: true }),
+    paraPr(4, { align: "LEFT", left: h3Left + Math.round(gongmun.bodyHeight / 2), spaceBefore: 300, spaceAfter: 100, lineSpacing: ls, keepWord: true }),
     paraPr(5, { align: "LEFT", lineSpacing: 130, indent: 400, keepWord: true }),
     paraPr(6, { align: "LEFT", lineSpacing: ls, indent: 600, keepWord: true }),
     paraPr(7, { align: "LEFT", lineSpacing: ls, indent: 600, keepWord: true }),

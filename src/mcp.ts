@@ -7,7 +7,7 @@ import { realpathSync, openSync, readSync, closeSync, existsSync } from "fs"
 import { readFile, writeFile, mkdir, stat, realpath } from "fs/promises"
 import { pathToFileURL } from "url"
 import { resolve, isAbsolute, extname, dirname, basename, join } from "path"
-import { parse, detectFormat, detectZipFormat, detectOle2Format, blocksToMarkdown, compare, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, PRESET_ALIAS, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
+import { parse, detectFormat, detectZipFormat, detectOle2Format, blocksToMarkdown, compare, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings, usesGaejosikMunche, PRESET_ALIAS, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
 import { fillWithUniqueGuard, type FillInput } from "./form/match.js"
 import type { GongmunOptions } from "./index.js"
 import {
@@ -1136,6 +1136,8 @@ server.tool(
       const fontWarns = gongmun?.fonts ? unknownFontWarnings(gongmun.fonts) : []
       if (gongmun) fontWarns.push(...incompatibleGongmunWarnings(gongmun))
       if (gongmun) fontWarns.push(...gongmunLintWarnings(markdown, 5))
+      // 개조식 문체 검수 — 보고서·계획서·개조식 프리셋만 (기안문 경어체 등에는 미적용)
+      if (gongmun && usesGaejosikMunche(gongmun.preset)) fontWarns.push(...muncheLintWarnings(markdown, 5))
       const warnText = fontWarns.length ? `\n⚠ ${fontWarns.join("\n⚠ ")}` : ""
       return {
         content: [{ type: "text", text: `✓ HWPX 생성 (${mode}${tableCount}) → ${out}\n크기: ${(buf.byteLength / 1024).toFixed(1)}KB${warnText}` }],

@@ -69,10 +69,22 @@ export function gaejosikSizes(bodyHeight: number, ov: GaejosikSizeOverrides = {}
   }
 }
 
-/** 단계별 문단 위 간격(HWPUNIT) — 양식 텍스트 스펙 15/10/6/3 × 200 */
+/**
+ * 단계별 문단 위 간격(HWPUNIT).
+ *
+ * 종전 값 15/10/6/3pt(×200 = 3000/2000/1200/600)는 「2_보고서 양식」 **한 파일**의
+ * 저장값이었다. 코퍼스 555건 실측은 정반대다 — □ 582문단 중 88%, ○ 799문단 중 88%가
+ * 문단 위 간격 **0**이고, 2000·3000은 상위 6위에도 들지 못한다(2위가 300). 줄간격
+ * 160%(○ 최빈 35%)에 10pt가 더해지면 항목 사이가 1.4줄로 벌어져 실물보다 훨씬 성기다
+ * (실렌더 확인).
+ *
+ * 이 파일 GAEJOSIK_BULLETS 주석에 이미 선언한 원칙 — "양식 파일 하나의 저장값보다 실무
+ * 관행 우선" — 을 간격에도 적용한다. 실측 최빈값 0을 기본으로 하고, □ 대항목만 절 구분이
+ * 필요해 실측 2위인 300(1.5pt)을 남긴다.
+ */
 export function gaejosikSpaceBefore(depth: number, bodyHeight: number): number {
   const s = bodyHeight / 1500
-  const ui = [3000, 2000, 1200, 600][Math.min(depth, 3)]
+  const ui = [300, 0, 0, 0][Math.min(depth, 3)]
   return Math.round(ui * s)
 }
 

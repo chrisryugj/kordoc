@@ -72,6 +72,15 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.9.1
+
+Generated a real district review report, opened it in Hangul, and checked every visible oddity against a 555-document corpus. All three defects came from the same root cause — **one template file's stored values outranking actual practice**.
+
+- **📐 Paragraph spacing between `○` items**: the default space-before was `□15pt/○10pt/-6pt`, taken from a single template file. The corpus says the opposite — **88%** of 582 `□` paragraphs and **88%** of 799 `○` paragraphs use **zero** space-before, and the old values do not even reach the top six (1.5pt ranks second). Combined with 160% line spacing, 10pt stretched the gap between items to 1.4 lines. Now set to the measured mode, keeping 1.5pt on `□` alone for section separation.
+- **📑 Indentation of `가./나.` subheadings under `□`**: h3/h4 paragraphs had no left margin, so while `□` hung its marker to the left, subheadings started at the body edge and rendered **further left than their parent**, collapsing the hierarchy (confirmed in Hangul). They are now indented by the `□` marker width to align with the parent's title text.
+- **📎 Attachment numbering no longer lost**: an indented `2. …` following `붙임  1. …` was parsed as a Markdown list and replaced with a bullet (`ㆍ`), **dropping the number**. Attachments are now a dedicated block that follows measured practice — one blank line before (95% of 343 samples), numbers `1. 2. 3.` preserved (zero bullet substitutions observed), and leading whitespace on later items kept so they align vertically with the first number (122 of 123 samples).
+- **✍️ Gaejosik prose linter (`kordoc lint --munche`)**: 12 rules on a different axis than notation — declarative `~다` endings (measured 0%), deontic `~해야 한다`, `A-not-B` rhetoric with an abstract B (measured 0), question/exclamation marks in body text (measured 0), couplet slogans, items over 70 chars and conclusions over 60, and lead sentences not ending in `~하고자 함.`. Warnings attach automatically to `generate` for the report/plan/gaejosik presets (generation is never blocked); `kordoc lint` requires `--munche` to opt in. Not applied to drafts/notices/minutes/press releases, whose prose conventions differ. Rules and evidence: [`docs/gaejosik-munche.md`](docs/gaejosik-munche.md). Statistics come from [jkf87/hwpx-skill](https://github.com/jkf87/hwpx-skill) v1.17.0 (15 municipal reports, 2,288 lines).
+
 ## What's New in v4.9.0
 
 - **🧹 AI-slop lint for official documents (`AI_*` rules)**: the gongmun style linter now flags stylistic traces that generative-AI drafts leave in official documents — dash usage (`AI_EM_DASH`: — – ―) and three or more bold spans on one line (`AI_BOLD_OVERUSE`). Both are advisory warnings shared by `kordoc lint` and the `generate` warning channel, kept separate from the 13 handbook-derived rules. Distilled from producing a real district review report as official HWPX. Writing guidance (dashes → commas/parentheses, one emphasis per point, loanwords → administrative terms) is reflected in `.claude/skills/gongmunseo/`.
