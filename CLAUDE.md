@@ -19,6 +19,26 @@ npm run bench:visual   # 한컴 실렌더 시각 오라클 (macOS GUI 전용, �
 
 ESLint, Prettier 미설정 상태. 벤치 코퍼스(`bench/corpus/`)는 gitignore — 없으면 맥미니(`ssh sm`)에서 rsync.
 
+### 코퍼스 동기화 (2026-08-22 기준선)
+
+맥북·맥미니 양쪽 `bench/corpus/` 는 **720파일 바이트 동일**로 맞춰져 있고, 두 기기 모두
+`npm run bench:gate` 전체 PASS(59/59) 다. 게이트 모수는 hwpx 350·pdf 92·hwp쌍 23 —
+`score.mjs` 의 `MIN_POP` 하한(170/25/12)에 여유가 있다.
+
+hwp쌍 23은 `corpus/pairs`(10) + `corpus/hwp5`(13)이 아니라 **`korea-kr`·`misc` 의 hwp+hwpx
+동명 짝까지 합산한 값**이다. 이 폴더들이 한쪽에만 있으면 쌍이 10으로 떨어져
+`❌ 모수 하한 미달` 로 게이트가 죽는다 — 지표는 전부 만점인데 모수만 미달하는 형태라
+품질 회귀로 오진하기 쉽다.
+
+```bash
+# 기기 간 코퍼스 동기화 — rtk 훅이 rsync 를 리라이트해 출력을 삼키므로 절대경로로 호출
+cd bench/corpus && /usr/bin/rsync -a --exclude '.DS_Store' <디렉토리…> sm:~/workspace/kordoc/bench/corpus/
+```
+
+`fuzz-sweep` 의 `slow` 판정은 30s 벽시계 임계라 **다른 게이트와 동시 실행하면 플레이크**다.
+실측(2026-08-22): 단독 최장 17.2s → 두 기기 게이트 병주 중 30.6s 로 FAIL. 코드 결함과
+구분하려면 `node bench/fuzz-sweep.mjs --gate` 를 부하 없이 단독 재실행해 볼 것.
+
 ## 아키텍처
 
 ### 파싱 파이프라인
