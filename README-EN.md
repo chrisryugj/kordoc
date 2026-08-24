@@ -72,6 +72,13 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.9.2
+
+Opened a real report whose `<right>` source lines wrap past one line in Hangul, and fixed what showed up.
+
+- **📌 Left-align fallback for multi-line source lines**: when a `<right>` paragraph (source citations, dates) exceeds the body width, right alignment leaves **each line's left edge ragged**, which reads as broken indentation (confirmed in Hangul — a three-line citation). The generator now pre-measures the typeset width: lines that fit stay right-placed (measured GT6/GT7/GT11 practice), overflowing ones are emitted left-aligned.
+- **🔤 Caption style for source lines**: `<right>` lines starting with `출처:`/`자료:` used the body size and did not read as captions. A dedicated charPr renders them **3pt smaller than body** (floor 10pt) — HY Junggodic on the measured presets (gaejosik/report/plan), the body font elsewhere — following the practice of distinguishing table source notes from body text. Other `<right>` lines (e.g. dates) keep the body size.
+
 ## What's New in v4.9.1
 
 Generated a real district review report, opened it in Hangul, and checked every visible oddity against a 555-document corpus. All three defects came from the same root cause — **one template file's stored values outranking actual practice**.

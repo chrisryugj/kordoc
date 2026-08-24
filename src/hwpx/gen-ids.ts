@@ -197,10 +197,12 @@ export const GJ_CHAR_BAR = 24          // 표지 장식 바 셀 빈 문단 — 6
 export const GJ_CHAR_BODY_TITLE = 25   // 본문 첫 페이지 제목 박스 — HY헤드라인M 22pt (실측: GT3 표④)
 export const GJ_CHAR_TITLE_BAR = 26    // 1페이지형 제목박스 382HU 바 스페이서 — 1pt
 export const GJ_CHAR_APPROVAL = 27     // 결재란 직위 라벨 — 굴림 계열 10pt
+export const GJ_CHAR_SRC = 28          // 출처행 캡션 — 한양중고딕 본문-3pt (srcCaptionPt)
+export const GJ_CHAR_SRC_BOLD = 29     // 출처행 캡션 bold
 // 블록 크기는 첫·끝 명명 id에서 파생 — 수기 카운트 드리프트 방지 (v4.0.5 P0-1).
 // 새 GJ_CHAR_*를 끝에 추가하면 자동 반영되지만, buildCharProperties 방출 행과의
 // 일치는 charVariantBase 런타임 불변식(gen-header)이 검증한다.
-const GJ_CHAR_COUNT = GJ_CHAR_APPROVAL - GJ_CHAR_DAE + 1
+const GJ_CHAR_COUNT = GJ_CHAR_SRC_BOLD - GJ_CHAR_DAE + 1
 
 // ─── 개조식 전용 paraPr id — 공통(0~7)+단계(8~15)+CENTER(16)+RIGHT(17)+표셀(18·19) 뒤 20~24 ──
 // v4.0.2부터 id 연속성을 위해 전 공문서 프리셋이 이 블록을 방출한다 (비개조식은 20만 사용)
@@ -222,11 +224,17 @@ export const GONGMUN_LIST_PLAIN_BASE = 25
 // 재사용하면 긴 라벨 줄바꿈 시 줄이 겹친다 — 보이는 텍스트는 전용 100% paraPr로.
 export const GONGMUN_PARA_APPROVAL = GONGMUN_LIST_PLAIN_BASE + GONGMUN_LIST_LEVELS
 
-// ─── (depth, 부호폭) 내어쓰기 변형 paraPr — 34~ (v4.0.5 P1-1) ──
+// ─── 장문 <right> 폴백 왼쪽정렬 paraPr — 34 ──
+// 출처행 등 <right> 문단이 본문폭을 넘겨 줄바꿈되면 RIGHT 정렬은 왼쪽 끝이
+// 들쭉날쭉해져 들여쓰기가 깨진 듯 보인다(한글 실렌더 QA — 제주 보고서 출처 3줄).
+// 우측 배치 관행(GT6/GT7/GT11)은 한 줄 출처행 실측이므로, 넘치는 문단만 LEFT로.
+export const GONGMUN_SRC_LEFT = GONGMUN_PARA_APPROVAL + 1
+
+// ─── (depth, 부호폭) 내어쓰기 변형 paraPr — 35~ (v4.0.5 P1-1) ──
 // 법정 번호 두 자리 이상('10.'·'10)'·'(10)') 항목 전용 — depth 공용 paraPr의 대표
 // 부호('1.') 내어쓰기로는 둘째 줄이 내용 첫 글자보다 ~0.55타 왼쪽으로 어긋난다.
 // 문서에 해당 항목이 있을 때만 발급(gongmunList.indentVariants — 기본 산출물 불변)
-export const GONGMUN_LIST_VARIANT_BASE = GONGMUN_PARA_APPROVAL + 1
+export const GONGMUN_LIST_VARIANT_BASE = GONGMUN_SRC_LEFT + 1
 
 // ─── 개조식 전용 borderFill id — 기본 2종(1·2) 뒤 3~9 ──
 export const GJ_BF_CHAPTER_NUM = 3   // 장헤더 로마숫자 셀 — #193AAA 음영 + #006699 테두리
@@ -304,6 +312,15 @@ export const GONGMUN_TBL_CHAR_BOLD = 12
 export const GONGMUN_TBL_PT = 1200
 export const GONGMUN_TITLE_BAR_CHAR = 13
 export const GONGMUN_APPROVAL_CHAR = 14
+// 출처행(<right> '출처:'·'자료:') 전용 — 본문보다 3pt 작은 캡션체 (실무 보고서 관행:
+// 표 아래 출처는 본문과 구분되는 작은 글씨. 실측 프리셋은 한양중고딕, 비실측은 본문 폰트)
+export const GONGMUN_SRC_CHAR = 15
+export const GONGMUN_SRC_CHAR_BOLD = 16
+
+/** 출처행 캡션 크기 — 본문 -3pt, 하한 10pt (gen-header 방출·gen-section 폭 판정 공용) */
+export function srcCaptionPt(bodyHeight: number): number {
+  return Math.max(bodyHeight - 300, 1000)
+}
 
 // ─── 공문서 자동 장평(orphan 축소) ───────────────────
 // 기본 charPr 11종(0~10) 뒤에, 자동 장평이 필요한 문단용 변형 charPr를 붙인다.
@@ -313,10 +330,10 @@ export const GONGMUN_APPROVAL_CHAR = 14
 export const CHAR_VARIANT_BASE = CHAR_QUOTE + 1
 export function charVariantBase(richAssets: boolean, isGongmun: boolean = true): number {
   if (!isGongmun) return CHAR_VARIANT_BASE
-  // 비실측 공문서 전용 블록(표 셀 2 + 제목바 + 결재란) 크기도 명명 상수에서 파생
+  // 비실측 공문서 전용 블록(표 셀 2 + 제목바 + 결재란 + 출처행 2) 크기도 명명 상수에서 파생
   return richAssets
     ? CHAR_VARIANT_BASE + GJ_CHAR_COUNT
-    : CHAR_VARIANT_BASE + (GONGMUN_APPROVAL_CHAR - GONGMUN_TBL_CHAR + 1)
+    : CHAR_VARIANT_BASE + (GONGMUN_SRC_CHAR_BOLD - GONGMUN_TBL_CHAR + 1)
 }
 /** 공문서 본문 기본 장평(%) — 실제 공문서 관행 (v3.5.3) */
 export const GONGMUN_BODY_RATIO = 95

@@ -13,16 +13,18 @@ import { buildGaejosikCover, buildGaejosikToc, buildGaejosikChapter, buildGaejos
 import {
   NS_SECTION, NS_PARA,
   CHAR_NORMAL, CHAR_BOLD, CHAR_QUOTE, CHAR_H1, PARA_NORMAL, PARA_QUOTE, PARA_CODE, PARA_LIST,
-  GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT, GONGMUN_LIST_BASE, GONGMUN_LIST_PLAIN_BASE, GONGMUN_LIST_VARIANT_BASE,
+  GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_SRC_LEFT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT, GONGMUN_LIST_BASE, GONGMUN_LIST_PLAIN_BASE, GONGMUN_LIST_VARIANT_BASE,
   GJ_CHAR_DAE, GJ_CHAR_DAE_BOLD, GJ_CHAR_CHAM, GJ_CHAR_CHAM_BOLD, GJ_PARA_CHAM,
   GJ_CHAR_TABLE, GJ_CHAR_TABLE_BOLD, GJ_CHAR_BODY_TITLE, gongmunTableHeaderBf,
   GJ_CHAR_APPROVAL, GJ_CHAR_TITLE_BAR, GONGMUN_APPROVAL_CHAR,
-  GONGMUN_TBL_CHAR, GONGMUN_TBL_CHAR_BOLD, GONGMUN_TBL_PT, GONGMUN_TITLE_BAR_CHAR,
+  GONGMUN_TBL_CHAR, GONGMUN_TBL_CHAR_BOLD, GONGMUN_TBL_PT, GONGMUN_TITLE_BAR_CHAR, GONGMUN_BODY_RATIO,
+  GONGMUN_SRC_CHAR, GONGMUN_SRC_CHAR_BOLD, GJ_CHAR_SRC, GJ_CHAR_SRC_BOLD, srcCaptionPt,
   charVariantBase, pageNumCtrl, newPageNumCtrl, pageHidingCtrl,
   escapeXml, headingParaPrId, headingCharPrId,
   type ResolvedTheme,
 } from "./gen-ids.js"
 import { type MdBlock, generateParagraph, generateRuns } from "./md-runs.js"
+import { measureTextWidth } from "./text-metrics.js"
 import { type GongmunFitPlan, type GongmunListPlan, variantMapper, precomputeGongmunList } from "./gen-gongmun-fit.js"
 import { generateTable, generateHtmlTableXml, DATA_TABLE_INSET, resetTableIds, type GongmunTableStyle } from "./gen-table.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
@@ -323,7 +325,21 @@ function renderParagraph(block: MdBlock, blockIdx: number, ctx: SectionCtx): str
   // <right>…</right> → 우측 정렬 (출처행·발신일자 — 실측 GT2/GT6/GT7/GT9 관행)
   const rgt = gongmun && /^<right>([\s\S]*)<\/right>$/i.exec((block.text || "").trim())
   if (ctr) return generateParagraph(ctr[1].trim(), GONGMUN_CENTER)
-  if (rgt) return generateParagraph(rgt[1].trim(), GONGMUN_RIGHT)
+  if (rgt) {
+    const t = rgt[1].trim()
+    // '출처:'·'자료:' 캡션은 본문-3pt 전용체(실측 한양중고딕/비실측 본문 폰트)로 —
+    // 표 아래 출처를 본문과 구분하는 실무 관행. 그 외 <right>(발신일자 등)는 본문 크기 유지.
+    const isSrc = /^(출처|자료)\s*[::]/.test(t)
+    const srcChar = ctx.richAssets ? GJ_CHAR_SRC : GONGMUN_SRC_CHAR
+    const srcBold = ctx.richAssets ? GJ_CHAR_SRC_BOLD : GONGMUN_SRC_CHAR_BOLD
+    const h = isSrc ? srcCaptionPt(gongmun!.bodyHeight) : gongmun!.bodyHeight
+    // 본문폭을 넘겨 줄바꿈되는 <right>는 왼쪽 끝이 들쭉날쭉해 들여쓰기가 깨진 듯
+    // 보인다(한글 실렌더 QA — 다줄 출처행). 우측 배치 관행은 한 줄일 때만 유지.
+    const fits = measureTextWidth(t, h, isSrc ? 100 : GONGMUN_BODY_RATIO) <= ctx.gjBodyW + 0.5
+    const paraId = fits ? GONGMUN_RIGHT : GONGMUN_SRC_LEFT
+    if (!isSrc) return generateParagraph(t, paraId)
+    return generateParagraph(t, paraId, srcChar, (id) => (id === CHAR_BOLD ? srcBold : id))
+  }
   return generateParagraph(block.text || "", PARA_NORMAL, CHAR_NORMAL, fit ? variantMapper(fit, blockIdx, vBase) : undefined)
 }
 

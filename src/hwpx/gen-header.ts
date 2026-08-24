@@ -10,7 +10,8 @@ import {
   NS_HEAD, NS_OPF, NS_HPF, NS_OCF, NS_PARA, NS_CORE,
   CHAR_TABLE_HEADER, CHAR_QUOTE,
   GONGMUN_BODY_RATIO, GONGMUN_LIST_BASE, GONGMUN_LIST_LEVELS, GONGMUN_LIST_PLAIN_BASE, GONGMUN_PARA_APPROVAL, GONGMUN_LIST_VARIANT_BASE,
-  GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT,
+  GONGMUN_CENTER, GONGMUN_RIGHT, GONGMUN_SRC_LEFT, GONGMUN_TBL_CENTER, GONGMUN_TBL_LEFT,
+  GONGMUN_SRC_CHAR, GONGMUN_SRC_CHAR_BOLD, GJ_CHAR_SRC, GJ_CHAR_SRC_BOLD, srcCaptionPt,
   GJ_PARA_CHAM, GJ_PARA_COVER, GJ_PARA_TOC_ITEM, GJ_PARA_CHAPTER, GJ_PARA_BAR,
   charPr, paraPr, borderFillEntry, escapeXml, type BorderSide,
   type ResolvedTheme,
@@ -123,6 +124,9 @@ function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | nu
       charPr(12, GONGMUN_TBL_PT, true, false, bodyFont, theme.body),
       charPr(GONGMUN_TITLE_BAR_CHAR, 100, false, false, bodyFont, theme.body),
       charPr(GONGMUN_APPROVAL_CHAR, 1000, false, false, bodyFont, theme.body),
+      // 출처행 캡션 — 본문 폰트 -3pt (실무 보고서: 표 아래 출처는 본문과 구분되는 작은 글씨)
+      charPr(GONGMUN_SRC_CHAR, srcCaptionPt(body), false, false, bodyFont, theme.body),
+      charPr(GONGMUN_SRC_CHAR_BOLD, srcCaptionPt(body), true, false, bodyFont, theme.body),
     )
   }
   if (richAssets) {
@@ -147,6 +151,8 @@ function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | nu
       charPr(25, sz.bodyTitle, false, false, 3),                        // 본문 제목박스(HY헤드라인M 22pt, 실측 GT3 표④)
       charPr(GJ_CHAR_TITLE_BAR, 100, false, false, 4),                  // 1페이지형 제목박스 바(1pt)
       charPr(GJ_CHAR_APPROVAL, 1000, false, false, 7),                  // 결재란 라벨(맑은 고딕 10pt)
+      charPr(GJ_CHAR_SRC, srcCaptionPt(body), false, false, 5),         // 출처행 캡션(한양중고딕 본문-3pt)
+      charPr(GJ_CHAR_SRC_BOLD, srcCaptionPt(body), true, false, 5),     // 출처행 캡션 bold
     )
   }
   // 불변식: 여기까지의 방출 수 == charVariantBase() — gen-section·generator가 이 값으로
@@ -269,6 +275,8 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
   }
   // 결재란 라벨 셀 — 실측 결재선 lineSp 100% (GJ_PARA_BAR 70%는 스페이서 전용)
   base.push(paraPr(GONGMUN_PARA_APPROVAL, { align: "CENTER", lineSpacing: 100, keepWord: true }))
+  // 장문 <right> 폴백 — 본문폭 초과 출처행은 LEFT (RIGHT 다줄은 왼쪽 끝이 들쭉날쭉)
+  base.push(paraPr(GONGMUN_SRC_LEFT, { align: "LEFT", lineSpacing: ls, keepWord: true }))
   // (depth, 부호폭) 내어쓰기 변형 34~ — 두 자리 부호('10.') 항목 전용 (v4.0.5 P1-1).
   // 간격·정렬은 해당 depth 공용 paraPr와 동일, 내어쓰기만 자기 부호폭
   for (let vi = 0; vi < listIndentVariants.length; vi++) {
