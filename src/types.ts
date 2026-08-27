@@ -390,6 +390,8 @@ export interface ExtractedImage {
   data: Uint8Array
   /** MIME 타입 */
   mimeType: string
+  /** 원본 컨테이너 내 항목명 (HWPX/DOCX ZIP 경로, HWP5 BinData 스토리지명 — PDF 등 합성 이미지는 없음, #70) */
+  source?: string
 }
 
 export interface ParseFailure extends ParseResultBase {

@@ -15,6 +15,8 @@ import { fileURLToPath } from "node:url"
 import { patchHwp, splitParaText } from "../src/roundtrip/hwp5-patch.js"
 import { parseHwp5Document } from "../src/hwp5/parser.js"
 import { FLAG_ENCRYPTED, readRecords, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE } from "../src/hwp5/record.js"
+import { FLAG_COMPRESSED } from "../src/hwp5/record.js"
+import { deflateRawSync, inflateRawSync } from "node:zlib"
 
 const require = createRequire(import.meta.url)
 const CFB = require("cfb")
@@ -832,3 +834,124 @@ describe("다중줄 <br> 표기 회귀 (hwp5-1/2/4)", () => {
     assert.match(re, /첫줄\n셋째줄/, "단일 줄바꿈으로 유지")
   })
 })
+
+// ─── soft-wrap LINE_SEG 정리 + 압축 꼬리 (#71) ───────────
+
+/** 자동 줄바꿈(soft-wrap) 문단 — 줄바꿈 문자 없이 LINE_SEG 세그먼트만 다수 (셀 폭 개행 상태) */
+function softWrapParagraph(text: string, segStarts: number[], level = 0): Buffer {
+  const header = Buffer.alloc(24)
+  header.writeUInt32LE(text.length + 1, 0)
+  header.writeUInt16LE(1, 12)
+  header.writeUInt16LE(segStarts.length, 16)      // lineSegCount
+  const textData = Buffer.concat([utf16(text), Buffer.from([0x0d, 0x00])])
+  const segs = segStarts.map((pos, k) => {
+    const ls = lineSeg36(k * 1320)
+    ls.writeUInt32LE(pos, 0)                      // textpos
+    return ls
+  })
+  return Buffer.concat([
+    rec(0x42, level, header),
+    rec(0x43, level + 1, textData),
+    rec(0x44, level + 1, Buffer.alloc(8)),
+    rec(0x45, level + 1, Buffer.concat(segs)),
+  ])
+}
+
+/** 테스트용 CRC-32 (IEEE) — 소스 구현과 독립 산출 (반사 테이블 방식 대신 비트 루프) */
+function crc32Ref(buf: Buffer): number {
+  let c = 0xffffffff
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i]
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+  }
+  return (c ^ 0xffffffff) >>> 0
+}
+
+describe("patchHwp — soft-wrap LINE_SEG 정리 (#71)", () => {
+  const section0Records = (data: Uint8Array) =>
+    readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(data)), "/BodyText/Section0")!.content))
+
+  it("2세그 문단의 단일행 축소 치환 — 범위 밖 세그먼트 제거 + lineSegCount 갱신", async () => {
+    const hwp = buildHwp([softWrapParagraph("닭가슴살샌드위치일이삼사오육", [0, 10])]) // 14자, nChars 15
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("닭가슴살샌드위치일이삼사오육", "닭가슴살샌드위치")) // 8자, nChars 9
+    assert.equal(r.success, true)
+    assert.equal(r.applied, 1)
+    const recs = section0Records(r.data!)
+    const hi = recs.findIndex(rc => rc.tagId === TAG_PARA_HEADER)
+    const ls = recs.find(rc => rc.tagId === 0x45)!
+    const nChars = recs[hi].data.readUInt32LE(0) & 0x7fffffff
+    assert.equal(nChars, 9)
+    assert.equal(ls.data.length, 36, "범위 밖 둘째 세그먼트가 제거되어 1세그")
+    assert.equal(recs[hi].data.readUInt16LE(16), 1, "PARA_HEADER lineSegCount = 1")
+    for (let o = 0; o < ls.data.length; o += 36) {
+      assert.ok(ls.data.readUInt32LE(o) < nChars, "모든 세그 textpos < nChars")
+    }
+    assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("닭가슴살샌드위치"))
+  })
+
+  it("3세그 문단 축소 — 유효 범위 세그는 보존, 초과분만 제거", async () => {
+    const text = "가나다라마바사아자차카타파하일이삼사오육칠팔구십" // 24자, nChars 25
+    const hwp = buildHwp([softWrapParagraph(text, [0, 10, 20])])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const shorter = "가나다라마바사아자차카타파하" // 14자 → nChars 15: seg 10 유효, seg 20 제거
+    const r = await patchHwp(hwp, md.replace(text, shorter))
+    assert.equal(r.success, true)
+    const recs = section0Records(r.data!)
+    const hi = recs.findIndex(rc => rc.tagId === TAG_PARA_HEADER)
+    const ls = recs.find(rc => rc.tagId === 0x45)!
+    assert.equal(ls.data.length, 72, "유효한 2세그 유지")
+    assert.equal(recs[hi].data.readUInt16LE(16), 2)
+    assert.equal(ls.data.readUInt32LE(36), 10, "유효한 둘째 세그 textpos 보존")
+  })
+
+  it("확장 치환은 LINE_SEG 원본 유지 — 전 세그 유효 범위", async () => {
+    const hwp = buildHwp([softWrapParagraph("닭가슴살샌드위치일이삼사오육", [0, 10])])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const longer = "닭가슴살샌드위치일이삼사오육칠팔구십" // 18자
+    const r = await patchHwp(hwp, md.replace("닭가슴살샌드위치일이삼사오육", longer))
+    assert.equal(r.success, true)
+    const recs = section0Records(r.data!)
+    const hi = recs.findIndex(rc => rc.tagId === TAG_PARA_HEADER)
+    const ls = recs.find(rc => rc.tagId === 0x45)!
+    assert.equal(ls.data.length, 72, "확장은 세그 원본 유지")
+    assert.equal(recs[hi].data.readUInt16LE(16), 2)
+  })
+})
+
+describe("patchHwp — 압축 스트림 꼬리 (#71)", () => {
+  /** 실파일 형식대로 raw deflate + 8바이트 꼬리(CRC32 LE + 비압축 크기 LE)로 압축 섹션 구성 */
+  function buildCompressedHwp(sectionParts: Buffer[]): Uint8Array {
+    const raw = Buffer.concat(sectionParts)
+    const tail = Buffer.alloc(8)
+    tail.writeUInt32LE(crc32Ref(raw), 0)
+    tail.writeUInt32LE(raw.length >>> 0, 4)
+    const fileHeader = Buffer.alloc(256)
+    fileHeader.write("HWP Document File", 0, "ascii")
+    fileHeader[35] = 5
+    fileHeader.writeUInt32LE(FLAG_COMPRESSED, 36)
+    const cfb = CFB.utils.cfb_new()
+    CFB.utils.cfb_add(cfb, "/FileHeader", fileHeader)
+    CFB.utils.cfb_add(cfb, "/DocInfo", Buffer.alloc(0))
+    CFB.utils.cfb_add(cfb, "/BodyText/Section0", Buffer.concat([deflateRawSync(raw), tail]))
+    CFB.utils.cfb_add(cfb, "/PrvText", utf16("미리보기"))
+    return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
+  }
+
+  it("재작성 압축 스트림에 한컴 8바이트 꼬리(CRC32+비압축 크기)가 복원된다", async () => {
+    const hwp = buildCompressedHwp([paragraph("압축 문단 하나"), paragraph("바뀔 문단")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("바뀔 문단", "수정된 문단"))
+    assert.equal(r.success, true)
+    assert.equal(r.applied, 1)
+
+    const stream = Buffer.from(CFB.find(CFB.parse(Buffer.from(r.data!)), "/BodyText/Section0")!.content)
+    const body = stream.subarray(0, stream.length - 8)
+    const inflated = inflateRawSync(body)          // 꼬리를 제외해도 온전한 deflate 스트림
+    const t = stream.subarray(stream.length - 8)
+    assert.equal(t.readUInt32LE(4), inflated.length, "꼬리 비압축 크기 필드")
+    assert.equal(t.readUInt32LE(0), crc32Ref(inflated), "꼬리 CRC32 필드")
+    assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("수정된 문단"), "꼬리 포함 스트림 재파싱 정상")
+  })
+})
+

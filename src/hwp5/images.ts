@@ -127,7 +127,7 @@ function resolveImageBlocks(
           const ext = mime.includes("jpeg") ? "jpg" : mime.includes("png") ? "png" : mime.includes("gif") ? "gif" : mime.includes("bmp") ? "bmp" : "bin"
           img = { filename: `image_${String(imageIndex).padStart(3, "0")}.${ext}`, data: new Uint8Array(bin.data), mime }
           resolved.set(storageId, img)
-          images.push({ filename: img.filename, data: img.data, mimeType: img.mime })
+          images.push({ filename: img.filename, data: img.data, mimeType: img.mime, source: bin.name })
           renamed.set(storageId, img.filename)
         }
       }
@@ -155,7 +155,7 @@ function resolveImageBlocks(
       const ext = mime.includes("jpeg") ? "jpg" : mime.includes("png") ? "png" : mime.includes("gif") ? "gif" : mime.includes("bmp") ? "bmp" : "bin"
       const filename = `image_${String(imageIndex).padStart(3, "0")}.${ext}`
       const data = new Uint8Array(bin.data)
-      images.push({ filename, data, mimeType: mime })
+      images.push({ filename, data, mimeType: mime, source: bin.name })
       blocks.push({ type: "image", text: filename, imageData: { data, mimeType: mime, filename: bin.name } })
     }
   }

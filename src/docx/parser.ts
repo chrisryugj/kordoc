@@ -14,6 +14,7 @@ import type {
 import { KordocError, precheckZipSize, stripDtd, sanitizeHref } from "../utils.js"
 import { blocksToMarkdown, buildTable } from "../table/builder.js"
 import { ommlElementToLatex, isDisplayMath } from "./equation.js"
+import { detectImageMime } from "../hwp5/images.js"
 
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
 const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
@@ -686,9 +687,12 @@ async function buildImageMap(
       const mimeMap: Record<string, string> = {
         png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
         gif: "image/gif", bmp: "image/bmp", wmf: "image/wmf", emf: "image/emf",
+        tif: "image/tiff", tiff: "image/tiff", svg: "image/svg+xml",
       }
       const filename = `image_${String(imgIdx).padStart(3, "0")}.${ext}`
-      images.push({ filename, data, mimeType: mimeMap[ext] ?? "image/png" })
+      // 미지 확장자를 image/png 로 단정하던 폴백 제거 — 매직바이트 실측 후 그래도 모르면 octet-stream (#70)
+      const mimeType = mimeMap[ext] ?? detectImageMime(data) ?? "application/octet-stream"
+      images.push({ filename, data, mimeType, source: imgPath })
       imageMap.set(embedId, filename)
     } catch (err) {
       warnings.push({

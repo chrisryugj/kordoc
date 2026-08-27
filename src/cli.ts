@@ -10,6 +10,7 @@ import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS } from "./hw
 import type { ParseOptions } from "./types.js"
 import type { FormatProfile } from "./hwpx/gen-profile.js"
 import { VERSION, toArrayBuffer, sanitizeError, classifyError } from "./utils.js"
+import { detectImageMime } from "./hwp5/images.js"
 
 const program = new Command()
 
@@ -90,12 +91,11 @@ program
         if (!result.success) {
           process.stderr.write(` FAIL\n`)
           process.stderr.write(`  → ${result.error}\n`)
-          // --format json 은 프로그램이 소비하는 출력이다 — 실패도 JSON 으로 내야
-          // 호출자가 원인 코드(ENCRYPTED 등)를 보고 분기할 수 있다. 사람이 읽는
-          // 포맷에서는 종전대로 stderr 안내만 남긴다.
-          if (opts.format === "json") {
-            process.stdout.write(JSON.stringify(result, null, 2) + "\n")
-          }
+          // 실패는 모든 --format 에서 stdout 에 동일한 실패 JSON(success:false + code)을 낸다(#69)
+          // — 호출자가 원인 코드(ENCRYPTED 등)로 분기할 수 있는 기계 계약. 성공 출력과 충돌하지
+          // 않는다: markdown 성공은 마크다운, chunks 성공은 JSON 배열이고 실패는 객체 + exit 1.
+          // stderr 의 FAIL 문구는 사람용으로 그대로 둔다.
+          process.stdout.write(JSON.stringify(result, null, 2) + "\n")
           process.exitCode = 1
           continue
         }
@@ -152,7 +152,16 @@ program
           for (const img of result.images) {
             writeFileSync(resolve(imgDir, img.filename), img.data)
           }
-          if (!opts.silent) process.stderr.write(`  → ${result.images.length}개 이미지 → ${imgDir}\n`)
+          // images/manifest.json — 소비자가 확장자·매직바이트 추측 없이 형식 분기(#70).
+          // mimeType 은 매직바이트 실측 우선 — 확장자 유래 선언값은 실데이터와 어긋날 수 있다.
+          const manifest = result.images.map(img => ({
+            name: img.filename,
+            mimeType: detectImageMime(img.data) ?? img.mimeType,
+            bytes: img.data.length,
+            ...(img.source ? { source: img.source } : {}),
+          }))
+          writeFileSync(resolve(imgDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf-8")
+          if (!opts.silent) process.stderr.write(`  → ${result.images.length}개 이미지 → ${imgDir} (manifest.json 포함)\n`)
         }
 
         if (opts.output && files.length === 1) {
@@ -171,16 +180,15 @@ program
         }
       } catch (err) {
         process.stderr.write(`\n[kordoc] ERROR: ${fileName} — ${sanitizeError(err)}\n`)
-        // 파싱 이후(출력·직렬화) 단계에서 터져도 --format json 은 실패 JSON 을 내야
-        // 호출자가 원인 코드로 분기할 수 있다 — 종전엔 성공 로그 뒤 비-JSON 이었다 (#65)
-        if (opts.format === "json") {
-          process.stdout.write(JSON.stringify({
-            success: false,
-            fileType: detectedFormat,
-            error: sanitizeError(err),
-            code: classifyError(err),
-          }, null, 2) + "\n")
-        }
+        // 파싱 이후(출력·직렬화) 단계에서 터져도 실패 JSON 을 내야 호출자가 원인 코드로
+        // 분기할 수 있다 — 종전엔 성공 로그 뒤 비-JSON 이었다 (#65). json 외 포맷에도
+        // 동일 계약을 적용한다 (#69).
+        process.stdout.write(JSON.stringify({
+          success: false,
+          fileType: detectedFormat,
+          error: sanitizeError(err),
+          code: classifyError(err),
+        }, null, 2) + "\n")
         process.exitCode = 1
       }
     }

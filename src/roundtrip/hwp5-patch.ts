@@ -355,7 +355,7 @@ export async function patchHwp(
       for (let i = 0; i < scans.length; i++) {
         if (scans[i].repl.size === 0 && scans[i].inserts.size === 0) continue
         const newStream = serializeRecords(scans[i].records, scans[i].repl, scans[i].inserts)
-        const content = compressed ? deflateRawSync(newStream) : newStream
+        const content = compressed ? compressWithTail(newStream) : newStream
         out = replaceOleStream(out, sectionPaths[i], content)
       }
       data = new Uint8Array(out)
@@ -949,6 +949,37 @@ function rebuildCharShape(csData: Buffer, coreStartUnit: number): { buf: Buffer;
   return { buf, count: kept.length }
 }
 
+// ─── 한컴 압축 스트림 꼬리 ───────────────────────────
+
+// CRC-32 (IEEE) — zlib.crc32 는 Node 22.2+ 전용이라 engines(>=18) 범위에서 직접 계산한다
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c >>> 0
+  }
+  return t
+})()
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/**
+ * 한컴 압축 스트림 재현 — raw deflate 뒤 8바이트 꼬리(CRC32(비압축) LE + 비압축 크기 LE).
+ * 한컴 실저장본의 BodyText/DocInfo 압축 스트림 전수에서 확인된 형식(#71, 코퍼스 실측 7/7).
+ * 꼬리 없이도 inflateRawSync 는 열리지만, 원본 충실성을 위해 재작성 스트림에도 복원한다.
+ */
+function compressWithTail(raw: Buffer): Buffer {
+  const tail = Buffer.alloc(8)
+  tail.writeUInt32LE(crc32(raw), 0)
+  tail.writeUInt32LE(raw.length >>> 0, 4)
+  return Buffer.concat([deflateRawSync(raw), tail])
+}
+
 /**
  * LINE_SEG(0x45, 36B/세그) 다중줄 합성 — HWP5 binary 구조 실측(kordoc 최초 파싱):
  * [textpos, vPos, lineH, textH, baseline, lineSpc, hStart, width, tag] 각 int32.
@@ -1071,6 +1102,19 @@ function stageParaPatch(
     if (synth) {
       scan.repl.set(para.lineSegIdx, synth.buf)
       newHeader.writeUInt16LE(synth.count, 16)        // lineSegCount
+    }
+  } else {
+    // 자동 줄바꿈(soft-wrap)으로 2+세그먼트였던 문단을 더 짧은 한 줄로 치환하면 뒤쪽
+    // 세그먼트의 textpos 가 새 nChars 밖을 가리킨 채 남아 한컴 무결성 검사가 "손상/변조"로
+    // 판정한다(#71). 범위를 벗어난 꼬리 세그먼트만 잘라내고 lineSegCount 를 맞춘다 —
+    // 유효 범위(textpos < nChars)의 세그먼트는 원본 유지가 렌더에 안전하므로 남긴다.
+    const lineSegData = records[para.lineSegIdx].data
+    const segCount = Math.floor(lineSegData.length / 36)
+    let keep = 1
+    while (keep < segCount && lineSegData.readUInt32LE(keep * 36) < nChars) keep++
+    if (keep < segCount) {
+      scan.repl.set(para.lineSegIdx, Buffer.from(lineSegData.subarray(0, keep * 36)))
+      newHeader.writeUInt16LE(keep, 16)               // lineSegCount
     }
   }
 

@@ -89,6 +89,12 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.10.0 변경사항
+
+- **📡 실패 계약 전 포맷 확장 (#69)**: 실패 JSON(`success:false` + `code`)이 `--format json` 전용에서 **markdown·chunks 포함 전 포맷**으로 확장됐습니다. 헤드리스 파이프라인이 stderr 한국어 문구 파싱 없이 원인 코드로 분기할 수 있습니다. `code` 값 집합·종료 코드 규칙·안정성 보증을 README [실패 계약](#실패-계약--기계-판독-가능한-실패-json-v4100-69) 표로 문서화했습니다. (@sorbetsharkroundhand 제보)
+- **🖼️ `images/manifest.json` (#70)**: 이미지 저장 시 `[ { name, mimeType, bytes, source } ]` manifest 를 함께 방출합니다. `mimeType` 은 매직바이트 실측 우선이라 확장자 추측이 필요 없습니다. DOCX 이미지의 미지 확장자를 `image/png` 로 단정하던 오폴백도 실측 판별로 교체. (@sorbetsharkroundhand 제보)
+- **🩹 patchHwp soft-wrap 축소 치환 무결성 (#71)**: 자동 줄바꿈으로 LINE_SEG 가 2세그먼트 이상인 문단을 더 짧은 한 줄로 치환하면 잔존 세그먼트의 textpos 가 새 nChars 밖을 가리켜 **한컴이 "문서 손상/변조" 경고로 열기를 거부**하던 버그 수정 — 범위를 벗어난 꼬리 세그먼트만 잘라내고 lineSegCount 를 정합화합니다(유효 세그먼트는 보존해 soft-wrap 렌더 유지). 재작성 압축 스트림에 한컴 실저장본의 8바이트 꼬리(CRC32+비압축 크기, 코퍼스 실측 7/7)도 복원합니다. (@heesun-woodi 제보)
+
 ## v4.9.2 변경사항
 
 `<right>` 출처행이 두 줄을 넘어가는 실제 보고서를 한글로 열어 확인하고 고쳤습니다.
@@ -887,6 +893,44 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 > `kordoc lint` 는 **텍스트(마크다운/txt)를 검사합니다** — HWPX 를 바로 넘기면 안 됩니다.
 > 생성물을 검수하려면 원고 마크다운을 넘기거나, `kordoc 문서.hwpx | kordoc lint -` 로 파이프하세요.
 > (공문서 생성 시에는 `generate` 가 같은 13룰 경고를 함께 냅니다.)
+
+### 실패 계약 — 기계 판독 가능한 실패 JSON (v4.10.0+, #69)
+
+변환 실패는 **모든 `--format`(markdown·json·chunks)에서** stdout 에 동일한 실패 JSON 을 내고 exit 1 로 끝납니다. 호출자는 stderr 문구가 아니라 `code` 로 분기하면 됩니다.
+
+```json
+{ "success": false, "fileType": "hwpx", "error": "암호화된 문서입니다 …", "code": "ENCRYPTED" }
+```
+
+성공 출력과 충돌하지 않습니다 — `markdown` 성공은 마크다운 텍스트, `chunks` 성공은 JSON **배열**, 실패는 언제나 `success:false` **객체**입니다. `-o`/`-d` 지정 시 실패한 파일의 출력물은 생성되지 않습니다. 여러 파일 입력 시 실패한 파일마다 실패 JSON 이 한 개씩 나옵니다.
+
+| `code` | 의미 |
+|---|---|
+| `ENCRYPTED` | 열기 암호 문서 (`--password` 필요 또는 불일치) |
+| `DRM_PROTECTED` | 한컴 문서보안(DRM) — 열 수 없음 |
+| `UNSUPPORTED_FORMAT` | 지원하지 않는 파일 형식 |
+| `CORRUPTED` | 시그니처 불일치·복구 불가 손상 |
+| `IMAGE_BASED_PDF` | 텍스트층 없는 스캔 PDF (`--ocr` 필요) |
+| `ZIP_BOMB` / `DECOMPRESSION_BOMB` | 압축 폭탄 방어 발동 |
+| `NO_SECTIONS` | 본문 섹션 없음 |
+| `OUTPUT_TOO_LARGE` | 출력 직렬화가 런타임 문자열 한계 초과 (#65) |
+| `MISSING_DEPENDENCY` | 선택 의존성 미설치 (pdfjs-dist 등) |
+| `EMPTY_INPUT` | 빈 입력 |
+| `PARSE_ERROR` | 그 외 파싱 실패 |
+
+**안정성 보증**: 종료 코드 규칙(성공 0 / 실패 1)과 실패 JSON 의 필드(`success`·`fileType`·`error`·`code`)는 유지되고, `code` 값 집합은 **추가만** 됩니다(기존 값 변경·제거 없음). `error` 문구는 사람용이라 계약이 아닙니다.
+
+### 이미지 번들 — `images/manifest.json` (v4.10.0+, #70)
+
+`-o`/`-d` 로 저장할 때 추출 이미지는 `images/` 에 저장되고, 같은 폴더에 `manifest.json` 이 함께 나옵니다. 소비자는 확장자·매직바이트 추측 없이 manifest 로 형식을 분기하면 됩니다.
+
+```json
+[ { "name": "image_001.png", "mimeType": "image/png", "bytes": 68, "source": "BinData/image1.png" } ]
+```
+
+- `mimeType` 은 **매직바이트 실측 우선**(PNG/JPEG/GIF/BMP/WMF/EMF 판별) — 확장자 유래 선언값과 다르면 실측이 이깁니다. 실측 불가 형식(TIFF·SVG 등)은 선언값을 그대로 둡니다.
+- `source` 는 원본 컨테이너 항목명(HWPX/DOCX ZIP 경로, HWP5 BinData 스토리지명). PDF 처럼 재인코딩으로 합성된 이미지에는 없습니다.
+- 나올 수 있는 확장자 집합: **PDF 는 항상 `png`**(순수 JS 재인코딩) · HWP5 는 스니프 유래 `png/jpg/gif/bmp`(WMF/EMF 는 `bin`) · HWPX 는 원본 확장자 유래 `png/jpg/gif/bmp/tif/wmf/emf/svg`(미지 확장자는 `bin`) · DOCX 는 원본 확장자 유지. 이미지 재인코딩은 하지 않습니다(원형 유지) — 형식 판정은 manifest 를 믿으세요.
 
 ## MCP 서버 (Claude / Cursor / Windsurf / Codex)
 

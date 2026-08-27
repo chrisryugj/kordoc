@@ -72,6 +72,12 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.10.0
+
+- **📡 Failure contract in every format (#69)**: the failure JSON (`success:false` + `code`) previously reached stdout only with `--format json`; it now covers **markdown and chunks** too, so headless pipelines branch on the cause code instead of keyword-matching Korean stderr messages. The code set, exit-code rule, and a stability guarantee are documented in the README. (reported by @sorbetsharkroundhand)
+- **🖼️ `images/manifest.json` (#70)**: saving images now also emits a `[ { name, mimeType, bytes, source } ]` manifest with magic-byte-verified `mimeType`, removing extension guessing on the consumer side. Also replaces the DOCX fallback that mislabeled unknown image extensions as `image/png`. (reported by @sorbetsharkroundhand)
+- **🩹 patchHwp soft-wrap shrink integrity (#71)**: replacing a soft-wrapped paragraph (2+ LINE_SEG segments) with a shorter single line left trailing segments whose `textpos` pointed beyond the new `nChars`, making **Hangul refuse to open the file with a "damaged/tampered" warning**. Out-of-range trailing segments are now trimmed with `lineSegCount` kept consistent (in-range segments are preserved so soft-wrap rendering survives). Rewritten compressed streams also restore Hancom's 8-byte tail (CRC32 + uncompressed size, verified on 7/7 corpus files). (reported by @heesun-woodi)
+
 ## What's New in v4.9.2
 
 Opened a real report whose `<right>` source lines wrap past one line in Hangul, and fixed what showed up.
@@ -459,6 +465,26 @@ npx kordoc watch ./docs --webhook https://api/hook  # webhook notification
 >
 > `kordoc lint` inspects **text (markdown/txt)** — do not hand it an HWPX. To lint a generated document,
 > lint the source markdown, or pipe: `kordoc report.hwpx | kordoc lint -`.
+
+### Failure contract — machine-readable failure JSON (v4.10.0+, #69)
+
+Conversion failures emit the same failure JSON to stdout **in every `--format` (markdown · json · chunks)** and exit 1, so callers branch on `code` instead of parsing human-oriented stderr messages.
+
+```json
+{ "success": false, "fileType": "hwpx", "error": "…", "code": "ENCRYPTED" }
+```
+
+This never collides with success output — `markdown` success is markdown text, `chunks` success is a JSON **array**, and a failure is always a `success:false` **object**. With `-o`/`-d`, no output file is produced for a failed input; with multiple inputs, each failed file emits one failure JSON. Codes: `ENCRYPTED`, `DRM_PROTECTED`, `UNSUPPORTED_FORMAT`, `CORRUPTED`, `IMAGE_BASED_PDF`, `ZIP_BOMB`, `DECOMPRESSION_BOMB`, `NO_SECTIONS`, `OUTPUT_TOO_LARGE`, `MISSING_DEPENDENCY`, `EMPTY_INPUT`, `PARSE_ERROR`. **Stability**: the exit-code rule (0 success / 1 failure) and the JSON fields are stable, and the `code` set only ever grows — existing values are never renamed or removed. The `error` string is for humans and is not part of the contract.
+
+### Image bundles — `images/manifest.json` (v4.10.0+, #70)
+
+When saving with `-o`/`-d`, extracted images land in `images/` together with a `manifest.json`, so consumers branch on formats without extension or magic-byte guessing.
+
+```json
+[ { "name": "image_001.png", "mimeType": "image/png", "bytes": 68, "source": "BinData/image1.png" } ]
+```
+
+`mimeType` prefers magic-byte detection (PNG/JPEG/GIF/BMP/WMF/EMF) over the declared, extension-derived type; undetectable formats (TIFF, SVG, …) keep the declared value. `source` is the original container entry (HWPX/DOCX ZIP path, HWP5 BinData storage name) and is absent for synthesized images (PDF re-encodes). Possible extensions: PDF always emits `png` (pure-JS re-encode); HWP5 emits sniffed `png/jpg/gif/bmp` (`bin` for WMF/EMF); HWPX emits extension-derived `png/jpg/gif/bmp/tif/wmf/emf/svg` (`bin` for unknown); DOCX keeps original extensions. Images are never re-encoded — trust the manifest, not the extension.
 
 ## MCP Server (Claude / Cursor / Windsurf / Codex)
 

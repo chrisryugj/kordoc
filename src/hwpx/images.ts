@@ -125,7 +125,7 @@ export async function extractImagesFromZip(
           imageIndex++
           const filename = `image_${String(imageIndex).padStart(3, "0")}.${mimeToExt(mimeType)}`
 
-          img = { filename, data, mimeType }
+          img = { filename, data, mimeType, source: path }
           images.push(img)
           usedPaths.add(path)
           break
@@ -176,7 +176,7 @@ export async function extractImagesFromZip(
         }
         imageIndex++
         const filename = `image_${String(imageIndex).padStart(3, "0")}.${mimeToExt(mimeType)}`
-        const img: ExtractedImage = { filename, data, mimeType }
+        const img: ExtractedImage = { filename, data, mimeType, source: file.name }
         images.push(img)
         blocks.push({ type: "image", text: filename, imageData: { data, mimeType, filename: file.name } })
       } catch (err) {
