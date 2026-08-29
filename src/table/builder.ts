@@ -180,12 +180,19 @@ function escapeGfm(text: string): string {
  *  행 전체 일치(^…$m)로 한정 — 무앵커면 "붙임 문서는 표 입니다." 같은 본문 중간을 오삭제한다 */
 const HWP_SHAPE_ALT_TEXT_RE = /^(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?$/gm
 
-/** HWP PUA 특수문자 및 도형 대체텍스트 제거 — 모든 포맷 공통 */
-function sanitizeText(text: string): string {
+/** 한컴 PUA 축만 정리 — 표시값 치환 후 매핑 안 된 Supplementary PUA 제거.
+ *  span 처럼 문단 일부만 다루는 곳은 sanitizeText 의 trim·공백 접합을 쓰면 접합이
+ *  깨지므로 이 축만 공유한다. */
+function sanitizePua(text: string): string {
   // 한컴 PUA → 표준 유니코드 매핑 (rhwp 검증 테이블) — 제거 regex보다 먼저 적용
-  let result = mapPuaText(text)
+  return mapPuaText(text)
     // Supplementary Private Use Area (U+F0000-U+FFFFD) — HWP 전용 기호 (매핑 안 된 잔여분)
     .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
+}
+
+/** HWP PUA 특수문자 및 도형 대체텍스트 제거 — 모든 포맷 공통 */
+function sanitizeText(text: string): string {
+  let result = sanitizePua(text)
     // HWP 도형/개체 자동생성 대체텍스트 제거
     .replace(HWP_SHAPE_ALT_TEXT_RE, "")
     .replace(/  +/g, " ")
@@ -341,18 +348,22 @@ export function dedupeRunningHeaders(blocks: IRBlock[]): IRBlock[] {
 function spansToMarkdown(spans: IRSpan[]): string {
   let out = ""
   for (const s of spans) {
-    if (!s.text) continue
+    // 서식 run 도 문단 텍스트와 같은 PUA 계약을 탄다 — 종전엔 이 경로만 sanitize 를
+    // 건너뛰어, 글머리표·괘선 조각이 span 을 타면 원시 PUA 가 마크다운에 그대로 실렸다
+    // (hwp3-sample10-hwpx: U+F080F·U+F0827 116자)
+    const text = sanitizePua(s.text ?? "")
+    if (!text) continue
     let marker = s.code ? "`" : s.bold && s.italic ? "***" : s.bold ? "**" : s.italic ? "*" : ""
     if (s.strike && !s.code) marker = `~~${marker}` // 닫힘은 아래 close 에서 역순 조합 (~~**…**~~)
     const uWrap = !!s.underline && !s.code // 밑줄은 태그 쌍이라 역순 조합 불가 — 별도 최외곽 래핑
     if (!marker && !uWrap) {
-      out += escapeGfm(s.text)
+      out += escapeGfm(text)
       continue
     }
-    const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s.text)!
+    const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!
     const core = m[2]
     if (!core) {
-      out += s.text
+      out += text
       continue
     }
     let open = marker

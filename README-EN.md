@@ -72,6 +72,17 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.11.0
+
+Swept the latest rhwp devel (v0.8.3–0.8.4) and folded the findings into kordoc's HWP3 decoder. All four defects **drop characters without a warning** — the conversion "succeeds" and part of the body is simply missing.
+
+- **🈳 Lost HWP3 symbols and hanja (missing coordinate rules)**: HWP3 stores characters as KS X 1001 coordinates — the symbol rows (0xA1–0xAC) with a stride of 96, the hanja rows (0xCA–0xFD) with a stride of 94. When the johab decoder was ported from rhwp, only the hardcoded table came along and **both rules were left behind**, so every code outside that table was dropped: `채권(債權)조서` became `채권()조서`, and symbols like `※ ○ 【】 ∴ ☞ ￦ ━` disappeared entirely. Both rules are ported, plus the two positions where Hancom's notation diverges from the standard mapping (`∼→～`, `⊙→◉`).
+- **🔤 Wider measured table for private codes**: ported the Latin-1 Supplement pass-through (`ü·ö·ä·ß` were deleted, turning "für" into "fr") and the 28 measured codes from rhwp #5860, then added codes that rhwp's table lacks — six box-drawing pieces, the double rule, circled/parenthesized series (`⓪①②`, `ⓐ–ⓕ`, `㉠–㉢`), the `•` bullet. Each was aligned against the Hancom-converted twin of the same document, and **only codes whose occurrence count matches the converted file exactly** were added.
+- **✒️ Lost araea syllables with a filler initial**: a syllable carrying only the araea vowel was treated as having an invalid initial and thrown away. It now survives as the single jamo, matching Hancom's own conversion.
+- **🧱 Formatted runs skipped PUA cleanup (all formats)**: paragraphs with bold/underline go through the span path, which was the one place that skipped PUA substitution and stripping — so Hancom-only bullets and rule fragments landed in the Markdown as **raw PUA (tofu)**. This path is shared by HWP5, HWPX, and HWP3. Also synced the 22 entries missing from kordoc's copy of rhwp's verified Hancom PUA table (`┌┬┐└┘│`, `┈═━`, `⓪①②④–⑨`, `✺◇▸□`, `⊞⊟`).
+
+Verified by comparing character multisets between nine HWP3 originals in rhwp `samples/` and their Hancom-converted twins. Characters present only in the converted file (i.e. lost by the HWP3 path) fell from 189→0 in `hwp3-sample11`, 1,139→618 in `hwp3-sample16`, and 172→11 in `hwp3-sample10`. The remaining 618 live in **text boxes inside drawing objects** (cover titles, flowchart labels), which kordoc still skips.
+
 ## What's New in v4.10.0
 
 - **📡 Failure contract in every format (#69)**: the failure JSON (`success:false` + `code`) previously reached stdout only with `--format json`; it now covers **markdown and chunks** too, so headless pipelines branch on the cause code instead of keyword-matching Korean stderr messages. The code set, exit-code rule, and a stability guarantee are documented in the README. (reported by @sorbetsharkroundhand)
