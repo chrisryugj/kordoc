@@ -92,6 +92,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwp5/crypto.ts` | HWP 배포용 문서 복호화 (MSVC LCG + AES) |
 | `src/hwp5/cfb-lenient.ts` | 손상된 CFB 파일 복구 파서 (rhwp 포팅) |
 | `src/hwp3/parser.ts` | HWP 3.x(1996~2002, 단일 binary stream) 텍스트 추출 — header + raw deflate + paragraph_list |
+| `src/hwp3/drawing.ts` | 그리기 개체 트리 워커 — ch=11 확장 블록(pic_type 3)의 도형 트리를 훑어 글상자 문단 리스트 회수 (#73). 확장 블록 슬라이스 안에서만 동작해 실패해도 본문 스트림 동기가 안 깨진다 |
 | `src/hwp3/records.ts` | DocInfo 128B / DocSummary 1008B / 헤더 구조 정의 |
 | `src/hwp3/johab.ts` + `johab-symbols.ts` | 상용조합형 cho/jung/jong → 0xAC00 한글 음절 + 5,893개 한자/기호 lookup (rhwp 포팅) |
 | `src/hwp3/reader.ts` | LE binary cursor (Buffer 기반) |

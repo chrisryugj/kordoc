@@ -26,6 +26,19 @@ export class Reader {
     return this.buf.length - this.pos
   }
 
+  /** 버퍼 전체 길이. 선언 길이가 스트림 안인지 판정하는 데 쓴다. */
+  length(): number {
+    return this.buf.length
+  }
+
+  /** 절대 위치로 이동 (버퍼 밖이면 InsufficientData). */
+  seek(pos: number): void {
+    if (pos < 0 || pos > this.buf.length) {
+      throw new InsufficientDataError(pos, this.buf.length)
+    }
+    this.pos = pos
+  }
+
   eof(): boolean {
     return this.pos >= this.buf.length
   }
