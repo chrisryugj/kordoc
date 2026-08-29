@@ -22,6 +22,7 @@
 import { inflateRawSync } from "zlib"
 import type { DocumentMetadata, IRBlock, InternalParseResult, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError } from "../utils.js"
+import { collectDrawingTextBoxLists } from "./drawing.js"
 import { decodeJohabText } from "./johab.js"
 import { Reader } from "./reader.js"
 import { readHeader } from "./records.js"
@@ -29,6 +30,9 @@ import { decryptHwp3Document, isEncryptedHwp3 } from "./crypto.js"
 
 /** 압축 해제 최대 크기 (100MB) — decompression bomb 방지 (hwp5/record.ts와 동일 캡) */
 const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
+
+/** ch=11 그림 정보 offset 74 — 3 이면 확장 블록이 그리기 개체 트리다 (0/1/2 는 그림). */
+const PIC_TYPE_DRAWING = 3
 
 const PARA_HEADER_FIXED_SIZE = 43 // follow_prev(1) + char_count(2) + line_count(2) + include_cs(1) + flags(1) + sc_flags(4) + style_idx(1) + rep_char_shape(31)
 const PARA_SHAPE_SIZE = 187 // ParaShape 구조 (rhwp records.rs Hwp3ParaShape::read 합산)
@@ -58,9 +62,12 @@ type CtrlSimple = { extraBytes: number; extraHchar: number; emit: string | null 
 const SIMPLE_CTRL: ReadonlyMap<number, CtrlSimple> = new Map([
   [9, { extraBytes: 6, extraHchar: 3, emit: "\t" }],
   [18, { extraBytes: 6, extraHchar: 3, emit: " " }], // AutoNumber → 공백 (HWP5 패턴)
-  [19, { extraBytes: 6, extraHchar: 3, emit: "￼" }],
-  [20, { extraBytes: 6, extraHchar: 3, emit: "￼" }],
-  [21, { extraBytes: 6, extraHchar: 3, emit: "￼" }],
+  // 19/20/21 (새 번호·쪽 번호 위치·쪽 감추기) 는 비가시 마커다 — 한글도 그 자리에
+  // 아무 글자를 내지 않는다 (rhwp #4957). 종전엔 U+FFFC 를 본문에 심어 마크다운에
+  // 대체 문자가 그대로 남았다 (samples 33개 중 6문서 11건). 차례 표식(25) 과 같은 계약.
+  [19, { extraBytes: 6, extraHchar: 3, emit: null }],
+  [20, { extraBytes: 6, extraHchar: 3, emit: null }],
+  [21, { extraBytes: 6, extraHchar: 3, emit: null }],
   [22, { extraBytes: 22, extraHchar: 11, emit: "￼" }],
   [23, { extraBytes: 8, extraHchar: 4, emit: "￼" }],
   [24, { extraBytes: 4, extraHchar: 2, emit: "-" }],
@@ -393,11 +400,49 @@ function parseTableLike(reader: Reader, ctx: ParaContext): string {
  * 종전엔 이 리스트를 소비하지 않아 그림 하나당 최소 43 byte 가 어긋났고, 어긋난
  * 자리가 char_count=0 으로 읽히면 문단 리스트가 "정상 종료"로 판정돼 **경고 없이**
  * 본문 나머지를 통째로 버렸다 (rhwp samples/hwp3-sample10: 본문 4MB 중 99.7% 유실).
+ *
+ * `pic_type`(info[74])이 3 이면 확장 블록은 그림이 아니라 **그리기 개체 트리**다 (#73).
  */
 function parsePicture(reader: Reader, ctx: ParaContext): void {
   const info = reader.readBytes(348)
   const nExt = info.readUInt32LE(0)
-  if (nExt > 0 && nExt < 100 * 1024 * 1024) reader.skip(nExt)
+  let ext: Buffer | null = null
+  if (nExt > 0 && nExt < 100 * 1024 * 1024) ext = reader.readBytes(nExt)
+  if (ext && info[74] === PIC_TYPE_DRAWING) parseDrawingObject(ext, ctx)
   // 캡션 텍스트는 표 셀과 같이 ctx 에 별도 paragraph 로 수집된다
   parseParagraphList(reader, ctx)
+}
+
+/**
+ * 그리기 개체 트리 안 글상자 텍스트를 회수한다 (#73).
+ *
+ * 본 스트림은 이미 확장 블록 길이만큼 전진했고 여기서는 그 **슬라이스만** 다루므로,
+ * 트리 해석이 어긋나도 본문 문단 스트림의 동기는 깨지지 않는다. 그래서 실패는
+ * 경고 한 줄로 삼키고 종전(통째로 건너뛰기) 동작으로 되돌아간다.
+ */
+function parseDrawingObject(ext: Buffer, ctx: ParaContext): void {
+  let lists: Buffer[]
+  try {
+    lists = collectDrawingTextBoxLists(ext)
+  } catch (err) {
+    pushDrawingWarning(ctx, `HWP3 그리기 개체 트리 파싱 실패 — 글상자 텍스트 생략: ${errText(err)}`)
+    return
+  }
+  for (const list of lists) {
+    try {
+      parseParagraphList(new Reader(list), ctx)
+    } catch (err) {
+      pushDrawingWarning(ctx, `HWP3 글상자 문단 리스트 파싱 실패: ${errText(err)}`)
+    }
+  }
+}
+
+/** 그리기 개체 경고는 문서당 한 번만 — 도형이 많은 문서에서 경고가 폭주한다. */
+function pushDrawingWarning(ctx: ParaContext, message: string): void {
+  if (ctx.warnings.some(w => w.code === "UNSUPPORTED_ELEMENT" && w.message.startsWith("HWP3 그리기"))) return
+  ctx.warnings.push({ code: "UNSUPPORTED_ELEMENT", message })
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }

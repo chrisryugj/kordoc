@@ -72,6 +72,13 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.12.0
+
+Cleared **all remaining** HWP3 text loss left after v4.11.0. Comparing the nine HWP3 originals in rhwp `samples/` against their Hancom-converted twins by character multiset, the only characters still missing are image alt-texts — everything else is **0**.
+
+- **🖼️ Text boxes inside drawing objects (#73)**: in HWP3, the extension block of the ch=11 (picture) control is a **drawing-object tree**, not an image, when `pic_type` is 3. Cover titles and flowchart labels live in text boxes there, and the block was skipped wholesale, so that text vanished (618 characters in sample16, 86 in sample19). kordoc now walks the frame header and shape tree (sibling/child bits) and reads each text box's paragraph list with the same parser as body text. Non-textbox shapes that carry the same block via "convert to text box" are recovered **only when the surplus length matches spec table 78 exactly**. The whole walk stays inside the extension-block slice, so a failure can't desync the body stream — it falls back to the previous skip-it-all behavior (recursion capped at 256 levels, 4,096 shapes).
+- **🔣 Invisible markers leaked as a replacement character**: the new-number, page-number-position, and page-hide controls emitted `￼` (U+FFFC) into the body, which survived into the Markdown. Hangul renders nothing at those positions — they now follow the same contract as the table-of-contents marker.
+
 ## What's New in v4.11.0
 
 Swept the latest rhwp devel (v0.8.3–0.8.4) and folded the findings into kordoc's HWP3 decoder. All four defects **drop characters without a warning** — the conversion "succeeds" and part of the body is simply missing.
