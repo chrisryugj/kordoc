@@ -85,6 +85,8 @@ A document-authoring round. Per-level fonts were measured on 206 real approval d
 - **📊 Third annex-table corpus**: `licbyl-byl2/` 183 pairs (seed 20260907). The 30 lowest HWP↔PDF documents break down into 8 undetected 1×1 frames, 15 HWP layout-flattening vs PDF single-column asymmetries and 7 structural differences (equation cells, page-boundary cell splits, line breaks — no parser defect). Cell agreement: tables 0.728 → 0.746, third corpus 0.772 → 0.787, forms 0.965 unchanged.
 
 
+## What's New in v4.12.2
+
 Annex-form round two. The corpus grew by 279 form pairs and 90 table-annex pairs (1,995 files in total), and the HWP, HWPX and PDF parsers now emit the **same IR shape** for single-cell frames. HWP↔PDF cell-text agreement rose from 0.927 to 0.965 and the PDF table ground-truth cellExact from 0.945 to 0.980; the gate floors were raised to those figures.
 
 - **🪆 Nested tables inside PDF frames**: certificates, receipts and oath forms put an "issuer | seal" table inside a single-cell frame. The PDF parser used to emit that table as a separate block after the frame; it now lands inside the frame cell's blocks in reading order, matching the HWPX parser. A lone frame with all four borders stroked becomes a 1×1 table and a lone stroked box inside it a nested table. Border-less outer frames cannot be told apart from Hancom's body-area clip and are left as prose.

@@ -66,6 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   근로감독관증: HWP 단일 24×19 틀을 PDF 가 6×4+1×1+4×3 으로 분할(테두리 없는 외곽 틀 미감지 — A 클래스).
 
 
+## [4.12.2] - 2026-09-05
+
 별지서식 라운드 2. 코퍼스를 2차로 늘리고(서식 279쌍 + 별표 90쌍, 총 1,995파일) 세 파서가 **같은 IR
 모양**을 내도록 맞췄다 — 1칸 틀 안 중첩표를 PDF 는 틀 셀의 `IRCell.blocks` 로, HWP5 는 서식 틀을
 해체하지 않고 표로. HWP5↔PDF 셀 텍스트 Jaccard(`bench/cmp-hwp-pdf.mjs`, 정식 편입) 는 licbyl
