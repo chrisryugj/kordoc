@@ -19,10 +19,13 @@ npm run bench:visual   # 한컴 실렌더 시각 오라클 (macOS GUI 전용, �
 
 ESLint, Prettier 미설정 상태. 벤치 코퍼스(`bench/corpus/`)는 gitignore — 없으면 맥미니(`ssh sm`)에서 rsync.
 
-### 코퍼스 동기화 (2026-08-22 기준선)
+### 코퍼스 동기화 (2026-09-05 기준선)
 
-맥북·맥미니 양쪽 `bench/corpus/` 는 **720파일 바이트 동일**로 맞춰져 있고, 두 기기 모두
-`npm run bench:gate` 전체 PASS(59/59) 다. 게이트 모수는 hwpx 350·pdf 92·hwp쌍 23 —
+맥북·맥미니 양쪽 `bench/corpus/` 는 바이트 동일로 맞춰 둔다. 2026-09-05 에 법령 별지서식
+`licbyl/`(법제처 licbyl API 표본 300건 — HWP5 원본 + PDF + rhwp v0.8.6 `export-hwpx` 변환 HWPX,
+`bench/collect-licbyl.mjs` seed 20260905 로 재현) 900파일이 들어와 게이트 모수는
+hwpx ~647·pdf ~368·hwp쌍 ~320 이다. rhwp 변환본 가운데 자기참조 GT 정렬이 깨지는 3건은
+`known-false-miss/` 에 격리했다(README 참조). 종전(2026-08-22) 모수는 hwpx 350·pdf 92·hwp쌍 23 —
 `score.mjs` 의 `MIN_POP` 하한(170/25/12)에 여유가 있다.
 
 hwp쌍 23은 `corpus/pairs`(10) + `corpus/hwp5`(13)이 아니라 **`korea-kr`·`misc` 의 hwp+hwpx
@@ -82,7 +85,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/equation-generate.ts` | Markdown display math → EqEdit script + `<hp:equation>` XML (equation.ts 토큰맵과 왕복 정합) |
 | `src/hwpx/gongmun.ts` | 공문서 모드 순수 로직 — 항목부호 8단계 시퀀스(가나다·단모음연속·원숫자), 단계별 들여쓰기(`levelIndent`), 단일형제 부호생략, 프리셋 해석(7종 — 기안문·보고서·계획서·통지·회의록·개조식·보도자료), bullet2 ㅇ/○ (v4.0.2) |
 | `src/hwpx/gaejosik.ts` | 개조식(정부 표준 보고서) 순수 로직 — □○-※ 부호·크기 체계·실측 색/기하 상수 (docs/gongmunseo-engine-spec.md (f)장) |
-| `src/hwpx/gongmun-lint.ts` | 공문서 표기법 검수 13룰(편람 — 날짜·시간·금액·붙임·쌍점 등) + AI 슬롭 2룰(v4.9.0) — generate 경고 채널 + `kordoc lint` (v4.0.1) |
+| `src/hwpx/gongmun-lint.ts` | 공문서 표기법 검수 19룰(편람 — 날짜·시간·금액·붙임·쌍점 등 13 + v4.12.1 금액 한글병기·물결표·두음법칙·외래어·차별표현·"끝." 누락 6) + AI 슬롭 2룰(v4.9.0) — generate 경고 채널 + `kordoc lint` (v4.0.1). `END_MARK_MISSING` 은 `{ document: true }`(lint CLI) 에서만 |
 | `src/hwpx/munche-lint.ts` | 개조식 **문체** 검수 12룰(서술형 종결·당위·수사·대구·항목/결론 길이·리드문) — 보고서·계획서·개조식 프리셋 generate 경고 + `kordoc lint --munche`. 표기법(gongmun-lint)과 축이 다름, 실측 근거는 docs/gaejosik-munche.md (v4.9.1) |
 | `src/hwpx/gen-docframe.ts` | 공문서 골격(v4.0.2) — 기안문 두문·결문(별지 제1호서식), 보고정보 행, 공고문 공고번호·발신명의, 보도자료 머리박스·담당 표. charPr는 variant·프로필 뒤 동적 id, 미사용 시 미방출 (spec (h)장) |
 | `src/hwpx/gen-gaejosik.ts` | 개조식 XML 조립 — 표지(파랑 바)·목차(1×7 스트라이프 배너+테두리 박스)·로마숫자 장 헤더 표·본문 첫 페이지 제목 반복 박스 (기하는 sizes 비례 스케일) |
@@ -109,6 +112,8 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/image-regions.ts` | 이미지 XObject 영역 추출 |
 | `src/pdf/image-extract.ts` | 이미지 XObject 바이트 추출 — 비동기 디코딩 대기 + 순수 JS PNG 인코딩, 표 병합 후 페이지 말미 주입 |
 | `src/pdf/line-types.ts` | 선 감지 공유 타입/상수 |
+| `src/pdf/clip-cells.ts` | 셀 클립 사각형 → 표 그리드 (v4.12.1) — 한컴 PDF 의 셀별 `W n` 클립을 셀 기하로 확정(`TableGrid.cells`). 포함 관계로 층을 나눠 같은 부모끼리만 이웃 묶음(중첩표는 별도 그리드, 틀은 자기 층의 셀), 클립 그리드·틀과 면적 절반 이상 겹치는 line 그리드 제거(`dropGridsInside`). 소비측은 클립 그리드를 면적 오름차순으로 먼저 처리. 법령 별지서식 외곽 표 복원 |
+| `src/pdf/symbol-fonts.ts` | Wingdings 글리프 코드 → 유니코드 복원 (v4.12.1) — pdfjs 가 심볼 폰트 코드를 Latin-1 로 돌려주는 것(`è`=0xE8 ➔)을 `page.commonObjs` 폰트 실명으로 판별해 되돌림 |
 | `src/pdf/cluster-detector.ts` | 클러스터 기반 테이블 감지 (선 없는 PDF용) |
 | `src/pdf/polyfill.ts` | pdfjs-dist 호환 심 (DOMMatrix, Path2D) |
 | `src/pdf/quality.ts` | PDF 페이지별 텍스트 품질 신호 계산 (한글/제어문자/PUA 비율, needsOcr 판정) |
@@ -178,5 +183,11 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 - **아웃바운드는 2곳뿐** (`src/pdf/formula/models.ts` 모델 다운로드, `src/watch.ts` webhook).
   둘 다 `assertNetworkAllowed()` 뒤에 있다 — 세 번째를 만들지 말 것. 폐쇄망 배포의 근거
   문서(`docs/offline-deployment.md`)가 "fetch 는 2건"을 재현 가능한 grep 으로 주장한다
+- **한컴 PDF 표는 클립이 진실**: 한컴 PDF 1.3 은 표 셀마다 `W n` 클립 사각형을 깐다(획 괘선과
+  무관). 별지서식처럼 테두리 "없음" 셀이 많은 표는 획으로는 복원이 안 되고, 실선 표도 line
+  경로(교차점 클러스터·MIN_COL_WIDTH 병합)보다 클립 셀이 정확하다 — pdf-table-gt cellExact
+  0.73 → 0.96 (v4.12.1). 클립 셀 판정을 손댈 때는 `bench/pdf-table-gt.mjs` 와
+  `licbyl/` HWP↔PDF 셀 대조를 함께 볼 것. `mergeParallelLines` 는 입력 선 객체를 **제자리 수정**하므로
+  전처리 뒤의 선을 클립 판정(획 유무)에 넘기면 결과가 달라진다
 - **본문폭급 표(48180)는 outMargin 좌우 0**: 283이면 진행폭(w+566)이 컬럼폭을 넘어 1mm
   침범 — 실물(t2)도 표지 표만 0. `gen-gaejosik.ts table()`이 w 기준 자동 분기 (v4.0.2)

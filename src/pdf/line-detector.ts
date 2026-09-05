@@ -26,10 +26,11 @@
  */
 
 export type { LineSegment, TableGrid, ExtractedCell, TextItem } from "./line-types.js"
-export { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges } from "./line-extract.js"
+export { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, type ClipRect } from "./line-extract.js"
 export { bridgeSplitColumnVerticals } from "./vertical-bridge.js"
 export { extractImageRegions, type ImageRegion } from "./image-regions.js"
 export { buildTableGrids } from "./table-grid.js"
+export { buildClipCellGrids, dropGridsInside } from "./clip-cells.js"
 export { extractCells } from "./cell-extract.js"
 export {
   SPACE_GAP_RATIO,

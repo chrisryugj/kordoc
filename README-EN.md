@@ -72,6 +72,16 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.12.1
+
+Statutory **annex forms** (법제처 별지서식) now parse consistently across HWP, HWPX and PDF. We collected 300 forms from the Ministry of Government Legislation OpenAPI as HWP+PDF pairs, added rhwp-converted HWPX, and put the 900-file corpus under the gates: HWP↔PDF cell-text agreement rose from 0.79 to 0.92 and the PDF table ground-truth gate's cellExact from 0.73 to 0.96.
+
+- **📐 PDF cell-clip grids**: Hancom PDF lays a clip rectangle per table cell before drawing its text. Annex forms use border-less outer cells, so the stroke-only line pipeline missed the table and scattered titles and fill-in fields into headings and paragraphs. Groups of adjacent clip rectangles now become tables with **cell geometry fixed up front**, so a pilot-licence application form comes out with the same 23 columns and merges as the HWP parser. Clips are layered by containment, so a certificate's single-cell frame becomes one cell of the outer table (title row, frame, footer) while the inner "issuer | seal" table survives as its own table.
+- **➔ Symbol-font glyph recovery**: process-flow arrows and check boxes typeset in Wingdings used to leak as stray Latin letters (`è`); they are mapped back to Unicode (➔ □ ✔ ☑).
+- **📝 Six more notation-lint rules**: Korean-numeral parenthetical for amounts (`MONEY_NO_HANGUL`), no spaces around the tilde in ranges (`TILDE_SPACE`), initial-sound rule '년도→연도' (`DUEUM_ERROR`), 40 common loanword misspellings with the standard form suggested (`LOANWORD_ERROR`), 25 discriminatory terms with preferred replacements (`DISCRIMINATORY_TERM`), and a missing "끝." after attachments (`END_MARK_MISSING`, `kordoc lint` only). Gaps were identified by comparing against other HWPX document tools (pyhwpxlib, hwpx-skill).
+- **🏛️ Internal-approval documents omit the sender line**: when the recipient is "내부결재", the closing block no longer prints the sender name, per the administrative-work regulation.
+- **🩹 Fill-in blanks preserved**: "년   월   일" / "시   분" no longer collapse into "년월일", and single-column frame tables in claim forms keep one item per line instead of being flattened into one line.
+
 ## What's New in v4.12.0
 
 Cleared **all remaining** HWP3 text loss left after v4.11.0. Comparing the nine HWP3 originals in rhwp `samples/` against their Hancom-converted twins by character multiset, the only characters still missing are image alt-texts — everything else is **0**.

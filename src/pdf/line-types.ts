@@ -24,6 +24,8 @@ export interface TableGrid {
   bbox: { x1: number; y1: number; x2: number; y2: number }
   /** 그리드 내 교차점 반경 (동적 tolerance용) */
   vertexRadius: number
+  /** 미리 확정된 셀 — 클립 사각형 그리드(clip-cells)가 채움. 있으면 extractCells 를 건너뛴다 */
+  cells?: ExtractedCell[]
 }
 
 export interface ExtractedCell {

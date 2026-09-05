@@ -25,7 +25,8 @@ describe("공문서 표기법 검수", () => {
   it("금액 — 천원 금지·금+숫자 붙여쓰기", () => {
     assert.ok(rulesOf("예산 345천원").includes("MONEY_CHEONWON"))
     assert.ok(rulesOf("금 113,560원").includes("MONEY_GEUM_SP"))
-    assert.equal(rulesOf("금113,560원").length, 0, "붙여 쓴 금액은 무위반")
+    assert.deepEqual(rulesOf("금113,560원"), ["MONEY_NO_HANGUL"], "붙여 쓴 금액은 한글 병기 권고만 남는다 (v4.12.1)")
+    assert.equal(rulesOf("금113,560원(금일십일만삼천오백육십원)").length, 0, "한글 병기까지 갖춘 금액은 무위반")
   })
 
   it("붙임·물결표·외국어 우선·쌍점", () => {

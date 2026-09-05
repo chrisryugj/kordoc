@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.12.1] - 2026-09-05
+
+법령 별지서식(법제처 별표·서식) 파싱을 세 포맷에서 맞췄다. 법제처 OpenAPI(`licbyl`)로 서식
+300건의 HWP5 원본과 PDF를 쌍으로 모으고(`bench/collect-licbyl.mjs`), rhwp v0.8.6 CLI
+(`export-hwpx`)로 HWPX 변환본을 붙여 900파일 코퍼스 `bench/corpus/licbyl/` 을 게이트에 편입했다.
+HWP↔PDF 셀 텍스트 일치(Jaccard)는 0.79 → 0.92, PDF 표 GT 게이트는 cellF1 0.727 → 0.896,
+cellExact 0.728 → 0.962, contentNED 0.531 → 0.831 로 올랐다.
+
+### Added
+
+- **PDF 셀 클립 그리드 (`src/pdf/clip-cells.ts`)** — 한컴 PDF 는 표 셀마다 `W n`(clip + endPath)
+  사각형을 깔고 그 안에 글을 찍는다. 별지서식 외곽 표는 테두리 "없음" 셀이라 획 괘선이 없어
+  line 파이프라인이 표를 못 잡고 제목·기입란이 헤딩과 문단으로 흩어졌다. `extractLines` 가
+  클립 사각형(`clipRects`)을 함께 수집하고, 서로 변을 맞대는 클립 묶음을 **셀 기하가 확정된
+  그리드**(`TableGrid.cells`)로 만들어 선→교차점→클러스터 경로를 건너뛴다. 전 페이지를 한
+  그리드로 합칠 때 행마다 다른 열 경계가 `MIN_COL_WIDTH` 병합으로 뭉개지던 것(도선사면허
+  신청서 23열 → 13열)도 사라져 HWP 파서와 같은 23열·같은 병합 구조가 나온다.
+  - 포함 관계로 층을 나눈다 — 각 클립의 부모(자기를 품는 가장 작은 클립)가 같은 것끼리만
+    이웃으로 묶는다. 지정서·영치증의 1칸 테두리 틀은 위 제목행·아래 꼬리행과 한 표의 셀이 되고
+    (HWP 파서의 1열 표와 같은 모양), 안쪽 "발신명의 | 직인" 표는 별도 그리드가 된다. 틀 안 자유
+    문단이 바깥 격자로 찢기거나(4열) 클러스터 표 감지에 걸려 가짜 6열 표가 되던 결함 제거.
+  - 틀과 면적 절반 이상 겹치는 line 그리드는 버린다 — 틀 괘선이 위 행 외곽선과 이어져 line
+    경로가 틀보다 크게 잡던 경우(영치증)까지 포함. 겹친 바깥 부분은 클립 그리드가 이미 셀로 담고 있다.
+  - 클립 그리드는 셀이 확정된 실제 표라 1행·1열 스킵, 프로즈 박스·의사 표 강등을 적용하지
+    않는다. 처리 순서는 클립 그리드(면적 오름차순 — 중첩표가 바깥 셀보다 먼저) → line 그리드
+    (블록 순서는 마지막에 Y 로 재정렬).
+- **PDF 심볼 폰트 글리프 복원 (`src/pdf/symbol-fonts.ts`)** — 처리절차 화살표·체크박스를
+  Wingdings 로 찍은 PDF 에서 pdfjs 가 코드를 Latin-1 문자로 돌려줘 `è` 가 남았다.
+  operatorList 로드 뒤 `page.commonObjs` 의 폰트 실명이 Wingdings 이면 0x21~0xFF 코드를
+  유니코드로 되돌린다(➔ □ ✔ ☑ …). Wingdings 2·3, Webdings 는 코드표가 달라 매핑하지 않는다.
+- **공문서 표기법 검수 6룰** (`gongmun-lint.ts`, pyhwpxlib Gongmun 검사·hwpx-skill 대조) —
+  `MONEY_NO_HANGUL`(금액 괄호 한글 병기, 규정 시행규칙 제2조), `TILDE_SPACE`(물결표 앞뒤
+  붙여쓰기), `DUEUM_ERROR`(어두 '년도·년간' → '연도·연간'), `LOANWORD_ERROR`(외래어 오기 40종,
+  표준 표기를 suggest 로), `DISCRIMINATORY_TERM`(차별·비하 표현 25종 → 순화어),
+  `END_MARK_MISSING`(붙임 있는데 "끝." 없음 — `kordoc lint` 문서 검사 전용, generate 경고에서는
+  official 프리셋이 "끝."을 자동 방출하므로 끔). `lintGongmunText(text, { document })` 옵션 추가.
+- **내부결재 문서의 발신명의 생략** — `docHead.to` 가 "내부결재"면 결문에 발신명의를 적지 않는다
+  (행정업무규정 시행규칙). `isInternalApproval()` 수출.
+- **`bench/collect-licbyl.mjs`** — 법제처 별표서식 목록 API 균등 보폭·결정적 표본 수집기
+  (같은 seed 면 같은 표본, '삭제'·'…으로 이동' 자리표시 서식 제외, 법령당 2건 상한).
+
+### Fixed
+
+- **기입 빈칸 "년   월   일" 이 "년월일" 로 붙던 것** — 균등배분 정리("현 장 대 응 단 장")가 한
+  글자 토큰 3개 이상을 무조건 이었다. 한 글자 토큰이 전부 날짜·시각 단위(년월일시분초)면
+  기입란으로 보고 붙이지 않는다. HWP/HWPX(`sanitizeText`)·PDF(`collapseEvenSpacing`) 공통.
+- **1열 다행 표의 셀 안 줄바꿈** — 청구서류의 1열 틀 표는 셀 하나에 기입 항목이 줄마다 들어
+  있는데 공백으로 이어 "1. 소속 2. 성명 3. …" 한 줄로 뭉개졌다. 줄을 줄로 남긴다.
+
+### Changed
+
+- `bench/corpus/licbyl/` 900파일(HWP5 300 + PDF 300 + rhwp HWPX 297) 게이트 편입. rhwp 변환본
+  가운데 부동 표를 section 첫머리에 쓰는 등 문서 순서가 시각 순서와 어긋나 자기참조 GT 정렬이
+  깨지는 3건은 `known-false-miss/` 로 격리(파서 출력은 HWP5 원본과 동일).
+- rhwp `tools/forms/일반기안문_서식.hwpx` 최신본은 header.xml 에 제어문자(0x01)가 섞여 있어
+  들여오지 않았다(번들 서식은 종전 그대로).
+
 ## [4.12.0] - 2026-08-30
 
 v4.11.0 이 걷어낸 HWP3 유실의 **잔여 전량**을 처리했다. rhwp `samples/` 의 HWP3 원본 9종을

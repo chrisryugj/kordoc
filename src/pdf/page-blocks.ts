@@ -8,6 +8,7 @@
 
 import type { IRBlock, IRTable, BoundingBox } from "../types.js"
 import { safeMin, safeMax } from "../utils.js"
+import { buildClipCellGrids, dropGridsInside } from "./clip-cells.js"
 import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
 import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem } from "./cluster-detector.js"
 import { type NormItem, collapseEvenSpacing, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
@@ -33,7 +34,12 @@ export function extractPageBlocksWithLines(
   if (items.length === 0) return []
 
   // 1단계: PDF 그래픽 명령에서 선 추출
-  let { horizontals, verticals } = extractLines(opList.fnArray, opList.argsArray)
+  const extracted = extractLines(opList.fnArray, opList.argsArray)
+  let { horizontals, verticals } = extracted
+  // 1.2단계: 셀 클립 사각형 → 테두리 없는 표 그리드 (법령 별지서식 외곽 표). 셀 기하가 확정돼
+  // 있어 line 경로를 거치지 않고, 실선 표는 아래 line 경로가 그대로 맡는다 (clip-cells.ts)
+  const clipResult = detectTables ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight) : { grids: [], containers: [] }
+  const clipGrids = clipResult.grids
   if (extraLines) {
     horizontals = horizontals.concat(extraLines.horizontals)
     verticals = verticals.concat(extraLines.verticals)
@@ -62,7 +68,8 @@ export function extractPageBlocksWithLines(
   wrapUnderlineRuns(items)
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
-  const grids = detectTables ? buildTableGrids(horizontals, verticals) : []
+  const lineGrids = detectTables ? buildTableGrids(horizontals, verticals) : []
+  const grids = [...clipGrids, ...dropGridsInside(lineGrids, clipGrids, clipResult.containers)]
 
   if (grids.length > 0) {
     return extractBlocksWithGrids(items, pageNum, grids, horizontals, verticals)
@@ -221,18 +228,27 @@ function extractBlocksWithGrids(
   const blocks: IRBlock[] = []
   const usedItems = new Set<NormItem>()
 
-  // 그리드를 Y좌표 내림차순 정렬 (위→아래)
-  const sortedGrids = [...grids].sort((a, b) => b.bbox.y2 - a.bbox.y2)
+  // 그리드를 Y좌표 내림차순 정렬 (위→아래). 셀이 확정된 클립 그리드가 먼저 글을 가져간다 —
+  // 틀 표(3×3 테두리 등)가 위에서 먼저 삼키면 안쪽 "발신명의 | 직인" 표가 빈 채로 죽는다.
+  // 클립 그리드끼리는 작은 것(중첩표)이 틀(1×1)보다 먼저다.
+  // 블록 순서는 마지막에 Y 로 다시 정렬되므로 처리 순서가 출력 순서를 바꾸지 않는다
+  const gridArea = (g: TableGrid): number => (g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1)
+  const sortedGrids = [...grids].sort((a, b) =>
+    (b.cells ? 1 : 0) - (a.cells ? 1 : 0)
+    || (a.cells && b.cells ? gridArea(a) - gridArea(b) : 0) // 클립 그리드끼리는 면적 오름차순 — 중첩표가 틀보다 먼저
+    || b.bbox.y2 - a.bbox.y2)
 
   for (const grid of sortedGrids) {
-    // 1행 다열 그리드는 테이블 헤더일 가능성 높음 → 스킵하여 클러스터 감지에 위임
+    // 1행 다열 그리드는 테이블 헤더일 가능성 높음 → 스킵하여 클러스터 감지에 위임.
+    // 클립 그리드(grid.cells)는 셀 기하가 확정된 실제 표라 1행·1열이어도 그대로 낸다
+    // (지정서의 "발신명의 | 직인" 1×2 표 실측)
     const numGridRows = grid.rowYs.length - 1
     const numGridCols = grid.colXs.length - 1
-    if (numGridRows === 1 && numGridCols >= 2) continue
+    if (!grid.cells && numGridRows === 1 && numGridCols >= 2) continue
     // 1열 다행 그리드 (세로선 없는 표) → 스킵하여 클러스터 감지로 열 추론 위임
     // Why: 행 구분선만 있는 표는 builder.ts 의 1-col branch 에서 세로 일렬로 플래튼되어
     //      테이블 구조가 무너짐. 클러스터 기반 X좌표 정렬로 열을 복원할 기회 제공.
-    if (numGridCols === 1 && numGridRows >= 2) continue
+    if (!grid.cells && numGridCols === 1 && numGridRows >= 2) continue
 
     // 그리드 영역 내 텍스트 아이템 수집
     const tableItems: NormItem[] = []
@@ -251,8 +267,8 @@ function extractBlocksWithGrids(
       usedItems.add(item)
     }
 
-    // 셀 추출
-    const cells = extractCells(grid, horizontals, verticals)
+    // 셀 추출 — 클립 그리드는 셀이 확정돼 있다
+    const cells = grid.cells ?? extractCells(grid, horizontals, verticals)
     if (cells.length === 0) continue
 
     // 텍스트→셀 매핑 (hasSpaceBefore 전파 — 셀 텍스트 단어 공백 복원)
@@ -332,7 +348,8 @@ function extractBlocksWithGrids(
 
     // 프로즈 박스: 가짜 열 위로 전폭 프로즈가 흐르는 표 → 표를 버리고 아이템을
     // 프로즈 폴백으로 재추출 (셀 조인 demote는 찢긴 조각을 스크램블하므로 부적합)
-    if (isProseBoxGrid(grid, verticals, irTable)) {
+    // 클립 그리드는 셀 기하가 확정된 실제 표 — 프로즈 박스·의사 표 강등을 적용하지 않는다
+    if (!grid.cells && isProseBoxGrid(grid, verticals, irTable)) {
       for (const it of tableItems) usedItems.delete(it)
       continue
     }
@@ -344,7 +361,7 @@ function extractBlocksWithGrids(
     }
 
     // 의사 테이블 필터: 텍스트성 내용 → paragraph로 복원 (구조 보존)
-    if (shouldDemoteTable(irTable)) {
+    if (!grid.cells && shouldDemoteTable(irTable)) {
       const demoted = demoteTableToText(irTable)
       if (demoted) {
         // 텍스트 박스(1x1 또는 1행 그리드) demote 시 앞뒤 줄바꿈으로 본문과 분리

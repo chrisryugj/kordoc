@@ -67,7 +67,7 @@ export function collapseEvenSpacing(text: string): string {
   // 1. 전체가 균등배분: 토큰의 70%가 1글자
   const tokens = text.split(" ")
   const singleCharCount = tokens.filter(t => t.length === 1).length
-  if (tokens.length >= 3 && singleCharCount / tokens.length >= 0.7) {
+  if (tokens.length >= 3 && singleCharCount / tokens.length >= 0.7 && !isDateUnitBlank(tokens)) {
     return tokens.join("")
   }
 
@@ -76,8 +76,13 @@ export function collapseEvenSpacing(text: string): string {
   // "중동 사태 대응" (2자 단어)는 매칭 안 됨 → 공백 유지
   return text.replace(
     /(?<![가-힣])[가-힣](?: [가-힣\d]){2,}(?![가-힣])/g,
-    match => match.replace(/ /g, ""),
+    match => (isDateUnitBlank(match.split(" ")) ? match : match.replace(/ /g, "")),
   )
+}
+
+/** 별지서식 기입 빈칸 "년   월   일"·"시   분" — 한 글자 토큰이 전부 날짜·시각 단위면 균등배분이 아니다 (v4.12.1) */
+function isDateUnitBlank(tokens: string[]): boolean {
+  return tokens.every(t => t.length !== 1 || !/[가-힣]/.test(t) || /[년월일시분초]/.test(t))
 }
 
 /** 아이템 그룹에서 바운딩 박스 계산 */

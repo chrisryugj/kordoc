@@ -203,7 +203,10 @@ function sanitizeText(text: string): string {
     const tokens = result.split(" ")
     // 한글 1글자 토큰만 카운트 — ASCII 특수문자(< > & 등)는 균등배분이 아님
     const koreanSingleCharCount = tokens.filter(t => t.length === 1 && /[\uAC00-\uD7AF\u3131-\u318E]/.test(t)).length
-    if (tokens.length >= 3 && koreanSingleCharCount / tokens.length >= 0.7) {
+    // 법령 별지서식의 기입 빈칸("년   월   일", "시   분")은 균등배분이 아니라 날짜·시각
+    // 단위 사이를 비워 둔 것 — 한 글자 토큰이 전부 단위 글자면 붙이지 않는다 (v4.12.1)
+    const allDateUnits = tokens.every(t => t.length !== 1 || !/[\uAC00-\uD7AF\u3131-\u318E]/.test(t) || /[년월일시분초]/.test(t))
+    if (tokens.length >= 3 && koreanSingleCharCount / tokens.length >= 0.7 && !allDateUnits) {
       result = tokens.join("")
     }
   }
@@ -607,10 +610,12 @@ function tableToMarkdown(table: IRTable): string {
       .join("\n")
   }
 
-  // 1열 다행 테이블 → 각 행을 별도 라인으로 출력 (목록성 데이터)
+  // 1열 다행 테이블 → 각 행을 별도 라인으로 출력 (목록성 데이터). 셀 안 줄바꿈은 줄로 남긴다 —
+  // 별지서식(청구서류)의 1열 틀 표는 셀 하나에 기입 항목이 줄마다 들어 있어, 공백으로 이으면
+  // "1. 소속 2. 성명 3. …" 한 줄로 뭉개진다 (v4.12.1)
   if (numCols === 1 && numRows >= 2) {
     return cells
-      .map(row => escapeGfm(sanitizeText(row[0].text)).replace(/\n/g, " "))
+      .map(row => escapeGfm(sanitizeText(row[0].text)).split("\n").map(l => l.trim()).filter(Boolean).join("\n"))
       .filter(Boolean)
       .join("\n")
   }

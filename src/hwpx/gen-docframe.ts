@@ -98,10 +98,15 @@ function footSep(g: ResolvedGongmun): string {
   return "─".repeat(Math.max(10, Math.round(bodyMm * (46 / 175))))
 }
 
+/** 수신이 "내부결재" 인 문서는 발신명의를 적지 않는다 (행정업무규정 시행규칙 제4조 — 내부결재 문서의 결문) */
+export function isInternalApproval(to: string | undefined): boolean {
+  return !!to && /^\s*내\s*부\s*결\s*재/.test(to)
+}
+
 export function buildDocFoot(g: ResolvedGongmun, ids: DocframeIds): string[] {
   const f = g.docFoot!
   const out: string[] = [blank()]
-  if (f.sender) { out.push(para(f.sender, GONGMUN_CENTER, ids.sender), blank()) }
+  if (f.sender && !isInternalApproval(g.docHead?.to)) { out.push(para(f.sender, GONGMUN_CENTER, ids.sender), blank()) }
   const foot = (text: string) => para(text, GONGMUN_TBL_LEFT, ids.foot)
   out.push(foot(footSep(g)))
   if (f.drafter || f.reviewer || f.approver)

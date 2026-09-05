@@ -19,6 +19,7 @@ import { createPdfImageState, extractPageImages, injectPageImageBlocks } from ".
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { type PdfTextItem, normalizeItems, filterHiddenText } from "./text-line.js"
 import { extractPageBlocksWithLines, mergeCrossPageTables } from "./page-blocks.js"
+import { remapSymbolFontItems } from "./symbol-fonts.js"
 import { computeMedianFontSizeFromFreq, detectHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText } from "./text-clean.js"
 import { applyLinkAnnotations } from "./links.js"
@@ -147,6 +148,12 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
         // 선 기반 테이블 감지를 위한 operatorList
         const opList = await page.getOperatorList()
+
+        // 심볼 폰트(Wingdings) 글리프 복원 — 폰트 실명은 operatorList 로드 뒤에야 commonObjs 에 있다
+        remapSymbolFontItems(visible, (loadedName) => {
+          try { return page.commonObjs.has(loadedName) ? (page.commonObjs.get(loadedName) as { name?: string } | null)?.name : undefined }
+          catch { return undefined }
+        })
 
         // 이미지 영역 감지 — 텍스트 없는 큰 이미지는 무음 정보손실이므로 가시화 (ODL 아이디어)
         const pageArea = viewport.width * viewport.height

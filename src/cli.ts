@@ -865,7 +865,7 @@ program
         process.exit(1)
       }
       const text = raw.toString("utf-8")
-      const findings = lintGongmunText(text)
+      const findings = lintGongmunText(text, { document: true })
       // 문체 검수는 옵트인 — 축이 다르고(표기법 vs 종결·수사), 개조식이 아닌 원고에는
       // 적용하면 안 되기 때문에 기본 동작은 종전 그대로 둔다
       const munche = opts.munche ? lintMuncheText(text) : []

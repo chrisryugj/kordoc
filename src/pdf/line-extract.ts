@@ -35,9 +35,13 @@ const MAX_LINE_WIDTH = 5.0
 export function extractLines(
   fnArray: Uint32Array | number[],
   argsArray: unknown[][],
-): { horizontals: LineSegment[]; verticals: LineSegment[] } {
+): { horizontals: LineSegment[]; verticals: LineSegment[]; clipRects: ClipRect[] } {
   const horizontals: LineSegment[] = []
   const verticals: LineSegment[] = []
+  const clipRects: ClipRect[] = []
+  // 클립 경로 추적 — 한컴 PDF 는 표 셀마다 `W n`(clip + endPath) 사각형을 깐다. 획이 없는
+  // 셀(테두리 "없음"인 별지서식 외곽 표)도 클립은 있으므로 그리드 복원의 근거가 된다 (v4.12.1)
+  let pendingClip = false
   let lineWidth = 1
 
   // CTM 추적 — 경로 좌표는 구성 시점의 CTM 공간에 있다. 콘텐츠 스트림이
@@ -80,7 +84,13 @@ export function extractLines(
   }
 
   function flushPath(isStroke: boolean, fromFill = false) {
-    if (!isStroke) { currentPath = []; return }
+    if (!isStroke) {
+      if (pendingClip) captureClipRect(currentPath, clipRects)
+      pendingClip = false
+      currentPath = []
+      return
+    }
+    pendingClip = false
     const effWidth = lineWidth * ctmScale()
     for (const seg of currentPath) {
       classifyAndAdd(seg, effWidth, horizontals, verticals, fromFill)
@@ -215,11 +225,40 @@ export function extractLines(
       case OPS.endPath:
         flushPath(false)
         break
+
+      case OPS.clip:
+      case OPS.eoClip:
+        pendingClip = true
+        break
     }
   }
 
-  return { horizontals, verticals }
+  return { horizontals, verticals, clipRects }
 }
+
+// ─── 클립 사각형 → 셀 그리드 선 ──────────────────────
+
+/** 클립 경로의 축 정렬 사각형 (CTM 적용, 페이지 좌표) */
+export interface ClipRect { x1: number; y1: number; x2: number; y2: number }
+
+/** 클립 사각형 최소 치수 (pt) — 셀 판정은 clip-cells.ts */
+const CLIP_MIN_W = 4
+const CLIP_MIN_H = 2
+
+/** 현재 경로가 축 정렬 사각형(3~5 세그먼트, 전부 수평/수직)이면 bbox 를 등록 */
+function captureClipRect(path: Array<{ x1: number; y1: number; x2: number; y2: number }>, out: ClipRect[]): void {
+  if (path.length < 3 || path.length > 5) return
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
+  for (const s of path) {
+    const dx = Math.abs(s.x2 - s.x1), dy = Math.abs(s.y2 - s.y1)
+    if (dx > ORIENTATION_TOL && dy > ORIENTATION_TOL) return // 사선/곡선 클립
+    x1 = Math.min(x1, s.x1, s.x2); x2 = Math.max(x2, s.x1, s.x2)
+    y1 = Math.min(y1, s.y1, s.y2); y2 = Math.max(y2, s.y1, s.y2)
+  }
+  if (x2 - x1 < CLIP_MIN_W || y2 - y1 < CLIP_MIN_H) return
+  out.push({ x1, y1, x2, y2 })
+}
+
 
 
 function classifyAndAdd(
