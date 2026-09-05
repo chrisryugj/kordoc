@@ -26,6 +26,12 @@ const CLIP_MIN_GROUP = 2
 /** 페이지 면적 대비 이 비율 이상인 클립은 페이지/본문 영역 — 셀 아님 */
 const CLIP_MAX_PAGE_FRAC = 0.75
 /** 셀 최소 치수 (pt) */
+/** 제목 아래 틀 판정 — 틀 윗변이 페이지 높이의 이 비율 아래에서 시작해야 한다 (본문 영역 클립은 9~11%, 별표 틀 26~52% 실측) */
+const TITLED_FRAME_MIN_TOP = 0.2
+/** 제목 아래 틀 판정 — 틀 폭이 페이지 폭의 이 비율 이상 (별표 틀 70~86% 실측, 2단 상자 38% 제외) */
+const TITLED_FRAME_MIN_WIDTH = 0.6
+/** 머리말 띠 — 이 비율 위의 글(머리말)은 "틀 위 본문 글" 로 세지 않는다 */
+const HEADER_BAND = 0.08
 const CLIP_MIN_W = 4
 const CLIP_MIN_H = 2
 /** 획 괘선이 변을 덮는다고 보는 거리(pt)·길이 비율 */
@@ -101,6 +107,7 @@ export function buildClipCellGrids(
   strokedV: LineSegment[],
   pageWidth: number,
   pageHeight: number,
+  textPoints: ReadonlyArray<{ x: number; y: number }> = [],
 ): ClipCellResult {
   const pageArea = pageWidth * pageHeight
   const sameRect = (a: ClipRect, b: ClipRect): boolean =>
@@ -156,8 +163,19 @@ export function buildClipCellGrids(
   const framed = (r: ClipRect): boolean =>
     edgeStroked(strokedH, "h", r.y1, r.x1, r.x2) && edgeStroked(strokedH, "h", r.y2, r.x1, r.x2)
     && edgeStroked(strokedV, "v", r.x1, r.y1, r.y2) && edgeStroked(strokedV, "v", r.x2, r.y1, r.y2)
-  /** 홀로 선 틀 — 다른 클립을 품고, 그리드 멤버가 아니며, 테두리가 그려져 있다 */
-  const loneFrame = (i: number): boolean => isContainer[i] && !isGridMember(i) && framed(cells[i])
+  // 테두리 없는 1칸 틀(별표·선서문 바깥 틀) 과 본문 영역 클립의 구분 — 문서 단위 반복 통계는 반증됐다
+  // (v4.12.3 실측: 채용공고 본문 영역 클립은 페이지마다 y1 이 73~91 로 달라 같은 사각형이 아니고, 별표는
+  // 1쪽짜리라 반복 자체가 없다). 대신 기하로 가른다: 본문 영역은 여백 바로 안쪽(y1 ≈ 9~11%)에서 시작해
+  // 머리말·쪽번호 말고는 바깥에 글이 없지만, 별표 틀은 제목("■ ○○법 [별표 N]"·별표명) 아래(y1 26~52%)
+  // 에서 시작해 그 위에 본문 글이 있다. 위쪽 머리말 띠(8%)를 뺀 곳에 글이 있고 틀 안에도 글이 있어야 한다
+  // 폭 조건: 별표 틀은 본문 폭 대부분(70~86%)을 차지한다 — 2단 채용공고의 단 상자(폭 38%, pair06)는 제외
+  const titledFrame = (r: ClipRect): boolean =>
+    r.y1 >= pageHeight * TITLED_FRAME_MIN_TOP
+    && (r.x2 - r.x1) >= pageWidth * TITLED_FRAME_MIN_WIDTH
+    && textPoints.some(p => p.y < r.y1 && p.y > pageHeight * HEADER_BAND && p.x >= r.x1 - CLIP_EDGE_TOL && p.x <= r.x2 + CLIP_EDGE_TOL)
+    && textPoints.some(p => p.x > r.x1 && p.x < r.x2 && p.y > r.y1 && p.y < r.y2)
+  /** 홀로 선 틀 — 다른 클립을 품고, 그리드 멤버가 아니며, 테두리가 그려져 있거나 제목 아래 틀이다 */
+  const loneFrame = (i: number): boolean => isContainer[i] && !isGridMember(i) && (framed(cells[i]) || titledFrame(cells[i]))
   /** 이 클립의 부모가 안쪽 표를 받을 수 있는 셀인가 — 그리드의 셀이거나 홀로 선 틀 */
   const parentAttachable = (i: number): boolean => parent[i] >= 0 && (isGridMember(parent[i]) || loneFrame(parent[i]))
   /** 부모 안에 이 클립 하나뿐인가 — 테두리 없는 바깥 틀 안에 테두리 있는 1칸 표 하나(선서문·서약서류).

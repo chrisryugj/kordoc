@@ -21,7 +21,7 @@ import { type PdfTextItem, normalizeItems, filterHiddenText } from "./text-line.
 import { extractPageBlocksWithLines, mergeCrossPageTables } from "./page-blocks.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
 import { computeMedianFontSizeFromFreq, detectHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
-import { sanitizeBlockControlChars, cleanPdfText } from "./text-clean.js"
+import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables } from "./text-clean.js"
 import { applyLinkAnnotations } from "./links.js"
 import { applyFormulaOcr } from "./formula-ocr.js"
 // polyfill 먼저 (ES 모듈 호이스팅되므로 별도 파일 필수)
@@ -346,9 +346,11 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     // 메트릭 수집 끝났으니 블록 텍스트의 C0/C1 제어문자(NUL 등) 정리
     sanitizeBlockControlChars(blocks)
+    // 1×1 표(중첩 없음)는 줄마다 문단으로 — 셀 줄바꿈이 mergeKoreanLines 에 붙지 않게 (v4.12.3)
+    const outBlocks = splitSingleCellTables(blocks)
 
     // blocksToMarkdown로 통일 — 헤딩 마크다운 반영 (HWP5/HWPX와 일관성)
-    let markdown = cleanPdfText(blocksToMarkdown(blocks))
+    let markdown = cleanPdfText(blocksToMarkdown(outBlocks))
 
     return {
       markdown,

@@ -9,14 +9,26 @@ import type { IRBlock } from "../types.js"
 import { stripControlChars } from "./quality.js"
 import { collapseEvenSpacing } from "./text-line.js"
 
-/** 블록 트리의 텍스트에서 비표시 제어문자를 in-place로 제거한다. */
+/**
+ * 한컴 PDF 가 가운뎃점(ㆍ U+318D)을 조합형 중성 아래아(ᆞ U+119E)로 내는 것을 되돌린다.
+ * 실측(v4.12.3, 별지서식·별표 573쌍): PDF 출력의 가운뎃점 3,238자 중 340자(41문서)가 U+119E,
+ * HWP5 원본은 전부 U+318D. 옛한글 자모 결합(앞이 초성 U+1100~115F)만 남긴다.
+ */
+export function normalizeAraea(text: string): string {
+  return text.replace(/(?<![\u1100-\u115F])\u119E/g, "\u318D")
+}
+
+const cleanChars = (text: string): string => normalizeAraea(stripControlChars(text))
+
+/** 블록 트리의 텍스트에서 비표시 제어문자 제거 + 조합형 가운뎃점 정규화 (in-place, 셀 blocks 포함) */
 export function sanitizeBlockControlChars(blocks: IRBlock[]): void {
   for (const b of blocks) {
-    if (b.text) b.text = stripControlChars(b.text)
+    if (b.text) b.text = cleanChars(b.text)
     if (b.table) {
       for (const row of b.table.cells) {
         for (const cell of row) {
-          if (cell.text) cell.text = stripControlChars(cell.text)
+          if (cell.text) cell.text = cleanChars(cell.text)
+          if (cell.blocks) sanitizeBlockControlChars(cell.blocks)
         }
       }
     }
@@ -24,9 +36,29 @@ export function sanitizeBlockControlChars(blocks: IRBlock[]): void {
   }
 }
 
+/**
+ * 최상위 1×1 표(중첩표 없음)를 줄마다 문단 블록으로 편다 (PDF 전용, v4.12.3).
+ * 1×1 셀 줄바꿈은 표 셀 줄바꿈 보존 정책(v4.12.1 1열 다행)과 같이 지켜야 하는데, 1×1 은
+ * tableToMarkdown 이 "줄\n줄" 로 내고 cleanPdfText 의 mergeKoreanLines 가 한글 줄을 이어 붙여
+ * "선 서 나는 헌법을 …"(선서문 안쪽 상자, 제목 줄+본문 줄 결합)이 됐다. 문단 블록 사이는 빈 줄이라
+ * 병합 대상이 아니다. 실측 파급: 별지서식·별표·보고서 897 PDF 중 10문서 12표.
+ */
+export function splitSingleCellTables(blocks: IRBlock[]): IRBlock[] {
+  const out: IRBlock[] = []
+  for (const b of blocks) {
+    const t = b.type === "table" ? b.table : undefined
+    const cell = t && t.rows === 1 && t.cols === 1 ? t.cells[0]?.[0] : undefined
+    if (!cell || cell.blocks?.some((x) => x.type === "table")) { out.push(b); continue }
+    const lines = (cell.text ?? "").split(/\n/).map((l) => l.trim()).filter(Boolean)
+    if (lines.length === 0) continue
+    for (const text of lines) out.push({ type: "paragraph", text, pageNumber: b.pageNumber, bbox: b.bbox })
+  }
+  return out
+}
+
 export function cleanPdfText(text: string): string {
   return mergeKoreanLines(
-    stripControlChars(text)
+    normalizeAraea(stripControlChars(text))
       // 문서 시작 단독 페이지 번호
       .replace(/^\d{1,4}\n/, "")
       // "- 2 -" 스타일 페이지 번호 (독립 라인 및 목록 항목 형태 포함)

@@ -3,7 +3,7 @@
  * 자동장평(orphan 줄 축소) 계획과 리스트 항목부호/깊이 사전 산출.
  */
 
-import { type ResolvedGongmun, GongmunNumberer, computeSuppression, hangulOrdinal, levelIndent, markerWidth, mmToHwpunit, usesAsteriskThird, usesReportFonts } from "./gongmun.js"
+import { type ResolvedGongmun, GongmunNumberer, computeSuppression, levelMarkerHeight, hangulOrdinal, levelIndent, markerWidth, mmToHwpunit, usesAsteriskThird, usesReportFonts } from "./gongmun.js"
 import { fitRatioForFewerLines } from "./text-metrics.js"
 import { type MdBlock, parseInlineMarkdown } from "./md-runs.js"
 import { CHAR_VARIANT_BASE, GONGMUN_BODY_RATIO, GONGMUN_LIST_LEVELS } from "./gen-ids.js"
@@ -66,6 +66,8 @@ export function computeGongmunFitPlan(
       const { marker, depth, indentVariant } = gongmunList.items.get(i)!
       // 개조식 □(16pt)·※(13pt)는 본문 charPr(15pt) 계열이 아니라 변형 제외
       if (gongmun.numbering === "gaejosik" && (depth === 0 || (block.text || "").trimStart().startsWith("※"))) continue
+      // levels 오버라이드 단계는 전용 charPr(다른 크기·글꼴) — 본문 장평 변형 대상 아님 (v4.12.3)
+      if (gongmun.levels?.[depth]) continue
       const content = plainRenderText(block.text || "")
       text = marker ? `${marker} ${content}` : content
       const li = levelIndent(depth, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset))
@@ -163,8 +165,10 @@ export function precomputeGongmunList(
     // 순번에 따라 부호폭이 변하는 체계는 법정 번호(standard)뿐 — 불릿(report·gaejosik)은
     // depth당 부호가 고정이고, 개조식 indent는 실측 체계(gaejosikLevelIndent)가 정본이다
     if (!marker || gongmun.numbering !== "standard") return undefined
-    const w = markerWidth(marker, gongmun.bodyHeight)
-    const rep = -levelIndent(depth, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset)).indent
+    // 부호폭은 그 단계의 글자 크기(levels 오버라이드 반영)로 — 대표 부호와 같은 기준
+    const h = levelMarkerHeight(gongmun, depth)
+    const w = markerWidth(marker, h)
+    const rep = -levelIndent(depth, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset), h).indent
     if (w === rep) return undefined
     const key = `${depth}:${w}`
     let vi = variantIdx.get(key)

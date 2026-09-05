@@ -27,6 +27,8 @@ export const SIZE_KEYS = [
   "dae", "cham", "chapter", "coverTitle", "coverSub",
   "tocLabel", "tocRoman", "tocItem", "table", "bodyTitle",
 ] as const
+/** 단계별 위계 타이포 키 (GongmunOptions.levels[depth]) */
+export const LEVEL_STYLE_KEYS = ["font", "pt", "bold"] as const
 /** 기안문 두문 키 (별지 제1호서식) */
 export const DOC_HEAD_KEYS = ["org", "to", "via", "title"] as const
 /** 기안문 결문 키 */
@@ -77,6 +79,7 @@ export interface GongmunSurfaceInput {
   h2Marker?: (typeof H2_MARKERS)[number]
   fonts?: NonNullable<GongmunOptions["fonts"]>
   sizes?: NonNullable<GongmunOptions["sizes"]>
+  levels?: NonNullable<GongmunOptions["levels"]>
   bullet2?: (typeof BULLET2_CHARS)[number]
   suppressSingle?: boolean
   docHead?: NonNullable<GongmunOptions["docHead"]>
@@ -115,6 +118,7 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.h2Marker) g.h2Marker = input.h2Marker
   if (input.fonts) g.fonts = input.fonts
   if (input.sizes) g.sizes = input.sizes
+  if (input.levels && Object.keys(input.levels).length > 0) g.levels = input.levels
   if (input.bullet2) g.bullet2 = input.bullet2
   if (input.suppressSingle !== undefined) g.suppressSingle = input.suppressSingle
   if (input.docHead) g.docHead = input.docHead
@@ -123,4 +127,32 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.noticeHead) g.noticeHead = input.noticeHead
   if (input.press) g.press = input.press
   return g
+}
+
+/**
+ * `--levels` 문법 파싱 — `0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14`.
+ * 항목은 쉼표, depth 뒤 `=`, 속성은 `/` 구분: 숫자=pt, bold·b=굵게, plain=굵게 해제, 그 외=글꼴명.
+ * 값 범위·depth 검증은 라이브러리 방어선(validateGongmunOptions)이 맡는다.
+ */
+export function parseLevelsSpec(spec: string): NonNullable<GongmunOptions["levels"]> {
+  const out: NonNullable<GongmunOptions["levels"]> = {}
+  for (const item of spec.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const eq = item.indexOf("=")
+    if (eq <= 0) throw new Error(`--levels: '${item}' — 'depth=글꼴/pt/bold' 꼴이어야 함`)
+    const depth = item.slice(0, eq).trim()
+    const st: NonNullable<GongmunOptions["levels"]>[string] = {}
+    for (const part of item.slice(eq + 1).split("/").map((s) => s.trim()).filter(Boolean)) {
+      if (/^\d+(\.\d+)?$/.test(part)) st.pt = Number(part)
+      else if (/^(bold|b)$/i.test(part)) st.bold = true
+      else if (/^plain$/i.test(part)) st.bold = false
+      else st.font = part
+    }
+    out[depth] = st
+  }
+  return out
+}
+
+/** levels 의 글꼴명을 unknownFontWarnings 입력(역할 → 글꼴명)으로 — 역할 이름은 `levels.<depth>` */
+export function levelFontRecord(levels: NonNullable<GongmunOptions["levels"]>): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(levels).map(([d, st]) => [`levels.${d}`, st.font]))
 }

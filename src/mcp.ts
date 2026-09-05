@@ -13,8 +13,7 @@ import type { GongmunOptions } from "./index.js"
 import {
   buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS,
   FONT_ROLE_KEYS, SIZE_KEYS, DOC_HEAD_KEYS, DOC_FOOT_KEYS, NOTICE_HEAD_KEYS, PRESS_CONTACT_KEYS,
-  BODY_PT_RANGE, LINE_SPACING_RANGE, SIZE_PT_RANGE, APPROVAL_MAX,
-} from "./hwpx/gongmun-surface.js"
+  BODY_PT_RANGE, LINE_SPACING_RANGE, SIZE_PT_RANGE, APPROVAL_MAX, LEVEL_STYLE_KEYS } from "./hwpx/gongmun-surface.js"
 import { VERSION, toArrayBuffer, sanitizeError, classifyError, KordocError } from "./utils.js"
 import { assertWithinRoot, getAccessRoot, isOfflineMode } from "./shared/offline.js"
 import { extractHwp5MetadataOnly } from "./hwp5/parser.js"
@@ -1053,6 +1052,8 @@ server.tool(
       .optional().describe("요소별 글꼴 오버라이드(공문서 모드) — body=본문(○·-)/heading=제목 계열(□·장헤더·표지·목차)/ref=※ 참고/table=표 셀. 개조식·보고서·계획서는 네 역할 전부, 그 외 프리셋은 body만 적용"),
     sizes: z.object(Object.fromEntries(SIZE_KEYS.map(k => [k, z.number().min(SIZE_PT_RANGE.min).max(SIZE_PT_RANGE.max).optional()])))
       .optional().describe("개조식 요소별 글자 크기(pt) 오버라이드 — dae=□/cham=※/chapter=장헤더/coverTitle·coverSub=표지/tocLabel·tocRoman·tocItem=목차/table=표 셀/bodyTitle=본문 첫 페이지 제목 반복 박스. 미지정 요소는 body_pt 비례 기본값"),
+    levels: z.record(z.string().regex(/^[0-7]$/), z.object(Object.fromEntries(LEVEL_STYLE_KEYS.map(k => [k, k === "pt" ? z.number().min(SIZE_PT_RANGE.min).max(SIZE_PT_RANGE.max).optional() : k === "bold" ? z.boolean().optional() : z.string().optional()]))))
+      .optional().describe("항목부호 단계별 위계 타이포(공문서 모드, v4.12.3) — {\"0\":{font:\"HY견고딕\",pt:17,bold:true},\"1\":{font:\"한컴돋움\",bold:true}} 꼴(depth 0~7). 실측: 전자결재 기안문 □/ㅇ/- 계열은 □=HY견고딕 +2~3pt 굵게·ㅇ=한컴돋움 굵게·-=휴먼명조 본문. 법정 8단계(1. 가.)는 본문 동일이 관행이라 기본 미적용"),
     bullet2: z.enum(BULLET2_CHARS).optional().describe("2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서 양식). 미지정 시 통지·보도자료 ㅇ, 그 외 ○"),
     suppress_single: z.boolean().optional().describe("단일 형제 항목 부호 생략(편람 규정, 법정 번호 standard 전용 — 불릿 체계인 보고서·계획서·개조식·보도자료엔 무효). 기본 false — 하나뿐인 항목에도 부호(1. 가.)를 부여 (부호 없는 계단 들여쓰기가 실무 눈에 어색)"),
     doc_head: z.object(Object.fromEntries(DOC_HEAD_KEYS.map(k => [k, z.string().optional()])))
@@ -1074,7 +1075,7 @@ server.tool(
     footer: z.string().optional().describe("꼬리말 텍스트 — 모든 쪽 하단 (v4.5.0)"),
     image_dir: z.string().optional().describe("마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드 (v4.5.0, PNG/JPEG/GIF/BMP). 미지정 시 참조만 placeholder로 보존"),
   },
-  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, fonts, sizes, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
+  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, fonts, sizes, levels, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
     try {
       // 조립은 gongmun-surface SSOT(buildGongmunOptions) — CLI와 의미론 공유 (v4.0.4)
       let gongmun: GongmunOptions | undefined
@@ -1083,7 +1084,7 @@ server.tool(
           preset: PRESET_ALIAS[preset], font, bodyPt: body_pt, lineSpacing: line_spacing,
           org, date, cover, toc, approval,
           pageNumbers: page_numbers, endMark: end_mark, bodyTitleBox: body_title_box,
-          h2Marker: h2_marker, fonts, sizes, bullet2, suppressSingle: suppress_single,
+          h2Marker: h2_marker, fonts, sizes, levels, bullet2, suppressSingle: suppress_single,
           docHead: doc_head, docFoot: doc_foot, reportInfo: report_info,
           noticeHead: notice_head, press,
         })

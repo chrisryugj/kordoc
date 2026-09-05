@@ -88,6 +88,31 @@ describe("buildClipCellGrids — 테두리 없는 표 복원", () => {
     assert.equal(outer.cells!.length, 2, "제목행 셀 + 틀 셀 — 안쪽 셀 경계가 바깥 열로 새지 않는다")
   })
 
+  it("테두리 없는 틀 — 제목 아래(윗변 ≥ 20%)에서 시작하고 위에 본문 글이 있으면 1×1 틀 (별표·선서문 바깥 틀, v4.12.3)", () => {
+    // 별표: 제목 두 줄(y≈150·180) 아래 y=270 부터 틀, 안에 중첩 클립 하나 + 글
+    const frame = { x1: 58, y1: 270, x2: 508, y2: 760 }
+    const inner = { x1: 100, y1: 400, x2: 300, y2: 420 }
+    const text = [{ x: 200, y: 150 }, { x: 200, y: 180 }, { x: 200, y: 500 }]
+    const { grids } = buildClipCellGrids([frame, inner], [], [], 595, 842, text)
+    assert.equal(grids.length, 1, "획 없는 틀이지만 제목 아래 틀은 1×1 그리드")
+    assert.deepEqual(grids[0].bbox, frame)
+  })
+
+  it("본문 영역 클립 — 여백 바로 안쪽(y1 ≈ 9%)에서 시작하고 바깥 글은 머리말뿐이면 틀이 아니다 (채용공고 회귀 방어)", () => {
+    const body = { x1: 58, y1: 73, x2: 534, y2: 769 }
+    const inner = { x1: 100, y1: 400, x2: 300, y2: 420 }
+    const text = [{ x: 300, y: 40 }, { x: 200, y: 500 }, { x: 300, y: 800 }] // 머리말·본문·쪽번호
+    const { grids } = buildClipCellGrids([body, inner], [], [], 595, 842, text)
+    assert.equal(grids.length, 0)
+    // 틀 위 글이 있어도 윗변이 20% 위면(머리말 영역 큰 문서) 본문 영역으로 본다
+    const lowTop = { x1: 58, y1: 150, x2: 534, y2: 769 }
+    assert.equal(buildClipCellGrids([lowTop, inner], [], [], 595, 842, [{ x: 200, y: 120 }, { x: 200, y: 500 }]).grids.length, 0)
+    // 2단 배치의 단 상자(폭 38%)는 위에 글이 있어도 틀이 아니다 (채용공고 pair06 실측)
+    const column = { x1: 468, y1: 127, x2: 795, y2: 497 }
+    const colInner = { x1: 500, y1: 200, x2: 700, y2: 220 }
+    assert.equal(buildClipCellGrids([column, colInner], [], [], 842, 595, [{ x: 600, y: 100 }, { x: 600, y: 300 }]).grids.length, 0)
+  })
+
   it("클립이 안 덮은 칸은 1×1 빈 셀로 채워 그리드가 온전하다", () => {
     // L자 — (300~500, 680~700) 칸 없음
     const partial = rects.slice(0, 3).concat([{ x1: 50, y1: 680, x2: 300, y2: 700 }])

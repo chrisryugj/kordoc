@@ -26,6 +26,8 @@ interface LintRule {
   pattern: RegExp
   message: string
   suggest?: string
+  /** 표 줄(GFM `|` 행·HTML td/th)은 건너뜀 — 서식 라벨 셀 오탐 방지 */
+  skipTable?: boolean
 }
 
 /** 외래어 오기 → 표준 표기 (국립국어원 외래어 표기법 용례) — 순서 무관, 긴 형태 우선 매칭 */
@@ -56,7 +58,10 @@ const DISCRIM_RE = new RegExp(DISCRIM_FIXES.map(([w]) => w).sort((a, b) => b.len
 // 규칙 순서·코드·문구는 편람 기준 원전(gonmun_lint.py) 유지 — 대조 검증 용이성
 const RULES: LintRule[] = [
   // 날짜 ─ 온점 뒤 한 칸, 0 패딩 금지, 연도 4자리, 끝 마침표
-  { code: "DATE_NO_SPACE", severity: "error", pattern: /\b\d{4}\.\d{1,2}\.\d{1,2}\.?/g,
+  // 법령 연혁 표기 `<개정 2012.2.14>`·`삭제 <2016.2.29.>`·`[시행일:2017.9.8.]` 는 법제처 정본 형식(별지서식 표제) —
+  // 편람 날짜 규칙 대상이 아니다 (v4.12.3: 서식 595건 DATE 156건 전부 이 꼴, 기안문 0건)
+  { code: "DATE_NO_SPACE", severity: "error",
+    pattern: /(?<!<(?:개정|신설|전문개정|전부개정|일부개정|제정)\s*)(?<!삭제\s*<)(?<!시행일\s*:\s*)\b\d{4}\.\d{1,2}\.\d{1,2}\.?/g,
     message: "날짜 온점 뒤에 한 칸씩 띄워야 함", suggest: "예) 2025. 1. 6." },
   { code: "DATE_ZERO_PAD", severity: "error", pattern: /\b\d{4}\.\s*0\d\.|\b\d{4}\.\s*\d{1,2}\.\s*0\d/g,
     message: "월·일 앞의 '0'은 표기하지 않음", suggest: "예) 2025. 1. 6. (2025. 01. 06. ✕)" },
@@ -85,7 +90,12 @@ const RULES: LintRule[] = [
   { code: "FOREIGN_FIRST", severity: "warning", pattern: /\b[A-Z]{2,5}\s*\([가-힣]/g,
     message: "한글을 먼저 쓰고 괄호 안에 외국어를 병기", suggest: "예) 업무 협약(MOU)" },
   // 쌍점 — URL(https:// 등)·시각(13:20)은 제외
-  { code: "COLON_SPACE", severity: "warning", pattern: /\S\s+:(?!\/\/)|\S:(?!\/\/)[^\s\d]/g,
+  // 편람: 쌍점은 앞말에 붙이고 뒤는 1타(원장: 김갑동). 표 셀은 제외(skipTable) — 법정 별지서식
+  // 자체가 "성 명 :"·"주 소 :" 라벨 셀을 쓰므로 서식 라벨은 이 규칙의 대상이 아니다(v4.12.3 실측:
+  // 서식 595건의 표 셀 801건 전부 라벨, 기안문 206건은 본문 414건이 "일 시 : 값" 꼴 — 편람상 위반).
+  // 뒤 글자에서 `<`(HTML 태그)·`*`·`_`(마크다운 강조 닫힘)는 제외 — "성명:</td>"·"과정:** 붙임" 오탐
+  { code: "COLON_SPACE", severity: "warning", skipTable: true,
+    pattern: /\S\s+:(?!\/\/)|\S:(?!\/\/)[^\s\d<*_]/g,
     message: "쌍점은 앞말에 붙이고 뒤는 한 칸 띄움", suggest: "예) 원장: 김갑동" },
   // ── 편람 보강 (v4.12.1) — pyhwpxlib Gongmun 검사·hwpx-skill gonmun_lint 대조로 빈 축 보충 ──
   // 금액 한글 병기 — 규정 시행규칙 제2조: 아라비아 숫자 다음 괄호 안에 한글로 적는다
@@ -136,7 +146,9 @@ export function lintGongmunText(text: string, opts?: { document?: boolean }): Go
       continue
     }
     if (fenceMarker !== null) continue
+    const tableLine = /^\s*\|/.test(line) || /<t[dhr][\s>]/i.test(line)
     for (const r of RULES) {
+      if (r.skipTable && tableLine) continue
       r.pattern.lastIndex = 0
       for (const m of line.matchAll(r.pattern)) {
         findings.push({

@@ -31,6 +31,23 @@ export type GongmunPresetInput =
   | "개조식" | "개조식보고서" | "정부보고서" | "정부표준개조식보고서"
   | "보도자료"
 
+/** 항목부호 단계 하나의 타이포 — 셋 다 선택(미지정=본문 계열 유지) */
+export interface GongmunLevelStyle {
+  /** 글꼴명 (예: HY견고딕·한컴돋움·휴먼명조) */
+  font?: string
+  /** 글자 크기 pt (6~60) */
+  pt?: number
+  /** 굵게 */
+  bold?: boolean
+}
+
+/** 해석된 단계 타이포 — height = pt×100 (미지정 pt는 본문), font null = 본문 글꼴 */
+export interface ResolvedLevelStyle {
+  font: string | null
+  height: number
+  bold: boolean
+}
+
 /** 공문서 모드 옵션 (전부 선택 — 프리셋 기본값을 개별 override) */
 export interface GongmunOptions {
   /** 문서 종류 프리셋(영문 키 또는 한글 별칭). 기본 'official'(일반 기안문) */
@@ -69,6 +86,14 @@ export interface GongmunOptions {
   fonts?: { body?: string; heading?: string; ref?: string; table?: string }
   /** 개조식 요소별 글자 크기(pt) 오버라이드 — 미지정 요소는 bodyPt 비례 기본값 */
   sizes?: GaejosikSizeOverrides
+  /**
+   * 항목부호 단계별 위계 타이포(v4.12.3) — depth(0~7)마다 글꼴·크기(pt)·굵기를 지정한다.
+   * 실측(실결재 기안문 206 + 보고서 337건): 법정 8단계(1. 가. 1))는 본문과 동일이 90%라 기본은
+   * 무변경, □/ㅇ/- 계열 전자결재 기안문은 □=HY견고딕 +2~3pt bold·ㅇ=한컴돋움 bold·-=휴먼명조가
+   * 지배 관행이다(docs/gongmunseo-reference.md 2.7). 지정한 단계만 바뀌고 나머지는 본문 계열.
+   * 개조식·보고서의 실측 □(HY헤드라인M)·보도자료 각주보다 우선한다(명시 옵션).
+   */
+  levels?: Record<number | string, GongmunLevelStyle>
   /** 쪽번호(하단 중앙 "- 1 -", 표지·목차는 카운트 제외). 기본: 개조식·보고서·계획서 켜짐 */
   pageNumbers?: boolean
   /** 본문 끝 2타+"끝." 표시(행정업무규정). 기본: 기안문(official)만 켜짐 */
@@ -129,6 +154,8 @@ export interface ResolvedGongmun {
   fonts: { body?: string; heading?: string; ref?: string; table?: string }
   /** 개조식 요소별 크기(pt) 오버라이드 (GongmunOptions.sizes) */
   sizes: GaejosikSizeOverrides
+  /** 단계별 위계 타이포(depth → 스타일) — null이면 없음 (v4.12.3) */
+  levels: Record<number, ResolvedLevelStyle> | null
   /** 쪽번호(하단 중앙 "- 1 -") — 개조식·보고서·계획서 기본 켜짐 */
   pageNumbers: boolean
   /** 머리말·꼬리말 영역(HWPUNIT) — 개조식 4251(15mm, 실측), 그 외 0(편람) */
@@ -257,6 +284,42 @@ function validateGongmunOptions(opts: GongmunOptions): void {
   if (opts.approval && opts.approval.length > 6) {
     throw new KordocError("approval must contain at most 6 labels")
   }
+  if (opts.levels) {
+    for (const [key, st] of Object.entries(opts.levels)) {
+      const depth = Number(key)
+      if (!Number.isInteger(depth) || depth < 0 || depth >= GONGMUN_LEVEL_COUNT) {
+        throw new KordocError(`levels: depth must be an integer between 0 and ${GONGMUN_LEVEL_COUNT - 1} (got "${key}")`)
+      }
+      if (!st || typeof st !== "object") throw new KordocError(`levels.${key} must be an object {font, pt, bold}`)
+      if (st.pt !== undefined) assertFiniteRange(`levels.${key}.pt`, st.pt, 6, 60)
+      if (st.font !== undefined && (typeof st.font !== "string" || !st.font.trim())) {
+        throw new KordocError(`levels.${key}.font must be a non-empty string`)
+      }
+    }
+  }
+}
+
+/** 항목부호 단계 수 — gen-ids GONGMUN_LIST_LEVELS(8)와 동일 값(순환 import 회피용 사본) */
+const GONGMUN_LEVEL_COUNT = 8
+
+/** levels 옵션 해석 — 셋 다 비어 있는 항목은 버린다(무의미한 charPr 방출 방지) */
+function resolveLevels(levels: GongmunOptions["levels"], bodyHeight: number): Record<number, ResolvedLevelStyle> | null {
+  if (!levels) return null
+  const out: Record<number, ResolvedLevelStyle> = {}
+  for (const [key, st] of Object.entries(levels)) {
+    if (st.font === undefined && st.pt === undefined && st.bold === undefined) continue
+    out[Number(key)] = {
+      font: st.font?.trim() || null,
+      height: st.pt !== undefined ? Math.round(st.pt * 100) : bodyHeight,
+      bold: !!st.bold,
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/** depth 단계 부호의 글자 높이 — levels 오버라이드가 있으면 그 크기, 없으면 본문 */
+export function levelMarkerHeight(g: Pick<ResolvedGongmun, "levels" | "bodyHeight">, depth: number): number {
+  return g.levels?.[depth]?.height ?? g.bodyHeight
 }
 
 /**
@@ -314,6 +377,7 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     toc: preset !== "press" && (opts.toc ?? gaejosik),
     fonts: opts.fonts ?? {},
     sizes: opts.sizes ?? {},
+    levels: resolveLevels(opts.levels, Math.round(bodyPt * 100)),
     // 쪽번호 — 보고서 계열 관행(실측: 2_보고서 양식·추진계획·공고문 전부 하단 중앙)
     pageNumbers: opts.pageNumbers ?? (gaejosik || preset === "report" || preset === "plan"),
     // 머리말·꼬리말 — 실측: 보고서 계열 15mm(GT3·t2·춘천·브라더), 공고·보도 10mm,
@@ -416,12 +480,14 @@ export function levelIndent(
   sizes: GaejosikSizeOverrides = {},
   bullet2: "ㅇ" | "○" = "○",
   asteriskThird = false,
+  markerHeight: number = bodyHeight,
 ): LevelIndent {
   // 개조식은 실측 양식의 들여쓰기 체계(□ 0 / ○ 1자 / - 1.5자 …)를 따른다.
   if (numbering === "gaejosik") return gaejosikLevelIndent(depth, bodyHeight, sizes, bullet2)
   // 같은 단계는 부호 종류가 일정하므로 대표 부호(순번 0)의 폭으로 내어쓰기를 정한다.
+  // 부호폭은 그 단계의 글자 크기(levels 오버라이드면 그 크기)로 — 둘째 줄이 내용 첫 글자에 정렬
   const marker = numbering === "report" ? reportMarker(depth, bullet2, asteriskThird) : standardMarker(depth, 0)
-  return { left: Math.round(depth * bodyHeight), indent: -markerWidth(marker, bodyHeight) }
+  return { left: Math.round(depth * bodyHeight), indent: -markerWidth(marker, markerHeight) }
 }
 
 // ─── 단일 형제 부호 생략(2-pass) ─────────────────────

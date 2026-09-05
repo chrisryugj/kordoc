@@ -81,6 +81,9 @@ const SUPPLEMENTARY_MAP: Record<number, string> = {
   0xf03c5: "□", // □ 글머리 — HWP3→HWP5 한컴 변환본 보존 코드, 한컴오피스 표시값 (rhwp #1105)
   // 아래 5종 — rhwp 44cabad9 verified_hancom_pua 표 (한컴 PDF 대조 확정)
   0xf012b: "(인)", // 결재·서명란
+  // 한컴 PDF 실렌더 대조(v4.12.3): 네모 테두리 안 "인" 글리프 — 결재 위치("수련치과병원장"·"청원주"·"경찰서장"
+  // 뒤, licbyl2 17754757·17975885). HWP5 에는 A0E1 로 접혀 저장(record.ts PUA-A 접힘 해제)
+  0xf00e1: "(인)",
   0xf02fc: "►", // 2025 행정업무운영 편람 callout 글머리
   0xf031c: "■", // 2025 행정업무운영 편람 목차 글머리
   0xf03a0: "↵", // 하이퍼텍스트 안내문의 Enter 키 픽토그램

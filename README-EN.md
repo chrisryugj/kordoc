@@ -72,7 +72,18 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
-## What's New in v4.12.2
+## What's New in v4.12.3
+
+A document-authoring round. Per-level fonts were measured on 206 real approval documents and 337 reports, giving a **level typography option**, and the colon/date notation rules were narrowed on the basis of statutory forms. A third annex-table corpus (183 pairs) brings the gate population to ~1,390 hwpx / ~950 pdf / ~860 hwp pairs.
+
+- **🔤 Level typography `levels`**: set font, size and weight per item level (0–7) — `--levels "0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14"`, MCP `levels`. Measured: the statutory 8-level numbering (1. 가. 1)) uses the body font in 90% of documents, so defaults are unchanged; e-approval documents with □/ㅇ/- bullets predominantly use □ HY견고딕 +2–3pt bold · ㅇ 한컴돋움 bold · - 휴먼명조 (`docs/gongmunseo-reference.md` 2.7). Hanging indents follow the level's own size. Output is byte-identical when unset.
+- **📝 Narrower notation lint**: `COLON_SPACE` skips table rows — statutory annex forms themselves use "성 명 :" label cells (all 801 table hits in 595 forms were labels), so they are outside the rule. Body text "일 시 : 값" (414 hits in 100 of 206 approval documents) does violate the manual and is still flagged. Colons followed by an HTML tag or a closing markdown emphasis ("성명:</td>", "과정:** 붙임") no longer fire. `DATE_NO_SPACE` exempts the law.go.kr revision notation (`<개정 2012.2.14>`, `삭제 <2016.2.29.>`, `[시행일:2017.9.8.]`; 156 → 10 hits in forms); document-number citations "○○과-123(2026.7.1.)호" (103 hits) remain violations.
+- **📄 PDF middle dot**: Hancom PDFs emit the middle dot (ㆍ) as the conjoining jamo araea (U+119E); it is normalised back (340 characters in 41 of 573 form pairs).
+- **📄 PDF 1×1 tables keep their lines**: a 1×1 table without nested tables (the inner box of an oath form) becomes one paragraph per line, so a title line no longer merges into the body ("선 서 나는 헌법을 …"), consistent with the cell line-break policy.
+- **📄 PDF frames below a title**: the "clip repeated on every page" hypothesis for border-less single-cell frames was refuted (the body-area clip differs per page and annex tables are single-page). Instead a container whose top edge is ≥ 20% down the page, spans ≥ 60% of the page width and has text above it is treated as a frame; two-column recruitment boxes are excluded by the width rule (pdf-table-gt gate unchanged).
+- **🖋️ One more HWP seal glyph**: the boxed "인" (U+F00E1, folded to A0E1 in HWP5), verified against the Hancom PDF rendering, now reads "(인)". The HWP5 hyphen control (0x18) is no longer emitted as "-" because Hancom does not draw it ("60g/㎡").
+- **📊 Third annex-table corpus**: `licbyl-byl2/` 183 pairs (seed 20260907). The 30 lowest HWP↔PDF documents break down into 8 undetected 1×1 frames, 15 HWP layout-flattening vs PDF single-column asymmetries and 7 structural differences (equation cells, page-boundary cell splits, line breaks — no parser defect). Cell agreement: tables 0.728 → 0.746, third corpus 0.772 → 0.787, forms 0.965 unchanged.
+
 
 Annex-form round two. The corpus grew by 279 form pairs and 90 table-annex pairs (1,995 files in total), and the HWP, HWPX and PDF parsers now emit the **same IR shape** for single-cell frames. HWP↔PDF cell-text agreement rose from 0.927 to 0.965 and the PDF table ground-truth cellExact from 0.945 to 0.980; the gate floors were raised to those figures.
 

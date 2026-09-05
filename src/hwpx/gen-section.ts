@@ -30,6 +30,7 @@ import { generateTable, generateHtmlTableXml, DATA_TABLE_INSET, resetTableIds, t
 import { TableBfRegistry } from "./gen-table-bf.js"
 import { type ProfileRemap } from "./gen-profile.js"
 import { buildApprovalTable, buildEndMark, hasEndMark, buildTitleBox, resetExtraTableIds } from "./gen-gongmun-extra.js"
+import { type LevelCharIds } from "./gen-levels.js"
 import { type DocframeIds, buildDocHead, buildDocFoot, buildReportInfo, buildNoticeHead, buildNoticeFoot, buildPressHead, buildPressContact } from "./gen-docframe.js"
 import { generateEquationParagraph } from "./equation-generate.js"
 import { parseChartFence, buildChartSpaceXml, buildChartElementXml } from "./chart-gen.js"
@@ -137,6 +138,8 @@ interface SectionCtx {
   bfReg: TableBfRegistry | null
   remap: ProfileRemap | null
   dfIds: DocframeIds | null
+  /** 단계별 위계 타이포 charPr (levels 옵션, v4.12.3) — null이면 없음 */
+  levelIds: LevelCharIds | null
   /** 이미지 placeholder 레지스트리 (v4.0.5) — null이면 종전 alt 텍스트 폴백 */
   images: ImageRegistry | null
   /** 파생 플래그·스타일 */
@@ -417,6 +420,13 @@ function renderListItem(block: MdBlock, blockIdx: number, ctx: SectionCtx): stri
       if (depth === 0) listCharPr = CHAR_NORMAL
       if (depth >= 2 && dfIds) { listCharPr = dfIds.small; mapId = undefined }
     }
+    // 단계별 위계 타이포(levels, v4.12.3) — 명시 옵션이라 프리셋 실측값보다 우선.
+    // fit 변형은 이 depth 를 제외하므로(gen-gongmun-fit) 본문·굵게만 전용 쌍으로 치환
+    const lv = ctx.levelIds?.[depth]
+    if (lv) {
+      listCharPr = lv.normal
+      mapId = (id) => (id === CHAR_BOLD ? lv.bold : id === CHAR_NORMAL ? lv.normal : id)
+    }
     return generateParagraph(text, listParaPr, listCharPr, mapId)
   }
   const indent = block.indent || 0
@@ -519,6 +529,7 @@ export function blocksToSectionXml(
   dfIds: DocframeIds | null = null,
   images: ImageRegistry | null = null,
   page: ResolvedPage | null = null,
+  levelIds: LevelCharIds | null = null,
 ): string {
   // 문서 생성마다 전역 표 id 카운터 리셋 — 같은 프로세스 연속 생성에도 결정적 출력
   resetTableIds(); resetGjTableIds(); resetExtraTableIds()
@@ -526,7 +537,7 @@ export function blocksToSectionXml(
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
   const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
   const ctx: SectionCtx = {
-    theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images,
+    theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, levelIds,
     gaejosik: gongmun?.preset === "gaejosik",
     measured, richAssets,
     vBase: charVariantBase(richAssets, !!gongmun),

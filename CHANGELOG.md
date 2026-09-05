@@ -5,7 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.12.2] - 2026-09-05
+## [4.12.3] - 2026-09-05
+
+공문서 작성 라운드. 실결재 기안문 206건 + 보고서·보도자료 337건 HWPX 의 항목부호 단계별 글꼴을 실측해
+`levels`(위계 타이포) 옵션을 넣고, 표기법 검수 `COLON_SPACE`·`DATE_NO_SPACE` 오탐을 법정 서식·법제처 표기
+근거로 좁혔다. 별표 코퍼스 3차(`licbyl-byl2/` 183쌍) 편입, PDF 텍스트·틀 결함 3건, HWP5 기호 2건.
+
+### Added
+
+- **`levels` — 항목부호 단계별 위계 타이포 (`src/hwpx/gen-levels.ts`, gongmun.ts·gen-section.ts·gen-header.ts·
+  gen-gongmun-fit.ts·gongmun-surface.ts·cli.ts·mcp.ts)** — `{ [depth 0~7]: { font?, pt?, bold? } }`. CLI
+  `--levels "0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14"`, MCP `levels`. 지정 단계마다 charPr 쌍(보통·굵게)을
+  docframe charPr 뒤 id 에, 글꼴은 정적 fontface 뒤에 append(한글·라틴만 참조, 그 외 언어는 본문 글꼴 — 비실측
+  프리셋 1종 언어 테이블 안전). 내어쓰기 폭은 그 단계 글자 크기(`levelIndent` `markerHeight`), 장평 변형은 지정
+  단계 제외, 인라인 `**강조**` 는 같은 단계 bold 짝. 실측 프리셋 □(HY헤드라인M)·보도자료 각주보다 우선.
+  미지정이면 산출물 불변. 실측 근거는 `docs/gongmunseo-reference.md` 2.7, 구현 매핑은 engine-spec (c-4):
+  법정 8단계는 본문 동일 90%(기본값 무변경), □/ㅇ/- 계열은 □ HY견고딕 +2~3pt bold · ㅇ 한컴돋움 bold · - 휴먼명조.
+- **PDF 제목 아래 틀 (`clip-cells.ts` `titledFrame`)** — 테두리 없는 1칸 틀(별표 1×1 프레임·선서문 바깥 틀)을
+  "문서 전 페이지 반복 클립 = 본문 영역" 가설로 가르려 했으나 반증(채용공고 pair05 본문 영역 클립은 쪽마다 y1 73~91 로
+  달라 같은 사각형이 아니고, 별표는 1쪽). 대신 윗변 ≥ 페이지 20%·폭 ≥ 60%·머리말 띠(8%) 아래 위쪽에 글이 있고
+  안에도 글이 있는 컨테이너를 틀로 본다(`buildClipCellGrids` 6번째 인자 text 좌표, page-blocks 가 넘김). 2단 채용공고의
+  단 상자(폭 38%, pair06)는 폭 조건으로 제외 — pdf-table-gt cellF1 0.933 회귀를 잡은 뒤 0.945 유지.
+- **PUA-A U+F00E1 → "(인)" (`shared/pua.ts`)** — 한컴 PDF 200dpi 실렌더로 네모 테두리 안 "인" 글리프 확인
+  (licbyl2 17754757 수련치과병원장·17975885 청원주/경찰서장 결재 위치).
+- **별표 코퍼스 3차** — `licbyl-byl2/` 183쌍(seed 20260907, `--knd=1 --exclude=licbyl,licbyl2,licbyl-byl`, 풀 소진으로
+  200 미달) + rhwp v0.8.6 HWPX 183. 격리 1건(known-false-miss README: HWP5 쌍 유사도 1 + "훈격구분" 출력 존재).
+  하위 30건(Jaccard<0.5) 분해: A 1×1 틀 PDF 미감지 8 · B HWP `flattenLayoutTables` 해체 vs PDF 1열 유지 13(+다열 2)
+  · C 구조 차 7 — C 는 수식 셀(HWP=HWPX, cmp 지표 한계)·쪽 경계 셀 분할·셀 줄바꿈·U+119E 로 파서 결함 없음.
+- **벤치 정규화 미러 (`bench/lib/normalize.mjs`)** — PUA_SUPP 에 F00E1 "(인)" 추가(없으면 HWPX phantom 4문서),
+  U+119E → ㆍ 접기(pdftotext·pdfjs 컨센서스가 ᆞ 를 내므로 파서 정규화와 대칭 — 없으면 별표 PDF 5문서 coverage 0.97~0.99).
+
+### Changed
+
+- **`COLON_SPACE` (`gongmun-lint.ts`)** — 표 줄(GFM `|`·HTML tr/td/th) 건너뜀(`skipTable`): 법정 별지서식 자체가
+  "성 명 :"·"주 소 :" 라벨 셀을 쓰므로 규칙 대상이 아니다(서식 595건 표 셀 801건 전부 라벨 — 서식 801 → 7).
+  뒤 글자 `<`·`*`·`_` 제외("성명:</td>" 578건·"과정:** 붙임"). 기안문 본문 "일 시 : 값"(206건 중 100건, 414건)은
+  편람(쌍점 앞 붙이고 뒤 1타) 위반이라 유지(492 → 425).
+- **`DATE_NO_SPACE`** — 법제처 연혁 표기 `<개정 2012.2.14>`·`<신설 …>`·`삭제 <…>`·`[시행일:2017.9.8.]` 제외(서식 156 → 10,
+  남은 10은 "예) 2016.07.01"·"0000.00.00." 기입 예시). 기안문 139건은 무변경 — 문서번호 인용 "○○과-123(2026.7.1.)호"
+  103건(74%)이 편람 날짜 표기 위반이라 유지.
+- **PDF 가운뎃점 정규화 (`text-clean.ts` `normalizeAraea`)** — 한컴 PDF 가 ㆍ(U+318D)를 조합형 중성 아래아 ᆞ(U+119E)로
+  내는 것(별지서식 573쌍: PDF 3,238자 중 340자·41문서, HWP 0)을 되돌린다. 앞이 초성(U+1100~115F)인 옛한글 결합은 보존.
+  셀 `blocks` 도 순회.
+- **PDF 1×1 표 줄 보존 (`text-clean.ts` `splitSingleCellTables`)** — 중첩표 없는 최상위 1×1 표를 줄마다 문단 블록으로.
+  결합 지점은 builder 1×1 분기가 아니라 `cleanPdfText` 의 `mergeKoreanLines`(한글 줄 병합)였다 — 문단 블록 사이 빈 줄은
+  병합 대상이 아니다. 선서문 "선 서 나는 헌법을 …" 해소. 파급 897 PDF 중 10문서 12표.
+- **HWP5 하이픈 제어문자(0x18) 미방출 (`hwp5/record.ts`)** — 한컴 PDF·rhwp export-hwpx 모두 그리지 않는다
+  ("60g/㎡", licbyl2 17855137 — 전 코퍼스 유일 출현). 실렌더 정합. 테스트 2건 갱신.
+
+### 판정 기록 (변경 없음)
+
+- **1열 다행 표 52건 행 경계** — HWP5 는 줄 렌더(행 경계 소실), PDF 는 클립 셀로 1열 표 유지(B 클래스 15건의 실체).
+  바꾸려면 HWPX 게이트·formats 베이스라인 파급 측정이 먼저라 이번 라운드 유지.
+- **후행 빈 열(17336891)** — HWP5 파서 8×5 = 한컴 PDF 8×5, rhwp HWPX 만 8×4. rhwp 변환 아티팩트, kordoc #47 트림
+  로직 차이 아님.
+- **PDF coverage weak 18409013(0.81)** — 체크박스 서식의 "예/아니오" 라벨 줄이 박스 줄과 분리 배치돼 어순만 다름
+  (텍스트 손실 0). 레이아웃 순서 차, 미수정.
+- **cmp 하위 3건** — 16826677 좌표전환계산부: HWP=HWPX 35×6 = PDF 35×6, 셀 안 수식(EQEDIT)이 IR cell.text 에 없어
+  Jaccard 만 낮음. 18191495 양도소득 통보: 21×52 초세밀 격자를 PDF 가 20×51 로 병합(두문 영역 클립 부재). 6427951
+  근로감독관증: HWP 단일 24×19 틀을 PDF 가 6×4+1×1+4×3 으로 분할(테두리 없는 외곽 틀 미감지 — A 클래스).
+
 
 별지서식 라운드 2. 코퍼스를 2차로 늘리고(서식 279쌍 + 별표 90쌍, 총 1,995파일) 세 파서가 **같은 IR
 모양**을 내도록 맞췄다 — 1칸 틀 안 중첩표를 PDF 는 틀 셀의 `IRCell.blocks` 로, HWP5 는 서식 틀을

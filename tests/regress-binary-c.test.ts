@@ -91,9 +91,9 @@ describe("회귀 C-2: HWP5 제어문자 스펙 매핑 (24=하이픈, 30=묶음�
     return buf
   }
 
-  it("0x18(24)=하이픈, 0x1e(30)=NBSP, 0x1f(31)=공백", () => {
+  it("0x18(24)=하이픈은 2바이트만 소비하고 방출 안 함(한컴 렌더 정합, v4.12.3), 0x1e(30)=NBSP, 0x1f(31)=공백", () => {
     const buf = u16buf(["A".charCodeAt(0), 0x0018, 0x001e, 0x001f, "B".charCodeAt(0)])
-    assert.equal(extractText(buf), "A-" + NBSP + " B")
+    assert.equal(extractText(buf), "A" + NBSP + " B")
   })
 
   it("예약 코드 0x19(25)는 출력 없이 2바이트만 소비 — 뒤 텍스트 보존", () => {

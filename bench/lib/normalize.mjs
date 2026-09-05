@@ -30,7 +30,7 @@ const PUA_SUPP = {
   0xf003b: "↓", 0xf02ef: "·", 0xf0854: "《", 0xf0855: "》",
   0xf00da: "▸", 0xf080f: "━", 0xf0827: "■", 0xf03c5: "□",
   // 한컴 PDF 대조로 확정된 표 (rhwp 44cabad9 verified_hancom_pua)
-  0xf012b: "(인)", 0xf02fc: "►", 0xf031c: "■", 0xf03a0: "↵",
+  0xf012b: "(인)", 0xf00e1: "(인)", 0xf02fc: "►", 0xf031c: "■", 0xf03a0: "↵",
   0xf03ef: "한", 0xf03f0: "글", 0xf03f1: "과", 0xf03f2: "컴", 0xf03f3: "퓨", 0xf03f4: "터",
 }
 
@@ -63,6 +63,9 @@ export function normText(s) {
     // hwpx GT는 밑줄을 방출하지 않으므로 태그를 남기면 서식 보존이 감점되는 역전이
     // 생긴다. <img>/표 태그와 동일하게 채점 전 제거 — 양쪽 동일 적용이라 대칭.
     .replace(/<\/?u>/g, "")
+    // 한컴 PDF 가운뎃점 — pdftotext·pdfjs 는 ㆍ(U+318D)를 조합형 아래아 ᆞ(U+119E)로 낸다. 파서(text-clean
+    // normalizeAraea)가 되돌리므로 채점 양쪽을 같은 꼴로 (v4.12.3, 옛한글 초성 결합은 보존)
+    .replace(/(?<![\u1100-\u115F])\u119E/g, "\u318D")
     // 매핑 안 된 Supplementary PUA — 파서가 의도 제거 (builder sanitizeText와 대칭)
     .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
     // zero-width, BOM, soft hyphen, 제어문자(\x1F 리더탭 마커 포함; \n \t는 아래 공백 처리)

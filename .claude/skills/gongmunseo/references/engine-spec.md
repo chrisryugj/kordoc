@@ -126,6 +126,25 @@ REFERENCE 2.1: 본문 글꼴 비강제, 명조 vs 맑은고딕 갈림. 현재 he
 
 REFERENCE 2.5: 본문 검정 기본. 현재 charPr `textColor` 기본 #000000 — 유지. 강조는 bold(부분 색은 theme 옵션으로 이미 지원).
 
+### c-4. 항목부호 단계별 위계 타이포 — `levels` 옵션 (v4.12.3)
+
+REFERENCE 2.7 실측: 법정 8단계는 본문과 동일(기본값 무변경), □/ㅇ/- 계열 전자결재 기안문은 □=HY견고딕 +2~3pt bold ·
+ㅇ=한컴돋움 bold · -=휴먼명조 본문. 프리셋 기본값을 바꾸지 않고 명시 옵션으로 적용한다.
+
+- 옵션: `levels: { [depth 0~7]: { font?, pt?(6~60), bold? } }` — CLI `--levels "0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14"`
+  (`/` 구분: 숫자=pt, `bold`·`b`=굵게, `plain`=굵게 해제, 그 외=글꼴명), MCP `levels` 객체. 셋 다 비면 무시.
+- 방출(`gen-levels.ts`): 지정 단계마다 charPr 한 쌍(보통·굵게)을 docframe charPr 뒤 id 에, 글꼴은 정적 fontface 뒤에
+  append(프로필 append 글꼴 뒤). charPr 의 fontRef 는 한글·라틴만 단계 글꼴, 그 외 언어는 본문 글꼴 id(비실측 0·rich 4) —
+  비실측 프리셋의 HANJA 이하 1종 언어 테이블에 없는 id 를 가리키지 않는다(프로필 append 규약과 동일). 장평은 본문 항목과
+  같은 95%.
+- 적용(`gen-section.ts renderListItem`): 지정 depth 의 항목은 전용 charPr, 인라인 `**강조**` 는 같은 단계의 bold 짝.
+  실측 프리셋의 □(GJ_CHAR_DAE)·보도자료 각주(12pt)보다 우선(명시 옵션). h2 말머리 `□`(헤딩)·개조식 h3 □ 는 헤딩
+  charPr 그대로 — levels 는 리스트 항목 전용.
+- 내어쓰기(`levelIndent` 7번째 인자 `markerHeight`): 부호폭은 그 단계 글자 크기로 계산해 둘째 줄이 내용 첫 글자에
+  정렬된다(17pt `1.` 은 12pt 보다 넓게). 두 자리 부호 변형(`10.`)도 같은 기준. `computeGongmunFitPlan` 은 지정 단계를
+  장평 변형에서 제외(개조식 □ 와 같은 취급).
+- 미지정이면 charPr·fontface 가 늘지 않아 기존 산출물 바이트 불변(테스트 `gongmun-levels.test.ts`).
+
 ---
 
 ## (d) 표기법 — 자동 적용 가능 여부

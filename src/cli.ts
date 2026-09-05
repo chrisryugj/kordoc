@@ -6,7 +6,7 @@ import { Command } from "commander"
 import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "./index.js"
 import type { FillInput } from "./index.js"
 import { parseFormatProfileJson } from "./hwpx/profile-io.js"
-import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS } from "./hwpx/gongmun-surface.js"
+import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, parseLevelsSpec, levelFontRecord } from "./hwpx/gongmun-surface.js"
 import type { ParseOptions } from "./types.js"
 import type { FormatProfile } from "./hwpx/gen-profile.js"
 import { VERSION, toArrayBuffer, sanitizeError, classifyError } from "./utils.js"
@@ -642,6 +642,7 @@ program
   .option("--h2-marker <type>", "h2 섹션 제목 말머리: box(□ — 보고서·계획서 기본)·number(1. — 공고문 관행)·none")
   .option("--fonts <spec>", "요소별 글꼴 오버라이드: body=나눔명조,heading=나눔고딕,ref=한양중고딕,table=맑은 고딕")
   .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
+  .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
   .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배) 또는 ○(원 — 보고서 양식)")
   .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
   .option("--doc-head <spec>", "기안문 두문: org=행정안전부,to=수신처,title=제목 (별지 제1호서식)")
@@ -730,6 +731,7 @@ program
               Object.entries(parseKv(String(opts.sizes), "--sizes")).map(([k, v]) => [k, Number(v)]).filter(([, v]) => Number.isFinite(v as number)),
             )
             : undefined,
+          levels: opts.levels ? parseLevelsSpec(String(opts.levels)) : undefined,
           bullet2: enumCheck("--bullet2", opts.bullet2, BULLET2_CHARS),
           suppressSingle: opts.suppressSingle ? true : undefined,
           docHead: opts.docHead ? parseKv(String(opts.docHead), "--doc-head") : undefined,
@@ -749,6 +751,9 @@ program
       // 폰트 오버라이드 오타·미설치 경고 (A2) — 생성은 진행
       if (gongmun?.fonts && !silent) {
         for (const w of unknownFontWarnings(gongmun.fonts)) process.stderr.write(`[kordoc] ${w}\n`)
+      }
+      if (gongmun?.levels && !silent) {
+        for (const w of unknownFontWarnings(levelFontRecord(gongmun.levels))) process.stderr.write(`[kordoc] ${w}\n`)
       }
       // 프리셋 비호환 옵션 경고 (v4.0.6) — 조용한 폐기 대신 노출, 생성은 진행
       if (gongmun && !silent) {

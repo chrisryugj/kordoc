@@ -27,6 +27,7 @@ import { blocksToSectionXml, type ChartPart } from "./gen-section.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
 import { buildProfileRemap, type FormatProfile } from "./gen-profile.js"
 import { docframeActive, docframeCharPrXmls, docframeIds } from "./gen-docframe.js"
+import { levelCharIds, levelFontFaces, levelCharPrXmls } from "./gen-levels.js"
 import { ImageRegistry } from "./gen-image.js"
 
 export { type HwpxTheme } from "./gen-ids.js"
@@ -100,6 +101,13 @@ export async function markdownToHwpx(
   const dfActive = !!gongmun && docframeActive(gongmun)
   const dfBase = charVariantBase(richAssets, !!gongmun) + (fit?.variants?.length ?? 0) * 4 + (remap?.charPrXmls.length ?? 0)
   const dfIds = dfActive ? docframeIds(dfBase) : null
+  const dfXmls = dfActive ? docframeCharPrXmls(dfBase, richAssets) : []
+  // 단계별 위계 타이포(levels, v4.12.3) — docframe charPr 뒤 id, 글꼴은 프로필 append 뒤 id.
+  // 옵션이 없으면 미방출(기존 산출물 불변)
+  const lvBase = dfBase + dfXmls.length
+  const lvIds = gongmun ? levelCharIds(gongmun, lvBase) : null
+  const lvFonts = gongmun ? levelFontFaces(gongmun) : []
+  const lvXmls = gongmun ? levelCharPrXmls(gongmun, lvBase, staticFontNext(gongmun) + (remap?.fontFaces.length ?? 0), richAssets ? 4 : 0) : []
   const chartParts: ChartPart[] = []
   // 이미지 레지스트리 (v4.0.5 placeholder → v4.5.0 실데이터) — images 옵션 바이트·
   // data: URI는 실제 임베드, 그 외 참조는 1×1 placeholder로 왕복 보존
@@ -108,7 +116,7 @@ export async function markdownToHwpx(
         [k, v instanceof Uint8Array ? v : new Uint8Array(v)] as const))
     : undefined
   const images = new ImageRegistry(supplied)
-  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, page)
+  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, page, lvIds)
 
   // 프로필이 있었는데 한 표에도 못 붙었으면 진단 경고 — 매칭은 보수적(불일치=미적용)이라
   // 마크다운을 크게 고쳐 쓴 경우 전멸할 수 있는데, 그걸 조용히 삼키지 않는다. 1회만.
@@ -129,8 +137,8 @@ export async function markdownToHwpx(
   zip.file("Contents/content.hpf", generateManifest(chartParts, images.manifestItems(), gongmun ? "gongmun" : "default"))
   for (const part of images.parts) zip.file(part.name, part.data)
   zip.file("Contents/header.xml", generateHeaderXml(theme, gongmun, fit?.variants ?? [], extraBorderFills,
-    [...(remap?.charPrXmls ?? []), ...(dfActive ? docframeCharPrXmls(dfBase, richAssets) : [])],
-    gongmunList?.indentVariants ?? [], remap?.fontFaces ?? []))
+    [...(remap?.charPrXmls ?? []), ...dfXmls, ...lvXmls],
+    gongmunList?.indentVariants ?? [], [...(remap?.fontFaces ?? []), ...lvFonts]))
   zip.file("Contents/section0.xml", sectionXml)
   for (const part of chartParts) zip.file(part.name, part.xml)
   // Preview/ — 한글 프로그램의 일부 버전(특히 macOS)이 존재 여부를 확인함

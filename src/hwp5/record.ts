@@ -446,7 +446,9 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
         break
       }
       case CHAR_PARA: break  // 문단 끝
-      case CHAR_HYPHEN: result += "-"; break
+      // 하이픈(24)은 한컴이 그리지 않는다 — 한컴 PDF·rhwp export-hwpx 모두 "60g/㎡"(licbyl2 17855137,
+      // 전 코퍼스 유일 출현). 실렌더가 진실이므로 방출하지 않는다 (v4.12.3, 종전 "-")
+      case CHAR_HYPHEN: break
       case CHAR_NBSP: result += "\u00a0"; break  // 진짜 NBSP
       case CHAR_FIXED_WIDTH: result += " "; break  // 고정폭 공백
 

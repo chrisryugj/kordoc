@@ -33,13 +33,13 @@ describe("extractText", () => {
     assert.equal(extractText(buf), "A\nB")
   })
 
-  it("하이픈(0x0018)·NBSP(0x001E)·고정폭 공백(0x001F) 처리", () => {
+  it("하이픈(0x0018)은 방출 안 함·NBSP(0x001E)·고정폭 공백(0x001F) 처리", () => {
     const buf = Buffer.alloc(8)
     buf.writeUInt16LE("A".charCodeAt(0), 0)
-    buf.writeUInt16LE(0x0018, 2) // hyphen
+    buf.writeUInt16LE(0x0018, 2) // hyphen — 한컴 PDF·rhwp 모두 그리지 않는다 ("60g/㎡", v4.12.3)
     buf.writeUInt16LE(0x001e, 4) // non-breaking space
     buf.writeUInt16LE(0x001f, 6) // fixed-width space
-    assert.equal(extractText(buf), "A-  ")
+    assert.equal(extractText(buf), "A\u00a0 ")
   })
 
   it("확장 제어문자(14바이트 페이로드) 스킵", () => {

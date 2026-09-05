@@ -114,6 +114,7 @@ export function charPr(
   fontId: number = 0,
   textColor: string = DEFAULT_TEXT_COLOR,
   ratioPct: number = 100,
+  restFont: number = fontId,
 ): string {
   const boldAttr = bold ? ` bold="1"` : ""
   const italicAttr = italic ? ` italic="1"` : ""
@@ -127,7 +128,7 @@ export function charPr(
   // 장평(ratio): 공문서 본문은 95%로 가로 압축 — 한두 글자만 다음 줄로 넘어가는
   // orphan을 줄여 한 줄에 담는다(실제 공문서 관행). 한글·라틴만, 나머지는 100.
   return `      <hh:charPr id="${id}" height="${height}" textColor="${escapeXml(textColor)}" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"${boldAttr}${italicAttr}>
-        <hh:fontRef hangul="${effFont}" latin="${effFont}" hanja="${effFont}" japanese="${effFont}" other="${effFont}" symbol="${effFont}" user="${effFont}"/>
+        <hh:fontRef hangul="${effFont}" latin="${effFont}" hanja="${restFont}" japanese="${restFont}" other="${restFont}" symbol="${restFont}" user="${restFont}"/>
         <hh:ratio hangul="${ratioPct}" latin="${ratioPct}" hanja="${ratioPct}" japanese="100" other="100" symbol="100" user="100"/>
         <hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
         <hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>

@@ -2,7 +2,7 @@
  * HWPX 패키지 구조 파일(container/manifest)과 head.xml 생성 (generator.ts에서 분리).
  */
 
-import { type ResolvedGongmun, levelIndent, markerWidth, needsGaejosikAssets, usesAsteriskThird, usesReportFonts } from "./gongmun.js"
+import { type ResolvedGongmun, levelIndent, levelMarkerHeight, markerWidth, needsGaejosikAssets, usesAsteriskThird, usesReportFonts } from "./gongmun.js"
 import { KordocError } from "../utils.js"
 import { GJ_CHAR_APPROVAL, GJ_CHAR_TITLE_BAR, GONGMUN_APPROVAL_CHAR, GONGMUN_TBL_PT, GONGMUN_TITLE_BAR_CHAR, charVariantBase } from "./gen-ids.js"
 import { gaejosikSizes, gaejosikSpaceBefore, gaejosikChamIndent, gaejosikTocItemIndent, GAEJOSIK_COLORS } from "./gaejosik.js"
@@ -231,7 +231,8 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
   const listAlign = gongmun.numbering === "gaejosik" || gongmun.numbering === "report" ? "LEFT" : "JUSTIFY"
   // 항목 단계별 paraPr (8 ~ 8+7): left/내어쓰기 indent
   for (let d = 0; d < GONGMUN_LIST_LEVELS; d++) {
-    const { left, indent } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset))
+    // 내어쓰기 폭은 그 단계 글자 크기 기준(levels 오버라이드 반영, v4.12.3)
+    const { left, indent } = levelIndent(d, gongmun.bodyHeight, gongmun.numbering, gongmun.sizes, gongmun.bullet2, usesAsteriskThird(gongmun.preset), levelMarkerHeight(gongmun, d))
     // 단락 위 간격 — 개조식·보고서(report 불릿) 공통 실측 스펙 □15/○10/-6/ㆍ3pt
     // (v4.1.0 GAP-05: t2 「2_보고서 양식」 paraPr 저장값 3000/2000/1200/600 실측 확정.
     //  종전 report d0 body×0.5=750은 실측의 1/4이라 □ 대항목 간격이 답답했음)

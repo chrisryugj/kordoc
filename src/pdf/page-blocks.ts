@@ -38,7 +38,9 @@ export function extractPageBlocksWithLines(
   let { horizontals, verticals } = extracted
   // 1.2단계: 셀 클립 사각형 → 테두리 없는 표 그리드 (법령 별지서식 외곽 표). 셀 기하가 확정돼
   // 있어 line 경로를 거치지 않고, 실선 표는 아래 line 경로가 그대로 맡는다 (clip-cells.ts)
-  const clipResult = detectTables ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight) : { grids: [], containers: [] }
+  const clipResult = detectTables
+    ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })))
+    : { grids: [], containers: [] }
   const clipGrids = clipResult.grids
   if (extraLines) {
     horizontals = horizontals.concat(extraLines.horizontals)
