@@ -214,6 +214,59 @@ function isProseBoxGrid(grid: TableGrid, verticals: LineSegment[], table: IRTabl
   return true
 }
 
+/** 셀 텍스트 정리 — 페이지 번호 표시("- 2 -") 제거 + 줄별 균등배분 공백 제거("경 제 총 괄 반" → "경제총괄반") */
+function cleanCellText(text: string): string {
+  const stripped = text.replace(/^[\s]*[-–—]\s*\d+\s*[-–—][\s]*$/gm, "").trim()
+  return stripped.split("\n").map(line => collapseEvenSpacing(line)).join("\n")
+}
+
+/** 틀 셀 좌표와 같은 부모를 가진 중첩표를 pending 에서 꺼낸다 (제자리 제거) */
+const FRAME_RECT_TOL = 1.5
+function takePendingNested(
+  pending: Array<{ parent: { x1: number; y1: number; x2: number; y2: number }; block: IRBlock }>,
+  cellBox: { x1: number; y1: number; x2: number; y2: number },
+): IRBlock[] {
+  const out: IRBlock[] = []
+  for (let i = pending.length - 1; i >= 0; i--) {
+    const p = pending[i].parent
+    if (Math.abs(p.x1 - cellBox.x1) <= FRAME_RECT_TOL && Math.abs(p.x2 - cellBox.x2) <= FRAME_RECT_TOL
+      && Math.abs(p.y1 - cellBox.y1) <= FRAME_RECT_TOL && Math.abs(p.y2 - cellBox.y2) <= FRAME_RECT_TOL) {
+      out.push(pending[i].block)
+      pending.splice(i, 1)
+    }
+  }
+  return out
+}
+
+/**
+ * 틀 셀의 blocks 조립 — 셀 자기 글(문단)과 안쪽 표를 위→아래 순서로 섞는다. 표의 y 띠 위·옆에
+ * 있는 글은 표 앞 문단, 아래 글은 다음 덩어리. text 는 blocks 평탄화(하위 호환, IRCell 계약)
+ */
+function buildFrameCellBlocks(cellItems: TextItem[], nested: IRBlock[], pageNum: number): { blocks: IRBlock[]; text: string } {
+  const tables = [...nested].sort((a, b) => (b.bbox!.y + b.bbox!.height) - (a.bbox!.y + a.bbox!.height))
+  const blocks: IRBlock[] = []
+  let rest = [...cellItems]
+  const pushParagraphs = (items: TextItem[]) => {
+    if (items.length === 0) return
+    for (const line of cleanCellText(cellTextToString(items)).split("\n")) {
+      const t = line.trim()
+      if (t) blocks.push({ type: "paragraph", text: t, pageNumber: pageNum })
+    }
+  }
+  for (const tb of tables) {
+    const bottom = tb.bbox!.y
+    pushParagraphs(rest.filter(it => it.y >= bottom))
+    rest = rest.filter(it => it.y < bottom)
+    blocks.push(tb)
+  }
+  pushParagraphs(rest)
+  const text = blocks
+    .map(b => b.type === "table" && b.table ? b.table.cells.flat().map(c => c.text).filter(Boolean).join("\n") : (b.text ?? ""))
+    .filter(Boolean)
+    .join("\n")
+  return { blocks, text }
+}
+
 /**
  * 선 기반 그리드가 감지된 경우: 테이블 영역의 텍스트는 셀에 매핑,
  * 나머지는 일반 텍스트 블록으로 처리.
@@ -227,6 +280,9 @@ function extractBlocksWithGrids(
 ): IRBlock[] {
   const blocks: IRBlock[] = []
   const usedItems = new Set<NormItem>()
+  // 중첩 클립 그리드(clipParent)에서 만든 표 — 틀 셀을 처리할 때 그 셀의 blocks 로 들어간다.
+  // 면적 오름차순 처리라 안쪽 표가 항상 틀보다 먼저 여기 쌓인다
+  const pendingNested: Array<{ parent: { x1: number; y1: number; x2: number; y2: number }; block: IRBlock }> = []
 
   // 그리드를 Y좌표 내림차순 정렬 (위→아래). 셀이 확정된 클립 그리드가 먼저 글을 가져간다 —
   // 틀 표(3×3 테두리 등)가 위에서 먼저 삼키면 안쪽 "발신명의 | 직인" 표가 빈 채로 죽는다.
@@ -292,15 +348,21 @@ function extractBlocksWithGrids(
       () => Array.from({ length: numCols }, () => ({ text: "", colSpan: 1, rowSpan: 1 })),
     )
 
+    let nestedAttached = false
     for (const cell of cells) {
       const cellItems = cellTextMap.get(cell) || []
-      let text = cellTextToString(cellItems)
-      // 셀 안의 페이지 번호 표시 제거 ("- 2 -" 등)
-      text = text.replace(/^[\s]*[-–—]\s*\d+\s*[-–—][\s]*$/gm, "").trim()
-      // 셀 텍스트 균등배분 공백 제거 ("경 제 총 괄 반" → "경제총괄반")
-      text = text.split("\n").map(line => collapseEvenSpacing(line)).join("\n")
+      // 틀 셀 — 안쪽 클립 그리드가 낸 표를 이 셀의 blocks 에 원문 순서(위→아래)로 넣는다.
+      // 지정서·영치증의 "발신명의 | 직인" 표가 틀 뒤 별도 블록으로 빠지던 것을 HWP 파서 IR 과
+      // 같은 모양(셀 안 문단 + 중첩표)으로 (v4.12.2)
+      const nested = grid.cells ? takePendingNested(pendingNested, cell.bbox) : []
+      if (nested.length > 0) {
+        nestedAttached = true
+        const built = buildFrameCellBlocks(cellItems, nested, pageNum)
+        irGrid[cell.row][cell.col] = { text: built.text, colSpan: cell.colSpan, rowSpan: cell.rowSpan, blocks: built.blocks }
+        continue
+      }
       irGrid[cell.row][cell.col] = {
-        text,
+        text: cleanCellText(cellTextToString(cellItems)),
         colSpan: cell.colSpan,
         rowSpan: cell.rowSpan,
       }
@@ -308,21 +370,15 @@ function extractBlocksWithGrids(
 
     // 과소분할 표 재구성 (ODL TableStructureNormalizer):
     // 행≤2 + 열≥3 + 셀 안에 텍스트 줄이 뭉친 표는 줄 centerY 기반 row band로 행 복원
+    // (중첩표를 품은 틀은 셀 구조가 확정된 것이라 재구성하지 않는다)
     let finalGrid = irGrid
     let finalRows = numRows
     let rebuiltUsed = false
-    if (numRows <= 2 && numCols >= 3) {
+    if (numRows <= 2 && numCols >= 3 && !nestedAttached) {
       const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems)
       if (rebuilt) {
         rebuiltUsed = true
-        finalGrid = rebuilt.map(row => row.map(rawText => {
-          const cleaned = rawText.replace(/^[\s]*[-–—]\s*\d+\s*[-–—][\s]*$/gm, "").trim()
-          return {
-            text: cleaned.split("\n").map(line => collapseEvenSpacing(line)).join("\n"),
-            colSpan: 1,
-            rowSpan: 1,
-          }
-        }))
+        finalGrid = rebuilt.map(row => row.map(rawText => ({ text: cleanCellText(rawText), colSpan: 1, rowSpan: 1 })))
         finalRows = finalGrid.length
       }
     }
@@ -345,6 +401,13 @@ function extractBlocksWithGrids(
     // 빈 테이블(모든 셀이 빈 문자열) 스킵
     const hasContent = finalGrid.some(row => row.some(cell => cell.text.trim() !== ""))
     if (!hasContent) continue
+
+    // 중첩 클립 그리드 — 틀 셀이 처리될 때 그 셀의 blocks 로 들어간다 (틀은 면적이 커서 뒤에 온다)
+    if (grid.clipParent) {
+      const nb: BoundingBox = { page: pageNum, x: grid.bbox.x1, y: grid.bbox.y1, width: grid.bbox.x2 - grid.bbox.x1, height: grid.bbox.y2 - grid.bbox.y1 }
+      pendingNested.push({ parent: grid.clipParent, block: { type: "table", table: irTable, pageNumber: pageNum, bbox: nb } })
+      continue
+    }
 
     // 프로즈 박스: 가짜 열 위로 전폭 프로즈가 흐르는 표 → 표를 버리고 아이템을
     // 프로즈 폴백으로 재추출 (셀 조인 demote는 찢긴 조각을 스크램블하므로 부적합)
@@ -373,6 +436,8 @@ function extractBlocksWithGrids(
 
     blocks.push({ type: "table", table: irTable, pageNumber: pageNum, bbox: tableBbox })
   }
+  // 틀 셀에 못 붙은 중첩표(틀이 빈 표로 걸러졌거나 셀 좌표가 어긋난 경우) — 종전대로 독립 블록
+  for (const p of pendingNested) blocks.push(p.block)
 
   // 테이블에 속하지 않은 나머지 텍스트 → 일반 블록
   let remaining = items.filter(i => !usedItems.has(i))

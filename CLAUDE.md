@@ -23,10 +23,15 @@ ESLint, Prettier 미설정 상태. 벤치 코퍼스(`bench/corpus/`)는 gitignor
 
 맥북·맥미니 양쪽 `bench/corpus/` 는 바이트 동일로 맞춰 둔다. 2026-09-05 에 법령 별지서식
 `licbyl/`(법제처 licbyl API 표본 300건 — HWP5 원본 + PDF + rhwp v0.8.6 `export-hwpx` 변환 HWPX,
-`bench/collect-licbyl.mjs` seed 20260905 로 재현) 900파일이 들어와 게이트 모수는
-hwpx ~647·pdf ~368·hwp쌍 ~320 이다. rhwp 변환본 가운데 자기참조 GT 정렬이 깨지는 3건은
-`known-false-miss/` 에 격리했다(README 참조). 종전(2026-08-22) 모수는 hwpx 350·pdf 92·hwp쌍 23 —
-`score.mjs` 의 `MIN_POP` 하한(170/25/12)에 여유가 있다.
+`bench/collect-licbyl.mjs` seed 20260905 로 재현) 900파일, 같은 날 v4.12.2 에서 `licbyl2/`(서식 2차,
+seed 20260906 `--exclude=licbyl`, 279쌍 — 표본 풀 소진으로 300 미달) 837파일과 `licbyl-byl/`(별표
+`--knd=1`, 90쌍) 271파일이 들어와 게이트 모수는 hwpx ~1,005·pdf ~737·hwp쌍 ~680 이다. rhwp 변환본
+가운데 자기참조 GT 정렬이 깨지는 것(licbyl 5 + licbyl2 11)은 `known-false-miss/` 에 격리했다(README
+참조 — 판정 기준은 **HWP5 쌍 유사도 1 + 미스 문자열이 파서 출력에 있음**, 둘 다 확인하고 옮길 것).
+rhwp 바이너리는 GH release v0.8.6 macos-aarch64(스크래치에 두고 `rhwp export-hwpx in.hwp out.hwpx`).
+종전(2026-08-22) 모수는 hwpx 350·pdf 92·hwp쌍 23 — `score.mjs` 의 `MIN_POP` 하한(170/25/12)에 여유가 있다.
+HWP5↔PDF 셀 대조 보고 지표는 `node bench/cmp-hwp-pdf.mjs licbyl [--linebreaks]`(licbyl 0.965·licbyl2
+0.965·별표 0.728 — 별표는 테두리 없는 1칸 틀이 많아 낮다, 게이트 아님).
 
 hwp쌍 23은 `corpus/pairs`(10) + `corpus/hwp5`(13)이 아니라 **`korea-kr`·`misc` 의 hwp+hwpx
 동명 짝까지 합산한 값**이다. 이 폴더들이 한쪽에만 있으면 쌍이 10으로 떨어져
@@ -85,12 +90,12 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/equation-generate.ts` | Markdown display math → EqEdit script + `<hp:equation>` XML (equation.ts 토큰맵과 왕복 정합) |
 | `src/hwpx/gongmun.ts` | 공문서 모드 순수 로직 — 항목부호 8단계 시퀀스(가나다·단모음연속·원숫자), 단계별 들여쓰기(`levelIndent`), 단일형제 부호생략, 프리셋 해석(7종 — 기안문·보고서·계획서·통지·회의록·개조식·보도자료), bullet2 ㅇ/○ (v4.0.2) |
 | `src/hwpx/gaejosik.ts` | 개조식(정부 표준 보고서) 순수 로직 — □○-※ 부호·크기 체계·실측 색/기하 상수 (docs/gongmunseo-engine-spec.md (f)장) |
-| `src/hwpx/gongmun-lint.ts` | 공문서 표기법 검수 19룰(편람 — 날짜·시간·금액·붙임·쌍점 등 13 + v4.12.1 금액 한글병기·물결표·두음법칙·외래어·차별표현·"끝." 누락 6) + AI 슬롭 2룰(v4.9.0) — generate 경고 채널 + `kordoc lint` (v4.0.1). `END_MARK_MISSING` 은 `{ document: true }`(lint CLI) 에서만 |
+| `src/hwpx/gongmun-lint.ts` | 공문서 표기법 검수 19룰(편람 — 날짜·시간·금액·붙임·쌍점 등 13 + v4.12.1 금액 한글병기·물결표·두음법칙·외래어·차별표현·"끝." 누락 6) + AI 슬롭 2룰(v4.9.0) — generate 경고 채널 + `kordoc lint` (v4.0.1). `END_MARK_MISSING` 은 `{ document: true }`(lint CLI) 에서만. 룰을 손대면 `gate-fill*`(실결재 기안문 206) + `licbyl`(서식 595) 파싱 텍스트에 돌려 오탐을 실측할 것(v4.12.2 TILDE·DUEUM 좁힘 근거) |
 | `src/hwpx/munche-lint.ts` | 개조식 **문체** 검수 12룰(서술형 종결·당위·수사·대구·항목/결론 길이·리드문) — 보고서·계획서·개조식 프리셋 generate 경고 + `kordoc lint --munche`. 표기법(gongmun-lint)과 축이 다름, 실측 근거는 docs/gaejosik-munche.md (v4.9.1) |
 | `src/hwpx/gen-docframe.ts` | 공문서 골격(v4.0.2) — 기안문 두문·결문(별지 제1호서식), 보고정보 행, 공고문 공고번호·발신명의, 보도자료 머리박스·담당 표. charPr는 variant·프로필 뒤 동적 id, 미사용 시 미방출 (spec (h)장) |
 | `src/hwpx/gen-gaejosik.ts` | 개조식 XML 조립 — 표지(파랑 바)·목차(1×7 스트라이프 배너+테두리 박스)·로마숫자 장 헤더 표·본문 첫 페이지 제목 반복 박스 (기하는 sizes 비례 스케일) |
 | `src/hwp5/parser.ts` | HWP 5.x(OLE2) 바이너리 파싱, 배포용 복호화, 각주/하이퍼링크 |
-| `src/hwp5/record.ts` | 레코드 리더, UTF-16LE, zlib 압축해제 |
+| `src/hwp5/record.ts` | 레코드 리더, UTF-16LE, zlib 압축해제. 한컴 PUA-A 접힘 해제(v4.12.2) — WCHAR U+A000~A48C 는 U+F0000대 기호(결재란 "(인)"=F012B↔A12B), 펴서 `pua.ts` 표로 |
 | `src/hwp5/aes.ts` | AES-128 ECB 순수 JS 구현 (배포용 복호화용) |
 | `src/hwp5/crypto.ts` | HWP 배포용 문서 복호화 (MSVC LCG + AES) |
 | `src/hwp5/cfb-lenient.ts` | 손상된 CFB 파일 복구 파서 (rhwp 포팅) |
@@ -112,7 +117,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/image-regions.ts` | 이미지 XObject 영역 추출 |
 | `src/pdf/image-extract.ts` | 이미지 XObject 바이트 추출 — 비동기 디코딩 대기 + 순수 JS PNG 인코딩, 표 병합 후 페이지 말미 주입 |
 | `src/pdf/line-types.ts` | 선 감지 공유 타입/상수 |
-| `src/pdf/clip-cells.ts` | 셀 클립 사각형 → 표 그리드 (v4.12.1) — 한컴 PDF 의 셀별 `W n` 클립을 셀 기하로 확정(`TableGrid.cells`). 포함 관계로 층을 나눠 같은 부모끼리만 이웃 묶음(중첩표는 별도 그리드, 틀은 자기 층의 셀), 클립 그리드·틀과 면적 절반 이상 겹치는 line 그리드 제거(`dropGridsInside`). 소비측은 클립 그리드를 면적 오름차순으로 먼저 처리. 법령 별지서식 외곽 표 복원 |
+| `src/pdf/clip-cells.ts` | 셀 클립 사각형 → 표 그리드 (v4.12.1) — 한컴 PDF 의 셀별 `W n` 클립을 셀 기하로 확정(`TableGrid.cells`). 포함 관계로 층을 나눠 같은 부모끼리만 이웃 묶음(중첩표는 별도 그리드 + `clipParent`, 틀은 자기 층의 셀), 클립 그리드·틀과 면적 절반 이상 겹치는 line 그리드 제거(`dropGridsInside`). 소비측(`page-blocks.ts`)은 클립 그리드를 면적 오름차순으로 먼저 처리하고 `clipParent` 가 있는 표는 틀 셀의 `IRCell.blocks` 에 원문 순서로 넣는다(v4.12.2). 1칸 틀은 **네 변 획**이 있을 때만 1×1 그리드 — 획 없는 큰 컨테이너는 한컴 본문 영역 클립 |
 | `src/pdf/symbol-fonts.ts` | Wingdings 글리프 코드 → 유니코드 복원 (v4.12.1) — pdfjs 가 심볼 폰트 코드를 Latin-1 로 돌려주는 것(`è`=0xE8 ➔)을 `page.commonObjs` 폰트 실명으로 판별해 되돌림 |
 | `src/pdf/cluster-detector.ts` | 클러스터 기반 테이블 감지 (선 없는 PDF용) |
 | `src/pdf/polyfill.ts` | pdfjs-dist 호환 심 (DOMMatrix, Path2D) |
@@ -189,5 +194,12 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
   0.73 → 0.96 (v4.12.1). 클립 셀 판정을 손댈 때는 `bench/pdf-table-gt.mjs` 와
   `licbyl/` HWP↔PDF 셀 대조를 함께 볼 것. `mergeParallelLines` 는 입력 선 객체를 **제자리 수정**하므로
   전처리 뒤의 선을 클립 판정(획 유무)에 넘기면 결과가 달라진다
+- **HWP5 `flattenLayoutTables` 는 서식 틀을 남긴다**: 중첩표를 품고 글이 `FORM_FRAME_MAX_TEXT`(600자)
+  이하인 표는 레이아웃 표가 아니라 별지서식 틀(3×1 제목행+틀+꼬리행) — HWPX·PDF 파서와 같은 모양으로
+  유지(v4.12.2). 페이지 사슬 레이아웃 표(글 많음)는 종전대로 해체. 임계를 바꾸면 `pairs/`·`misc/` 의
+  동의서·카테고리 표가 움직인다
+- **PDF 1칸 틀은 획 4변이 조건**: 한컴 PDF 는 본문 영역(여백 안쪽)에도 클립을 깔고 그 안에 페이지의
+  모든 표·칩이 들어간다. 획 없는 컨테이너를 틀로 삼으면 페이지가 통째로 1×1 표가 되어 pair 게이트가
+  0.985 → 0.87 로 무너진다(v4.12.2 실측). 테두리 없는 1칸 틀(선서문 바깥)은 표로 못 삼는 문서화된 한계
 - **본문폭급 표(48180)는 outMargin 좌우 0**: 283이면 진행폭(w+566)이 컬럼폭을 넘어 1mm
   침범 — 실물(t2)도 표지 표만 0. `gen-gaejosik.ts table()`이 w 기준 자동 분기 (v4.0.2)

@@ -77,7 +77,10 @@ const round = (x, d = 6) => (x === null || x === undefined ? null : +x.toFixed(d
 // reorderedMax: 순서구제 무증가 플로어 (2026-07-05 실측 3 = pair06 2단 조판 정당 케이스).
 //   순서구제가 공용 matchTables에 있어 표 방출순서 회귀가 재짝지음으로 green 위장 가능 (리뷰 #15)
 // minPairs/minRefTables: 모수 하한 — 코퍼스 소실 시 rate(0/0)=1 조용한 만점 방지 (리뷰 #14)
-const GATES = { matchedRate: 0.98, exactRate: 0.65, cellF1: 0.72, cellExactRate: 0.72, contentNED: 0.525, parseErrors: 0, reorderedMax: 3, minPairs: 3, minRefTables: 35 }
+// 상향 잠금 (2026-09-05 v4.12.2 실측: 매칭 1.0 / exact 0.855072 / cellF1 0.945306 / cellExact 0.979575 /
+// NED 0.948432 — 클립 셀 그리드(v4.12.1) + 틀 셀 중첩표·1칸 틀 복원(v4.12.2). 직전 v4.12.1 실측
+// cellF1 0.873·cellExact 0.945·NED 0.842 는 코드에 반영되지 않은 채 11차 플로어가 남아 있었다)
+const GATES = { matchedRate: 0.98, exactRate: 0.85, cellF1: 0.94, cellExactRate: 0.97, contentNED: 0.94, parseErrors: 0, reorderedMax: 3, minPairs: 3, minRefTables: 35 }
 
 const t0 = performance.now()
 const dir = join(root, "corpus", "pairs")

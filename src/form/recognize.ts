@@ -74,11 +74,10 @@ export function extractFormFields(blocks: IRBlock[]): FormResult {
   let totalTables = 0
   let formTables = 0
 
-  for (const block of blocks) {
-    if (block.type !== "table" || !block.table) continue
+  for (const table of collectTables(blocks)) {
     totalTables++
 
-    const tableFields = extractFromTable(block.table)
+    const tableFields = extractFromTable(table)
     if (tableFields.length > 0) {
       formTables++
       fields.push(...tableFields)
@@ -95,6 +94,23 @@ export function extractFormFields(blocks: IRBlock[]): FormResult {
 
   const confidence = totalTables > 0 ? formTables / totalTables : (fields.length > 0 ? 0.3 : 0)
   return { fields, confidence: Math.min(confidence, 1) }
+}
+
+/**
+ * 문서 순서 표 수집 — 셀 blocks 의 중첩표 포함. 법령 별지서식은 1칸 틀 안에 신청인 정보·발신명의 표가
+ * 중첩되어 있고(HWPX 파서·PDF 클립 셀 그리드 모두 셀 blocks 로 낸다) fillHwpx 도 중첩표를 DFS 로 훑으므로
+ * 인식기도 같은 경계로 본다 — 최상위만 보면 틀 안 표의 라벨-값이 통째로 빠진다 (v4.12.2)
+ */
+function collectTables(blocks: IRBlock[], out: IRTable[] = [], depth = 0): IRTable[] {
+  if (depth > 12) return out
+  for (const block of blocks) {
+    if (block.type !== "table" || !block.table) continue
+    out.push(block.table)
+    for (const row of block.table.cells) {
+      for (const cell of row) if (cell?.blocks?.length) collectTables(cell.blocks, out, depth + 1)
+    }
+  }
+  return out
 }
 
 function extractFromTable(table: IRTable): FormField[] {

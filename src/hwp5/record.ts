@@ -399,6 +399,11 @@ function ctrlIdToDiskAscii(id: number): string {
   return String.fromCharCode(id & 0xff, (id >>> 8) & 0xff, (id >>> 16) & 0xff, (id >>> 24) & 0xff)
 }
 
+/** 한컴 PUA-A 접힘 영역 — HWP5 WCHAR 의 U+A000~U+A48C(이 글자 음절) ↔ U+F0000~U+F048C. 관찰 범위만 (v4.12.2) */
+const HANCOM_FOLDED_PUA_START = 0xa000
+const HANCOM_FOLDED_PUA_END = 0xa48c
+const HANCOM_FOLDED_PUA_SHIFT = 0xf0000 - 0xa000
+
 /** 확장 전용 컨트롤 문자 (CTRL_HEADER 자식 레코드 1개와 대응) — rhwp is_extended_only_ctrl_char */
 export function isExtendedOnlyCtrlChar(ch: number): boolean {
   return (ch >= 1 && ch <= 3) || (ch >= 11 && ch <= 12) || (ch >= 14 && ch <= 18) || (ch >= 21 && ch <= 23)
@@ -473,6 +478,15 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
             i += 14
           }
         } else if (ch >= 0x0020) {
+          // HWP5 문자는 2바이트 WCHAR 라 한컴 Supplementary PUA-A(U+F0000대) 기호를 담을 수 없다 —
+          // 한컴은 U+A000 + (code − 0xF0000) 으로 접어 저장한다(이 글자 음절 블록, 한국어 문서에는
+          // 안 나온다). 결재란 "(인)"(F012B)이 A12B 로 들어 있는 법령 별지서식 실측 — rhwp export-hwpx
+          // 도 같은 자리를 F012B→"(인)" 으로 복원한다. 펴서 mapPuaText(pua.ts) 표에 넘기고, 매핑 없는
+          // 코드는 종전 PUA-A 정책(sanitizeText 제거)을 따른다 (v4.12.2)
+          if (ch >= HANCOM_FOLDED_PUA_START && ch <= HANCOM_FOLDED_PUA_END) {
+            result += String.fromCodePoint(ch + HANCOM_FOLDED_PUA_SHIFT)
+            break
+          }
           // UTF-16 surrogate pair 처리 (BMP 외 문자: 이모지, CJK 확장 등)
           if (ch >= 0xd800 && ch <= 0xdbff && i + 1 < data.length) {
             const lo = data.readUInt16LE(i)

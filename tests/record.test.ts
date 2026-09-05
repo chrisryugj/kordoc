@@ -201,3 +201,19 @@ describe("parseFileHeader", () => {
     assert.equal(header.flags, 1)
   })
 })
+
+describe("한컴 PUA-A 접힘 해제 (v4.12.2)", () => {
+  it("HWP5 WCHAR U+A12B(이 글자 블록) 는 한컴 PUA-A U+F012B 결재란 기호다 — 펴서 낸다", () => {
+    const buf = Buffer.alloc(6)
+    buf.writeUInt16LE("장".charCodeAt(0), 0)
+    buf.writeUInt16LE(0x0020, 2)
+    buf.writeUInt16LE(0xa12b, 4)
+    assert.equal(extractText(buf), "장 \u{F012B}")
+  })
+  it("접힘 영역 밖(한글·기호)은 그대로", () => {
+    const buf = Buffer.alloc(4)
+    buf.writeUInt16LE(0x9fff, 0)
+    buf.writeUInt16LE(0xa4d0, 2) // Lisu — 관찰 범위 밖
+    assert.equal(extractText(buf), "鿿ꓐ")
+  })
+})

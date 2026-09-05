@@ -3,7 +3,7 @@
 // 국가법령정보 공동활용 OpenAPI: lawSearch.do?target=licbyl (별표서식 목록, XML) →
 // <별표서식파일링크>(HWP5) + <별표서식PDF파일링크>(PDF) 를 쌍으로 내려받는다.
 //
-// 사용법: node bench/collect-licbyl.mjs [최대서식수] [출력서브디렉토리] [OC] [--seed=N] [--knd=2]
+// 사용법: node bench/collect-licbyl.mjs [최대서식수] [출력서브디렉토리] [OC] [--seed=N] [--knd=2] [--exclude=licbyl,...]
 // 예: node bench/collect-licbyl.mjs 300 licbyl ryuseungin
 //
 // 표본: 전체 목록(display=100, 알파벳순)에서 페이지를 균등 보폭으로 고르고 페이지 안에서
@@ -23,6 +23,7 @@ const outDir = fileURLToPath(new URL(`./corpus/${pos[1] ?? 'licbyl'}/`, import.m
 const OC = pos[2] ?? process.env.LAW_OC ?? 'ryuseungin';
 const SEED = Number(flag('seed', 20260905));
 const KND = flag('knd', '2'); // 2 = 서식 (1 = 별표)
+const KIND = KND === '1' ? '별표' : '서식';
 const PER_PAGE_PICK = 3;
 const DISPLAY = 100;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -71,6 +72,11 @@ async function download(link, dest) {
 
 await mkdir(outDir, { recursive: true });
 const have = new Set((await readdir(outDir)).map(f => f.split('_')[0]));
+// --exclude=licbyl,licbyl2 : 형제 코퍼스 폴더의 별표일련번호도 중복 제외 (2차 수집)
+for (const ex of flag('exclude', '').split(',').filter(Boolean)) {
+  const dir = fileURLToPath(new URL(`./corpus/${ex}/`, import.meta.url));
+  for (const f of await readdir(dir).catch(() => [])) have.add(f.split('_')[0]);
+}
 const first = await fetchList(1);
 const pages = Math.ceil(first.total / DISPLAY);
 const wanted = Math.ceil(MAX / PER_PAGE_PICK);
@@ -86,7 +92,7 @@ for (let k = 0; k < wanted && got < MAX; k++) {
   try { list = page === 1 ? first : await fetchList(page); }
   catch (e) { console.warn(`  ! 목록 실패 p${page}: ${e.message}`); await sleep(jitter()); continue; }
   // '삭제 <2014.10.29.>'·'[별지 제6호서식]으로 이동' 은 서식이 아니라 자리표시 문서 — 표본에서 제외
-  const pool = list.items.filter(it => it.kind === '서식' && it.hwp && it.pdf && !have.has(it.seq) && !/^삭제|으로 이동/.test(it.name));
+  const pool = list.items.filter(it => it.kind === KIND && it.hwp && it.pdf && !have.has(it.seq) && !/^삭제|으로 이동/.test(it.name));
   // 페이지 안에서 결정적 셔플 후 앞 N건 (같은 법령 2건 상한)
   const order = pool.map(it => ({ it, r: rnd() })).sort((a, b) => a.r - b.r).map(x => x.it);
   let picked = 0;

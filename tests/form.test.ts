@@ -144,3 +144,28 @@ describe("isLabelCell — 라벨 인식 확장 (v3.7 P3)", () => {
     }
   })
 })
+
+describe("extractFormFields — 틀 셀 blocks 안 중첩표 (v4.12.2)", () => {
+  it("1칸 틀 안에 중첩된 신청인 정보 표의 라벨-값도 필드로 잡는다 (fillHwpx DFS 와 같은 경계)", () => {
+    const inner: IRTable = {
+      rows: 2, cols: 2, hasHeader: false,
+      cells: [
+        [{ text: "성명", colSpan: 1, rowSpan: 1 }, { text: "홍길동", colSpan: 1, rowSpan: 1 }],
+        [{ text: "연락처", colSpan: 1, rowSpan: 1 }, { text: "02-123-4567", colSpan: 1, rowSpan: 1 }],
+      ],
+    }
+    const frame: IRBlock = {
+      type: "table",
+      table: {
+        rows: 1, cols: 1, hasHeader: false,
+        cells: [[{
+          text: "신청서\n성명\n홍길동\n연락처\n02-123-4567",
+          colSpan: 1, rowSpan: 1,
+          blocks: [{ type: "paragraph", text: "신청서" }, { type: "table", table: inner }],
+        }]],
+      },
+    }
+    const r = extractFormFields([frame])
+    assert.deepEqual(r.fields.map(f => [f.label, f.value]), [["성명", "홍길동"], ["연락처", "02-123-4567"]])
+  })
+})

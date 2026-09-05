@@ -15,7 +15,10 @@ describe("flattenLayoutTables — 중첩표 구조 보존", () => {
     assert.equal(nested.cols, 3)
 
     // 외곽 2×1 페이지 레이아웃 표: cell(0,0)=반복 머리말, cell(1,0)=본문(blocks 보유)
-    // cell(1,0).text는 줄바꿈 다량 → 레이아웃 휴리스틱(totalNewlines>5) 트리거
+    // cell(1,0).text는 줄바꿈 다량 → 레이아웃 휴리스틱(totalNewlines>5) 트리거.
+    // 페이지 사슬 레이아웃 표는 본문 한 페이지 분량(수백~수천 자)이다 — 별지서식 1칸 틀
+    // (중첩표 + 글 ≤600자)과 가르는 기준이라 픽스처도 페이지 분량으로 둔다 (v4.12.2)
+    const pageBody = Array.from({ length: 8 }, (_, k) => `줄${k + 1} ` + "본문 문장이 한 페이지를 채운다. ".repeat(4)).join("\n")
     const outer: IRBlock = {
       type: "table",
       pageNumber: 3,
@@ -26,7 +29,7 @@ describe("flattenLayoutTables — 중첩표 구조 보존", () => {
         cells: [
           [{ text: "머리말 반복 running header", colSpan: 1, rowSpan: 1 }],
           [{
-            text: "줄1\n줄2\n줄3\n줄4\n줄5\n줄6\n줄7\n줄8",
+            text: pageBody,
             colSpan: 1,
             rowSpan: 1,
             blocks: [
@@ -60,6 +63,35 @@ describe("flattenLayoutTables — 중첩표 구조 보존", () => {
     // pageNumber 보존
     const headerPara = flat.find(b => b.type === "paragraph" && b.text === "머리말 반복 running header")
     assert.equal(headerPara?.pageNumber, 3, "text-split 문단 pageNumber 보존")
+  })
+
+  it("별지서식 1칸 틀(제목행+틀+꼬리행 3×1, 틀 안 발신명의|직인 중첩표, 글 적음)은 해체하지 않는다 — HWPX·PDF 파서와 같은 모양", () => {
+    const seal = buildTable([[{ text: "국토교통부장관", colSpan: 1, rowSpan: 1 }, { text: "직인", colSpan: 1, rowSpan: 1 }]])
+    const frame: IRBlock = {
+      type: "table", pageNumber: 1,
+      table: {
+        rows: 3, cols: 1, hasHeader: false,
+        cells: [
+          [{ text: "■ 항공보안법 시행규칙 [별지 제6호서식]", colSpan: 1, rowSpan: 1 }],
+          [{
+            text: "제 호\n보안검색교육기관 지정서\n1. 명칭\n2. 주소\n3. 전화번호\n4. 교육과정\n5. 피교육생 정원\n년 월 일",
+            colSpan: 1, rowSpan: 1,
+            blocks: [
+              ...["제 호", "보안검색교육기관 지정서", "1. 명칭", "2. 주소", "3. 전화번호", "4. 교육과정", "5. 피교육생 정원", "년 월 일"]
+                .map(t => ({ type: "paragraph" as const, text: t, pageNumber: 1 })),
+              { type: "table", table: seal, pageNumber: 1 },
+            ],
+          }],
+          [{ text: "210mm×297mm[백상지 120g/㎡]", colSpan: 1, rowSpan: 1 }],
+        ],
+      },
+    }
+    const flat = flattenLayoutTables([frame])
+    assert.equal(flat.length, 1, "틀 표가 그대로 남는다")
+    assert.equal(flat[0].type, "table")
+    assert.equal(flat[0].table!.rows, 3)
+    const nested = flat[0].table!.cells[1][0].blocks!.find(b => b.type === "table")
+    assert.ok(nested, "중첩 발신명의|직인 표는 틀 셀 blocks 안에 남는다")
   })
 
   it("blocks 없는 셀은 기존대로 줄 단위 paragraph로 분해 (회귀 방지)", () => {

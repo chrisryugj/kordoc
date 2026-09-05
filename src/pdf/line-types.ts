@@ -26,6 +26,9 @@ export interface TableGrid {
   vertexRadius: number
   /** 미리 확정된 셀 — 클립 사각형 그리드(clip-cells)가 채움. 있으면 extractCells 를 건너뛴다 */
   cells?: ExtractedCell[]
+  /** 이 그리드를 품는 바깥 셀(틀)의 클립 사각형 — 중첩표. 소비측(page-blocks)이 그 셀의
+   *  `IRCell.blocks` 에 표로 넣는다 (v4.12.2, HWP 파서의 중첩표 IR 과 같은 모양) */
+  clipParent?: { x1: number; y1: number; x2: number; y2: number }
 }
 
 export interface ExtractedCell {

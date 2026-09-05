@@ -224,6 +224,9 @@ function sanitizeText(text: string): string {
  * HWPX에서 표를 문단으로 해체하면 표 매핑이 깨진다. HWPX 적용은 코퍼스
  * 전/후 정량 비교 + 라운드트립 e2e 검증이 선행되어야 한다.
  */
+/** 서식 틀로 보는 표의 총 글자 수 상한 — 별지서식 틀은 수백 자(영치증 ~400), 페이지 레이아웃 표는 그 이상 */
+const FORM_FRAME_MAX_TEXT = 600
+
 export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
   const result: IRBlock[] = []
 
@@ -256,7 +259,12 @@ export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
       // 레이아웃 테이블 판정: 많은 줄바꿈(>5), 또는 적은 행에 비해 총 텍스트 과다(>300)
       // 단, 열이 4개 이상이면 헤더-값 구조의 데이터 표일 가능성이 높아 해체하지 않는다
       // (실증: 2×10 모집프로그램 표가 문단으로 해체되어 헤더↔값 연결 파괴)
-      if (numCols < 4 && (totalNewlines > 5 || (numRows <= 2 && totalTextLen > 300))) {
+      // 법령 별지서식의 1칸 틀(제목행+틀+꼬리행 3×1, 틀 안에 발신명의|직인 중첩표)은 레이아웃 표가
+      // 아니라 서식 그 자체다 — 중첩표를 품고 글이 적으면(FORM_FRAME_MAX_TEXT) HWPX·PDF 파서와 같은
+      // 모양(표 셀 blocks 안 중첩표)으로 남긴다. 페이지 사슬 레이아웃 표는 글이 많아 종전대로 해체 (v4.12.2)
+      const hasNested = cells.some(row => row.some(c => c.blocks?.some(b => b.type === "table" && b.table)))
+      const isFormFrame = hasNested && totalTextLen <= FORM_FRAME_MAX_TEXT
+      if (!isFormFrame && numCols < 4 && (totalNewlines > 5 || (numRows <= 2 && totalTextLen > 300))) {
         // 레이아웃 테이블 → 각 셀을 paragraph 블록으로 분해
         for (let r = 0; r < numRows; r++) {
           for (let c = 0; c < numCols; c++) {

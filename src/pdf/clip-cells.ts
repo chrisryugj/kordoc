@@ -11,7 +11,9 @@
  * 적용 범위는 보수적으로 잡는다: 서로 변을 맞대는 클립 묶음이 CLIP_MIN_GROUP 개 이상이고,
  * 그 변 가운데 획 괘선이 없는 비율이 CLIP_MIN_INVISIBLE 이상일 때만 이 경로를 탄다. 실선
  * 테두리 표는 검증된 line 경로가 그대로 맡는다. 글상자·그림·머리말처럼 이웃 없는 단독
- * 클립은 묶음이 안 돼 제외된다.
+ * 클립은 묶음이 안 돼 제외된다 — 단 다른 클립을 품는 틀과 틀 안에 홀로 든 클립은 1칸 표다
+ * (v4.12.2, 선서문·지정서·영치증 실측). 중첩 관계는 `TableGrid.clipParent` 로 넘겨 소비측이
+ * 틀 셀의 `IRCell.blocks` 에 안쪽 표를 넣는다 (HWP 파서 IR 과 같은 모양).
  */
 
 import type { ClipRect } from "./line-extract.js"
@@ -101,10 +103,17 @@ export function buildClipCellGrids(
   pageHeight: number,
 ): ClipCellResult {
   const pageArea = pageWidth * pageHeight
-  const cells = rects.filter(r =>
-    (r.x2 - r.x1) >= CLIP_MIN_W && (r.y2 - r.y1) >= CLIP_MIN_H
-    && (pageArea <= 0 || (r.x2 - r.x1) * (r.y2 - r.y1) < pageArea * CLIP_MAX_PAGE_FRAC))
-  if (cells.length < CLIP_MIN_GROUP) return { grids: [], containers: [] }
+  const sameRect = (a: ClipRect, b: ClipRect): boolean =>
+    Math.abs(a.x1 - b.x1) <= CLIP_EDGE_TOL && Math.abs(a.x2 - b.x2) <= CLIP_EDGE_TOL && Math.abs(a.y1 - b.y1) <= CLIP_EDGE_TOL && Math.abs(a.y2 - b.y2) <= CLIP_EDGE_TOL
+  // 같은 사각형은 셀 안 문단마다 반복 클립된다(틀 3회·선서문 안쪽 1칸 표 2회 실측) — 좌표로 중복 제거.
+  // 중복을 남기면 1칸 표가 서로 이웃도 포함도 아닌 단독 클립 여러 개로 흩어져 묶이지 않는다
+  const cells: ClipRect[] = []
+  for (const r of rects) {
+    if ((r.x2 - r.x1) < CLIP_MIN_W || (r.y2 - r.y1) < CLIP_MIN_H) continue
+    if (pageArea > 0 && (r.x2 - r.x1) * (r.y2 - r.y1) >= pageArea * CLIP_MAX_PAGE_FRAC) continue
+    if (!cells.some(c => sameRect(c, r))) cells.push(r)
+  }
+  if (cells.length < 1) return { grids: [], containers: [] }
 
   // 포함 관계로 층을 나눈다 — 각 사각형의 부모 = 자기를 품는 가장 작은 사각형. 중첩표 셀은 바깥
   // 셀 안에 있으므로 같은 부모(그 바깥 셀)끼리만 묶이고, 바깥 셀은 자기 층(최상위 또는 그 위 셀)의
@@ -138,16 +147,43 @@ export function buildClipCellGrids(
     if (g) g.push(i)
     else groups.set(r, [i])
   }
-  // 틀(무언가를 품는 사각형)은 같은 사각형이 문단마다 반복 클립되므로(영치증 실측 3회) 좌표로 중복 제거
-  const containers: ClipRect[] = []
-  for (let i = 0; i < cells.length; i++) {
-    if (!isContainer[i]) continue
-    const r = cells[i]
-    if (!containers.some(c => Math.abs(c.x1 - r.x1) <= CLIP_EDGE_TOL && Math.abs(c.x2 - r.x2) <= CLIP_EDGE_TOL && Math.abs(c.y1 - r.y1) <= CLIP_EDGE_TOL && Math.abs(c.y2 - r.y2) <= CLIP_EDGE_TOL)) containers.push(r)
-  }
+  const containers: ClipRect[] = cells.filter((_, i) => isContainer[i])
+  const groupSize = (i: number): number => groups.get(find(i))?.length ?? 0
+  const isGridMember = (i: number): boolean => groupSize(i) >= CLIP_MIN_GROUP
+  // 네 변이 모두 획 괘선인 사각형 — 서식의 1칸 틀(지정서·영치증·선서문 실측). 한컴은 본문 영역
+  // (여백 안쪽 전체)에도 클립을 깔고 그 안에 페이지의 모든 표가 들어가므로, 획 없는 큰 컨테이너를
+  // 틀로 보면 페이지가 통째로 1×1 표가 된다 (채용공고 PDF 실측 회귀) — 획 4변을 요구해 가른다
+  const framed = (r: ClipRect): boolean =>
+    edgeStroked(strokedH, "h", r.y1, r.x1, r.x2) && edgeStroked(strokedH, "h", r.y2, r.x1, r.x2)
+    && edgeStroked(strokedV, "v", r.x1, r.y1, r.y2) && edgeStroked(strokedV, "v", r.x2, r.y1, r.y2)
+  /** 홀로 선 틀 — 다른 클립을 품고, 그리드 멤버가 아니며, 테두리가 그려져 있다 */
+  const loneFrame = (i: number): boolean => isContainer[i] && !isGridMember(i) && framed(cells[i])
+  /** 이 클립의 부모가 안쪽 표를 받을 수 있는 셀인가 — 그리드의 셀이거나 홀로 선 틀 */
+  const parentAttachable = (i: number): boolean => parent[i] >= 0 && (isGridMember(parent[i]) || loneFrame(parent[i]))
+  /** 부모 안에 이 클립 하나뿐인가 — 테두리 없는 바깥 틀 안에 테두리 있는 1칸 표 하나(선서문·서약서류).
+   *  테두리 없는 틀은 본문 영역 클립과 구분이 안 돼 표로 못 삼지만, 그 안에 상자 하나만 있는 꼴은
+   *  본문 영역(칩·표가 여럿)과 다르다 — 안쪽 상자만이라도 1×1 표로 낸다 */
+  const onlyChild = (i: number): boolean => parent[i] >= 0 && parent.filter(p => p === parent[i]).length === 1
   const grids: TableGrid[] = []
   for (const idxs of groups.values()) {
-    if (idxs.length < CLIP_MIN_GROUP) continue
+    const first = idxs[0]
+    const parentRect = parentAttachable(first) ? cells[parent[first]] : undefined
+    if (idxs.length < CLIP_MIN_GROUP) {
+      // 이웃 없는 단독 클립은 원칙적으로 표가 아니다(글상자·그림·머리말·본문 영역). 예외 두 가지 —
+      // 1칸 틀: ① 다른 클립을 품고 테두리가 그려진 틀(선서문·각서류의 바깥 1칸 표) ② 그런 틀 안에
+      // 홀로 든 테두리 있는 클립(그 안의 1칸 표). 둘 다 HWP 에서는 1×1 표이고 안에 문단·표가 층으로
+      // 들어 있다 — 1×1 그리드로 내서 소비측이 틀 셀의 blocks 에 안쪽 표를 넣게 한다
+      if (!loneFrame(first) && !((parentRect || onlyChild(first)) && framed(cells[first]))) continue
+      const r = cells[first]
+      grids.push({
+        rowYs: [r.y2, r.y1], colXs: [r.x1, r.x2],
+        bbox: { x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 },
+        vertexRadius: 1,
+        cells: [{ row: 0, col: 0, rowSpan: 1, colSpan: 1, bbox: { x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 } }],
+        ...(parentRect ? { clipParent: parentRect } : {}),
+      })
+      continue
+    }
     const members = idxs.map(i => cells[i])
 
     // 테두리 없는 표 판정 — 변 4개씩 획 괘선 유무
@@ -190,6 +226,7 @@ export function buildClipCellGrids(
       bbox: { x1: colXs[0], y1: rowYs[numRows], x2: colXs[numCols], y2: rowYs[0] },
       vertexRadius: 1,
       cells: out,
+      ...(parentRect ? { clipParent: parentRect } : {}),
     })
   }
   return { grids, containers }

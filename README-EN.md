@@ -72,6 +72,17 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.12.2
+
+Annex-form round two. The corpus grew by 279 form pairs and 90 table-annex pairs (1,995 files in total), and the HWP, HWPX and PDF parsers now emit the **same IR shape** for single-cell frames. HWP↔PDF cell-text agreement rose from 0.927 to 0.965 and the PDF table ground-truth cellExact from 0.945 to 0.980; the gate floors were raised to those figures.
+
+- **🪆 Nested tables inside PDF frames**: certificates, receipts and oath forms put an "issuer | seal" table inside a single-cell frame. The PDF parser used to emit that table as a separate block after the frame; it now lands inside the frame cell's blocks in reading order, matching the HWPX parser. A lone frame with all four borders stroked becomes a 1×1 table and a lone stroked box inside it a nested table. Border-less outer frames cannot be told apart from Hancom's body-area clip and are left as prose.
+- **🖋️ "(인)" seal marks recovered from HWP**: HWP 5.x stores characters as 16-bit units, so Hancom folds its private symbols (U+F012B) into the U+A000 range. The stray `ꄫ` in signature lines now reads "(인)".
+- **📋 Form frames kept in HWP**: a 3×1 annex frame (title row, frame with a nested seal table, footer row) was treated as a layout table and flattened into paragraphs; it now stays a table. Page-chain layout tables with long text are still flattened.
+- **📝 Sharper notation lint**: false positives were measured on 206 real approval documents and 595 annex forms. `TILDE_SPACE` now fires only on numeric/date/time ranges, and `DUEUM_ERROR` skips fill-in blanks ("    년도", "( 년간)") and single-word table headers.
+- **🧾 Form recognition reaches nested tables**: `extractFormFields` walks tables nested in cell blocks, the same boundary `fillHwpx` uses.
+- **📊 `bench/cmp-hwp-pdf.mjs`**: the HWP↔PDF cell-text Jaccard report is now a first-class bench script. Its `--linebreaks` mode measured that 85% of in-cell PDF line breaks fall on word boundaries and 13% inside words, so line joining stays off.
+
 ## What's New in v4.12.1
 
 Statutory **annex forms** (법제처 별지서식) now parse consistently across HWP, HWPX and PDF. We collected 300 forms from the Ministry of Government Legislation OpenAPI as HWP+PDF pairs, added rhwp-converted HWPX, and put the 900-file corpus under the gates: HWP↔PDF cell-text agreement rose from 0.79 to 0.92 and the PDF table ground-truth gate's cellExact from 0.73 to 0.96.
