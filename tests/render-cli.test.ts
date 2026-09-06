@@ -13,7 +13,15 @@ const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 let dir: string, doc: string
 const run = (args: string[]) => spawnSync(process.execPath, ["--import", "tsx", CLI, ...args], { encoding: "utf8", timeout: 120000 })
 
+const HWP5 = fileURLToPath(new URL("../bench/corpus/hwp5/merging-cell.hwp", import.meta.url))
+
 describe("render CLI", () => {
+  it("HWP5 기본 호출(옵션 없음)은 페이지별 통합 렌더러로 간다 (HWPX 전용 세로 스택 경로 금지)", { skip: !existsSync(HWP5) }, () => {
+    const out = join(dir, "hwp5.svg")
+    const r = run(["render", HWP5, "-o", out, "--silent"])
+    assert.equal(r.status, 0, r.stderr)
+    assert.ok(readFileSync(out, "utf8").includes('data-kordoc-type="table"'))
+  })
   before(async () => { dir = mkdtempSync(join(tmpdir(), "kordoc-render-cli-")); doc = join(dir, "doc.hwpx"); writeFileSync(doc, await buildRenderFixture()) })
   after(() => rmSync(dir, { recursive: true, force: true }))
 

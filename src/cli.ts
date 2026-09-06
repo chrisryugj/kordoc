@@ -640,6 +640,8 @@ program
   .option("--no-end-mark", "'끝.' 표시 끄기 (기안문 기본 켜짐)")
   .option("--no-body-title-box", "본문 첫 페이지 제목 반복 박스 끄기 (개조식+표지 기본 켜짐)")
   .option("--h2-marker <type>", "h2 장 제목 표기: band(로마자 채움 칸 + 제목 띠 표 — 보고서·계획서 기본)·roman(Ⅰ. 텍스트)·number(1. — 통지 기본)·box(장 없이 □ 대항목)·none")
+  .option("--band-color <hex>", "띠 제목 번호칸 채움색 #RRGGBB (기본 #003366 — 실측 최다. 교육청형 밝은 띠: #DFE6F7)")
+  .option("--band-text-color <hex>", "띠 제목 번호 글자색 #RRGGBB (기본 #FFFFFF — 밝은 띠면 #000000)")
   .option("--summary <text>", "보고서 요약 박스 (제목표 아래 음영 상자 — 마크다운 제목 직후 인용문(>)으로도 지정)")
   .option("--doc-info <spec>", "보고서 표지 문서정보표: docNum=스마트도시과-123,date=2026. 9. 6.,disclosure=공개,policyNo= (--cover와 함께)")
   .option("--dept <name>", "표지 부서명 (기관명 아래 괄호)")
@@ -728,6 +730,7 @@ program
           // --no-body-title-box 단독 플래그 — commander 기본 true는 "미지정"으로 정돈
           bodyTitleBox: opts.bodyTitleBox === false ? false : undefined,
           h2Marker: enumCheck("--h2-marker", opts.h2Marker, H2_MARKERS),
+          bandColor: opts.bandColor, bandTextColor: opts.bandTextColor,
           fonts: opts.fonts ? parseKv(String(opts.fonts), "--fonts") : undefined,
           sizes: opts.sizes
             ? Object.fromEntries(
@@ -1010,7 +1013,7 @@ program
 
 program
   .command("render <file>")
-  .description("레이아웃 보존 렌더 — HWPX를 SVG(기본, 전체 페이지 세로 스택)·HTML·PNG·JPEG·PDF로. 한컴 저장본은 조판 캐시 그대로, 캐시 없는 생성본·편집본은 순수 TS 조판(reflow, 기본 켬) — kordoc render 문서.hwpx -o 문서.svg / --format png --pages 2-4 -d ./pages / --format pdf -o 문서.pdf")
+  .description("레이아웃 보존 렌더 — HWPX·HWP(5.x)를 SVG(기본, HWPX 는 전체 페이지 세로 스택)·HTML·PNG·JPEG·PDF로. 한컴 저장본은 조판 캐시 그대로, 캐시 없는 생성본·편집본은 순수 TS 조판(reflow, 기본 켬) — kordoc render 문서.hwpx -o 문서.svg / --format png --pages 2-4 -d ./pages / --format pdf -o 문서.pdf")
   .option("-o, --output <path>", "출력 경로 (단일 산출: svg 스택·html·pdf·한 쪽 png/jpeg. 기본: <입력>.<확장자>)")
   .option("-d, --out-dir <dir>", "페이지별 산출 디렉토리 (svg/png/jpeg 여러 쪽 → page_001.png …)")
   .option("--format <fmt>", "svg(기본) | html | png | jpeg | pdf")
@@ -1035,8 +1038,8 @@ program
       const highlights = opts.highlight ? String(opts.highlight).split(",") : undefined
       const absPath = resolve(file)
       const stem = file.replace(/\.hwpx?$/i, "")
-      if (fmt === "svg" && !outDir && !pages) {
-        // 종전 동작 — 전체 페이지 세로 스택 SVG 한 파일
+      if (fmt === "svg" && !outDir && !pages && !/\.hwp$/i.test(absPath)) {
+        // 종전 동작(HWPX) — 전체 페이지 세로 스택 SVG 한 파일. HWP5 는 통합 렌더러(페이지별)
         const { renderHwpxToSvg } = await import("./render/index.js")
         const buffer = readFileSync(absPath)
         const result = await renderHwpxToSvg(toArrayBuffer(buffer), { highlights, reflow: opts.reflow, reflowMode: opts.reflowMode })
@@ -1083,7 +1086,7 @@ program
 
 program
   .command("crop <file>")
-  .description("렌더 영역 잘라내기 — 표·이미지·문단·도형을 페이지 이미지에서 crop (HWPX) — kordoc crop 문서.hwpx --target table -d ./regions")
+  .description("렌더 영역 잘라내기 — 표·이미지·문단·도형을 페이지 이미지에서 crop (HWPX·HWP) — kordoc crop 문서.hwpx --target table -d ./regions")
   .option("-d, --out-dir <dir>", "출력 디렉토리 (필수) — <유형>_<번호>_page_<쪽>.png + regions.json")
   .option("--target <types>", "유형(쉼표): table | image | paragraph | shape", "table")
   .option("--format <fmt>", "png(기본) | jpeg")
@@ -1128,7 +1131,7 @@ program
 
 program
   .command("tables <file>")
-  .description("표 추출·분류 — 의미표/레이아웃(조직도 등)/불확실 분류 JSON + 선택적 시각 crop (HWPX) — kordoc tables 문서.hwpx --visual non-tabular-and-uncertain -d ./tables")
+  .description("표 추출·분류 — 의미표/레이아웃(조직도 등)/불확실 분류 JSON + 선택적 시각 crop (HWPX·HWP) — kordoc tables 문서.hwpx --visual non-tabular-and-uncertain -d ./tables")
   .option("-o, --output <path>", "JSON 출력 경로 (기본 stdout; -d 지정 시 <out-dir>/tables.json)")
   .option("-d, --out-dir <dir>", "crop 저장 디렉토리 (--visual 지정 시 필수)")
   .option("--visual <policy>", "crop 대상: none(기본) | non-tabular | non-tabular-and-uncertain | all", "none")

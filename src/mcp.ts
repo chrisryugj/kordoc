@@ -849,77 +849,84 @@ server.tool(
 
 server.tool(
   "render_document",
-  "HWPX 문서를 실제 조판 그대로 렌더해 PNG 이미지(또는 SVG 파일)로 돌려줍니다. generate_document·fill_form·patch_document·place_seal 결과물을 눈으로 확인하는 용도 — 생성/수정 후 이 도구로 렌더해 깨짐·잘림·배치를 검증하고 다시 고치는 루프를 권장합니다. 한컴 저장본은 조판 캐시로, AI 생성본(캐시 없음)은 순수 조판 엔진(reflow)으로 렌더되며 후자는 한컴 실조판의 근사입니다 (참고용 미리보기).",
+  "HWPX·HWP 문서를 실제 조판 그대로 렌더해 PNG/JPEG 이미지로 응답하거나 SVG·HTML·PDF 파일로 저장합니다. generate_document·fill_form·patch_document·place_seal 결과물을 눈으로 확인하는 용도 — 생성/수정 후 이 도구로 렌더해 깨짐·잘림·배치를 검증하고 다시 고치는 루프를 권장합니다. 한컴 저장본(HWPX·HWP 모두)은 조판 캐시로 정확히, AI 생성본(캐시 없음)은 순수 조판 엔진(reflow)으로 렌더되며 후자는 한컴 실조판의 근사입니다 (참고용 미리보기).",
   {
-    file_path: z.string().min(1).describe("렌더할 HWPX 파일의 절대 경로"),
-    format: z.enum(["png", "svg"]).default("png").describe("png=이미지로 응답에 직접 반환 (sharp 필요, 기본 설치됨) / svg=output_path에 파일 저장"),
-    output_path: z.string().min(1).optional().describe("결과 저장 경로 (png는 선택, svg는 필수 — 확장자는 format과 일치)"),
+    file_path: z.string().min(1).describe("렌더할 HWPX 또는 HWP(5.x) 파일의 절대 경로"),
+    format: z.enum(["png", "jpeg", "svg", "html", "pdf"]).default("png").describe("png/jpeg=이미지로 응답에 직접 반환(output_path 는 선택) / svg·html·pdf=output_path 에 파일 저장(필수). svg 는 pages 미지정 HWPX 면 전체 세로 스택 1파일, 그 외 페이지별 파일. html=자급자족 레이아웃 HTML 1파일, pdf=Chromium 필요"),
+    output_path: z.string().min(1).optional().describe("결과 저장 경로 (확장자는 format 과 일치 — .png/.jpg/.svg/.html/.pdf). 페이지별 산출은 _page_NNN 접미"),
     highlights: z.array(z.string().min(1)).optional().describe("형광펜 표시할 검색어 목록 — 채운 값·수정 문구 위치 확인용"),
     reflow_mode: z.enum(["keep", "charAll"]).default("keep").describe("reflow 줄바꿈: keep=어절 단위, charAll=글자 단위"),
-    pages: z.string().min(1).optional().describe("페이지 선택(1-based: '3', '1-3', '1,3,7-9') — 지정하면 페이지별 이미지로 응답(최대 8쪽). 미지정이면 전체를 세로 스택 이미지 1장으로"),
+    pages: z.string().min(1).optional().describe("페이지 선택(1-based: '3', '1-3', '1,3,7-9') — 지정하면 페이지별 산출(이미지 응답은 최대 8쪽). HWPX png/svg 에서 미지정이면 전체를 세로 스택 1장으로"),
+    max_width_px: z.number().int().min(200).max(4000).optional().describe("래스터(png/jpeg) 최대 폭 px — 큰 문서 응답 부피 조절"),
   },
-  async ({ file_path, format, output_path, highlights, reflow_mode, pages }) => {
+  async ({ file_path, format, output_path, highlights, reflow_mode, pages, max_width_px }) => {
     try {
-      if (format === "svg" && !output_path) {
-        return { content: [{ type: "text", text: 'format: "svg"는 output_path(.svg)가 필수입니다 — SVG 원문은 커서 응답에 직접 담지 않습니다.' }], isError: true }
+      const EXT: Record<string, string[]> = { png: [".png"], jpeg: [".jpg", ".jpeg"], svg: [".svg"], html: [".html", ".htm"], pdf: [".pdf"] }
+      const needsFile = format === "svg" || format === "html" || format === "pdf"
+      if (needsFile && !output_path) {
+        return { content: [{ type: "text", text: `format: "${format}" 은 output_path(${EXT[format][0]})가 필수입니다 — 원문은 커서 응답에 직접 담지 않습니다.` }], isError: true }
       }
-      const outPath = output_path
-        ? safeOutputPath(output_path, new Set([format === "png" ? ".png" : ".svg"]))
-        : undefined
-      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx"]))
-      if (pages && format === "png") {
-        // 페이지별 렌더 — 통합 렌더러(renderDocument) 경유. 응답 부피 보호로 8쪽까지
-        const { renderDocument } = await import("./render/index.js")
-        const { scene, assets } = await renderDocument(buffer, { format: "png", pages, highlights, reflow: true, reflowMode: reflow_mode })
-        const MAX_PAGES = 8
-        const shown = assets.slice(0, MAX_PAGES)
+      const outPath = output_path ? safeOutputPath(output_path, new Set(EXT[format])) : undefined
+      const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx", ".hwp"]))
+      const isHwp5 = resolved.toLowerCase().endsWith(".hwp")
+      if (!isHwp5 && !pages && (format === "png" || format === "svg")) {
+        // 종전 동작(HWPX·pages 미지정): 전 페이지 세로 스택 1장/1파일
+        const { renderHwpxToSvg } = await import("./render/index.js")
+        // reflow는 조판 캐시가 있으면 무시되므로 항상 켠다 — 한컴본·생성본 모두 커버
+        const result = await renderHwpxToSvg(buffer, { highlights, reflow: true, reflowMode: reflow_mode })
         const summary = [
-          `렌더 완료: 문서 ${scene.pages.length}페이지 중 ${assets.length}쪽 선택 (텍스트 ${scene.stats.texts}·이미지 ${scene.stats.images}·표 ${scene.stats.tables}·도형 ${scene.stats.shapes})`,
-          ...scene.warnings.map(w => `⚠️ ${w}`),
+          `렌더 완료: ${result.pageCount}페이지, ${Math.round(result.width)}x${Math.round(result.height)}pt (텍스트 ${result.stats.texts}·이미지 ${result.stats.images}·표 ${result.stats.tables})`,
+          ...result.warnings.map(w => `⚠️ ${w}`),
         ]
-        if (assets.length > MAX_PAGES) summary.push(`⚠️ ${MAX_PAGES}쪽까지만 응답에 담았습니다 — pages 를 좁히세요`)
+        if (format === "svg") {
+          await mkdir(dirname(outPath!), { recursive: true })
+          await writeFile(outPath!, result.svg, "utf-8")
+          summary.push(`저장: ${outPath}`)
+          return { content: [{ type: "text", text: summary.join("\n") }] }
+        }
+        const { rasterizeSvg } = await import("./render/rasterize.js")
+        const raster = await rasterizeSvg(result.svg, result.width, result.height, max_width_px ? { maxWidthPx: max_width_px } : undefined)
         if (outPath) {
           await mkdir(dirname(outPath), { recursive: true })
-          for (const a of assets) {
-            const p = assets.length === 1 ? outPath : outPath.replace(/\.png$/i, `_page_${String(a.page).padStart(3, "0")}.png`)
-            await writeFile(p, a.data as Buffer)
-            summary.push(`저장: ${p}`)
-          }
+          await writeFile(outPath, raster.png)
+          summary.push(`저장: ${outPath}`)
         }
+        summary.push(`이미지 ${raster.widthPx}x${raster.heightPx}px — 잘림·겹침·빈칸·페이지 넘침이 보이면 원인 텍스트를 수정해 다시 생성/패치하세요.`)
         return {
           content: [
-            ...shown.map(a => ({ type: "image" as const, data: (a.data as Buffer).toString("base64"), mimeType: "image/png" })),
+            { type: "image", data: raster.png.toString("base64"), mimeType: "image/png" },
             { type: "text", text: summary.join("\n") },
           ],
         }
       }
-      const { renderHwpxToSvg } = await import("./render/index.js")
-      // reflow는 조판 캐시가 있으면 무시되므로 항상 켠다 — 한컴본·생성본 모두 커버
-      const result = await renderHwpxToSvg(buffer, { highlights, reflow: true, reflowMode: reflow_mode })
+      // 통합 렌더러(renderDocument) — 페이지별 산출. HWP5 는 항상 이 경로
+      const { renderDocument } = await import("./render/index.js")
+      const { scene, assets } = await renderDocument(buffer, { format, pages, highlights, reflow: true, reflowMode: reflow_mode, maxWidthPx: max_width_px })
       const summary = [
-        `렌더 완료: ${result.pageCount}페이지, ${Math.round(result.width)}x${Math.round(result.height)}pt (텍스트 ${result.stats.texts}·이미지 ${result.stats.images}·표 ${result.stats.tables})`,
-        ...result.warnings.map(w => `⚠️ ${w}`),
+        `렌더 완료: 문서 ${scene.pages.length}페이지 중 ${assets.filter(a => a.page !== undefined).length || 1}건 (텍스트 ${scene.stats.texts}·이미지 ${scene.stats.images}·표 ${scene.stats.tables}·도형 ${scene.stats.shapes})`,
+        ...scene.warnings.map(w => `⚠️ ${w}`),
       ]
-      if (format === "svg") {
-        await mkdir(dirname(outPath!), { recursive: true })
-        await writeFile(outPath!, result.svg, "utf-8")
-        summary.push(`저장: ${outPath}`)
-        return { content: [{ type: "text", text: summary.join("\n") }] }
-      }
-      const { rasterizeSvg } = await import("./render/rasterize.js")
-      const raster = await rasterizeSvg(result.svg, result.width, result.height)
+      const suffixed = (p: string, page: number) => p.replace(/(\.[^.]+)$/, `_page_${String(page).padStart(3, "0")}$1`)
       if (outPath) {
         await mkdir(dirname(outPath), { recursive: true })
-        await writeFile(outPath, raster.png)
-        summary.push(`저장: ${outPath}`)
+        for (const a of assets) {
+          const p = a.page === undefined || assets.length === 1 ? outPath : suffixed(outPath, a.page)
+          await writeFile(p, a.data as Buffer | string)
+          summary.push(`저장: ${p}`)
+        }
       }
-      summary.push(`이미지 ${raster.widthPx}x${raster.heightPx}px — 잘림·겹침·빈칸·페이지 넘침이 보이면 원인 텍스트를 수정해 다시 생성/패치하세요.`)
-      return {
-        content: [
-          { type: "image", data: raster.png.toString("base64"), mimeType: "image/png" },
-          { type: "text", text: summary.join("\n") },
-        ],
+      if (format === "png" || format === "jpeg") {
+        const MAX_PAGES = 8
+        const shown = assets.slice(0, MAX_PAGES)
+        if (assets.length > MAX_PAGES) summary.push(`⚠️ ${MAX_PAGES}쪽까지만 응답에 담았습니다 — pages 를 좁히세요`)
+        return {
+          content: [
+            ...shown.map(a => ({ type: "image" as const, data: (a.data as Buffer).toString("base64"), mimeType: format === "jpeg" ? "image/jpeg" : "image/png" })),
+            { type: "text", text: summary.join("\n") },
+          ],
+        }
       }
+      return { content: [{ type: "text", text: summary.join("\n") }] }
     } catch (err) {
       return {
         content: [{ type: "text", text: `렌더 실패: ${describeError(err)}` }],
@@ -933,9 +940,9 @@ server.tool(
 
 server.tool(
   "crop_regions",
-  "HWPX 문서를 렌더해 표·이미지·문단·도형 영역을 페이지 이미지에서 잘라 파일로 저장합니다(render_document 와 같은 조판 엔진, 페이지 로컬 pt bbox 를 실배율로 환산). 표가 진짜 데이터표인지 조직도인지는 판단하지 않습니다 — 렌더러가 아는 개체를 자를 뿐. 결과: output_dir/<유형>_<번호>_page_<쪽>.png + regions.json(id·유형·페이지·bbox pt).",
+  "HWPX·HWP 문서를 렌더해 표·이미지·문단·도형 영역을 페이지 이미지에서 잘라 파일로 저장합니다(render_document 와 같은 조판 엔진, 페이지 로컬 pt bbox 를 실배율로 환산). 표가 진짜 데이터표인지 조직도인지는 판단하지 않습니다(그건 extract_tables) — 렌더러가 아는 개체를 자를 뿐. 결과: output_dir/<유형>_<번호>_page_<쪽>.png + regions.json(id·유형·페이지·bbox pt).",
   {
-    file_path: z.string().min(1).describe("HWPX 파일 절대 경로"),
+    file_path: z.string().min(1).describe("HWPX 또는 HWP(5.x) 파일 절대 경로"),
     output_dir: z.string().min(1).describe("crop 파일 저장 디렉토리"),
     target: z.array(z.enum(["table", "image", "paragraph", "shape"])).default(["table"]).describe("잘라낼 개체 유형"),
     format: z.enum(["png", "jpeg"]).default("png"),
@@ -944,7 +951,7 @@ server.tool(
   },
   async ({ file_path, output_dir, target, format, pages, padding_pt }) => {
     try {
-      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx"]))
+      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx", ".hwp"]))
       const dir = safeOutputPath(join(output_dir, "regions.json"), new Set([".json"])).replace(/[\\/]regions\.json$/, "")
       const { extractRenderedRegions } = await import("./render/index.js")
       const regions = await extractRenderedRegions(buffer, { types: target, format, pages, paddingPt: padding_pt, reflow: true })
@@ -960,6 +967,57 @@ server.tool(
       return { content: [{ type: "text", text: `crop ${regions.length}건 → ${dir}\n` + manifest.map(m => `${m.file}  p${m.page} (${m.bbox.x},${m.bbox.y} ${m.bbox.width}×${m.bbox.height}pt)${m.sourceId ? ` src=${m.sourceId}` : ""}`).join("\n") }] }
     } catch (err) {
       return { content: [{ type: "text", text: `crop 실패: ${describeError(err)}` }], isError: true }
+    }
+  },
+)
+
+// ─── 도구: extract_tables ────────────────────────────
+
+server.tool(
+  "extract_tables",
+  "HWPX·HWP 문서의 표를 추출·분류합니다(#76). 표마다 semantic-table(데이터표) / non-tabular-layout(조직도·연락망·결재란처럼 표를 캔버스로 쓴 것) / uncertain 분류와 근거 신호, 페이지·bbox(pt, 렌더 region 조인), 정책(visual)에 따른 crop 이미지를 돌려줍니다 — 조직도는 이미지로, 데이터표는 셀 구조로 넘기는 멀티모달 파이프라인용. 휴리스틱(네트워크·LLM 없음), 중첩표도 독립 분류. crop 은 output_dir 에 저장하고 8장까지 응답에 함께 담습니다.",
+  {
+    file_path: z.string().min(1).describe("HWPX 또는 HWP(5.x) 파일 절대 경로"),
+    output_dir: z.string().min(1).optional().describe("crop 파일·tables.json 저장 디렉토리 (visual 이 none 이 아니면 필수)"),
+    visual: z.enum(["none", "non-tabular", "non-tabular-and-uncertain", "all"]).default("none").describe("crop 대상: none=분류·bbox 만 / non-tabular=조직도류만 / non-tabular-and-uncertain(권장) / all"),
+    format: z.enum(["png", "jpeg"]).default("png"),
+    padding_pt: z.number().min(0).max(100).default(0).describe("crop 둘레 여백 pt"),
+    cells: z.boolean().default(false).describe("응답 JSON 에 셀 텍스트 격자 포함"),
+  },
+  async ({ file_path, output_dir, visual, format, padding_pt, cells }) => {
+    try {
+      if (visual !== "none" && !output_dir) {
+        return { content: [{ type: "text", text: "visual 이 none 이 아니면 crop 파일을 저장할 output_dir 이 필요합니다." }], isError: true }
+      }
+      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx", ".hwp"]))
+      const dir = output_dir ? safeOutputPath(join(output_dir, "tables.json"), new Set([".json"])).replace(/[\\/]tables\.json$/, "") : undefined
+      const { extractTables } = await import("./table/visual.js")
+      const tables = await extractTables(buffer, { policy: visual, format, paddingPt: padding_pt })
+      if (dir) await mkdir(dir, { recursive: true })
+      const ext = format === "jpeg" ? "jpg" : "png"
+      const images: Array<{ type: "image"; data: string; mimeType: string }> = []
+      const report = []
+      for (const t of tables) {
+        const crops = []
+        for (const c of t.crops) {
+          const name = `${t.id.replace(/[^\w.-]/g, "_")}_page_${String(c.page).padStart(3, "0")}.${ext}`
+          if (dir) await writeFile(join(dir, name), c.data)
+          if (images.length < 8) images.push({ type: "image", data: c.data.toString("base64"), mimeType: c.mimeType })
+          crops.push({ file: dir ? name : undefined, page: c.page, bbox: c.bbox })
+        }
+        report.push({
+          id: t.id, sourceId: t.sourceId, page: t.page, classification: t.classification,
+          table: { rows: t.table.rows, cols: t.table.cols, hasHeader: t.table.hasHeader, caption: t.table.caption, ...(cells ? { cells: t.table.cells.map(r => r.map(c => c.text)) } : {}) },
+          regions: t.regions, crops, warnings: t.warnings,
+        })
+      }
+      const json = JSON.stringify(report, null, 2)
+      if (dir) await writeFile(join(dir, "tables.json"), json + "\n")
+      const kinds = report.reduce<Record<string, number>>((m, r) => { m[r.classification.kind] = (m[r.classification.kind] ?? 0) + 1; return m }, {})
+      const head = `표 ${report.length}개 (${Object.entries(kinds).map(([k, v]) => `${k} ${v}`).join(", ") || "없음"}) crop ${report.reduce((n, r) => n + r.crops.length, 0)}건${dir ? ` → ${dir}` : ""}${images.length < report.reduce((n, r) => n + r.crops.length, 0) ? " (응답에는 8장까지)" : ""}`
+      return { content: [...images, { type: "text", text: `${head}\n${json}` }] }
+    } catch (err) {
+      return { content: [{ type: "text", text: `표 추출 실패: ${describeError(err)}` }], isError: true }
     }
   },
 )
@@ -1110,6 +1168,8 @@ server.tool(
     end_mark: z.boolean().optional().describe("본문 끝 '끝.' 표시 (행정업무규정). 미지정 시 기안문만 켜짐, 본문이 이미 '끝.'으로 끝나면 중복 생성 안 함"),
     body_title_box: z.boolean().optional().describe("본문 첫 페이지 제목 반복 박스 (개조식 실측 관행). 미지정 시 개조식+표지 조합에서 켜짐"),
     h2_marker: z.enum(H2_MARKERS).optional().describe("h2 장 제목 표기: band=로마자 채움 칸+제목 띠 표(보고서·계획서 기본), roman='Ⅰ. 제목' 텍스트, number='1. 제목'(통지 기본), box=장 없이 □ 대항목으로, none=번호 없음. 기안문 본문의 h2는 항상 법정 '1.' 항목"),
+    band_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().describe("띠 제목 번호칸 채움색 #RRGGBB (기본 #003366 실측 최다. 교육청형 밝은 띠는 #DFE6F7 + band_text_color #000000)"),
+    band_text_color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().describe("띠 제목 번호 글자색 #RRGGBB (기본 #FFFFFF)"),
     summary: z.string().optional().describe("보고서 요약 박스 — 제목표 아래 #DFE6F7 음영 상자(서울 실결재 관행). 마크다운 제목 직후 인용문(> …)으로도 지정 가능"),
     doc_info: z.object(Object.fromEntries(DOC_INFO_KEYS.map(k => [k, z.string().optional()]))).optional().describe("보고서 표지 문서정보표 — docNum=문서번호/date=결재일자/disclosure=공개여부/policyNo=방침번호 (cover=true와 함께)"),
     dept: z.string().optional().describe("표지 부서명 — 기관명 아래 '(스마트도시과)' (cover와 함께)"),
@@ -1140,7 +1200,7 @@ server.tool(
     footer: z.string().optional().describe("꼬리말 텍스트 — 모든 쪽 하단 (v4.5.0)"),
     image_dir: z.string().optional().describe("마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드 (v4.5.0, PNG/JPEG/GIF/BMP). 미지정 시 참조만 placeholder로 보존"),
   },
-  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, summary, doc_info, dept, fonts, sizes, levels, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
+  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, band_color, band_text_color, summary, doc_info, dept, fonts, sizes, levels, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
     try {
       // 조립은 gongmun-surface SSOT(buildGongmunOptions) — CLI와 의미론 공유 (v4.0.4)
       let gongmun: GongmunOptions | undefined
@@ -1149,7 +1209,7 @@ server.tool(
           preset: PRESET_ALIAS[preset], font, bodyPt: body_pt, lineSpacing: line_spacing,
           org, date, cover, toc, approval,
           pageNumbers: page_numbers, endMark: end_mark, bodyTitleBox: body_title_box,
-          h2Marker: h2_marker, fonts, sizes, levels, bullet2, suppressSingle: suppress_single,
+          h2Marker: h2_marker, bandColor: band_color, bandTextColor: band_text_color, fonts, sizes, levels, bullet2, suppressSingle: suppress_single,
           docHead: doc_head, docFoot: doc_foot, reportInfo: report_info,
           noticeHead: notice_head, press, summary, docInfo: doc_info, dept,
         })

@@ -952,12 +952,51 @@ function renderSectionToPages(
 }
 
 /** 내부 렌더 산출 — 구역별 페이지 버퍼 + 공유 defs·region. 세로 스택/페이지별 SVG 조립의 공통 입력 */
-interface InternalRender {
+export interface InternalRender {
   sections: RenderedSection[]
   defs: string[]
   warnings: string[]
   stats: Ctx["stats"]
   regions: RenderRegion[]
+}
+
+/** 이미지 참조(binaryItemIDRef) → dataURI (심볼 id 는 렌더 중 발급) */
+export type RenderImages = Ctx["images"]
+
+/** 렌더할 구역 DOM — HWPX section*.xml 또는 HWP5 어댑터가 합성한 동형 DOM (hwp5-scene) */
+export interface SectionRoot { root: Element; index: number }
+
+export interface SectionRenderInput {
+  styles: RenderStyles
+  images: RenderImages
+  /** 로딩 단계 경고를 이어받아 렌더 경고를 누적한다 */
+  warnings: string[]
+  reflow: boolean
+  reflowMode: WrapMode
+  highlights?: string[]
+}
+
+/**
+ * 구역 DOM 들 → 페이지 버퍼 (포맷 무관 공용 단계). 공유 자원(styles/images/defs/warnings/stats/region)은
+ * 전 구역에 누적된다 — 이미지 심볼 dataURI 중복 방지·전역 페이지 번호·결정적 region id.
+ */
+export function renderSectionRoots(sections: SectionRoot[], input: SectionRenderInput): InternalRender {
+  const ctxBase: Omit<Ctx, "pages" | "page" | "geom" | "pageH"> = {
+    styles: input.styles, images: input.images, defs: [],
+    highlights: (input.highlights ?? []).map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
+    warnings: input.warnings, warned: new Set(), stats: { texts: 0, images: 0, tables: 0, shapes: 0 },
+    extentMemo: { cell: new WeakMap(), table: new WeakMap() },
+    regions: new RegionCollector(), parentStack: [], pageBase: 0,
+  }
+  const rendered: RenderedSection[] = []
+  for (const { root, index } of sections) {
+    const geom = readSectionGeom(root)
+    const { pages, pageH } = renderSectionToPages(root, geom, ctxBase, input.reflow, input.reflowMode)
+    rendered.push({ pages, PW: geom.PW, pageH, clipId: `pgclip${index}` })
+    ctxBase.pageBase += pages.length
+  }
+  if (rendered.length === 0) throw new KordocError("렌더할 구역이 없습니다")
+  return { sections: rendered, defs: ctxBase.defs, warnings: input.warnings, stats: ctxBase.stats, regions: ctxBase.regions.regions }
 }
 
 const SVG_FONT_FAMILY = `'HCR Batang','함초롬바탕','Hancom Batang',AppleMyungjo,'Noto Serif CJK KR',serif`
@@ -1043,17 +1082,8 @@ async function renderHwpxInternal(input: ArrayBuffer | Uint8Array, options?: Ren
     images.set(ref, { dataUri: `data:${sniffMime(href, bytes)};base64,${Buffer.from(bytes).toString("base64")}` })
   }
 
-  // 전 구역 공유 컨텍스트 자원 (이미지 심볼 defs·통계·경고·region 을 누적)
-  const ctxBase: Omit<Ctx, "pages" | "page" | "geom" | "pageH"> = {
-    styles, images, defs: [],
-    highlights: (options?.highlights ?? []).map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
-    warnings, warned: new Set(), stats: { texts: 0, images: 0, tables: 0, shapes: 0 },
-    extentMemo: { cell: new WeakMap(), table: new WeakMap() },
-    regions: new RegionCollector(), parentStack: [], pageBase: 0,
-  }
-
-  // 구역별 렌더
-  const rendered: RenderedSection[] = []
+  // 구역 XML → DOM. 조판 캐시 없는 구역은 reflow 옵션이 없으면 생략
+  const roots: SectionRoot[] = []
   let noCacheSkipped = false
   for (let si = 0; si < secXmls.length; si++) {
     const secXml = secXmls[si]
@@ -1068,19 +1098,16 @@ async function renderHwpxInternal(input: ArrayBuffer | Uint8Array, options?: Ren
     const doc = createXmlParser().parseFromString(secXml, "text/xml")
     const root = doc.documentElement as unknown as Element
     if (!root) { warnings.push(`구역 ${si} XML 파싱 실패 — 생략`); continue }
-    const geom = readSectionGeom(root)
-    const { pages, pageH } = renderSectionToPages(root, geom, ctxBase, !!options?.reflow, options?.reflowMode ?? "keep")
-    rendered.push({ pages, PW: geom.PW, pageH, clipId: `pgclip${si}` })
-    ctxBase.pageBase += pages.length
+    roots.push({ root, index: si })
   }
 
-  if (rendered.length === 0) {
+  if (roots.length === 0) {
     if (noCacheSkipped) {
       throw new KordocError("조판 캐시(linesegarray) 없음 — 한컴에서 저장한 HWPX만 렌더 가능 (reflow 옵션으로 합성 렌더 가능)")
     }
     throw new KordocError("렌더할 구역이 없습니다 — HWPX가 손상되었을 수 있습니다")
   }
-  return { sections: rendered, defs: ctxBase.defs, warnings, stats: ctxBase.stats, regions: ctxBase.regions.regions }
+  return renderSectionRoots(roots, { styles, images, warnings, reflow: !!options?.reflow, reflowMode: options?.reflowMode ?? "keep", highlights: options?.highlights })
 }
 
 /**
@@ -1127,15 +1154,15 @@ export interface HwpxPagesResult {
 }
 
 /**
- * HWPX → 페이지별 독립 SVG. `select` 가 있으면 그 페이지만 조립한다(그리기 자체는 전 페이지 —
- * 조립·래스터가 비싼 단계). 페이지 SVG 는 페이지 로컬 좌표(세로 스택 오프셋 없음), 사용된 이미지 심볼만 defs 에 싣는다.
+ * 페이지 버퍼 → 페이지별 독립 SVG + RenderScene (포맷 무관 조립 단계). `select` 가 있으면 그 페이지만 조립한다
+ * (그리기 자체는 전 페이지 — 조립·래스터가 비싼 단계). 페이지 SVG 는 페이지 로컬 좌표(세로 스택 오프셋 없음),
+ * 사용된 이미지 심볼만 defs 에 싣는다.
  */
-export async function renderHwpxPages(
-  input: ArrayBuffer | Uint8Array,
-  options?: RenderSvgOptions,
+export function assemblePageSvgs(
+  r: InternalRender,
+  format: RenderScene["format"],
   select?: Set<number> | ((pageCount: number) => Set<number>),
-): Promise<HwpxPagesResult> {
-  const r = await renderHwpxInternal(input, options)
+): HwpxPagesResult {
   const pages: RenderScene["pages"] = []
   const pageSvgs = new Map<number, string>()
   const pageCount = r.sections.reduce((n, rs) => n + rs.pages.length, 0)
@@ -1158,6 +1185,16 @@ export async function renderHwpxPages(
         `<g clip-path="url(#${clipId})">\n${body}\n</g>\n</svg>`)
     }
   }
-  const scene: RenderScene = { format: "hwpx", pages, regions: r.regions, warnings: r.warnings, stats: { texts: r.stats.texts, tables: r.stats.tables, images: r.stats.images, shapes: r.stats.shapes } }
+  const scene: RenderScene = { format, pages, regions: r.regions, warnings: r.warnings, stats: { texts: r.stats.texts, tables: r.stats.tables, images: r.stats.images, shapes: r.stats.shapes } }
   return { scene, pageSvgs }
+}
+
+/** HWPX → 페이지별 독립 SVG (#75 Task 3). HWP5 는 hwp5-scene 의 renderHwp5Pages 가 같은 조립 단계를 쓴다 */
+export async function renderHwpxPages(
+  input: ArrayBuffer | Uint8Array,
+  options?: RenderSvgOptions,
+  select?: Set<number> | ((pageCount: number) => Set<number>),
+): Promise<HwpxPagesResult> {
+  const r = await renderHwpxInternal(input, options)
+  return assemblePageSvgs(r, "hwpx", select)
 }

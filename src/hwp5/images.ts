@@ -164,14 +164,9 @@ function resolveImageBlocks(
   return images
 }
 
-/** OLE2 BinData 스토리지(FileIndex)에서 이미지 추출, blocks의 image 블록과 매핑 */
-export function extractHwp5Images(
-  fileIndex: BinCfbEntry[] | undefined,
-  blocks: IRBlock[],
-  warnings: ParseWarning[],
-  sweepUnreferenced?: boolean,
-): ExtractedImage[] {
-  // BinData 스토리지의 모든 파일을 FileIndex 순회로 수집 — 엔트리명은 "BIN%04X.ext" 16진
+/** BinData 스토리지의 모든 파일을 FileIndex 순회로 수집 — 엔트리명은 "BIN%04X.ext" 16진.
+ *  파서(이미지 추출)와 렌더 어댑터(#75 HWP5)가 공유한다 */
+export function collectHwp5BinData(fileIndex: BinCfbEntry[] | undefined): Map<number, { data: Buffer; name: string }> {
   const binDataMap = new Map<number, { data: Buffer; name: string }>()
   if (fileIndex) {
     for (const entry of fileIndex) {
@@ -183,6 +178,32 @@ export function extractHwp5Images(
       binDataMap.set(idx, { data, name: entry.name })
     }
   }
+  return binDataMap
+}
+
+/** Lenient CFB: BinData 엔트리 수집 — 엔트리명 "BIN%04X.ext" 16진 */
+export function collectHwp5BinDataLenient(lcfb: LenientCfbContainer): Map<number, { data: Buffer; name: string }> {
+  const binDataMap = new Map<number, { data: Buffer; name: string }>()
+  const binRe = /^BIN([0-9A-Fa-f]{4,8})(?:\.|$)/
+  for (const e of lcfb.entries()) {
+    const match = e.name.match(binRe)
+    if (!match) continue
+    const idx = parseInt(match[1], 16)
+    const raw = lcfb.findStream(e.name)
+    if (!raw) continue
+    binDataMap.set(idx, { data: normalizeBinPayload(raw), name: e.name })
+  }
+  return binDataMap
+}
+
+/** OLE2 BinData 스토리지(FileIndex)에서 이미지 추출, blocks의 image 블록과 매핑 */
+export function extractHwp5Images(
+  fileIndex: BinCfbEntry[] | undefined,
+  blocks: IRBlock[],
+  warnings: ParseWarning[],
+  sweepUnreferenced?: boolean,
+): ExtractedImage[] {
+  const binDataMap = collectHwp5BinData(fileIndex)
 
   if (binDataMap.size === 0) {
     // 이미지 블록이 있는데 BinData가 없으면 sentinel 정리만 수행
@@ -199,17 +220,7 @@ export function extractHwp5ImagesLenient(
   warnings: ParseWarning[],
   sweepUnreferenced?: boolean,
 ): ExtractedImage[] {
-  // BinData 엔트리 수집 — 엔트리명 "BIN%04X.ext" 16진
-  const binDataMap = new Map<number, { data: Buffer; name: string }>()
-  const binRe = /^BIN([0-9A-Fa-f]{4,8})(?:\.|$)/
-  for (const e of lcfb.entries()) {
-    const match = e.name.match(binRe)
-    if (!match) continue
-    const idx = parseInt(match[1], 16)
-    const raw = lcfb.findStream(e.name)
-    if (!raw) continue
-    binDataMap.set(idx, { data: normalizeBinPayload(raw), name: e.name })
-  }
+  const binDataMap = collectHwp5BinDataLenient(lcfb)
   if (binDataMap.size === 0) {
     resolveCellImageSentinels(blocks, new Map())
     return []

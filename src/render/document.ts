@@ -3,7 +3,7 @@
  * → SVG/HTML/PNG/JPEG/PDF 자산. 다운스트림은 RenderScene 만 알면 된다.
  *
  *   hwpx → HWPX 어댑터(svg-render, 조판 캐시 재생·reflow 폴백)
- *   hwp  → HWP5 어댑터는 후속(#75 Task 7) — 지금은 KordocError
+ *   hwp  → HWP5 어댑터(hwp5-scene: 레코드 → 동형 section DOM → 같은 렌더러)
  *   기타 → 미지원
  */
 
@@ -12,6 +12,7 @@ import { detectFormat, detectZipFormat } from "../detect.js"
 import { KordocError, toArrayBuffer } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { renderHwpxPages } from "./svg-render.js"
+import { renderHwp5Pages } from "./hwp5-scene.js"
 import type { WrapMode } from "../hwpx/text-metrics.js"
 import type { RenderScene, RenderSourceFormat } from "./scene.js"
 import { renderSceneToHtml } from "./html.js"
@@ -25,6 +26,8 @@ export interface SceneRenderOptions {
   pages?: number[] | string
   /** 조판 캐시 없는 HWPX 를 순수 TS 조판으로 렌더 (기본 true — 캐시가 있으면 무시) */
   reflow?: boolean
+  /** 암호 HWP5 열기 암호 */
+  password?: string
   reflowMode?: WrapMode
   highlights?: string[]
   maxImageBytes?: number
@@ -82,16 +85,16 @@ async function loadBuffer(input: RenderInput): Promise<ArrayBuffer> {
   return input
 }
 
-/** 입력 포맷 → 렌더 어댑터 종류. HWP5 는 후속 */
+/** 입력 포맷 → 렌더 어댑터 종류 (hwpx | hwp). OLE2 는 HWP5 로 본다 — 세부 판정(HWP3·암호)은 어댑터가 */
 async function sourceFormatOf(buffer: ArrayBuffer): Promise<RenderSourceFormat> {
   const format = detectFormat(buffer)
   if (format === "hwpx") {
     const zip = await detectZipFormat(buffer)
     if (zip === "hwpx" || zip === "unknown") return "hwpx"
-    throw new KordocError(`렌더 미지원 형식(${zip}) — 레이아웃 렌더는 HWPX 만 지원합니다`)
+    throw new KordocError(`렌더 미지원 형식(${zip}) — 레이아웃 렌더는 HWPX·HWP 만 지원합니다`)
   }
-  if (format === "hwp") throw new KordocError("HWP5 레이아웃 렌더는 아직 지원하지 않습니다 — 한컴에서 HWPX 로 저장한 뒤 렌더하세요 (#75 후속)")
-  throw new KordocError(`렌더 미지원 형식(${format}) — 레이아웃 렌더는 HWPX 만 지원합니다`)
+  if (format === "hwp") return "hwp"
+  throw new KordocError(`렌더 미지원 형식(${format}) — 레이아웃 렌더는 HWPX·HWP 만 지원합니다`)
 }
 
 /**
@@ -101,7 +104,6 @@ async function sourceFormatOf(buffer: ArrayBuffer): Promise<RenderSourceFormat> 
 export async function renderDocumentToScene(input: RenderInput, options: SceneRenderOptions = {}): Promise<SceneRenderResult> {
   const buffer = await loadBuffer(input)
   const source = await sourceFormatOf(buffer)
-  if (source !== "hwpx") throw new KordocError("HWP5 레이아웃 렌더는 아직 지원하지 않습니다")
   const select = options.pages !== undefined
     ? (pageCount: number) => {
       const set = parsePageRange(options.pages!, pageCount)
@@ -109,9 +111,10 @@ export async function renderDocumentToScene(input: RenderInput, options: SceneRe
       return set
     }
     : undefined
-  const { scene, pageSvgs } = await renderHwpxPages(buffer, {
-    reflow: options.reflow ?? true, reflowMode: options.reflowMode, highlights: options.highlights, maxImageBytes: options.maxImageBytes,
-  }, select)
+  const renderOptions = { reflow: options.reflow ?? true, reflowMode: options.reflowMode, highlights: options.highlights, maxImageBytes: options.maxImageBytes }
+  const { scene, pageSvgs } = source === "hwp"
+    ? renderHwp5Pages(buffer, { ...renderOptions, password: options.password }, select)
+    : await renderHwpxPages(buffer, renderOptions, select)
   return { scene, pageSvgs }
 }
 

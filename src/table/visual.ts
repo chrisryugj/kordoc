@@ -1,6 +1,6 @@
 /**
- * 분류된 표 ↔ 렌더 region 조인 (#76 Task 6·7). bbox 는 여기서 계산하지 않는다 — #75 의 RenderRegion.sourceId(hp:tbl id) 로 IRTable.sourceId 를 잇는다.
- * HWP5 는 렌더 어댑터가 없어 분류만 되고 regions/crops 는 비며 경고를 남긴다.
+ * 분류된 표 ↔ 렌더 region 조인 (#76 Task 6·7). bbox 는 여기서 계산하지 않는다 — #75 의 RenderRegion.sourceId 로 IRTable.sourceId 를 잇는다
+ * (HWPX 는 `hp:tbl id`, HWP5 는 table-ids.ts 의 문서 순번 `t{N}` — 파서·렌더 어댑터가 같은 프리패스를 쓴다).
  */
 
 import { readFile } from "node:fs/promises"
@@ -27,7 +27,7 @@ export interface ExtractTableVisualOptions {
 export interface ExtractedTableCrop { page: number; bbox: PageBBox; mimeType: "image/png" | "image/jpeg"; data: Buffer }
 
 export interface ExtractedTable {
-  /** sourceId(HWPX) 또는 문서 순서 `tbl-N` */
+  /** sourceId(HWPX `hp:tbl id` · HWP5 `t{N}`) 또는 문서 순서 `tbl-N` */
   id: string
   page: number
   table: IRTable
@@ -35,7 +35,7 @@ export interface ExtractedTable {
   sourceId?: string
   regions: PageBBox[]
   crops: ExtractedTableCrop[]
-  /** 표별 경고 — region 미매칭·중복 매칭·HWP5 미지원 */
+  /** 표별 경고 — region 미매칭·중복 매칭·렌더 미지원 형식 */
   warnings: string[]
 }
 
@@ -46,7 +46,7 @@ function wantsCrop(kind: TableClassificationSummary["kind"], policy: TableVisual
   return policy === "non-tabular-and-uncertain" && kind === "uncertain"
 }
 
-/** 문서 → 분류된 표 목록(+HWPX 는 region·crop). 정상 parse 는 래스터하지 않는다 — 이 API 만 명시적으로 */
+/** 문서 → 분류된 표 목록(+HWPX·HWP 는 region·crop). 정상 parse 는 래스터하지 않는다 — 이 API 만 명시적으로 */
 export async function extractTables(input: string | ArrayBuffer | Buffer, options: ExtractTableVisualOptions = {}): Promise<ExtractedTable[]> {
   const policy = options.policy ?? "non-tabular-and-uncertain"
   const buffer = typeof input === "string" ? toArrayBuffer(await readFile(input)) : Buffer.isBuffer(input) ? toArrayBuffer(input) : input
@@ -59,8 +59,8 @@ export async function extractTables(input: string | ArrayBuffer | Buffer, option
   }))
   if (out.length === 0) return out
   const format = detectFormat(buffer)
-  if (format !== "hwpx") {
-    for (const t of out) t.warnings.push(format === "hwp" ? "HWP5 는 레이아웃 렌더 미지원 — region·crop 없음(분류만)" : `${format} 은 렌더 미지원 — region·crop 없음`)
+  if (format !== "hwpx" && format !== "hwp") {
+    for (const t of out) t.warnings.push(`${format} 은 렌더 미지원 — region·crop 없음`)
     return out
   }
   // region 조인 — sourceId 1:1. 중복·미매칭은 경고

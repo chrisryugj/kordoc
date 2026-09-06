@@ -1,4 +1,4 @@
-/** #76 Task 6·7 — extractTables: 분류 + 렌더 region 조인(sourceId) + 정책별 crop. HWP5 는 분류만 */
+/** #76 Task 6·7 — extractTables: 분류 + 렌더 region 조인(sourceId) + 정책별 crop. HWPX·HWP5 */
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
@@ -44,10 +44,11 @@ describe("extractTables — HWPX", () => {
     const out = await extractTables(Buffer.from(await buildRenderFixture({ noTable: true, singlePage: true })))
     assert.deepEqual(out, [])
   })
-  it("HWP5 — 분류는 되고 region·crop 은 비며 경고 (corpus 존재 시)", { skip: !existsSync(join(CORPUS, "hwp5")) }, async () => {
-    const f = readdirSync(join(CORPUS, "hwp5")).find(n => n.endsWith(".hwp"))
+  it("HWP5 — 분류 + 렌더 region 조인(sourceId t{N}) (corpus 존재 시, #75 Task 7)", { skip: !existsSync(join(CORPUS, "hwp5")) }, async () => {
+    const f = readdirSync(join(CORPUS, "hwp5")).find(n => n === "merging-cell.hwp")
     if (!f) return
     const out = await extractTables(join(CORPUS, "hwp5", f))
-    for (const t of out) { assert.ok(t.classification); assert.equal(t.regions.length, 0); assert.ok(t.warnings.some(w => w.includes("HWP5"))) }
+    assert.ok(out.length >= 1)
+    for (const t of out) { assert.ok(t.classification); assert.match(t.sourceId!, /^t\d+$/); assert.equal(t.regions.length, 1); assert.deepEqual(t.warnings, []) }
   })
 })

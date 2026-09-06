@@ -6,10 +6,10 @@ import {
   TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE, TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE,
   TAG_EQEDIT, TAG_SHAPE_COMPONENT, TAG_SHAPE_COMPONENT_CONTAINER, TAG_SHAPE_COMPONENT_PICTURE,
   FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_DISTRIBUTION, FLAG_DRM,
-  type HwpRecord, type HwpDocInfo, type IndexedControlResolver,
+  type HwpRecord, type HwpDocInfo, type HwpFileHeader, type IndexedControlResolver,
 } from "./record.js"
 import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
-import { extractHwp5Images, extractHwp5ImagesLenient } from "./images.js"
+import { extractHwp5Images, extractHwp5ImagesLenient, collectHwp5BinData, collectHwp5BinDataLenient } from "./images.js"
 import { inlineImagesIntoMarkdown } from "../image/transcode.js"
 import { decryptViewText } from "./crypto.js"
 import { hwpEquationToLatex } from "./equation.js"
@@ -21,6 +21,7 @@ import { assertDecryptedDocInfo, assertSupportedEncryptVersion, decryptPasswordS
 import { KordocError, sanitizeHref } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { detectHwp5SectionPages, type Hwp5SectionPageDetect } from "./page-boundary.js"
+import { indexHwp5Tables } from "./table-ids.js"
 
 import { createRequire } from "module"
 const require = createRequire(import.meta.url)
@@ -99,7 +100,23 @@ function normalizeCtrlId(raw: number): number {
   return raw
 }
 
-export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): InternalParseResult {
+/**
+ * 열린 HWP5 컨테이너 — 파서와 렌더 어댑터(#75 Task 7)가 공유하는 스트림 접근 계층.
+ * strict CFB → lenient 폴백, DRM 거부, 암호 문서 복호(findStream 에 내장), 압축·배포용 플래그.
+ */
+export interface Hwp5Container {
+  cfb: CfbContainer | null
+  lenientCfb: LenientCfbContainer | null
+  header: HwpFileHeader
+  compressed: boolean
+  distribution: boolean
+  encrypted: boolean
+  /** 스트림 읽기 — 암호 문서는 복호를 거친다 */
+  findStream: (path: string) => Buffer | null
+  warnings: ParseWarning[]
+}
+
+export function openHwp5Container(buffer: Buffer, options?: Pick<ParseOptions, "password">): Hwp5Container {
   // CFB 파싱: strict 먼저, 실패 시 lenient 폴백
   let cfb: CfbContainer | null = null
   let lenientCfb: LenientCfbContainer | null = null
@@ -150,11 +167,6 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
   const compressed = (header.flags & FLAG_COMPRESSED) !== 0
   const distribution = (header.flags & FLAG_DISTRIBUTION) !== 0
 
-  const metadata: DocumentMetadata = {
-    version: `${header.versionMajor}.x`,
-  }
-  if (cfb) extractHwp5Metadata(cfb, metadata)
-
   // 암호 문서는 여기서 비밀번호를 검증한다 — DocInfo·섹션 파싱은 실패를 경고로 흡수해서,
   // 오답으로 나온 난수 데이터가 "성공했는데 내용이 쓰레기"인 결과로 흘러가기 때문이다.
   if (encrypted) {
@@ -169,38 +181,84 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
     assertDecryptedDocInfo(docInfoData, readRecords)
   }
 
+  return { cfb, lenientCfb, header, compressed, distribution, encrypted, findStream, warnings }
+}
+
+/** DocInfo 원시 레코드 (best-effort) — 렌더 어댑터가 FACE_NAME·BORDER_FILL 등 파서가 안 쓰는 레코드를 읽는다 */
+export function readHwp5DocInfoRecords(c: Hwp5Container): HwpRecord[] | null {
+  try {
+    const raw = c.findStream("/DocInfo")
+    if (!raw) return null
+    return readRecords(c.compressed ? decompressStream(raw) : raw)
+  } catch {
+    return null
+  }
+}
+
+/** 섹션 원시 스트림 — 배포용은 복호+압축해제 완료, 그 외는 readHwp5SectionRecords 가 압축을 푼다 */
+export function readHwp5SectionStreams(c: Hwp5Container): Buffer[] {
+  return c.distribution
+    ? (c.cfb ? findViewTextSections(c.cfb, c.compressed) : findViewTextSectionsLenient(c.lenientCfb!, c.compressed))
+    : c.encrypted
+      ? findSectionsVia(c.findStream)
+      : (c.cfb ? findSections(c.cfb) : findSectionsLenient(c.lenientCfb!, c.compressed))
+}
+
+/** 섹션 스트림 → 레코드 (누적 압축해제 상한). 실패한 섹션은 null + PARTIAL_PARSE 경고 */
+export function readHwp5SectionRecords(c: Hwp5Container, sections: Buffer[], warnings: ParseWarning[]): (HwpRecord[] | null)[] {
+  const out: (HwpRecord[] | null)[] = []
+  let totalDecompressed = 0
+  for (let si = 0; si < sections.length; si++) {
+    try {
+      // 배포용 문서는 findViewTextSections에서 이미 복호화+압축해제 완료
+      const data = (!c.distribution && c.compressed) ? decompressStream(Buffer.from(sections[si])) : Buffer.from(sections[si])
+      totalDecompressed += data.length
+      if (totalDecompressed > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
+      out.push(readRecords(data))
+    } catch (secErr) {
+      if (secErr instanceof KordocError) throw secErr
+      out.push(null)
+      warnings.push({ page: si + 1, message: `섹션 ${si + 1} 파싱 실패: ${secErr instanceof Error ? secErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
+    }
+  }
+  return out
+}
+
+/** BinData 스토리지 — storageId(16진 BIN%04X) → 바이트(항목별 압축 정규화) */
+export function readHwp5BinData(c: Hwp5Container): Map<number, { data: Buffer; name: string }> {
+  return c.cfb ? collectHwp5BinData(c.cfb.FileIndex) : collectHwp5BinDataLenient(c.lenientCfb!)
+}
+
+export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): InternalParseResult {
+  const c = openHwp5Container(buffer, options)
+  const { cfb, lenientCfb, compressed, encrypted, findStream, warnings } = c
+
+  const metadata: DocumentMetadata = {
+    version: `${c.header.versionMajor}.x`,
+  }
+  if (cfb) extractHwp5Metadata(cfb, metadata)
+
   // DocInfo 파싱 (스타일 정보 추출)
   // 암호 문서는 복호를 거치는 findStream 경로로 — cfb 직접 접근은 암호문을 읽는다
   const docInfo = cfb && !encrypted
     ? parseDocInfoStream(cfb, compressed)
     : parseDocInfoFromStream(findStream("/DocInfo"), compressed)
 
-  const sections = distribution
-    ? (cfb ? findViewTextSections(cfb, compressed) : findViewTextSectionsLenient(lenientCfb!, compressed))
-    : encrypted
-      ? findSectionsVia(findStream)
-      : (cfb ? findSections(cfb) : findSectionsLenient(lenientCfb!, compressed))
+  const sections = readHwp5SectionStreams(c)
   if (sections.length === 0) throw new KordocError("섹션 스트림을 찾을 수 없습니다")
 
   // (#66) 1단계: 섹션 레코드 확보 + 실제 페이지 프리패스 — 조판 캐시(PARA_LINE_SEG)가
   // 전 섹션에서 신뢰 가능하면 layout 모드(실제 페이지), 아니면 종전 섹션 근사.
-  const sectionRecords: (HwpRecord[] | null)[] = []
-  const sectionDetects: (Hwp5SectionPageDetect | null)[] = []
-  let totalDecompressed = 0
-  for (let si = 0; si < sections.length; si++) {
-    try {
-      // 배포용 문서는 findViewTextSections에서 이미 복호화+압축해제 완료
-      const data = (!distribution && compressed) ? decompressStream(Buffer.from(sections[si])) : Buffer.from(sections[si])
-      totalDecompressed += data.length
-      if (totalDecompressed > MAX_TOTAL_DECOMPRESS) throw new KordocError("총 압축 해제 크기 초과 (decompression bomb 의심)")
-      const records = readRecords(data)
-      sectionRecords.push(records)
-      sectionDetects.push(detectHwp5SectionPages(records))
-    } catch (secErr) {
-      if (secErr instanceof KordocError) throw secErr
-      sectionRecords.push(null)
-      sectionDetects.push(null)
-      warnings.push({ page: si + 1, message: `섹션 ${si + 1} 파싱 실패: ${secErr instanceof Error ? secErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
+  const sectionRecords = readHwp5SectionRecords(c, sections, warnings)
+  const sectionDetects: (Hwp5SectionPageDetect | null)[] = sectionRecords.map(r => r ? detectHwp5SectionPages(r) : null)
+  // 표 순번(sourceId) 프리패스 — 렌더 어댑터(#75)와 같은 규칙(table-ids.ts)
+  const sectionTableIds: Map<number, string>[] = []
+  {
+    let base = 0
+    for (const r of sectionRecords) {
+      const ix = indexHwp5Tables(r ?? [], base)
+      sectionTableIds.push(ix.ids)
+      base += ix.count
     }
   }
 
@@ -228,7 +286,7 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
     if (!layoutPages && pageFilter && !pageFilter.has(si + 1)) continue
     try {
       const sectionBlocks = parseSection(records, docInfo, warnings, si + 1, doc,
-        layoutPages ? { base: pageBase, pageAtPara: detect.pageAtPara } : undefined)
+        layoutPages ? { base: pageBase, pageAtPara: detect.pageAtPara } : undefined, sectionTableIds[si])
       bodyBlocks.push(...sectionBlocks)
       parsedSections++
       options?.onProgress?.(parsedSections, sections.length)
@@ -613,6 +671,8 @@ interface Hwp5Ctx {
   pageMap?: { base: number; pageAtPara: number[] }
   /** 지금까지 만난 top-level 문단 수 (pageAtPara 인덱스) */
   topOrdinal: number
+  /** 표 CTRL_HEADER 레코드 인덱스 → sourceId (table-ids.ts 프리패스, 렌더 region 조인 키 #76) */
+  tableIds?: Map<number, string>
 }
 
 /** 섹션 레코드 → IRBlock[] (테스트에서 직접 사용 가능하도록 export) */
@@ -623,10 +683,11 @@ export function parseSection(
   sectionNum: number,
   doc?: Hwp5DocState,
   pageMap?: { base: number; pageAtPara: number[] },
+  tableIds?: Map<number, string>,
 ): IRBlock[] {
   const ctx: Hwp5Ctx = {
     docInfo, warnings, sectionNum, doc: doc ?? createHwp5DocState(), depth: 0,
-    page: pageMap ? pageMap.base + 1 : sectionNum, pageMap, topOrdinal: 0,
+    page: pageMap ? pageMap.base + 1 : sectionNum, pageMap, topOrdinal: 0, tableIds,
   }
   return parseParagraphList(records, 0, records.length, ctx)
 }
@@ -1038,6 +1099,8 @@ interface Hwp5Cell extends CellContext {
 function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): IRTable | null {
   if (ctx.depth >= MAX_NEST_DEPTH) return null
   const { childStart, childEnd } = ctrl
+  // sourceId — CTRL_HEADER 레코드 인덱스(childStart − 1)로 프리패스 순번을 찾는다 (렌더 어댑터와 같은 키)
+  const sourceId = ctx.tableIds?.get(childStart - 1)
 
   // HWPTAG_TABLE 레코드에서 행/열 수
   let rows = 0
@@ -1099,12 +1162,14 @@ function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx)
     }))
     const table: IRTable = { rows, cols, cells: irCells, hasHeader: rows > 1 }
     if (caption) table.caption = caption
+    if (sourceId) table.sourceId = sourceId
     return table
   }
 
   const cellRows = arrangeCells(rows, cols, cells)
   const table = buildTable(cellRows, { keepAnchoredEmptyCols: ctx.doc.keepTrailingEmptyCols })
   if (caption && table.rows > 0) table.caption = caption
+  if (sourceId && table.rows > 0) table.sourceId = sourceId
   return table.rows > 0 ? table : null
 }
 

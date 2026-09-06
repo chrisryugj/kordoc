@@ -407,7 +407,7 @@ export type {
 } from "./roundtrip/source-map.js"
 export { renderHtml, markdownToPdf, blocksToPdf } from "./print/renderer.js"
 export type { PrintPreset, PrintOptions, PageMargin } from "./print/renderer.js"
-export { renderHwpxToSvg, renderDocument, renderDocumentToScene, extractRenderedRegions, renderSceneToHtml } from "./render/index.js"
+export { renderHwpxToSvg, renderDocument, renderDocumentToScene, extractRenderedRegions, renderSceneToHtml, renderHwp5Pages } from "./render/index.js"
 // 표 분류·시각 추출 (#76)
 export { classifyTable, collectTableBlocks } from "./table/classifier.js"
 export type { ClassifyContext } from "./table/classifier.js"

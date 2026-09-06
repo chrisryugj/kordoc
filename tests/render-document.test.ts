@@ -1,4 +1,4 @@
-/** #75 Task 3·4·6·8 — 페이지별 SVG·HTML·통합 renderDocument·페이지 선택·미지원 형식·PDF(환경 게이트) */
+/** #75 Task 3·4·6·8 — 페이지별 SVG·HTML·통합 renderDocument·페이지 선택·미지원 형식·PDF(환경 게이트). HWP5 경로는 render-hwp5.test */
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
@@ -64,18 +64,22 @@ describe("render document: renderDocument 통합", () => {
     assert.equal(png.assets.length, 1)
     assert.equal(png.assets[0].page, 2)
     assert.ok(png.assets[0].scale! > 0 && Math.abs(png.assets[0].width! - 595.28 * png.assets[0].scale!) <= 1)
+    // 보고 픽셀 = 실제 PNG IHDR (sharp 의 pt 단위 density 가 제곱으로 걸리는 환경에서 crop 이 1/4 로 잘리던 실사고)
+    const ihdrW = (png.assets[0].data as Buffer).readUInt32BE(16), ihdrH = (png.assets[0].data as Buffer).readUInt32BE(20)
+    assert.equal(ihdrW, png.assets[0].width); assert.equal(ihdrH, png.assets[0].height)
+    assert.ok(ihdrW <= 600, `maxWidthPx 준수: ${ihdrW}`)
     const jpg = await renderDocument(buf, { format: "jpeg", pages: "1" })
     assert.equal(jpg.assets[0].mimeType, "image/jpeg")
   })
-  it("Buffer·Uint8Array·경로 입력, 미지원 형식·HWP5·없는 파일은 KordocError", async () => {
+  it("Buffer·Uint8Array·경로 입력, 미지원 형식·깨진 OLE2·없는 파일은 KordocError", async () => {
     const u8 = await buildRenderFixture({ singlePage: true })
     const viaBuffer = await renderDocument(Buffer.from(u8), { format: "svg" })
     assert.equal(viaBuffer.assets.length, 1)
     await assert.rejects(renderDocument(Buffer.from("%PDF-1.4\n%%EOF"), { format: "svg" }), /미지원 형식/)
     await assert.rejects(renderDocument("/nonexistent/x.hwpx", { format: "svg" }), /찾을 수 없습니다/)
-    // OLE2 시그니처(HWP5) → 후속 안내
+    // OLE2 시그니처만 있는 껍데기 → HWP5 어댑터가 컨테이너 오류로 거부 (조용한 빈 렌더 금지)
     const ole = Buffer.alloc(600); ole.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
-    await assert.rejects(renderDocument(ole, { format: "svg" }), /HWP5/)
+    await assert.rejects(renderDocument(ole, { format: "svg" }), KordocError)
   })
   it("pdf — Chromium 있으면 %PDF, 없으면 조치 안내 KordocError", { skip: !existsSync("/Applications/Google Chrome.app") && !findChromiumPath() && !process.env.PUPPETEER_EXECUTABLE_PATH }, async () => {
     const r = await renderDocument(await buildRenderFixture(), { format: "pdf" })

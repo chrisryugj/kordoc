@@ -1,4 +1,5 @@
 export { renderHwpxToSvg, renderHwpxPages, type RenderSvgOptions, type RenderSvgResult, type HwpxPagesResult } from "./svg-render.js"
+export { renderHwp5Pages, renderHwp5Records, buildHwp5RenderStyles, hwp5SectionToXml, type RenderHwp5Options, type Hwp5SectionXmlContext } from "./hwp5-scene.js"
 export { regionId, unionBBox, RegionCollector, type RenderScene, type ScenePage, type RenderRegion, type PageBBox, type RenderObjectType, type RenderSourceFormat } from "./scene.js"
 export { renderDocument, renderDocumentToScene, type RenderFormat, type RenderDocumentOptions, type RenderDocumentResult, type RenderAsset, type SceneRenderOptions, type SceneRenderResult, type RenderInput } from "./document.js"
 export { renderSceneToHtml, type SceneHtmlOptions } from "./html.js"
