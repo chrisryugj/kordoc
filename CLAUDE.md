@@ -140,11 +140,13 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/xlsx/parser.ts` | XLSX(ZIP+XML) 파싱, 공유 문자열/병합 셀 처리 |
 | `src/docx/parser.ts` | DOCX(ZIP+XML) 파싱, 스타일/번호매기기/각주 처리 |
 | `src/table/builder.ts` | 2-pass 그리드 테이블 빌더 + 마크다운 변환 |
-| `src/render/svg-render.ts` | 레이아웃 보존 렌더 — HWPX 조판 캐시(lineseg·cellAddr·pos)를 SVG 절대배치로. 문단·표·이미지·도형 region 기록 + `<g data-kordoc-*>` 래퍼, `renderHwpxPages` 페이지별 standalone SVG (#75) |
+| `src/render/svg-render.ts` | 레이아웃 보존 렌더 — HWPX 조판 캐시(lineseg·cellAddr·pos)를 SVG 절대배치로. 문단·표·이미지·도형 region 기록 + `<g data-kordoc-*>` 래퍼. 포맷 무관 단계 `renderSectionRoots`(구역 DOM→페이지 버퍼)·`assemblePageSvgs`(페이지별 standalone SVG) 를 HWPX·HWP5 어댑터가 공유 (#75) |
 | `src/render/scene.ts` | RenderScene 계약 — 1-based 페이지·페이지 로컬 pt bbox·결정적 region id(`table-000017`)·다중 페이지 조각·parentId·sourceId |
-| `src/render/document.ts` | 통합 렌더 API `renderDocument`/`renderDocumentToScene` — 포맷 감지(HWPX만, HWP5 후속)→페이지 선택→svg/html/png/jpeg/pdf 자산 |
+| `src/render/document.ts` | 통합 렌더 API `renderDocument`/`renderDocumentToScene` — 포맷 감지(hwpx→svg-render / hwp→hwp5-scene)→페이지 선택→svg/html/png/jpeg/pdf 자산 |
+| `src/render/hwp5-scene.ts` | HWP5 렌더 어댑터 (#75 Task 7) — BodyText 레코드(LINE_SEG·CTRL/TABLE/LIST_HEADER·SHAPE_COMPONENT/PICTURE)를 HWPX 동형 section DOM 으로 합성해 공용 렌더러(`renderSectionRoots`/`assemblePageSvgs`)에 전달. 레코드 오프셋 실측은 헤더 주석 |
+| `src/hwp5/table-ids.ts` | HWP5 표 순번 `t{N}` 프리패스 — 파서 `IRTable.sourceId` 와 렌더 `RenderRegion.sourceId` 공용 키 |
 | `src/render/html.ts` · `pdf.ts` · `regions.ts` | 레이아웃 HTML(`.kordoc-page[data-page]`+인쇄 CSS) · HTML→PDF(puppeteer-core optional) · region crop(`cropRect` bbox×실배율, `extractRenderedRegions`) |
-| `src/table/classifier.ts` · `analyze.ts` · `visual.ts` | 표 분류(의미/비표/불확실 휴리스틱, 키워드는 구조 증거 게이트) · opt-in 트리 배선+표현 정책 · 분류↔렌더 region 조인·`extractTables` (#76) |
+| `src/table/classifier.ts` · `analyze.ts` · `visual.ts` | 표 분류(의미/비표/불확실 휴리스틱, 키워드는 구조 증거 게이트) · opt-in 트리 배선+표현 정책 · 분류↔렌더 region 조인(HWPX `hp:tbl id`·HWP5 `t{N}`)·`extractTables` (#76) |
 | `src/render/layout.ts` | 렌더 순수 계산 — uint32 음수(toInt32), 표 열 경계 전파 솔버, 행 높이(max+콘텐츠 성장) |
 | `src/render/head-styles.ts` | 렌더용 header.xml 스타일 — charPr(크기·굵기·색·장평·자간)/paraPr 정렬/borderFill |
 | `src/diff/compare.ts` | 문서 비교 (블록 단위 diff) |

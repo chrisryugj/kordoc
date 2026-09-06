@@ -89,7 +89,7 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
-## v4.14.0 변경사항
+## v4.13.1 변경사항
 
 - **🖼️ HWP(5.x)도 조판 그대로 렌더**: `kordoc render 문서.hwp --format png -d ./pages`, `renderDocument("문서.hwp", …)`, MCP `render_document`·`crop_regions` 가 `.hwp` 를 받습니다. 한컴이 저장한 HWP5 의 조판 캐시(줄 좌표·셀 격자·개체 앵커)를 HWPX 와 같은 렌더러로 그리므로, 같은 문서를 hwp/hwpx 로 각각 저장한 10쌍에서 페이지 수·표 위치·괘선 굵기가 HWPX 렌더와 일치합니다. 표 영역 id 는 문서 순번(`t1`, `t2`…)이고 파서 결과의 `sourceId` 와 같아 `kordoc tables 문서.hwp --visual all -d ./tables` 도 HWP 에서 조직도 crop 까지 됩니다. 머리말·꼬리말·수식은 HWPX 와 같이 미렌더.
 - **🧭 MCP `extract_tables`**: 표 분류(데이터표/조직도류/불확실) + 페이지·bbox + crop 을 MCP 에서도. 응답에 crop 8장까지, `output_dir` 에 tables.json.
@@ -873,6 +873,10 @@ writeFileSync("결재문서.svg", r.svg)
 // r.width/r.height (pt), r.pageCount, r.stats { texts, images, tables }, r.warnings
 
 const g = await renderHwpxToSvg(generatedHwpx, { reflow: true }) // 조판 캐시 없는 생성본
+
+// 통합 렌더 — HWPX·HWP(5.x) 모두, 페이지별 PNG + 표 영역 crop (v4.13, HWP v4.13.1)
+const { scene, assets } = await renderDocument("결재문서.hwp", { format: "png", pages: "1-2" })
+const crops = await extractRenderedRegions("결재문서.hwp", { types: ["table"] })
 ```
 
 CLI로도: `kordoc render 결재문서.hwpx -o 결재문서.svg` — 조판 캐시 없는 문서는 기본으로
@@ -1071,11 +1075,11 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `extract_profile` | 참조 HWPX에서 표 서식 프로필(JSON) 추출 — generate_document의 profile_path로 재현 |
 | `generate_document` | 마크다운(표·수식·차트 포함) → HWPX 생성, 공문서 프리셋 (v3.5) |
 | `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
-| `render_document` | HWPX·HWP를 조판 그대로 PNG/JPEG 이미지(응답)·SVG/HTML/PDF 파일로 렌더 — 생성·수정 결과를 AI가 눈으로 검증 (v4.1, HWP·포맷 확장 v4.14) |
+| `render_document` | HWPX·HWP를 조판 그대로 PNG/JPEG 이미지(응답)·SVG/HTML/PDF 파일로 렌더 — 생성·수정 결과를 AI가 눈으로 검증 (v4.1, HWP·포맷 확장 v4.13.1) |
 | `redact_document` | 개인정보(주민번호·전화·이메일·카드·계좌) 탐지 + 서식 보존 마스킹, 리포트 반환 (v4.1) |
 | `parse_chunks` | RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 (v4.1) |
 | `crop_regions` | 렌더 영역(표·이미지·문단·도형)을 페이지 이미지에서 실배율로 잘라 저장 + regions.json (v4.13) |
-| `extract_tables` | 표 분류(데이터표/조직도류/불확실) + 페이지·bbox + 정책별 crop — 조직도는 이미지로, 데이터표는 구조로 (v4.14) |
+| `extract_tables` | 표 분류(데이터표/조직도류/불확실) + 페이지·bbox + 정책별 crop — 조직도는 이미지로, 데이터표는 구조로 (v4.13.1) |
 
 ## API
 
@@ -1117,6 +1121,9 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `blocksToPdf(blocks, options?)` | IRBlock[] → PDF 생성 (동일하게 `puppeteer-core` 필요) |
 | `renderHtml(blocks, options?)` | IRBlock[] → 인쇄용 HTML (puppeteer 불필요) |
 | `renderHwpxToSvg(buffer, options?)` | HWPX → 레이아웃 보존 SVG — 다페이지·형광펜·도형, 캐시 없으면 `reflow` (v3.10~15) |
+| `renderDocument(입력, { format, pages?, … })` | HWPX·HWP(5.x) → 페이지별 svg/png/jpeg·문서 html/pdf 자산 + `RenderScene`(페이지 로컬 pt bbox·결정적 region id) (v4.13, HWP v4.13.1) |
+| `extractRenderedRegions(입력, { types?, pages?, … })` | 표·이미지·문단·도형 region 을 페이지 이미지에서 실배율 crop (v4.13) |
+| `extractTables(입력, { policy?, … })` | 표 분류(의미표/조직도류/불확실) + 렌더 region 조인 + 정책별 crop (v4.13, HWP v4.13.1) |
 | `placeSealHwpx(buffer, seals)` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
 | `validateHwpx(buffer)` | HWPX 구조 검증 — ZIP·mimetype·필수 파트·XML 웰폼드 (v3.16) |
 | `lintGongmunText(text, { document? })` | 공문서 표기법 검수 19룰 + AI 슬롭 2룰 — 텍스트/마크다운 입력 (v4.0.1, v4.12.1 보강). `document: true` 면 붙임/"끝." 문서 단위 검사 포함 |

@@ -72,7 +72,7 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
-## What's New in v4.14.0
+## What's New in v4.13.1
 
 - **🖼️ HWP (5.x) renders as typeset too**: `kordoc render doc.hwp --format png -d ./pages`, `renderDocument("doc.hwp", …)`, and the MCP tools `render_document`/`crop_regions` accept `.hwp`. The layout cache Hancom saves in HWP5 (line positions, cell grid, object anchors) goes through the same renderer as HWPX, so for 10 documents saved as both hwp and hwpx the page count, table positions and border widths match the HWPX render. Table region ids are document ordinals (`t1`, `t2`, …) and equal the parser's `sourceId`, so `kordoc tables doc.hwp --visual all -d ./tables` crops org charts from HWP as well. Headers/footers/equations are not rendered, same as HWPX.
 - **🧭 MCP `extract_tables`**: table classification (data table / layout-like / uncertain) + page·bbox + crops, now over MCP. Up to 8 crops inline, tables.json in `output_dir`.
@@ -455,6 +455,10 @@ writeFileSync("approval.svg", r.svg)
 // r.width/r.height (pt), r.pageCount, r.stats { texts, images, tables }, r.warnings
 
 const g = await renderHwpxToSvg(generatedHwpx, { reflow: true }) // cache-less files
+
+// Unified renderer — HWPX and HWP (5.x), per-page PNG + table crops (v4.13, HWP v4.13.1)
+const { scene, assets } = await renderDocument("approval.hwp", { format: "png", pages: "1-2" })
+const crops = await extractRenderedRegions("approval.hwp", { types: ["table"] })
 ```
 
 From the CLI: `kordoc render approval.hwpx -o approval.svg` (`--reflow`, `--highlight 예산,집행`) — for continuous rendering use `kordoc render-worker` (stdin NDJSON).
@@ -625,11 +629,11 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `extract_profile` | Extract a table format profile (JSON) from a reference HWPX — feed it to generate_document's profile_path |
 | `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (v3.5) |
 | `place_seal` | Place a stamp/signature image over an anchor phrase (v3.16) |
-| `render_document` | Render HWPX/HWP exactly as typeset to PNG/JPEG (inline) or SVG/HTML/PDF files — lets the AI visually verify generated/edited documents (v4.1, HWP + formats v4.14) |
+| `render_document` | Render HWPX/HWP exactly as typeset to PNG/JPEG (inline) or SVG/HTML/PDF files — lets the AI visually verify generated/edited documents (v4.1, HWP + formats v4.13.1) |
 | `redact_document` | Detect PII (resident registration no., phone, email, card, account) + format-preserving masking with a report (v4.1) |
 | `parse_chunks` | Structure-preserving chunk JSON for RAG — heading/outline hierarchy breadcrumbs + standalone table chunks (v4.1) |
 | `crop_regions` | Crop rendered regions (tables/images/paragraphs/shapes) from page images at true scale + regions.json (v4.13) |
-| `extract_tables` | Table classification (data table / layout-like / uncertain) + page·bbox + policy-based crops — org charts as images, data tables as structure (v4.14) |
+| `extract_tables` | Table classification (data table / layout-like / uncertain) + page·bbox + policy-based crops — org charts as images, data tables as structure (v4.13.1) |
 
 ## API
 
@@ -667,6 +671,9 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `blocksToPdf(blocks, options?)` | IRBlock[] → PDF |
 | `renderHtml(blocks, options?)` | IRBlock[] → print-ready HTML |
 | `renderHwpxToSvg(buffer, options?)` | HWPX → layout-preserving SVG — multi-page, highlights, shapes; `reflow` for cache-less files (v3.10–15) |
+| `renderDocument(input, { format, pages?, … })` | HWPX/HWP (5.x) → per-page svg/png/jpeg or document html/pdf assets + `RenderScene` (page-local pt bboxes, deterministic region ids) (v4.13, HWP v4.13.1) |
+| `extractRenderedRegions(input, { types?, pages?, … })` | Crop table/image/paragraph/shape regions from page images at true scale (v4.13) |
+| `extractTables(input, { policy?, … })` | Table classification (data / layout-like / uncertain) + render-region join + policy-based crops (v4.13, HWP v4.13.1) |
 | `placeSealHwpx(buffer, seals)` | Place stamp/signature images over anchor phrases (v3.16) |
 | `validateHwpx(buffer)` | HWPX structure validation — ZIP, mimetype, required parts, XML well-formedness (v3.16) |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown string |

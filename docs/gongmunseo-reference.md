@@ -253,7 +253,7 @@ scratch `analyze-b1.mjs`(digest-lib) 로 전수 디코드. 결재문서본문은
 결론: 3단 3글꼴 스킴은 관행이 아니다(단일 저자 사양). 교육청 계획서의 지배 관행은 □·○·- 전부 휴먼명조 13~14 regular.
 띠 표는 계획서 장르 한정 관행(두 코퍼스 37~39%) — v4.13.0 부터 보고서·계획서 기본 `h2Marker: "band"`(번호칸 3,100 HU·높이 2,600·
 채움 #003366 최다·흰 글자 HY헤드라인M 17b). 교육청형 밝은 띠(#DFE6F7 + 검정 글자)는 `bandColor`/`bandTextColor` 옵션
-(v4.14.0, CLI `--band-color`/`--band-text-color`, MCP `band_color`/`band_text_color`).
+(v4.13.1, CLI `--band-color`/`--band-text-color`, MCP `band_color`/`band_text_color`).
 
 > **측정 단위 주의(2026-09-06 실렌더 검증)**: 한컴 저장 hwpx 의 문단 여백은 `hp:switch` 의 `hp:default` 가 `hp:case(HwpUnitChar)` 의
 > 정확히 2배(전 코퍼스 100%)이고 실렌더는 case 값이다(▪ 문단 둘째 줄 12.9mm ≈ case 3600 HU). 2.8 의 내어쓰기·문단앞 수치 중

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.14.0] - 2026-09-06
+## [4.13.1] - 2026-09-06
 
 #75 후속: HWP5(.hwp) 레이아웃 렌더. v4.13.0 의 렌더 통합 계층(RenderScene)이 HWPX 만 받던 것을 HWP5 어댑터로 넓혔다.
 한컴이 저장한 HWP5 의 조판 캐시(PARA_LINE_SEG)·표(TABLE/LIST_HEADER)·개체(CTRL_HEADER·SHAPE_COMPONENT)를 HWPX 와 같은 뜻의

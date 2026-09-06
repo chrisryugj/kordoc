@@ -444,7 +444,7 @@ MdBlock[] ─outline.ts─▶ OutlineNode[](title/chapter/item(depth)/ref/sub/pa
 - `docHead{org,slogan,to,via,title}` → 두문표 / `docFoot{sender,drafter,reviewer,approver|approvers[],cooperator,recipients,docNum,receive,zip,address,site,phone,fax,email,disclosure}` → 결문표(수신 '내부결재'면 발신명의 생략)
 - `reportInfo` → 보고서 제목표 담당자 행(제목 없으면 우상단 12pt) / 기안문 우상단 12pt
 - `summary`·인용문 → 요약박스 · `cover{date,org,dept}`+`docInfo`+`approval` → 서울형 표지 · `approval` 단독 → 우상단 결재선표
-- `h2Marker` roman(기본)/number/box/none · `bullet2` ㅇ(기본)/○ · `levels`·`fonts`·`bodyPt`·`lineSpacing` → 스킴 오버레이
+- `h2Marker` band(보고서·계획서 기본)/roman/number/box/none · `bandColor`/`bandTextColor`(띠 번호칸 #003366/#FFFFFF 기본, 교육청형 #DFE6F7/#000000) · `bullet2` ㅇ(기본)/○ · `levels`·`fonts`·`bodyPt`·`lineSpacing` → 스킴 오버레이
 - 기안문 본문 기본 굴림체 12 160%(`bodyFont` myeongjo/gothic 지정 시 함초롬바탕/맑은 고딕), 보고서 15/180%, 여백 13/13/18/18 h13 f13.
 
 ### 실무자 요청 반영 (2026-09-06 저녁)
