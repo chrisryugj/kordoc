@@ -113,8 +113,11 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     faceClass: faceClassForGen(scheme.table.font),
   }
 
+  /** 전면부가 남긴 직전 요소 — 본문 첫 □ 의 앞 간격 판정(제목표 바로 아래 첫 □ 는 반 줄) */
+  let frontKind: "start" | "title" | "summary" = "start"
   // 요약박스 — 한 문장 3줄 이내, 넘치면 경고
   const pushSummary = (t: string) => {
+    frontKind = "summary"
     const box = buildSummaryBox(t, frame)
     if (box.lines > 3) warnings.push(`요약박스가 ${box.lines}줄입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 줄이세요`)
     paras.push(box.xml)
@@ -141,6 +144,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
       if (t.overflow) warnings.push(`제목이 길어 한 줄에 담지 못했습니다(20pt·장평 85%까지 축소) — 제목을 줄이세요: "${docTitle.slice(0, 30)}…"`)
       if (pendingPageBreak) { paras.push(t.xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `).replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`)); pendingPageBreak = false }
       else paras.push(t.xml)
+      frontKind = "title"
     }
     // 제목 없는 보고서의 담당자 행 — 우상단 12pt (기안문 보고정보 행과 동일)
     if (!docTitle && g.reportInfo) paras.push(generateParagraph(g.reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
@@ -165,7 +169,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   const BOX_GAP_AFTER_BAND = 1200
   /** 본문 뒤 띠 제목 앞 간격 */
   const BAND_BEFORE_HU = 2000
-  let prevKind: OutlineNode["kind"] | "start" = "start"
+  let prevKind: OutlineNode["kind"] | "start" = frontKind
   /** 직전 항목의 depth — 연속 □(하위 항목 없이 □ 다음 □) 사이엔 빈 줄을 넣지 않는다 (실측 52:48 반반, 실무자 요청) */
   let prevItemDepth = -1
   /** 다음 노드 — □ 의 keepWithNext 는 다음이 하위 항목·※ 일 때만. □→□→□→표 사슬이 이어지면 표가 안 들어갈 때 장 전체가 다음 쪽으로 밀린다(실렌더) */
