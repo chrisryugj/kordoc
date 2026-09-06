@@ -5,6 +5,108 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.13.0] - 2026-09-06
+
+공문서 생성 엔진 재설계(v5). 서울 정보소통광장 결재문서본문 629건(기존 429 + 신규 7종 필터 280)을 전수 실측해
+위계·글꼴·들여쓰기·골격을 `gongmun-scheme.ts` 하나에 박고, 기안문·보고서·계획서·통지·회의록 생성을 새 엔진
+`gen-gongmun.ts`(아웃라인 → 스킴 → 레지스트리)로 갈아탔다. 계기는 실무 검토보고서 실렌더 — □ 두 줄 꺾임,
+`1. 검토 배경`(h2)·`가.`(h3)·리스트 □ 가 위계 없이 뒤섞임(□ 가 가. 보다 왼쓸림), □·ㅇ 글꼴이 중앙부처 양식
+(HY헤드라인M·휴먼명조)이라 서울 실결재(HY견고딕 17b·한컴돋움 15b·휴먼명조 14)와 다른 것.
+
+### Added
+
+- **v5 엔진 (`src/hwpx/gen-gongmun.ts`·`outline.ts`·`gongmun-scheme.ts`·`style-registry.ts`·`fit-line.ts`·`gen-frame-seoul.ts`)**
+  — official/report/plan/notice/minutes 전담. `#/##/###`·리스트 깊이·명시 부호(□ ㅇ - ※ 1. 가.)를 하나의 depth 로
+  정규화해 입력 형태와 무관하게 같은 위계를 낸다. charPr/paraPr/글꼴은 레지스트리 동적 발급(손계산 id 파티션
+  없음). 개조식(gaejosik)·보도자료·범용은 `gen-section.ts` 유지.
+- **□·제목·장 제목 한 줄 강제 (`fit-line.ts`)** — 장평 100→85(자간 0/-3/-5) → pt 축소(□ 하한 14·제목 20).
+  실측 □ 150건 중 한 줄 95%, 장평 96/95·자간 -4/-5 관행. 못 담으면 `MarkdownToHwpxOptions.warnings` 로 경고
+  (CLI stderr·MCP 응답). 표 셀도 12→11→10pt 자동 축소(`requiredTableWidth`, 실측 셀 pt 10:91·11:72·12:55).
+- **서울 실결재 골격표 (`gen-frame-seoul.ts`)** — 기안문 두문표(6행: 슬로건 굴림 10·기관명 굴림 20b 자간띄움·
+  수신/(경유)/제목 굴림 14, 제목행 하변 0.12mm)·결문표(48열 격자: 발신명의 18b·회색 띠 #CCCCCC·결재선 직위 10/
+  성명 11b/일자 9b·협조자·시행/접수·우·전화/전송/이메일/공개구분 굴림 10, 직위칸은 내용 폭), 보고서 제목표
+  (HY헤드라인M 25b 상 0.4mm·하 0.15mm + 담당자 행 휴먼명조 12)·요약박스(#DFE6F7 0.4mm 한컴돋움 15b)·결재선표·
+  표지(문서정보표·결재선·파랑 띠 제목·기관명·부서). 텍스트 '─' 룰·문단형 두문·결문은 제거.
+- **옵션** — `docHead.slogan`, `docFoot.approvers[]·recipients·zip`, `summary`(또는 제목 직후 인용문), `docInfo`,
+  `cover.dept`/`--dept`, `h2Marker: "roman"`(보고서 기본 Ⅰ. Ⅱ.). CLI `--summary --doc-info --dept`, MCP
+  `summary·doc_info·dept`. `reportInfo` 는 보고서에서 제목표 담당자 행.
+- **코퍼스** — `bench/corpus-gen/opengov-2609/` 7종 필터(plan·report·policy·notice·meeting·y2024·y2022) 280건.
+  실측 결과는 `docs/gongmunseo-reference.md` 2.8, 설계는 engine-spec (i)장.
+- **금액 한글 병기값 계산 (`src/shared/numbering.ts hangulAmount`)** — 규정 시행규칙 제2조(아라비아 숫자 다음 괄호 안에 한글).
+  4자리 그룹 × 만·억·조·경·해, 그룹 안 천·백·십, 숫자 영일이삼사오육칠팔구, 공문 관행대로 `일십`·`일백`·`일천`·`일만`의 "일"을
+  생략하지 않는다(금113,560원(금일십일만삼천오백육십원)). `MONEY_NO_HANGUL` 경고가 고정 예시 대신 걸린 금액의 실제 병기값을 제안.
+- **하이픈·ISO 날짜 룰 `DATE_HYPHEN`** — `2026-07-18` 꼴은 편람 날짜 표기(온점 구분, 온점 뒤 한 칸)가 아니다. warning, 제안은
+  실제 변환값 `2026. 7. 18.`(0 패딩 제거). URL 경로·파일명·영숫자 접두(`v2026-07-18`)·표 셀·펜스 코드는 제외.
+- **outline 항목 부호 확장** — `❑`·`❏`·`ㅁ`(대항목), `◎`(중항목), `ㅡ`·`‣`·`▪`·`▫`(세부) 를 □/ㅇ/- 계열로 인식, 개조식 자동감지에도
+  반영. 영문 `o`/`O`/`0` 은 영문 문장 선두 오탐이라 넣지 않는다. 테스트 `gongmun-lint-amount-date.test.ts`(5)·`outline-markers.test.ts`(3).
+
+### Changed
+
+- **실무자 요청 5건** — `출처:`·`자료:`·`근거:` 항목은 ※ 참고 13pt(당구장표시, 작은 글씨) · 둘째 줄 ≤20% 고아 줄은
+  자간 -1%씩(Shift+Alt+N 관행) → 장평 조합으로 한 줄(`fitOrphanLine`) · ~~줄바꿈 어절 단위~~(라운드 2에서 글자 단위로 전환, 아래) ·
+  법령 코드 `(282791)`·KOSIS `DT_…`·`(법정동코드 …)`·"○○ MCP 조회" 도구 언급 제거(`stripLawCodes`) · 요약박스(제목 직후 `>` 한 문장 3줄 이내 "…하고자 함", 부호 없이 — 보고서는
+  필수, 없거나 3줄 초과면 warning, 꼬리 고아 줄 자간 축소).
+- **프리셋 기본값(서울 실측)** — 기안문 본문 굴림체 12 160%, 보고서·계획서 여백
+  13/13/18/18 머리·꼬리 13mm·줄간격 180%·`bullet2` ㅇ(개조식만 ○)·h2 = 장(Ⅰ.)·h3 = □·리스트 depth+1.
+  통지·기안문의 h2 는 법정 `1.` 항목이 되고 아래 리스트는 `가.`부터. □ 앞 빈 줄 한 줄(실측 76%), 붙임 앞 한 줄.
+- **`faceClassForGen`(`text-metrics.ts`)** — 생성 전용 고딕 폭 클래스(대문자 0.72·숫자 0.58·괄호 0.35em).
+- **라운드 2 (실렌더 결함 3건, 같은 날 밤)** —
+  (1) v5 본문 줄바꿈을 **글자 단위(KEEP_WORD)+양쪽정렬**로: 라운드 1의 어절유지+양쪽정렬은 실결재 개조식 `-` 문단 1,023개 중
+  1.2%뿐(글자 단위 76%, 다줄 88%)이라 긴 어절이 통째로 밀리며 앞 줄 어절 간격이 벌어졌다. 라틴·숫자는 계속 단어 유지, 구 경로
+  (범용·개조식·보도자료)는 어절 유지 불변. `fitOrphanLine`·요약박스 줄 수 시뮬레이션도 글자 단위.
+  (2) 요약박스 문단 좌우 여백 1000/1000(실측 133건 55%) — 글자가 테두리에 붙지 않게, 선두 공백 2칸 제거. `paraPr`·`ParaSpec` 에 `right`.
+  (3) 표 열 역할(`gen-table.ts colRoles`) — 비고·근거·참고·출처·담당·연락처 및 내용 열 있는 표의 역할 없는 마지막 열은 **25% 상한**
+  (실측 비고 중앙값 21%·p75 26%, 최장 어절 폭까지는 허용), 내용·사항·실적·계획류 열은 비례 가중 ×2(실측 중앙값 51%) + 본문 셀 LEFT.
+  공문서 모드에서만 적용, 역할 미지정 호출은 종전과 동일. 라운드 1 잔여 타입 오류 2건(`lastTextNode` never·`DISTRIBUTE` 정렬) 정리.
+  테스트 `gen-table-roles.test.ts` 8건 + 기존 2건 갱신(1,631).
+- **라운드 3 — 한컴 툴바 글꼴 칸 빈칸·스타일 영문명 수정 + 장 제목 띠 표** —
+  (1) 맥 한컴에서 kordoc 산출물의 글꼴 칸이 비고 스타일이 `Normal`/`Outline 1` 로 뜨던 결함. 실렌더 A/B(변형 10종)로
+  원인 확정: 한컴 툴바("대표" 언어)는 charPr 7개 언어 슬롯이 **같은 글꼴로 풀릴 때만** 이름을 보여주는데 kordoc 은 한글·라틴만
+  지정하고 나머지를 굴림/Symbol(id 0)로 뒀다. `gen-header` 범용 분기의 7개 언어 목록을 동일하게(라틴 슬롯의 Times New Roman/
+  Consolas/Arial Black 제거 — 한컴 기본 템플릿·실결재와 같은 방식), 레지스트리·levels·프로필 charPr 의 나머지 슬롯을 같은 id 로.
+  스타일 속성 `langIDRef` → 정본 `langID`(실결재 58/58). 글꼴 미설치·캐럿·fontfaces 형식 가설은 전부 반증(변형 A~L).
+  (2) `h2Marker: "band"` — 장 제목을 "로마자 채움 칸(#003366, 흰 HY헤드라인M 17b) | 간격 | 제목 칸(하변 0.4mm)" 1행 3열 표로.
+  계획서 장르 실측(서울 plan 36.8%·교육청 38.9%, reference 2.9)·실무자 요청으로 **보고서·계획서 기본값**(종전 `roman` 텍스트는
+  `--h2-marker roman`). 제목 칸 `__kordoc_h2` 왕복 채널로 파서가 heading 2 로 복원.
+  (3) 연속 □(하위 항목 없이 □ 다음 □) 사이 빈 줄 제거 — 실측은 52:48 반반(하위 항목 뒤 □ 는 75% 유지), 실무자 눈에 과했다.
+  (4) □ 의 keepWithNext 는 다음이 하위 항목·※ 일 때만 — □→□→□→표 사슬이 이어지면 표가 안 들어갈 때 장 전체가 다음 쪽으로 밀려
+  1쪽 하단이 비던 것(실렌더).
+  (5) □ 한 줄 강제는 **크기를 줄이지 않는다**(장평 90·자간 -5 까지만, `fitOneLine` minPt/minRatio) — 17→14pt·장평 85 로 우겨넣어
+  형제 □ 끼리 크기·굵기가 들쭉날쭉하던 결함. 넘치면 내어쓰기 두 줄 + "문장을 줄이세요" 경고. 띠 제목·제목표 아래 첫 □ 반 줄·요약박스 뒤 띠 반 줄.
+  (6) □ 앞 빈 줄을 빈 문단 대신 문단 위 간격 **10pt** 로 — 빈 문단(15pt×180%=27pt)은 ㅇ→□ 기준선이 본문 행간(30pt)의 1.8배(55pt)로
+  벌어져 구멍처럼 보였다(실렌더 캡처). 10pt 면 37pt·잉크 간격 22pt 로 실결재의 그룹 사이 비율(본문 13~17pt 대비 23~25pt)과 같다.
+  띠 제목 앞 20pt·띠 아래 첫 □ 12pt.
+- **렌더 통합 계층 (#75, 1차: HWPX)** — `src/render/scene.ts` `RenderScene`(1-based 페이지·페이지 로컬 pt bbox·결정적 region id
+  `table-000017`·다중 페이지 조각·`parentId`·`sourceId`=hp:tbl id). `svg-render.ts` 가 문단·표·이미지·도형 region 을 그리는 순서로
+  기록하고 SVG 에 `<g data-kordoc-id/type/page>` 래퍼를 단다(그 외 방출 바이트 불변, 시각 게이트 무회귀). `renderHwpxPages()` 가
+  페이지별 standalone SVG(사용 심볼만 defs) 를 내고, `document.ts` `renderDocument(input, {format: svg|html|png|jpeg|pdf, pages})` /
+  `renderDocumentToScene()` 이 포맷 감지→어댑터→자산으로 통합(HWP5 는 후속 — 명시 오류). `html.ts` 자급자족 레이아웃 HTML
+  (`.kordoc-page[data-page]`, 인쇄 CSS), `pdf.ts` 는 그 HTML 을 Chromium 으로 인쇄(puppeteer-core optional), `rasterize.ts`
+  `rasterizePageSvg`(png/jpeg 같은 배율), `regions.ts` `extractRenderedRegions()`/`cropRect`(bbox×실배율, 페이지 클램프, 최소 1px).
+  CLI `kordoc render --format … --pages … -d`(기본 svg -o 는 종전 세로 스택 그대로)·`kordoc crop --target table -d`, MCP
+  `render_document` 에 `pages`(페이지별 이미지)·`crop_regions` 신설. 테스트 `render-scene`·`render-regions`·`render-document`·`render-cli`.
+- **표 분류·시각 추출 (#76)** — `src/table/classifier.ts` 휴리스틱 분류(의미: 반복 행 스키마·격자 규칙성·활성 밀도·열 타입 일관성 /
+  비표: 병합 불규칙·빈 띠·희소·중첩 래퍼, 도표 키워드는 구조 증거가 있을 때만 가산) → `semantic-table | non-tabular-layout | uncertain`.
+  `ParseOptions.classifyTables`(opt-in, 기본 산출 불변) 가 최상위·셀·캡션 중첩표를 독립 분류해 `IRTable.classification` 에 붙인다.
+  `IRTable.sourceId`(HWPX hp:tbl id)·`regions`. `builder.ts` `hasStructuredCellContent`(중첩표·구분선 → HTML) + GFM 셀이 blocks 를
+  직접 직렬화해 **병합 없는 단순 표의 셀 이미지가 text 평탄화에 없어도 `![image](src)` 로 남는다**(span 문단·HWPX 산출은 종전 그대로).
+  `analyze.ts` `chooseTableRepresentation`(gfm/html/visual).
+  `visual.ts` `extractTables(input, {policy})` 가 분류 + #75 region 조인(sourceId 1:1, 중복·미매칭 경고) + 정책별 crop
+  (기본 non-tabular-and-uncertain). CLI `kordoc tables --visual … -d`. 테스트 `table-classifier`(픽스처 매트릭스 10)·`table-analysis`·
+  `table-cell-image`·`table-visual`·`table-cli`.
+  렌더(reflow)의 `faceClassOf` 는 불변. 표 열폭 측정에 셀 글꼴 클래스 반영(`GongmunTableStyle.faceClass`).
+- `gen-ids.charPr` 자간 인자(`spacingPct`), `gen-table-bf` `mid`(0.15mm) 변, `tc()` rowSpan·vAlign.
+- 테스트 33건을 v5 계약으로 갱신(레지스트리 id 는 조회로 확인).
+
+- **시각 오라클 하네스(bench:visual)** — 한컴은 마지막 창 크기·확대율을 기억하므로 다른 캡처·수동 확대가 남긴 상태가 그대로
+  찍혀 14/14 이탈하던 것을, 캡처 전에 창 750×850·확대 45%(상태 표시줄 slider) 로 고정해 재현 가능하게 했다. 종이 검출은
+  "순백 행 첫~끝" 대신 종이 밖(순백 <3%) 행으로 분절한 뒤 강한 순백 행이 가장 많은 분절 — 표지 문서처럼 다음 쪽 상단이
+  함께 보여도 한 쪽만 잡는다. baseline 14건은 v4.9.2 이후 갱신이 없던 것이라 실렌더를 눈으로 확인하고 다시 잡았다.
+
+### Removed
+
+- `gen-docframe.ts` 의 문단형 두문·결문 빌더(`buildDocHead`·`buildDocFoot`) — 표 골격이 대체.
+
 ## [4.12.3] - 2026-09-05
 
 공문서 작성 라운드. 실결재 기안문 206건 + 보고서·보도자료 337건 HWPX 의 항목부호 단계별 글꼴을 실측해

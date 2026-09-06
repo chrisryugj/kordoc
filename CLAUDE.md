@@ -21,6 +21,10 @@ ESLint, Prettier 미설정 상태. 벤치 코퍼스(`bench/corpus/`)는 gitignor
 
 ### 코퍼스 동기화 (2026-09-05 기준선)
 
+`bench/corpus/` 아래는 전부 **파서 게이트 모수**다(recall 1 강제). 생성 엔진 학습용으로 긁은 실결재 원본은
+`bench/corpus-gen/`(gitignore, 2026-09-06 `opengov-2609/` 280건)에 두고 corpus 에 섞지 말 것 — 섞으면 파서가 못 읽는
+문서 1건에 게이트가 죽는다(36900720 recall 미달로 실측). corpus-gen 도 맥미니와 rsync 로 맞춘다.
+
 맥북·맥미니 양쪽 `bench/corpus/` 는 바이트 동일로 맞춰 둔다. 2026-09-05 에 법령 별지서식
 `licbyl/`(법제처 licbyl API 표본 300건 — HWP5 원본 + PDF + rhwp v0.8.6 `export-hwpx` 변환 HWPX,
 `bench/collect-licbyl.mjs` seed 20260905 로 재현) 900파일, 같은 날 v4.12.2 에서 `licbyl2/`(서식 2차,
@@ -80,8 +84,14 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/generator.ts` | Markdown → HWPX 역변환 엔트리 (구현은 7모듈로 분리 — 재수출 허브) |
 | `src/hwpx/gen-section.ts` | secPr + 본문 section0.xml 조립 |
 | `src/hwpx/gen-header.ts` | container/manifest/head.xml 생성 |
-| `src/hwpx/gen-table.ts` | GFM/HTML(병합) 표 XML 생성 — 내용 비례 열폭(짧은 열 실폭 고정) + 실측 정부 표 문법(헤더 음영·bold·하변 이중선, 외곽 0.4mm 위계, 라벨열, 셀 CENTER 130%/LEFT, 축폭+우측 배치) |
+| `src/hwpx/gen-table.ts` | GFM/HTML(병합) 표 XML 생성 — 내용 비례 열폭(짧은 열 실폭 고정) + 열 역할 `colRoles`(공문서 모드: 비고·근거·마지막 보조 열 25% 상한, 내용류 열 가중 ×2·LEFT) + 실측 정부 표 문법(헤더 음영·bold·하변 이중선, 외곽 0.4mm 위계, 라벨열, 셀 CENTER 130%/LEFT, 축폭+우측 배치) |
 | `src/hwpx/gen-table-bf.ts` | 표 셀 위치별 borderFill 동적 레지스트리 — 외곽 0.4/내부 0.12/헤더 DOUBLE_SLIM 조합 dedupe 발급, header.xml에 일괄 방출 |
+| `src/hwpx/gen-gongmun.ts` | **v5 공문서 엔진**(2026-09-06) — 기안문·보고서·계획서·통지·회의록 전담. outline → scheme → 문단 XML, 두문표·결문표·제목표·요약박스 골격, □·제목 한 줄 강제, 표 셀 12→10pt 자동 축소. 개조식·보도자료·범용은 gen-section 유지 (docs/gongmunseo-engine-spec.md (i)장) |
+| `src/hwpx/outline.ts` | 마크다운 블록 → 의미 아웃라인 — #/##/###·리스트 깊이·명시 부호(□ㅇ-※1.가.)를 하나의 depth로 정규화 (입력 형태 무관 동일 결과) |
+| `src/hwpx/gongmun-scheme.ts` | 위계 스킴 SSOT — 서울 실결재 629건 실측(reference 2.8): 법정형 굴림 12/2타 계단, 개조식형 □ HY견고딕 17b·ㅇ 한컴돋움 15b 1타·- 휴먼명조 14 3타·※ 한컴돋움 14, 표 한컴돋움 12 #DFE6F7 |
+| `src/hwpx/style-registry.ts` | charPr/paraPr/글꼴 동적 발급(dedupe) — 손계산 id 파티션 제거. 정적 블록(charPr 0~16·paraPr 0~7·글꼴 3종) 뒤에 이어붙임 |
+| `src/hwpx/fit-line.ts` | 한 줄 강제 — 장평→자간→pt 축소 (실측 96/95·-4/-5 관행), 넘치면 warning. 고아 줄 자간 축소는 글자 단위 시뮬레이션 |
+| `src/hwpx/gen-frame-seoul.ts` | 서울 실결재 골격표 — 두문표(6행, 기관명 굴림 20b 자간띄움), 결문표(48열 격자 위 colSpan — 행마다 임의 폭 주면 한컴이 뒤틀림), 보고서 제목표·요약박스·결재선·표지. 열폭은 실측 비율 스케일 + 내용 폭 |
 | `src/hwpx/gen-gongmun-extra.ts` | 공문서 부속 요소 — 결재란(2×N 서명 표)·"끝." 표시·1페이지형 제목박스(색상바+gradient) |
 | `src/hwpx/font-catalog.ts` | 폰트 카탈로그 — fonts 오버라이드 오타·미설치 경고(`unknownFontWarnings`), 생성은 진행 |
 | `src/hwpx/gen-gongmun-fit.ts` | 공문 자동장평 계획 + 리스트 항목부호 선계산 |
@@ -130,7 +140,11 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/xlsx/parser.ts` | XLSX(ZIP+XML) 파싱, 공유 문자열/병합 셀 처리 |
 | `src/docx/parser.ts` | DOCX(ZIP+XML) 파싱, 스타일/번호매기기/각주 처리 |
 | `src/table/builder.ts` | 2-pass 그리드 테이블 빌더 + 마크다운 변환 |
-| `src/render/svg-render.ts` | 레이아웃 보존 렌더 — HWPX 조판 캐시(lineseg·cellAddr·pos)를 SVG 절대배치로 (한컴 저장본 전용, 1페이지) |
+| `src/render/svg-render.ts` | 레이아웃 보존 렌더 — HWPX 조판 캐시(lineseg·cellAddr·pos)를 SVG 절대배치로. 문단·표·이미지·도형 region 기록 + `<g data-kordoc-*>` 래퍼, `renderHwpxPages` 페이지별 standalone SVG (#75) |
+| `src/render/scene.ts` | RenderScene 계약 — 1-based 페이지·페이지 로컬 pt bbox·결정적 region id(`table-000017`)·다중 페이지 조각·parentId·sourceId |
+| `src/render/document.ts` | 통합 렌더 API `renderDocument`/`renderDocumentToScene` — 포맷 감지(HWPX만, HWP5 후속)→페이지 선택→svg/html/png/jpeg/pdf 자산 |
+| `src/render/html.ts` · `pdf.ts` · `regions.ts` | 레이아웃 HTML(`.kordoc-page[data-page]`+인쇄 CSS) · HTML→PDF(puppeteer-core optional) · region crop(`cropRect` bbox×실배율, `extractRenderedRegions`) |
+| `src/table/classifier.ts` · `analyze.ts` · `visual.ts` | 표 분류(의미/비표/불확실 휴리스틱, 키워드는 구조 증거 게이트) · opt-in 트리 배선+표현 정책 · 분류↔렌더 region 조인·`extractTables` (#76) |
 | `src/render/layout.ts` | 렌더 순수 계산 — uint32 음수(toInt32), 표 열 경계 전파 솔버, 행 높이(max+콘텐츠 성장) |
 | `src/render/head-styles.ts` | 렌더용 header.xml 스타일 — charPr(크기·굵기·색·장평·자간)/paraPr 정렬/borderFill |
 | `src/diff/compare.ts` | 문서 비교 (블록 단위 diff) |
@@ -150,7 +164,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |
 | `src/cli.ts` | Commander 기반 CLI |
 | `src/mcp.ts` | MCP 서버 (Claude/Cursor 연동, 15개 도구) |
-| `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) |
+| `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) + `rasterizePageSvg` 페이지 단위 png/jpeg(실배율 보고) |
 | `src/redact.ts` | PII 탐지·서식 보존 마스킹 순수 로직 (주민번호·전화·이메일·카드·계좌, 룰 우선순위 겹침 처리) |
 | `src/chunks.ts` | RAG용 구조 청킹 — IR 위계(헤딩·listDepth·표) → breadcrumb 청크 JSON |
 
@@ -161,6 +175,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 - **깨진 ZIP 복구**: HWPX Central Directory 손상 시 Local File Header(PK\x03\x04) 직접 스캔
 - **pdfjs-dist 외부 의존**: `external`로 번들에서 제외, 사용자가 선택적 설치. cfb는 `noExternal`로 번들에 포함
 - **HWP5 레코드 구조**: 4바이트 헤더(tagId 10bit, level 10bit, size 12bit), FLAG_COMPRESSED 시 inflateRawSync
+- **v5 공문서(official/report/plan/notice/minutes)는 gen-gongmun.ts 경로** — gen-section의 h2Marker·coverH1Idx·docframe 분기는 개조식·보도자료·범용에만 산다. 위계·글꼴 값을 바꾸려면 gongmun-scheme.ts 하나만 (reference 2.8 실측 인용 필수). □ 두 줄·제목 두 줄은 fit-line이 막는다 — 실렌더 확인은 `bench/visual` 또는 scratch capture(한컴 창 1500px로 좁혀 HUD 회피)
 - **공문서 모드 paraPr margin**: HWPX `<hh:margin>`은 **반드시 자식요소형**(`<hc:intent>`/`<hc:left>`/`<hc:right>`/`<hc:prev>`/`<hc:next>`, `xmlns:hc` 선언 필수). 속성형(`indent="…"`)은 한컴이 무시함. 내어쓰기 = `<hc:intent>` **음수**(둘째 줄을 오른쪽으로), 깊이 들여쓰기 = `<hc:left>` 누적. (실제 한컴 공문서 파일로 검증한 모델)
 
 ### 빌드 설정 (tsup)

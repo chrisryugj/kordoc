@@ -9,7 +9,7 @@ import { parseFormatProfileJson } from "./hwpx/profile-io.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, parseLevelsSpec, levelFontRecord } from "./hwpx/gongmun-surface.js"
 import type { ParseOptions } from "./types.js"
 import type { FormatProfile } from "./hwpx/gen-profile.js"
-import { VERSION, toArrayBuffer, sanitizeError, classifyError } from "./utils.js"
+import { VERSION, toArrayBuffer, sanitizeError, classifyError, KordocError } from "./utils.js"
 import { detectImageMime } from "./hwp5/images.js"
 
 const program = new Command()
@@ -639,15 +639,18 @@ program
   .option("--end-mark", "본문 끝 '끝.' 표시 강제 켜기")
   .option("--no-end-mark", "'끝.' 표시 끄기 (기안문 기본 켜짐)")
   .option("--no-body-title-box", "본문 첫 페이지 제목 반복 박스 끄기 (개조식+표지 기본 켜짐)")
-  .option("--h2-marker <type>", "h2 섹션 제목 말머리: box(□ — 보고서·계획서 기본)·number(1. — 공고문 관행)·none")
+  .option("--h2-marker <type>", "h2 장 제목 표기: band(로마자 채움 칸 + 제목 띠 표 — 보고서·계획서 기본)·roman(Ⅰ. 텍스트)·number(1. — 통지 기본)·box(장 없이 □ 대항목)·none")
+  .option("--summary <text>", "보고서 요약 박스 (제목표 아래 음영 상자 — 마크다운 제목 직후 인용문(>)으로도 지정)")
+  .option("--doc-info <spec>", "보고서 표지 문서정보표: docNum=스마트도시과-123,date=2026. 9. 6.,disclosure=공개,policyNo= (--cover와 함께)")
+  .option("--dept <name>", "표지 부서명 (기관명 아래 괄호)")
   .option("--fonts <spec>", "요소별 글꼴 오버라이드: body=나눔명조,heading=나눔고딕,ref=한양중고딕,table=맑은 고딕")
   .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
   .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
   .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배) 또는 ○(원 — 보고서 양식)")
   .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
-  .option("--doc-head <spec>", "기안문 두문: org=행정안전부,to=수신처,title=제목 (별지 제1호서식)")
-  .option("--doc-foot <spec>", "기안문 결문: sender=장관명의,drafter=기안자,reviewer=검토자,approver=결재권자,docNum=시행번호,phone=전화,email=메일,disclosure=공개구분 …")
-  .option("--report-info <text>", "업무보고 우상단 보고정보 행 — 예: '(2026. 7. 11., 과장 홍길동, ☎02-120)'")
+  .option("--doc-head <spec>", "기안문 두문표: org=기관명,slogan=원훈,to=수신처,title=제목 (별지 제1호서식·서울 실결재 6행 표)")
+  .option("--doc-foot <spec>", "기안문 결문표: sender=발신명의,drafter=주무관 홍길동,reviewer=과장 김철수,approver=국장 박영희,cooperator=협조자,docNum=시행(과-번호 (날짜)),receive=접수,zip=우편번호,address=주소,site=홈페이지,phone=전화,fax=전송,email=메일,disclosure=공개구분")
+  .option("--report-info <text>", "보고서 담당자 행(제목표 아래) / 기안문 우상단 보고정보 행 — 예: '(2026. 7. 11., 과장 홍길동, ☎02-120)'")
   .option("--notice-head <spec>", "공고문 두문·결문: no=공고 제2026-1호,date=2026년 7월 11일,sender=행정안전부장관")
   .option("--press-head <spec>", "보도자료 머리: release=보도시점,distribute=배포일,dept=담당부서,manager=담당자,phone=연락처")
   .option("--press-sub <items>", "보도자료 부제 (세미콜론 구분, 제목 아래 '- … -')")
@@ -737,6 +740,9 @@ program
           docHead: opts.docHead ? parseKv(String(opts.docHead), "--doc-head") : undefined,
           docFoot: opts.docFoot ? parseKv(String(opts.docFoot), "--doc-foot") : undefined,
           reportInfo: opts.reportInfo ? String(opts.reportInfo) : undefined,
+          summary: opts.summary ? String(opts.summary) : undefined,
+          docInfo: opts.docInfo ? parseKv(String(opts.docInfo), "--doc-info") : undefined,
+          dept: opts.dept ? String(opts.dept) : undefined,
           noticeHead: opts.noticeHead ? parseKv(String(opts.noticeHead), "--notice-head") : undefined,
           press: opts.pressHead || opts.pressSub
             ? {
@@ -807,12 +813,15 @@ program
         if (!silent) process.stderr.write(`[kordoc] 이미지 임베드: ${Object.keys(imageBytes ?? {}).length}개 (${dir})\n`)
       }
 
+      const genWarnings: string[] = []
       const buf = await markdownToHwpx(md, gongmun || profile || page || imageBytes
         ? {
           ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}),
           ...(page ? { page } : {}), ...(imageBytes ? { images: imageBytes } : {}),
+          warnings: genWarnings,
         }
         : undefined)
+      if (!silent) for (const w of genWarnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
       const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
       mkdirSync(dirname(outPath), { recursive: true })
       writeFileSync(outPath, Buffer.from(buf))
@@ -1001,8 +1010,14 @@ program
 
 program
   .command("render <file>")
-  .description("레이아웃 보존 렌더 — HWPX를 SVG로 (전체 페이지 세로 스택). 한컴 저장본은 조판 캐시 그대로, 캐시 없는 생성본·편집본은 순수 TS 조판(reflow, 기본 켬) — kordoc render 문서.hwpx -o 문서.svg")
-  .option("-o, --output <path>", "출력 SVG 경로 (기본: <입력>.svg)")
+  .description("레이아웃 보존 렌더 — HWPX를 SVG(기본, 전체 페이지 세로 스택)·HTML·PNG·JPEG·PDF로. 한컴 저장본은 조판 캐시 그대로, 캐시 없는 생성본·편집본은 순수 TS 조판(reflow, 기본 켬) — kordoc render 문서.hwpx -o 문서.svg / --format png --pages 2-4 -d ./pages / --format pdf -o 문서.pdf")
+  .option("-o, --output <path>", "출력 경로 (단일 산출: svg 스택·html·pdf·한 쪽 png/jpeg. 기본: <입력>.<확장자>)")
+  .option("-d, --out-dir <dir>", "페이지별 산출 디렉토리 (svg/png/jpeg 여러 쪽 → page_001.png …)")
+  .option("--format <fmt>", "svg(기본) | html | png | jpeg | pdf")
+  .option("--pages <range>", "렌더할 페이지 (1-based: 3 / 1-3 / 1,3,7-9)")
+  .option("--max-width <px>", "래스터 최대 폭 px (기본 1400)")
+  .option("--title <text>", "HTML/PDF 문서 제목")
+  .option("--browser <path>", "PDF 용 Chromium 실행 파일 (기본: PUPPETEER_EXECUTABLE_PATH 또는 자동 탐지)")
   .option("--highlight <terms>", "검색어 형광펜 (쉼표 구분)")
   .option("--no-reflow", "순수 TS 조판 끄기 (조판 캐시 없는 문서가 빈 페이지로 나올 수 있음)")
   .option("--reflow-mode <mode>", "reflow 줄바꿈 모드: keep(어절) | charAll(글자)", "keep")
@@ -1011,22 +1026,155 @@ program
     try {
       const rootOpts = program.opts()
       const output: string | undefined = opts.output ?? rootOpts.output
+      const outDir: string | undefined = opts.outDir ?? rootOpts.outDir
       const silent: boolean = opts.silent ?? rootOpts.silent
-      const { renderHwpxToSvg } = await import("./render/index.js")
-      const absPath = resolve(file)
-      const buffer = readFileSync(absPath)
+      // 루트 --format(markdown 기본) 이 서브커맨드 뒤 --format 을 흡수한다(cli-options 회귀) — 기본값이 아니면 그 값을 쓴다
+      const fmt: string = opts.format ?? (rootOpts.format && rootOpts.format !== "markdown" ? rootOpts.format : "svg")
+      const pages: string | undefined = opts.pages ?? rootOpts.pages
+      if (!["svg", "html", "png", "jpeg", "pdf"].includes(fmt)) throw new KordocError(`--format 은 svg|html|png|jpeg|pdf 중 하나: ${fmt}`)
       const highlights = opts.highlight ? String(opts.highlight).split(",") : undefined
-      const result = await renderHwpxToSvg(toArrayBuffer(buffer), { highlights, reflow: opts.reflow, reflowMode: opts.reflowMode })
-      const outPath = resolve(output ?? file.replace(/\.hwpx$/i, "") + ".svg")
-      mkdirSync(dirname(outPath), { recursive: true })
-      writeFileSync(outPath, result.svg, "utf-8")
+      const absPath = resolve(file)
+      const stem = file.replace(/\.hwpx?$/i, "")
+      if (fmt === "svg" && !outDir && !pages) {
+        // 종전 동작 — 전체 페이지 세로 스택 SVG 한 파일
+        const { renderHwpxToSvg } = await import("./render/index.js")
+        const buffer = readFileSync(absPath)
+        const result = await renderHwpxToSvg(toArrayBuffer(buffer), { highlights, reflow: opts.reflow, reflowMode: opts.reflowMode })
+        const outPath = resolve(output ?? stem + ".svg")
+        mkdirSync(dirname(outPath), { recursive: true })
+        writeFileSync(outPath, result.svg, "utf-8")
+        if (!silent) {
+          process.stderr.write(`[kordoc] 렌더 (${result.pageCount}페이지, ${result.width}x${result.height}pt, 텍스트 ${result.stats.texts}·이미지 ${result.stats.images}·표 ${result.stats.tables}) → ${outPath}\n`)
+          for (const w of result.warnings) process.stderr.write(`[kordoc] ⚠️ ${w}\n`)
+        }
+        return
+      }
+      const { renderDocument } = await import("./render/index.js")
+      const { scene, assets } = await renderDocument(absPath, {
+        format: fmt as "svg" | "html" | "png" | "jpeg" | "pdf", pages, highlights, reflow: opts.reflow, reflowMode: opts.reflowMode,
+        maxWidthPx: opts.maxWidth ? Number(opts.maxWidth) : undefined, title: opts.title, browserExecutablePath: opts.browser,
+      })
+      const ext = fmt === "jpeg" ? "jpg" : fmt
+      const written: string[] = []
+      if (fmt === "html" || fmt === "pdf" || (assets.length === 1 && !outDir)) {
+        const outPath = resolve(output ?? stem + "." + ext)
+        mkdirSync(dirname(outPath), { recursive: true })
+        writeFileSync(outPath, assets[0].data)
+        written.push(outPath)
+      } else {
+        if (!outDir) throw new KordocError(`페이지 ${assets.length}장 산출은 --out-dir 이 필요합니다 (한 쪽만 내려면 --pages 로 선택)`)
+        mkdirSync(resolve(outDir), { recursive: true })
+        for (const a of assets) {
+          const outPath = resolve(outDir, `page_${String(a.page).padStart(3, "0")}.${ext}`)
+          writeFileSync(outPath, a.data)
+          written.push(outPath)
+        }
+      }
       if (!silent) {
-        process.stderr.write(`[kordoc] 렌더 (${result.pageCount}페이지, ${result.width}x${result.height}pt, 텍스트 ${result.stats.texts}·이미지 ${result.stats.images}·표 ${result.stats.tables}) → ${outPath}\n`)
-        for (const w of result.warnings) process.stderr.write(`[kordoc] ⚠️ ${w}\n`)
+        process.stderr.write(`[kordoc] 렌더 ${fmt} (${scene.pages.length}페이지 중 ${assets.length}건, 텍스트 ${scene.stats.texts}·이미지 ${scene.stats.images}·표 ${scene.stats.tables}·도형 ${scene.stats.shapes}) → ${written.length === 1 ? written[0] : resolve(outDir!)}\n`)
+        for (const w of scene.warnings) process.stderr.write(`[kordoc] ⚠️ ${w}\n`)
+      }
+    } catch (err) {
+      // exit(1) 을 바로 부르면 파이프 stderr 가 유실된다 — exitCode 로 정상 종료
+      process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+      process.exitCode = 1
+    }
+  })
+
+program
+  .command("crop <file>")
+  .description("렌더 영역 잘라내기 — 표·이미지·문단·도형을 페이지 이미지에서 crop (HWPX) — kordoc crop 문서.hwpx --target table -d ./regions")
+  .option("-d, --out-dir <dir>", "출력 디렉토리 (필수) — <유형>_<번호>_page_<쪽>.png + regions.json")
+  .option("--target <types>", "유형(쉼표): table | image | paragraph | shape", "table")
+  .option("--format <fmt>", "png(기본) | jpeg")
+  .option("--pages <range>", "대상 페이지 (1-based)")
+  .option("--padding <pt>", "bbox 둘레 여백 pt", "0")
+  .option("--max-width <px>", "페이지 래스터 최대 폭 px (crop 해상도, 기본 1400)")
+  .option("--no-reflow", "순수 TS 조판 끄기")
+  .option("--reflow-mode <mode>", "reflow 줄바꿈 모드: keep | charAll", "keep")
+  .option("--silent", "진행 메시지 숨기기")
+  .action(async (file: string, opts) => {
+    try {
+      const rootOpts = program.opts()
+      const outDir: string | undefined = opts.outDir ?? rootOpts.outDir
+      const silent: boolean = opts.silent ?? rootOpts.silent
+      const fmt: string = opts.format ?? (rootOpts.format && rootOpts.format !== "markdown" ? rootOpts.format : "png")
+      const pages: string | undefined = opts.pages ?? rootOpts.pages
+      if (!["png", "jpeg"].includes(fmt)) throw new KordocError(`--format 은 png|jpeg 중 하나: ${fmt}`)
+      if (!outDir) throw new KordocError("--out-dir 이 필요합니다 (crop 은 파일 여러 개를 냅니다)")
+      const types = String(opts.target).split(",").map((t: string) => t.trim()).filter(Boolean)
+      for (const t of types) if (!["table", "image", "paragraph", "shape"].includes(t)) throw new KordocError(`--target 유형 오류: ${t}`)
+      const { extractRenderedRegions } = await import("./render/index.js")
+      const regions = await extractRenderedRegions(resolve(file), {
+        types: types as Array<"table" | "image" | "paragraph" | "shape">, format: fmt as "png" | "jpeg", pages,
+        paddingPt: Number(opts.padding) || 0, maxWidthPx: opts.maxWidth ? Number(opts.maxWidth) : undefined, reflow: opts.reflow, reflowMode: opts.reflowMode,
+      })
+      const dir = resolve(outDir)
+      mkdirSync(dir, { recursive: true })
+      const ext = fmt === "jpeg" ? "jpg" : "png"
+      const manifest = regions.map(r => {
+        const name = `${r.region.id.replace("-", "_")}_page_${String(r.page).padStart(3, "0")}.${ext}`
+        writeFileSync(resolve(dir, name), r.data)
+        return { file: name, id: r.region.id, type: r.region.type, sourceId: r.region.sourceId, parentId: r.region.parentId, page: r.page, bbox: r.bbox, widthPx: r.widthPx, heightPx: r.heightPx }
+      })
+      writeFileSync(resolve(dir, "regions.json"), JSON.stringify(manifest, null, 2))
+      if (!silent) process.stderr.write(`[kordoc] crop ${regions.length}건 (${types.join(",")}) → ${dir}\n`)
+    } catch (err) {
+      // exit(1) 을 바로 부르면 파이프 stderr 가 유실된다 — exitCode 로 정상 종료
+      process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+      process.exitCode = 1
+    }
+  })
+
+program
+  .command("tables <file>")
+  .description("표 추출·분류 — 의미표/레이아웃(조직도 등)/불확실 분류 JSON + 선택적 시각 crop (HWPX) — kordoc tables 문서.hwpx --visual non-tabular-and-uncertain -d ./tables")
+  .option("-o, --output <path>", "JSON 출력 경로 (기본 stdout; -d 지정 시 <out-dir>/tables.json)")
+  .option("-d, --out-dir <dir>", "crop 저장 디렉토리 (--visual 지정 시 필수)")
+  .option("--visual <policy>", "crop 대상: none(기본) | non-tabular | non-tabular-and-uncertain | all", "none")
+  .option("--crop-format <fmt>", "png(기본) | jpeg", "png")
+  .option("--padding <pt>", "crop 여백 pt", "0")
+  .option("--cells", "JSON 에 셀 텍스트 격자 포함")
+  .option("--silent", "진행 메시지 숨기기")
+  .action(async (file: string, opts) => {
+    try {
+      const rootOpts = program.opts()
+      const output: string | undefined = opts.output ?? rootOpts.output
+      const outDir: string | undefined = opts.outDir ?? rootOpts.outDir
+      const silent: boolean = opts.silent ?? rootOpts.silent
+      const policy = String(opts.visual)
+      if (!["none", "non-tabular", "non-tabular-and-uncertain", "all"].includes(policy)) throw new KordocError(`--visual 은 none|non-tabular|non-tabular-and-uncertain|all: ${policy}`)
+      if (policy !== "none" && !outDir) throw new KordocError("--visual 은 crop 파일을 내므로 --out-dir 이 필요합니다")
+      const cropFmt = String(opts.cropFormat)
+      if (!["png", "jpeg"].includes(cropFmt)) throw new KordocError(`--crop-format 은 png|jpeg: ${cropFmt}`)
+      const { extractTables } = await import("./table/visual.js")
+      const tables = await extractTables(resolve(file), { policy: policy as "none" | "non-tabular" | "non-tabular-and-uncertain" | "all", format: cropFmt as "png" | "jpeg", paddingPt: Number(opts.padding) || 0 })
+      const dir = outDir ? resolve(outDir) : undefined
+      if (dir) mkdirSync(dir, { recursive: true })
+      const ext = cropFmt === "jpeg" ? "jpg" : "png"
+      const report = tables.map(t => {
+        const crops = t.crops.map(c => {
+          const name = `${t.id.replace(/[^\w.-]/g, "_")}_page_${String(c.page).padStart(3, "0")}.${ext}`
+          if (dir) writeFileSync(resolve(dir, name), c.data)
+          return { file: dir ? name : undefined, page: c.page, bbox: c.bbox }
+        })
+        return {
+          id: t.id, sourceId: t.sourceId, page: t.page, classification: t.classification,
+          table: { rows: t.table.rows, cols: t.table.cols, hasHeader: t.table.hasHeader, caption: t.table.caption, ...(opts.cells ? { cells: t.table.cells.map(r => r.map(c => c.text)) } : {}) },
+          regions: t.regions, crops, warnings: t.warnings,
+        }
+      })
+      const json = JSON.stringify(report, null, 2)
+      const jsonPath = output ? resolve(output) : dir ? resolve(dir, "tables.json") : undefined
+      if (jsonPath) { mkdirSync(dirname(jsonPath), { recursive: true }); writeFileSync(jsonPath, json + "\n") }
+      else process.stdout.write(json + "\n")
+      if (!silent) {
+        const kinds = report.reduce<Record<string, number>>((m, r) => { m[r.classification.kind] = (m[r.classification.kind] ?? 0) + 1; return m }, {})
+        process.stderr.write(`[kordoc] 표 ${report.length}개 (${Object.entries(kinds).map(([k, v]) => `${k} ${v}`).join(", ")}) crop ${report.reduce((n, r) => n + r.crops.length, 0)}건${jsonPath ? ` → ${jsonPath}` : ""}\n`)
       }
     } catch (err) {
       process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
-      process.exit(1)
+      process.exitCode = 1
     }
   })
 

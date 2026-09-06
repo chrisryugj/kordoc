@@ -12,7 +12,7 @@ import { fillWithUniqueGuard, type FillInput } from "./form/match.js"
 import type { GongmunOptions } from "./index.js"
 import {
   buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS,
-  FONT_ROLE_KEYS, SIZE_KEYS, DOC_HEAD_KEYS, DOC_FOOT_KEYS, NOTICE_HEAD_KEYS, PRESS_CONTACT_KEYS,
+  FONT_ROLE_KEYS, SIZE_KEYS, DOC_HEAD_KEYS, DOC_FOOT_KEYS, DOC_INFO_KEYS, NOTICE_HEAD_KEYS, PRESS_CONTACT_KEYS,
   BODY_PT_RANGE, LINE_SPACING_RANGE, SIZE_PT_RANGE, APPROVAL_MAX, LEVEL_STYLE_KEYS } from "./hwpx/gongmun-surface.js"
 import { VERSION, toArrayBuffer, sanitizeError, classifyError, KordocError } from "./utils.js"
 import { assertWithinRoot, getAccessRoot, isOfflineMode } from "./shared/offline.js"
@@ -856,8 +856,9 @@ server.tool(
     output_path: z.string().min(1).optional().describe("결과 저장 경로 (png는 선택, svg는 필수 — 확장자는 format과 일치)"),
     highlights: z.array(z.string().min(1)).optional().describe("형광펜 표시할 검색어 목록 — 채운 값·수정 문구 위치 확인용"),
     reflow_mode: z.enum(["keep", "charAll"]).default("keep").describe("reflow 줄바꿈: keep=어절 단위, charAll=글자 단위"),
+    pages: z.string().min(1).optional().describe("페이지 선택(1-based: '3', '1-3', '1,3,7-9') — 지정하면 페이지별 이미지로 응답(최대 8쪽). 미지정이면 전체를 세로 스택 이미지 1장으로"),
   },
-  async ({ file_path, format, output_path, highlights, reflow_mode }) => {
+  async ({ file_path, format, output_path, highlights, reflow_mode, pages }) => {
     try {
       if (format === "svg" && !output_path) {
         return { content: [{ type: "text", text: 'format: "svg"는 output_path(.svg)가 필수입니다 — SVG 원문은 커서 응답에 직접 담지 않습니다.' }], isError: true }
@@ -866,6 +867,32 @@ server.tool(
         ? safeOutputPath(output_path, new Set([format === "png" ? ".png" : ".svg"]))
         : undefined
       const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx"]))
+      if (pages && format === "png") {
+        // 페이지별 렌더 — 통합 렌더러(renderDocument) 경유. 응답 부피 보호로 8쪽까지
+        const { renderDocument } = await import("./render/index.js")
+        const { scene, assets } = await renderDocument(buffer, { format: "png", pages, highlights, reflow: true, reflowMode: reflow_mode })
+        const MAX_PAGES = 8
+        const shown = assets.slice(0, MAX_PAGES)
+        const summary = [
+          `렌더 완료: 문서 ${scene.pages.length}페이지 중 ${assets.length}쪽 선택 (텍스트 ${scene.stats.texts}·이미지 ${scene.stats.images}·표 ${scene.stats.tables}·도형 ${scene.stats.shapes})`,
+          ...scene.warnings.map(w => `⚠️ ${w}`),
+        ]
+        if (assets.length > MAX_PAGES) summary.push(`⚠️ ${MAX_PAGES}쪽까지만 응답에 담았습니다 — pages 를 좁히세요`)
+        if (outPath) {
+          await mkdir(dirname(outPath), { recursive: true })
+          for (const a of assets) {
+            const p = assets.length === 1 ? outPath : outPath.replace(/\.png$/i, `_page_${String(a.page).padStart(3, "0")}.png`)
+            await writeFile(p, a.data as Buffer)
+            summary.push(`저장: ${p}`)
+          }
+        }
+        return {
+          content: [
+            ...shown.map(a => ({ type: "image" as const, data: (a.data as Buffer).toString("base64"), mimeType: "image/png" })),
+            { type: "text", text: summary.join("\n") },
+          ],
+        }
+      }
       const { renderHwpxToSvg } = await import("./render/index.js")
       // reflow는 조판 캐시가 있으면 무시되므로 항상 켠다 — 한컴본·생성본 모두 커버
       const result = await renderHwpxToSvg(buffer, { highlights, reflow: true, reflowMode: reflow_mode })
@@ -898,6 +925,41 @@ server.tool(
         content: [{ type: "text", text: `렌더 실패: ${describeError(err)}` }],
         isError: true,
       }
+    }
+  },
+)
+
+// ─── 도구: crop_regions ──────────────────────────────
+
+server.tool(
+  "crop_regions",
+  "HWPX 문서를 렌더해 표·이미지·문단·도형 영역을 페이지 이미지에서 잘라 파일로 저장합니다(render_document 와 같은 조판 엔진, 페이지 로컬 pt bbox 를 실배율로 환산). 표가 진짜 데이터표인지 조직도인지는 판단하지 않습니다 — 렌더러가 아는 개체를 자를 뿐. 결과: output_dir/<유형>_<번호>_page_<쪽>.png + regions.json(id·유형·페이지·bbox pt).",
+  {
+    file_path: z.string().min(1).describe("HWPX 파일 절대 경로"),
+    output_dir: z.string().min(1).describe("crop 파일 저장 디렉토리"),
+    target: z.array(z.enum(["table", "image", "paragraph", "shape"])).default(["table"]).describe("잘라낼 개체 유형"),
+    format: z.enum(["png", "jpeg"]).default("png"),
+    pages: z.string().min(1).optional().describe("대상 페이지(1-based 범위)"),
+    padding_pt: z.number().min(0).max(100).default(0).describe("bbox 둘레 여백 pt"),
+  },
+  async ({ file_path, output_dir, target, format, pages, padding_pt }) => {
+    try {
+      const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwpx"]))
+      const dir = safeOutputPath(join(output_dir, "regions.json"), new Set([".json"])).replace(/[\\/]regions\.json$/, "")
+      const { extractRenderedRegions } = await import("./render/index.js")
+      const regions = await extractRenderedRegions(buffer, { types: target, format, pages, paddingPt: padding_pt, reflow: true })
+      await mkdir(dir, { recursive: true })
+      const ext = format === "jpeg" ? "jpg" : "png"
+      const manifest = []
+      for (const r of regions) {
+        const name = `${r.region.id.replace("-", "_")}_page_${String(r.page).padStart(3, "0")}.${ext}`
+        await writeFile(join(dir, name), r.data)
+        manifest.push({ file: name, id: r.region.id, type: r.region.type, sourceId: r.region.sourceId, parentId: r.region.parentId, page: r.page, bbox: r.bbox, widthPx: r.widthPx, heightPx: r.heightPx })
+      }
+      await writeFile(join(dir, "regions.json"), JSON.stringify(manifest, null, 2))
+      return { content: [{ type: "text", text: `crop ${regions.length}건 → ${dir}\n` + manifest.map(m => `${m.file}  p${m.page} (${m.bbox.x},${m.bbox.y} ${m.bbox.width}×${m.bbox.height}pt)${m.sourceId ? ` src=${m.sourceId}` : ""}`).join("\n") }] }
+    } catch (err) {
+      return { content: [{ type: "text", text: `crop 실패: ${describeError(err)}` }], isError: true }
     }
   },
 )
@@ -1028,7 +1090,7 @@ server.tool(
 
 server.tool(
   "generate_document",
-  "마크다운을 HWPX 한글 문서로 생성합니다. \"보고서로/공문서로/개조식으로/계획서로 뽑아줘·만들어줘\" 요청이 이 도구입니다. 프리셋 매핑: 정부 표준 보고서(표지·목차·로마숫자 장헤더 자동)='개조식', 기안문·시행문·알림공문='기안문', 1페이지 요약보고서='보고서', 추진계획='계획서'. 표는 실측 정부 서식(헤더 음영+이중선·외곽 굵은선·내용 비례 열폭), 쪽번호·결재란·'끝.' 표시 지원. ⚠ 생성 전 확인 권장: 문서종류(보고서/기안문)·제목·기관명(org)·날짜·목차 여부가 불명확하면 사용자에게 물어보세요 — 엉뚱한 프리셋 선택이 가장 흔한 오생성 원인. 마크다운 규칙: #(h1)=문서 제목(표지), ##(h2)=장(Ⅰ Ⅱ Ⅲ 자동), 리스트 깊이=□ ○ - ㆍ 부호, ※시작 문단=참고 스타일, <right>텍스트</right>=우측정렬 출처행. (원본 서식 보존 제자리 수정은 patch_document, 서식 빈칸 채우기는 fill_form)",
+  "마크다운을 HWPX 한글 문서로 생성합니다. \"보고서로/공문서로/개조식으로/계획서로 뽑아줘·만들어줘\" 요청이 이 도구입니다. 프리셋 매핑: 정부 표준 보고서(표지·목차·로마숫자 장헤더 자동)='개조식', 기안문·시행문·알림공문='기안문', 1페이지 요약보고서='보고서', 추진계획='계획서'. 표는 실측 정부 서식(헤더 음영+이중선·외곽 굵은선·내용 비례 열폭), 쪽번호·결재란·'끝.' 표시 지원. ⚠ 생성 전 확인 권장: 문서종류(보고서/기안문)·제목·기관명(org)·날짜·목차 여부가 불명확하면 사용자에게 물어보세요 — 엉뚱한 프리셋 선택이 가장 흔한 오생성 원인. 마크다운 규칙(v4.13 서울 실결재 실측 위계): #(h1)=문서 제목, ##(h2)=장(보고서 Ⅰ Ⅱ / 기안문·통지는 법정 1.), ###(h3)=□ 대항목(기안문 가.), 그 아래 리스트=ㅇ → - → ㆍ(기안문 가. → 1) → 가)), 본문에 □/ㅇ/-/1./가. 를 직접 써도 같은 위계로 정규화, ※시작·'출처:'·'자료:'=참고(13pt), 제목 직후 인용문(>)=보고서 요약박스 — ★보고서는 반드시 제목 직후 `> …하고자 함` 한 문장(쉼표 허용·부호 없음·3줄 이내 약 90~100자)로 보고 목적을 넣을 것(없거나 3줄 초과면 경고), <right>텍스트</right>=우측정렬. □·제목은 한 줄에 자동 축소, 둘째 줄 20% 이내 고아 줄은 자간 축소로 한 줄. 법령 코드 (282791)·KOSIS 표 ID DT_…·(법정동코드 …)·○○ MCP 조회 같은 내부 식별자·도구 언급은 자동 제거 — 출처는 기관·자료명만 쓸 것. (원본 서식 보존 제자리 수정은 patch_document, 서식 빈칸 채우기는 fill_form)",
   {
     markdown: z.string().min(1).describe("HWPX로 변환할 마크다운 전문. 표는 GFM 문법 사용 (예: '| 이름 | 부서 |\\n| --- | --- |\\n| 홍길동 | 기획팀 |')"),
     output_path: z.string().min(1).describe("출력 HWPX 파일의 절대 경로 (.hwpx 권장)"),
@@ -1047,7 +1109,10 @@ server.tool(
     page_numbers: z.boolean().optional().describe("쪽번호(하단 중앙 '- 1 -', 표지·목차 카운트 제외). 미지정 시 개조식·보고서·계획서 켜짐"),
     end_mark: z.boolean().optional().describe("본문 끝 '끝.' 표시 (행정업무규정). 미지정 시 기안문만 켜짐, 본문이 이미 '끝.'으로 끝나면 중복 생성 안 함"),
     body_title_box: z.boolean().optional().describe("본문 첫 페이지 제목 반복 박스 (개조식 실측 관행). 미지정 시 개조식+표지 조합에서 켜짐"),
-    h2_marker: z.enum(H2_MARKERS).optional().describe("h2 섹션 제목 말머리(비개조식): box='□ 제목'(실측 보고서 관행), number='1. 제목'(공고문 관행), none=말머리 없음. 미지정 시 보고서·계획서 box, 그 외 none"),
+    h2_marker: z.enum(H2_MARKERS).optional().describe("h2 장 제목 표기: band=로마자 채움 칸+제목 띠 표(보고서·계획서 기본), roman='Ⅰ. 제목' 텍스트, number='1. 제목'(통지 기본), box=장 없이 □ 대항목으로, none=번호 없음. 기안문 본문의 h2는 항상 법정 '1.' 항목"),
+    summary: z.string().optional().describe("보고서 요약 박스 — 제목표 아래 #DFE6F7 음영 상자(서울 실결재 관행). 마크다운 제목 직후 인용문(> …)으로도 지정 가능"),
+    doc_info: z.object(Object.fromEntries(DOC_INFO_KEYS.map(k => [k, z.string().optional()]))).optional().describe("보고서 표지 문서정보표 — docNum=문서번호/date=결재일자/disclosure=공개여부/policyNo=방침번호 (cover=true와 함께)"),
+    dept: z.string().optional().describe("표지 부서명 — 기관명 아래 '(스마트도시과)' (cover와 함께)"),
     fonts: z.object(Object.fromEntries(FONT_ROLE_KEYS.map(k => [k, z.string().optional()])))
       .optional().describe("요소별 글꼴 오버라이드(공문서 모드) — body=본문(○·-)/heading=제목 계열(□·장헤더·표지·목차)/ref=※ 참고/table=표 셀. 개조식·보고서·계획서는 네 역할 전부, 그 외 프리셋은 body만 적용"),
     sizes: z.object(Object.fromEntries(SIZE_KEYS.map(k => [k, z.number().min(SIZE_PT_RANGE.min).max(SIZE_PT_RANGE.max).optional()])))
@@ -1057,10 +1122,10 @@ server.tool(
     bullet2: z.enum(BULLET2_CHARS).optional().describe("2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서 양식). 미지정 시 통지·보도자료 ㅇ, 그 외 ○"),
     suppress_single: z.boolean().optional().describe("단일 형제 항목 부호 생략(편람 규정, 법정 번호 standard 전용 — 불릿 체계인 보고서·계획서·개조식·보도자료엔 무효). 기본 false — 하나뿐인 항목에도 부호(1. 가.)를 부여 (부호 없는 계단 들여쓰기가 실무 눈에 어색)"),
     doc_head: z.object(Object.fromEntries(DOC_HEAD_KEYS.map(k => [k, z.string().optional()])))
-      .optional().describe("기안문 두문(별지 제1호서식) — org=행정기관명(18pt bold 중앙)/to=수신/via=경유/title=제목. 기안문 프리셋 전용"),
+      .optional().describe("기안문 두문표(별지 제1호서식·서울 실결재 6행 표) — org=행정기관명(굴림 20pt bold 자간띄움)/slogan=원훈(상단 10pt)/to=수신('내부결재'면 발신명의 생략)/via=경유/title=제목(미지정 시 첫 h1). 기안문 프리셋 전용"),
     doc_foot: z.object(Object.fromEntries(DOC_FOOT_KEYS.map(k => [k, z.string().optional()])))
-      .optional().describe("기안문 결문 — sender=발신명의(22pt 중앙)/drafter·reviewer·approver=기안·검토·결재/docNum=시행/receive=접수/disclosure=공개구분 등. 기안문 프리셋 전용"),
-    report_info: z.string().optional().describe("업무보고 우상단 보고정보 행 — 예: '(2026. 7. 11., 과장 홍길동, ☎02-120)' (실측: 12pt 우측정렬)"),
+      .optional().describe("기안문 결문표 — sender=발신명의(18pt bold 중앙)/drafter·reviewer·approver='직위 성명' 결재선/cooperator=협조자/recipients=수신자 목록/docNum=시행 '과-번호 (날짜)'/receive=접수/zip·address·site/phone·fax·email/disclosure=공개구분. 기안문 프리셋 전용"),
+    report_info: z.string().optional().describe("보고서: 제목표 아래 담당자 행 '(2026. 9. 6., 스마트도시과 홍길동, ☎450-1234)' / 기안문: 우상단 12pt 보고정보 행"),
     notice_head: z.object(Object.fromEntries(NOTICE_HEAD_KEYS.map(k => [k, z.string().optional()])))
       .optional().describe("공고문 두문·결문 — no=공고번호(본문 위 bold)/date=날짜(본문 아래 우측)/sender=발신명의(우측 bold). 통지 프리셋 전용"),
     press: z.object({
@@ -1075,7 +1140,7 @@ server.tool(
     footer: z.string().optional().describe("꼬리말 텍스트 — 모든 쪽 하단 (v4.5.0)"),
     image_dir: z.string().optional().describe("마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드 (v4.5.0, PNG/JPEG/GIF/BMP). 미지정 시 참조만 placeholder로 보존"),
   },
-  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, fonts, sizes, levels, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
+  async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, h2_marker, summary, doc_info, dept, fonts, sizes, levels, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
     try {
       // 조립은 gongmun-surface SSOT(buildGongmunOptions) — CLI와 의미론 공유 (v4.0.4)
       let gongmun: GongmunOptions | undefined
@@ -1086,7 +1151,7 @@ server.tool(
           pageNumbers: page_numbers, endMark: end_mark, bodyTitleBox: body_title_box,
           h2Marker: h2_marker, fonts, sizes, levels, bullet2, suppressSingle: suppress_single,
           docHead: doc_head, docFoot: doc_foot, reportInfo: report_info,
-          noticeHead: notice_head, press,
+          noticeHead: notice_head, press, summary, docInfo: doc_info, dept,
         })
       }
       // 서식 프로필 (이슈 #41) — 경로 검증(realpath + .json) 후 경계 zod 검증 (CLI --profile과 공유 스키마)
@@ -1120,10 +1185,12 @@ server.tool(
           } catch { /* 파일 없음 — placeholder 유지 */ }
         }
       }
+      const genWarnings: string[] = []
       const buf = await markdownToHwpx(markdown, gongmun || profile || page || images
         ? {
           ...(gongmun ? { gongmun } : {}), ...(profile ? { profile } : {}),
           ...(page ? { page } : {}), ...(images ? { images } : {}),
+          warnings: genWarnings,
         }
         : undefined)
       await mkdir(dirname(out), { recursive: true })
@@ -1139,6 +1206,7 @@ server.tool(
       if (gongmun) fontWarns.push(...gongmunLintWarnings(markdown, 5))
       // 개조식 문체 검수 — 보고서·계획서·개조식 프리셋만 (기안문 경어체 등에는 미적용)
       if (gongmun && usesGaejosikMunche(gongmun.preset)) fontWarns.push(...muncheLintWarnings(markdown, 5))
+      fontWarns.push(...genWarnings)
       const warnText = fontWarns.length ? `\n⚠ ${fontWarns.join("\n⚠ ")}` : ""
       return {
         content: [{ type: "text", text: `✓ HWPX 생성 (${mode}${tableCount}) → ${out}\n크기: ${(buf.byteLength / 1024).toFixed(1)}KB${warnText}` }],

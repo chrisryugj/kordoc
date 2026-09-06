@@ -25,6 +25,7 @@ import type { FillValue, FillInput } from "./form/match.js"
 import { fillHwpx } from "./form/filler-hwpx.js"
 import type { HwpxFillResult } from "./form/filler-hwpx.js"
 import { blocksToMarkdown } from "./table/builder.js"
+import { classifyTableTree } from "./table/analyze.js"
 import { blocksToPages } from "./page-markdown.js"
 import { markdownToHwpx } from "./hwpx/generator.js"
 
@@ -70,6 +71,8 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
   const format = detectFormat(buffer)
 
   const result = await dispatch(format, buffer, opts)
+  // opt-in 표 분류(#76) — 구조 파싱 뒤 메타만 붙인다. 기본(미지정/false)은 산출 불변
+  if (result.success && opts?.classifyTables) classifyTableTree(result.blocks)
   // 페이지별 마크다운(#68)은 파서가 채운 pageNumber 의 사영이라 여기서 한 번에
   // 붙인다. 포맷별 파서를 직접 부르는 호출자는 `blocksToPages(result.blocks)` 로
   // 같은 값을 얻는다.
@@ -404,8 +407,20 @@ export type {
 } from "./roundtrip/source-map.js"
 export { renderHtml, markdownToPdf, blocksToPdf } from "./print/renderer.js"
 export type { PrintPreset, PrintOptions, PageMargin } from "./print/renderer.js"
-export { renderHwpxToSvg } from "./render/index.js"
-export type { RenderSvgOptions, RenderSvgResult } from "./render/index.js"
+export { renderHwpxToSvg, renderDocument, renderDocumentToScene, extractRenderedRegions, renderSceneToHtml } from "./render/index.js"
+// 표 분류·시각 추출 (#76)
+export { classifyTable, collectTableBlocks } from "./table/classifier.js"
+export type { ClassifyContext } from "./table/classifier.js"
+export { classifyTableTree, chooseTableRepresentation } from "./table/analyze.js"
+export type { TableRepresentation } from "./table/analyze.js"
+export { hasStructuredCellContent } from "./table/builder.js"
+export { extractTables } from "./table/visual.js"
+export type { ExtractTableVisualOptions, ExtractedTable, ExtractedTableCrop, TableVisualPolicy } from "./table/visual.js"
+export type {
+  RenderSvgOptions, RenderSvgResult, RenderScene, ScenePage, RenderRegion, PageBBox, RenderObjectType, RenderSourceFormat,
+  RenderFormat, RenderDocumentOptions, RenderDocumentResult, RenderAsset, SceneRenderOptions, SceneRenderResult,
+  ExtractRegionOptions, RegionAsset,
+} from "./render/index.js"
 
 // ─── Re-exports ──────────────────────────────────────
 
