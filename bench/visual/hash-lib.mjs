@@ -19,6 +19,7 @@ import { readFileSync, rmSync } from "node:fs"
 
 const WHITE_MIN = 248 // 종이 순백 판정 하한
 const PAGE_FRAC = 0.5 // 열/행의 순백 비율이 이 이상이면 페이지
+const OUTSIDE_FRAC = 0.03 // 행의 순백 비율이 이 미만이면 종이 밖(작업영역·쪽 사이 띠)
 
 export function decodeBmp(b) {
   const off = b.readUInt32LE(10)
@@ -48,20 +49,31 @@ export function pageRect(img) {
   const stepY = Math.max(1, Math.floor(h / 256))
   const stepX = Math.max(1, Math.floor(w / 256))
   const isWhite = (p) => buf[p] >= WHITE_MIN && buf[p + 1] >= WHITE_MIN && buf[p + 2] >= WHITE_MIN
-  let x0 = -1, x1 = -1, y0 = -1, y1 = -1
+  // 열: 순백 ≥PAGE_FRAC 인 첫~끝. 행: 종이 밖(작업영역 회색·쪽 사이 띠)은 순백이 거의 없고(<OUTSIDE_FRAC),
+  // 본문 행은 글자가 있어도 순백이 남는다. 그래서 행을 "밖" 행으로 분절하고, 순백 ≥PAGE_FRAC 인 강한 행이 가장
+  // 많은 분절을 종이로 삼는다 — crop 에 다음 쪽 상단이 함께 들어와도(표지 문서는 첫 쪽이 위로 당겨져 2쪽이 보인다)
+  // 첫~끝처럼 두 쪽과 사이 띠를 한 종이로 묶지 않고, 가로로 넓은 채움 띠·표 괘선 행에서 끊기지도 않는다.
+  let x0 = -1, x1 = -1
   for (let x = 0; x < w; x++) {
     let white = 0, n = 0
     for (let y = 0; y < h; y += stepY) { if (isWhite(row(y) + x * bpp)) white++; n++ }
     if (white / n >= PAGE_FRAC) { if (x0 < 0) x0 = x; x1 = x }
   }
+  const frac = new Float64Array(h)
   for (let y = 0; y < h; y++) {
     const r = row(y)
     let white = 0, n = 0
     for (let x = 0; x < w; x += stepX) { if (isWhite(r + x * bpp)) white++; n++ }
-    if (white / n >= PAGE_FRAC) { if (y0 < 0) y0 = y; y1 = y }
+    frac[y] = white / n
   }
-  if (x0 < 0 || x1 <= x0) { x0 = 0; x1 = w - 1 }
-  if (y0 < 0 || y1 <= y0) { y0 = 0; y1 = h - 1 }
+  let y0 = -1, y1 = -1, bestStrong = 0
+  for (let y = 0; y < h; ) {
+    if (frac[y] < OUTSIDE_FRAC) { y++; continue }
+    let end = y, strong = 0
+    while (end < h && frac[end] >= OUTSIDE_FRAC) { if (frac[end] >= PAGE_FRAC) strong++; end++ }
+    if (strong > bestStrong) { bestStrong = strong; y0 = y; y1 = end - 1 }
+    y = end
+  }
   return { x0, x1, y0, y1 }
 }
 

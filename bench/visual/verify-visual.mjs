@@ -49,6 +49,12 @@ const CENTROID_MAX = 0.05
 
 const APP = "Hancom Office HWP"
 const LOAD_WAIT_MS = 12000
+/** 캡처 창 기하·확대율 고정 — 한컴은 마지막 창 크기·확대율을 기억하므로 다른 작업(스크립트 캡처·수동 확대)이
+ *  남긴 상태가 그대로 캡처에 들어와 전 케이스가 이탈한다(2026-09-06 실사고: 1500×1080·121% 잔존 → 14/14 이탈).
+ *  750×850·45%: crop 상단(창 높이 20% = 170pt)이 눈금자(148~161pt) 아래에 떨어져 흰 눈금자가 종이로 오검출되지 않고,
+ *  A4 한 쪽(357×505pt)이 crop(690×612pt) 안에 통째로 들어오며 종이 폭이 crop 폭의 52% 라 hash-lib pageRect 행 검출
+ *  (순백 ≥50%)이 성립한다. */
+const VIEW = { pos: [0, 30], size: [750, 850], zoom: 45 }
 
 /** 개조식 밀집 본문 — 장 2개·부호 4단계·※ 참고·데이터 표·긴 서술 (한 페이지 밀집) */
 const GAEJOSIK_FULL_MD = [
@@ -241,6 +247,23 @@ async function captureHancom(hwpxPath, pngPath) {
       if (!bounds) await sleep(2000)
     }
     if (!bounds) throw new Error("한컴 창을 못 잡음 — GUI 세션·손상 다이얼로그 확인")
+    // 창 기하·확대율을 고정하고(위 VIEW), 실제 값을 다시 읽는다 — 확대율 슬라이더는 상태 표시줄의 slider 1
+    try {
+      osa(
+        `tell application "System Events" to tell process "${APP}"\n` +
+        `  set w to first window whose name is "${windowName}"\n` +
+        `  set position of w to {${VIEW.pos.join(", ")}}\n` +
+        `  set size of w to {${VIEW.size.join(", ")}}\n` +
+        `  delay 0.3\n` +
+        `  set value of slider 1 of w to ${VIEW.zoom}\nend tell`,
+      )
+    } catch (e) { throw new Error(`창 기하·확대율 고정 실패 — ${e.message ?? e}`) }
+    await sleep(600)
+    bounds = osa(
+      `tell application "System Events" to tell process "${APP}"\n` +
+      `  set w to first window whose name is "${windowName}"\n` +
+      `  return (position of w as list) & (size of w as list)\nend tell`,
+    ).split(", ").map(Number)
     // -R은 z-order 무관 영역 캡처라, 한컴이 front가 아니면 앞 창(브라우저 등)이 찍힌다
     osa(`tell application "${APP}" to activate`)
     await sleep(700)
