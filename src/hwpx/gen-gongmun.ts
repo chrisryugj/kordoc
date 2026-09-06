@@ -259,7 +259,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     if (chapterStyle === "band") {
       // 요약박스 직후엔 반 줄(붙지 않게), 본문 뒤엔 실측 빈 줄보다 조금 넉넉히(20pt)
       const before = prevKind === "start" || prevKind === "title" ? 0 : prevKind === "summary" ? BOX_GAP_AFTER_BAND : BAND_BEFORE_HU
-      const band = buildChapterBand(chapterLabel(node.index, "roman").replace(/\.$/, ""), plain(node.text), frame, { ...CHAPTER_BAND_DEFAULT, titleFont: st.font, titlePt: st.pt }, before)
+      const band = buildChapterBand(chapterLabel(node.index, "roman").replace(/\.$/, ""), plain(node.text), frame, { ...CHAPTER_BAND_DEFAULT, color: g.bandColor, textColor: g.bandTextColor, titleFont: st.font, titlePt: st.pt }, before)
       if (band.overflow) warnings.push(`장 제목이 띠 표 한 줄에 담기지 않아 축소했습니다 — 제목을 줄이세요: "${node.text.slice(0, 30)}…"`)
       return band.xml
     }

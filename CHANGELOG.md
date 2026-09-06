@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.14.0] - 2026-09-06
+
+#75 후속: HWP5(.hwp) 레이아웃 렌더. v4.13.0 의 렌더 통합 계층(RenderScene)이 HWPX 만 받던 것을 HWP5 어댑터로 넓혔다.
+한컴이 저장한 HWP5 의 조판 캐시(PARA_LINE_SEG)·표(TABLE/LIST_HEADER)·개체(CTRL_HEADER·SHAPE_COMPONENT)를 HWPX 와 같은 뜻의
+section DOM 으로 합성해 같은 렌더러에 넣는다. 같은 문서의 hwp↔hwpx 10쌍(`bench/corpus/pairs`)에서 페이지 수·페이지 크기·표 수·
+표 bbox·괘선 굵기 분포가 HWPX 렌더와 일치한다(레코드 레이아웃은 pairs 의 header.xml 대조로 확정: BORDER_FILL 변 @2+6k,
+CTRL_HEADER textWrap bit21-23, PAGE_DEF 가로 bit0).
+
+### Added
+
+- **HWP5 렌더 어댑터 (`src/render/hwp5-scene.ts`, #75 Task 7)**: `renderDocument`·`renderDocumentToScene`·`extractRenderedRegions`·
+  `extractTables` 와 CLI `render`·`crop`·`tables`, MCP `render_document`·`crop_regions` 가 `.hwp` 를 받는다. `RenderScene.format` 은
+  `"hwp"`. 문단·표·이미지·도형 region 과 결정적 id 는 HWPX 와 같은 규칙. 표 `sourceId` 는 문서 순번 `t{N}`(`src/hwp5/table-ids.ts`)
+  이고 파서 `IRTable.sourceId` 도 같은 프리패스로 매겨 `extractTables` 의 region·crop 조인이 HWP5 에서도 된다(종전 "분류만" 경고
+  제거). 그리기 개체는 그림·사각형·타원·선·다각형·곡선·글상자·묶음, 수식·OLE 는 경고. 암호 문서는 `password` 옵션.
+- **MCP `extract_tables`** (도구 17개): 표 분류(semantic-table / non-tabular-layout / uncertain) + 페이지·bbox + 정책별 crop
+  (응답 8장·`output_dir` 저장·tables.json). CLI `tables`·API `extractTables` 와 같은 결과.
+- **MCP `render_document` 포맷 확장**: `format` 에 `jpeg`·`html`·`pdf` 추가(svg·html·pdf 는 `output_path` 필수, 페이지별 산출은
+  `_page_NNN` 접미), `max_width_px`. HWPX png/svg 의 pages 미지정 세로 스택 동작은 그대로.
+- **띠 제목 색 옵션** `bandColor`/`bandTextColor`(CLI `--band-color`/`--band-text-color`, MCP `band_color`/`band_text_color`):
+  기본 #003366/#FFFFFF, 교육청형 밝은 띠 `#DFE6F7`+`#000000`. `#RRGGBB` 아니면 KordocError.
+
+### Changed
+
+- HWP5 파서 진입부를 컨테이너 계층(`openHwp5Container`·`readHwp5DocInfoRecords`·`readHwp5SectionStreams`·`readHwp5SectionRecords`·
+  `readHwp5BinData`)으로 분리하고(동작 동일) svg-render 를 포맷 무관 단계(`renderSectionRoots`·`assemblePageSvgs`)로 나눴다.
+- 개조식 문단 위 간격 재검증(서울·gate-fill 428건, `hp:case` 우선. `hp:default` 는 2배 함정): □ 0 96%·ㅇ 0 84%·- 0 90%. 엔진 값
+  (□ 300/그 외 0)은 유지하고, 구 주석의 "3000/2000/1200/600 실측 스펙"과 `scripts/style-digest.mjs` 의 default 우선 읽기를 고쳤다.
+  `docs/gongmunseo-reference.md` 2.8 에 □ 앞 간격 10pt 실렌더 근거, 2.9 에 띠 색 옵션을 적었다.
+
+### Fixed
+
+- **crop 이 표 영역의 좌상단 1/4 만 잘리던 결함(v4.13.0 HWPX 포함)**: sharp 0.35·libvips 8.18·rsvg 2.62 는 pt 단위 SVG 에
+  `density` 배율을 제곱으로 적용해(144dpi → 4px/pt) 래스터가 보고 배율(2px/pt)의 2배로 나왔고, `cropRect` 가 보고 배율로 픽셀을
+  환산해 어긋났다. `rasterize.ts` 가 프로세스당 1회 프로브로 배율 지수를 재고 산출 픽셀 크기·scale 을 실제 이미지에서 읽는다.
+  `render_document` PNG 도 이제 `max_width_px`(기본 1400) 를 실제로 지킨다.
+
 ## [4.13.0] - 2026-09-06
 
 공문서 생성 엔진 재설계(v5). 서울 정보소통광장 결재문서본문 629건(기존 429 + 신규 7종 필터 280)을 전수 실측해

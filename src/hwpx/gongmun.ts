@@ -109,6 +109,13 @@ export interface GongmunOptions {
    */
   h2Marker?: "band" | "roman" | "box" | "number" | "none"
   /**
+   * 띠 제목(h2Marker 'band') 번호칸 채움색 `#RRGGBB` — 기본 #003366(서울 plan 띠 표 실측 최다).
+   * 교육청형 밝은 띠는 `bandColor: "#DFE6F7", bandTextColor: "#000000"`.
+   */
+  bandColor?: string
+  /** 띠 제목 번호 글자색 `#RRGGBB` — 기본 #FFFFFF */
+  bandTextColor?: string
+  /**
    * 2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서
    * 양식 계열 실측). 기본: notice·press 'ㅇ', 그 외 '○' (v4.1.0 실결재 60건 분포).
    */
@@ -183,6 +190,9 @@ export interface ResolvedGongmun {
   bodyTitleBox: boolean
   /** h2 장 제목 표기 — 보고서·계획서 'roman', 통지·공고 'number' (v5) */
   h2Marker: "band" | "roman" | "box" | "number" | "none"
+  /** 띠 제목 번호칸 채움색·글자색 (#RRGGBB, 대문자 정규화) */
+  bandColor: string
+  bandTextColor: string
   /** 2단계 항목부호 — notice·press 기본 'ㅇ', 그 외 '○' (실결재 60건 분포, v4.1.0) */
   bullet2: "ㅇ" | "○"
   /** 단일 형제 부호 생략(규정) — 기본 false (실무 관행: 하나여도 부호, v4.0.2) */
@@ -365,6 +375,14 @@ export function incompatibleGongmunWarnings(opts: GongmunOptions): string[] {
   return warns
 }
 
+/** `#RRGGBB` 색 옵션 검증·대문자 정규화 — 미지정은 undefined(기본값은 호출부) */
+function hexColorOption(name: string, value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const v = value.trim()
+  if (!/^#[0-9a-fA-F]{6}$/.test(v)) throw new KordocError(`${name} must be a #RRGGBB color (got "${value}")`)
+  return v.toUpperCase()
+}
+
 export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
   validateGongmunOptions(opts)
   const preset = normalizeGongmunPreset(opts.preset)
@@ -417,6 +435,9 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     // h2 말머리 — 실측: 보고서 양식 □ 대항목(QA-2), 공고문 아라비아("1. 사업개요", 바이오헬스 실측)
     // v5 라운드 3: 보고서·계획서 기본 band(띠 표) — 서울 plan 7/19·교육청 7/18 실측, 실무자 요청
     h2Marker: opts.h2Marker ?? (preset === "report" || preset === "plan" ? "band" : preset === "notice" ? "number" : "none"),
+    // 띠 제목 색 — 실측 최다 #003366/흰 글자(계획서 띠 표 14개). 교육청형 밝은 띠는 옵션으로
+    bandColor: hexColorOption("bandColor", opts.bandColor) ?? "#003366",
+    bandTextColor: hexColorOption("bandTextColor", opts.bandTextColor) ?? "#FFFFFF",
     // 2단계 부호 — 실결재 기안문·공고문 ㅇ 지배(60건 중 ㅇ134:○5), 보고서 양식 계열 ○
     // v5: 서울 실결재 ㅇ(이응) 지배 — 보고서·계획서·통지·보도자료 ㅇ, 중앙부처 개조식 양식만 ○
     bullet2: opts.bullet2 ?? (preset === "gaejosik" ? "○" : "ㅇ"),

@@ -89,6 +89,15 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.14.0 변경사항
+
+- **🖼️ HWP(5.x)도 조판 그대로 렌더**: `kordoc render 문서.hwp --format png -d ./pages`, `renderDocument("문서.hwp", …)`, MCP `render_document`·`crop_regions` 가 `.hwp` 를 받습니다. 한컴이 저장한 HWP5 의 조판 캐시(줄 좌표·셀 격자·개체 앵커)를 HWPX 와 같은 렌더러로 그리므로, 같은 문서를 hwp/hwpx 로 각각 저장한 10쌍에서 페이지 수·표 위치·괘선 굵기가 HWPX 렌더와 일치합니다. 표 영역 id 는 문서 순번(`t1`, `t2`…)이고 파서 결과의 `sourceId` 와 같아 `kordoc tables 문서.hwp --visual all -d ./tables` 도 HWP 에서 조직도 crop 까지 됩니다. 머리말·꼬리말·수식은 HWPX 와 같이 미렌더.
+- **🧭 MCP `extract_tables`**: 표 분류(데이터표/조직도류/불확실) + 페이지·bbox + crop 을 MCP 에서도. 응답에 crop 8장까지, `output_dir` 에 tables.json.
+- **🖨️ MCP `render_document` 포맷 확장**: `format: jpeg|html|pdf` 추가(html/pdf/svg 는 `output_path` 로 저장), `max_width_px`.
+- **🎨 띠 제목 색**: `--band-color #DFE6F7 --band-text-color #000000`(교육청형 밝은 띠). 기본은 실측 최다 남색 #003366·흰 글자.
+- **📏 개조식 문단 간격 재검증**: 실결재 428건을 `hp:case`(한컴 실렌더 값) 기준으로 다시 재어 □·ㅇ·- 문단 위 간격 0 이 84~96% 임을 확인, 엔진 값 유지. `docs/gongmunseo-reference.md` 2.8 에 □ 앞 간격 10pt 근거 추가.
+- **🔧 crop 이 표의 좌상단 1/4 만 잘리던 결함 수정**: sharp 최신판이 pt 단위 SVG 의 배율을 제곱으로 적용해 래스터가 보고값의 2배로 나오던 것 — 이제 실제 픽셀 크기로 환산하고 `render_document` 의 PNG 도 `max_width_px` 를 지킵니다 (v4.13.0 HWPX `crop_regions`·`kordoc crop` 도 같은 결함이었음).
+
 ## v4.13.0 변경사항
 
 공문서 생성 엔진을 다시 설계했습니다(v5). 서울 정보소통광장 결재문서 **629건을 전수 실측**해 위계·글꼴·들여쓰기·골격을 스킴 하나에 박고, 기안문·보고서·계획서·통지·회의록 생성을 새 엔진으로 갈아탔습니다. 어떤 형태의 마크다운(`#/##/###`, 리스트, □ ㅇ - 1. 가. 명시 부호)을 던져도 같은 위계로 나옵니다.
@@ -1046,7 +1055,7 @@ codex mcp add kordoc -- npx -y kordoc mcp
 }
 ```
 
-**15개 도구:**
+**17개 도구:**
 
 | 도구 | 설명 |
 |------|------|
@@ -1062,9 +1071,11 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `extract_profile` | 참조 HWPX에서 표 서식 프로필(JSON) 추출 — generate_document의 profile_path로 재현 |
 | `generate_document` | 마크다운(표·수식·차트 포함) → HWPX 생성, 공문서 프리셋 (v3.5) |
 | `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
-| `render_document` | HWPX를 조판 그대로 PNG 이미지/SVG로 렌더 — 생성·수정 결과를 AI가 눈으로 검증 (v4.1) |
+| `render_document` | HWPX·HWP를 조판 그대로 PNG/JPEG 이미지(응답)·SVG/HTML/PDF 파일로 렌더 — 생성·수정 결과를 AI가 눈으로 검증 (v4.1, HWP·포맷 확장 v4.14) |
 | `redact_document` | 개인정보(주민번호·전화·이메일·카드·계좌) 탐지 + 서식 보존 마스킹, 리포트 반환 (v4.1) |
 | `parse_chunks` | RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 (v4.1) |
+| `crop_regions` | 렌더 영역(표·이미지·문단·도형)을 페이지 이미지에서 실배율로 잘라 저장 + regions.json (v4.13) |
+| `extract_tables` | 표 분류(데이터표/조직도류/불확실) + 페이지·bbox + 정책별 crop — 조직도는 이미지로, 데이터표는 구조로 (v4.14) |
 
 ## API
 

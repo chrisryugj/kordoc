@@ -72,6 +72,15 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.14.0
+
+- **🖼️ HWP (5.x) renders as typeset too**: `kordoc render doc.hwp --format png -d ./pages`, `renderDocument("doc.hwp", …)`, and the MCP tools `render_document`/`crop_regions` accept `.hwp`. The layout cache Hancom saves in HWP5 (line positions, cell grid, object anchors) goes through the same renderer as HWPX, so for 10 documents saved as both hwp and hwpx the page count, table positions and border widths match the HWPX render. Table region ids are document ordinals (`t1`, `t2`, …) and equal the parser's `sourceId`, so `kordoc tables doc.hwp --visual all -d ./tables` crops org charts from HWP as well. Headers/footers/equations are not rendered, same as HWPX.
+- **🧭 MCP `extract_tables`**: table classification (data table / layout-like / uncertain) + page·bbox + crops, now over MCP. Up to 8 crops inline, tables.json in `output_dir`.
+- **🖨️ MCP `render_document` formats**: `format: jpeg|html|pdf` added (html/pdf/svg are written to `output_path`), plus `max_width_px`.
+- **🎨 Chapter band colors**: `--band-color #DFE6F7 --band-text-color #000000` (the light band used by education offices). Default stays the most common navy #003366 with white numerals.
+- **📏 Outline paragraph spacing re-verified**: 428 real approval documents re-measured from `hp:case` (the value Hancom actually renders): space-before 0 for □/ㅇ/- in 84–96% of paragraphs, engine values unchanged. Section 2.8 of `docs/gongmunseo-reference.md` now documents the 10pt gap before □.
+- **🔧 Crops no longer cut to the top-left quarter**: recent sharp/libvips apply the `density` factor squared to pt-sized SVGs, so rasters came out at twice the reported scale. Pixel size and scale are now read from the actual image, and `render_document` PNGs honor `max_width_px` (the v4.13.0 HWPX `crop_regions`/`kordoc crop` had the same defect).
+
 ## What's New in v4.13.0
 
 The official-document generator was redesigned (v5). **629 real approval documents** from the Seoul open-government archive were measured exhaustively, the hierarchy/fonts/indents/frames were put into one scheme, and 기안문·보고서·계획서·통지·회의록 now go through a new engine. Any markdown shape (`#/##/###`, lists, explicit □ ㅇ - 1. 가. markers) yields the same hierarchy.
@@ -600,7 +609,7 @@ codex mcp add kordoc -- npx -y kordoc mcp
 }
 ```
 
-**15 tools:**
+**17 tools:**
 
 | Tool | Description |
 |------|-------------|
@@ -616,9 +625,11 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `extract_profile` | Extract a table format profile (JSON) from a reference HWPX — feed it to generate_document's profile_path |
 | `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (v3.5) |
 | `place_seal` | Place a stamp/signature image over an anchor phrase (v3.16) |
-| `render_document` | Render HWPX exactly as typeset to a PNG image/SVG — lets the AI visually verify generated/edited documents (v4.1) |
+| `render_document` | Render HWPX/HWP exactly as typeset to PNG/JPEG (inline) or SVG/HTML/PDF files — lets the AI visually verify generated/edited documents (v4.1, HWP + formats v4.14) |
 | `redact_document` | Detect PII (resident registration no., phone, email, card, account) + format-preserving masking with a report (v4.1) |
 | `parse_chunks` | Structure-preserving chunk JSON for RAG — heading/outline hierarchy breadcrumbs + standalone table chunks (v4.1) |
+| `crop_regions` | Crop rendered regions (tables/images/paragraphs/shapes) from page images at true scale + regions.json (v4.13) |
+| `extract_tables` | Table classification (data table / layout-like / uncertain) + page·bbox + policy-based crops — org charts as images, data tables as structure (v4.14) |
 
 ## API
 

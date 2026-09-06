@@ -61,10 +61,12 @@ for (const pp of findAll(hdr, "paraPr")) {
   const bs = kids(pp, "breakSetting")[0];
   if (bs) { o.brkNonLatin = A(bs, "breakNonLatinWord"); o.brkLatin = A(bs, "breakLatinWord"); if (A(bs, "keepWithNext") === "1") o.keepNext = 1; }
   if (A(pp, "snapToGrid") === "1") o.grid = 1;
-  // margin·lineSpacing이 hp:switch>hp:default 안에 있을 수 있다(전자결재 산출 기안문 실측)
-  // — hp:default가 표준 HWPUNIT 값, hp:case(HwpUnitChar)는 글자단위라 default 우선
+  // margin·lineSpacing이 hp:switch 안에 있을 수 있다(전자결재 산출 기안문 실측).
+  // ★ hp:default 의 intent/left/prev 는 hp:case(HwpUnitChar) 의 정확히 2배이고 한컴 실렌더는 case 값이다
+  //   (2026-09-06 PIL 픽셀 실측, 서울 469건·교육청 25건 paraPr 100%) — case 우선, 없으면 default, 없으면 plain
+  const swCase = kids(pp, "switch").flatMap((sw) => kids(sw, "case"));
   const swDefault = kids(pp, "switch").flatMap((sw) => kids(sw, "default"));
-  const scopes = [pp, ...swDefault];
+  const scopes = [...swCase, pp, ...swDefault];
   const m = scopes.flatMap((s) => kids(s, "margin"))[0];
   if (m) {
     const g = (t) => { const el = kids(m, t)[0]; return el ? Number(A(el, "value")) : 0; };

@@ -79,6 +79,9 @@ export interface GongmunSurfaceInput {
   endMark?: boolean
   bodyTitleBox?: boolean
   h2Marker?: (typeof H2_MARKERS)[number]
+  /** 띠 제목 번호칸 채움색·글자색 (#RRGGBB) */
+  bandColor?: string
+  bandTextColor?: string
   fonts?: NonNullable<GongmunOptions["fonts"]>
   sizes?: NonNullable<GongmunOptions["sizes"]>
   levels?: NonNullable<GongmunOptions["levels"]>
@@ -124,6 +127,8 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.endMark !== undefined) g.endMark = input.endMark
   if (input.bodyTitleBox !== undefined) g.bodyTitleBox = input.bodyTitleBox
   if (input.h2Marker) g.h2Marker = input.h2Marker
+  if (input.bandColor) g.bandColor = input.bandColor
+  if (input.bandTextColor) g.bandTextColor = input.bandTextColor
   if (input.fonts) g.fonts = input.fonts
   if (input.sizes) g.sizes = input.sizes
   if (input.levels && Object.keys(input.levels).length > 0) g.levels = input.levels
