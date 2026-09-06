@@ -6,7 +6,10 @@
  * (v4.0.1). URL 쌍점 오탐 가드 등 일부 보강. v4.12.1 에 금액 한글 병기·물결표·두음법칙·
  * 외래어·차별 표현·"끝." 누락 6룰 보강 (pyhwpxlib Gongmun 검사 항목 대조). 검사는 조언용이다 — 생성은 막지 않고
  * 경고만 낸다 (A2 폰트경고와 같은 원칙). 별도 CLI `kordoc lint`는 error 시 exit 1.
+ * v4.13.0: 하이픈 날짜(2026-07-18) 룰, 금액 한글 병기·하이픈 날짜는 실제 변환값을 제안.
  */
+
+import { hangulAmount } from "../shared/numbering.js"
 
 export interface GongmunLintFinding {
   /** 1-based 줄 번호 */
@@ -69,6 +72,11 @@ const RULES: LintRule[] = [
     message: "연도는 네 자리로 표기('24 ✕)", suggest: "예) 2025. 1. 6." },
   { code: "DATE_NO_END_DOT", severity: "warning", pattern: /\b\d{4}\.\s\d{1,2}\.\s\d{1,2}(?!\s*[.\d(])/g,
     message: "날짜의 '일' 다음에 마침표(.)를 찍어야 함", suggest: "예) 2025. 1. 6." },
+  // 하이픈·ISO 날짜(2026-07-18) — 편람은 온점 구분만 인정. URL 경로·파일명·코드 안(앞뒤에 / = & ? # % . - 영숫자)은
+  // 제외, 표 셀은 서식 기입란 관행이 섞여 건너뜀. 제안은 실제 변환값(0 패딩 제거)
+  { code: "DATE_HYPHEN", severity: "warning", skipTable: true,
+    pattern: /(?<![\/=&?#%.\w-])(?:19|20)\d{2}-\d{1,2}-\d{1,2}(?![\/\w-])/g,
+    message: "날짜는 하이픈(-) 대신 온점으로 구분하고 온점 뒤 한 칸 띄움", suggest: "예) 2026. 7. 18." },
   // 시간 ─ 24시각제, 쌍점 붙여쓰기
   { code: "TIME_AMPM", severity: "error", pattern: /(오전|오후|아침|밤|낮)\s*\d{1,2}\s*시/g,
     message: "24시각제 숫자로 표기(오전/오후 사용 안 함)", suggest: "예) 09:00, 15:30" },
@@ -168,8 +176,14 @@ export function lintGongmunText(text: string, opts?: { document?: boolean }): Go
   return findings
 }
 
-/** 사전 규칙(외래어·차별 표현)은 걸린 낱말의 표준 표기를 바로 제안 */
+/** 사전 규칙(외래어·차별 표현)은 걸린 낱말의 표준 표기를, 금액·하이픈 날짜는 실제 변환값을 바로 제안 */
 function dictSuggest(code: string, match: string): string | undefined {
+  const m = match.trim()
+  if (code === "MONEY_NO_HANGUL") return `${m} → ${m}(금${hangulAmount(m)}원)`
+  if (code === "DATE_HYPHEN") {
+    const d = m.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (d) return `${m} → ${d[1]}. ${Number(d[2])}. ${Number(d[3])}.`
+  }
   const table = code === "LOANWORD_ERROR" ? LOANWORD_FIXES : code === "DISCRIMINATORY_TERM" ? DISCRIM_FIXES : null
   if (!table) return undefined
   const hit = table.find(([w]) => w === match.trim())

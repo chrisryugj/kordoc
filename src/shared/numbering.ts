@@ -41,6 +41,35 @@ export function circledHangul(n: number): string {
   return n < 14 ? String.fromCodePoint(0x326e + n) : hangulOrdinal(n)
 }
 
+const AMOUNT_DIGITS = "영일이삼사오육칠팔구"
+const AMOUNT_SMALL = ["", "십", "백", "천"]
+const AMOUNT_BIG = ["", "만", "억", "조", "경", "해"]
+
+/**
+ * 금액 숫자 → 한글 병기값 (규정 시행규칙 제2조: 아라비아 숫자 다음 괄호 안에 한글).
+ * 4자리 그룹 × 만·억·조·경·해, 그룹 안 천·백·십, 숫자 영일이삼사오육칠팔구.
+ * 공문 관행대로 `일십`·`일백`·`일천`·`일만`의 "일"을 생략하지 않는다 — 금113,560원(금일십일만삼천오백육십원).
+ * 값이 0인 그룹은 단위까지 생략, 0은 "영". 쉼표·공백 등 숫자 아닌 문자는 무시.
+ * 반환은 순수 한글 — 접두·접미(금·원·원정)는 호출자가 붙인다.
+ */
+export function hangulAmount(n: number | string): string {
+  const digits = String(n).replace(/\D/g, "").replace(/^0+(?=\d)/, "")
+  if (!digits || digits === "0") return "영"
+  const groups: string[] = []
+  for (let end = digits.length; end > 0; end -= 4) groups.unshift(digits.slice(Math.max(0, end - 4), end))
+  let out = ""
+  groups.forEach((g, i) => {
+    let part = ""
+    const padded = g.padStart(4, "0")
+    for (let k = 0; k < 4; k++) {
+      const d = Number(padded[k])
+      if (d) part += AMOUNT_DIGITS[d] + AMOUNT_SMALL[3 - k]
+    }
+    if (part) out += part + (AMOUNT_BIG[groups.length - 1 - i] ?? "")
+  })
+  return out
+}
+
 /** 1-based n → 로마 숫자 (범위 밖은 아라비아 숫자 폴백) */
 export function romanNumeral(n: number, upper: boolean): string {
   if (n <= 0 || n > 3999) return String(n)
