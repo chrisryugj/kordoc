@@ -98,12 +98,44 @@ export interface InlineStyle {
   fontName?: string
 }
 
+// ─── 표 분류 계약 (#76) — 분류기 내부 점수 구조(TableSignals)는 노출하지 않는다 ───
+
+export type TableClassificationKind = "semantic-table" | "non-tabular-layout" | "uncertain"
+
+export type TableClassificationReason =
+  | "repeated-row-schema"
+  | "grid-regularity"
+  | "high-active-density"
+  | "column-type-consistency"
+  | "nested-structure-wrapper"
+  | "span-irregularity"
+  | "spacer-bands"
+  | "extreme-sparsity"
+  | "diagram-context-keyword"
+  | "low-evidence"
+  | "ambiguous-scores"
+
+/** 휴리스틱 분류 결과 — confidence 는 확률이 아니라 두 점수의 격차 */
+export interface TableClassificationSummary {
+  kind: TableClassificationKind
+  confidence: number
+  semanticScore: number
+  nonTabularScore: number
+  reasons: TableClassificationReason[]
+}
+
 export interface IRTable {
   rows: number
   cols: number
   cells: IRCell[][]
   /** 첫 행을 헤더로 렌더링할지 여부 (현재: rows > 1이면 true — 의미적 감지가 아닌 레이아웃 힌트) */
   hasHeader: boolean
+  /** opt-in 분류(`ParseOptions.classifyTables`) 결과 — #76 */
+  classification?: TableClassificationSummary
+  /** 원본 표 식별자(HWPX `hp:tbl id`) — 렌더 region(`RenderRegion.sourceId`)과의 조인 키 */
+  sourceId?: string
+  /** 렌더 인프라가 준 페이지 로컬 pt 조각(다중 페이지 표는 여럿) — extractTables 가 채운다 */
+  regions?: BoundingBox[]
   /** 표 캡션 (예: "표 1. 부서별 예산") — v3.0 */
   caption?: string
   /**
@@ -187,6 +219,9 @@ export interface ParseOptions {
    *  기본 false: 마크다운 가독성을 위해 후행 빈 열을 트림.
    *  양식 인식 경로(parse_form·fill)는 내부적으로 항상 켠다. */
   keepTrailingEmptyCols?: boolean
+  /** 구조 파싱 뒤 표를 의미표/레이아웃/불확실로 분류해 `IRTable.classification` 에 붙인다 (#76).
+   *  기본 false — 기본 parse 출력 불변. 중첩표·셀 blocks·캡션 blocks 까지 재귀, 원문 순서는 바꾸지 않는다. */
+  classifyTables?: boolean
   /** 빈 문단(텍스트 없는 hp:p) 보존 (#57). 기본 false: 종전대로 빈 문단 제거.
    *  켜면 본문은 `text: ""` paragraph 블록으로, 표 셀은 빈 줄로 순서대로 보존해
    *  "원문 문단 수 = 줄 수" 대응을 유지한다 (행 줄맞춤 서식 문서용).

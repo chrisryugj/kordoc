@@ -120,7 +120,7 @@ function walkSection(
           }
         }
         if (tableCtx) tableStack.push(tableCtx)
-        const newTable: TableState = { rows: [], currentRow: [], cell: null }
+        const newTable: TableState = { rows: [], currentRow: [], cell: null, sourceId: el.getAttribute("id") ?? undefined }
         walkSection(el, blocks, newTable, tableStack, ctx, depth + 1)
         tableCtx = completeTable(newTable, tableStack, blocks, ctx)
         break
@@ -548,7 +548,7 @@ function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0): SubListConten
  */
 function buildSubListTable(el: Element, ctx: WalkCtx, depth: number): { text: string; block: IRBlock | null } {
   const sink: IRBlock[] = []
-  const st: TableState = { rows: [], currentRow: [], cell: null }
+  const st: TableState = { rows: [], currentRow: [], cell: null, sourceId: el.getAttribute("id") ?? undefined }
   walkSection(el, sink, st, [], ctx, depth + 1)
   let flat = convertTableToText(st.rows)
   if (st.caption) flat = st.caption + (flat ? "\n" + flat : "")
@@ -616,7 +616,7 @@ function walkParagraphChildren(
         // 테이블은 walkSection으로 위임. inline 플래그로 완료 시 부모 셀 텍스트를
         // 같은 줄(공백)로 이을지 결정한다 (#52 후속 — 글자취급 표는 앞뒤 텍스트와 한 줄)
         if (tableCtx) tableStack.push(tableCtx)
-        const newTable: TableState = { rows: [], currentRow: [], cell: null, inline: isInlineTbl(el) }
+        const newTable: TableState = { rows: [], currentRow: [], cell: null, inline: isInlineTbl(el), sourceId: el.getAttribute("id") ?? undefined }
         walkSection(el, blocks, newTable, tableStack, ctx, d + 1)
         tableCtx = completeTable(newTable, tableStack, blocks, ctx)
       } else if (localTag === "caption" && !inShape) {

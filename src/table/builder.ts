@@ -519,6 +519,20 @@ function hasNestedTables(table: IRTable): boolean {
   return false
 }
 
+/**
+ * 셀에 GFM 표 문법으로 담을 수 없는 구조 콘텐츠(중첩표·구분선)가 있는가 (#76 Task 4) — hasNestedTables 의 일반화.
+ * 이미지는 GFM 셀에 `![image](src)` 로 인라인할 수 있어 여기 세지 않는다 — 대신 GFM 경로가 blocks 를 직접 직렬화해
+ * (아래 tableToMarkdown) 병합 없는 단순 표의 셀 이미지가 사라지지 않게 한다. span 문단(왕복 채널)도 GFM 그대로.
+ */
+export function hasStructuredCellContent(table: IRTable): boolean {
+  for (const row of table.cells) {
+    for (const cell of row) {
+      if (cell.blocks?.some(b => (b.type === "table" && b.table) || b.type === "separator")) return true
+    }
+  }
+  return false
+}
+
 /** 셀 내부 콘텐츠 → HTML — blocks(중첩표/다중문단) 있으면 구조 보존 재귀 렌더링 */
 function cellInnerHtml(cell: IRCell): string {
   if (cell.blocks?.length) {
@@ -597,7 +611,8 @@ function tableToMarkdown(table: IRTable): string {
 
   // 병합 셀·중첩표가 있으면 HTML 테이블로 출력하되, 수식이 있으면 GFM 표로 출력한다.
   // 많은 Markdown 렌더러가 raw HTML table 내부의 $...$를 수식으로 다시 처리하지 않는다.
-  if ((hasMergedCells(table) || hasNestedTables(table)) && !tableContainsInlineMath(table)) {
+  // 병합·구조 콘텐츠(중첩표·구분선)는 HTML (#76 — hasNestedTables 일반화)
+  if ((hasMergedCells(table) || hasStructuredCellContent(table)) && !tableContainsInlineMath(table)) {
     return tableToHtml(table)
   }
 
@@ -637,8 +652,9 @@ function tableToMarkdown(table: IRTable): string {
       if (skip.has(`${r},${c}`)) continue
       const cell = cells[r]?.[c]
       if (!cell) continue
-      // 왕복 채널 셀 spans (v4.0.4) — 강조 마커 재방출 (문단별, 개행은 <br> 규약)
-      display[r][c] = (cell.blocks?.some(b => b.spans)
+      // 왕복 채널 셀 spans (v4.0.4) — 강조 마커 재방출 (문단별, 개행은 <br> 규약).
+      // 이미지 블록이 있는 셀도 blocks 순서대로 직렬화 — text 평탄화에 참조가 없어도 `![image](src)` 가 남는다 (#76)
+      display[r][c] = (cell.blocks?.some(b => b.spans || (b.type === "image" && b.text))
         ? cell.blocks
           .map(b => b.type === "image" && b.text
             ? `![image](${b.text})`

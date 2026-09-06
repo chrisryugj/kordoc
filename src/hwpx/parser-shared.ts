@@ -66,6 +66,8 @@ export interface TableState {
    * 공백 연결할지 판단 (#52 후속). 블록/float 표(기본 undefined)는 종전대로 `\n`.
    */
   inline?: boolean
+  /** hp:tbl id — IRTable.sourceId (렌더 region 조인 키, #76) */
+  sourceId?: string
 }
 
 /** 섹션 간 공유 상태 — 자동번호 카운터, 머리말/꼬리말, 변경추적 */

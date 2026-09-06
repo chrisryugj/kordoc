@@ -15,6 +15,7 @@ import type { CellCtxEx, TableState, WalkCtx } from "./parser-shared.js"
 function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boolean, keepEmptyParagraphs?: boolean): IRTable {
   const table = buildTable(state.rows, { keepAnchoredEmptyCols, keepEmptyParagraphs })
   if (state.caption) table.caption = state.caption
+  if (state.sourceId) table.sourceId = state.sourceId
   // 캡션 안 중첩표는 구조도 병행 제공 — caption 문자열은 하위 호환 평탄화로 유지 (#55)
   if (state.captionBlocks?.length) table.captionBlocks = state.captionBlocks
 
