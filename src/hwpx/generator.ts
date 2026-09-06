@@ -29,6 +29,8 @@ import { buildProfileRemap, type FormatProfile } from "./gen-profile.js"
 import { docframeActive, docframeCharPrXmls, docframeIds } from "./gen-docframe.js"
 import { levelCharIds, levelFontFaces, levelCharPrXmls } from "./gen-levels.js"
 import { ImageRegistry } from "./gen-image.js"
+import { StyleRegistry } from "./style-registry.js"
+import { buildGongmunSectionV5, usesV5Engine } from "./gen-gongmun.js"
 
 export { type HwpxTheme } from "./gen-ids.js"
 export {
@@ -63,6 +65,11 @@ export interface MarkdownToHwpxOptions {
    * URI는 이 맵 없이도 임베드. 바이트가 없는 url은 종전 placeholder 참조 보존.
    */
   images?: Record<string, Uint8Array | ArrayBuffer>
+  /**
+   * 경고 수집 싱크 (v5) — 생성기가 조용히 처리한 것(□ 한 줄 축소 한계 초과·제목 축소 등)을
+   * 여기에 push한다. 호출 표면(CLI stderr·MCP 응답)이 노출.
+   */
+  warnings?: string[]
 }
 
 
@@ -81,6 +88,41 @@ export async function markdownToHwpx(
   const { md, defs } = extractFootnoteDefs(markdown)
   beginInlineDoc(defs)
   try {
+  // ─── v5 엔진 (기안문·보고서·계획서·통지·회의록) — outline + scheme + StyleRegistry ───
+  if (gongmun && usesV5Engine(gongmun.preset)) {
+    const blocks = parseMarkdownToBlocks(md)
+    const staticBfEnd = staticBorderFillNext(gongmun, true)
+    const charBase = charVariantBase(false, true)
+    const fontBase = staticFontNext(gongmun, true)
+    const remap = options?.profile ? buildProfileRemap(options.profile, charBase, staticBfEnd, fontBase) : null
+    const bfReg = new TableBfRegistry(staticBfEnd + (remap?.borderFillXmls.length ?? 0))
+    const reg = new StyleRegistry(charBase + (remap?.charPrXmls.length ?? 0), 8, fontBase + (remap?.fontFaces.length ?? 0), ["함초롬바탕", "함초롬돋움", "HY견고딕"])
+    const chartParts: ChartPart[] = []
+    const supplied = options?.images
+      ? new Map(Object.entries(options.images).map(([k, v]) => [k, v instanceof Uint8Array ? v : new Uint8Array(v)] as const))
+      : undefined
+    const images = new ImageRegistry(supplied)
+    const res = buildGongmunSectionV5(blocks, gongmun, { reg, bfReg, remap, images, page, chartParts }, theme)
+    if (options?.warnings) options.warnings.push(...res.warnings)
+    if (remap && remap.tables.length > 0 && remap.tables.every(t => !t.used)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[kordoc] format profile: 프로필 표 ${remap.tables.length}개가 문서 표와 매칭되지 않아 미적용 (행·열/첫 셀 텍스트 불일치)`)
+    }
+    const zip = new JSZip()
+    zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
+    zip.file("META-INF/container.xml", generateContainerXml())
+    zip.file("Contents/content.hpf", generateManifest(chartParts, images.manifestItems(), "gongmun"))
+    for (const part of images.parts) zip.file(part.name, part.data)
+    zip.file("Contents/header.xml", generateHeaderXml(theme, gongmun, [],
+      [...(remap?.borderFillXmls ?? []), ...bfReg.emit()],
+      [...(remap?.charPrXmls ?? []), ...reg.charPrXmls],
+      [], [...(remap?.fontFaces ?? []), ...reg.extraFonts],
+      { paraPrXmls: reg.paraPrXmls, bodyFace: "함초롬바탕" }))
+    zip.file("Contents/section0.xml", res.xml)
+    for (const part of chartParts) zip.file(part.name, part.xml)
+    zip.file("Preview/PrvText.txt", buildPrvText(blocks))
+    return await zip.generateAsync({ type: "arraybuffer" })
+  }
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 전용 charPr 블록(11~25)이 먼저 온다 (QA-1)
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
   const richAssets = !!gongmun && needsGaejosikAssets(gongmun)

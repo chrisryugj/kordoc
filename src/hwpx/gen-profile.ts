@@ -240,7 +240,7 @@ export function borderFillDefToXml(id: number, def: BorderFillDef): string {
  * underline을 지원한다.
  *
  * 글꼴 해석 (0.3.0): fontName_hangul이 있으면 리맵된 append 글꼴 id(namedFontId)를
- * 쓴다 — HANGUL·LATIN에만 존재하는 id라 hanja 이하 언어는 기본(0). 이름이 없는
+ * 쓴다 — 전 언어 목록이 동일하므로(gen-header) 나머지 슬롯도 같은 id. 이름이 없는
  * 구버전 프로필은 fontRef_hangul 순번이 생성 header 범위(0~2) 안일 때만 존중,
  * 밖이면 dangling IDREF 방지를 위해 기본 글꼴(0)로 접는다.
  */
@@ -250,9 +250,10 @@ export function profileCharPrXml(id: number, def: CharPrDef, namedFontId?: numbe
   const height = Math.max(parseHu(def.height_hwpunit) ?? 1000, 100)
   const color = escapeXml(def.textColor ?? "#000000")
   let font = 0
-  let restFont = 0 // hanja/japanese/other/symbol/user — append 글꼴이 없는 언어
+  let restFont = 0 // hanja/japanese/other/symbol/user — 7슬롯 동일해야 한컴 툴바가 글꼴명을 보여준다
   if (namedFontId != null) {
     font = namedFontId
+    restFont = font
   } else {
     const rawFont = def.fontRef_hangul != null ? parseInt(def.fontRef_hangul, 10) || 0 : 0
     font = rawFont >= 0 && rawFont <= LEGACY_PROFILE_FONT_MAX ? rawFont : 0

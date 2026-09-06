@@ -76,10 +76,11 @@ function assertSequentialIds(rows: string[], label: string, startId: number): vo
 // ─── charPr 생성 헬퍼 ───────────────────────────────
 
 /** charProperties 블록 생성 — 공문서 모드면 본문/제목 height를 표준값으로 */
-function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | null, ratioVariants: number[] = [], extraCharPrXmls: string[] = []): string {
+function buildCharProperties(theme: ResolvedTheme, gongmun: ResolvedGongmun | null, ratioVariants: number[] = [], extraCharPrXmls: string[] = [], v5 = false): string {
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 제목 HY헤드라인M·본문 휴먼명조 (QA-1, 부처별 양식 3종 실측)
-  const measured = !!gongmun && usesReportFonts(gongmun.preset)
-  const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
+  // v5 엔진은 정적 블록을 비실측 최소 세트로 고정하고 스킴 글꼴은 레지스트리가 발급한다
+  const measured = !v5 && !!gongmun && usesReportFonts(gongmun.preset)
+  const richAssets = !v5 && !!gongmun && needsGaejosikAssets(gongmun)
   // 비공문서(기존 동작): 본문 10pt
   let body = 1000, code = 900, h1 = 1800, h2 = 1400, h3 = 1200, h4 = 1100
   if (gongmun) {
@@ -293,6 +294,24 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
   return `<hh:paraProperties itemCnt="${base.length}">\n${base.join("\n")}\n    </hh:paraProperties>`
 }
 
+/** v5 최소 paraPr — 기본 0~7(본문 줄간격은 스킴) + 레지스트리 발급분 */
+function buildParaPropertiesV5(gongmun: ResolvedGongmun, extra: string[]): string {
+  const ls = gongmun.lineSpacing
+  const base = [
+    paraPr(0, { lineSpacing: ls, keepWord: true }),
+    paraPr(1, { align: gongmun.centerTitle ? "CENTER" : "LEFT", spaceBefore: 400, spaceAfter: 400, lineSpacing: ls, keepWord: true }),
+    paraPr(2, { align: "LEFT", spaceBefore: 600, spaceAfter: 150, lineSpacing: ls, keepWord: true }),
+    paraPr(3, { align: "LEFT", spaceBefore: 400, spaceAfter: 100, lineSpacing: ls, keepWord: true }),
+    paraPr(4, { align: "LEFT", spaceBefore: 300, spaceAfter: 100, lineSpacing: ls, keepWord: true }),
+    paraPr(5, { align: "LEFT", lineSpacing: 130, indent: 400, keepWord: true }),
+    paraPr(6, { align: "LEFT", lineSpacing: ls, indent: 600, keepWord: true }),
+    paraPr(7, { align: "LEFT", lineSpacing: ls, indent: 600, keepWord: true }),
+    ...extra,
+  ]
+  assertSequentialIds(base, "paraPr", 0)
+  return `<hh:paraProperties itemCnt="${base.length}">\n${base.join("\n")}\n    </hh:paraProperties>`
+}
+
 /**
  * 개요(OUTLINE) 문단이 참조하는 numbering 정의 — 헤딩 paraPr(1~4)이 사용.
  * 실제 한컴 파일의 paraHead 속성을 미러하되 번호 서식 텍스트를 비워
@@ -322,12 +341,12 @@ function fontEntry(id: number, face: string, weight = 6): string {
  * 정적 fontface 다음 폰트 id — 프로필 append 글꼴(fontName_hangul, 0.3.0)이 여기서부터.
  * buildFontFaces의 실제 방출 개수에서 파생: 실측 프리셋 8종(0~7), 그 외 3종(0~2).
  */
-export function staticFontNext(gongmun: ResolvedGongmun | null): number {
-  return gongmun && needsGaejosikAssets(gongmun) ? 8 : 3
+export function staticFontNext(gongmun: ResolvedGongmun | null, v5 = false): number {
+  return !v5 && gongmun && needsGaejosikAssets(gongmun) ? 8 : 3
 }
 
-function buildFontFaces(gongmun: ResolvedGongmun | null, bodyFace: string, extraFonts: string[] = []): string {
-  if (gongmun && needsGaejosikAssets(gongmun)) {
+function buildFontFaces(gongmun: ResolvedGongmun | null, bodyFace: string, extraFonts: string[] = [], v5 = false): string {
+  if (!v5 && gongmun && needsGaejosikAssets(gongmun)) {
     // 실측 폰트 프리셋(개조식·보고서·계획서) — 실측 양식의 폰트 세트. 모든 언어에 동일
     // 목록(한글 폰트의 라틴 글리프 사용, 실제 정부 양식 hwpx도 전 언어 동일 id 참조).
     // fonts 옵션으로 역할별 오버라이드: id 3=heading(제목 계열) / 4=body(본문) / 5=ref(※) / 7=table(표 셀)
@@ -354,43 +373,17 @@ function buildFontFaces(gongmun: ResolvedGongmun | null, bodyFace: string, extra
       langs.map((l) => `      <hh:fontface lang="${l}" fontCnt="${faces.length + extraFonts.length}">\n${list}\n      </hh:fontface>`).join("\n") +
       `\n    </hh:fontfaces>`
   }
-  // 프로필 append 글꼴(0.3.0) — HANGUL·LATIN에만 id 3+로 붙인다 (HANJA 이하 1종 언어에
-  // 붙이면 id 구멍). profileCharPrXml이 hangul/latin만 이 id를 참조, 나머지 언어는 0.
-  const extraH = extraFonts.map((f, i) => fontEntry(3 + i, f)).join("\n")
-  const extraBlock = extraH ? `\n${extraH}` : ""
-  return `<hh:fontfaces itemCnt="7">
-      <hh:fontface lang="HANGUL" fontCnt="${3 + extraFonts.length}">
-${fontEntry(0, bodyFace)}
-${fontEntry(1, "함초롬돋움")}
-${fontEntry(2, "HY견고딕", 9)}${extraBlock}
-      </hh:fontface>
-      <hh:fontface lang="LATIN" fontCnt="${3 + extraFonts.length}">
-        <hh:font id="0" face="Times New Roman" type="TTF" isEmbedded="0">
-          <hh:typeInfo familyType="FCAT_OLDSTYLE" weight="5" proportion="4" contrast="2" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="4"/>
-        </hh:font>
-        <hh:font id="1" face="Consolas" type="TTF" isEmbedded="0">
-          <hh:typeInfo familyType="FCAT_MODERN" weight="5" proportion="0" contrast="0" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/>
-        </hh:font>
-        <hh:font id="2" face="Arial Black" type="TTF" isEmbedded="0">
-          <hh:typeInfo familyType="FCAT_GOTHIC" weight="9" proportion="0" contrast="0" strokeVariation="0" armStyle="0" letterform="0" midline="0" xHeight="0"/>
-        </hh:font>${extraBlock}
-      </hh:fontface>
-      <hh:fontface lang="HANJA" fontCnt="1">
-${fontEntry(0, "함초롬바탕")}
-      </hh:fontface>
-      <hh:fontface lang="JAPANESE" fontCnt="1">
-${fontEntry(0, "굴림")}
-      </hh:fontface>
-      <hh:fontface lang="OTHER" fontCnt="1">
-${fontEntry(0, "굴림")}
-      </hh:fontface>
-      <hh:fontface lang="SYMBOL" fontCnt="1">
-${fontEntry(0, "Symbol")}
-      </hh:fontface>
-      <hh:fontface lang="USER" fontCnt="1">
-${fontEntry(0, "굴림")}
-      </hh:fontface>
-    </hh:fontfaces>`
+  // 7개 언어 목록을 전부 동일하게 — 한컴 툴바("대표" 언어)는 charPr 의 7개 슬롯이 같은 글꼴로 풀릴 때만
+  // 이름을 보여준다(맥 한컴 실렌더 A/B, 2026-09-06: 한글·영문만 지정하고 나머지를 굴림/Symbol 로 두면 글꼴 칸이
+  // 빈칸). 한컴 기본 템플릿·실결재도 라틴 슬롯에 같은 한글 글꼴을 쓴다 — 종전 Times New Roman/Consolas/Arial Black
+  // 라틴 슬롯은 제거. 프로필 append 글꼴(0.3.0)은 정적 3종 뒤 id 3+ 로 전 언어에 붙는다.
+  const list = [fontEntry(0, bodyFace), fontEntry(1, "함초롬돋움"), fontEntry(2, "HY견고딕", 9)]
+    .concat(extraFonts.map((f, i) => fontEntry(3 + i, f)))
+    .join("\n")
+  const langs = ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"]
+  return `<hh:fontfaces itemCnt="${langs.length}">\n` +
+    langs.map((l) => `      <hh:fontface lang="${l}" fontCnt="${3 + extraFonts.length}">\n${list}\n      </hh:fontface>`).join("\n") +
+    `\n    </hh:fontfaces>`
 }
 
 /**
@@ -398,13 +391,13 @@ ${fontEntry(0, "굴림")}
  * generator의 동적 id 배치(프로필·표 레지스트리 시작점)가 이 목록의 길이에서 파생되므로
  * (staticBorderFillNext) 여기가 정적 borderFill 개수의 단일 진실원천이다 (v4.0.5 P0-1).
  */
-function staticBorderFillItems(gongmun: ResolvedGongmun | null): string[] {
+function staticBorderFillItems(gongmun: ResolvedGongmun | null, v5 = false): string[] {
   const thin: BorderSide = ["0.12 mm", "#000000"]
   const items = [
     borderFillEntry(1, {}),
     borderFillEntry(2, { l: thin, r: thin, t: thin, b: thin }),
   ]
-  if (gongmun && needsGaejosikAssets(gongmun)) {
+  if (!v5 && gongmun && needsGaejosikAssets(gongmun)) {
     // 개조식 전용 3~9 (gen-ids GJ_BF_*) — 실측 색상 (gaejosik.ts GAEJOSIK_COLORS)
     const c = GAEJOSIK_COLORS
     const edge: BorderSide = ["0.12 mm", c.border]
@@ -428,13 +421,13 @@ function staticBorderFillItems(gongmun: ResolvedGongmun | null): string[] {
 }
 
 /** 정적 borderFill 다음 발급 id — 프로필·표 레지스트리가 여기서부터 이어 쓴다 */
-export function staticBorderFillNext(gongmun: ResolvedGongmun | null): number {
-  return staticBorderFillItems(gongmun).length + 1
+export function staticBorderFillNext(gongmun: ResolvedGongmun | null, v5 = false): number {
+  return staticBorderFillItems(gongmun, v5).length + 1
 }
 
-function buildBorderFills(gongmun: ResolvedGongmun | null, extra: string[] = []): string {
+function buildBorderFills(gongmun: ResolvedGongmun | null, extra: string[] = [], v5 = false): string {
   // 섹션 생성 중 등록된 표 위치별 borderFill (gen-table-bf TableBfRegistry)을 정적 목록 뒤에
-  const items = [...staticBorderFillItems(gongmun), ...extra]
+  const items = [...staticBorderFillItems(gongmun, v5), ...extra]
   assertSequentialIds(items, "borderFill", 1)
   return `<hh:borderFills itemCnt="${items.length}">\n${items.join("\n")}\n    </hh:borderFills>`
 }
@@ -446,27 +439,37 @@ function buildBorderFills(gongmun: ResolvedGongmun | null, extra: string[] = [])
  */
 function buildStyles(gongmun: ResolvedGongmun | null): string {
   const items = [
-    `<hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langIDRef="1042" lockForm="0"/>`,
+    `<hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" charPrIDRef="0" nextStyleIDRef="0" langID="1042" lockForm="0"/>`,
   ]
   if (gongmun) {
     for (let lvl = 1; lvl <= 4; lvl++) {
-      items.push(`<hh:style id="${lvl}" type="PARA" name="개요 ${lvl}" engName="Outline ${lvl}" paraPrIDRef="${lvl}" charPrIDRef="${4 + lvl}" nextStyleIDRef="0" langIDRef="1042" lockForm="0"/>`)
+      items.push(`<hh:style id="${lvl}" type="PARA" name="개요 ${lvl}" engName="Outline ${lvl}" paraPrIDRef="${lvl}" charPrIDRef="${4 + lvl}" nextStyleIDRef="0" langID="1042" lockForm="0"/>`)
     }
   }
   return `<hh:styles itemCnt="${items.length}">\n      ${items.join("\n      ")}\n    </hh:styles>`
 }
 
-export function generateHeaderXml(theme: ResolvedTheme, gongmun: ResolvedGongmun | null, ratioVariants: number[] = [], extraBorderFills: string[] = [], extraCharPrXmls: string[] = [], listIndentVariants: Array<{ depth: number; widthHu: number }> = [], extraFonts: string[] = []): string {
+/**
+ * v5 엔진(gen-gongmun.ts) 헤더 모드 — 정적 블록은 비실측 공문서 최소 세트(charPr 0~16·paraPr 0~7·
+ * 정적 글꼴 3종)만 두고, 나머지는 StyleRegistry가 발급한 XML을 이어붙인다.
+ */
+export interface HeaderV5 {
+  paraPrXmls: string[]
+  /** 본문 한글 글꼴(정적 fontface id 0) — 스킴 본문 글꼴 */
+  bodyFace: string
+}
+
+export function generateHeaderXml(theme: ResolvedTheme, gongmun: ResolvedGongmun | null, ratioVariants: number[] = [], extraBorderFills: string[] = [], extraCharPrXmls: string[] = [], listIndentVariants: Array<{ depth: number; widthHu: number }> = [], extraFonts: string[] = [], v5: HeaderV5 | null = null): string {
   // 본문 한글 글꼴 — fonts.body 오버라이드 > bodyFont 프리셋(gothic=맑은 고딕)
-  const bodyFace = gongmun?.fonts.body ?? (gongmun?.bodyFont === "gothic" ? "맑은 고딕" : "함초롬바탕")
-  const charPropsXml = buildCharProperties(theme, gongmun, ratioVariants, extraCharPrXmls)
-  const paraPropsXml = buildParaProperties(gongmun, gongmun ? listIndentVariants : [])
+  const bodyFace = v5?.bodyFace ?? gongmun?.fonts.body ?? (gongmun?.bodyFont === "gothic" ? "맑은 고딕" : "함초롬바탕")
+  const charPropsXml = buildCharProperties(theme, gongmun, ratioVariants, extraCharPrXmls, !!v5)
+  const paraPropsXml = v5 ? buildParaPropertiesV5(gongmun!, v5.paraPrXmls) : buildParaProperties(gongmun, gongmun ? listIndentVariants : [])
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <hh:head xmlns:hh="${NS_HEAD}" xmlns:hp="${NS_PARA}" xmlns:hc="${NS_CORE}" version="1.4" secCnt="1">
   <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>
   <hh:refList>
-    ${buildFontFaces(gongmun, bodyFace, extraFonts)}
-    ${buildBorderFills(gongmun, extraBorderFills)}
+    ${buildFontFaces(gongmun, bodyFace, extraFonts, !!v5)}
+    ${buildBorderFills(gongmun, extraBorderFills, !!v5)}
     ${charPropsXml}
     <hh:tabProperties itemCnt="0"/>
     ${buildNumberings()}

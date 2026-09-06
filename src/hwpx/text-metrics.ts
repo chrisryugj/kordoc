@@ -67,11 +67,42 @@ export const SPACE_EM_FONT = 300
  * 넓어 함초롬 테이블로 재면 줄당 1~2자 과대적재로 wrap 지점이 어긋난다
  * (bench/verify-linebreak.mjs seoul 코퍼스 실측: fixedPitch 테이블로 74/75 일치).
  */
-export type FaceClass = "hcr" | "fixedPitch"
+export type FaceClass = "hcr" | "fixedPitch" | "gothic"
 
-/** HWP 글꼴명 → 폭 테이블 클래스. 미상/미지정은 hcr (기존 동작 불변) */
+/**
+ * HWP 글꼴명 → 폭 테이블 클래스. 미상/미지정은 hcr (기존 동작 불변).
+ * 'gothic'(v5): 한컴돋움·맑은 고딕·HY견고딕·HY헤드라인M 등 굵은 고딕 — 한글 1.0em·ASCII 0.6em으로
+ * 함초롬(0.97/0.55)보다 넉넉히 잡는다. 표 열폭·□ 한 줄 맞춤이 실렌더보다 좁게 재어 꺾이던 것 방지.
+ */
 export function faceClassOf(face: string | null | undefined): FaceClass {
   return face && /^(굴림체|돋움체|바탕체|궁서체)$/.test(face.trim()) ? "fixedPitch" : "hcr"
+}
+
+/**
+ * 생성(v5) 전용 폭 클래스 — 렌더(reflow)는 faceClassOf 그대로(게이트 baseline 불변).
+ * 굵은 고딕 계열은 'gothic'으로 넉넉히 재어 표 열폭·□ 한 줄 맞춤이 실렌더에서 꺾이지 않게 한다.
+ */
+export function faceClassForGen(face: string | null | undefined): FaceClass {
+  if (!face) return "hcr"
+  const f = face.trim()
+  if (/^(굴림체|돋움체|바탕체|궁서체)$/.test(f)) return "fixedPitch"
+  if (/^(한컴돋움|맑은 고딕|HY견고딕|HY헤드라인M|HY중고딕|한양중고딕|나눔고딕|나눔스퀘어|돋움|굴림)$/.test(f)) return "gothic"
+  return "hcr"
+}
+
+/**
+ * 고딕 근사 advance(em×1000) — 한컴돋움·맑은 고딕 계열 실렌더 대비 보수적으로:
+ * 대문자 0.72 · 소문자 0.56 · 숫자 0.58 · 괄호 0.35 · 마침표류 0.28 · 그 외 ASCII 0.5 · 전각 1.0
+ * (실측: "DT_1YL21161" 한컴돋움 12pt 셀이 함초롬 테이블(0.55)로는 25% 좁게 재어져 글자 분해)
+ */
+function gothicWidthEm1000(cp: number): number {
+  if (cp >= 0x80) return 1000
+  if (cp >= 0x41 && cp <= 0x5a) return 720
+  if (cp >= 0x61 && cp <= 0x7a) return 560
+  if (cp >= 0x30 && cp <= 0x39) return 580
+  if (cp === 0x28 || cp === 0x29 || cp === 0x5b || cp === 0x5d) return 350
+  if (cp === 0x2e || cp === 0x2c || cp === 0x3a || cp === 0x3b || cp === 0x27) return 280
+  return 500
 }
 
 /** 고정폭 글꼴 advance(em×1000) — ASCII 반각 500, 그 외 전각 1000 */
@@ -100,7 +131,7 @@ export function measureTextWidth(
 ): number {
   const spaceEm = opts?.spaceEm ?? SPACE_EM_FIXED
   const spacing = opts?.spacingPct ?? 0
-  const widthEm = opts?.faceClass === "fixedPitch" ? fixedPitchWidthEm1000 : charWidthEm1000
+  const widthEm = opts?.faceClass === "fixedPitch" ? fixedPitchWidthEm1000 : opts?.faceClass === "gothic" ? gothicWidthEm1000 : charWidthEm1000
   let em = 0
   for (const ch of text) {
     const cp = ch.codePointAt(0)!
@@ -161,7 +192,7 @@ export function simulateWrap(
   const EPS = 0.5
   const spaceEm = opts?.spaceEm ?? SPACE_EM_FIXED
   const spacing = opts?.spacingPct ?? 0
-  const widthEm = opts?.faceClass === "fixedPitch" ? fixedPitchWidthEm1000 : charWidthEm1000
+  const widthEm = opts?.faceClass === "fixedPitch" ? fixedPitchWidthEm1000 : opts?.faceClass === "gothic" ? gothicWidthEm1000 : charWidthEm1000
   const k = (height * ratioPct) / 100 / 1000
   const cwCp = (cp: number): number =>
     (cp === 0x20 ? spaceEm : widthEm(cp)) * (1 + spacing / 100) * k

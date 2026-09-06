@@ -47,20 +47,19 @@ describe("v4.0.5 두 자리 부호 내어쓰기 회귀 (P1-1)", () => {
     assert.equal(plan.indentVariants[0].widthHu, markerWidth("10.", g.bodyHeight))
   })
 
-  it("생성 — 변형 paraPr가 방출되고 10.+ 항목 문단이 그것을 참조", async () => {
+  it("생성 — '10.' 항목은 자기 부호폭 내어쓰기 paraPr, '9.'는 대표 부호폭 (v5 레지스트리)", async () => {
     const buf = await markdownToHwpx(items12, { gongmun: { preset: "official" } })
     const { header, section } = await parts(buf)
     const g = resolveGongmun({ preset: "official" })
-    // 변형 paraPr: left는 depth 공용과 동일, 내어쓰기는 '10.' 실폭
-    const rep = -levelIndent(0, g.bodyHeight, g.numbering, g.sizes, g.bullet2, false).indent
+    const rep = markerWidth("1.", g.bodyHeight)
     const wide = markerWidth("10.", g.bodyHeight)
     assert.ok(wide > rep, "두 자리 부호가 대표 부호보다 넓다")
-    assert.equal(intentOf(header, GONGMUN_LIST_BASE), -rep)
-    assert.equal(intentOf(header, GONGMUN_LIST_VARIANT_BASE), -wide)
-    // 문단 참조 — '10.' 항목이 변형 paraPr를 가리킨다
-    assert.match(section, new RegExp(`<hp:p paraPrIDRef="${GONGMUN_LIST_VARIANT_BASE}"[^>]*>(?:(?!</hp:p>).)*?10\\. 10번째`, "s"))
-    // '9.' 항목은 여전히 depth 공용
-    assert.match(section, new RegExp(`<hp:p paraPrIDRef="${GONGMUN_LIST_BASE}"[^>]*>(?:(?!</hp:p>).)*?9\\. 9번째`, "s"))
+    const intentOfText = (text: string) => {
+      const pid = section.slice(section.lastIndexOf("<hp:p ", section.indexOf(text))).match(/paraPrIDRef="(\d+)"/)![1]
+      return Number(header.match(new RegExp(`<hh:paraPr id="${pid}"[\\s\\S]*?<hc:intent value="(-?\\d+)"`))![1])
+    }
+    assert.equal(intentOfText("10. 10번째"), -wide)
+    assert.equal(intentOfText("9. 9번째"), -rep)
   })
 
   it("중첩 '(10)'·'10)' 도 각 depth 변형 발급 + 두 자리 없는 문서는 미발급", () => {

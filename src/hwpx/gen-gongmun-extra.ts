@@ -27,11 +27,11 @@ export function tbl(rows: string[], w: number, h: number, cols: number): string 
     + `</hp:tbl>`
 }
 
-export function tc(opts: { bf: number; row: number; col: number; w: number; h: number; colSpan?: number; paras: string; name?: string }): string {
+export function tc(opts: { bf: number; row: number; col: number; w: number; h: number; colSpan?: number; rowSpan?: number; paras: string; name?: string; vAlign?: "TOP" | "CENTER" | "BOTTOM" }): string {
   return `<hp:tc name="${opts.name ?? ""}" header="0" hasMargin="0" protect="0" editable="1" dirty="0" borderFillIDRef="${opts.bf}">`
-    + `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${opts.paras}</hp:subList>`
+    + `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="${opts.vAlign ?? "CENTER"}" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${opts.paras}</hp:subList>`
     + `<hp:cellAddr colAddr="${opts.col}" rowAddr="${opts.row}"/>`
-    + `<hp:cellSpan colSpan="${opts.colSpan ?? 1}" rowSpan="1"/>`
+    + `<hp:cellSpan colSpan="${opts.colSpan ?? 1}" rowSpan="${opts.rowSpan ?? 1}"/>`
     + `<hp:cellSz width="${opts.w}" height="${opts.h}"/>`
     + `<hp:cellMargin left="141" right="141" top="141" bottom="141"/>`
     + `</hp:tc>`

@@ -31,7 +31,7 @@ import { TableBfRegistry } from "./gen-table-bf.js"
 import { type ProfileRemap } from "./gen-profile.js"
 import { buildApprovalTable, buildEndMark, hasEndMark, buildTitleBox, resetExtraTableIds } from "./gen-gongmun-extra.js"
 import { type LevelCharIds } from "./gen-levels.js"
-import { type DocframeIds, buildDocHead, buildDocFoot, buildReportInfo, buildNoticeHead, buildNoticeFoot, buildPressHead, buildPressContact } from "./gen-docframe.js"
+import { type DocframeIds, buildReportInfo, buildNoticeHead, buildNoticeFoot, buildPressHead, buildPressContact } from "./gen-docframe.js"
 import { generateEquationParagraph } from "./equation-generate.js"
 import { parseChartFence, buildChartSpaceXml, buildChartElementXml } from "./chart-gen.js"
 import { A4_W_HU, A4_H_HU, CHART_TABLE_ID_BASE } from "./geometry.js"
@@ -48,7 +48,7 @@ export interface ChartPart {
 
 // ─── 섹션 속성 (공문서 표준 여백) ────────────────────
 
-function generateSecPr(gongmun: ResolvedGongmun | null, page: ResolvedPage | null = null): string {
+export function generateSecPr(gongmun: ResolvedGongmun | null, page: ResolvedPage | null = null): string {
   // A4: 210mm × 297mm → 59528 × 84188 HWPUNIT (1mm ≈ 283.46 HWPUNIT)
   // 비공문서(기존): 위 30 / 아래 15 / 좌 20 / 우 15mm, 머리말·꼬리말 10mm.
   // 공문서 표준(편람 서식 작성방법 해설·시행규칙 별표4): 위 20 / 아래 10 / 좌 20 / 우 20mm,
@@ -185,10 +185,6 @@ function buildPreamble(blocks: MdBlock[], ctx: SectionCtx): void {
   // 결재란 — 문서 최상단 우측 (실측 GT12: 결재선이 표지 최상단)
   if (gongmun?.approval && bfReg) {
     preamble.push(buildApprovalTable(gongmun.approval, bfReg, richAssets ? GJ_CHAR_APPROVAL : GONGMUN_APPROVAL_CHAR))
-  }
-  // 기안문 두문 (별지 제1호서식 — 기관명·수신·경유·제목)
-  if (gongmun?.docHead && dfIds) {
-    preamble.push(...buildDocHead(gongmun, dfIds))
   }
   // 공고문 공고번호 (실측: 바이오헬스 공고문 최상단 좌측 bold)
   if (gongmun?.noticeHead && dfIds) {
@@ -504,10 +500,6 @@ function appendPostamble(blocks: MdBlock[], ctx: SectionCtx): void {
       ? lastBlock.text || ""
       : ""
     if (!hasEndMark(lastText)) paraXmls.push(buildEndMark())
-  }
-  // 기안문 결문 (별지 제1호서식 — "끝." 뒤 발신명의·기안/검토/결재·시행/접수·연락처)
-  if (gongmun?.docFoot && dfIds) {
-    paraXmls.push(...buildDocFoot(gongmun, dfIds))
   }
   // 보도자료 담당 표 — 문서 말미
   if (gongmun?.press && dfIds && bfReg && tableStyle) {

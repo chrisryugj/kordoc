@@ -52,8 +52,9 @@ export function levelCharPrXmls(g: ResolvedGongmun, base: number, fontBase: numb
     const st = g.levels![d]
     const fontId = st.font ? fontBase + faces.indexOf(st.font) : bodyFontId
     // 굵기 오버라이드가 없는 단계도 인라인 **강조** 용 bold 짝을 낸다
-    out.push(charPr(ids[d].normal, st.height, st.bold, false, fontId, undefined, GONGMUN_BODY_RATIO, bodyFontId))
-    out.push(charPr(ids[d].bold, st.height, true, false, fontId, undefined, GONGMUN_BODY_RATIO, bodyFontId))
+    // 나머지 언어 슬롯도 단계 글꼴 — 7슬롯 동일해야 한컴 툴바 글꼴명 표시(전 언어 목록 동일)
+    out.push(charPr(ids[d].normal, st.height, st.bold, false, fontId, undefined, GONGMUN_BODY_RATIO, fontId))
+    out.push(charPr(ids[d].bold, st.height, true, false, fontId, undefined, GONGMUN_BODY_RATIO, fontId))
   }
   return out
 }

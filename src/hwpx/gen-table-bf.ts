@@ -13,9 +13,11 @@ import { borderFillEntry, type BorderSide } from "./gen-ids.js"
 const THIN: BorderSide = ["0.12 mm", "#000000"]
 const THICK: BorderSide = ["0.4 mm", "#000000"]
 const DOUBLE: BorderSide = ["0.5 mm", "#000000", "DOUBLE_SLIM"]
+/** 0.15mm 중간선 — 서울 보고서 제목표 제목/담당자 행 경계 실측 */
+const MID: BorderSide = ["0.15 mm", "#000000"]
 
 /** 셀 한 변의 선 종류 */
-export type EdgeKind = "thin" | "thick" | "double" | "none"
+export type EdgeKind = "thin" | "thick" | "double" | "mid" | "none"
 
 /** 셀 테두리+채움 스펙 — 위치별 조합 키로 dedupe */
 export interface CellBfSpec {
@@ -27,7 +29,7 @@ export interface CellBfSpec {
   fill?: string | { gradient: [string, string] }
 }
 
-const EDGE: Record<Exclude<EdgeKind, "none">, BorderSide> = { thin: THIN, thick: THICK, double: DOUBLE }
+const EDGE: Record<Exclude<EdgeKind, "none">, BorderSide> = { thin: THIN, thick: THICK, double: DOUBLE, mid: MID }
 
 function sideOf(kind: EdgeKind): BorderSide | undefined {
   return kind === "none" ? undefined : EDGE[kind]

@@ -353,8 +353,9 @@ describe("폰트명 왕복 (스키마 0.3.0)", () => {
     assert.match(header, /<hh:fontface lang="HANGUL" fontCnt="4">/)
     assert.match(header, /<hh:fontface lang="LATIN" fontCnt="4">/)
     assert.match(header, /<hh:font id="3" face="휴먼명조"/)
-    // charPr는 append 글꼴 id 참조 (이름 없던 시절의 0 폴딩 아님), 1종 언어는 0
-    assert.match(header, /<hh:fontRef hangul="3" latin="3" hanja="0"/)
+    // charPr는 append 글꼴 id 참조 (이름 없던 시절의 0 폴딩 아님), 나머지 언어 슬롯도 같은 id(툴바 글꼴명 조건)
+    assert.match(header, /<hh:fontRef hangul="3" latin="3" hanja="3" japanese="3" other="3" symbol="3" user="3"/)
+    assert.match(header, /<hh:fontface lang="HANJA" fontCnt="4">/)
   })
 
   it("같은 글꼴 이름은 표·charPr를 넘어 dedupe된다", () => {

@@ -3,8 +3,7 @@
  * 보도자료 머리박스·담당 표 (v4.1.0 GAP-02/03/04/08).
  *
  * 실측 근거:
- *   기안문 두문·결문 — 행안부 별지 제1호서식 (hwpx-skill gonmun.py 실측 이식:
- *     기관명 18pt bold CENTER / 발신명의 22pt bold CENTER / 결문 9pt + 구분선 / 라벨 bold)
+ *   (기안문 두문·결문은 v5 gen-frame-seoul.ts 서울 실결재 표 골격으로 이전)
  *   보고정보 행 — 「3_보고서 양식」 휴먼명조 12pt RIGHT "(보고일시, 보고자(과장), 연락처)"
  *   공고문 — 바이오헬스 공고문 실물: 공고번호 본문크기 bold 좌 / 날짜 RIGHT / 발신명의 bold RIGHT
  *   보도자료 — 국토부 실물(bodojaryo-reference): 머리박스 + 보도시점/배포(돋움 10pt bold)
@@ -62,61 +61,15 @@ export function docframeCharPrXmls(base: number, richAssets: boolean): string[] 
 
 // ─── 문단 헬퍼 ──────────────────────────────────────
 
-/** 라벨(bold) + 내용 두 run 문단 — "수신  ○○" 꼴 */
-function labeled(label: string, value: string, paraPrId: number): string {
-  return `<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0">`
-    + `<hp:run charPrIDRef="${CHAR_BOLD}"><hp:t>${escapeXml(label)}</hp:t></hp:run>`
-    + `<hp:run charPrIDRef="${CHAR_NORMAL}"><hp:t>${escapeXml(value)}</hp:t></hp:run></hp:p>`
-}
-
 function blank(): string {
   return `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}"><hp:t></hp:t></hp:run></hp:p>`
 }
 
-// ─── 기안문 두문 (별지 제1호서식) ─────────────────────
-
-export function buildDocHead(g: ResolvedGongmun, ids: DocframeIds): string[] {
-  const h = g.docHead!
-  const out: string[] = []
-  if (h.org) { out.push(para(h.org, GONGMUN_CENTER, ids.org), blank()) }
-  if (h.to !== undefined) out.push(labeled("수신  ", h.to, PARA_NORMAL))
-  out.push(para(h.via ? `(경유)  ${h.via}` : "(경유)", PARA_NORMAL, CHAR_NORMAL))
-  if (h.title !== undefined) out.push(labeled("제목  ", h.title, PARA_NORMAL))
-  out.push(blank())
-  return out
-}
-
-// ─── 기안문 결문 ────────────────────────────────────
-
-/**
- * 결문 구분선 — 서식의 가로줄을 텍스트 룰로 (gonmun.py 준용). 실측 46자는 기안문 기본
- * 여백(좌20·우15 → 본문 175mm) 기준 — 커스텀 여백에는 컬럼폭 비례(기본 여백에서 46자
- * 불변)로 조정한다. 고정 46자면 좁은 컬럼에서 줄바꿈으로 두 줄 룰이 된다 (v4.0.4)
- */
-function footSep(g: ResolvedGongmun): string {
-  const bodyMm = 210 - g.margins.left - g.margins.right
-  return "─".repeat(Math.max(10, Math.round(bodyMm * (46 / 175))))
-}
+// 기안문 두문·결문 문단 빌더는 v5(gen-frame-seoul.ts 두문표·결문표)로 대체돼 제거됨
 
 /** 수신이 "내부결재" 인 문서는 발신명의를 적지 않는다 (행정업무규정 시행규칙 제4조 — 내부결재 문서의 결문) */
 export function isInternalApproval(to: string | undefined): boolean {
   return !!to && /^\s*내\s*부\s*결\s*재/.test(to)
-}
-
-export function buildDocFoot(g: ResolvedGongmun, ids: DocframeIds): string[] {
-  const f = g.docFoot!
-  const out: string[] = [blank()]
-  if (f.sender && !isInternalApproval(g.docHead?.to)) { out.push(para(f.sender, GONGMUN_CENTER, ids.sender), blank()) }
-  const foot = (text: string) => para(text, GONGMUN_TBL_LEFT, ids.foot)
-  out.push(foot(footSep(g)))
-  if (f.drafter || f.reviewer || f.approver)
-    out.push(foot(`기안자 ${f.drafter ?? ""}      검토자 ${f.reviewer ?? ""}      결재권자 ${f.approver ?? ""}`))
-  if (f.cooperator) out.push(foot(`협조자 ${f.cooperator}`))
-  if (f.docNum || f.receive) out.push(foot(`시행  ${f.docNum ?? ""}        접수  ${f.receive ?? ""}`))
-  if (f.address || f.site) out.push(foot(`${f.address ?? ""}      /  ${f.site ?? ""}`))
-  if (f.phone || f.fax || f.email || f.disclosure)
-    out.push(foot(`전화 ${f.phone ?? ""}      전송 ${f.fax ?? ""}      /  ${f.email ?? ""}      /  ${f.disclosure ?? ""}`))
-  return out
 }
 
 // ─── 업무보고 보고정보 행 (실측 t3: 휴먼명조 12pt RIGHT) ──

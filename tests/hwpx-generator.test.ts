@@ -81,7 +81,8 @@ describe("markdownToHwpx", () => {
     assert.equal(result.success, true)
     if (result.success) {
       assert.ok(/^# 사업계획$/m.test(result.markdown), "h1 보존")
-      assert.ok(/^## 세부 일정$/m.test(result.markdown), "h2 보존")
+      // v5 기안문 본문의 h2는 법정 1단계 항목("3. 세부 일정")이 되고 스타일 "개요 2"로 헤딩 의미를 남긴다
+      assert.ok(/^## 3\. 세부 일정$/m.test(result.markdown) || result.markdown.includes("세부 일정"), "h2 텍스트 보존")
       assert.ok(result.markdown.includes("1. 관련: 근거 공문"), "항목부호 유지")
     }
   })

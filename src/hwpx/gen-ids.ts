@@ -115,6 +115,7 @@ export function charPr(
   textColor: string = DEFAULT_TEXT_COLOR,
   ratioPct: number = 100,
   restFont: number = fontId,
+  spacingPct: number = 0,
 ): string {
   const boldAttr = bold ? ` bold="1"` : ""
   const italicAttr = italic ? ` italic="1"` : ""
@@ -130,7 +131,7 @@ export function charPr(
   return `      <hh:charPr id="${id}" height="${height}" textColor="${escapeXml(textColor)}" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="1"${boldAttr}${italicAttr}>
         <hh:fontRef hangul="${effFont}" latin="${effFont}" hanja="${restFont}" japanese="${restFont}" other="${restFont}" symbol="${restFont}" user="${restFont}"/>
         <hh:ratio hangul="${ratioPct}" latin="${ratioPct}" hanja="${ratioPct}" japanese="100" other="100" symbol="100" user="100"/>
-        <hh:spacing hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>
+        <hh:spacing hangul="${spacingPct}" latin="${spacingPct}" hanja="${spacingPct}" japanese="0" other="0" symbol="0" user="0"/>
         <hh:relSz hangul="100" latin="100" hanja="100" japanese="100" other="100" symbol="100" user="100"/>
         <hh:offset hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/>${boldEl}
       </hh:charPr>`
@@ -138,8 +139,8 @@ export function charPr(
 
 // ─── paraPr 생성 헬퍼 ───────────────────────────────
 
-export function paraPr(id: number, opts: { align?: string; spaceBefore?: number; spaceAfter?: number; lineSpacing?: number; indent?: number; left?: number; keepWord?: boolean; keepWithNext?: boolean; outlineLevel?: number } = {}): string {
-  const { align = "JUSTIFY", spaceBefore = 0, spaceAfter = 0, lineSpacing = 160, indent = 0, left = 0, keepWord = false, keepWithNext = false, outlineLevel } = opts
+export function paraPr(id: number, opts: { align?: string; spaceBefore?: number; spaceAfter?: number; lineSpacing?: number; indent?: number; left?: number; right?: number; keepWord?: boolean; keepWithNext?: boolean; outlineLevel?: number } = {}): string {
+  const { align = "JUSTIFY", spaceBefore = 0, spaceAfter = 0, lineSpacing = 160, indent = 0, left = 0, right = 0, keepWord = false, keepWithNext = false, outlineLevel } = opts
   // keepWord=true면 한글도 어절(단어) 단위로만 줄바꿈 — 단어 중간에서 끊기지 않음.
   // 주의: breakNonLatinWord의 한컴 실구현 의미는 이름과 반대다 —
   //   "BREAK_WORD"=어절 유지, "KEEP_WORD"=글자 단위 (2026-07 한글 COM 실렌더 A/B 실측.
@@ -158,7 +159,7 @@ export function paraPr(id: number, opts: { align?: string; spaceBefore?: number;
         ${heading}
         <hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="${breakNonLatin}" widowOrphan="0" keepWithNext="${keepWithNext ? 1 : 0}" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>
         <hh:autoSpacing eAsianEng="0" eAsianNum="0"/>
-        <hh:margin><hc:intent value="${indent}" unit="HWPUNIT"/><hc:left value="${left}" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="${spaceBefore}" unit="HWPUNIT"/><hc:next value="${spaceAfter}" unit="HWPUNIT"/></hh:margin>
+        <hh:margin><hc:intent value="${indent}" unit="HWPUNIT"/><hc:left value="${left}" unit="HWPUNIT"/><hc:right value="${right}" unit="HWPUNIT"/><hc:prev value="${spaceBefore}" unit="HWPUNIT"/><hc:next value="${spaceAfter}" unit="HWPUNIT"/></hh:margin>
         <hh:lineSpacing type="PERCENT" value="${lineSpacing}"/>
         <hh:border borderFillIDRef="1" offsetLeft="0" offsetRight="0" offsetTop="0" offsetBottom="0" connect="0" ignoreMargin="0"/>
       </hh:paraPr>`

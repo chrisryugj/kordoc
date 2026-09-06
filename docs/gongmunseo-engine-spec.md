@@ -314,7 +314,8 @@ REFERENCE 2.7 실측: 법정 8단계는 본문과 동일(기본값 무변경), �
   `KEEP_WORD`는 정렬(JUSTIFY/LEFT) 무관 "실증되었/고," 식 어절 중간 분리,
   `BREAK_WORD`는 전 줄바꿈 어절 경계 + 영어 단어 통째 유지. `snapToGrid`·`condense`는 줄나눔 방식과 무관.
 - 정본 양식(2_보고서)의 본문이 `KEEP_WORD/KEEP_WORD`인 것은 한글 **기본값**(한글단위 '글자'/영어단위 '단어') 그대로 저장된 것.
-- 산출 정책: 공문서·일반 모든 경로 `breakNonLatinWord="BREAK_WORD"`(어절)·`breakLatinWord="KEEP_WORD"`(단어). 줄폭보다 긴 단일 토큰(긴 URL·무공백 `·` 연쇄)만 강제 분해(한컴 동일).
+- 산출 정책: 범용·개조식(gaejosik)·보도자료 경로 `breakNonLatinWord="BREAK_WORD"`(어절)·`breakLatinWord="KEEP_WORD"`(단어). 줄폭보다 긴 단일 토큰(긴 URL·무공백 `·` 연쇄)만 강제 분해(한컴 동일).
+  **v5 엔진(기안문·보고서·계획서·통지·회의록) 본문·요약박스는 `KEEP_WORD`(글자 단위)+JUSTIFY** — (i)장 라운드 2 참조. 라틴·숫자는 여전히 단어 유지.
 
 ## (g) v4.0.0 공문서 완성 요소 — 실측 16종 전수 대조 (2026-07-11)
 
@@ -410,3 +411,59 @@ bold → 본문 □→ㅇ→\*(각주 12pt) → 담당 부서/담당자/연락�
 
 report 불릿 리스트도 개조식과 동일 실측 간격 □3000/○2000/-1200/ㆍ600 (t2 paraPr 저장값,
 body 1500 기준 비례 스케일) + □ keepWithNext.
+
+
+## (i) v5 엔진 — 아웃라인·스킴·레지스트리 (2026-09-06)
+
+기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)은 `gen-gongmun.ts`(v5)가 생성한다.
+개조식(gaejosik, 중앙부처 표지·목차 양식)·보도자료(press)·범용 마크다운은 종전 `gen-section.ts`.
+
+### 파이프라인
+```
+MdBlock[] ─outline.ts─▶ OutlineNode[](title/chapter/item(depth)/ref/sub/para/attach/summary/block)
+          ─gongmun-scheme.ts─▶ 단계별 부호·글꼴·pt·bold·선행 타·줄간격 (서울 실측, reference 2.8)
+          ─gen-gongmun.ts─▶ 문단 XML (StyleRegistry가 charPr/paraPr/글꼴 동적 발급, fit-line이 □·제목 한 줄 강제)
+          ─gen-frame-seoul.ts─▶ 두문표·결문표·제목표·요약박스·결재선·표지
+```
+
+### depth 정규화 규칙 (입력 형태와 무관하게 같은 결과)
+- 첫 h1 → 제목. h2 → 장(보고서 `Ⅰ.`/통지 `1.`; 기안문은 법정 1단계 `1.` 항목이 되고 아래 리스트는 `가.`부터).
+- h3~h6 → 항목 depth level-3 (h3=□/1., h4=ㅇ/가.). 그 아래 리스트는 헤딩 depth+1부터.
+- 문단·항목 선두의 명시 부호가 depth를 강제: □0 ㅇ○1 -2 ㆍ3 / 1.→0 가.→1 1)→2 …
+  개조식 문서 안의 법정 부호(`가. 기술인력`)는 소제목(한컴돋움 13, 2타)로 보존.
+- ※·`* ` 선두 → 참고(직전 항목 depth+1 들여쓰기). 붙임 → 붙임 블록(앞 한 줄, 선행 공백 보존).
+- 보고서: 제목 직후 인용문(`>`) → 요약박스. 본문에 □/ㅇ 명시 부호가 있는 기안문은 개조식형 본문으로 자동 전환.
+- 리스트 사이 서술 문단은 법정 번호를 재시작(마크다운 의미), 헤딩에서 온 항목 아래 문단은 잇는다.
+
+### 한 줄 강제(fit-line.ts)
+□·제목·장 제목: 장평 100→85(각 자간 0/-3/-5) → pt 1씩 축소(□ 하한 14, 제목 20) → 그래도 넘치면 마지막 조합 + warning
+(`MarkdownToHwpxOptions.warnings` 싱크 → CLI stderr·MCP 응답). 폭 측정은 `faceClassForGen`(고딕 계열 대문자 0.72·숫자 0.58em).
+표 셀은 12→11→10pt 자동 축소(`requiredTableWidth`) — 실측 셀 pt 분포와 일치.
+
+### 옵션 매핑 (기존 이름 유지)
+- `docHead{org,slogan,to,via,title}` → 두문표 / `docFoot{sender,drafter,reviewer,approver|approvers[],cooperator,recipients,docNum,receive,zip,address,site,phone,fax,email,disclosure}` → 결문표(수신 '내부결재'면 발신명의 생략)
+- `reportInfo` → 보고서 제목표 담당자 행(제목 없으면 우상단 12pt) / 기안문 우상단 12pt
+- `summary`·인용문 → 요약박스 · `cover{date,org,dept}`+`docInfo`+`approval` → 서울형 표지 · `approval` 단독 → 우상단 결재선표
+- `h2Marker` roman(기본)/number/box/none · `bullet2` ㅇ(기본)/○ · `levels`·`fonts`·`bodyPt`·`lineSpacing` → 스킴 오버레이
+- 기안문 본문 기본 굴림체 12 160%(`bodyFont` myeongjo/gothic 지정 시 함초롬바탕/맑은 고딕), 보고서 15/180%, 여백 13/13/18/18 h13 f13.
+
+### 실무자 요청 반영 (2026-09-06 저녁)
+- `출처:`·`자료:`·`근거:`·`참고:` 로 시작하는 항목·문단은 ※ 참고(한컴돋움 **13pt**)로 — 본문 ㅇ 항목과 확실히 구분(당구장표시).
+- **고아 줄 자간 축소(`fitOrphanLine`)**: 글자 단위 시뮬레이션에서 둘째 줄이 한 줄의 20% 이내면 자간 -1%씩(한글 Shift+Alt+N)
+  → -8 까지, 그래도 안 되면 장평 97·95·92·90 조합으로 한 줄 줄인다. ㅇ·-·※·서술 문단 대상(□·제목은 fit-line 한 줄 강제).
+- ~~줄바꿈은 어절 단위(BREAK_WORD)~~ → **라운드 2에서 글자 단위(KEEP_WORD)+양쪽정렬로 전환**(아래).
+
+### 라운드 2 (2026-09-06 밤) — 실렌더 결함 3건
+- **`-` 줄 어절 간격 벌어짐**: 라운드 1의 어절유지+양쪽정렬은 실결재 개조식 `-` 문단의 1.2%뿐(reference 2.8 정렬·줄바꿈). 긴 어절
+  ("과학기술정보통신부장관에게")이 통째로 다음 줄로 밀리며 앞 줄이 늘어났다. 유저 결정으로 실측 76%인 **JUSTIFY+KEEP_WORD(글자 단위)**
+  로 전환 — `gen-gongmun.ts` 항목·※·서술·장·붙임 문단 전부 `keepWord:false`, `fitOrphanLine`·요약박스 줄 수 시뮬레이션도 `charAll`.
+  라틴·숫자 토큰은 `breakLatinWord=KEEP_WORD` 그대로 단어 유지. 구 경로(범용·개조식·보도자료)는 어절 유지 불변.
+- **요약박스 글자가 테두리에 붙음**: 실측 133건의 55%가 문단 좌우 여백 1000/1000(셀 여백은 141) — `buildSummaryBox` 문단 `left/right 1000`
+  (`ParaSpec.right`·`paraPr right` 신설), 종전 선두 공백 2칸은 제거(실측 선두 공백 0 이 53%). 가용폭에서 2000 차감.
+- **표 열폭이 긴 글자 수 순**: "단계|내용|근거"에서 근거가 가장 길어 최광열이 되고 내용이 두 줄로 꺾였다. 실측 462표: 내용류 열
+  중앙값 51%, 비고 21%(p75 26%), 마지막 열 26%. `gen-table.ts colRoles(headers)` — 비고·비고사항·참고(사항)·출처·(관련/법적/추진)근거·
+  근거법령·담당(자/부서)·연락처 = remark(**25% 상한**, 단 최장 어절+패딩까지는 허용해 글자 세로 분해 금지), `…내용/사항/실적/계획/방안/사유/
+  개요/설명/임무/역할/현황/성과`(12자 이하) = content(비례 가중 ×2, 본문 셀 LEFT — 한 줄에 들어가도 가운데 정렬하지 않음), 내용 열이 있는
+  3열+ 표의 역할 없는 마지막 열도 remark. **공문서 모드에서만** 적용(범용 경로 바이트 불변). 역할 미지정 호출은 종전과 동일.
+- 법령 인용 뒤 법제처 MST·ID 코드 `인공지능기본법(282791)` → `인공지능기본법`, KOSIS `DT_1YL21161`, `(법정동코드 11215-10700)`, `…, 통계 MCP 조회` 도구 언급 제거 (`stripLawCodes` — 출처는 기관·자료명만).
+- 요약박스는 여러 줄(제목 직후 인용문 `>` 줄마다 문단) — **보고서는 요약 필수** — 부호 없이 **한 문장(쉼표 허용) 3줄 이내** "…하고자 함"(보고 목적), 없거나 3줄 초과면 warning. 선두 부호는 벗기고 문장 꼬리 고아 줄은 자간 축소. 생성기는 요약을 쓰지 않는다(에이전트가 작성).

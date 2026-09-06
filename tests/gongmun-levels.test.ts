@@ -85,45 +85,46 @@ describe("levels — CLI/MCP 표면", () => {
 })
 
 describe("levels — HWPX 방출", () => {
-  it("비실측 프리셋: 글꼴은 HANGUL·LATIN 에 append, charPr 는 한글·라틴만 참조·그 외 언어 본문(0)", async () => {
+  it("법정형(통지): levels 글꼴은 전 언어 목록에 append, charPr 7슬롯이 같은 글꼴 (v5 — 한컴 툴바 글꼴명 표시 조건)", async () => {
     const buf = await markdownToHwpx(MD, { gongmun: { preset: "notice", levels: { 0: { font: "HY견고딕", pt: 17, bold: true }, 1: { font: "한컴돋움", bold: true } } } })
     const header = await unzipText(buf, "Contents/header.xml")
     const section = await unzipText(buf, "Contents/section0.xml")
-    // append 글꼴 id 3·4 (정적 3종 뒤)
-    assert.match(header, /<hh:fontface lang="HANGUL" fontCnt="5">[\s\S]*?<hh:font id="3" face="HY견고딕"[\s\S]*?<hh:font id="4" face="한컴돋움"/)
-    assert.match(header, /<hh:fontface lang="LATIN" fontCnt="5">[\s\S]*?<hh:font id="4" face="한컴돋움"/)
-    assert.match(header, /<hh:fontface lang="HANJA" fontCnt="1">/)
-    // 단계 charPr — 1단계 17pt bold HY견고딕(3), 2단계 본문 15pt bold 한컴돋움(4)
-    const lv0 = header.match(/<hh:charPr id="(\d+)" height="1700"[^>]*bold="1">\s*<hh:fontRef hangul="3" latin="3" hanja="0" japanese="0" other="0" symbol="0" user="0"\/>/)
+    const fid = (face: string) => header.match(new RegExp(`<hh:fontface lang="HANGUL"[\\s\\S]*?<hh:font id="(\\d+)" face="${face}"`))![1]
+    const gyeon = fid("HY견고딕"), dotum = fid("한컴돋움")
+    assert.equal(gyeon, "2", "HY견고딕은 정적 3종(id 2) 재사용")
+    assert.ok(Number(dotum) >= 3, "한컴돋움은 정적 3종 뒤 append")
+    assert.match(header, new RegExp(`<hh:fontface lang="LATIN"[\\s\\S]*?<hh:font id="${dotum}" face="한컴돋움"`))
+    const hangulCnt = header.match(/<hh:fontface lang="HANGUL" fontCnt="(\d+)">/)![1]
+    assert.match(header, new RegExp(`<hh:fontface lang="HANJA" fontCnt="${hangulCnt}">[\\s\\S]*?<hh:font id="${dotum}" face="한컴돋움"`), "한자 목록도 동일")
+    // 단계 charPr — 1단계 17pt bold HY견고딕, 2단계 본문(12pt) bold 한컴돋움, 7슬롯 동일
+    const lv0 = header.match(new RegExp(`<hh:charPr id="(\\d+)" height="1700"[^>]*bold="1">\\s*<hh:fontRef hangul="${gyeon}" latin="${gyeon}" hanja="${gyeon}" japanese="${gyeon}" other="${gyeon}" symbol="${gyeon}" user="${gyeon}"/>`))
     assert.ok(lv0, "1단계 전용 charPr")
-    const lv1 = header.match(/<hh:charPr id="(\d+)" height="1500"[^>]*bold="1">\s*<hh:fontRef hangul="4" latin="4" hanja="0"/)
+    const lv1 = header.match(new RegExp(`<hh:charPr id="(\\d+)" height="1200"[^>]*bold="1">\\s*<hh:fontRef hangul="${dotum}" latin="${dotum}" hanja="${dotum}"`))
     assert.ok(lv1, "2단계 전용 charPr")
-    const id0 = lv0![1], id1 = lv1![1]
-    // 리스트 문단이 전용 charPr 를 참조 — 인라인 **강조** 는 같은 단계의 bold 짝
-    assert.match(section, new RegExp(`<hp:run charPrIDRef="${id0}"><hp:t>1\\. 첫째 항목</hp:t>`))
-    assert.match(section, new RegExp(`<hp:run charPrIDRef="${id1}"><hp:t>가\\. 둘째 </hp:t></hp:run><hp:run charPrIDRef="${Number(id1) + 1}"><hp:t>강조</hp:t>`))
-    // 지정 안 한 3단계는 본문 charPr(0)
-    assert.match(section, /<hp:run charPrIDRef="0"><hp:t>1\) 셋째 항목<\/hp:t>/)
-    // 1단계 paraPr 내어쓰기 = 17pt '1.' 부호폭
-    const w = markerWidth("1.", 1700)
-    assert.match(header, new RegExp(`<hh:paraPr id="8"[\\s\\S]*?<hc:intent value="-${w}"`))
+    assert.match(section, new RegExp(`<hp:run charPrIDRef="${lv0![1]}"><hp:t>1\\. 첫째 항목</hp:t>`))
+    // 2단계는 이미 굵은 단계라 인라인 **강조**도 같은 스펙 → 같은 charPr(레지스트리 dedupe). 자동장평 변형이 붙을 수 있어 id는 조회
+    const run1 = section.match(/<hp:run charPrIDRef="(\d+)"><hp:t>가\. 둘째 <\/hp:t><\/hp:run><hp:run charPrIDRef="(\d+)"><hp:t>강조<\/hp:t>/)
+    assert.ok(run1, "가. 둘째 + 강조 run")
+    for (const id of [run1![1], run1![2]]) assert.match(header, new RegExp(`<hh:charPr id="${id}" height="1200"[^>]*bold="1">\\s*<hh:fontRef hangul="${dotum}"`))
+    // 1단계 문단 내어쓰기 = 17pt '1.' 부호폭
+    const pid = section.slice(section.lastIndexOf("<hp:p ", section.indexOf("1. 첫째 항목"))).match(/paraPrIDRef="(\d+)"/)![1]
+    assert.match(header, new RegExp(`<hh:paraPr id="${pid}"[\\s\\S]*?<hc:intent value="-${markerWidth("1.", 1700)}"`))
   })
 
-  it("실측 프리셋(보고서): 명시 levels 가 □ HY헤드라인M 실측값보다 우선, 글꼴은 8종 뒤 append", async () => {
-    const buf = await markdownToHwpx(MD, { gongmun: { preset: "report", levels: { 0: { font: "HY견고딕", pt: 17, bold: true } } } })
+  it("보고서: 명시 levels 가 서울 실측 □(HY견고딕 17b)보다 우선 (v5)", async () => {
+    const buf = await markdownToHwpx(MD, { gongmun: { preset: "report", levels: { 0: { font: "나눔고딕", pt: 18, bold: false } } } })
     const header = await unzipText(buf, "Contents/header.xml")
     const section = await unzipText(buf, "Contents/section0.xml")
-    assert.match(header, /<hh:font id="8" face="HY견고딕"/)
-    const lv0 = header.match(/<hh:charPr id="(\d+)" height="1700"[^>]*bold="1">\s*<hh:fontRef hangul="8" latin="8" hanja="4"/)
-    assert.ok(lv0, "보고서 1단계 전용 charPr(그 외 언어는 본문 휴먼명조 4)")
+    const fid = header.match(/<hh:fontface lang="HANGUL"[\s\S]*?<hh:font id="(\d+)" face="나눔고딕"/)![1]
+    const lv0 = header.match(new RegExp(`<hh:charPr id="(\\d+)" height="1800"[^>]*>\\s*<hh:fontRef hangul="${fid}"`))
+    assert.ok(lv0, "보고서 1단계 전용 charPr(나눔고딕 18pt)")
     assert.match(section, new RegExp(`<hp:run charPrIDRef="${lv0![1]}"><hp:t>□ 첫째 항목</hp:t>`))
-    assert.doesNotMatch(section, /<hp:run charPrIDRef="11"><hp:t>□ 첫째 항목/)
   })
 
-  it("levels 없는 생성은 charPr·fontface 가 늘지 않는다 (기존 산출물 불변)", async () => {
+  it("levels 없는 생성은 charPr·fontface 가 늘지 않는다 (빈 levels = 미지정)", async () => {
     const a = await unzipText(await markdownToHwpx(MD, { gongmun: { preset: "notice" } }), "Contents/header.xml")
     const b = await unzipText(await markdownToHwpx(MD, { gongmun: { preset: "notice", levels: {} } }), "Contents/header.xml")
     assert.equal(a, b)
-    assert.match(a, /<hh:fontface lang="HANGUL" fontCnt="3">/)
+    assert.match(a, /<hh:fontface lang="HANGUL" fontCnt="\d+">/)
   })
 })

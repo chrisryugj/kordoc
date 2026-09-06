@@ -17,7 +17,7 @@ import type { GongmunOptions, GongmunPreset } from "./gongmun.js"
 // ─── 값 집합 (CLI 검증·MCP zod 공통 파생원) ──────────────
 
 export const BODY_FONTS = ["myeongjo", "gothic"] as const
-export const H2_MARKERS = ["box", "number", "none"] as const
+export const H2_MARKERS = ["band", "roman", "box", "number", "none"] as const
 export const BULLET2_CHARS = ["ㅇ", "○"] as const
 
 /** 요소별 글꼴 오버라이드 역할 키 (GongmunOptions.fonts) */
@@ -30,12 +30,14 @@ export const SIZE_KEYS = [
 /** 단계별 위계 타이포 키 (GongmunOptions.levels[depth]) */
 export const LEVEL_STYLE_KEYS = ["font", "pt", "bold"] as const
 /** 기안문 두문 키 (별지 제1호서식) */
-export const DOC_HEAD_KEYS = ["org", "to", "via", "title"] as const
+export const DOC_HEAD_KEYS = ["org", "slogan", "to", "via", "title"] as const
 /** 기안문 결문 키 */
 export const DOC_FOOT_KEYS = [
-  "sender", "drafter", "reviewer", "approver", "cooperator", "docNum", "receive",
-  "address", "site", "phone", "fax", "email", "disclosure",
+  "sender", "drafter", "reviewer", "approver", "cooperator", "recipients", "docNum", "receive",
+  "zip", "address", "site", "phone", "fax", "email", "disclosure",
 ] as const
+/** 보고서 표지 문서정보표 키 */
+export const DOC_INFO_KEYS = ["docNum", "date", "disclosure", "policyNo"] as const
 /** 공고문 두문·결문 키 */
 export const NOTICE_HEAD_KEYS = ["no", "date", "sender"] as const
 /** 보도자료 담당 표 키 */
@@ -87,6 +89,12 @@ export interface GongmunSurfaceInput {
   reportInfo?: string
   noticeHead?: NonNullable<GongmunOptions["noticeHead"]>
   press?: NonNullable<GongmunOptions["press"]>
+  /** 보고서 요약 박스 (v5) */
+  summary?: string
+  /** 보고서 표지 문서정보표 (v5) */
+  docInfo?: NonNullable<GongmunOptions["docInfo"]>
+  /** 표지 부서명 (v5 — cover와 함께) */
+  dept?: string
 }
 
 /**
@@ -105,8 +113,8 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.lineSpacing !== undefined) g.lineSpacing = input.lineSpacing
   if (input.cover === false) {
     g.cover = false
-  } else if (input.org || input.date) {
-    g.cover = { ...(input.org ? { org: input.org } : {}), ...(input.date ? { date: input.date } : {}) }
+  } else if (input.org || input.date || input.dept) {
+    g.cover = { ...(input.org ? { org: input.org } : {}), ...(input.date ? { date: input.date } : {}), ...(input.dept ? { dept: input.dept } : {}) }
   } else if (input.cover === true) {
     g.cover = true
   }
@@ -126,6 +134,8 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.reportInfo) g.reportInfo = input.reportInfo
   if (input.noticeHead) g.noticeHead = input.noticeHead
   if (input.press) g.press = input.press
+  if (input.summary) g.summary = input.summary
+  if (input.docInfo) g.docInfo = input.docInfo
   return g
 }
 

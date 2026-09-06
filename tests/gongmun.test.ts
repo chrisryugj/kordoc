@@ -4,6 +4,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
 import { markdownToHwpx, parse, validateHwpx } from "../src/index.js"
+import { measureTextWidth, simulateWrap, faceClassForGen } from "../src/hwpx/text-metrics.js"
 import {
   hangulOrdinal,
   circledNumber,
@@ -19,6 +20,19 @@ import {
 } from "../src/hwpx/gongmun.js"
 
 // ─── 순수 로직 ──────────────────────────────────────
+
+/** 텍스트를 담은 문단의 paraPr/charPr XML (v5 레지스트리 id는 동적이라 조회로 확인) */
+function prOf(sec: string, head: string, text: string): { para: string; char: string } {
+  const at = sec.indexOf(`<hp:t>${text}`)
+  if (at < 0) throw new Error(`문단 없음: ${text}`)
+  const pStart = sec.lastIndexOf("<hp:p ", at)
+  const pid = sec.slice(pStart).match(/paraPrIDRef="(\d+)"/)![1]
+  const cid = sec.slice(sec.lastIndexOf("<hp:run ", at)).match(/charPrIDRef="(\d+)"/)![1]
+  const para = head.match(new RegExp(`<hh:paraPr id="${pid}"[\\s\\S]*?</hh:paraPr>`))![0]
+  const char = head.match(new RegExp(`<hh:charPr id="${cid}"[\\s\\S]*?</hh:charPr>`))![0]
+  return { para, char }
+}
+const fontIdOf = (head: string, face: string) => head.match(new RegExp(`<hh:fontface lang="HANGUL"[\\s\\S]*?<hh:font id="(\\d+)" face="${face}"`))?.[1]
 
 describe("gongmun 순수 로직", () => {
   it("가나다 순서 + 단모음 연속(가→하→거→너)", () => {
@@ -108,8 +122,9 @@ describe("gongmun 순수 로직", () => {
     assert.deepEqual(off.margins, { top: 20, bottom: 15, left: 20, right: 15 })
     const rep = resolveGongmun({ preset: "report" })
     assert.equal(rep.numbering, "report")
-    // v4.1.0: 보고서 계열 여백 = 실측 상하 15mm (t2 「2_보고서 양식」 계열)
-    assert.deepEqual(rep.margins, { top: 15, bottom: 15, left: 20, right: 20 })
+    // v5: 서울 보고서형 기안 여백 = 실결재 개조식 문서 지배값 13/13/18/18 (머리·꼬리 13)
+    assert.deepEqual(rep.margins, { top: 13, bottom: 13, left: 18, right: 18 })
+    assert.equal(rep.headerFooter, 3600)
     const min = resolveGongmun({ preset: "minutes" })
     assert.equal(min.bodyHeight, 1400)
     assert.equal(min.lineSpacing, 130)
@@ -242,12 +257,12 @@ describe("gongmun 렌더링", () => {
     assert.match(head, /<hh:charPr id="0" height="1200"/)
   })
 
-  it("계획서 기본 항목부호 — 실측 계획안의 □ → ㅇ → *", async () => {
-    const buf = await markdownToHwpx("- 대항목\n  - 중항목\n    - 참고", { gongmun: { preset: "plan" } })
+  it("계획서 기본 항목부호 — 서울 실측 □ → ㅇ → - (v5)", async () => {
+    const buf = await markdownToHwpx("- 대항목\n  - 중항목\n    - 세부", { gongmun: { preset: "plan" } })
     const texts = await sectionTexts(buf)
     assert.ok(texts.includes("□ 대항목"))
     assert.ok(texts.includes("ㅇ 중항목"))
-    assert.ok(texts.includes("* 참고"))
+    assert.ok(texts.includes("- 세부"))
   })
 
   it("사용자 지정 폰트명 XML 특수문자 — 이스케이프 후 구조 검증 통과", async () => {
@@ -260,20 +275,20 @@ describe("gongmun 렌더링", () => {
     assert.equal(validation.ok, true, validation.issues.map((issue) => issue.message).join("\n"))
   })
 
-  it("report 프리셋 불릿 □○- (단일 형제도 표시)", async () => {
+  it("report 프리셋 불릿 □ㅇ- (단일 형제도 표시)", async () => {
     const rep = `1. 현황
   - 단독 자식`
     const texts = await sectionTexts(await markdownToHwpx(rep, { gongmun: { preset: "report" } }))
     assert.ok(texts.includes("□ 현황"))
-    assert.ok(texts.includes("○ 단독 자식")) // report는 단일 형제 생략 안 함
+    assert.ok(texts.includes("ㅇ 단독 자식")) // report는 단일 형제 생략 안 함
   })
 
   it("<center> → 가운데정렬 단락", async () => {
     const buf = await markdownToHwpx("<center>광 진 구 청</center>", { gongmun: { preset: "official" } })
     const zip = await JSZip.loadAsync(buf)
     const sec = await zip.file("Contents/section0.xml")!.async("text")
-    // 가운데정렬 paraPr(16) 사용 + 태그 제거된 텍스트
-    assert.match(sec, /paraPrIDRef="16"/)
+    const head = await zip.file("Contents/header.xml")!.async("text")
+    assert.match(prOf(sec, head, "광 진 구 청").para, /horizontal="CENTER"/)
     const texts = await sectionTexts(buf)
     assert.ok(texts.includes("광 진 구 청"))
     assert.ok(!texts.some((t) => t.includes("<center>")))
@@ -387,14 +402,15 @@ describe("gaejosik 개조식 보고서", () => {
     assert.ok((sec2.match(/pageBreak="1"/g) || []).length >= 2, "표지→목차→본문 쪽나눔 2회")
   })
 
-  it("보고서에서도 명시한 표지·목차를 생성하고 구조 검증 통과", async () => {
+  it("보고서 표지(서울형: 문서정보표·결재선·파랑 띠·기관명) — 목차는 v5 보고서에 없음", async () => {
     const buf = await markdownToHwpx(md, {
-      gongmun: { preset: "report", cover: { date: "2026. 7. 11.", org: "테스트기관" }, toc: true },
+      gongmun: { preset: "report", cover: { date: "2026. 7. 11.", org: "테스트기관", dept: "스마트도시과" }, approval: ["주무관", "팀장", "과장"], docInfo: { docNum: "스마트도시과-1" } },
     })
     const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
-    assert.ok(sec.includes("목  차"), "비개조식 목차")
-    assert.ok(sec.includes("테스트기관"), "비개조식 표지 기관명")
-    assert.ok((sec.match(/pageBreak="1"/g) || []).length >= 2, "표지→목차→본문 쪽나눔")
+    assert.ok(!sec.includes("목  차"), "v5 보고서는 목차 없음")
+    assert.ok(/테\s+스\s+트\s+기\s+관/.test(sec), "표지 기관명(자간 띄움)")
+    assert.ok(sec.includes("(스마트도시과)") && sec.includes("문서번호") && sec.includes("스마트도시과-1"), "부서명·문서정보표")
+    assert.ok((sec.match(/pageBreak="1"/g) || []).length >= 1, "표지→본문 쪽나눔")
     const validation = await validateHwpx(buf)
     assert.equal(validation.ok, true, validation.issues.map((issue) => issue.message).join("\n"))
   })
@@ -551,16 +567,30 @@ describe("gaejosik 개조식 보고서", () => {
 
 describe("어절 줄나눔 저장값 — breakNonLatinWord 이름 역전 매핑", () => {
   // 한컴 실구현: "BREAK_WORD"=어절 유지, "KEEP_WORD"=글자 단위 (2026-07 한글 COM 실렌더 실측).
-  // 일반·공문서·개조식 전 경로가 어절(BREAK_WORD)로 방출돼야 한다.
-  it("전 경로 breakNonLatinWord=BREAK_WORD(어절)·breakLatinWord=KEEP_WORD(단어)", async () => {
-    const md = "# 제목\n\n본문 문단입니다."
-    const optsList = [undefined, { gongmun: { preset: "official" as const } }, { gongmun: { preset: "개조식" } }]
-    for (const opts of optsList) {
+  it("범용·개조식(구 경로)은 어절(BREAK_WORD)·라틴 단어 유지", async () => {
+    const md = "# 제목\n\n본문 문단입니다.\n\n- 항목 하나"
+    for (const opts of [undefined, { gongmun: { preset: "개조식" } }]) {
       const hdr = await headerXml(await markdownToHwpx(md, opts as Parameters<typeof markdownToHwpx>[1]))
       assert.ok(!hdr.includes('breakNonLatinWord="KEEP_WORD"'), "글자 단위(KEEP_WORD)가 남아 있음")
       assert.ok(hdr.includes('breakNonLatinWord="BREAK_WORD"'), "어절(BREAK_WORD) 방출 없음")
       assert.ok(hdr.includes('breakLatinWord="KEEP_WORD"'), "라틴 단어 유지 없음")
       assert.ok(!hdr.includes('breakLatinWord="BREAK_WORD"'), "라틴이 글자 단위로 방출됨")
+    }
+  })
+  // v5 본문은 글자 단위(KEEP_WORD)+양쪽정렬 — 서울 실결재 개조식 `-` 문단 76%(다줄 88%)·법정형 97%.
+  // 라운드 1의 어절유지+양쪽정렬(실측 1.2%)은 긴 어절이 통째로 다음 줄로 밀려 앞 줄 어절 간격이 벌어졌다
+  // (2026-09-06 실렌더, 유저 결정으로 전환). 라틴·숫자는 breakLatinWord=KEEP_WORD 로 계속 단어 유지.
+  it("v5(기안문·보고서) 본문 항목·서술 문단은 글자 단위(KEEP_WORD)+양쪽정렬, 라틴 단어 유지", async () => {
+    const md = "# 제목\n\n본문 문단입니다.\n\n- 항목 하나"
+    for (const [preset, marker] of [["official", "1. 항목 하나"], ["report", "□ 항목 하나"]] as const) {
+      const buf = await markdownToHwpx(md, { gongmun: { preset } })
+      const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text"), hdr = await headerXml(buf)
+      for (const text of [marker, "본문 문단입니다."]) {
+        const { para } = prOf(sec, hdr, text)
+        assert.ok(para.includes('breakNonLatinWord="KEEP_WORD"'), `${preset} ${text}: 글자 단위 아님`)
+        assert.ok(para.includes('breakLatinWord="KEEP_WORD"'), `${preset} ${text}: 라틴 단어 유지 없음`)
+        assert.ok(para.includes('horizontal="JUSTIFY"'), `${preset} ${text}: 양쪽정렬 아님`)
+      }
     }
   })
 })
@@ -608,7 +638,7 @@ describe("공문서 v4 구조 요소 — 쪽번호·제목박스·배너·결재
     assert.ok(banner.includes('borderFillIDRef="9"'), "라벤더 스트라이프 셀")
   })
 
-  it("결재란 — 직위 라벨 + 서명 공란 2행, 우측 배치 (실측 GT12 간이형)", async () => {
+  it("결재란 — 직위 라벨 + 서명 공란 2행, 우측 배치 (서울 결재선 12pt, v5)", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "official", approval: ["담당", "팀장", "과장"] } })
     const sec = await sectionOf(buf)
     const hdr = await headerXml(buf)
@@ -618,12 +648,9 @@ describe("공문서 v4 구조 요소 — 쪽번호·제목박스·배너·결재
     const tbl = sec.slice(tblStart, sec.indexOf("</hp:tbl>", tblStart))
     assert.match(tbl, /rowCnt="2" colCnt="3"/)
     assert.ok(tbl.includes("팀장") && tbl.includes("과장"))
-    const labelChar = tbl.match(/charPrIDRef="(\d+)"><hp:t>담당<\/hp:t>/)?.[1]
-    assert.ok(labelChar, "결재 라벨 charPr")
-    assert.match(hdr, new RegExp(`<hh:charPr id="${labelChar}" height="1000"`), "결재 라벨 10pt")
-    // 호스트 문단 우측정렬 (GONGMUN_RIGHT=17)
-    const host = sec.slice(sec.lastIndexOf("<hp:p ", tblStart), tblStart)
-    assert.ok(host.includes('paraPrIDRef="17"'), "결재란 호스트 RIGHT")
+    assert.match(prOf(sec, hdr, "담당").char, /height="1200"/, "결재 라벨 12pt")
+    const hostPid = sec.slice(sec.lastIndexOf("<hp:p ", tblStart), tblStart).match(/paraPrIDRef="(\d+)"/)![1]
+    assert.match(hdr.match(new RegExp(`<hh:paraPr id="${hostPid}"[\\s\\S]*?</hh:paraPr>`))![0], /horizontal="RIGHT"/, "결재란 호스트 RIGHT")
   })
 
   it('"끝." 표시 — 기안문 기본, 중복 방지', async () => {
@@ -641,25 +668,25 @@ describe("공문서 v4 구조 요소 — 쪽번호·제목박스·배너·결재
   it("<right> 태그 — 출처행 우측정렬 (실측 GT2/GT6/GT7 관행)", async () => {
     const buf = await markdownToHwpx("# 제목\n\n<right>2026. 7. 11. 홍보담당관</right>\n\n본문", { gongmun: { preset: "report" } })
     const sec = await sectionOf(buf)
-    const at = sec.indexOf("홍보담당관")
-    const para = sec.slice(sec.lastIndexOf("<hp:p ", at), at)
-    assert.ok(para.includes('paraPrIDRef="17"'), "출처행 RIGHT paraPr")
+    assert.match(prOf(sec, await headerXml(buf), "2026. 7. 11. 홍보담당관").para, /horizontal="RIGHT"/)
   })
 
-  it("report/plan 제목박스 — 색상바+제목+gradient 3단 (실측 GT2/GT6/GT7)", async () => {
+  it("report/plan 제목표 — HY헤드라인M 25pt bold, 상 0.4mm 선, 왕복 마커 __kordoc_h1 (서울 실측, v5)", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "report" } })
     const sec = await sectionOf(buf)
     const hdr = await headerXml(buf)
-    assert.match(hdr, /<hc:gradation[\s\S]*?#0080C0[\s\S]*?#3CBFFF/)
-    assert.match(hdr, /#0080C0/)
     const at = sec.indexOf(escapeStub("보고서 제목"))
     const tblStart = sec.lastIndexOf("<hp:tbl", at)
     assert.ok(tblStart > 0, "제목이 표 안에")
-    const box = sec.slice(tblStart, at)
-    assert.match(box, /rowCnt="3" colCnt="1"/)
-    const barChar = box.match(/charPrIDRef="(\d+)"><hp:t><\/hp:t>[\s\S]*?<hp:cellSz[^>]*height="382"/)?.[1]
-    assert.ok(barChar, "382HU 색상바의 빈 문단 charPr")
-    assert.match(hdr, new RegExp(`<hh:charPr id="${barChar}" height="100"`), "색상바 스페이서 1pt")
+    const box = sec.slice(tblStart, sec.indexOf("</hp:tbl>", tblStart))
+    assert.match(box, /rowCnt="1" colCnt="1"/)
+    assert.ok(box.includes('name="__kordoc_h1"'), "왕복 h1 마커")
+    const { char } = prOf(sec, hdr, "보고서 제목")
+    assert.match(char, /height="2500"[^>]*bold="1"/)
+    assert.ok(char.includes(`hangul="${fontIdOf(hdr, "HY헤드라인M")}"`))
+    const bfId = box.match(/borderFillIDRef="(\d+)"/g)![1].match(/\d+/)![0]
+    assert.match(hdr.match(new RegExp(`<hh:borderFill id="${bfId}"[\\s\\S]*?</hh:borderFill>`))![0], /topBorder type="SOLID" width="0.4 mm"/)
+    assert.ok(!hdr.includes("<hc:gradation"), "v5 제목표에 gradient 없음")
   })
 
   it("표 실측 문법 — 헤더 bold·하변 이중선·외곽 0.4mm·라벨열 음영·호스트 RIGHT", async () => {
@@ -702,17 +729,21 @@ function escapeStub(s: string): string {
 describe("v4.0.1 실측 폰트 프리셋 (QA-1)", () => {
   const md = `# 제목\n\n## 개요\n\n본문 **강조** 문장임\n\n- 대항목\n\n※ 자료: 행안부`
 
-  it("보고서 프리셋 — 휴먼명조 본문·HY헤드라인M 제목·한양중고딕 ※ 폰트 세트", async () => {
-    const buf = await markdownToHwpx(md, { gongmun: { preset: "보고서" } })
+  it("보고서 프리셋 — 서울 실측 세트: □ HY견고딕 17b·ㅇ 한컴돋움 15b·- 휴먼명조 14·※ 한컴돋움 14 (v5)", async () => {
+    const buf = await markdownToHwpx("# 제목\n\n- 대항목\n  - 중항목\n    - 소항목\n\n※ 자료: 행안부", { gongmun: { preset: "보고서" } })
     const head = await headerXml(buf)
-    for (const f of ["휴먼명조", "HY헤드라인M", "한양중고딕", "맑은 고딕"]) {
-      assert.ok(head.includes(`face="${f}"`), `폰트 세트에 ${f}`)
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    for (const f of ["HY견고딕", "한컴돋움", "휴먼명조", "HY헤드라인M"]) assert.ok(head.includes(`face="${f}"`), `폰트 세트에 ${f}`)
+    const expect = (text: string, face: string, h: number, bold: boolean) => {
+      const { char } = prOf(sec, head, text)
+      assert.match(char, new RegExp(`height="${h}"`), `${text} ${h}`)
+      assert.equal(/bold="1"/.test(char), bold, `${text} bold=${bold}`)
+      assert.ok(char.includes(`hangul="${fontIdOf(head, face)}"`), `${text} → ${face}`)
     }
-    // 본문(0)·볼드(1) = 휴먼명조(id 4), h2(6) = HY헤드라인M(id 3, bold 없음)
-    assert.match(head, /<hh:charPr id="0" height="1500"[^>]*>\s*<hh:fontRef hangul="4"/)
-    assert.match(head, /<hh:charPr id="1" height="1500"[^>]*bold="1"[^>]*>\s*<hh:fontRef hangul="4"/)
-    assert.match(head, /<hh:charPr id="6" height="1600"[^>]*>\s*<hh:fontRef hangul="3"/)
-    assert.ok(!/<hh:charPr id="6"[^>]*bold="1"/.test(head), "h2는 HY헤드라인M 자체 굵기 (bold 없음)")
+    expect("□ 대항목", "HY견고딕", 1700, true)
+    expect("ㅇ 중항목", "한컴돋움", 1500, true)
+    expect("- 소항목", "휴먼명조", 1400, false)
+    expect("※ 자료: 행안부", "한컴돋움", 1300, false)
   })
 
   it("볼드 폰트 치환 제거 — 범용·기안문 볼드가 원 폰트 유지 (HY견고딕 참조 없음)", async () => {
@@ -722,24 +753,38 @@ describe("v4.0.1 실측 폰트 프리셋 (QA-1)", () => {
     }
   })
 
-  it("보고서 ※ 문단 — 참고 스타일(charPr 13)·리스트 □는 HY헤드라인M(charPr 11)", async () => {
-    const buf = await markdownToHwpx(md, { gongmun: { preset: "보고서" } })
-    const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
-    assert.ok(sec.includes(`charPrIDRef="13"><hp:t>※ 자료: 행안부</hp:t>`), "※ → 한양중고딕 참고")
-    assert.ok(sec.includes(`charPrIDRef="11"><hp:t>□ 대항목</hp:t>`), "리스트 □ → HY헤드라인M 16pt")
+  it("보고서 들여쓰기 — □ 0타·ㅇ 1타·- 3타, 내어쓰기 = 부호폭+1타 (v5)", async () => {
+    const buf = await markdownToHwpx("- 대항목\n  - 중항목\n    - 소항목", { gongmun: { preset: "보고서" } })
+    const head = await headerXml(buf)
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const geom = (t: string) => { const p = prOf(sec, head, t).para; return { left: Number(p.match(/<hc:left value="(-?\d+)"/)![1]), indent: Number(p.match(/<hc:intent value="(-?\d+)"/)![1]) } }
+    assert.deepEqual(geom("□ 대항목"), { left: 0, indent: -markerWidth("□", 1700) })
+    assert.deepEqual(geom("ㅇ 중항목"), { left: 750, indent: -markerWidth("ㅇ", 1500) })
+    assert.deepEqual(geom("- 소항목"), { left: 2100, indent: -markerWidth("-", 1400) })
   })
 })
 
 describe("v4.0.1 h2 말머리 (QA-2)", () => {
   const md = `# 문서 제목\n\n## 개요\n\n내용임\n\n## 1. 추진 성과\n\n내용임`
 
-  it("보고서·계획서 기본 — h2에 □ 말머리 + 선행 번호 제거", async () => {
+  it("보고서·계획서 기본 — h2는 띠 표(로마자 칸 + 제목 칸) + 선행 번호 제거, roman 지정 시 텍스트 장 (v5 라운드 3)", async () => {
     for (const preset of ["보고서", "계획서"] as const) {
-      const texts = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset } }))
-      assert.ok(texts.includes("□ 개요"), `${preset} h2 → □ 개요`)
-      assert.ok(texts.includes("□ 추진 성과"), `${preset} 선행 번호 제거 후 □`)
+      const buf = await markdownToHwpx(md, { gongmun: { preset } })
+      const texts = await sectionTexts(buf)
+      assert.ok(texts.includes("Ⅰ") && texts.includes("개요"), `${preset} 띠 표 번호칸·제목칸: ${texts}`)
+      assert.ok(texts.includes("Ⅱ") && texts.includes("추진 성과"), `${preset} 선행 번호 제거 후 Ⅱ`)
+      const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+      assert.ok(sec.includes('name="__kordoc_h2"'), "왕복 채널 셀 이름")
+      assert.ok(/faceColor="#003366"/.test(await headerXml(buf)), "번호칸 채움 #003366")
+      // 왕복 — 파서가 띠 표를 heading 2 로 복원 (표로 남지 않는다)
+      const back = await parse(buf)
+      assert.ok(back.success)
+      const h2 = back.blocks.filter(b => b.type === "heading" && b.level === 2).map(b => b.text)
+      assert.deepEqual(h2.slice(0, 2), ["개요", "추진 성과"])
+      assert.ok(!back.blocks.some(b => b.type === "table" && b.table?.cells.some(r => r.some(c => c.text === "Ⅰ"))), "띠 표가 일반 표로 남지 않음")
     }
+    const roman = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "보고서", h2Marker: "roman" } }))
+    assert.ok(roman.includes("Ⅰ. 개요") && roman.includes("Ⅱ. 추진 성과"), `roman 텍스트 장: ${roman}`)
   })
 
   it("h2Marker number — 아라비아 순번 재부여", async () => {
@@ -748,11 +793,13 @@ describe("v4.0.1 h2 말머리 (QA-2)", () => {
     assert.ok(texts.includes("2. 추진 성과"))
   })
 
-  it("h2Marker none — 말머리 없음, 기안문 기본도 없음", async () => {
+  it("h2Marker none — 번호 없음 / 기안문 h2는 법정 1. 항목 (v5)", async () => {
     const t1 = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "보고서", h2Marker: "none" } }))
-    assert.ok(t1.includes("개요") && !t1.includes("□ 개요"))
+    assert.ok(t1.includes("개요") && !t1.includes("□ 개요") && !t1.includes("Ⅰ. 개요"))
     const t2 = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "기안문" } }))
-    assert.ok(t2.includes("개요") && !t2.includes("□ 개요"), "기안문은 기본 말머리 없음")
+    assert.ok(t2.includes("1. 개요") && t2.includes("2. 추진 성과"), `기안문 h2 → 1. 2.: ${t2}`)
+    const box = await sectionTexts(await markdownToHwpx(md, { gongmun: { preset: "보고서", h2Marker: "box" } }))
+    assert.ok(box.includes("□ 개요"), "box 모드는 장 없이 □")
   })
 
   it("개조식 h2는 장 헤더가 소비 — h2Marker 영향 없음", async () => {
@@ -771,13 +818,13 @@ describe("v4.0.2 프로덕션 리뷰 회귀", () => {
     assert.match(head15, /<hh:charPr id="8" height="1400"/)
   })
 
-  it("비실측 프리셋 + 표지/목차 — bodyFont 지정이 본문 charPr에 유지된다", async () => {
-    const head = await headerXml(await markdownToHwpx("본문", {
-      gongmun: { preset: "notice", toc: true, bodyFont: "gothic" },
-    }))
-    assert.match(head, /<hh:font id="4" face="맑은 고딕"/, "rich 폰트세트 id 4 = 해석된 본문 폰트")
-    const charPr0 = head.match(/<hh:charPr id="0"[\s\S]*?<\/hh:charPr>/)![0]
-    assert.match(charPr0, /hangul="4"/, "본문 charPr가 id 4를 참조해야 gothic이 렌더됨")
+  it("통지 bodyFont gothic — 본문 문단이 맑은 고딕을 참조한다 (v5)", async () => {
+    const buf = await markdownToHwpx("본문", { gongmun: { preset: "notice", bodyFont: "gothic" } })
+    const head = await headerXml(buf)
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const id = fontIdOf(head, "맑은 고딕")
+    assert.ok(id, "맑은 고딕 글꼴 등록")
+    assert.ok(prOf(sec, head, "본문").char.includes(`hangul="${id}"`), "본문 charPr가 맑은 고딕 참조")
   })
 
   it("press 프리셋은 cover/toc 무시 — 머리박스·제목·부제 보존", async () => {
@@ -798,16 +845,83 @@ describe("v4.0.2 프로덕션 리뷰 회귀", () => {
     assert.ok(!head.includes('face="HY헤드라인M"'), "rich 폰트세트 미방출")
   })
 
-  it("결재란 라벨 — 전용 100% paraPr(33) 사용 (바 스페이서 70% 재사용 금지)", async () => {
+  it("결재란 라벨 — 줄간격 100% paraPr (바 스페이서 재사용 금지)", async () => {
     const buf = await markdownToHwpx("본문", { gongmun: { preset: "official", approval: ["담당", "팀장"] } })
     const head = await headerXml(buf)
-    const para33 = head.match(/<hh:paraPr id="33"[\s\S]*?<\/hh:paraPr>/)![0]
-    assert.match(para33, /<hh:lineSpacing[^>]*value="100"/, "라벨 줄간격 100% (실측 결재선)")
     const zip = await JSZip.loadAsync(buf)
     const secXml = await zip.file("Contents/section0.xml")!.async("text")
-    assert.ok(secXml.includes('paraPrIDRef="33"'), "라벨 문단이 전용 paraPr 참조")
+    assert.match(prOf(secXml, head, "담당").para, /<hh:lineSpacing[^>]*value="100"/, "라벨 줄간격 100% (실측 결재선)")
     const validation = await validateHwpx(buf)
     assert.equal(validation.ok, true, validation.issues.map((i) => i.message).join("\n"))
+  })
+})
+
+describe("v5 실무 요청 (2026-09-06)", () => {
+  const secOf = async (buf: ArrayBuffer) => (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+
+  it("출처·자료·근거 항목 → ※ 참고 13pt (당구장표시, 작은 글씨)", async () => {
+    const buf = await markdownToHwpx("- 대항목\n  - 2023년 45.4%\n  - 출처: KOSIS e-지방지표\n\n자료: 행안부", { gongmun: { preset: "보고서" } })
+    const sec = await secOf(buf); const head = await headerXml(buf)
+    const ts = await sectionTexts(buf)
+    assert.ok(ts.includes("※ 출처: KOSIS e-지방지표") && ts.includes("※ 자료: 행안부"), `${ts}`)
+    assert.ok(!ts.some((t) => t.startsWith("ㅇ 출처")))
+    assert.match(prOf(sec, head, "※ 출처").char, /height="1300"/)
+  })
+
+  it("법령 인용 뒤 법제처 코드 (282791) 제거", async () => {
+    const ts = await sectionTexts(await markdownToHwpx("- 인공지능기본법(282791) 제2조, 같은 법 시행령(288781) 제1조의2\n\n「고독사 예방 및 관리에 관한 법률」(254853) 제13조\n\n※ 광진구 인공지능 기본조례(2098845) 제3조\n\n- 출처: KOSIS e-지방지표 「1인가구비율(시도/시/군/구)」 DT_1YL21161, 통계 MCP 조회\n\n- 건축HUB 화양동(법정동코드 11215-10700) 표제부 집계, 건축허브 MCP 조회", { gongmun: { preset: "보고서" } }))
+    const all = ts.join(" ")
+    assert.ok(!/\(\d{6,7}\)/.test(all), `코드 잔존: ${all}`)
+    assert.ok(all.includes("인공지능기본법 제2조") && all.includes("시행령 제1조의2") && all.includes("법률」 제13조") && all.includes("기본조례 제3조"))
+    assert.ok(!/DT_|MCP|법정동코드/.test(all), `출처 내부 식별자 잔존: ${all}`)
+    assert.ok(ts.includes("※ 출처: KOSIS e-지방지표 「1인가구비율(시도/시/군/구)」") && ts.includes("□ 건축HUB 화양동 표제부 집계"), `${ts}`)
+  })
+
+  it("고아 줄 — 한 줄 근접(가용폭 90~108%) 항목은 자간·장평을 줄여 한 줄에, 긴 문단은 그대로", async () => {
+    // 15pt 한컴돋움 ㅇ 항목(left 750) — 추정폭이 가용폭의 ~100% 되도록 어절을 더한다 (실렌더는 추정보다 2~4% 넓어 꼬리가 넘침)
+    const W = mmToHwpunit(210 - 18 - 18), first = W - 750
+    const fc = faceClassForGen("한컴돋움")
+    let long = "2023년 45.4% → 2024년 46.0% → 2025년 46.9% 서울 40.5% 전국 43.1%"
+    for (let i = 0; i < 40 && measureTextWidth(`ㅇ ${long}`, 1500, 100, { faceClass: fc }) < first * 0.98; i++) long += i % 2 ? " 증가" : " 추세"
+    const buf = await markdownToHwpx(`- 대항목\n  - ${long}`, { gongmun: { preset: "보고서" } })
+    const sec = await secOf(buf); const head = await headerXml(buf)
+    const { char } = prOf(sec, head, `ㅇ ${long.slice(0, 10)}`)
+    const sp = Number(char.match(/<hh:spacing hangul="(-?\d+)"/)![1])
+    const ratio = Number(char.match(/<hh:ratio hangul="(\d+)"/)![1])
+    assert.ok(sp < 0 || ratio < 100, `자간/장평 축소 적용: spacing=${sp} ratio=${ratio}`)
+    // 둘째 줄이 길면(40~85%) 손대지 않는다 — 어절 시뮬레이션으로 그런 길이를 만든다
+    const cont = first - markerWidth("ㅇ", 1500)
+    let longer = long
+    for (let i = 0; i < 60; i++) {
+      const w = simulateWrap(`ㅇ ${longer}`, first * 0.95, cont * 0.95, 1500, 100, "keep", { faceClass: fc })
+      if (w.lines === 2 && w.lastLineWidth > cont * 0.4 && w.lastLineWidth < cont * 0.85) break
+      longer += i % 2 ? " 세부내역" : " 참조"
+    }
+    const buf2 = await markdownToHwpx(`- 대항목\n  - ${longer}`, { gongmun: { preset: "보고서" } })
+    const c2 = prOf(await secOf(buf2), await headerXml(buf2), `ㅇ ${long.slice(0, 10)}`).char
+    assert.match(c2, /<hh:spacing hangul="0"/)
+  })
+
+  it("요약박스 — 제목 직후 인용문 한 문장, 부호는 벗기고 3줄 초과·부재는 경고", async () => {
+    const md = "# 검토보고\n\n> ㅇ 안부확인 서비스 확대 방향을 검토하고자 함\n\n## 배경\n\n- 항목"
+    const warnings: string[] = []
+    const buf = await markdownToHwpx(md, { gongmun: { preset: "보고서" }, warnings })
+    const sec = await secOf(buf)
+    const at = sec.indexOf('name="__kordoc_summary"')
+    assert.ok(at > 0, "요약박스")
+    const cell = sec.slice(at, sec.indexOf("</hp:tc>", at))
+    assert.ok(cell.includes("<hp:t>안부확인 서비스 확대 방향을 검토하고자 함</hp:t>"), "선두 ㅇ 제거·선두 공백 없음(문단 여백으로 대체)")
+    // 실측(요약박스 133건): 문단 좌우 여백 1000/1000 55% — 글자가 테두리에 붙지 않게. 줄바꿈은 본문과 같은 글자 단위
+    const { para } = prOf(sec, await headerXml(buf), "안부확인 서비스 확대 방향을 검토하고자 함")
+    assert.ok(para.includes('<hc:left value="1000"') && para.includes('<hc:right value="1000"'), "요약박스 문단 좌우 여백 1000")
+    assert.ok(para.includes('breakNonLatinWord="KEEP_WORD"'), "요약박스 글자 단위 줄바꿈")
+    assert.ok(!warnings.some((w) => w.includes("요약박스")))
+    const w3: string[] = []
+    await markdownToHwpx(`# 검토보고\n\n> ${"매우 긴 문장을 반복해서 넣어 세 줄을 넘기게 한다 ".repeat(8)}\n\n- 항목`, { gongmun: { preset: "보고서" }, warnings: w3 })
+    assert.ok(w3.some((w) => w.includes("줄입니다")), "3줄 초과 경고")
+    const w2: string[] = []
+    await markdownToHwpx("# 검토보고\n\n## 배경\n\n- 항목", { gongmun: { preset: "보고서" }, warnings: w2 })
+    assert.ok(w2.some((w) => w.includes("요약박스")), "요약 없으면 경고")
   })
 })
 
@@ -820,8 +934,9 @@ describe("v4.0.4 프로덕션 리뷰 회귀", () => {
   it("참고(※) 항목이 법정번호(standard) 순번을 먹지 않는다 — 번호 증발 방지", async () => {
     const md = "## 배경\n- 첫째\n- ※ 근거: 정보화법\n- 셋째\n- 넷째"
     const sec = await sectionXml(await markdownToHwpx(md, { gongmun: { preset: "계획서", numbering: "standard" } }))
-    const nums = [...sec.matchAll(/<hp:t>(\d+)\. /g)].map((m) => m[1])
-    for (const n of ["1", "2", "3"]) assert.ok(nums.includes(n), `번호 ${n} 누락 (참고 항목이 순번 소비): ${nums.join(",")}`)
+    // v5: h2 "배경"이 1단계(1.)를 차지하고 리스트는 가.부터 — 참고(※)가 순번을 먹으면 '다.'가 사라진다
+    const marks = [...sec.matchAll(/<hp:t>([가-하])\. /g)].map((m) => m[1])
+    assert.deepEqual(marks, ["가", "나", "다"], `참고 항목이 순번을 소비하면 안 됨: ${marks.join(",")}`)
   })
 
   it("개조식 장식표 폭 — 기본 여백은 48180 유지, 넓은 여백은 본문폭 이하로 스케일", async () => {

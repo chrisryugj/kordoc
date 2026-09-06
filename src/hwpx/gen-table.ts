@@ -57,7 +57,12 @@ export interface GongmunTableStyle {
   headerFill?: string
   /** 라벨열 음영색 (기본 #E7E7E7 — 실측 GT6/GT7 표3) */
   labelFill?: string
+  /** 셀 글꼴 폭 클래스(v5) — 열폭·행높이 측정에 사용. 미지정 hcr */
+  faceClass?: import("./text-metrics.js").FaceClass
 }
+
+/** 현재 표의 폭 측정 클래스 — generateTable/generateHtmlTableXml 진입 시 style에서 설정 */
+let curFace: import("./text-metrics.js").FaceClass = "hcr"
 
 /** 실측 데이터 표 폭 여유 — GT6 46194·GT7 46372·GT11 46544 ≈ 본문폭 −1800 */
 export const DATA_TABLE_INSET = 1800
@@ -96,7 +101,7 @@ const CELL_PAD = 1200
 function cellContentWidth(text: string, charHeight: number): number {
   let max = 0
   for (const seg of text.replace(/!\[[^\]]*\]\([^)\s]+\)/g, "").replace(/\*\*|__|`/g, "").split(/<br\s*\/?>/i)) {
-    const w = measureTextWidth(seg.trim(), charHeight, 100)
+    const w = measureTextWidth(seg.trim(), charHeight, 100, { faceClass: curFace })
     if (w > max) max = w
   }
   return max
@@ -107,11 +112,32 @@ function cellMinWordWidth(text: string, charHeight: number): number {
   let max = 0
   for (const seg of text.replace(/!\[[^\]]*\]\([^)\s]+\)/g, "").replace(/\*\*|__|`/g, "").split(/<br\s*\/?>/i)) {
     for (const word of seg.trim().split(/\s+/)) {
-      const w = measureTextWidth(word, charHeight, 100)
+      const w = measureTextWidth(word, charHeight, 100, { faceClass: curFace })
       if (w > max) max = w
     }
   }
   return max
+}
+
+/** 열 역할 — 헤더 텍스트로 판정. content(주요 내용 열)는 넓게, remark(비고·근거·마지막 보조 열)는 좁게 */
+export type ColRole = "content" | "remark" | null
+
+// 실측(서울 실결재 데이터표 462개, 3열+): 내용·사항류 열 폭 중앙값 51%(p75 63%), 비고 열 21%(p75 26%),
+// 마지막 열 26%. 최협 헤더는 구분·연번·비고·시간. 비고를 먼저 보고(참고사항·비고사항) 내용류를 본다.
+const REMARK_HEAD = /^(비고|비고란|비고사항|참고|참고사항|출처|(관련|법적|추진)?근거|근거법령|담당(자|부서)?|연락처)$/u
+const CONTENT_HEAD = /(내용|사항|실적|계획|방안|사유|개요|설명|임무|역할|현황|성과)$/u
+/** 비고류 열 폭 상한(전체 대비) — 실측 p75 26% */
+const REMARK_SHARE = 0.25
+/** 내용류 열 비례 배분 가중 — 3열 all-short 표에서 25/50/25(실측 중앙값 51%) */
+const CONTENT_WEIGHT = 2
+
+export function colRoles(headers: string[]): ColRole[] {
+  const clean = headers.map((h) => (h ?? "").replace(/!\[[^\]]*\]\([^)\s]+\)/g, "").replace(/\*\*|__|`|\s+/g, ""))
+  const roles: ColRole[] = clean.map((h) => (REMARK_HEAD.test(h) ? "remark" : h.length <= 12 && CONTENT_HEAD.test(h) ? "content" : null))
+  // 내용 열이 있는 3열+ 표의 마지막 열(근거·일정 등)은 비고처럼 좁게 — 실측 마지막 열 중앙값 26%
+  const last = roles.length - 1
+  if (roles.length >= 3 && roles.includes("content") && roles[last] === null) roles[last] = "remark"
+  return roles
 }
 
 /**
@@ -124,14 +150,18 @@ function cellMinWordWidth(text: string, charHeight: number): number {
  *    확정 열이 각자 균등분할분 이하만 가져가므로 잔여 ≥ 남은 열 수 × 균등분할분
  *    ≥ 남은 열 수 × minW — 음수 폭 불가 불변식 유지.
  */
-export function computeColWidths(colMax: number[], totalWidth: number, colMinWord: number[] = []): number[] {
+export function computeColWidths(colMax: number[], totalWidth: number, colMinWord: number[] = [], roles: ColRole[] = []): number[] {
   const colCnt = colMax.length
   const minW = Math.min(Math.max(2000, Math.round(totalWidth * 0.06)), Math.floor(totalWidth / colCnt))
   const cap = Math.round(totalWidth * 0.8)
-  const raw = colMax.map((w) => Math.min(Math.max(w + CELL_PAD, minW), cap))
+  // 열별 상한 — remark 열은 25%(최장 어절보다는 좁아지지 않게), 나머지 80%. 역할 미지정이면 종전과 동일
+  const capOf = colMax.map((_, i) => (roles[i] === "remark" ? Math.min(cap, Math.max(Math.round(totalWidth * REMARK_SHARE), (colMinWord[i] ?? 0) + CELL_PAD)) : cap))
+  const raw = colMax.map((w, i) => Math.min(Math.max(w + CELL_PAD, minW), capOf[i]))
+  // 비례 배분 가중 — content 열은 같은 내용폭이라도 2배 몫
+  const wgt = raw.map((r, i) => (roles[i] === "content" ? r * CONTENT_WEIGHT : r))
   // 열 하한 = 최장 어절 폭 + 실패딩 — 이보다 좁으면 어절이 글자 단위로 세로 분해
   // ("구/분", "소요예/산" — v4.0.2 실렌더 QA). 어절 경계 줄바꿈은 허용.
-  const floor = raw.map((r, i) => Math.min(Math.max(minW, (colMinWord[i] ?? 0) + CELL_PAD), r, cap))
+  const floor = raw.map((r, i) => Math.min(Math.max(minW, (colMinWord[i] ?? 0) + CELL_PAD), r, capOf[i]))
   const widths = Array<number>(colCnt).fill(0)
   const free = new Set(raw.map((_, i) => i))
   let budget = totalWidth
@@ -143,7 +173,8 @@ export function computeColWidths(colMax: number[], totalWidth: number, colMinWor
   //    결함. 남은 열들이 각자 하한을 못 받게 되면 확정 중단.
   for (const i of [...raw.keys()].sort((a, b) => raw[a] - raw[b])) {
     if (free.size <= 1) break
-    const fixed = Math.round(raw[i] * 1.12)
+    // remark 열은 1.12 여유를 줘도 상한을 넘지 않는다
+    const fixed = roles[i] === "remark" ? Math.min(Math.round(raw[i] * 1.12), capOf[i]) : Math.round(raw[i] * 1.12)
     if (budget - fixed < sumFloorFree - floor[i]) break
     widths[i] = fixed; free.delete(i); budget -= fixed; sumFloorFree -= floor[i]
   }
@@ -152,34 +183,36 @@ export function computeColWidths(colMax: number[], totalWidth: number, colMinWor
     // 전 열이 짧은 표(잔여 과잉) — 확정을 버리고 내용폭 비례로 전폭 배분
     // (마지막 한 열만 비대해지는 것 방지, 표 폭은 totalWidth 유지)
     const sumRaw = raw.reduce((a, b) => a + b, 0)
+    const sumWgt = wgt.reduce((a, b) => a + b, 0)
     // raw[i]는 measureTextWidth의 float — 다른 분기(round/floor)와 달리 정수화가 빠져
-    // 소수 폭이 XML로 새면 HWPUNIT 정수 규약 위반·합 불변식 붕괴. round + 80% 캡 재적용.
-    for (let i = 0; i < colCnt; i++) widths[i] = Math.min(cap, Math.round(raw[i]) + Math.floor((raw[i] / sumRaw) * (totalWidth - sumRaw)))
+    // 소수 폭이 XML로 새면 HWPUNIT 정수 규약 위반·합 불변식 붕괴. round + 열별 캡 재적용.
+    // 잔여는 가중(content ×2) 비례 — 비고 열이 캡을 넘긴 몫은 아래 잔여 정산이 내용폭 큰 열로 돌린다.
+    for (let i = 0; i < colCnt; i++) widths[i] = Math.min(capOf[i], Math.round(raw[i]) + Math.floor((wgt[i] / sumWgt) * (totalWidth - sumRaw)))
     free.clear()
   } else {
     // 2) 긴 열 비례 배분 — 하한(최장 어절) 미달 열은 하한 확정 후 재배분.
     //    잔여가 하한 합보다 작으면 하한 비례 축소(표 폭 불변식 유지)
     for (;;) {
-      const sum = [...free].reduce((a, i) => a + raw[i], 0)
-      const short = [...free].filter((i) => (raw[i] / sum) * budget < floor[i])
+      const sum = [...free].reduce((a, i) => a + wgt[i], 0)
+      const short = [...free].filter((i) => (wgt[i] / sum) * budget < floor[i])
       if (short.length === 0) break
       const shortSum = short.reduce((a, i) => a + floor[i], 0)
       const scale = Math.min(1, (budget - (free.size - short.length) * minW) / shortSum)
       for (const i of short) { widths[i] = Math.max(minW, Math.floor(floor[i] * scale)); free.delete(i); budget -= widths[i] }
       if (free.size === 0) break
     }
-    const sum = [...free].reduce((a, i) => a + raw[i], 0)
-    for (const i of free) widths[i] = Math.floor((raw[i] / sum) * budget)
+    const sum = [...free].reduce((a, i) => a + wgt[i], 0)
+    for (const i of free) widths[i] = Math.min(capOf[i], Math.floor((wgt[i] / sum) * budget))
   }
   // 잔여 정산 — sum == totalWidth 불변식 (v4.0.5 P1-3: 음수 잔여도 정산).
-  // 양수 잔여(내림 손실)는 내용폭 큰 열부터 1씩 — 단 80% 캡 초과 열은 건너뛴다
+  // 양수 잔여(내림 손실·remark 캡 회수분)는 가중 내용폭 큰 열부터 1씩 — 단 열별 캡 초과 열은 건너뛴다
   // (전 열 캡 도달 시엔 합 불변식이 캡보다 우선). all-short 분기의 round 상향으로
   // sum > totalWidth가 되던 케이스는 음수 잔여 루프가 최광열부터 1씩 회수한다.
   let rem = totalWidth - widths.reduce((a, b) => a + b, 0)
-  const order = [...raw.keys()].sort((a, b) => raw[b] - raw[a])
+  const order = [...raw.keys()].sort((a, b) => wgt[b] - wgt[a])
   for (let k = 0, skipped = 0; rem > 0; k = (k + 1) % colCnt, rem--) {
     // 캡 존중: colCnt회 연속 스킵이면 전 열 캡 — 그때만 캡 초과 허용
-    while (widths[order[k]] >= cap && skipped < colCnt) { skipped++; k = (k + 1) % colCnt }
+    while (widths[order[k]] >= capOf[order[k]] && skipped < colCnt) { skipped++; k = (k + 1) % colCnt }
     skipped = 0
     widths[order[k]]++
   }
@@ -199,7 +232,7 @@ function estimateRowHeight(cells: string[], widths: number[], charHeight: number
     const usable = Math.max((widths[c] ?? widths[widths.length - 1]) - CELL_PAD, 1000)
     let lines = 0
     for (const seg of cell.replace(/\*\*|__|`/g, "").split(/<br\s*\/?>/i)) {
-      lines += Math.max(1, Math.ceil(measureTextWidth(seg.trim(), charHeight, 100) / usable))
+      lines += Math.max(1, Math.ceil(measureTextWidth(seg.trim(), charHeight, 100, { faceClass: curFace }) / usable))
     }
     if (lines > maxLines) maxLines = lines
   })
@@ -208,7 +241,22 @@ function estimateRowHeight(cells: string[], widths: number[], charHeight: number
 
 // ─── GFM 그리드 표 ──────────────────────────────────
 
+/**
+ * 표가 한 줄 셀로 다 들어가기 위한 자연 폭(HWPUNIT) — 열별 최장 내용 + 패딩(×1.12 여유) 합.
+ * v5 엔진이 셀 글자 크기 자동 축소(12→11→10pt, 실측 셀 pt 분포) 판단에 쓴다.
+ */
+export function requiredTableWidth(rows: string[][], charHeight: number, faceClass: import("./text-metrics.js").FaceClass = "hcr"): number {
+  const prev = curFace
+  curFace = faceClass
+  const colCnt = Math.max(...rows.map((r) => r.length), 1)
+  const colMax = Array<number>(colCnt).fill(0)
+  for (const row of rows) row.forEach((cell, c) => { const w = cellContentWidth(cell, charHeight); if (w > colMax[c]) colMax[c] = w })
+  curFace = prev
+  return colMax.reduce((a, w) => a + Math.round((w + CELL_PAD) * 1.12), 0)
+}
+
 export function generateTable(rows: string[][], theme: ResolvedTheme, style: GongmunTableStyle | null = null, remap: ProfileRemap | null = null, seq = 0, images: ImageRegistry | null = null): string {
+  curFace = style?.faceClass ?? "hcr"
   const rowCnt = rows.length
   const colCnt = Math.max(...rows.map(r => r.length), 1)
   const reg = style?.bfRegistry ?? null
@@ -232,9 +280,12 @@ export function generateTable(rows: string[][], theme: ResolvedTheme, style: Gon
     const mw = cellMinWordWidth(cell, measureH)
     if (mw > colMinWord[c]) colMinWord[c] = mw
   }))
-  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalW, colMinWord)
-  // 본문 셀이 전부 한 줄에 들어가는 열은 가운데 정렬 (숫자·라벨 열 관행)
-  const colCentered = colWidths.map((w, c) => colMaxBody[c] + CELL_PAD <= w)
+  // 열 역할(내용 넓게·비고 좁게)은 공문서 모드만 — 범용 경로 산출물 바이트 불변
+  const roles = style ? colRoles(rows[0] ?? []) : []
+  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalW, colMinWord, roles)
+  // 본문 셀이 전부 한 줄에 들어가는 열은 가운데 정렬 (숫자·라벨 열 관행) — 내용(서술) 열은 넓혀서 한 줄에
+  // 들어가도 LEFT (실측 TBL-11 장문 열 LEFT, 2026-09-06 실렌더: 가운데 정렬된 서술 셀이 떠 보임)
+  const colCentered = colWidths.map((w, c) => roles[c] !== "content" && colMaxBody[c] + CELL_PAD <= w)
   // 라벨열 감지 — 2열 표에서 1열이 짧은 라벨이면 음영+bold (실측: GT6/GT7 표3 라벨|값 패턴)
   const labelCol0 = !!reg && colCnt === 2 && colCentered[0] && rows.every((r) => (r[0] ?? "").replace(/\*\*|__|`/g, "").length <= 12)
 
@@ -429,8 +480,11 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
       if (dc === 0 && mw > colMinWord[c]) colMinWord[c] = mw
     }
   })
-  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalWidth, colMinWord)
-  const colCentered = colWidths.map((w, c) => colMaxBody[c] + CELL_PAD <= w)
+  const headers = Array.from({ length: colCnt }, () => "")
+  for (const [i, cell] of placed.entries()) if (cell.r === 0 && cell.c < colCnt) headers[cell.c] = unescapeHtml(cellLines[i].join(" "))
+  const roles = style ? colRoles(headers) : []
+  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalWidth, colMinWord, roles)
+  const colCentered = colWidths.map((w, c) => roles[c] !== "content" && colMaxBody[c] + CELL_PAD <= w)
 
   const cellH = style ? Math.round(measureH * 1.6) + 282 : 1500
   const tblW = colWidths.reduce((a, b) => a + b, 0)

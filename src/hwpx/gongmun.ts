@@ -64,7 +64,7 @@ export interface GongmunOptions {
    * 표지 페이지(개조식 프리셋 기본 켜짐) — 첫 h1을 제목으로, 파랑 장식 바 + 날짜 + 기관명.
    * false로 끄거나 {date, org}로 날짜(기본 오늘, 'YYYY. M. D.')·기관명(기본 생략) 지정.
    */
-  cover?: boolean | { date?: string; org?: string }
+  cover?: boolean | { date?: string; org?: string; dept?: string }
   /** 목차 페이지(개조식 프리셋 기본 켜짐) — h2 목록을 Ⅰ Ⅱ Ⅲ…로 자동 생성. false로 끔 */
   toc?: boolean
   /** 용지 여백(mm). 기본 공식값 위20/아래10/좌20/우20 */
@@ -103,11 +103,11 @@ export interface GongmunOptions {
   /** 본문 첫 페이지 제목 박스(개조식) — 목차 뒤 본문 시작에 제목 반복(실측 관행). 기본: 표지 있으면 켜짐 */
   bodyTitleBox?: boolean
   /**
-   * h2 섹션 제목 말머리 (비개조식 — 개조식 h2는 로마숫자 장 헤더가 대체).
-   * 'box'=□ 대항목(실측 보고서 양식 관행) / 'number'=아라비아 번호(1. 2. — 공고문 관행)
-   * / 'none'=말머리 없음. 기본: 보고서·계획서 'box', 공고문 'number', 그 외 'none'.
+   * h2 장 제목 표기 (v5): 'band'=로마자 채움 칸 + 제목 띠 표(보고서·계획서 기본 — 계획서 장르 실측 37~39%) /
+   * 'roman'=Ⅰ. Ⅱ. 텍스트 / 'number'=1. 2. (통지 기본) / 'box'=장 없이 □ 대항목으로 / 'none'=번호 없음.
+   * 기안문 본문의 h2는 항상 법정 1. 항목.
    */
-  h2Marker?: "box" | "number" | "none"
+  h2Marker?: "band" | "roman" | "box" | "number" | "none"
   /**
    * 2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서
    * 양식 계열 실측). 기본: notice·press 'ㅇ', 그 외 '○' (v4.1.0 실결재 60건 분포).
@@ -120,14 +120,21 @@ export interface GongmunOptions {
    * 적용되지 않으므로, 기본 numbering이 report인 plan 프리셋은 numbering:'standard' 병기 필요.
    */
   suppressSingle?: boolean
-  /** 기안문 두문 — 행정기관명·수신·경유·제목 (별지 제1호서식, official 전용) */
-  docHead?: { org?: string; to?: string; via?: string; title?: string }
-  /** 기안문 결문 — 발신명의·기안/검토/결재·시행/접수·주소·연락처·공개구분 (official 전용) */
+  /** 기안문 두문표 — 행정기관명·(원훈 slogan)·수신·경유·제목 (별지 제1호서식·서울 실결재 6행 표, official 전용) */
+  docHead?: { org?: string; slogan?: string; to?: string; via?: string; title?: string }
+  /**
+   * 기안문 결문표 — 발신명의·결재선(기안/검토/결재 또는 approvers 배열 "직위 성명")·협조자·수신자·
+   * 시행/접수·우편번호(zip)·주소·홈페이지·전화·전송·이메일·공개구분 (official 전용)
+   */
   docFoot?: {
     sender?: string; drafter?: string; reviewer?: string; approver?: string
-    cooperator?: string; docNum?: string; receive?: string
-    address?: string; site?: string; phone?: string; fax?: string; email?: string; disclosure?: string
+    approvers?: string[]; cooperator?: string; recipients?: string; docNum?: string; receive?: string
+    zip?: string; address?: string; site?: string; phone?: string; fax?: string; email?: string; disclosure?: string
   }
+  /** 보고서 요약 박스(제목표 아래 #DFE6F7 상자, 서울 실결재) — 마크다운 제목 직후 인용문(>)으로도 지정 가능 */
+  summary?: string
+  /** 보고서 표지 문서정보표 — 문서번호·결재일자·공개여부·방침번호 (cover와 함께) */
+  docInfo?: { docNum?: string; date?: string; disclosure?: string; policyNo?: string }
   /** 업무보고 우상단 보고정보 행 — "(보고일시, 보고자, 연락처)" (실측 t3: 휴먼명조 12pt RIGHT) */
   reportInfo?: string
   /** 공고문 두문·결문 — 공고번호(본문 위)·날짜·발신명의(본문 아래 우측, 실측 바이오헬스 공고) */
@@ -147,7 +154,15 @@ export interface ResolvedGongmun {
   /** 자동 장평 하한(%) — null이면 끔 */
   autoFitMinRatio: number | null
   /** 표지 설정 — null이면 표지 없음 (개조식 외 프리셋 기본) */
-  cover: { date: string | null; org: string } | null
+  cover: { date: string | null; org: string; dept?: string } | null
+  /** 옵션이 명시됐는지 — v5 스킴이 실측 기본값(굴림 12·한컴돋움 15·160/180%)을 쓸지 판단 */
+  bodyPtExplicit: boolean
+  lineSpacingExplicit: boolean
+  bodyFontExplicit: boolean
+  /** 보고서 요약 박스 텍스트 — null이면 마크다운 인용문 자동 */
+  summary: string | null
+  /** 보고서 표지 문서정보표 */
+  docInfo: NonNullable<GongmunOptions["docInfo"]> | null
   /** 목차 자동 생성 여부 (개조식 프리셋 기본 true) */
   toc: boolean
   /** 요소별 글꼴 오버라이드 (GongmunOptions.fonts) */
@@ -166,14 +181,14 @@ export interface ResolvedGongmun {
   approval: string[] | null
   /** 본문 첫 페이지 제목 박스(개조식, 실측 GT3 표④) — 표지 있을 때 기본 켜짐 */
   bodyTitleBox: boolean
-  /** h2 섹션 제목 말머리 — 보고서·계획서 기본 '□'(실측), 'number'=아라비아, 'none'=없음 */
-  h2Marker: "box" | "number" | "none"
+  /** h2 장 제목 표기 — 보고서·계획서 'roman', 통지·공고 'number' (v5) */
+  h2Marker: "band" | "roman" | "box" | "number" | "none"
   /** 2단계 항목부호 — notice·press 기본 'ㅇ', 그 외 '○' (실결재 60건 분포, v4.1.0) */
   bullet2: "ㅇ" | "○"
   /** 단일 형제 부호 생략(규정) — 기본 false (실무 관행: 하나여도 부호, v4.0.2) */
   suppressSingle: boolean
   /** 기안문 두문 — null이면 없음 */
-  docHead: { org?: string; to?: string; via?: string; title?: string } | null
+  docHead: NonNullable<GongmunOptions["docHead"]> | null
   /** 기안문 결문 — null이면 없음 */
   docFoot: NonNullable<GongmunOptions["docFoot"]> | null
   /** 보고정보 행 — null이면 없음 */
@@ -192,6 +207,10 @@ const OFFICIAL_MARGINS = { top: 20, bottom: 15, left: 20, right: 15 }
 
 /** 보고서 계열 여백(mm) — 실측: 「2_보고서 양식」·샘플양식1·공고문·보도자료 공통 상하 15mm */
 const GAEJOSIK_MARGINS = { top: 15, bottom: 15, left: 20, right: 20 }
+
+/** 서울 보고서형 기안(간이기안) 여백(mm) — 실결재 개조식 문서 지배값 13/13/18/18·머리꼬리 13 (v5) */
+const SEOUL_REPORT_MARGINS = { top: 13, bottom: 13, left: 18, right: 18 }
+const SEOUL_REPORT_HEADER_FOOTER = 3600
 
 /** 개조식 머리말·꼬리말 영역(HWPUNIT) — 실측 4251(15mm). 쪽번호가 이 영역에 렌더 */
 const GAEJOSIK_HEADER_FOOTER = 4251
@@ -368,12 +387,17 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     bodyHeight: Math.round(bodyPt * 100),
     lineSpacing: opts.lineSpacing ?? d.lineSpacing,
     numbering: opts.numbering ?? d.numbering,
-    margins: opts.margins ?? (reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
+    margins: opts.margins ?? (preset === "report" || preset === "plan" ? SEOUL_REPORT_MARGINS : reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
     centerTitle: opts.centerTitle ?? true,
     autoFitMinRatio,
     // 보도자료는 머리박스가 1페이지 최상단을 차지하는 서식이라 표지·목차와 양립 불가 —
     // 켜면 머리박스가 표지에 얹히고 25pt 제목·부제가 유실된다 (docHead 프리셋 게이팅과 동일 관례)
-    cover: coverOn && preset !== "press" ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "" } : null,
+    cover: coverOn && preset !== "press" ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "", ...(coverOpts.dept ? { dept: coverOpts.dept } : {}) } : null,
+    bodyPtExplicit: opts.bodyPt !== undefined,
+    lineSpacingExplicit: opts.lineSpacing !== undefined,
+    bodyFontExplicit: opts.bodyFont !== undefined,
+    summary: opts.summary?.trim() || null,
+    docInfo: opts.docInfo ?? null,
     toc: preset !== "press" && (opts.toc ?? gaejosik),
     fonts: opts.fonts ?? {},
     sizes: opts.sizes ?? {},
@@ -382,7 +406,8 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     pageNumbers: opts.pageNumbers ?? (gaejosik || preset === "report" || preset === "plan"),
     // 머리말·꼬리말 — 실측: 보고서 계열 15mm(GT3·t2·춘천·브라더), 공고·보도 10mm,
     // 기안문 0(실결재 41/60건 h0/f0)
-    headerFooter: usesReportFonts(preset) ? GAEJOSIK_HEADER_FOOTER
+    headerFooter: preset === "report" || preset === "plan" ? SEOUL_REPORT_HEADER_FOOTER
+      : usesReportFonts(preset) ? GAEJOSIK_HEADER_FOOTER
       : preset === "notice" || preset === "press" ? 2835 : 0,
     // "끝." — 기안문 규정(본문 끝 2타+"끝."). 그 외는 opt-in
     endMark: opts.endMark ?? preset === "official",
@@ -390,9 +415,11 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     // 본문 제목박스 — 실측(GT3·GT12): 목차 뒤 본문 시작에 제목 반복. 표지 켜진 개조식 기본
     bodyTitleBox: opts.bodyTitleBox ?? (gaejosik && coverOn),
     // h2 말머리 — 실측: 보고서 양식 □ 대항목(QA-2), 공고문 아라비아("1. 사업개요", 바이오헬스 실측)
-    h2Marker: opts.h2Marker ?? (preset === "report" || preset === "plan" ? "box" : preset === "notice" ? "number" : "none"),
+    // v5 라운드 3: 보고서·계획서 기본 band(띠 표) — 서울 plan 7/19·교육청 7/18 실측, 실무자 요청
+    h2Marker: opts.h2Marker ?? (preset === "report" || preset === "plan" ? "band" : preset === "notice" ? "number" : "none"),
     // 2단계 부호 — 실결재 기안문·공고문 ㅇ 지배(60건 중 ㅇ134:○5), 보고서 양식 계열 ○
-    bullet2: opts.bullet2 ?? (preset === "plan" || preset === "notice" || preset === "press" ? "ㅇ" : "○"),
+    // v5: 서울 실결재 ㅇ(이응) 지배 — 보고서·계획서·통지·보도자료 ㅇ, 중앙부처 개조식 양식만 ○
+    bullet2: opts.bullet2 ?? (preset === "gaejosik" ? "○" : "ㅇ"),
     // 단일 형제 부호 생략 — 규정이지만 부호 없는 계단이 실무 눈에 어색 (실무자 QA)
     suppressSingle: opts.suppressSingle ?? false,
     docHead: preset === "official" && opts.docHead ? opts.docHead : null,
