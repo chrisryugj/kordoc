@@ -210,7 +210,7 @@ function toCss(v: string | number): string {
 }
 
 /** Windows/Mac/Linux의 일반적 Chrome 경로 자동 감지 */
-function findChromiumPath(): string | null {
+export function findChromiumPath(): string | null {
   // 사용자가 명시 안 했으면 OS 표준 경로 시도
   // Windows
   const win = [

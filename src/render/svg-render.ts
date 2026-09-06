@@ -27,6 +27,7 @@ import { toInt32, solveBoundaries, solveRowHeights, type SpanConstraint } from "
 import { measureTextWidth, type WrapMode } from "../hwpx/text-metrics.js"
 import { parseRenderStyles, DEFAULT_CHAR, type RenderStyles, type RenderBorderEdge } from "./head-styles.js"
 import { reflowSection } from "./reflow.js"
+import { RegionCollector, type PageBBox, type RenderRegion, type RenderScene } from "./scene.js"
 
 export interface RenderSvgOptions {
   /** 이미지 1장당 허용 최대 바이트 (기본 40MB) */
@@ -52,7 +53,9 @@ export interface RenderSvgResult {
   /** 렌더된 페이지 수 */
   pageCount: number
   warnings: string[]
-  stats: { texts: number; images: number; tables: number }
+  stats: { texts: number; images: number; tables: number; shapes: number }
+  /** 개체 region(페이지 로컬 pt bbox·결정적 id) — #75 */
+  regions: RenderRegion[]
 }
 
 // ─── XML 헬퍼 ─────────────────────────────────────
@@ -126,12 +129,39 @@ interface Ctx {
   highlights: string[]
   warnings: string[]
   warned: Set<string>
-  stats: { texts: number; images: number; tables: number }
+  stats: { texts: number; images: number; tables: number; shapes: number }
   /** 셀/표 측정 메모 — 중첩표 지수 재계산 캡 (렌더 1회 공유) */
   extentMemo: ExtentMemo
+  /** 개체 region 수집 — 그리는 순서로 결정적 id (#75). 전 구역 공유 */
+  regions: RegionCollector
+  /** 현재 열린 부모 region id 스택 (표 셀 콘텐츠·문단 개체·도형 글상자) */
+  parentStack: string[]
+  /** 앞선 구역들의 페이지 수 누계 — 전역 1-based 페이지 = pageBase + page + 1 */
+  pageBase: number
+  /** 이 구역 페이지의 실높이(HWPUNIT) — 단일 페이지 캔버스 연장 포함. region 하단 클램프용 */
+  pageH: number
 }
 
 const pt = (u: number): string => String(Math.round(u) / 100)
+/** HWPUNIT → pt (소수 둘째 자리) */
+const ptNum = (u: number): number => Math.round(u) / 100
+
+/** 현재 그리는 페이지의 전역 1-based 번호 */
+function pageNo(ctx: Ctx): number { return ctx.pageBase + ctx.page + 1 }
+
+/** HWPUNIT 사각형 → 페이지 로컬 pt bbox. 페이지 하단을 넘는 높이는 잘라 기록(분할 지오메트리 없음) */
+function bboxOf(ctx: Ctx, x: number, y: number, w: number, h: number): PageBBox {
+  const clippedH = Math.max(0, Math.min(h, ctx.pageH - y))
+  return { page: pageNo(ctx), x: ptNum(x), y: ptNum(y), width: ptNum(Math.max(0, w)), height: ptNum(clippedH) }
+}
+
+function regionOpenTag(id: string, type: string, page: number): string {
+  return `<g data-kordoc-id="${id}" data-kordoc-type="${type}" data-kordoc-page="${page}">`
+}
+
+function parentId(ctx: Ctx): string | undefined {
+  return ctx.parentStack.length ? ctx.parentStack[ctx.parentStack.length - 1] : undefined
+}
 
 function emit(ctx: Ctx, s: string): void {
   ctx.pages[ctx.page].push(s)
@@ -312,10 +342,26 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
   const plans = planLines(m, ctx.styles)
   const baseV = m.segs[0].vertpos
 
+  // 문단 region — 실문자가 있는 문단만. 줄(lineseg) 영역의 페이지별 합집합, 페이지가 바뀌면 조각을 나눈다.
+  // SVG 는 페이지 버퍼별로 <g data-kordoc-*> 래퍼를 열고 닫는다(개체는 별도 region, parentId=문단).
+  const hasText = m.chars.some(c => c.ch !== "" && c.ch.trim() !== "")
+  let paraRegionId: string | null = null
+  let gOpenOn = -1
+
   for (let li = 0; li < plans.length; li++) {
     const plan = plans[li]
     if (segPages && segPages[li] !== undefined) ctx.page = segPages[li]
     const { seg } = plan
+    if (hasText) {
+      const lineBox = bboxOf(ctx, ox + seg.horzpos, oy + seg.vertpos, seg.horzsize, seg.textheight)
+      if (paraRegionId === null) paraRegionId = ctx.regions.add("paragraph", lineBox, { parentId: parentId(ctx) })
+      else ctx.regions.addFragment(paraRegionId, lineBox)
+      if (gOpenOn !== ctx.page) {
+        if (gOpenOn >= 0) ctx.pages[gOpenOn].push("</g>")
+        emit(ctx, regionOpenTag(paraRegionId, "paragraph", pageNo(ctx)))
+        gOpenOn = ctx.page
+      }
+    }
     // charPr 단위 조각으로 분할
     let i = plan.start
     let cursor = ox + seg.horzpos + plan.xoff
@@ -404,8 +450,10 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
       i = j
     }
   }
+  if (gOpenOn >= 0) ctx.pages[gOpenOn].push("</g>")
 
-  // 개체 배치 — 인라인은 소속 줄 위치, 앵커는 hp:pos 해석
+  // 개체 배치 — 인라인은 소속 줄 위치, 앵커는 hp:pos 해석. 개체 region 의 부모는 문단(없으면 상위)
+  if (paraRegionId) ctx.parentStack.push(paraRegionId)
   for (const o of m.objs) {
     if (o.inline) {
       let planIdx = 0
@@ -427,6 +475,7 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
       drawObject(o, x, y, baseV, areaW, ctx, depth)
     }
   }
+  if (paraRegionId) ctx.parentStack.pop()
 }
 
 /** hp:pos 기준계 해석 → 개체 좌상단 절대좌표 (tac=0) */
@@ -531,6 +580,11 @@ function drawShape(o: ParaObj, x: number, y: number, ctx: Ctx, depth: number): v
   const fill = face && face.toLowerCase() !== "none" ? face : "none"
   const fillAttr = ` fill="${fill === "none" ? "none" : escapeXml(fill)}"`
 
+  ctx.stats.shapes++
+  const shapeId = ctx.regions.add("shape", bboxOf(ctx, x, y, w, h), { parentId: parentId(ctx) })
+  emit(ctx, regionOpenTag(shapeId, "shape", pageNo(ctx)))
+  ctx.parentStack.push(shapeId)
+
   if (o.tag === "rect") {
     emit(ctx, `<rect x="${pt(x)}" y="${pt(y)}" width="${pt(w)}" height="${pt(h)}"${fillAttr}${strokeAttr}/>`)
   } else if (o.tag === "ellipse") {
@@ -555,6 +609,8 @@ function drawShape(o: ParaObj, x: number, y: number, ctx: Ctx, depth: number): v
   if (sub) {
     for (const p of elements(sub)) if (ln(p) === "p") drawPara(p, x, y, w, ctx, depth + 1)
   }
+  ctx.parentStack.pop()
+  emit(ctx, "</g>")
 }
 
 // ─── 표 ───────────────────────────────────────────
@@ -682,6 +738,14 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
   const rowY: number[] = [0]
   for (let r = 0; r < nRows; r++) rowY.push(rowY[r] + rowH[r])
 
+  // 표 region — 페이지에 걸친 표는 시작 페이지에서 잘려 그려지므로(조판 캐시에 분할점 없음) 시작 페이지
+  // 조각만 기록하고 경고한다. sourceId = hp:tbl id (IR 표와의 조인 키, #76)
+  const tblH = rowY[nRows]
+  if (ty + tblH > ctx.pageH + 100) warnOnce(ctx, "table-split", "페이지에 걸친 표 — 분할 지오메트리가 없어 시작 페이지 영역만 region 으로 기록")
+  const tblId = ctx.regions.add("table", bboxOf(ctx, tx, ty, colX[nCols], tblH), { sourceId: tbl.getAttribute("id") ?? undefined, parentId: parentId(ctx) })
+  emit(ctx, regionOpenTag(tblId, "table", pageNo(ctx)))
+  ctx.parentStack.push(tblId)
+
   // 1패스: 배경 → 2패스: 콘텐츠 → 3패스: 테두리 (테두리가 배경/콘텐츠 위)
   const geom = cells.map(c => ({
     c,
@@ -715,6 +779,8 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
     if (bf.left) emit(ctx, edgeLine(g.x, g.y, g.x, g.y + g.h, bf.left))
     if (bf.right) emit(ctx, edgeLine(g.x + g.w, g.y, g.x + g.w, g.y + g.h, bf.right))
   }
+  ctx.parentStack.pop()
+  emit(ctx, "</g>")
 }
 
 // ─── 이미지 ───────────────────────────────────────
@@ -742,9 +808,12 @@ function drawPic(pic: Element, x: number, y: number, ctx: Ctx): void {
   const img = findFirst(pic, "img")
   const ref = img?.getAttribute("binaryItemIDRef")
   const loaded = ref != null ? ctx.images.get(ref) : undefined
+  const imgId = ctx.regions.add("image", bboxOf(ctx, x, y, w, h), { sourceId: ref ?? undefined, parentId: parentId(ctx) })
+  emit(ctx, regionOpenTag(imgId, "image", pageNo(ctx)))
   if (!loaded) {
     emit(ctx, `<rect x="${pt(x)}" y="${pt(y)}" width="${pt(w)}" height="${pt(h)}" fill="#eee" stroke="#c00" stroke-width="0.5"/>`)
     warnOnce(ctx, `img:${ref}`, `이미지 바이너리 누락: ${ref ?? "(ref 없음)"}`)
+    emit(ctx, "</g>")
     return
   }
   ctx.stats.images++
@@ -772,6 +841,7 @@ function drawPic(pic: Element, x: number, y: number, ctx: Ctx): void {
   } else {
     emit(ctx, `<use href="#${symId}" x="${pt(x)}" y="${pt(y)}" width="${pt(w)}" height="${pt(h)}"/>`)
   }
+  emit(ctx, "</g>")
 }
 
 function sniffMime(name: string, bytes: Uint8Array): string {
@@ -814,7 +884,7 @@ interface RenderedSection { pages: string[][]; PW: number; pageH: number; clipId
 function renderSectionToPages(
   root: Element,
   geom: PageGeom,
-  ctxBase: Omit<Ctx, "pages" | "page" | "geom">,
+  ctxBase: Omit<Ctx, "pages" | "page" | "geom" | "pageH">,
   doReflow: boolean,
   reflowMode: WrapMode,
 ): { pages: string[][]; pageH: number } {
@@ -864,29 +934,39 @@ function renderSectionToPages(
     }
   }
 
+  // 리셋이 없는데 본문이 페이지를 넘는 파일(누적 vertpos 기록본) 방어 —
+  // 한 페이지로 두되 캔버스만 내용 끝까지 늘려 잘림을 막는다. (region 클램프에 쓰므로 그리기 전에 확정)
+  const pageH = nPages === 1 ? Math.max(PH, MT + maxTopV + 2000) : PH
   const ctx: Ctx = {
     ...ctxBase,
     pages: Array.from({ length: nPages }, () => []),
     page: 0,
     geom,
+    pageH,
   }
   for (const p of elements(root)) {
     if (ln(p) !== "p") continue
     drawPara(p, ML, MT, BODY_W, ctx, 0, paraSegPages.get(p))
   }
-
-  // 리셋이 없는데 본문이 페이지를 넘는 파일(누적 vertpos 기록본) 방어 —
-  // 한 페이지로 두되 캔버스만 내용 끝까지 늘려 잘림을 막는다.
-  const pageH = nPages === 1 ? Math.max(PH, MT + maxTopV + 2000) : PH
   return { pages: ctx.pages, pageH }
 }
 
+/** 내부 렌더 산출 — 구역별 페이지 버퍼 + 공유 defs·region. 세로 스택/페이지별 SVG 조립의 공통 입력 */
+interface InternalRender {
+  sections: RenderedSection[]
+  defs: string[]
+  warnings: string[]
+  stats: Ctx["stats"]
+  regions: RenderRegion[]
+}
+
+const SVG_FONT_FAMILY = `'HCR Batang','함초롬바탕','Hancom Batang',AppleMyungjo,'Noto Serif CJK KR',serif`
+
 /**
- * HWPX(한컴 저장본) → 레이아웃 보존 SVG. **전 구역(section*)을 세로 스택으로** 렌더한다.
- * 조판 캐시(linesegarray)가 없는 구역은 reflow 옵션으로 합성 조판(없으면 그 구역 생략);
- * 렌더 가능한 구역이 하나도 없으면 KordocError.
+ * HWPX(한컴 저장본) → 구역별 페이지 버퍼. 조판 캐시(linesegarray)가 없는 구역은 reflow 옵션으로
+ * 합성 조판(없으면 그 구역 생략); 렌더 가능한 구역이 하나도 없으면 KordocError.
  */
-export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?: RenderSvgOptions): Promise<RenderSvgResult> {
+async function renderHwpxInternal(input: ArrayBuffer | Uint8Array, options?: RenderSvgOptions): Promise<InternalRender> {
   const maxImg = options?.maxImageBytes ?? 40 * 1024 * 1024
   // 압축폭탄 가드 — 파서 진입점과 동일하게 압축해제 전 central directory 선언 크기를 검사한다.
   // 렌더 이미지 캡은 f.async 로 엔트리를 전량 압축해제한 뒤에야 크기를 보므로, 단일 BinData
@@ -963,12 +1043,13 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
     images.set(ref, { dataUri: `data:${sniffMime(href, bytes)};base64,${Buffer.from(bytes).toString("base64")}` })
   }
 
-  // 전 구역 공유 컨텍스트 자원 (이미지 심볼 defs·통계·경고를 누적)
-  const ctxBase: Omit<Ctx, "pages" | "page" | "geom"> = {
+  // 전 구역 공유 컨텍스트 자원 (이미지 심볼 defs·통계·경고·region 을 누적)
+  const ctxBase: Omit<Ctx, "pages" | "page" | "geom" | "pageH"> = {
     styles, images, defs: [],
     highlights: (options?.highlights ?? []).map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
-    warnings, warned: new Set(), stats: { texts: 0, images: 0, tables: 0 },
+    warnings, warned: new Set(), stats: { texts: 0, images: 0, tables: 0, shapes: 0 },
     extentMemo: { cell: new WeakMap(), table: new WeakMap() },
+    regions: new RegionCollector(), parentStack: [], pageBase: 0,
   }
 
   // 구역별 렌더
@@ -990,6 +1071,7 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
     const geom = readSectionGeom(root)
     const { pages, pageH } = renderSectionToPages(root, geom, ctxBase, !!options?.reflow, options?.reflowMode ?? "keep")
     rendered.push({ pages, PW: geom.PW, pageH, clipId: `pgclip${si}` })
+    ctxBase.pageBase += pages.length
   }
 
   if (rendered.length === 0) {
@@ -998,7 +1080,16 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
     }
     throw new KordocError("렌더할 구역이 없습니다 — HWPX가 손상되었을 수 있습니다")
   }
+  return { sections: rendered, defs: ctxBase.defs, warnings, stats: ctxBase.stats, regions: ctxBase.regions.regions }
+}
 
+/**
+ * HWPX(한컴 저장본) → 레이아웃 보존 SVG. **전 구역(section*)을 세로 스택으로** 렌더한다.
+ * 조판 캐시(linesegarray)가 없는 구역은 reflow 옵션으로 합성 조판(없으면 그 구역 생략);
+ * 렌더 가능한 구역이 하나도 없으면 KordocError.
+ */
+export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?: RenderSvgOptions): Promise<RenderSvgResult> {
+  const r = await renderHwpxInternal(input, options)
   // 전 구역 페이지를 세로 스택으로 조립 (구역마다 page 크기 상이 가능 → 구역별 clip)
   const GAP = 2400 // 페이지 사이 시각 간격 (24pt)
   const clipDefs: string[] = []
@@ -1006,7 +1097,7 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
   let y = 0
   let maxPW = 0
   let pageNo = 0
-  for (const rs of rendered) {
+  for (const rs of r.sections) {
     maxPW = Math.max(maxPW, rs.PW)
     clipDefs.push(`<clipPath id="${rs.clipId}"><rect x="0" y="0" width="${pt(rs.PW)}" height="${pt(rs.pageH)}"/></clipPath>`)
     for (const buf of rs.pages) {
@@ -1022,8 +1113,51 @@ export async function renderHwpxToSvg(input: ArrayBuffer | Uint8Array, options?:
   const totalH = Math.max(0, y - GAP)
 
   // width/height는 pt 단위 명시 — 단위 없는 px로 두면 A4 실물(96dpi 기준)보다 25% 작게 보인다 (v3.10.1)
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${pt(maxPW)} ${pt(totalH)}" width="${pt(maxPW)}pt" height="${pt(totalH)}pt" font-family="'HCR Batang','함초롬바탕','Hancom Batang',AppleMyungjo,'Noto Serif CJK KR',serif" xml:space="preserve">\n` +
-    `<defs>${clipDefs.join("")}${ctxBase.defs.join("")}</defs>\n` +
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${pt(maxPW)} ${pt(totalH)}" width="${pt(maxPW)}pt" height="${pt(totalH)}pt" font-family="${SVG_FONT_FAMILY}" xml:space="preserve">\n` +
+    `<defs>${clipDefs.join("")}${r.defs.join("")}</defs>\n` +
     `${groups.join("\n")}\n</svg>`
-  return { svg, width: Math.round(maxPW) / 100, height: Math.round(totalH) / 100, pageCount: pageNo, warnings, stats: ctxBase.stats }
+  return { svg, width: Math.round(maxPW) / 100, height: Math.round(totalH) / 100, pageCount: pageNo, warnings: r.warnings, stats: r.stats, regions: r.regions }
+}
+
+/** 페이지별 독립 SVG 산출 — RenderScene 과 선택 페이지의 standalone SVG (#75 Task 3) */
+export interface HwpxPagesResult {
+  scene: RenderScene
+  /** 페이지 번호(1-based) → standalone SVG. 선택된 페이지만 조립 */
+  pageSvgs: Map<number, string>
+}
+
+/**
+ * HWPX → 페이지별 독립 SVG. `select` 가 있으면 그 페이지만 조립한다(그리기 자체는 전 페이지 —
+ * 조립·래스터가 비싼 단계). 페이지 SVG 는 페이지 로컬 좌표(세로 스택 오프셋 없음), 사용된 이미지 심볼만 defs 에 싣는다.
+ */
+export async function renderHwpxPages(
+  input: ArrayBuffer | Uint8Array,
+  options?: RenderSvgOptions,
+  select?: Set<number> | ((pageCount: number) => Set<number>),
+): Promise<HwpxPagesResult> {
+  const r = await renderHwpxInternal(input, options)
+  const pages: RenderScene["pages"] = []
+  const pageSvgs = new Map<number, string>()
+  const pageCount = r.sections.reduce((n, rs) => n + rs.pages.length, 0)
+  const chosen = typeof select === "function" ? select(pageCount) : select
+  let pageNo = 0
+  for (const rs of r.sections) {
+    for (const buf of rs.pages) {
+      pageNo++
+      pages.push({ page: pageNo, width: ptNum(rs.PW), height: ptNum(rs.pageH) })
+      if (chosen && !chosen.has(pageNo)) continue
+      const body = buf.join("\n")
+      const used = new Set<string>()
+      for (const m of body.matchAll(/href="#(bin\d+)"/g)) used.add(m[1])
+      const defs = r.defs.filter(d => { const m = /<symbol id="(bin\d+)"/.exec(d); return m ? used.has(m[1]) : true })
+      const clipId = `pgclip${pageNo}`
+      pageSvgs.set(pageNo,
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${pt(rs.PW)} ${pt(rs.pageH)}" width="${pt(rs.PW)}pt" height="${pt(rs.pageH)}pt" font-family="${SVG_FONT_FAMILY}" xml:space="preserve" data-page="${pageNo}">\n` +
+        `<defs><clipPath id="${clipId}"><rect x="0" y="0" width="${pt(rs.PW)}" height="${pt(rs.pageH)}"/></clipPath>${defs.join("")}</defs>\n` +
+        `<rect width="${pt(rs.PW)}" height="${pt(rs.pageH)}" fill="white"/>\n` +
+        `<g clip-path="url(#${clipId})">\n${body}\n</g>\n</svg>`)
+    }
+  }
+  const scene: RenderScene = { format: "hwpx", pages, regions: r.regions, warnings: r.warnings, stats: { texts: r.stats.texts, tables: r.stats.tables, images: r.stats.images, shapes: r.stats.shapes } }
+  return { scene, pageSvgs }
 }
