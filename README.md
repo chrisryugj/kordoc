@@ -29,7 +29,7 @@ npx -y kordoc setup
 1. 사용 중인 AI 클라이언트 번호 선택 (Claude Desktop / Cursor / Claude Code / Windsurf / VS Code / Gemini CLI / Zed / Antigravity / Codex — 설치된 건 `[감지됨]` 표시)
 2. 설정 파일 자동 패치 → 클라이언트 재시작
 
-Windows 도 자동으로 `cmd /c npx` 래핑. 수동 JSON 편집 불필요. 재시작하면 15개 문서 도구 (`parse_document`, `parse_table`, `fill_form`, `patch_document`, `generate_document` 등) 활성화.
+Windows 도 자동으로 `cmd /c npx` 래핑. 수동 JSON 편집 불필요. 재시작하면 17개 문서 도구 (`parse_document`, `parse_table`, `fill_form`, `patch_document`, `generate_document` 등) 활성화.
 
 > **CLI 로만 쓸 거면** 설치 없이 `npx kordoc <파일>` 바로 사용. 아래 [CLI](#cli) 섹션 참고.
 
