@@ -1,0 +1,31 @@
+name: Mirror to GitLab
+
+# 정부 GitLab(gitlab.aigov.go.kr)은 push 마다 보안스캔(Gitleaks·Semgrep·OSV·Trivy)을
+# 돌리고 하나라도 걸리면 push 전체를 거부한다. 옛 태그는 옛 lockfile 을 가리켜
+# 다시 통과할 수 없으므로 이벤트가 가리키는 ref 하나만 민다.
+on:
+  push:
+    branches: [main]
+    tags: ['**']
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-gitlab-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push ${{ github.ref }} to gitlab.aigov.go.kr
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          REPO: ${{ github.event.repository.name }}
+          REF: ${{ github.ref }}
+        run: |
+          git push "https://oauth2:${GITLAB_TOKEN}@gitlab.aigov.go.kr/chrisryugj/${REPO}.git" \
+            "${GITHUB_SHA}:${REF}"
