@@ -178,7 +178,10 @@ async function htmlToPdf(html: string, options?: PrintOptions): Promise<Buffer> 
 
   try {
     const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: "networkidle0" })
+    // puppeteer 25 부터 setContent 의 waitUntil 에서 networkidle0 이 빠짐. 같은 의미
+    // (연결 0개가 500ms 유지)를 waitForNetworkIdle 로.
+    await page.setContent(html, { waitUntil: "load" })
+    await page.waitForNetworkIdle({ idleTime: 500, concurrency: 0 })
 
     const margin = options?.margin
     const pdf = await page.pdf({

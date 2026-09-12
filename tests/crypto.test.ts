@@ -12,7 +12,7 @@ import { decryptViewText, _MsvcLcg, _decryptDistributePayload, _extractAesKey } 
 describe("aes128EcbDecrypt", () => {
   it("NIST 테스트 벡터 — AES-128 ECB", () => {
     // NIST FIPS-197 Appendix B: AES-128 테스트 벡터
-    // Key: 2b7e151628aed2a6abf7158809cf4f3c
+    // Key: 2b7e151628aed2a6abf7158809cf4f3c (gitleaks:allow, NIST 공개 테스트 벡터)
     // Plaintext: 3243f6a8885a308d313198a2e0370734
     // Ciphertext: 3925841d02dc09fbdc118597196a0b32
     const key = Buffer.from("2b7e151628aed2a6abf7158809cf4f3c", "hex")
