@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.13.2] - 2026-09-14
+
+### Fixed
+
+- **한 쪽을 넘는 표가 쪽 경계에서 나뉘지 않고 잘리던 것** (`src/hwpx/gen-table.ts`): 생성 표는 글자처럼 취급
+  (`treatAsChar="1"`)이었고, 한글은 글자처럼 취급 표를 한 줄의 글자로 보아 `pageBreak="CELL"`이어도 나누지 않는다 —
+  표 전체가 다음 쪽으로 넘어가 앞 쪽이 비고, 한 쪽보다 큰 표는 하단이 쪽 밖으로 잘렸다(한글 2024 COM 실렌더. 한컴
+  저장본 표를 90행으로 부풀려도 동일하고, `pageBreak`·`textWrap`·`flowWithText`·행높이·헤더 반복·호스트 줄간격은 모두
+  무관, `treatAsChar="0"`으로만 셀 단위 분할과 헤더 반복이 동작). 2행 이상 최상위 표(GFM·HTML 경로)를 부유
+  앵커(`treatAsChar="0"` + `textWrap="TOP_AND_BOTTOM"` + PARA/COLUMN, 실측 모드는 `horzAlign="RIGHT"`)로 바꿨다.
+  1행 표(밴드 박스·제목 박스)와 중첩표는 나눌 일이 없어 글자처럼 취급 유지. 확산계획서형 15행·30행 표가 한글에서
+  10쪽으로 정상 분할·헤더 반복되는 것을 확인. 부유 표는 본문이 표 바닥에 바로 붙고 다음 문단의 '문단 위' 간격도
+  흡수되므로(띠 제목이 괘선에 밀착) 아래 여백 `outMargin bottom`을 한 줄 피치(글자높이×1.6)로 둔다.
+- **렌더: 셀 성장 표(부유)가 뒤 문단과 겹침** (`src/render/svg-render.ts`): 부유 개체의 밀어내기 역산이 선언 `hp:sz`
+  높이를 써서, reflow 가 실효높이로 민 만큼 표가 아래로 내려가 뒤 문단 위에 겹쳤다 — 인라인 표와 같은 실효높이 사용.
+
 ## [4.13.1] - 2026-09-06
 
 #75 후속: HWP5(.hwp) 레이아웃 렌더. v4.13.0 의 렌더 통합 계층(RenderScene)이 HWPX 만 받던 것을 HWP5 어댑터로 넓혔다.

@@ -67,6 +67,35 @@ let curFace: import("./text-metrics.js").FaceClass = "hcr"
 /** 실측 데이터 표 폭 여유 — GT6 46194·GT7 46372·GT11 46544 ≈ 본문폭 −1800 */
 export const DATA_TABLE_INSET = 1800
 
+/**
+ * 표 `<hp:pos>` — 2행 이상 최상위 표는 부유(treatAsChar=0, 자리차지)로 앵커한다.
+ *
+ * 한글은 글자처럼 취급(treatAsChar=1) 표를 한 줄의 글자로 보아 `pageBreak="CELL"`이어도
+ * 쪽 경계에서 나누지 않는다 — 표 전체가 다음 쪽으로 넘어가 앞 쪽이 비고, 한 쪽을 넘는
+ * 표는 하단이 잘린다 (한글 2024 COM 실렌더: 한컴 저장본 표를 부풀려도 동일, treatAsChar=0
+ * 으로만 셀 단위 분할·헤더 반복이 동작). 1행 표(밴드 박스 등)와 중첩표는 나눌 일이 없어
+ * 글자처럼 취급을 유지한다. 부유 표의 좌우 정렬은 호스트 문단 정렬 대신 horzAlign이 맡는다.
+ */
+function tablePosXml(float: boolean, right: boolean): string {
+  return float
+    ? `<hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="${right ? "RIGHT" : "LEFT"}" vertOffset="0" horzOffset="0"/>`
+    : `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="0" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
+}
+
+/**
+ * 표 `<hp:outMargin>` — 부유 표는 아래 여백을 한 줄 피치(글자높이×1.6)로 둔다.
+ * 글자처럼 취급일 때는 호스트 문단의 줄 leading이 표 아래 간격이 됐지만, 부유 표는 본문이
+ * 표 바닥에 바로 붙고 다음 문단의 '문단 위' 간격도 호스트 문단 기준이라 흡수된다
+ * (한글 2024 실렌더: 띠 제목·ㅇ 항목이 표 괘선에 밀착). 실측 2000HU(7mm) 전후가 자연스러움.
+ */
+function tableOutMarginXml(float: boolean, charHeight: number): string {
+  const bottom = float ? Math.round(charHeight * 1.6) : 0
+  return `<hp:outMargin left="0" right="0" top="0" bottom="${bottom}"/>`
+}
+
+/** 부유 표의 `<hp:tbl>` 배치 속성 — 자리차지(TOP_AND_BOTTOM)라 본문이 표 옆으로 흐르지 않는다 */
+const FLOAT_TBL_ATTRS = ` textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None"`
+
 // ─── 서식 프로필 매칭 헬퍼 (#41) ─────────────────────
 
 /** 마크다운 셀 → 매칭 앵커. 이미지 참조는 원본 XML 텍스트에 없으므로 제거 후 정규화. */
@@ -366,18 +395,21 @@ export function generateTable(rows: string[][], theme: ResolvedTheme, style: Gon
   const tblW = colWidths.reduce((a, b) => a + b, 0)
   const tblH = rowHeights.reduce((a, b) => a + b, 0)
 
-  // <hp:tbl>에 필수 속성 + <hp:sz>/<hp:outMargin>/<hp:inMargin> (pos는 inline-level 기준)
+  // 실측 모드: 데이터 표 호스트 문단 RIGHT (실측: GT6/GT7/GT11 관행, TBL-09)
+  const hostPr = reg && style?.rightParaPr !== undefined ? style.rightParaPr : 0
+  // 2행 이상은 부유 앵커 — 한글이 쪽 경계에서 나눌 수 있도록 (tablePosXml 참조)
+  const float = rowCnt >= 2
+
+  // <hp:tbl>에 필수 속성 + <hp:sz>/<hp:outMargin>/<hp:inMargin>
   const tblInner = `<hp:sz width="${tblW}" widthRelTo="ABSOLUTE" height="${tblH}" heightRelTo="ABSOLUTE" protect="0"/>`
-    + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="0" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
-    + `<hp:outMargin left="0" right="0" top="0" bottom="0"/>`
+    + tablePosXml(float, hostPr !== 0)
+    + tableOutMarginXml(float, measureH)
     + `<hp:inMargin left="510" right="510" top="141" bottom="141"/>`
     + trElements
 
   // 공문서: 쪽 넘어가면 헤더행 반복 (repeatHeader)
-  const tbl = `<hp:tbl id="${tblId}" zOrder="0" numberingType="TABLE" pageBreak="CELL" repeatHeader="${style ? 1 : 0}" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="2" noShading="0">${tblInner}</hp:tbl>`
+  const tbl = `<hp:tbl id="${tblId}" zOrder="0" numberingType="TABLE"${float ? FLOAT_TBL_ATTRS : ""} pageBreak="CELL" repeatHeader="${style ? 1 : 0}" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="2" noShading="0">${tblInner}</hp:tbl>`
 
-  // 실측 모드: 데이터 표 호스트 문단 RIGHT (실측: GT6/GT7/GT11 관행, TBL-09)
-  const hostPr = reg && style?.rightParaPr !== undefined ? style.rightParaPr : 0
   return `<hp:p paraPrIDRef="${hostPr}" styleIDRef="0"><hp:run charPrIDRef="0">${tbl}</hp:run></hp:p>`
 }
 
@@ -447,7 +479,7 @@ function unescapeHtml(s: string): string {
  * subList 안에 재귀 생성한다. 파싱 불가면 null (호출부가 문단 폴백).
  * @param totalWidth 표 전체 폭(HWPUNIT) — 중첩표는 부모 셀폭에 맞춰 축소
  */
-export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, totalWidth: number = 44000, style: GongmunTableStyle | null = null, remap: ProfileRemap | null = null, seq = 0, images: ImageRegistry | null = null): string | null {
+export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, totalWidth: number = 44000, style: GongmunTableStyle | null = null, remap: ProfileRemap | null = null, seq = 0, images: ImageRegistry | null = null, nested = false): string | null {
   const rows = parseHtmlTable(rawHtml)
   if (!rows || rows.length === 0) return null
   const { placed, rowCnt, colCnt } = layoutHtmlRows(rows)
@@ -516,7 +548,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
       // 넘으면 셀 경계를 침범하므로 상한(셀폭 − 마진 282)에 양보한다 (v4.0.5 P1-3)
       const sw = spanW(cell)
       const nestedW = Math.max(Math.min(Math.max(sw - 1020, 4000), sw - 282), 500)
-      const nestedXml = generateHtmlTableXml(nested, theme, nestedW, style ? { ...style, totalWidth: nestedW } : null)
+      const nestedXml = generateHtmlTableXml(nested, theme, nestedW, style ? { ...style, totalWidth: nestedW } : null, null, 0, null, true)
       if (nestedXml) {
         // 재귀가 확정한 실높이(hp:sz — 셀 성장·줄바꿈 반영)를 재사용. 행수×cellH 추정은
         // 중첩 셀이 접히면(긴 텍스트 wrap) 과소해 호스트 행이 중첩표를 못 담았다 (v4.0.4)
@@ -613,11 +645,14 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   }
 
   const tableH = tableRowHeights.reduce((sum, height) => sum + height, 0)
+  // 2행 이상 최상위 표는 부유 앵커 (tablePosXml 참조) — 호스트 문단은 호출자가 감싸며
+  // 실측 모드(bfRegistry)에서 우측정렬이라 horzAlign도 같이 맞춘다
+  const float = !nested && rowCnt >= 2
 
-  return `<hp:tbl id="${tblId}" zOrder="0" numberingType="TABLE" pageBreak="CELL" repeatHeader="${style ? 1 : 0}" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="2" noShading="0">`
+  return `<hp:tbl id="${tblId}" zOrder="0" numberingType="TABLE"${float ? FLOAT_TBL_ATTRS : ""} pageBreak="CELL" repeatHeader="${style ? 1 : 0}" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="2" noShading="0">`
     + `<hp:sz width="${tblW}" widthRelTo="ABSOLUTE" height="${tableH}" heightRelTo="ABSOLUTE" protect="0"/>`
-    + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="0" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
-    + `<hp:outMargin left="0" right="0" top="0" bottom="0"/>`
+    + tablePosXml(float, !!reg && style?.rightParaPr !== undefined)
+    + tableOutMarginXml(float, measureH)
     + `<hp:inMargin left="510" right="510" top="141" bottom="141"/>`
     + trXmls.join("")
     + `</hp:tbl>`

@@ -484,7 +484,9 @@ function anchorObject(o: ParaObj, ox: number, oy: number, baseV: number, areaW: 
   const pos = findChildByLocalName(o.el, "pos")
   const om = findChildByLocalName(o.el, "outMargin")
   const omT = num(om, "top"), omB = num(om, "bottom")
-  const w = o.width, h = o.height
+  // 표는 셀 콘텐츠 성장으로 선언 sz보다 커질 수 있다 — reflow가 실효높이로 밀어낸 만큼
+  // 되돌려야 표가 뒤 문단 위에 겹치지 않는다 (한컴 저장본은 sz가 실높이라 차이 없음)
+  const w = o.width, h = o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el, ctx.extentMemo)) : o.height
   if (!pos) return { x: ox, y: oy + baseV }
   const vo = num(pos, "vertOffset")
   const ho = num(pos, "horzOffset")

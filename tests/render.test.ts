@@ -191,6 +191,10 @@ describe("render: reflow 인라인 표 나란히 배치 (결재란 겹침)", () 
     const zip = await JSZip.loadAsync(hwpx)
     const secName = Object.keys(zip.files).find(n => /section0\.xml$/.test(n))!
     let sec = await zip.file(secName)!.async("string")
+    // 생성기는 2행 이상 표를 부유(treatAsChar=0)로 앵커한다 — 이 테스트는 인라인 표의
+    // 가로 전진을 검증하므로 결재란처럼 글자처럼 취급으로 되돌린다
+    sec = sec.replace(/ textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None"/g, "")
+      .replace(/treatAsChar="0"/g, 'treatAsChar="1"')
     // 두 번째 표를 첫 표의 호스트 문단으로 이동 (연속 인라인 개체)
     const starts = [...sec.matchAll(/<hp:tbl /g)].map(m => m.index!)
     assert.equal(starts.length, 2, "재현 전제: 표 2개 생성")
