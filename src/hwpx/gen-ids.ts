@@ -265,7 +265,7 @@ export type BorderSide = [string, string] | [string, string, string]
 export function borderFillEntry(
   id: number,
   b: { l?: BorderSide; r?: BorderSide; t?: BorderSide; b?: BorderSide },
-  fill?: string | { gradient: [string, string] },
+  fill?: string | { gradient: string[]; type?: "LINEAR" | "RADIAL"; angle?: number },
 ): string {
   const side = (name: string, v?: BorderSide) =>
     v
@@ -275,7 +275,11 @@ export function borderFillEntry(
   if (typeof fill === "string") {
     brush = `\n        <hc:fillBrush><hc:winBrush faceColor="${fill}" hatchColor="#000000" alpha="0"/></hc:fillBrush>`
   } else if (fill) {
-    brush = `\n        <hc:fillBrush><hc:gradation type="RADIAL" angle="0" centerX="0" centerY="0" step="50" colorNum="2" stepCenter="50" alpha="0"><hc:color value="${fill.gradient[0]}"/><hc:color value="${fill.gradient[1]}"/></hc:gradation></hc:fillBrush>`
+    // LINEAR angle 90 = 위→아래(업무보고 장 띠 #D6EAFE→#FFFFFF). 2색만 — colorNum 3 은 한글 2024 COM 실렌더에서
+    // 셀이 검게 칠해진다(2026-09-15 A/B: 3색·step 255 ✗, 2색·step 50 ✓)
+    const type = fill.type ?? "RADIAL"
+    const colors = fill.gradient.slice(0, 2).map((c) => `<hc:color value="${c}"/>`).join("")
+    brush = `\n        <hc:fillBrush><hc:gradation type="${type}" angle="${fill.angle ?? 0}" centerX="0" centerY="0" step="50" colorNum="2" stepCenter="50" alpha="0">${colors}</hc:gradation></hc:fillBrush>`
   }
   return `      <hh:borderFill id="${id}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">
         <hh:slash type="NONE" Crooked="0" isCounter="0"/>

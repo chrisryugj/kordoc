@@ -7,7 +7,7 @@
  * 순서 = id 순서로 일괄 붙인다. 시작 id는 호출자가 정적 블록 크기에서 넘긴다.
  */
 
-import { charPr as charPrXml, paraPr as paraPrXml } from "./gen-ids.js"
+import { charPr as charPrXml, paraPr as paraPrXml, CHAR_NORMAL, CHAR_BOLD, CHAR_ITALIC, CHAR_BOLD_ITALIC } from "./gen-ids.js"
 
 export interface CharSpec {
   font: string
@@ -93,4 +93,21 @@ export class StyleRegistry {
   get paraPrXmls(): string[] { return this.paraXmls }
   /** append 글꼴(정적 목록 제외) — fontBase부터 순서대로 */
   get extraFonts(): string[] { return this.fontList }
+}
+
+/**
+ * 인라인 **굵게**·*기울임* → 레지스트리 변형 매핑 — md-runs 가 정적 id(CHAR_BOLD…)로 낸 run 을
+ * 문단 기본 스펙(글꼴·크기·장평·자간)의 변형으로 바꾼다. emphasisColor 를 주면 굵게가 그 색이 된다
+ * (업무보고 항목 띠: 강조 = 파랑, 굵기는 글꼴이 이미 굵어 그대로).
+ */
+export function inlineMapper(reg: StyleRegistry, base: { font: string; pt: number; bold: boolean; ratio?: number; spacing?: number; color?: string }, emphasisColor?: string): (id: number) => number {
+  const norm = reg.char({ font: base.font, pt: base.pt, bold: base.bold, ratio: base.ratio, spacing: base.spacing, color: base.color })
+  const emColor = emphasisColor ?? base.color
+  return (id) => {
+    if (id === CHAR_BOLD) return reg.char({ font: base.font, pt: base.pt, bold: true, ratio: base.ratio, spacing: base.spacing, color: emColor })
+    if (id === CHAR_ITALIC) return reg.char({ font: base.font, pt: base.pt, bold: base.bold, italic: true, ratio: base.ratio, spacing: base.spacing, color: base.color })
+    if (id === CHAR_BOLD_ITALIC) return reg.char({ font: base.font, pt: base.pt, bold: true, italic: true, ratio: base.ratio, spacing: base.spacing, color: emColor })
+    if (id === CHAR_NORMAL) return norm
+    return id
+  }
 }

@@ -98,6 +98,8 @@ export interface GongmunSurfaceInput {
   docInfo?: NonNullable<GongmunOptions["docInfo"]>
   /** 표지 부서명 (v5 — cover와 함께) */
   dept?: string
+  /** 표지 우상단 취급 표시 — "대외주의" 등 (업무보고 프리셋, cover와 함께) */
+  coverLabel?: string
 }
 
 /**
@@ -116,8 +118,11 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.lineSpacing !== undefined) g.lineSpacing = input.lineSpacing
   if (input.cover === false) {
     g.cover = false
-  } else if (input.org || input.date || input.dept) {
-    g.cover = { ...(input.org ? { org: input.org } : {}), ...(input.date ? { date: input.date } : {}), ...(input.dept ? { dept: input.dept } : {}) }
+  } else if (input.org || input.date || input.dept || input.coverLabel) {
+    g.cover = {
+      ...(input.org ? { org: input.org } : {}), ...(input.date ? { date: input.date } : {}),
+      ...(input.dept ? { dept: input.dept } : {}), ...(input.coverLabel ? { label: input.coverLabel } : {}),
+    }
   } else if (input.cover === true) {
     g.cover = true
   }

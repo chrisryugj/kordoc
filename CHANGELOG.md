@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.14.0] - 2026-09-15
+
+### Added
+
+- **중앙부처 업무보고 프리셋 `ministry`(별칭 업무보고·부처업무보고·중앙부처보고서)** (`src/hwpx/gen-frame-ministry.ts`,
+  `gongmun-scheme.ts ministryScheme`, `outline.ts`, `gen-gongmun.ts`): 재정경제부 「2차 업무보고 서면보고자료」(2026-07-15, 17쪽)
+  PDF 를 글꼴·크기·색·도형 좌표까지 전수 실측해 만든 국회 서면보고형 골격 — `# 제목`=표지(대외주의 빨강 박스 `--cover-label`,
+  파란 바 #0C3DCA·#0A33A9 두 줄, HY헤드라인M 32, 날짜 24), 목차 박스(Ⅰ. 17 / 1. 15, 쪽 82% 높이), `##`=Ⅰ. 장 띠(세로 그라데이션
+  #D6EAFE→흰 + 파랑 이중선, 장마다 새 쪽), `###`=파란 숫자칸(#3057B9) + 밑줄 제목 절 띠, `####`=남색(#203A7B) 소제목 박스,
+  `#####`=① 하늘색 항목 띠(#E8F7FC, 상하 #00ACFF, HY중고딕 15), `> ▪ …`=연노랑(#FFF7CC) 성과 요약박스(위치 무관, `*` 줄은 맑은 고딕 11
+  각주), `## 별첨 …`=별첨 띠(#0066FF). 본문은 함초롬바탕 15 전 단계 동일·145%·ㅇ 1타·- 3타·문단 뒤 6pt, `* 각주` 맑은 고딕 12,
+  표 맑은 고딕 12 헤더 #DFE6F7. **□·❶ 뒤 `(키워드)`·`[키워드]` 는 파랑(#0000FF) bold, ㅇ 뒤는 검정 bold** — 원본이 색으로 위계를
+  내는 관행. ❶~❿·➊~➓·⇒·↳·☞ 선두 글리프는 그대로 보존. 여백 위·아래 10 + 머리말·꼬리말 10mm(본문 시작 20mm), 좌우 20,
+  쪽번호 "- 1 -"(표지·목차 숨김). 한글 2024 COM 실렌더 7쪽으로 원본과 대조 확인. 실측표는 `docs/gongmunseo-engine-spec.md` (j)장.
+- **`cover.label` / `--cover-label` / MCP `cover_label`**: 표지 우상단 취급 표시("대외주의"·"비공개") — 빨간 0.12mm 테두리 박스.
+- **아웃라인 옵션** `headingFrames`(h3~h6 을 항목이 아닌 heading 노드로, 리스트 깊이 불간섭 — 부호 없는 `-` 리스트는 직전 명시 부호
+  항목의 한 단계 아래에서 시작), `quoteBox`(인용문 어디서나 요약박스), `keepMarkers`(❶⇒↳ 보존). 다른 프리셋은 켜지 않아 산출물 불변.
+- **표 셀 테두리 스펙에 색·굵기 직접 지정** (`gen-table-bf.ts` `EdgeKind | BorderSide`) — 파랑 이중선·하늘색 0.4mm 같은 색 띠 표.
+  gradation 은 `type: "LINEAR", angle` 지정 가능.
+
+### Changed
+
+- **gradation 은 2색으로 고정** (`gen-ids.ts borderFillEntry`): 3색(`colorNum="3"`)은 한글 2024 COM 실렌더에서 셀이 검게 칠해진다
+  (A/B 4종 실측). 색을 2개로 자르고 `step="50"` 방출. 종전 RADIAL 2색 제목박스 바는 바이트 동일.
+- 문체 검수(`munche-lint.ts`): 줄마다 부호(▪□ㅇ-*※)로 시작하는 인용문은 리드문이 아니라 성과 요약 박스 — LEAD_ENDING·LEAD_LONG 밖.
+- `inlineMapper`(**굵게** → 레지스트리 변형)를 `style-registry.ts` 로 옮기고 `emphasisColor`(굵게의 색) 인자 추가. `gen-frame-seoul.ts`
+  의 `ftbl`·`host` 골격 헬퍼를 export.
+
 ## [4.13.2] - 2026-09-14
 
 ### Fixed

@@ -130,6 +130,53 @@ export function seoulGaejosikScheme(bodyPt = 15, lineSp = 180, bullet2: "ㅇ" | 
   }
 }
 
+/**
+ * 중앙부처 업무보고 스킴 — 재경부 「2차 업무보고 서면보고자료」(2026-07-15, 17쪽) PDF 전수 실측
+ * (docs/gongmunseo-engine-spec.md (j)장):
+ *   □·ㅇ·- 함초롬바탕 15 regular(강조만 bold, □ 뒤 괄호 키워드 bold #0000FF) · 줄피치 21.7pt ≈ 145%
+ *   ㅇ 1타(둘째 줄 x86.6 = 30pt) · - 3타(둘째 줄 x95.5) · * 각주 맑은 고딕 12 · 표 맑은 고딕 12/11.5 헤더 #DFE6F7
+ *   장 띠 HY헤드라인M 16 · 절 숫자칸/소제목 박스 HY헤드라인M 15 · ① 항목 띠 HY중고딕 15(원본 HaanYGodic24)
+ *   요약박스 #FFF7CC 함초롬바탕 13 · 표지 HY헤드라인M 32 / 날짜 24
+ * 서울 개조식(HY견고딕 17 bold □)과 달리 부호 단계의 글꼴·크기가 전부 같고 색으로 위계를 낸다.
+ */
+export const MINISTRY_FRAME: FrameSpec = {
+  font: "함초롬바탕",
+  titleFont: "HY헤드라인M", titlePt: 32,
+  contactFont: "함초롬바탕", contactPt: 12,
+  summaryFont: "함초롬바탕", summaryPt: 13, summaryFill: "#FFF7CC",
+}
+
+export function ministryScheme(bodyPt = 15, lineSp = 145): Scheme {
+  const d = bodyPt - 15
+  const lv = (font: string, pt: number, bold: boolean, leadTa: number, extra: Partial<LevelStyle> = {}): LevelStyle =>
+    ({ font, pt: pt + d, bold, leadTa, ...extra })
+  return {
+    kind: "gaejosik",
+    lineSp,
+    body: lv("함초롬바탕", 15, false, 0),
+    levels: [
+      // □ 는 한 줄 강제 안 함 — 실측 □ 문장의 절반이 두 줄(pg3·pg6). 앞 빈 줄은 스킴 공통 로직(BOX_BLANK_HU)
+      lv("함초롬바탕", 15, false, 0, { keepWithNext: true, blankBefore: true }),
+      lv("함초롬바탕", 15, false, 1),
+      lv("함초롬바탕", 15, false, 3),
+      lv("함초롬바탕", 15, false, 4),
+      lv("함초롬바탕", 15, false, 5),
+      lv("함초롬바탕", 15, false, 6),
+      lv("함초롬바탕", 15, false, 7),
+      lv("함초롬바탕", 15, false, 8),
+    ],
+    // * 각주 — 맑은 고딕 12(n=124), 선두 4칸 공백 ≈ ㅇ 본문 시작(x80)에 맞춘다
+    ref: lv("맑은 고딕", 12, false, 3),
+    sub: lv("함초롬바탕", 15, false, 2),
+    attach: lv("함초롬바탕", 15, false, 0),
+    chapter: lv("HY헤드라인M", 16, false, 0, { oneLine: true, keepWithNext: true }),
+    marker: (depth) => (depth === 0 ? "□" : depth === 1 ? "ㅇ" : depth === 2 ? "-" : "ㆍ"),
+    table: { font: "맑은 고딕", pt: 12 + d, headerFill: "#DFE6F7", labelFill: "#F2F2F2" },
+    frame: MINISTRY_FRAME,
+    blankBetweenTop: false,
+  }
+}
+
 /** 서울 실측 법정형(기안문 본문) 스킴 — 전 단계 본문 글꼴·크기 동일, 2타 계단 */
 export function seoulLegalScheme(bodyFont = "굴림체", bodyPt = 12, lineSp = 160): Scheme {
   const lv = (leadTa: number, extra: Partial<LevelStyle> = {}): LevelStyle => ({ font: bodyFont, pt: bodyPt, bold: false, leadTa, ...extra })
@@ -182,6 +229,9 @@ export function levelGeometry(style: LevelStyle, marker: string): { left: number
 
 /** 스킴 선택 — 옵션·프리셋·본문 부호 자동감지 */
 export function pickScheme(g: ResolvedGongmun, bodyHasBoxMarkers: boolean): Scheme {
+  if (g.preset === "ministry") {
+    return applySchemeOverrides(ministryScheme(g.bodyPtExplicit ? g.bodyHeight / 100 : 15, g.lineSpacingExplicit ? g.lineSpacing : 145), g)
+  }
   const gaejosik = g.numbering !== "standard" || bodyHasBoxMarkers
   const base = gaejosik
     ? seoulGaejosikScheme(g.bodyPtExplicit ? g.bodyHeight / 100 : 15, g.lineSpacingExplicit ? g.lineSpacing : 180, g.bullet2)

@@ -86,12 +86,13 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/gen-header.ts` | container/manifest/head.xml 생성 |
 | `src/hwpx/gen-table.ts` | GFM/HTML(병합) 표 XML 생성 — 내용 비례 열폭(짧은 열 실폭 고정) + 열 역할 `colRoles`(공문서 모드: 비고·근거·마지막 보조 열 25% 상한, 내용류 열 가중 ×2·LEFT) + 실측 정부 표 문법(헤더 음영·bold·하변 이중선, 외곽 0.4mm 위계, 라벨열, 셀 CENTER 130%/LEFT, 축폭+우측 배치) |
 | `src/hwpx/gen-table-bf.ts` | 표 셀 위치별 borderFill 동적 레지스트리 — 외곽 0.4/내부 0.12/헤더 DOUBLE_SLIM 조합 dedupe 발급, header.xml에 일괄 방출 |
-| `src/hwpx/gen-gongmun.ts` | **v5 공문서 엔진**(2026-09-06) — 기안문·보고서·계획서·통지·회의록 전담. outline → scheme → 문단 XML, 두문표·결문표·제목표·요약박스 골격, □·제목 한 줄 강제, 표 셀 12→10pt 자동 축소. 개조식·보도자료·범용은 gen-section 유지 (docs/gongmunseo-engine-spec.md (i)장) |
+| `src/hwpx/gen-gongmun.ts` | **v5 공문서 엔진**(2026-09-06) — 기안문·보고서·계획서·통지·회의록·업무보고(ministry) 전담. outline → scheme → 문단 XML, 두문표·결문표·제목표·요약박스 골격, □·제목 한 줄 강제, 표 셀 12→10pt 자동 축소. 개조식·보도자료·범용은 gen-section 유지 (docs/gongmunseo-engine-spec.md (i)장) |
 | `src/hwpx/outline.ts` | 마크다운 블록 → 의미 아웃라인 — #/##/###·리스트 깊이·명시 부호(□ㅇ-※1.가.)를 하나의 depth로 정규화 (입력 형태 무관 동일 결과) |
 | `src/hwpx/gongmun-scheme.ts` | 위계 스킴 SSOT — 서울 실결재 629건 실측(reference 2.8): 법정형 굴림 12/2타 계단, 개조식형 □ HY견고딕 17b·ㅇ 한컴돋움 15b 1타·- 휴먼명조 14 3타·※ 한컴돋움 14, 표 한컴돋움 12 #DFE6F7 |
 | `src/hwpx/style-registry.ts` | charPr/paraPr/글꼴 동적 발급(dedupe) — 손계산 id 파티션 제거. 정적 블록(charPr 0~16·paraPr 0~7·글꼴 3종) 뒤에 이어붙임 |
 | `src/hwpx/fit-line.ts` | 한 줄 강제 — 장평→자간→pt 축소 (실측 96/95·-4/-5 관행), 넘치면 warning. 고아 줄 자간 축소는 글자 단위 시뮬레이션 |
 | `src/hwpx/gen-frame-seoul.ts` | 서울 실결재 골격표 — 두문표(6행, 기관명 굴림 20b 자간띄움), 결문표(48열 격자 위 colSpan — 행마다 임의 폭 주면 한컴이 뒤틀림), 보고서 제목표·요약박스·결재선·표지. 열폭은 실측 비율 스케일 + 내용 폭 |
+| `src/hwpx/gen-frame-ministry.ts` | **중앙부처 업무보고 골격**(v4.14.0, preset `ministry`/업무보고) — 재경부 2차 업무보고 PDF 전수 실측: 표지(대외주의 박스·파란 바 2줄·HY헤드라인M 32)·목차 박스·장 띠(그라데이션 2색+파랑 이중선, 장마다 새 쪽)·절 숫자칸(#3057B9)·소제목 박스(#203A7B)·① 항목 띠(#E8F7FC/#00ACFF)·연노랑 요약박스(#FFF7CC)·별첨 띠(#0066FF). `ministryRuns` 가 선두 (키워드)·[키워드]를 파랑 bold 런으로. 스킴은 `ministryScheme`(함초롬바탕 15 전 단계 동일·145%·각주 맑은 고딕 12), 아웃라인은 `headingFrames`·`quoteBox`·`keepMarkers` 옵션 (docs/gongmunseo-engine-spec.md (j)장) |
 | `src/hwpx/gen-gongmun-extra.ts` | 공문서 부속 요소 — 결재란(2×N 서명 표)·"끝." 표시·1페이지형 제목박스(색상바+gradient) |
 | `src/hwpx/font-catalog.ts` | 폰트 카탈로그 — fonts 오버라이드 오타·미설치 경고(`unknownFontWarnings`), 생성은 진행 |
 | `src/hwpx/gen-gongmun-fit.ts` | 공문 자동장평 계획 + 리스트 항목부호 선계산 |

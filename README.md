@@ -89,6 +89,11 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.14.0 변경사항
+
+- **🏛️ 중앙부처 업무보고 프리셋 `업무보고`**: 재정경제부 「2차 업무보고 서면보고자료」(2026. 7. 15., 17쪽)를 글꼴·크기·색·도형 좌표까지 전수 실측해 국회 서면보고형 골격을 그대로 냅니다 — 표지(대외주의 박스 `--cover-label`, 파란 바 두 줄), 목차 박스, `##` Ⅰ. 장 띠(그라데이션+파랑 이중선, 장마다 새 쪽), `###` 파란 숫자칸 절, `####` 남색 소제목 박스, `#####` ① 하늘색 항목 띠, `> ▪ …` 연노랑 성과 요약박스, `## 별첨 …` 별첨 띠. 본문 함초롬바탕 15·각주 맑은 고딕 12·표 맑은 고딕 12, **□ 뒤 `(키워드)`·`[키워드]` 는 파랑 굵게**(ㅇ 뒤는 검정 굵게), ❶⇒↳ 부호 보존. `kordoc generate 보고.md --preset 업무보고 --date "2026. 7. 15." --cover-label 대외주의`. 한글 COM 실렌더로 원본과 대조했습니다.
+- **🎨 표 셀 테두리에 색·굵기 직접 지정**(파랑 이중선·하늘색 0.4mm 등)과 LINEAR 그라데이션 — 3색 그라데이션은 한글에서 검게 칠해져 2색으로 고정.
+
 ## v4.13.1 변경사항
 
 - **🖼️ HWP(5.x)도 조판 그대로 렌더**: `kordoc render 문서.hwp --format png -d ./pages`, `renderDocument("문서.hwp", …)`, MCP `render_document`·`crop_regions` 가 `.hwp` 를 받습니다. 한컴이 저장한 HWP5 의 조판 캐시(줄 좌표·셀 격자·개체 앵커)를 HWPX 와 같은 렌더러로 그리므로, 같은 문서를 hwp/hwpx 로 각각 저장한 10쌍에서 페이지 수·표 위치·괘선 굵기가 HWPX 렌더와 일치합니다. 표 영역 id 는 문서 순번(`t1`, `t2`…)이고 파서 결과의 `sourceId` 와 같아 `kordoc tables 문서.hwp --visual all -d ./tables` 도 HWP 에서 조직도 crop 까지 됩니다. 머리말·꼬리말·수식은 HWPX 와 같이 미렌더.
@@ -835,7 +840,7 @@ const withEquation = await markdownToHwpx("피타고라스\n\n$$a^2 + b^2 = c^2$
 
 // 공문서 모드 — 항목부호 8단계 + 내어쓰기 + 공식 여백/명조 자동
 const gongmun = await markdownToHwpx("1. 추진배경\n  - 세부 항목\n2. 추진계획", {
-  gongmun: { preset: "보고서" },  // official | report | plan | notice | minutes | gaejosik | press
+  gongmun: { preset: "보고서" },  // official | report | plan | notice | minutes | gaejosik | press | ministry(업무보고)
 })
 
 // 정부 표준 개조식 보고서 (v4.0) — 표지·목차(장식 배너)·로마숫자 장헤더·

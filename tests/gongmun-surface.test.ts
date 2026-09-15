@@ -50,11 +50,11 @@ describe("값 집합 상수 — 드리프트 잠금", () => {
     assert.deepEqual([...H2_MARKERS], ["band", "roman", "box", "number", "none"])
     assert.deepEqual([...BULLET2_CHARS], ["ㅇ", "○"])
   })
-  it("PRESET_ALIAS 전 별칭이 내부 7프리셋으로 해석된다 (MCP preset enum 파생원)", () => {
+  it("PRESET_ALIAS 전 별칭이 내부 8프리셋으로 해석된다 (MCP preset enum 파생원)", () => {
     const presets = new Set(Object.values(PRESET_ALIAS))
-    assert.equal(presets.size, 7)
-    // MCP zod에 빠져 있던 별칭(v4.0.4에서 PRESET_ALIAS 파생으로 회복)
-    for (const alias of ["시행문", "공문", "공문서", "계획", "알림", "안내"]) {
+    assert.equal(presets.size, 8)
+    // MCP zod에 빠져 있던 별칭(v4.0.4에서 PRESET_ALIAS 파생으로 회복) + 업무보고(v4.14.0)
+    for (const alias of ["시행문", "공문", "공문서", "계획", "알림", "안내", "업무보고", "부처업무보고", "중앙부처보고서"]) {
       assert.ok(PRESET_ALIAS[alias], `별칭 누락: ${alias}`)
     }
   })

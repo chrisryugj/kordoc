@@ -16,8 +16,8 @@ const DOUBLE: BorderSide = ["0.5 mm", "#000000", "DOUBLE_SLIM"]
 /** 0.15mm 중간선 — 서울 보고서 제목표 제목/담당자 행 경계 실측 */
 const MID: BorderSide = ["0.15 mm", "#000000"]
 
-/** 셀 한 변의 선 종류 */
-export type EdgeKind = "thin" | "thick" | "double" | "mid" | "none"
+/** 셀 한 변의 선 종류 — 이름 있는 위계 또는 직접 지정([굵기, 색, 선종류], 색 띠 표용) */
+export type EdgeKind = "thin" | "thick" | "double" | "mid" | "none" | BorderSide
 
 /** 셀 테두리+채움 스펙 — 위치별 조합 키로 dedupe */
 export interface CellBfSpec {
@@ -25,14 +25,21 @@ export interface CellBfSpec {
   b: EdgeKind
   l: EdgeKind
   r: EdgeKind
-  /** 단색 채움(#RRGGBB) 또는 gradient 2색 */
-  fill?: string | { gradient: [string, string] }
+  /** 단색 채움(#RRGGBB) 또는 gradient(기본 RADIAL 2색 — LINEAR·다색은 type/angle 지정) */
+  fill?: string | GradientFill
 }
 
-const EDGE: Record<Exclude<EdgeKind, "none">, BorderSide> = { thin: THIN, thick: THICK, double: DOUBLE, mid: MID }
+export type GradientFill = { gradient: string[]; type?: "LINEAR" | "RADIAL"; angle?: number }
+
+const EDGE: Record<Exclude<EdgeKind, "none" | BorderSide>, BorderSide> = { thin: THIN, thick: THICK, double: DOUBLE, mid: MID }
 
 function sideOf(kind: EdgeKind): BorderSide | undefined {
+  if (Array.isArray(kind)) return kind
   return kind === "none" ? undefined : EDGE[kind]
+}
+
+function edgeKey(kind: EdgeKind): string {
+  return Array.isArray(kind) ? kind.join("/") : kind
 }
 
 /**
@@ -45,7 +52,8 @@ export class TableBfRegistry {
   constructor(private nextId: number) {}
 
   get(spec: CellBfSpec): number {
-    const key = `${spec.t}|${spec.b}|${spec.l}|${spec.r}|${typeof spec.fill === "string" ? spec.fill : spec.fill ? spec.fill.gradient.join("-") : ""}`
+    const fillKey = typeof spec.fill === "string" ? spec.fill : spec.fill ? `${spec.fill.type ?? "RADIAL"}@${spec.fill.angle ?? 0}:${spec.fill.gradient.join("-")}` : ""
+    const key = `${edgeKey(spec.t)}|${edgeKey(spec.b)}|${edgeKey(spec.l)}|${edgeKey(spec.r)}|${fillKey}`
     const hit = this.map.get(key)
     if (hit !== undefined) return hit
     const id = this.nextId++

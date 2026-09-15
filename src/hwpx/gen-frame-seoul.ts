@@ -34,8 +34,8 @@ interface FrameCtx {
   W: number
 }
 
-/** 골격표 — treatAsChar, 셀 여백 실측(140), outMargin 좌우 0 */
-function ftbl(rows: string[], w: number, h: number, cols: number, opts: { bottomGap?: number; bf?: number } = {}): string {
+/** 골격표 — treatAsChar, 셀 여백 실측(140), outMargin 좌우 0 (gen-frame-ministry 도 같은 골격을 쓴다) */
+export function ftbl(rows: string[], w: number, h: number, cols: number, opts: { bottomGap?: number; bf?: number } = {}): string {
   return `<hp:tbl id="${++frameTableId}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="${rows.length}" colCnt="${cols}" cellSpacing="0" borderFillIDRef="${opts.bf ?? BF_NONE}" noAdjust="1">`
     + `<hp:sz width="${w}" widthRelTo="ABSOLUTE" height="${h}" heightRelTo="ABSOLUTE" protect="0"/>`
     + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
@@ -45,7 +45,7 @@ function ftbl(rows: string[], w: number, h: number, cols: number, opts: { bottom
     + `</hp:tbl>`
 }
 
-function host(tableXml: string, paraPrId: number, charPrId: number, extra = ""): string {
+export function host(tableXml: string, paraPrId: number, charPrId: number, extra = ""): string {
   return `<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"${extra}><hp:run charPrIDRef="${charPrId}">${tableXml}</hp:run></hp:p>`
 }
 

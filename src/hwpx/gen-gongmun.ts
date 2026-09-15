@@ -1,8 +1,9 @@
 /**
  * 공문서 생성 엔진 v5 — 아웃라인(outline.ts) + 위계 스킴(gongmun-scheme.ts) → section0.xml.
  *
- * 담당 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes).
+ * 담당 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·업무보고(ministry).
  * (개조식 gaejosik = 중앙부처 표지·목차 양식, 보도자료 press, 범용 마크다운은 gen-section.ts)
+ * 업무보고(ministry)는 재경부 실측 골격(gen-frame-ministry.ts) — 장 띠·절 띠·소제목 박스·항목 띠·요약박스·별첨 띠.
  *
  * 원칙
  *   - 입력 형태(#/##/-/□/1.)와 무관하게 아웃라인 depth 하나로 정규화하고 스킴이 부호·글꼴을 정한다.
@@ -15,7 +16,7 @@ import { type MdBlock, generateParagraph } from "./md-runs.js"
 import { type ResolvedGongmun, GongmunNumberer, computeSuppression, mmToHwpunit } from "./gongmun.js"
 import { type Scheme, type LevelStyle, pickScheme, levelGeometry, taHu } from "./gongmun-scheme.js"
 import { buildOutline, type Outline, type OutlineNode } from "./outline.js"
-import { StyleRegistry } from "./style-registry.js"
+import { StyleRegistry, inlineMapper } from "./style-registry.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
 import { fitOneLine, fitOrphanLine } from "./fit-line.js"
 import { faceClassForGen } from "./text-metrics.js"
@@ -27,7 +28,7 @@ import { type ChartPart, generateSecPr } from "./gen-section.js"
 import { generateEquationParagraph } from "./equation-generate.js"
 import { parseChartFence, buildChartSpaceXml, buildChartElementXml } from "./chart-gen.js"
 import { CHART_TABLE_ID_BASE, A4_W_HU } from "./geometry.js"
-import { CHAR_NORMAL, CHAR_BOLD, CHAR_ITALIC, CHAR_BOLD_ITALIC, PARA_CODE, CHAR_CODE, NS_SECTION, NS_PARA, escapeXml, newPageNumCtrl } from "./gen-ids.js"
+import { PARA_CODE, CHAR_CODE, NS_SECTION, NS_PARA, escapeXml, newPageNumCtrl, pageHidingCtrl } from "./gen-ids.js"
 import { hasEndMark } from "./gen-gongmun-extra.js"
 import { buildNoticeHead, buildNoticeFoot, isInternalApproval } from "./gen-docframe.js"
 import {
@@ -35,8 +36,13 @@ import {
   buildApprovalSeoul, buildReportCover, splitTitleName, resetFrameTableIds, buildChapterBand, CHAPTER_BAND_DEFAULT,
 } from "./gen-frame-seoul.js"
 import { formatGaejosikDate } from "./gaejosik.js"
+import {
+  buildMinistryCover, buildMinistryToc, buildMinistryChapterBand, buildMinistrySectionBand, buildMinistrySubheadBox,
+  buildMinistryItemBand, buildMinistrySummaryBox, buildMinistryAttachBand, isAttachHeading, ministryRuns, romanOf, MINISTRY,
+  type MinistryTocChapter,
+} from "./gen-frame-ministry.js"
 
-export const V5_PRESETS = new Set(["official", "report", "plan", "notice", "minutes"])
+export const V5_PRESETS = new Set(["official", "report", "plan", "notice", "minutes", "ministry"])
 export function usesV5Engine(preset: string): boolean { return V5_PRESETS.has(preset) }
 
 export interface GongmunEngineDeps {
@@ -60,18 +66,6 @@ export function chapterLabel(index: number, style: "roman" | "number"): string {
   return style === "roman" ? `${ROMAN[(index - 1) % 12]}.` : `${index}.`
 }
 
-/** 인라인 **굵게**·*기울임* → 레지스트리 변형 매핑 */
-function inlineMapper(reg: StyleRegistry, base: { font: string; pt: number; bold: boolean; ratio?: number; spacing?: number }): (id: number) => number {
-  const norm = reg.char({ font: base.font, pt: base.pt, bold: base.bold, ratio: base.ratio, spacing: base.spacing })
-  return (id) => {
-    if (id === CHAR_BOLD) return reg.char({ font: base.font, pt: base.pt, bold: true, ratio: base.ratio, spacing: base.spacing })
-    if (id === CHAR_ITALIC) return reg.char({ font: base.font, pt: base.pt, bold: base.bold, italic: true, ratio: base.ratio, spacing: base.spacing })
-    if (id === CHAR_BOLD_ITALIC) return reg.char({ font: base.font, pt: base.pt, bold: true, italic: true, ratio: base.ratio, spacing: base.spacing })
-    if (id === CHAR_NORMAL) return norm
-    return id
-  }
-}
-
 /** 렌더 텍스트(강조 문법 제거) — 폭 계산용 */
 function plain(text: string): string {
   return text.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/!\[[^\]]*\]\([^)]*\)/g, "")
@@ -84,9 +78,12 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   const g = gongmun
   const preset = g.preset
   const isReport = preset === "report" || preset === "plan"
+  const isMinistry = preset === "ministry"
   const W = mmToHwpunit(210 - g.margins.left - g.margins.right)
-  // 1차 아웃라인(스킴 미정) — 본문 □ 부호 자동감지용
-  const pre = buildOutline(blocks, { gaejosik: true, consumeTitle: true, summaryFromQuote: isReport })
+  // 1차 아웃라인(스킴 미정) — 본문 □ 부호 자동감지용. 업무보고는 h3~h6 을 서식 틀로, 인용문은 어디서나 요약박스로
+  const pre = buildOutline(blocks, isMinistry
+    ? { gaejosik: true, consumeTitle: true, summaryFromQuote: true, quoteBox: true, headingFrames: true, keepMarkers: true }
+    : { gaejosik: true, consumeTitle: true, summaryFromQuote: isReport })
   const scheme = pickScheme(g, pre.hasBoxMarkers)
   const gaejosik = scheme.kind === "gaejosik"
   const outline: Outline = gaejosik ? pre : buildOutline(blocks, { gaejosik: false, consumeTitle: true, summaryFromQuote: false })
@@ -129,6 +126,29 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     else if (outline.title) paras.push(generateParagraph(outline.title, reg.para({ align: "CENTER", lineSp: scheme.lineSp, after: lineHu(scheme.body) }), reg.char({ font: scheme.body.font, pt: scheme.body.pt + 2, bold: true }), undefined, 1))
     if (g.reportInfo) paras.push(generateParagraph(g.reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
     if (g.approval) paras.push(buildApprovalSeoul(g.approval, null, frame))
+  } else if (isMinistry) {
+    // 표지 → 목차 → 첫 장 띠(쪽번호 1). 표지·목차는 쪽번호 숨김
+    if (g.cover) {
+      const cover = buildMinistryCover({ title: docTitle, date: g.cover.date ?? formatGaejosikDate(new Date()), org: g.cover.org || undefined, label: g.cover.label }, frame)
+      if (g.pageNumbers) cover[0] = cover[0].replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${pageHidingCtrl()}`)
+      paras.push(...cover)
+      pendingPageBreak = true
+    }
+    if (g.toc && outline.chapters > 0) {
+      const tocChapters: MinistryTocChapter[] = []
+      for (const n of outline.nodes) {
+        if (n.kind === "chapter") tocChapters.push({ title: plain(n.text), subs: [], attach: isAttachHeading(n.text) })
+        else if (n.kind === "heading" && n.level === 3 && tocChapters.length) tocChapters[tocChapters.length - 1].subs.push(plain(n.text))
+      }
+      const toc = buildMinistryToc(tocChapters, frame)
+      if (g.pageNumbers) toc[0] = toc[0].replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${pageHidingCtrl()}`)
+      paras.push(...toc)
+      pendingPageBreak = true
+    }
+    if (!g.cover && !g.toc && docTitle) {
+      paras.push(generateParagraph(docTitle, reg.para({ align: "CENTER", lineSp: scheme.lineSp, after: lineHu(scheme.body) }), reg.char({ font: scheme.frame.titleFont, pt: 20 }), undefined, 1))
+      frontKind = "title"
+    }
   } else if (isReport) {
     if (g.cover) {
       paras.push(...buildReportCover({
@@ -175,6 +195,10 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   /** 다음 노드 — □ 의 keepWithNext 는 다음이 하위 항목·※ 일 때만. □→□→□→표 사슬이 이어지면 표가 안 들어갈 때 장 전체가 다음 쪽으로 밀린다(실렌더) */
   let nextNode: OutlineNode | undefined
   let tableSeq = 0
+  /** 업무보고 서식 틀 번호 — 절(장마다 리셋)·소제목(절마다)·항목 띠(소제목마다) */
+  let sectionSeq = 0, subheadSeq = 0, itemBandSeq = 0
+  /** 업무보고 첫 본문 문단에 쪽번호 1 리셋 */
+  let pendingNewPageNum = isMinistry && (!!g.cover || !!g.toc)
   let chapterStyle: "band" | "roman" | "number" | "box" | "none" = g.h2Marker === "box" || g.h2Marker === "number" || g.h2Marker === "none" || g.h2Marker === "band" ? g.h2Marker : "roman"
   if (!gaejosik) chapterStyle = "number" // 기안문 본문의 h2는 1. 항목이 된다 (아래 chapter 분기)
 
@@ -219,19 +243,28 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     // 라운드 1의 어절유지+양쪽정렬(실측 1.2%)은 긴 어절이 통째로 다음 줄로 밀려 앞 줄 어절 간격이 벌어졌다
     // (실렌더 확인, 2026-09-06). 라틴·숫자 토큰은 breakLatinWord=KEEP_WORD 로 계속 통째 유지.
     const keepNext = !!st.keepWithNext && !!nextNode && ((nextNode.kind === "item" && nextNode.depth > depth) || nextNode.kind === "ref")
+    if (isMinistry) {
+      // 실측: 문단 뒤 6~7pt(줄피치 21.7 → 문단 간 27.6~29). ❶⇒↳ 선두 글리프는 그대로, (키워드)는 □·❶ 파랑 bold / ㅇ 이하 검정 bold
+      const mk = node.marker ?? marker
+      const g2 = node.marker ? levelGeometry(st, mk) : geom2
+      const paraId = reg.para({ align: "JUSTIFY", left: g2.left, indent: g2.indent, before, after: 600, lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: keepNext, keepWord: false })
+      const runs = ministryRuns(mk, node.text, frame, base, depth === 0 ? MINISTRY.blue : null)
+      return `<hp:p paraPrIDRef="${paraId}" styleIDRef="${styleId}">${runs}</hp:p>`
+    }
     const paraId = reg.para({ align: "JUSTIFY", left: geom2.left, indent: geom2.indent, before, lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: keepNext, keepWord: false })
     return generateParagraph(text, paraId, reg.char(base), inlineMapper(reg, base), styleId)
   }
 
   const renderRef = (node: Extract<OutlineNode, { kind: "ref" }>): string => {
     const st = scheme.ref
-    const marker = "※"
-    const left = leadLeft(node.depth, st.pt)
+    // 업무보고 각주는 * (실측 맑은 고딕 12, 선두 4칸) — ※ 는 원문에 없다
+    const marker = isMinistry ? "*" : "※"
+    const left = isMinistry ? st.leadTa * taHu(st.pt) : leadLeft(node.depth, st.pt)
     const geom = levelGeometry({ ...st, leadTa: 0 }, marker)
     const base = { font: st.font, pt: st.pt, bold: st.bold }
     const f = fitOrphanLine(plain(`${marker} ${node.text}`), st.font, st.pt, W - left, W - left + geom.indent)
     const baseF = f ? { ...base, ratio: f.ratio, spacing: f.spacing } : base
-    const paraId = reg.para({ align: "JUSTIFY", left, indent: geom.indent, lineSp: st.lineSp ?? scheme.lineSp, keepWord: false })
+    const paraId = reg.para({ align: "JUSTIFY", left, indent: geom.indent, after: isMinistry ? 400 : 0, lineSp: isMinistry ? 130 : st.lineSp ?? scheme.lineSp, keepWord: false })
     return generateParagraph(`${marker} ${node.text}`, paraId, reg.char(baseF), inlineMapper(reg, baseF))
   }
 
@@ -256,6 +289,19 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
 
   const renderChapter = (node: Extract<OutlineNode, { kind: "chapter" }>): string => {
     const st = scheme.chapter
+    if (isMinistry) {
+      sectionSeq = 0; subheadSeq = 0; itemBandSeq = 0
+      // 실측: 장(Ⅰ·Ⅱ·Ⅲ)·별첨은 전부 새 쪽 첫머리 — 첫 장 외엔 쪽 나눔
+      const first = prevKind === "start" || prevKind === "title"
+      const xml = isAttachHeading(node.text)
+        ? buildMinistryAttachBand(node.text, frame, 0)
+        : (() => {
+          const band = buildMinistryChapterBand(romanOf(node.index), node.text, frame, 0)
+          if (band.overflow) warnings.push(`장 제목이 띠 한 줄에 담기지 않아 축소했습니다 — 제목을 줄이세요: "${node.text.slice(0, 30)}…"`)
+          return band.xml
+        })()
+      return first ? xml : xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `)
+    }
     if (chapterStyle === "band") {
       // 요약박스 직후엔 반 줄(붙지 않게), 본문 뒤엔 실측 빈 줄보다 조금 넉넉히(20pt)
       const before = prevKind === "start" || prevKind === "title" ? 0 : prevKind === "summary" ? BOX_GAP_AFTER_BAND : BAND_BEFORE_HU
@@ -335,9 +381,20 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     switch (node.kind) {
       case "title": break
       case "summary":
+        if (isMinistry) { xml = buildMinistrySummaryBox(node.text, frame); break }
         if (isReport && !g.summary) { pushSummary(node.text); prevKind = node.kind; return }
         xml = renderRef({ kind: "ref", depth: 0, text: node.text })
         break
+      case "heading": {
+        // 업무보고 서식 틀 — h3 절 띠(숫자칸) / h4 소제목 박스 / h5+ 항목 띠 ①. 다른 프리셋은 outline 이 heading 을 내지 않는다
+        const before = prevKind === "chapter" || prevKind === "heading" || prevKind === "start" ? 0 : BAND_BEFORE_HU
+        if (node.level <= 3) { subheadSeq = 0; itemBandSeq = 0; xml = buildMinistrySectionBand(++sectionSeq, node.text, frame, before) }
+        else if (node.level === 4) { itemBandSeq = 0; xml = buildMinistrySubheadBox(++subheadSeq, node.text, frame, before) }
+        else xml = buildMinistryItemBand(++itemBandSeq, node.text, frame, before)
+        lastItemFromHeading = true
+        lastTextNode = node
+        break
+      }
       case "chapter":
         lastItemFromHeading = true
         if (!gaejosik) {
@@ -359,6 +416,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     prevAttach = node.kind === "attach"
     if (!xml) return
     if (pendingPageBreak) { xml = xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `); pendingPageBreak = false }
+    if (pendingNewPageNum) { xml = xml.replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`); pendingNewPageNum = false }
     paras.push(xml)
     prevKind = node.kind
     if (node.kind === "item") prevItemDepth = node.depth

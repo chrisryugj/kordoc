@@ -16,7 +16,7 @@ import { hangulOrdinal, circledNumber, circledHangul } from "../shared/numbering
 
 // ─── 옵션 타입 ──────────────────────────────────────
 
-export type GongmunPreset = "official" | "report" | "plan" | "notice" | "minutes" | "gaejosik" | "press"
+export type GongmunPreset = "official" | "report" | "plan" | "notice" | "minutes" | "gaejosik" | "press" | "ministry"
 export type GongmunNumbering = "standard" | "report" | "gaejosik"
 export type GongmunFont = "myeongjo" | "gothic"
 
@@ -30,6 +30,7 @@ export type GongmunPresetInput =
   | "회의록"
   | "개조식" | "개조식보고서" | "정부보고서" | "정부표준개조식보고서"
   | "보도자료"
+  | "업무보고" | "부처업무보고" | "중앙부처보고서"
 
 /** 항목부호 단계 하나의 타이포 — 셋 다 선택(미지정=본문 계열 유지) */
 export interface GongmunLevelStyle {
@@ -61,10 +62,11 @@ export interface GongmunOptions {
   /** 항목부호 체계. 'standard'=법정 8단계(1. 가. 1) …) / 'report'=보고서 불릿(□ ○ - ㆍ) / 'gaejosik'=개조식(□ ○ - ㆍ + 부호별 폰트) */
   numbering?: GongmunNumbering
   /**
-   * 표지 페이지(개조식 프리셋 기본 켜짐) — 첫 h1을 제목으로, 파랑 장식 바 + 날짜 + 기관명.
+   * 표지 페이지(개조식·업무보고 프리셋 기본 켜짐) — 첫 h1을 제목으로, 파랑 장식 바 + 날짜 + 기관명.
    * false로 끄거나 {date, org}로 날짜(기본 오늘, 'YYYY. M. D.')·기관명(기본 생략) 지정.
+   * label = 표지 우상단 취급 표시("대외주의"·"비공개" — 업무보고 프리셋, 빨간 테두리 박스).
    */
-  cover?: boolean | { date?: string; org?: string; dept?: string }
+  cover?: boolean | { date?: string; org?: string; dept?: string; label?: string }
   /** 목차 페이지(개조식 프리셋 기본 켜짐) — h2 목록을 Ⅰ Ⅱ Ⅲ…로 자동 생성. false로 끔 */
   toc?: boolean
   /** 용지 여백(mm). 기본 공식값 위20/아래10/좌20/우20 */
@@ -161,7 +163,7 @@ export interface ResolvedGongmun {
   /** 자동 장평 하한(%) — null이면 끔 */
   autoFitMinRatio: number | null
   /** 표지 설정 — null이면 표지 없음 (개조식 외 프리셋 기본) */
-  cover: { date: string | null; org: string; dept?: string } | null
+  cover: { date: string | null; org: string; dept?: string; label?: string } | null
   /** 옵션이 명시됐는지 — v5 스킴이 실측 기본값(굴림 12·한컴돋움 15·160/180%)을 쓸지 판단 */
   bodyPtExplicit: boolean
   lineSpacingExplicit: boolean
@@ -225,6 +227,13 @@ const SEOUL_REPORT_HEADER_FOOTER = 3600
 /** 개조식 머리말·꼬리말 영역(HWPUNIT) — 실측 4251(15mm). 쪽번호가 이 영역에 렌더 */
 const GAEJOSIK_HEADER_FOOTER = 4251
 
+/**
+ * 중앙부처 업무보고 여백(mm) — 재경부 2차 업무보고(2026-07-15) 실측: 본문 x 56.5~538pt(좌우 20mm),
+ * 장 띠 상단 y56pt(위 20mm), 쪽번호 y803pt. 위·아래 10 + 머리말·꼬리말 10mm(2835)로 본문 시작 20mm를 맞춘다.
+ */
+const MINISTRY_MARGINS = { top: 10, bottom: 10, left: 20, right: 20 }
+const MINISTRY_HEADER_FOOTER = 2835
+
 const PRESET_DEFAULTS: Record<
   GongmunPreset,
   { bodyPt: number; lineSpacing: number; numbering: GongmunNumbering }
@@ -239,6 +248,8 @@ const PRESET_DEFAULTS: Record<
   gaejosik: { bodyPt: 15, lineSpacing: 160, numbering: "gaejosik" },
   // 보도자료 — 실측(국토부 실물): 본문 바탕 14pt 160%, □→ㅇ→*(각주) 부호
   press: { bodyPt: 14, lineSpacing: 160, numbering: "report" },
+  // 중앙부처 업무보고 — 실측(재경부 2차 업무보고): 함초롬바탕 15pt, 줄피치 21.7pt(≈145%), □→ㅇ→-→*(각주)
+  ministry: { bodyPt: 15, lineSpacing: 145, numbering: "report" },
 }
 
 /** 프리셋 별칭(한글/영문) → 내부 preset 키. CLI·라이브러리 공용 */
@@ -250,6 +261,7 @@ export const PRESET_ALIAS: Record<string, GongmunPreset> = {
   minutes: "minutes", 회의록: "minutes",
   gaejosik: "gaejosik", 개조식: "gaejosik", 개조식보고서: "gaejosik", 정부보고서: "gaejosik", 정부표준개조식보고서: "gaejosik",
   press: "press", 보도자료: "press",
+  ministry: "ministry", 업무보고: "ministry", 부처업무보고: "ministry", 중앙부처보고서: "ministry",
 }
 
 /** 프리셋 입력(영문 키 또는 한글 별칭)을 내부 GongmunPreset로 정규화. 미상은 'official' */
@@ -393,7 +405,8 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     : typeof opts.autoFit === "object" ? Math.min(Math.max(opts.autoFit.minRatio ?? 90, 50), 99)
     : 90
   // 표지·목차 — 개조식 프리셋만 기본 켜짐. cover.date null이면 렌더 시점의 오늘 날짜
-  const coverOn = opts.cover !== undefined ? opts.cover !== false : preset === "gaejosik"
+  const ministry = preset === "ministry"
+  const coverOn = opts.cover !== undefined ? opts.cover !== false : preset === "gaejosik" || ministry
   const coverOpts = typeof opts.cover === "object" ? opts.cover : {}
   const gaejosik = preset === "gaejosik"
   // 여백 — 보고서 계열(개조식·보고서·계획서·공고문·보도자료)은 실측 상하 15mm,
@@ -405,26 +418,27 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     bodyHeight: Math.round(bodyPt * 100),
     lineSpacing: opts.lineSpacing ?? d.lineSpacing,
     numbering: opts.numbering ?? d.numbering,
-    margins: opts.margins ?? (preset === "report" || preset === "plan" ? SEOUL_REPORT_MARGINS : reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
+    margins: opts.margins ?? (ministry ? MINISTRY_MARGINS : preset === "report" || preset === "plan" ? SEOUL_REPORT_MARGINS : reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
     centerTitle: opts.centerTitle ?? true,
     autoFitMinRatio,
     // 보도자료는 머리박스가 1페이지 최상단을 차지하는 서식이라 표지·목차와 양립 불가 —
     // 켜면 머리박스가 표지에 얹히고 25pt 제목·부제가 유실된다 (docHead 프리셋 게이팅과 동일 관례)
-    cover: coverOn && preset !== "press" ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "", ...(coverOpts.dept ? { dept: coverOpts.dept } : {}) } : null,
+    cover: coverOn && preset !== "press" ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "", ...(coverOpts.dept ? { dept: coverOpts.dept } : {}), ...(coverOpts.label ? { label: coverOpts.label } : {}) } : null,
     bodyPtExplicit: opts.bodyPt !== undefined,
     lineSpacingExplicit: opts.lineSpacing !== undefined,
     bodyFontExplicit: opts.bodyFont !== undefined,
     summary: opts.summary?.trim() || null,
     docInfo: opts.docInfo ?? null,
-    toc: preset !== "press" && (opts.toc ?? gaejosik),
+    toc: preset !== "press" && (opts.toc ?? (gaejosik || ministry)),
     fonts: opts.fonts ?? {},
     sizes: opts.sizes ?? {},
     levels: resolveLevels(opts.levels, Math.round(bodyPt * 100)),
     // 쪽번호 — 보고서 계열 관행(실측: 2_보고서 양식·추진계획·공고문 전부 하단 중앙)
-    pageNumbers: opts.pageNumbers ?? (gaejosik || preset === "report" || preset === "plan"),
+    pageNumbers: opts.pageNumbers ?? (gaejosik || ministry || preset === "report" || preset === "plan"),
     // 머리말·꼬리말 — 실측: 보고서 계열 15mm(GT3·t2·춘천·브라더), 공고·보도 10mm,
     // 기안문 0(실결재 41/60건 h0/f0)
-    headerFooter: preset === "report" || preset === "plan" ? SEOUL_REPORT_HEADER_FOOTER
+    headerFooter: ministry ? MINISTRY_HEADER_FOOTER
+      : preset === "report" || preset === "plan" ? SEOUL_REPORT_HEADER_FOOTER
       : usesReportFonts(preset) ? GAEJOSIK_HEADER_FOOTER
       : preset === "notice" || preset === "press" ? 2835 : 0,
     // "끝." — 기안문 규정(본문 끝 2타+"끝."). 그 외는 opt-in

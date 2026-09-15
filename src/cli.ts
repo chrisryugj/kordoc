@@ -622,7 +622,7 @@ program
   .alias("gen")
   .description("마크다운 → 공문서 HWPX 생성 — kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 (markdown에 '-' 지정 시 stdin)")
   .option("-o, --output <path>", "출력 HWPX 경로 (기본: <입력>.hwpx)")
-  .option("--preset <name>", "공문서 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·개조식(gaejosik — 표지·목차·장헤더 자동)·보도자료(press)", "기안문")
+  .option("--preset <name>", "공문서 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·개조식(gaejosik — 표지·목차·장헤더 자동)·업무보고(ministry — 중앙부처 업무보고: 장 띠·절 숫자칸·소제목 박스·① 항목 띠·성과 요약박스·별첨 띠)·보도자료(press)", "기안문")
   .option("--font <type>", "본문 글꼴: myeongjo(함초롬바탕) 또는 gothic(맑은 고딕)")
   .option("--pt <size>", "본문 글자 크기(pt)")
   .option("--line-spacing <percent>", "본문 줄간격(%)")
@@ -645,6 +645,7 @@ program
   .option("--summary <text>", "보고서 요약 박스 (제목표 아래 음영 상자 — 마크다운 제목 직후 인용문(>)으로도 지정)")
   .option("--doc-info <spec>", "보고서 표지 문서정보표: docNum=스마트도시과-123,date=2026. 9. 6.,disclosure=공개,policyNo= (--cover와 함께)")
   .option("--dept <name>", "표지 부서명 (기관명 아래 괄호)")
+  .option("--cover-label <text>", "표지 우상단 취급 표시 — '대외주의'·'비공개' 빨간 테두리 박스 (업무보고 프리셋 실측)")
   .option("--fonts <spec>", "요소별 글꼴 오버라이드: body=나눔명조,heading=나눔고딕,ref=한양중고딕,table=맑은 고딕")
   .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
   .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
@@ -687,7 +688,7 @@ program
       if (!opts.plain) {
         const preset = PRESET_ALIAS[String(opts.preset).trim()]
         if (!preset) {
-          process.stderr.write(`[kordoc] 알 수 없는 프리셋: ${opts.preset} (기안문/보고서/계획서/통지/회의록/개조식/보도자료)\n`)
+          process.stderr.write(`[kordoc] 알 수 없는 프리셋: ${opts.preset} (기안문/보고서/계획서/통지/회의록/개조식/업무보고/보도자료)\n`)
           process.exit(1)
         }
         const enumCheck = <T extends readonly string[]>(flag: string, value: unknown, allowed: T): (typeof allowed)[number] | undefined => {
@@ -746,6 +747,7 @@ program
           summary: opts.summary ? String(opts.summary) : undefined,
           docInfo: opts.docInfo ? parseKv(String(opts.docInfo), "--doc-info") : undefined,
           dept: opts.dept ? String(opts.dept) : undefined,
+          coverLabel: opts.coverLabel ? String(opts.coverLabel) : undefined,
           noticeHead: opts.noticeHead ? parseKv(String(opts.noticeHead), "--notice-head") : undefined,
           press: opts.pressHead || opts.pressSub
             ? {

@@ -38,7 +38,7 @@ export interface MuncheLintFinding {
  */
 export function usesGaejosikMunche(preset?: string): boolean {
   const p = normalizeGongmunPreset(preset)
-  return p === "gaejosik" || p === "report" || p === "plan"
+  return p === "gaejosik" || p === "report" || p === "plan" || p === "ministry"
 }
 
 // ─── 줄 종류 ────────────────────────────────────────
@@ -143,7 +143,10 @@ export function lintMuncheText(text: string): MuncheLintFinding[] {
     if (!leadBuf.length) return
     const block = leadBuf.map((l) => l.body).join(" ").trim()
     const at = leadBuf[0].line
+    // 줄마다 부호(▪ □ ㅇ - * ※)로 시작하는 인용은 리드문이 아니라 성과 요약 박스(업무보고 프리셋) — 종결·길이 규칙 밖
+    const bulleted = leadBuf.every((l) => /^[▪■□○ㅇ●\-–ㆍ·•*※]/u.test(l.body))
     leadBuf = []
+    if (bulleted) return
     if (block.length < 20) return // 짧은 인용은 리드문이 아니다
     if (!LEAD_ENDING.test(block)) {
       add(at, "lead", "warning", "LEAD_ENDING", block,

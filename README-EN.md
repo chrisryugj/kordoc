@@ -72,6 +72,11 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.14.0
+
+- **🏛️ Central-government business-report preset `업무보고` (`ministry`)**: built by exhaustively measuring the Ministry of Economy and Finance's written report to the National Assembly (2026-07-15, 17 pages) — fonts, sizes, colors and shape coordinates. Cover (red "대외주의" box via `--cover-label`, two blue bars), TOC box, `##` chapter band (gradient + blue double rule, one chapter per page), `###` blue numbered section box, `####` navy sub-heading box, `#####` ① sky-blue item band, `> ▪ …` pale-yellow summary box, `## 별첨 …` appendix band. Body 함초롬바탕 15, footnotes 맑은 고딕 12, tables 맑은 고딕 12; **`(keyword)`/`[keyword]` right after □ is rendered blue bold** (black bold after ㅇ); leading ❶⇒↳ glyphs are kept. `kordoc generate report.md --preset 업무보고 --date "2026. 7. 15." --cover-label 대외주의`. Verified against the original with Hancom COM rendering.
+- **🎨 Per-edge border color/width for table cells** (blue double rule, sky-blue 0.4 mm …) and LINEAR gradients — 3-color gradients render black in Hangul, so gradients are clamped to 2 colors.
+
 ## What's New in v4.13.1
 
 - **🖼️ HWP (5.x) renders as typeset too**: `kordoc render doc.hwp --format png -d ./pages`, `renderDocument("doc.hwp", …)`, and the MCP tools `render_document`/`crop_regions` accept `.hwp`. The layout cache Hancom saves in HWP5 (line positions, cell grid, object anchors) goes through the same renderer as HWPX, so for 10 documents saved as both hwp and hwpx the page count, table positions and border widths match the HWPX render. Table region ids are document ordinals (`t1`, `t2`, …) and equal the parser's `sourceId`, so `kordoc tables doc.hwp --visual all -d ./tables` crops org charts from HWP as well. Headers/footers/equations are not rendered, same as HWPX.
