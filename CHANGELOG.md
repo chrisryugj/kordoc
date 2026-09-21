@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.14.1] - 2026-09-21
+
+### Fixed
+
+- **섹션 폴백(`pageMode: "section"`)에서 표 셀 안 블록의 쪽번호가 조판 잠정값으로 남던 것** (`src/hwpx/parser.ts`, #78 · PR #79 @LimePencil):
+  조판 캐시가 없어 섹션 근사로 떨어질 때 최상위 블록만 섹션 번호로 덮고 `table.cells[][].blocks`·`captionBlocks`·`children` 은
+  건드리지 않아, `pageCount = 1` 인데 셀 안 문단·이미지는 2~6쪽을 주장하는 두 좌표계가 섞였다. 블록 트리 전체를 소유 섹션
+  번호로 통일. layout 모드 산출물은 불변, 마크다운·표 기하도 그대로.
+
 ## [4.14.0] - 2026-09-15
 
 ### Added
