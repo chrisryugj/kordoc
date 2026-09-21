@@ -19,7 +19,7 @@ HWP 3.x/5.x, HWPX, HWPML, PDF, XLS, XLSX, DOCX, images (PNG/JPG/WebP) — parse,
 
 ## ⚡ 30-Second Setup (AI Agent Integration)
 
-**macOS / Linux / Windows.** All you need is Node.js 18+.
+**macOS / Linux / Windows.** All you need is Node.js 20+.
 
 ```bash
 npx -y kordoc setup

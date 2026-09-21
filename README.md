@@ -19,7 +19,7 @@ HWP 3.x/5.x, HWPX, HWPML, PDF, XLS, XLSX, DOCX, 이미지(PNG/JPG/WebP) — 관�
 
 ## ⚡ 30초 설치 (AI 에이전트 연동)
 
-**macOS / Linux / Windows 공용**. Node.js 18+ 만 있으면 됩니다.
+**macOS / Linux / Windows 공용**. Node.js 20+ 만 있으면 됩니다.
 
 ```bash
 npx -y kordoc setup
