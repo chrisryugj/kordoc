@@ -32,6 +32,22 @@ import { extractFromBrokenZip, resolveSectionPaths, readKordocLayout } from "./z
 
 export { extractHwpxMetadataOnly } from "./metadata.js"
 
+/** Section fallback must replace provisional layout pages throughout the block tree. */
+function assignSectionPage(block: IRBlock, sectionNum: number): void {
+  const pending = [block]
+  while (pending.length > 0) {
+    const current = pending.pop()!
+    current.pageNumber = sectionNum
+    for (const child of current.children ?? []) pending.push(child)
+    for (const caption of current.table?.captionBlocks ?? []) pending.push(caption)
+    for (const row of current.table?.cells ?? []) {
+      for (const cell of row) {
+        for (const child of cell.blocks ?? []) pending.push(child)
+      }
+    }
+  }
+}
+
 // stripDtd는 utils.js에서 import
 
 export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
@@ -129,7 +145,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   if (!layoutPages) {
     // 섹션 근사 — 종전(v4.7.2까지) 의미 그대로 pageNumber = 섹션 번호
     for (const r of sectionRanges) {
-      for (let b = r.start; b < r.end; b++) allBlocks[b].pageNumber = r.sectionNum
+      for (let b = r.start; b < r.end; b++) assignSectionPage(allBlocks[b], r.sectionNum)
     }
   }
 
