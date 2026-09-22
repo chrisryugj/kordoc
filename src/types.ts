@@ -338,7 +338,8 @@ export type ErrorCode =
 
 // ─── 파싱 결과 (discriminated union) ────────────────
 
-export type FileType = "hwpx" | "hwp" | "hwp3" | "hwpml" | "pdf" | "xlsx" | "xls" | "docx" | "image" | "unknown"
+/** 감지된 파일 형식. pptx는 감지만 지원하며 파싱 시 UNSUPPORTED_FORMAT을 반환한다. */
+export type FileType = "hwpx" | "hwp" | "hwp3" | "hwpml" | "pdf" | "xlsx" | "xls" | "docx" | "pptx" | "image" | "unknown"
 
 interface ParseResultBase {
   fileType: FileType

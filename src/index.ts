@@ -90,10 +90,14 @@ async function dispatch(
 ): Promise<ParseResult> {
   switch (format) {
     case "hwpx": {
-      // ZIP 기반 포맷 세분화: HWPX, XLSX, DOCX 구분
+      // ZIP 기반 포맷 세분화: HWPX, XLSX, DOCX, PPTX 구분
       const zipFormat = await detectZipFormat(buffer)
       if (zipFormat === "xlsx") return parseXlsx(buffer, opts)
       if (zipFormat === "docx") return parseDocx(buffer, opts)
+      if (zipFormat === "pptx") {
+        return { success: false, fileType: "pptx", error: "PPTX 파일은 지원하지 않는 파일 형식입니다.", code: "UNSUPPORTED_FORMAT" }
+      }
+      // unknown은 손상 ZIP·비표준 섹션 경로의 HWPX 복구를 위해 기존 파서로 전달
       return parseHwpx(buffer, opts)
     }
     case "hwp": {

@@ -101,15 +101,17 @@ export function detectOle2Format(buffer: ArrayBuffer): "hwp" | "xls" | "unknown"
 
 /**
  * ZIP 내부 구조 기반 포맷 세분화.
- * HWPX, XLSX, DOCX 모두 ZIP이므로 내부 파일로 구분.
+ * HWPX, XLSX, DOCX, PPTX 모두 ZIP이므로 내부 파일로 구분 (PPTX는 감지만 지원).
  */
-export async function detectZipFormat(buffer: ArrayBuffer): Promise<"hwpx" | "xlsx" | "docx" | "unknown"> {
+export async function detectZipFormat(buffer: ArrayBuffer): Promise<"hwpx" | "xlsx" | "docx" | "pptx" | "unknown"> {
   try {
     const zip = await JSZip.loadAsync(buffer)
     // XLSX: xl/workbook.xml
     if (zip.file("xl/workbook.xml")) return "xlsx"
     // DOCX: word/document.xml
     if (zip.file("word/document.xml")) return "docx"
+    // PPTX: 파싱 미지원이지만 HWPX로 오인하지 않도록 감지
+    if (zip.file("ppt/presentation.xml")) return "pptx"
     // HWPX: Contents/ 또는 content.hpf 또는 mimetype
     if (zip.file("Contents/content.hpf") || zip.file("mimetype")) return "hwpx"
     // 기타 ZIP 내에 section 파일이 있으면 HWPX로 추정
