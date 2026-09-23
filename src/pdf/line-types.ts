@@ -36,6 +36,8 @@ export interface ExtractedCell {
   rowSpan: number; colSpan: number
   /** 셀 바운딩 박스 */
   bbox: { x1: number; y1: number; x2: number; y2: number }
+  /** 클립이 없어 격자를 메우려고 만든 1×1 칸 (clip-cells) — 원본의 칸이 아니다 */
+  filler?: boolean
 }
 
 export interface TextItem {
@@ -44,6 +46,8 @@ export interface TextItem {
   fontSize: number; fontName: string
   /** pdfjs 공백 아이템이 이 아이템 직전에 있었음 — 단어 경계 힌트 (parser.ts NormItem에서 전파) */
   hasSpaceBefore?: boolean
+  /** 콘텐츠 스트림 순번 (NormItem.seq 전파 — 겹친 글자 순서 복원) */
+  seq?: number
 }
 
 /** Vertex 기반 좌표 병합 시 radius 배수 — ODL: VERTEX_TABLE_FACTOR */

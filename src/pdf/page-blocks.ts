@@ -17,6 +17,9 @@ import { detectColumnGutter, orderByGutter, type ColRect } from "./two-column.js
 import { detectColumns, extractWithColumns } from "./columns.js"
 import { shouldDemoteTable, demoteTableToText, detectListBlocks, detectSpecialKoreanTables } from "./block-detect.js"
 import { markUnderlineItems, wrapUnderlineRuns } from "./underline.js"
+import { extractImageRegions, type ImageRegion } from "./image-regions.js"
+import { markImageCell } from "./table-trim.js"
+import { CLIP_TABLES, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, recordCellLines } from "./table-meta.js"
 
 /**
  * 선 기반 테이블 감지를 우선 시도, 실패 시 기존 휴리스틱 fallback.
@@ -39,7 +42,7 @@ export function extractPageBlocksWithLines(
   // 1.2단계: 셀 클립 사각형 → 테두리 없는 표 그리드 (법령 별지서식 외곽 표). 셀 기하가 확정돼
   // 있어 line 경로를 거치지 않고, 실선 표는 아래 line 경로가 그대로 맡는다 (clip-cells.ts)
   const clipResult = detectTables
-    ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })))
+    ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects)
     : { grids: [], containers: [] }
   const clipGrids = clipResult.grids
   if (extraLines) {
@@ -74,7 +77,9 @@ export function extractPageBlocksWithLines(
   const grids = [...clipGrids, ...dropGridsInside(lineGrids, clipGrids, clipResult.containers)]
 
   if (grids.length > 0) {
-    return extractBlocksWithGrids(items, pageNum, grids, horizontals, verticals)
+    // 셀 안 그림(로고·서명 등) — 8pt 미만 조각은 장식이라 제외
+    const imageRegions = extractImageRegions(opList.fnArray, opList.argsArray).filter(r => r.x2 - r.x1 >= 8 && r.y2 - r.y1 >= 8)
+    return extractBlocksWithGrids(items, pageNum, grids, horizontals, verticals, imageRegions)
   }
 
   // Fallback: 기존 휴리스틱 (선이 없는 PDF)
@@ -279,6 +284,7 @@ function extractBlocksWithGrids(
   grids: TableGrid[],
   horizontals: LineSegment[],
   verticals: LineSegment[],
+  imageRegions: ImageRegion[] = [],
 ): IRBlock[] {
   const blocks: IRBlock[] = []
   const usedItems = new Set<NormItem>()
@@ -332,7 +338,7 @@ function extractBlocksWithGrids(
     // 텍스트→셀 매핑 (hasSpaceBefore 전파 — 셀 텍스트 단어 공백 복원)
     const textItems: TextItem[] = tableItems.map(i => ({
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
-      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore,
+      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, seq: i.seq,
     }))
     const cellTextMap = mapTextToCells(textItems, cells)
 
@@ -368,15 +374,24 @@ function extractBlocksWithGrids(
         colSpan: cell.colSpan,
         rowSpan: cell.rowSpan,
       }
+      const b = cell.bbox
+      // 칸을 통째로 덮는 그림은 칸 배경이다(행정업무운영 편람 예시 상자: 칸마다 배경 그림) — 내용 그림으로 보지 않는다
+      const isBackdrop = (r: ImageRegion) => r.x1 <= b.x1 + 1 && r.x2 >= b.x2 - 1 && r.y1 <= b.y1 + 1 && r.y2 >= b.y2 - 1
+      if (imageRegions.some(r => { const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2; return cx > b.x1 && cx < b.x2 && cy > b.y1 && cy < b.y2 && !isBackdrop(r) })) {
+        markImageCell(irGrid[cell.row][cell.col])
+      }
+      if (cell.filler && !cellItems.length) FILLER_CELLS.add(irGrid[cell.row][cell.col])
+      if (grid.cells && cellItems.length) recordCellLines(irGrid[cell.row][cell.col], cellItems)
     }
 
     // 과소분할 표 재구성 (ODL TableStructureNormalizer):
     // 행≤2 + 열≥3 + 셀 안에 텍스트 줄이 뭉친 표는 줄 centerY 기반 row band로 행 복원
-    // (중첩표를 품은 틀은 셀 구조가 확정된 것이라 재구성하지 않는다)
+    // (중첩표를 품은 틀·셀 클립 그리드는 셀 구조가 확정된 것이라 재구성하지 않는다 — 클립 표에 돌리면 상자 안
+    // 문단이 줄마다 행·열로 찢긴다: 보도자료 "[참고] SDG 14" 2×2 상자 → 10×3)
     let finalGrid = irGrid
     let finalRows = numRows
     let rebuiltUsed = false
-    if (numRows <= 2 && numCols >= 3 && !nestedAttached) {
+    if (!grid.cells && numRows <= 2 && numCols >= 3 && !nestedAttached) {
       const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems)
       if (rebuilt) {
         rebuiltUsed = true
@@ -399,10 +414,14 @@ function extractBlocksWithGrids(
       cells: finalGrid,
       hasHeader: finalRows > 1,
     }
+    TABLE_COLXS.set(irTable, grid.colXs)
 
     // 빈 테이블(모든 셀이 빈 문자열) 스킵
     const hasContent = finalGrid.some(row => row.some(cell => cell.text.trim() !== ""))
-    if (!hasContent) continue
+    // 글 없는 클립 표는 쪽 넘김 조각일 수 있어 잇기 단계까지 둔다 (못 이으면 mergeCrossPageTables 가 버린다)
+    const emptyPart = !hasContent && !!grid.cells && !grid.clipParent && !nestedAttached
+    if (!hasContent && !emptyPart) continue
+    if (emptyPart) EMPTY_PARTS.add(irTable)
 
     // 중첩 클립 그리드 — 틀 셀이 처리될 때 그 셀의 blocks 로 들어간다 (틀은 면적이 커서 뒤에 온다)
     if (grid.clipParent) {
@@ -436,6 +455,7 @@ function extractBlocksWithGrids(
       continue
     }
 
+    if (grid.cells) CLIP_TABLES.add(irTable)
     blocks.push({ type: "table", table: irTable, pageNumber: pageNum, bbox: tableBbox })
   }
   // 틀 셀에 못 붙은 중첩표(틀이 빈 표로 걸러졌거나 셀 좌표가 어긋난 경우) — 종전대로 독립 블록
@@ -475,7 +495,8 @@ function extractBlocksWithGrids(
   {
     const rects: ColRect[] = remaining.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))
     for (const b of blocks) {
-      if (b.bbox) rects.push({ x: b.bbox.x, y: b.bbox.y, w: b.bbox.width, h: b.bbox.height })
+      // 글 없는 클립 표 조각(쪽 넘김 잇기용으로만 남긴 것)은 지면 판단에 넣지 않는다
+      if (b.bbox && !(b.table && EMPTY_PARTS.has(b.table))) rects.push({ x: b.bbox.x, y: b.bbox.y, w: b.bbox.width, h: b.bbox.height })
     }
     gutterX = detectColumnGutter(rects)
   }
@@ -566,68 +587,8 @@ function extractBlocksWithGrids(
   return mergeAdjacentTableBlocks(ordered)
 }
 
-/**
- * 페이지 걸친 표 병합 — ODL TableBorderProcessor.checkNeighborTables 포팅.
- * Original work: Copyright 2025-2026 Hancom Inc. (Apache-2.0)
- *
- * 페이지 N의 마지막 표와 페이지 N+1의 첫 표가:
- *  - 블록 배열에서 인접 (사이에 본문 블록 없음 — 머리글/바닥글 제거 후 기준)
- *  - 열 수 동일
- *  - 좌우 경계 근접 (폭 대비 0.2 비율 이내, ODL NEIGHBOUR_TABLE_EPSILON)
- * 이면 한 표로 병합. 반복 헤더 행(첫 행 텍스트 동일)은 제거.
- */
-const NEIGHBOR_TABLE_EPSILON = 0.2
-
-export function mergeCrossPageTables(blocks: IRBlock[]): void {
-  for (let i = blocks.length - 2; i >= 0; i--) {
-    const prev = blocks[i]
-    const curr = blocks[i + 1]
-    if (prev.type !== "table" || curr.type !== "table" || !prev.table || !curr.table) continue
-    if (!prev.pageNumber || !curr.pageNumber || curr.pageNumber !== prev.pageNumber + 1) continue
-    if (prev.table.cols !== curr.table.cols) continue
-    if (!prev.bbox || !curr.bbox) continue
-
-    // 좌우 경계 근접 검증 (폭 대비 비율)
-    const width = Math.max(prev.bbox.width, curr.bbox.width, 1)
-    const leftDiff = Math.abs(prev.bbox.x - curr.bbox.x)
-    const rightDiff = Math.abs((prev.bbox.x + prev.bbox.width) - (curr.bbox.x + curr.bbox.width))
-    if (leftDiff > width * NEIGHBOR_TABLE_EPSILON || rightDiff > width * NEIGHBOR_TABLE_EPSILON) continue
-
-    // 반복 헤더 행 제거: 다음 표 첫 행이 이전 표 첫 행과 동일하면 중복 헤더
-    let currCells = curr.table.cells
-    if (currCells.length > 1 && prev.table.cells.length > 0 &&
-        rowTextsEqual(prev.table.cells[0], currCells[0])) {
-      currCells = currCells.slice(1)
-    }
-    if (currCells.length === 0) {
-      blocks.splice(i + 1, 1)
-      continue
-    }
-
-    const merged: IRTable = {
-      rows: prev.table.rows + currCells.length,
-      cols: prev.table.cols,
-      cells: [...prev.table.cells, ...currCells],
-      hasHeader: prev.table.hasHeader,
-      caption: prev.table.caption,
-    }
-    blocks[i] = { ...prev, table: merged }
-    blocks.splice(i + 1, 1)
-  }
-}
-
-/** 두 행의 셀 텍스트가 모두 동일한지 (공백 정규화 후 비교) */
-function rowTextsEqual(a: import("../types.js").IRCell[], b: import("../types.js").IRCell[]): boolean {
-  if (a.length !== b.length) return false
-  const norm = (t: string) => t.replace(/\s+/g, "")
-  for (let i = 0; i < a.length; i++) {
-    if (norm(a[i].text) !== norm(b[i].text)) return false
-  }
-  // 빈 행끼리의 비교는 의미 없음
-  return a.some(c => c.text.trim() !== "")
-}
-
-/** 같은 열 수의 연속 테이블 블록을 하나로 합침 */
+/** 같은 열 수의 연속 테이블 블록을 하나로 합침 — 선 기반 그리드 파편 재조립용. 클립 표는 변을 공유하지 않는
+ *  별개 표라 합치지 않는다(행정업무운영 편람 Q&A 상자 두 개가 4×1 로 뭉개지고 안쪽 6×5 표가 사라지던 것) */
 function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
   if (blocks.length <= 1) return blocks
   const result: IRBlock[] = [blocks[0]]
@@ -635,7 +596,7 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
     const prev = result[result.length - 1]
     const curr = blocks[i]
     if (prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
-        prev.table.cols === curr.table.cols) {
+        prev.table.cols === curr.table.cols && !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table)) {
       // 합치기: prev의 cells에 curr의 cells 추가
       const merged: IRTable = {
         rows: prev.table.rows + curr.table.rows,

@@ -34,6 +34,24 @@ export interface NormItem {
   strike?: boolean
   /** 밑줄이 그어진 텍스트 (개정문 추가·변경 표시, 제목 강조 등) */
   underline?: boolean
+  /** 콘텐츠 스트림 순번 — 좌표가 겹친 글자의 순서를 되살리는 데만 쓴다 (sortLineByX) */
+  seq?: number
+}
+
+/** 같은 줄 아이템 x 정렬 — x 가 1pt 이내로 붙은 이웃은 콘텐츠 스트림 순서를 따른다. 좌표를 정수로 반올림하므로
+ *  자간을 줄인 숫자에서 뒤 글자가 앞 글자 위로 0.1pt 겹치면(“.”@251.5 → 252, “8”@251.4 → 251) x 만으로는
+ *  "147.8" 이 "1478." 로 뒤집힌다(해외직접투자 보도자료 표 실측). 제자리 정렬 후 반환 */
+export function sortLineByX<T extends { x: number; seq?: number }>(items: T[]): T[] {
+  items.sort((a, b) => a.x - b.x)
+  for (let i = 1; i < items.length; i++) {
+    for (let j = i; j > 0; j--) {
+      const a = items[j - 1], b = items[j]
+      if (b.x - a.x > 1 || a.seq === undefined || b.seq === undefined || b.seq >= a.seq) break
+      items[j - 1] = b
+      items[j] = a
+    }
+  }
+  return items
 }
 
 // ═══════════════════════════════════════════════════════
@@ -122,7 +140,9 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
   // pdfjs 공백 아이템 위치 수집 — 단어 경계 힌트로 활용
   const spacePositions: { x: number; y: number }[] = []
 
+  let seq = 0
   for (const i of rawItems) {
+    seq++
     if (typeof i.str !== "string") continue
     const x = Math.round(i.transform[4])
     const y = Math.round(i.transform[5])
@@ -152,11 +172,11 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     // 균등배분 TextItem 분해: "홍 보 지 원 반" → 개별 글자 아이템으로
     const split = splitEvenSpacedItem(text, x, w, fontSize)
     if (split) {
-      for (const s of split) {
-        items.push({ text: s.text, x: s.x, y, w: s.w, h, fontSize, fontName: i.fontName || "", isHidden })
-      }
+      split.forEach((s, k) => {
+        items.push({ text: s.text, x: s.x, y, w: s.w, h, fontSize, fontName: i.fontName || "", isHidden, seq: seq + k / 1000 })
+      })
     } else {
-      items.push({ text, x, y, w, h, fontSize, fontName: i.fontName || "", isHidden })
+      items.push({ text, x, y, w, h, fontSize, fontName: i.fontName || "", isHidden, seq })
     }
   }
 
@@ -297,7 +317,7 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
 
 export function mergeLineSimple(items: NormItem[]): string {
   if (items.length <= 1) return items[0]?.text || ""
-  const sorted = [...items].sort((a, b) => a.x - b.x)
+  const sorted = sortLineByX([...items])
 
   // 좌표 기반 균등배분 감지 (ODL TextLineProcessor 방식)
   const isEvenSpaced = detectEvenSpacedItems(sorted)

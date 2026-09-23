@@ -18,7 +18,9 @@ import { extractImageRegions } from "./line-detector.js"
 import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { type PdfTextItem, normalizeItems, filterHiddenText } from "./text-line.js"
-import { extractPageBlocksWithLines, mergeCrossPageTables } from "./page-blocks.js"
+import { extractPageBlocksWithLines } from "./page-blocks.js"
+import { mergeCrossPageTables } from "./table-parts.js"
+import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
 import { computeMedianFontSizeFromFreq, detectHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables } from "./text-clean.js"
@@ -306,7 +308,9 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     // 페이지 걸친 표 병합 — 머리글/바닥글 제거 후 인접해진 표를 하나로
     // (ODL TableBorderProcessor.checkNeighborTables 포팅)
-    mergeCrossPageTables(blocks)
+    mergeCrossPageTables(blocks, pageHeights)
+    // 후행 빈 열 정리 — HWP 계열 표 빌더와 같은 규칙 (병합 뒤: 쪽마다 같은 열 구조일 때 이어 붙인 다음)
+    if (!options?.keepTrailingEmptyCols) trimTrailingEmptyTableCols(blocks)
 
     // 추출 이미지 참조를 페이지 말미 위치에 주입 (표 병합 뒤 — 인접성 보존)
     injectPageImageBlocks(blocks, pageImageBlocks)

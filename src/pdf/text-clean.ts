@@ -18,7 +18,14 @@ export function normalizeAraea(text: string): string {
   return text.replace(/(?<![\u1100-\u115F])\u119E/g, "\u318D")
 }
 
-const cleanChars = (text: string): string => normalizeAraea(stripControlChars(text))
+/**
+ * 한컴 PDF 의 "유니코드 없는 글리프" 자리표시 U+F000 제거. 한컴 PDF 는 ToUnicode 를 못 만든 글리프를 전부 U+F000 으로
+ * 낸다 — 자동 글머리표·자동 번호(□·①), 일부 괄호(《), 칸 채움 글자까지 같은 코드라(보도자료 246건 실측: 줄머리 33·줄 안
+ * 125) 원래 글자를 되살릴 수 없고, 남기면 두부 글자로 찍힌다. 페이지 품질 신호(PUA 비율) 계산 뒤에 지운다
+ */
+const stripNoUnicodeGlyph = (text: string): string => (text.includes("\uF000") ? text.replace(/\uF000/g, "") : text)
+
+const cleanChars = (text: string): string => normalizeAraea(stripNoUnicodeGlyph(stripControlChars(text)))
 
 /** 블록 트리의 텍스트에서 비표시 제어문자 제거 + 조합형 가운뎃점 정규화 (in-place, 셀 blocks 포함) */
 export function sanitizeBlockControlChars(blocks: IRBlock[]): void {

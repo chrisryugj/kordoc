@@ -35,10 +35,15 @@ const MAX_LINE_WIDTH = 5.0
 export function extractLines(
   fnArray: Uint32Array | number[],
   argsArray: unknown[][],
-): { horizontals: LineSegment[]; verticals: LineSegment[]; clipRects: ClipRect[] } {
+): { horizontals: LineSegment[]; verticals: LineSegment[]; clipRects: ClipRect[]; fillRects: ClipRect[] } {
   const horizontals: LineSegment[] = []
   const verticals: LineSegment[] = []
   const clipRects: ClipRect[] = []
+  // 채움 사각형 — 한컴은 폭 3pt 안팎의 좁은 빈 칸에는 셀 클립을 깔지 않고 배경 채움만 그린다(행정업무운영 편람
+  // 머리 상자 양옆 회색 띠 실측). 클립 격자에 빠진 가장자리 칸을 이것으로 되살린다 (clip-cells)
+  const fillRects: ClipRect[] = []
+  /** 이번 경로의 re 사각형 (얇은 사각형은 세그먼트가 가운데 선 하나로 접히므로 원본 bbox 를 따로 둔다) */
+  let pathRects: ClipRect[] = []
   // 클립 경로 추적 — 한컴 PDF 는 표 셀마다 `W n`(clip + endPath) 사각형을 깐다. 획이 없는
   // 셀(테두리 "없음"인 별지서식 외곽 표)도 클립은 있으므로 그리드 복원의 근거가 된다 (v4.12.1)
   let pendingClip = false
@@ -68,6 +73,8 @@ export function extractLines(
   }
 
   function pushRectangle(rx: number, ry: number, rw: number, rh: number) {
+    const [ax, ay] = applyCtm(rx, ry), [bx, by] = applyCtm(rx + rw, ry + rh)
+    pathRects.push({ x1: Math.min(ax, bx), y1: Math.min(ay, by), x2: Math.max(ax, bx), y2: Math.max(ay, by) })
     // 얇은 사각형(선으로 그린 괘선) 판별은 CTM 적용 후 실제 두께 기준
     const effH = Math.abs(rh) * Math.hypot(ctm[2], ctm[3])
     const effW = Math.abs(rw) * Math.hypot(ctm[0], ctm[1])
@@ -83,7 +90,12 @@ export function extractLines(
     }
   }
 
-  function flushPath(isStroke: boolean, fromFill = false) {
+  function flushPath(isStroke: boolean, fromFill = false, filled = fromFill) {
+    if (filled) {
+      if (pathRects.length) for (const r of pathRects) fillRects.push(r)
+      else captureClipRect(currentPath, fillRects, 0.3, 0.3)
+    }
+    pathRects = []
     if (!isStroke) {
       if (pendingClip) captureClipRect(currentPath, clipRects)
       pendingClip = false
@@ -198,7 +210,7 @@ export function extractLines(
             flushPath(true, true) // 순수 fill — 그라디언트 밴드 스택(스테일 폭)
           } else if (afterOp === OPS.fillStroke || afterOp === OPS.eoFillStroke ||
                      afterOp === OPS.closeFillStroke || afterOp === OPS.closeEOFillStroke) {
-            flushPath(true) // fill+stroke — stroke 폭 유효
+            flushPath(true, false, true) // fill+stroke — stroke 폭 유효
           } else if (afterOp === OPS.endPath) {
             flushPath(false)
           }
@@ -219,7 +231,7 @@ export function extractLines(
       case OPS.eoFillStroke:
       case OPS.closeFillStroke:
       case OPS.closeEOFillStroke:
-        flushPath(true) // fill+stroke — stroke 폭 유효
+        flushPath(true, false, true) // fill+stroke — stroke 폭 유효
         break
 
       case OPS.endPath:
@@ -233,7 +245,7 @@ export function extractLines(
     }
   }
 
-  return { horizontals, verticals, clipRects }
+  return { horizontals, verticals, clipRects, fillRects }
 }
 
 // ─── 클립 사각형 → 셀 그리드 선 ──────────────────────
@@ -246,7 +258,7 @@ const CLIP_MIN_W = 4
 const CLIP_MIN_H = 2
 
 /** 현재 경로가 축 정렬 사각형(3~5 세그먼트, 전부 수평/수직)이면 bbox 를 등록 */
-function captureClipRect(path: Array<{ x1: number; y1: number; x2: number; y2: number }>, out: ClipRect[]): void {
+function captureClipRect(path: Array<{ x1: number; y1: number; x2: number; y2: number }>, out: ClipRect[], minW = CLIP_MIN_W, minH = CLIP_MIN_H): void {
   if (path.length < 3 || path.length > 5) return
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
   for (const s of path) {
@@ -255,7 +267,7 @@ function captureClipRect(path: Array<{ x1: number; y1: number; x2: number; y2: n
     x1 = Math.min(x1, s.x1, s.x2); x2 = Math.max(x2, s.x1, s.x2)
     y1 = Math.min(y1, s.y1, s.y2); y2 = Math.max(y2, s.y1, s.y2)
   }
-  if (x2 - x1 < CLIP_MIN_W || y2 - y1 < CLIP_MIN_H) return
+  if (x2 - x1 < minW || y2 - y1 < minH) return
   out.push({ x1, y1, x2, y2 })
 }
 

@@ -9,6 +9,7 @@
  */
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
+import { sortLineByX } from "./text-line.js"
 
 /** 셀 경계 내부 판별 여유 (텍스트 매핑용) */
 const CELL_PADDING = 2
@@ -107,7 +108,7 @@ export function cellTextToString(items: TextItem[]): string {
 
   // 각 행을 텍스트로 변환 — 좌표 기반 균등배분 감지 포함
   const textLines = merged.map(line => {
-    const s = line.sort((a, b) => a.x - b.x)
+    const s = sortLineByX(line)
     if (s.length === 1) return s[0].text
 
     // 균등배분 구간 감지 (좌표 기반)
@@ -267,7 +268,9 @@ function mergeCellTextLines(textLines: string[]): string {
     else if (/[,(]$/.test(prev.trim()) && curr.trim().length <= 15) {
       merged[merged.length - 1] = prev + curr.trim()
     }
-    else if (/[\d,]$/.test(prev) && /^[\d,]+[)\]]?$/.test(curr.trim()) && curr.trim().length <= 10) {
+    // 줄바꿈에 잘린 숫자 조각은 잇되, 천 단위 쉼표까지 온전한 숫자 두 개(병합 칸에 쌓인 "20,775,661" / "5,187,590")는 잇지 않는다
+    else if (/[\d,]$/.test(prev) && /^[\d,]+[)\]]?$/.test(curr.trim()) && curr.trim().length <= 10
+      && !(/\d{1,3}(,\d{3})+$/.test(prev) && /^\d{1,3}(,\d{3})+$/.test(curr.trim()))) {
       merged[merged.length - 1] = prev + curr.trim()
     }
     else {

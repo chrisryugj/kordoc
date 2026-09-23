@@ -168,7 +168,10 @@ export function normalizeUndersegmentedTable(
   }
 
   if (countNonEmptyRows(rebuilt) <= countNonEmptyRows(originalCells)) return null
-  if (countNonEmptyCols(rebuilt, numCols) < countNonEmptyCols(originalCells, numCols)) return null
+  // 열 비교는 본문 행만 — 머리 행 병합 칸("부서·장·관·항·목", 0~2열)은 앵커 열 하나로 세지만 재구성은 글자 중심 x 로
+  // 다시 나눠, 제대로 된 재구성을 열이 줄었다고 버리던 것 (괴산 예산서 OCR 실측)
+  const origBody = numRows > 1 ? originalCells.slice(1) : originalCells
+  if (countNonEmptyCols(rebuilt, numCols) < countNonEmptyCols(origBody, numCols)) return null
 
   return rebuilt
 }

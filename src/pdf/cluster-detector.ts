@@ -207,17 +207,18 @@ export function findTwoColumnProseCutX(items: ClusterItem[]): number | null {
   // 줄 다수(55%+)가 컷 양쪽에 모두 텍스트를 가져야 함 (한쪽 들여쓰기 문서 배제).
   // 55%: 상단 1/3이 전폭 목차인 속기록 1면(57%)까지 포함하는 값 — 코퍼스 전수에서
   // 타 문서 오발화 0 확인
+  // 단별 통계는 양쪽에 글이 있는 줄로만 — 한쪽에만 글이 있는 줄(2단 위 목차·제목 띠)이 섞이면 왼 단 양쪽 정렬 비율이
+  // 기준 아래로 떨어져 줄 단위로 섞여 읽힌다 (국회 회의록 OCR 실측)
   const left: ClusterItem[] = []
   const right: ClusterItem[] = []
   let twoSide = 0
   for (const line of lines) {
-    let hasL = false
-    let hasR = false
+    const L: ClusterItem[] = [], R: ClusterItem[] = []
     for (const i of line.items) {
-      if (i.x + i.w <= cutX) { left.push(i); hasL = true }
-      else if (i.x >= cutX) { right.push(i); hasR = true }
+      if (i.x + i.w <= cutX) L.push(i)
+      else if (i.x >= cutX) R.push(i)
     }
-    if (hasL && hasR) twoSide++
+    if (L.length && R.length) { twoSide++; left.push(...L); right.push(...R) }
   }
   if (twoSide / lines.length < 0.55) return null
   if (left.length < 5 || right.length < 5) return null
