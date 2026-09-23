@@ -1,16 +1,24 @@
 /**
  * 내장 텍스트 OCR 엔진 — PP-OCRv5 korean (det DBNet + rec SVTR/CTC) ONNX 추론.
  *
- * 파이프라인: 페이지 RGBA → det(선 검출) → 라인 crop → rec(CTC 인식) → OcrItem[]
+ * 파이프라인: 페이지 RGBA → det(선 검출) → 박스 픽셀 분석(대비·행 밴드) → 라인 crop
+ *   → rec 배치(CTC 인식) → 표기 후처리 → OcrItem[]
  * (좌표는 입력 픽셀 기준 top-left origin — 호출자가 PDF 좌표계로 변환).
  *
  * 전·후처리는 공식 inference.yml 스펙 그대로:
  *  - det: BGR, 긴 변 960 리사이즈(32 배수), mean/std [0.485,0.456,0.406]/[0.229,0.224,0.225],
  *         DBPostProcess thresh 0.3 / box_thresh 0.6 / unclip_ratio 1.5
- *  - rec: BGR, 높이 48 고정 비율 리사이즈 + 우측 zero-pad, (x/255-0.5)/0.5,
- *         CTC 디코드 (blank=0, 1..N=사전, N+1=공백), text_score 0.5
+ *  - rec: BGR, 높이 48 고정 비율 리사이즈 + 우측 zero-pad(최소 폭 320), (x/255-0.5)/0.5,
+ *         CTC 디코드 (blank=0, 1..N=사전, N+1=공백), text_score 0.5.
+ *         배치(recBatch>1)는 공식처럼 폭 비율로 정렬해 묶고 배치 최대 폭까지 zero-pad — 기본은 1
  * DB 후처리의 contour+minAreaRect 는 축정렬 connected-component bbox 로 근사
- * (공문서 스캔은 수평 텍스트가 지배적 — 회전 텍스트는 v1 범위 밖).
+ * (공문서 스캔은 수평 텍스트가 지배적).
+ *
+ * 공식 파이프라인 밖의 보강 (근거는 bench/ocr-accuracy.mjs 코퍼스 실측, 각 모듈 주석):
+ *  - 키 큰 박스(세로로 쌓인 글자)는 행 밴드로 갈라 밴드마다 인식 (line-split.ts)
+ *  - 잉크 대비가 낮은 박스(배경 도안)는 인식하지 않음 — 환각 방지
+ *  - 사전 밖 공문서 기호(○ △)·둥근 따옴표·천 단위 숫자 공백 복원, 점류 조각 폐기 (postprocess.ts)
+ *  - 결과 좌표는 det 박스(unclip 여백) 대신 박스 안 잉크 외곽 — 텍스트층 아이템과 같은 기하
  *
  * 의존성(onnxruntime-node, sharp)은 optional — 미설치 시 create()가 명확한 에러.
  * 모델 미다운로드 시에도 즉시 실패 — 호출자가 ensureOcrModels() 먼저.
@@ -26,6 +34,9 @@ import {
   getOcrModelsDir,
   parseCharacterDict,
 } from "./models.js"
+import { grayCrop, inkBounds, inkStats, splitRowBands } from "./line-split.js"
+import { isDotFragment, restoreBulletItems, restoreSymbols } from "./postprocess.js"
+import { bandBoxes, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
 export interface OcrItem {
@@ -38,18 +49,54 @@ export interface OcrItem {
   confidence: number
 }
 
-/** det 입력 긴 변 (공식 resize_long) — 1920 보존 실험은 recall Δ median +0.04pp에
- *  속도 -25%로 기각 (bench/ocr-accuracy.mjs 실측, 2026-08-02) */
-const DET_LONG_SIDE = 960
-const DET_THRESH = 0.3
-const DET_BOX_THRESH = 0.6
-const DET_UNCLIP_RATIO = 1.5
+/**
+ * 엔진 튜닝 — 기본값이 제품 동작. 벤치·실험만 덮어쓴다 (공개 API 아님).
+ */
+export interface OcrTuning {
+  /** det 입력 긴 변 (공식 resize_long). 1920 보존 실험은 recall Δ median +0.04pp에
+   *  속도 -25%로 기각 (2026-08-02) */
+  detLongSide: number
+  detThresh: number
+  detBoxThresh: number
+  detUnclip: number
+  /** 인식 신뢰도 하한 (공식 drop_score) */
+  textScore: number
+  /** rec 배치 크기. 공식 rec_batch_num 은 6 이지만 onnxruntime CPU 에선 배치(최대 폭까지
+   *  zero-pad)가 오히려 느리다 — 코퍼스 16쪽 교대 실측 1: 0.57 · 4: 0.93 · 8: 0.87 s/page,
+   *  정확도 차는 박스 내 CER 0.08pp (2026-09-23). 기본 1 */
+  recBatch: number
+  /** 키 큰 박스 행 밴드 분할 */
+  splitTall: boolean
+  /** 이 대비(전경/배경 평균 휘도 차) 미만 박스는 글자가 아님 — 0 이면 끔 */
+  minInkContrast: number
+  /** 기호·따옴표 복원 + 점류 조각 폐기 */
+  postprocess: boolean
+  /** 결과 좌표를 det 박스(unclip 여백 포함) 대신 박스 안 잉크 외곽으로 */
+  tightBoxes: boolean
+}
+
+export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
+  detLongSide: 960,
+  detThresh: 0.3,
+  detBoxThresh: 0.6,
+  detUnclip: 1.5,
+  textScore: 0.5,
+  recBatch: 1,
+  splitTall: true,
+  minInkContrast: 35,
+  postprocess: true,
+  tightBoxes: true,
+})
+
 const DET_MIN_SIZE = 3
 const DET_MAX_BOXES = 1000
-const REC_HEIGHT = 48
 const REC_MIN_WIDTH = 320
-const REC_MAX_WIDTH = 3200
-const TEXT_SCORE = 0.5
+/** 배치 텐서 폭 합 상한 — 긴 줄 여러 개를 한 텐서로 묶어 메모리가 튀지 않게 */
+const REC_BATCH_MAX_PIXELS = 48 * 16000
+/** 키 큰 박스 판정 (공식 파이프라인의 세로 판정 h/w ≥ 1.5 와 같은 문턱) */
+const TALL_RATIO = 1.5
+/** 밴드로 갈라지지 않는 키 큰 박스 중 이 비율 이상은 90° 회전 글자 후보 */
+const ROTATE_RATIO = 3
 
 // det: BGR 채널 순서에 yml 기재 순서 그대로 적용 (mean[0]→B)
 const DET_MEAN = [0.485, 0.456, 0.406]
@@ -60,11 +107,13 @@ type SharpFactory = (
   options?: { raw?: { width: number; height: number; channels: number } },
 ) => SharpChain
 interface SharpChain {
-  extract(region: { left: number; top: number; width: number; height: number }): SharpChain
   resize(w: number, h: number, opts?: { fit?: string }): SharpChain
   removeAlpha(): SharpChain
   raw(): { toBuffer(): Promise<Buffer> }
 }
+
+/** 인식 대상 한 줄 — rot 는 crop 회전(90=반시계, 270=시계) */
+interface LineJob { box: Box; rot: 0 | 90 | 270; group: number }
 
 export class OcrEngine {
   private det: InferenceSession
@@ -136,16 +185,59 @@ export class OcrEngine {
     width: number,
     height: number,
     stats?: { droppedLowConf: number },
+    tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
   ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
-    const boxes = await this.detect(rgba, width, height)
-    const items: OcrItem[] = []
+    const boxes = await this.detect(rgba, width, height, tuning)
+
+    // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
+    const jobs: LineJob[] = []
+    let group = 0
     for (const b of boxes) {
-      const r = await this.recognizeLine(rgba, width, height, b)
-      if (!r || !r.text.trim()) continue
-      if (r.confidence >= TEXT_SCORE) items.push(r)
-      else if (stats) stats.droppedLowConf++
+      const gray = grayCrop(rgba, width, b)
+      const ink = inkStats(gray)
+      if (tuning.minInkContrast > 0 && ink.contrast < tuning.minInkContrast) continue
+      if (tuning.splitTall && b.h >= b.w * TALL_RATIO) {
+        const bands = splitRowBands(gray, b.w, b.h, ink, 0.45)
+        if (bands.length >= 2) {
+          for (const sub of bandBoxes(b, bands, height)) jobs.push({ box: sub, rot: 0, group: group++ })
+          continue
+        }
+        if (b.h >= b.w * ROTATE_RATIO) {
+          for (const rot of [0, 90, 270] as const) jobs.push({ box: b, rot, group })
+          group++
+          continue
+        }
+      }
+      jobs.push({ box: b, rot: 0, group: group++ })
     }
+
+    const results = await this.recognizeJobs(rgba, width, jobs, tuning.recBatch)
+
+    // 회전 후보 그룹은 최고 신뢰도 하나만
+    const best = new Map<number, { job: LineJob; text: string; confidence: number }>()
+    jobs.forEach((job, i) => {
+      const r = results[i]
+      if (!r) return
+      const cur = best.get(job.group)
+      if (!cur || r.confidence > cur.confidence) best.set(job.group, { job, ...r })
+    })
+
+    const items: OcrItem[] = []
+    for (const { job, text: raw, confidence } of best.values()) {
+      const text = tuning.postprocess ? restoreSymbols(raw.trim()) : raw
+      if (!text.trim()) continue
+      if (tuning.postprocess && isDotFragment(text)) continue
+      if (confidence < tuning.textScore) { if (stats) stats.droppedLowConf++; continue }
+      let b = job.box
+      if (tuning.tightBoxes) {
+        const gray = grayCrop(rgba, width, b)
+        const t = inkBounds(gray, b.w, b.h, inkStats(gray))
+        b = { x: b.x + t.x0, y: b.y + t.y0, w: t.x1 - t.x0, h: t.y1 - t.y0 }
+      }
+      items.push({ text, x: b.x, y: b.y, w: b.w, h: b.h, confidence })
+    }
+    if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
   }
@@ -156,8 +248,9 @@ export class OcrEngine {
     rgba: Uint8Array,
     width: number,
     height: number,
-  ): Promise<Array<{ x: number; y: number; w: number; h: number }>> {
-    const ratio = DET_LONG_SIDE / Math.max(width, height)
+    tuning: Readonly<OcrTuning>,
+  ): Promise<Box[]> {
+    const ratio = tuning.detLongSide / Math.max(width, height)
     const dw = Math.max(32, Math.round((width * ratio) / 32) * 32)
     const dh = Math.max(32, Math.round((height * ratio) / 32) * 32)
 
@@ -183,15 +276,15 @@ export class OcrEngine {
     const out = await this.det.run({ [this.det.inputNames[0]]: tensor })
     const probMap = out[this.det.outputNames[0]].data as Float32Array
 
-    const rawBoxes = componentBoxes(probMap, dw, dh)
+    const rawBoxes = componentBoxes(probMap, dw, dh, tuning.detThresh, tuning.detBoxThresh)
     const sx = width / dw
     const sy = height / dh
-    const boxes: Array<{ x: number; y: number; w: number; h: number }> = []
+    const boxes: Box[] = []
     for (const rb of rawBoxes.slice(0, DET_MAX_BOXES)) {
       // unclip: DB 는 학습 시 텍스트 영역을 수축시키므로 검출 박스를 되팽창
       const bw = rb.x2 - rb.x1 + 1
       const bh = rb.y2 - rb.y1 + 1
-      const delta = (bw * bh * DET_UNCLIP_RATIO) / (2 * (bw + bh))
+      const delta = (bw * bh * tuning.detUnclip) / (2 * (bw + bh))
       const x1 = Math.max(0, Math.floor((rb.x1 - delta) * sx))
       const y1 = Math.max(0, Math.floor((rb.y1 - delta) * sy))
       const x2 = Math.min(width, Math.ceil((rb.x2 + 1 + delta) * sx))
@@ -204,44 +297,53 @@ export class OcrEngine {
 
   // ─── rec ─────────────────────────────────────────────
 
-  private async recognizeLine(
+  /** 라인 작업들을 폭 비율 순으로 배치 인식 — 결과는 jobs 순서 */
+  private async recognizeJobs(
     rgba: Uint8Array,
-    width: number,
-    height: number,
-    box: { x: number; y: number; w: number; h: number },
-  ): Promise<OcrItem | null> {
-    const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round((box.w * REC_HEIGHT) / box.h)))
-    const padded = Math.max(REC_MIN_WIDTH, rw)
-
-    const rgb = await this.sharp(rgba, { raw: { width, height, channels: 4 } })
-      .extract({ left: box.x, top: box.y, width: box.w, height: box.h })
-      .resize(rw, REC_HEIGHT, { fit: "fill" })
-      .removeAlpha()
-      .raw()
-      .toBuffer()
-
-    // HWC RGB → CHW BGR, (x/255-0.5)/0.5, 우측 zero-pad
-    const plane = padded * REC_HEIGHT
-    const input = new Float32Array(3 * plane) // pad 영역은 0 (=정규화 후 회색 아님 주의: PP 도 0 pad)
-    for (let y = 0; y < REC_HEIGHT; y++) {
-      for (let x = 0; x < rw; x++) {
-        const src = (y * rw + x) * 3
-        const dst = y * padded + x
-        input[dst] = rgb[src + 2] / 255 / 0.5 - 1 // B
-        input[plane + dst] = rgb[src + 1] / 255 / 0.5 - 1 // G
-        input[2 * plane + dst] = rgb[src] / 255 / 0.5 - 1 // R
-      }
+    pageW: number,
+    jobs: LineJob[],
+    batchSize: number,
+  ): Promise<Array<{ text: string; confidence: number } | null>> {
+    const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot))
+    const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w)
+    const results: Array<{ text: string; confidence: number } | null> = new Array(jobs.length).fill(null)
+    const plane = REC_HEIGHT
+    for (let s = 0; s < order.length;) {
+      // 폭 오름차순이라 배치 마지막 원소가 최대 폭
+      let e = s + 1
+      while (e < order.length && e - s < Math.max(1, batchSize)
+        && (e - s + 1) * Math.max(REC_MIN_WIDTH, crops[order[e]].w) * plane <= REC_BATCH_MAX_PIXELS) e++
+      const idx = order.slice(s, e)
+      const bw = Math.max(REC_MIN_WIDTH, crops[idx[idx.length - 1]].w)
+      const n = idx.length
+      const chw = 3 * REC_HEIGHT * bw
+      const input = new Float32Array(n * chw) // pad 영역 0 (공식 zero-pad 와 동일)
+      idx.forEach((ci, k) => {
+        const c = crops[ci]
+        const base = k * chw
+        const p = REC_HEIGHT * bw
+        for (let y = 0; y < REC_HEIGHT; y++) {
+          for (let x = 0; x < c.w; x++) {
+            const src = (y * c.w + x) * 3
+            const dst = base + y * bw + x
+            // HWC RGB → CHW BGR, (x/255-0.5)/0.5
+            input[dst] = c.rgb[src + 2] / 127.5 - 1
+            input[dst + p] = c.rgb[src + 1] / 127.5 - 1
+            input[dst + 2 * p] = c.rgb[src] / 127.5 - 1
+          }
+        }
+      })
+      const tensor = new this.ort.Tensor("float32", input, [n, 3, REC_HEIGHT, bw])
+      const out = await this.rec.run({ [this.rec.inputNames[0]]: tensor })
+      const logits = out[this.rec.outputNames[0]]
+      const [, T, C] = logits.dims as number[]
+      const data = logits.data as Float32Array
+      idx.forEach((ci, k) => {
+        results[ci] = ctcDecode(data.subarray(k * T * C, (k + 1) * T * C), T, C, this.dict)
+      })
+      s = e
     }
-
-    const tensor = new this.ort.Tensor("float32", input, [1, 3, REC_HEIGHT, padded])
-    const out = await this.rec.run({ [this.rec.inputNames[0]]: tensor })
-    const logits = out[this.rec.outputNames[0]]
-    const [, T, C] = logits.dims as number[]
-    const data = logits.data as Float32Array
-
-    const decoded = ctcDecode(data, T, C, this.dict)
-    if (!decoded) return null
-    return { text: decoded.text, x: box.x, y: box.y, w: box.w, h: box.h, confidence: decoded.confidence }
+    return results
   }
 }
 
@@ -288,13 +390,15 @@ export function componentBoxes(
   prob: Float32Array,
   w: number,
   h: number,
+  thresh: number = DEFAULT_OCR_TUNING.detThresh,
+  boxThresh: number = DEFAULT_OCR_TUNING.detBoxThresh,
 ): Array<{ x1: number; y1: number; x2: number; y2: number }> {
   const visited = new Uint8Array(w * h)
   const boxes: Array<{ x1: number; y1: number; x2: number; y2: number; score: number }> = []
   const stack: number[] = []
 
   for (let start = 0; start < w * h; start++) {
-    if (visited[start] || prob[start] <= DET_THRESH) continue
+    if (visited[start] || prob[start] <= thresh) continue
     let x1 = start % w, x2 = x1, y1 = (start / w) | 0, y2 = y1
     let sum = 0
     let count = 0
@@ -312,17 +416,17 @@ export function componentBoxes(
       if (py < y1) y1 = py
       if (py > y2) y2 = py
       // 4-이웃
-      if (px > 0 && !visited[p - 1] && prob[p - 1] > DET_THRESH) { visited[p - 1] = 1; stack.push(p - 1) }
-      if (px < w - 1 && !visited[p + 1] && prob[p + 1] > DET_THRESH) { visited[p + 1] = 1; stack.push(p + 1) }
-      if (py > 0 && !visited[p - w] && prob[p - w] > DET_THRESH) { visited[p - w] = 1; stack.push(p - w) }
-      if (py < h - 1 && !visited[p + w] && prob[p + w] > DET_THRESH) { visited[p + w] = 1; stack.push(p + w) }
+      if (px > 0 && !visited[p - 1] && prob[p - 1] > thresh) { visited[p - 1] = 1; stack.push(p - 1) }
+      if (px < w - 1 && !visited[p + 1] && prob[p + 1] > thresh) { visited[p + 1] = 1; stack.push(p + 1) }
+      if (py > 0 && !visited[p - w] && prob[p - w] > thresh) { visited[p - w] = 1; stack.push(p - w) }
+      if (py < h - 1 && !visited[p + w] && prob[p + w] > thresh) { visited[p + w] = 1; stack.push(p + w) }
     }
     if (x2 - x1 + 1 < DET_MIN_SIZE && y2 - y1 + 1 < DET_MIN_SIZE) continue
     boxes.push({ x1, y1, x2, y2, score: sum / count })
   }
 
   return boxes
-    .filter(b => b.score >= DET_BOX_THRESH)
+    .filter(b => b.score >= boxThresh)
     .sort((a, b) => (a.y1 - b.y1) || (a.x1 - b.x1))
 }
 

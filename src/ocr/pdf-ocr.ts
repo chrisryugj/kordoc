@@ -18,6 +18,7 @@ import type { LineSegment } from "../pdf/line-types.js"
 import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { getOcrEngine, type OcrItem } from "./engine.js"
+import { deskewPage } from "./deskew.js"
 import { ensureOcrModels } from "./models.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
@@ -105,8 +106,10 @@ async function ocrOnePage(
   const rgba = bgraToRgba(bgra)
 
   if (mode === "builtin") {
+    // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정
+    const { rgba: upright } = deskewPage(rgba, rw, rh)
     const stats = { droppedLowConf: 0 }
-    const items = await engine!.recognizePage(rgba, rw, rh, stats)
+    const items = await engine!.recognizePage(upright, rw, rh, stats)
     if (stats.droppedLowConf > 0) {
       warnings.push({
         page: pageNo,
@@ -116,7 +119,7 @@ async function ocrOnePage(
     }
     // 래스터에서 표 괘선 감지 — 스캔본 병합셀 서식도 선 기반 표 파이프라인을 탄다
     const scale = rh / pdfH
-    const ruling = detectRulingLines(rgba, rw, rh, scale)
+    const ruling = detectRulingLines(upright, rw, rh, scale)
     const extraLines = rulingToPdfLines(ruling, scale, pdfH)
     return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables)
   }
@@ -165,11 +168,12 @@ export function ocrItemsToBlocks(
     return {
       text: it.text,
       x: Math.round(it.x / scale),
-      // NormItem.y 는 pdfjs transform[5] = 베이스라인 (bottom-up) — 박스 하단으로 근사
+      // NormItem.y 는 pdfjs transform[5] = 베이스라인 (bottom-up) — 잉크 하단으로 근사
       y: Math.round(pdfH - (it.y + it.h) / scale),
       w: Math.round(it.w / scale),
       h: Math.round(h),
-      fontSize: Math.max(1, Math.round(h * 0.8)), // 박스높이는 어센더+디센더 포함 — 글자크기 근사
+      // 박스는 잉크 외곽(engine tightBoxes) — 한글 줄 잉크 높이 ≈ 0.9em
+      fontSize: Math.max(1, Math.round(h / 0.9)),
       fontName: "ocr",
       isHidden: false,
     }

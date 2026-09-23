@@ -8,7 +8,8 @@
  *  4. runPdfOcr 페이지 번호 1-based 계약 (pdfium page.number 는 0-based —
  *     환산 누락 시 페이지가 한 장씩 밀리는 off-by-one, 수식 OCR 에서 실재했던 결함)
  *  5. OcrProvider 인터페이스 (기존 계약)
- *  6. 모델이 로컬에 있으면 엔진 E2E (없으면 skip — CI 에는 모델 없음)
+ *  6. 모델이 로컬에 있으면 엔진 E2E (없으면 skip — CI 에는 모델 없음):
+ *     가로 한글 줄 인식, 세로로 쌓인 글자의 글자별 인식 + 잉크 외곽 좌표
  */
 
 import { describe, it } from "node:test"
@@ -184,6 +185,38 @@ describe("내장 엔진 E2E (모델 있을 때만)", () => {
       const text = items.map(i => i.text).join("")
       assert.ok(text.includes("대한민국"), `인식 결과: ${text}`)
       assert.ok(text.includes("2026"), `인식 결과: ${text}`)
+    } finally {
+      await engine.destroy()
+    }
+  })
+
+  it("세로로 쌓인 글자(표 칸 세로쓰기)는 글자마다 따로 인식 + 잉크 외곽 좌표", async (t) => {
+    const status = await getOcrModelStatus()
+    if (!status.every(s => s.verified)) { t.skip("OCR 모델 미설치"); return }
+    let sharp: typeof import("sharp")["default"]
+    try { sharp = (await import("sharp")).default } catch { t.skip("sharp 미설치"); return }
+    // 부천 예산서 표 모양 — 칸 경계 세로선 사이의 세로 라벨 "국/균/도/시" + 오른쪽 숫자 열.
+    // det 가 라벨을 세로로 이어 키 큰 박스 하나로 잡고, 종전 엔진은 이를 높이 48 로 짓눌러
+    // "시" 하나만 남겼다(나머지 3글자 소실 — 이 합성 페이지에서 재현 확인)
+    const chars = ["국", "균", "도", "시"]
+    const rows = chars.map((c, i) =>
+      `<text x="40" y="${30 + i * 34}" font-size="18" font-family="sans-serif">${c}</text>` +
+      `<text x="120" y="${30 + i * 34}" font-size="18" font-family="sans-serif">${(i + 1) * 1234},567</text>`).join("")
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="170"><rect width="800" height="170" fill="white"/>` +
+      `<rect x="30" y="0" width="2" height="170" fill="black"/><rect x="100" y="0" width="2" height="170" fill="black"/>${rows}</svg>`
+    const { data, info } = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const { OcrEngine } = await import("../src/ocr/engine.js")
+    const engine = await OcrEngine.create()
+    try {
+      const items = await engine.recognizePage(new Uint8Array(data), info.width, info.height)
+      const labels = items.filter(i => i.x < 100)
+      const got = labels.map(i => i.text.trim())
+      const hit = chars.filter(c => got.includes(c)).length
+      assert.ok(hit >= 3, `글자별 인식: ${JSON.stringify(got)}`)
+      for (const it of labels) {
+        assert.ok(it.x >= 32, `칸 경계 세로선은 잉크 외곽에서 빠짐: x=${it.x}`)
+        assert.ok(it.h <= 30, `잉크 외곽 높이는 글자 크기 수준: h=${it.h}`)
+      }
     } finally {
       await engine.destroy()
     }
