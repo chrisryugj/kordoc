@@ -5,10 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.14.3] - 2026-09-24
 
 읽기 품질 전면 점검: 코퍼스를 넓히고(rhwp 표본 1,351파일·정책브리핑 hwpx+pdf 짝 200쌍) 포맷마다 정답지 벤치를 다시 세운 뒤,
 표·표 안의 표·PDF·OCR·개인정보 마스킹을 고쳤다. 수치는 모두 새 모수 기준.
+글자만 필요한 호출자(문서 검색 색인 등)를 위해 이미지 끄기와 상주 파싱 워커를 더했다.
 
 ### Changed
 
@@ -46,14 +47,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **이미지 끄기** (`ParseOptions.images: false`, CLI `--no-images`; `src/index.ts`, `src/pdf/parser.ts`,
+  `src/pdf/image-extract.ts`): 결과에 이미지 바이트를 싣지 않는다. `images` 를 비우고 블록 트리(자식·표 셀·캡션)의
+  `imageData` 를 떼며, HWP5 `inlineImages` 도 무시한다. 그림 자리 표시는 마크다운·블록에 남는다. PDF 는 PNG 인코딩을
+  건너뛰되 거르기·중복 판정은 같아 자리 표시도 같다(메모리 보호용 128MB 누적 상한만 걸리지 않아 그 뒤 그림도 남는다).
+  실측: changwon-plan2026.pdf JSON 200MB → 9.5MB·CPU 36.4 → 25.4초(자리 표시 외 본문 줄 9,756개 동일),
+  gwd-info-plan.pdf 65MB → 7.2MB·CPU 19.4 → 14.9초. 검색 색인처럼 글자만 필요한 호출자용 (Anything 문서 검색 앱 연동).
+- **상주 파싱 워커** `kordoc parse-worker` (`src/cli/commands-worker.ts`): stdin NDJSON 요청 한 줄마다 한 줄 JSON 응답.
+  `result` 는 `--format json` 과 같은 ParseResult 이고 파싱 실패도 `success:false` 로 담긴다. 응답에 `rss` 를 실어 호스트가
+  워커 교체 시점을 정하고, 시작 줄 `{"ready":true,"version","protocol":1}` 로 호환을 판단한다. pdfjs 등의 console 경고가
+  프로토콜 줄을 깨지 않게 stderr 로 돌리고, 종료 전에 stdout 을 비운다 (맥·윈도의 비동기 파이프에서 곧바로 exit 하면
+  마지막 큰 응답이 잘렸다, 테스트로 레드 확인).
 - 벤치: `bench/collect-rhwp.mjs`·`collect-korea-kr-pairs.mjs`(코퍼스 수집), `bench/lib/geo-grid.mjs`(PDF 표 기하 정답지: 폭 0 논리 열 접기),
   `pdf-table-gt.mjs` 중첩표 트랙·세트별 집계, `bench/ocr-robust.mjs`(열화 입력), `bench/redact-bench.mjs`·`redact-docs.mjs`(합성·코퍼스 마스킹).
 - 게이트 플로어를 새 모수로 다시 잠갔다(PDF 표 매칭 0.97·exact 0.90·F1 0.94·중첩 exact 0.63 등). `bench:gate` 에 마스킹·OCR 정확도 게이트 추가.
 - fuzz 멈춤·느림 한도를 문서마다 max(30s, 원본 파싱 × 3, 상한 180s)로. 깨끗한 원본도 35초 걸리는 367쪽 PDF 가 고정 30초에 걸리던 것.
 
-### Known issues
+### Fixed
 
-- rhwp HWP3 변환본 4건은 본문의 리터럴 `$`(셸 변수)가 인라인 수식 `$…$` 와 구별되지 않아 HWPX recall 게이트를 넘지 못한다. IR 에 리터럴 `$` 이스케이프 규약이 필요하다.
+- **본문의 `$` 가 수식으로 읽히던 것** (HWPX·HWP5·HWP3; `src/table/builder.ts` `escapeLiteralDollar`): IR 글 규약을 정했다. 원문의
+  리터럴 `$` 는 `\$` 로 담고 `$…$`·`$$…$$` 는 파서가 넣는 수식 스팬에만 쓴다. `escapeGfm` 은 이스케이프된 `$` 에서 수식 스팬을
+  열지 않는다. 종전엔 셸 변수 "echo $HOME $PATH" 가 수식 스팬으로 보호돼 마크다운 렌더러에서 수식이 됐다(rhwp HWP3 변환본 4건이
+  HWPX recall 게이트 미달). `\$` 는 CommonMark 백슬래시 이스케이프라 렌더 결과는 `$` 그대로다. HWP5 는 필드 범위가 글자 위치라
+  디코딩 중엔 한 글자 표지로 받고 필드 처리 뒤 `\$` 로 바꾼다(`dollarMark`). 라운드트립 역변환(`unescapeGfm`·`unescapeGfmCell`·
+  `normForMatch`)과 마크다운→HWPX 인라인 파싱은 `\$` 를 원문 `$` 로 되돌린다.
+- **원문 역슬래시 뒤 구두점에서 역슬래시가 사라지던 것** (`escapeGfm`): "C:\.Pls"·"cd \!*"·"{} \;" 처럼 리터럴 역슬래시 뒤에
+  ASCII 구두점이 오면 CommonMark 가 이스케이프로 읽어 역슬래시를 지웠다(렌더러·채점 모두). 마크다운에서 `\\` 로 낸다. IR 규약
+  이스케이프 `\$`·`\|` 는 그대로 두고, 라운드트립 역변환도 `\\` 를 되돌린다. `$` 결함에 가려 있던 rhwp HWP3 변환본 2건의 잔여 미스.
+- **HWPX 미기입 누름틀 안내문이 본문으로 나오던 것** (`src/hwpx/section-walker.ts`): CLICK_HERE 필드가 수정 안 됨(`dirty="0"`)이고
+  값 자리 글이 안내문 그대로면 한컴은 화면에만 흐리게 보이고 인쇄하지 않는다(rhwp form-01·form-02·issue1893, 한컴 PDF 에 없음).
+  블록 글에는 남기고(양식 채우기·패치가 원문 자리와 맞대도록) `IRSpan.placeholder` 로 표시해 마크다운에서만 뺀다. HWP5 의 미기입
+  안내문 제거와 같은 판정이다. 누름틀 채우기(`fillHwpx`)는 값을 넣으면 `dirty` 를 "1" 로 켠다. 한컴이 직접 채운 필드도 그렇고,
+  켜지 않으면 안내문과 같은 값을 넣었을 때(#3380) 한컴과 파서가 그 값을 미기입 안내문으로 본다.
 
 ## [4.14.2] - 2026-09-23
 

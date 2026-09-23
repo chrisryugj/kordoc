@@ -13,7 +13,7 @@ npm 패키지로 배포되며, 3가지 인터페이스 제공: 라이브러리 A
 npm run build          # tsup으로 ESM+CJS 듀얼 빌드 → dist/
 npm run dev            # watch 모드
 npm test               # node --test + tsx 로더 (tests/*.test.ts)
-npm run bench:gate     # 코퍼스 회귀 게이트 체인 (score·roundtrip·pdf-table·formats·fuzz·reflow·pages) — prepublishOnly에 배선
+npm run bench:gate     # 코퍼스 회귀 게이트 체인 (pages·score·roundtrip·pdf-table·formats·fuzz·reflow·redact·ocr) — prepublishOnly에 배선
 npm run bench:visual   # 한컴 실렌더 시각 오라클 (macOS GUI 전용, 발행 전 수동 1회 — bench/visual/, 순수 로직은 hash-lib.mjs)
 node bench/predict-layout.mjs 문서.hwpx --loose  # 생성 공문서의 한글 조판 예측(실글꼴 폭표, 한글 2024 PDF 154줄 재현), 한컴 없이 벌어진 줄·고아 줄·압축 확인
 ```
@@ -45,8 +45,9 @@ HWP5↔PDF 셀 대조 보고 지표는 `node bench/cmp-hwp-pdf.mjs licbyl [--lin
 `korea-kr-pairs/`(정책브리핑 보도자료 hwpx+pdf(+hwp) 짝 200쌍, `bench/collect-korea-kr-pairs.mjs --pages=20-120 --exclude=korea-kr,korea-kr2`)이
 들어와 게이트 모수는 hwpx 1,994·pdf 1,561(채점 1,384)·hwp쌍 1,058, PDF 표 GT(`pdf-table-gt.mjs`)는 430쌍 1,784표(중첩표 트랙 157표)다.
 rhwp 의 HWP3 변환본 4건(`hwp3-sample5·10·11·14`)은 hp:t 안 셸 텍스트의 리터럴 `$`(`$HOME`·`$1`)가 인라인 수식 `$…$` 와
-구별되지 않아 HWPX recall·phantom·순서 게이트에 걸린다. 출력 마크다운에서도 수식으로 읽히는 실결함이라 IR 에 리터럴 `$` 이스케이프
-규약(HWPX·HWP5·HWP3 공통)을 넣어야 풀린다(미해결).
+구별되지 않아 HWPX recall·phantom·순서 게이트에 걸렸다. v4.14.3 에서 IR 리터럴 `$` 규약(원문 `$` → `\$`, `escapeLiteralDollar`)으로 풀었다.
+미기입 누름틀 안내문(rhwp form-01·form-02·issue1893)은 IR 글에 `placeholder` span 으로 남기고 마크다운·참조 모두에서 뺀다
+(`bench/ref/policy.mjs` clickhere-placeholder).
 
 hwp쌍 23은 `corpus/pairs`(10) + `corpus/hwp5`(13)이 아니라 **`korea-kr`·`misc` 의 hwp+hwpx
 동명 짝까지 합산한 값**이다. 이 폴더들이 한쪽에만 있으면 쌍이 10으로 떨어져
@@ -192,7 +193,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/page-range.ts` | 페이지 범위 문자열 파싱 (`"1-3,5"` → `Set<number>`) |
 | `src/page-markdown.ts` | 페이지별 마크다운 사영 (#68) — `IRBlock.pageNumber` 로 갈라 페이지마다 `blocksToMarkdown()`. `parse()` 가 `ParseSuccess.pages` 로 붙인다 |
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |
-| `src/cli.ts` | Commander 기반 CLI 진입점(루트 파싱 명령). 하위 명령은 `src/cli/commands-{docs,generate,render,system}.ts` (등록 순서 = 도움말 순서) |
+| `src/cli.ts` | Commander 기반 CLI 진입점(루트 파싱 명령). 하위 명령은 `src/cli/commands-{docs,generate,render,system,worker}.ts` (등록 순서 = 도움말 순서) |
 | `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 17개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
 | `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) + `rasterizePageSvg` 페이지 단위 png/jpeg(실배율 보고) |
 | `src/redact.ts` | PII 탐지·마스킹 엔진: 정규화·겹침 처리·마크다운 표 머리글 문맥(선형 시간). 룰 정의는 `redact-rules.ts` |
