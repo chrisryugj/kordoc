@@ -113,6 +113,19 @@ test("#80 MCP: unsupported PPTX and supported ZIP metadata stay distinct", { tim
       })
     }
 
+    // 원본 보존 채우기·패치도 "감지된 포맷: hwpx" 가 아니라 실제 포맷을 안내한다
+    for (const [tool, args] of [
+      ["fill_form", { file_path: renamed, fields: { 성명: "홍길동" }, output_format: "hwpx-preserve" }],
+      ["patch_document", { file_path: renamed, edited_markdown: "본문", output_path: join(dir, "patched.hwpx") }],
+    ] as const) {
+      await t.test(`${tool} names the refined PPTX format`, async () => {
+        const result = await client.callTool({ name: tool, arguments: args }, undefined, { timeout: 10000 })
+        const text = (result.content as { type: string; text?: string }[]).map(item => item.text ?? "").join("\n")
+        assert.equal(result.isError, true, text)
+        assert.match(text, /감지된 포맷: pptx/)
+      })
+    }
+
     for (const tool of ["detect_format", "parse_document", "parse_metadata"]) {
       await t.test(`${tool} continues to reject the unsupported .pptx extension`, async () => {
         const result = await callTool(tool, original)

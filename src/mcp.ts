@@ -600,12 +600,10 @@ server.tool(
 
       // ─── hwpx-preserve: 원본 ZIP 직접 수정 (스타일 보존) ───
       if (output_format === "hwpx-preserve") {
-        const format = detectFormat(buffer)
-        let isHwpx = format === "hwpx"
-        if (isHwpx) {
-          const zipFormat = await detectZipFormat(buffer)
-          isHwpx = zipFormat === "hwpx"
-        }
+        // ZIP 은 내부 구조로 세분화한 포맷을 보고한다 — PPTX 를 "hwpx" 로 안내하던 오해 방지 (#80)
+        let format: string = detectFormat(buffer)
+        if (format === "hwpx") format = await detectZipFormat(buffer)
+        const isHwpx = format === "hwpx"
         if (!isHwpx) {
           return {
             content: [{ type: "text", text: `hwpx-preserve는 HWPX 파일만 지원합니다 (감지된 포맷: ${format}). hwpx 또는 markdown을 사용하세요.` }],
@@ -796,12 +794,11 @@ server.tool(
     try {
       const out = safeOutputPath(output_path, new Set([".hwpx", ".hwp"]))
       const { buffer } = await readValidatedFile(file_path)
-      const format = detectFormat(buffer)
-      let isHwpx = format === "hwpx"
-      if (isHwpx) {
-        const zipFormat = await detectZipFormat(buffer)
-        isHwpx = zipFormat === "hwpx"
-      }
+      // ZIP(hwpx/xlsx/docx/pptx)·OLE2(hwp/xls) 모두 내부 구조로 세분화한 포맷으로 판정·안내 (#80)
+      let format: string = detectFormat(buffer)
+      if (format === "hwpx") format = await detectZipFormat(buffer)
+      else if (format === "hwp") format = detectOle2Format(buffer)
+      const isHwpx = format === "hwpx"
       if (!isHwpx && format !== "hwp") {
         return {
           content: [{ type: "text", text: `patch_document는 HWPX 또는 HWP 5.x만 지원합니다 (감지된 포맷: ${format}).` }],
