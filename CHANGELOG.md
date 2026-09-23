@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HWPX** (`src/hwpx/notes.ts`·`run-spans.ts` 신설): 각주·미주 참조 부호와 주석 머리 번호, 캡션 번호, `content.hpf` 메타데이터(제목·지은이·설명·
   키워드·날짜). 전 코퍼스 phantom 0.0047 → 0.00005, 표 exact·셀 F1·수식·각주 게이트 1.
 - **OCR** (`src/ocr/line-split.ts`·`postprocess.ts`·`crop.ts`·`deskew.ts` 신설): 기울기 보정, 세로로 이어진 키 큰 박스를 행 밴드로 갈라 인식,
-  사전에 없는 공문서 기호(○·△·따옴표) 복원, 박스 좌표를 잉크 경계로. CER 0.201 → 0.192, 기울어진 스캔(+3°) 57.6% → 22.0%.
+  사전에 없는 공문서 기호(○·△·따옴표) 복원, 박스 좌표를 잉크 경계로. CER 0.201 → 0.171(아래 PDF 경로 보완 포함), 표 셀 F1 0.409 → 0.440,
+  기울어진 스캔(+3°) 57.6% → 22.0%.
   PDF 경로 보완 3건: 과소분할 표 열 비교는 본문 행만(`undersegmented.ts`), 2단 판정 통계는 양쪽에 글 있는 줄만(`cluster-detector.ts`),
   병합 칸에 쌓인 온전한 천 단위 숫자는 잇지 않음(`cell-text.ts`).
 - **개인정보 마스킹** (`src/redact-rules.ts`·`redact-doc.ts`·`redact-hwpx.ts`·`redact-hwp5.ts`·`redact-scrub.ts` 신설): 파일 안 모든 글자 저장소
@@ -48,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 벤치: `bench/collect-rhwp.mjs`·`collect-korea-kr-pairs.mjs`(코퍼스 수집), `bench/lib/geo-grid.mjs`(PDF 표 기하 정답지: 폭 0 논리 열 접기),
   `pdf-table-gt.mjs` 중첩표 트랙·세트별 집계, `bench/ocr-robust.mjs`(열화 입력), `bench/redact-bench.mjs`·`redact-docs.mjs`(합성·코퍼스 마스킹).
 - 게이트 플로어를 새 모수로 다시 잠갔다(PDF 표 매칭 0.97·exact 0.90·F1 0.94·중첩 exact 0.63 등). `bench:gate` 에 마스킹·OCR 정확도 게이트 추가.
+- fuzz 멈춤·느림 한도를 문서마다 max(30s, 원본 파싱 × 3, 상한 180s)로. 깨끗한 원본도 35초 걸리는 367쪽 PDF 가 고정 30초에 걸리던 것.
 
 ### Known issues
 

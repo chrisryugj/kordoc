@@ -10,6 +10,7 @@
 //
 // 게이트: crash(throw)=0 · hang(>TIMEOUT 미반환)=0 · 실패인데 code 없음=0 · slow=0
 //   slow = 반환은 했지만 TIMEOUT 초과 (동기 블로킹은 race로 못 끊음 — 이벤트루프 점유 감지).
+//   TIMEOUT 은 문서마다 max(30s, 원본 파싱 × CLEAN_FACTOR) — 원본부터 30초를 넘는 큰 문서 대응(2026-09-23 편람 367쪽).
 //   기준선(2026-07-03): bflip eval-rda-2022.pdf 144.8s 1건 발굴 → findTwoColumnProseCutX
 //   오염 좌표 폭주 가드로 2.3s 해소 — slow 게이트 0으로 잠금
 // 사용법: node bench/fuzz-sweep.mjs [--gate] [--doc=부분문자열] [--verbose]
@@ -25,6 +26,10 @@ const gateMode = args.includes("--gate")
 const verbose = args.includes("--verbose")
 const docFilter = (args.find(a => a.startsWith("--doc=")) ?? "").split("=")[1] ?? null
 const TIMEOUT_MS = 30_000
+// 큰 문서(행정업무운영 편람 PDF 367쪽: 깨끗한 원본도 35초)는 변형도 원본만큼 걸린다 — 멈춤·느림 판정 한도를 원본 파싱
+// 시간의 CLEAN_FACTOR 배로 늘린다(상한 MAX_LIMIT_MS). 원본은 변형이 TIMEOUT_MS 를 넘었을 때만 한 번 잰다
+const CLEAN_FACTOR = 3
+const MAX_LIMIT_MS = 180_000
 
 // ─── 결정적 PRNG (xorshift32, 경로 시드) ────────────
 function djb2(s) {
@@ -86,20 +91,35 @@ files.sort()
 
 const rows = []
 let crash = 0, hang = 0, noCode = 0, success = 0, failed = 0, slow = 0
+const timeoutAfter = ms => new Promise(resolve => setTimeout(() => resolve("__timeout__"), Math.max(0, ms)).unref())
 for (const file of files) {
   const rel = relative(corpusDir, file)
   if (docFilter && !rel.includes(docFilter)) continue
   const orig = await readFile(file)
+  const name = rel.split("/").pop()
+  // 이 문서의 멈춤·느림 한도 — 처음 필요할 때 원본을 재서 정한다
+  let limitMs = null
+  const limitFor = async () => {
+    if (limitMs === null) {
+      const tc = performance.now()
+      await Promise.race([parse(Buffer.from(orig), { filename: name }).catch(() => null), timeoutAfter(MAX_LIMIT_MS)])
+      limitMs = Math.min(MAX_LIMIT_MS, Math.max(TIMEOUT_MS, CLEAN_FACTOR * (performance.now() - tc)))
+    }
+    return limitMs
+  }
   for (const variant of VARIANTS) {
     const rng = makeRng(djb2(`${rel}:${variant}`))
     const mutated = Buffer.from(mutate(orig, variant, rng)) // parse가 detach해도 안전하게 복사본
     const t = performance.now()
     let outcome, code = null, error = null
     try {
-      const res = await Promise.race([
-        parse(mutated, { filename: rel.split("/").pop() }),
-        new Promise(resolve => setTimeout(() => resolve("__timeout__"), TIMEOUT_MS).unref()),
-      ])
+      const pending = parse(mutated, { filename: name })
+      let res = await Promise.race([pending, timeoutAfter(TIMEOUT_MS)])
+      // 한도를 넘기면 원본 기준 한도까지 같은 파싱을 더 기다린다 (큰 문서의 정상 소요와 진짜 멈춤을 가른다)
+      if (res === "__timeout__") {
+        const limit = await limitFor()
+        if (limit > TIMEOUT_MS) res = await Promise.race([pending, timeoutAfter(limit - (performance.now() - t))])
+      }
       if (res === "__timeout__") { outcome = "hang"; hang++ }
       else if (res.success) { outcome = "success"; success++ }
       else {
@@ -113,7 +133,7 @@ for (const file of files) {
       error = String(err?.stack ?? err).slice(0, 300)
     }
     const ms = Math.round(performance.now() - t)
-    if (outcome !== "hang" && ms > TIMEOUT_MS) { slow++; outcome = `slow-${outcome}` }
+    if (outcome !== "hang" && ms > TIMEOUT_MS && ms > await limitFor()) { slow++; outcome = `slow-${outcome}` }
     rows.push({ file: rel, variant, outcome, code, ms, ...(error ? { error } : {}) })
     if (verbose || outcome === "crash" || outcome === "hang") {
       console.error(`${outcome.padEnd(7)} ${variant.padEnd(5)} ${ms}ms ${rel}${code ? " [" + code + "]" : ""}${outcome === "crash" ? "\n  " + error : ""}`)
