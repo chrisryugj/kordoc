@@ -7,7 +7,7 @@ import { polishGongmunText } from "../src/hwpx/gongmun-typo.js"
 import { fontAdvanceEm1000 } from "../src/hwpx/font-metrics.js"
 import { measureTextWidth, faceClassForGen, simulateWrap } from "../src/hwpx/text-metrics.js"
 import { markerLayout } from "../src/hwpx/gen-marker.js"
-import { fitParagraph } from "../src/hwpx/fit-line.js"
+import { fitParagraph, fitCharBreaks } from "../src/hwpx/fit-line.js"
 import { tabAdvance, buildPara } from "../src/render/para-model.js"
 import { DEFAULT_PARA_GEOM } from "../src/render/head-styles.js"
 import { reflowSection } from "../src/render/reflow.js"
@@ -237,5 +237,56 @@ describe("경계 사례 — 별표 강조·두 자리 번호·표지 묶음 빈�
     assert.ok(measureTextWidth(body, MINISTRY.item.pt * 100, near.ratio, { faceClass: fc, spacingPct: near.spacing }) <= avail, "압축 뒤 한 줄")
     const far = await bandOf(1.6)
     assert.deepEqual([far.ratio, far.spacing], [100, 0])
+  })
+})
+
+describe("한 줄 맞춤·긴 어절 (한컴 실렌더 지적 4건)", () => {
+  const NB = "\u00a0"
+  it("한 줄보다 긴 어절은 한컴처럼 다음 줄로 넘긴 뒤 쪼갠다(앞 줄은 벌어짐)", () => {
+    const fc = faceClassForGen("휴먼명조")
+    const text = `서대문구 계획서 기준 서울시와 11개 구(강남·강서·광진·금천·동작·서초·성동·성북·영등포·은평·종로)가 사용`
+    const w = simulateWrap(text, 45820, 45820, 1400, 100, "keep", { faceClass: fc })
+    assert.equal(w.starts[1], text.indexOf("구("))
+  })
+
+  it("짧은 꼬리 줄은 압축 15% 이내면 한 줄로 올리고, 2% 여유를 두고 판정한다", () => {
+    for (const [font, pt, W, text] of [
+      ["한컴돋움", 15, 46320, `전담 조직 신설: 수원 AI스마트정책국(2025.${NB}10.), 안양 AI전략국(2026.${NB}1.)`],
+      ["휴먼명조", 14, 45820, `인천은 2026.${NB}7.${NB}1. 행정체제 개편(제물포구·영종구·서해구·검단구 신설) 반영`],
+      ["휴먼명조", 14, 45820, `「농어업 인공지능 육성계획(2026~2030)」: 4대 과제 19개 사업, 5년 1,647억${NB}원`],
+    ] as const) {
+      const fc = faceClassForGen(font)
+      assert.equal(simulateWrap(text, W * 0.98, W * 0.98, pt * 100, 100, "keep", { faceClass: fc }).lines, 2, text)
+      const f = fitParagraph(text, font, pt, W, W, 90)
+      assert.ok(f, text)
+      assert.ok(1 - (f.ratio / 100) * (1 + f.spacing / 100) <= 0.15 + 1e-9, `${f.ratio}/${f.spacing}`)
+      assert.equal(simulateWrap(text, W * 0.98, W * 0.98, pt * 100, f.ratio, "keep", { faceClass: fc, spacingPct: f.spacing }).lines, 1, text)
+    }
+  })
+
+  it("꼬리를 올리면 묶은 긴 날짜 덩어리가 밀려 앞 줄이 벌어지는 문단은 줄 수를 줄이지 않는다", () => {
+    const fc = faceClassForGen("한컴돋움"), W = 46320
+    const text = `「서울시 인공지능 기본계획(2027~2029)」 수립 중: 용역 2026.${NB}5.${NB}7.~11.${NB}6.(3억${NB}원), 최종안은 10~11월 인공지능위원회 의결 예정`
+    const base = simulateWrap(text, W * 0.98, W * 0.98, 1500, 100, "keep", { faceClass: fc }).lines
+    const f = fitParagraph(text, "한컴돋움", 15, W, W, 90)
+    const after = f ? simulateWrap(text, W * 0.98, W * 0.98, 1500, f.ratio, "keep", { faceClass: fc, spacingPct: f.spacing }).lines : base
+    assert.equal(after, base)
+  })
+
+  it("한 줄보다 긴 가운뎃점 목록 문단은 글자 단위로, 줄 끝은 공백·가운뎃점 뒤에만(±1% 에서도 같은 자리)", async () => {
+    const fc = faceClassForGen("휴먼명조"), W = 45820
+    const text = "서대문구 계획서 기준 서울시와 11개 구(강남·강서·광진·금천·동작·서초·성동·성북·영등포·은평·종로)가 ChatGPT 기반 플랫폼을 SaaS로 사용"
+    const f = fitCharBreaks(text, "휴먼명조", 14, W, W, 90)
+    assert.ok(f)
+    for (const s of [0.99, 1, 1.01]) {
+      const starts = simulateWrap(text, W * s, W * s, 1400, f.ratio, "charAll", { faceClass: fc, spacingPct: f.spacing }).starts.slice(1)
+      assert.ok(starts.length > 0 && starts.every((i) => text[i - 1] === " " || text[i - 1] === "·"), starts.map((i) => text.slice(i - 2, i + 2)).join(" "))
+    }
+    // 긴 어절이 없으면 해당 없음(어절 단위 유지)
+    assert.equal(fitCharBreaks("서대문구 계획서 기준 서울시와 11개 구가 플랫폼을 사용", "휴먼명조", 14, W, W, 90), null)
+    // 생성물: 그 문단만 KEEP_WORD(글자 단위), 다른 항목은 BREAK_WORD
+    const { sec, head } = await parts(await markdownToHwpx(`# 보고\n\n> 검토하고자 함\n\n### 대항목\n\n- 중항목\n  - ${text}\n  - 짧은 항목`, { gongmun: { preset: "report" } }))
+    assert.ok(paraPrOf(head, paraOf(sec, "서대문구 계획서")).includes('breakNonLatinWord="KEEP_WORD"'))
+    assert.ok(paraPrOf(head, paraOf(sec, "짧은 항목")).includes('breakNonLatinWord="BREAK_WORD"'))
   })
 })

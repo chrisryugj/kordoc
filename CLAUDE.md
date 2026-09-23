@@ -91,7 +91,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/outline.ts` | 마크다운 블록 → 의미 아웃라인 — #/##/###·리스트 깊이·명시 부호(□ㅇ-※1.가.)를 하나의 depth로 정규화 (입력 형태 무관 동일 결과) |
 | `src/hwpx/gongmun-scheme.ts` | 위계 스킴 SSOT — 서울 실결재 629건 실측(reference 2.8): 법정형 굴림 12/2타 계단, 개조식형 □ HY견고딕 17b·ㅇ 한컴돋움 15b 1타·- 휴먼명조 14 3타·※ 한컴돋움 14, 표 한컴돋움 12 #DFE6F7 |
 | `src/hwpx/style-registry.ts` | charPr/paraPr/글꼴 동적 발급(dedupe) — 손계산 id 파티션 제거. 정적 블록(charPr 0~16·paraPr 0~7·글꼴 3종) 뒤에 이어붙임 |
-| `src/hwpx/fit-line.ts` | 한 줄 강제 — 장평→자간→pt 축소 (실측 96/95·-4/-5 관행), 넘치면 warning. `fitParagraph`: 어절 조판을 재현해 무압축·자간/장평 사다리 중 비용(벌어진 줄 + 고아 줄 + 압축량)이 가장 낮은 조합 (engine-spec (k)장) |
+| `src/hwpx/fit-line.ts` | 한 줄 강제 — 장평→자간→pt 축소 (실측 96/95·-4/-5 관행), 넘치면 warning. `fitParagraph`: 어절 조판을 재현해 짧은 꼬리 줄은 압축 15% 이내로 올리고, 그 밖엔 무압축·자간/장평 사다리 중 비용(벌어진 줄 + 고아 줄 + 압축량)이 가장 낮은 조합. 판단은 여유 2%. `fitCharBreaks`: 한 줄보다 긴 어절이 있는 문단을 글자 단위로, 줄 끝은 공백·목록 구분자 뒤에만 (engine-spec (k)장) |
 | `src/hwpx/font-metrics.ts` | 생성·렌더용 실글꼴 폭표: 한컴오피스 번들 TTF(한컴돋움·HY견고딕·휴먼명조·HY헤드라인M·굴림체·굴림·맑은 고딕·함초롬돋움) ASCII + 기호 예외, 나머지 cjk 균일. 한글 2024 PDF 154줄 줄바꿈 재현으로 검증. `faceClassForGen`/`faceClassOf` 가 `font:이름` 으로 쓴다 |
 | `src/hwpx/gen-marker.ts` | 항목부호 + 탭 원자: `markerLayout`(내어쓰기 = 부호 실폭 + 1타)·`markerRunXml`. paraPr `autoTab`(tabPr 1 = 내어쓰기용 자동 탭)과 짝, 첫 줄 내용이 둘째 줄과 같은 x |
 | `src/hwpx/gongmun-typo.ts` | 공문서 문자 다듬기: 날짜·시각 범위·금액 "원" 앞 공백 → U+00A0(`escapeTextXml` 이 `<hp:nbSpace/>` 로 방출), 곧은따옴표 → ‘’“”. v5 아웃라인·개조식·보도자료 블록에 적용 |

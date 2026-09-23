@@ -198,7 +198,7 @@ export interface WrapResult {
  * 문단 줄바꿈 시뮬레이션.
  * mode 'keep' = 어절 단위(공문서 모드 — 저장 속성 breakNonLatinWord="BREAK_WORD", 이름 역전 주의),
  * mode 'charAll' = 글자 단위(breakNonLatinWord="KEEP_WORD" — 한글 기본값·전자결재 변환기).
- * 한 어절이 줄보다 길면 keep에서도 글자 단위로 강제 분해(한컴 동일).
+ * 한 어절이 줄보다 길면 keep에서도 글자 단위로 강제 분해 — 한컴처럼 다음 줄로 넘긴 뒤 쪼갠다(앞 줄은 벌어진다).
  *
  * @param text        문단 전체 텍스트(항목 부호 포함)
  * @param firstWidth  첫 줄 가용 폭(HWPUNIT)
@@ -275,7 +275,9 @@ export function simulateWrap(
       continue
     }
     if (lineW === 0 || w > contWidth + EPS) {
-      // 빈 줄이거나 다음 줄에도 안 들어가는 초장 유닛 — 글자 단위 강제 분해
+      // 빈 줄이거나 다음 줄에도 안 들어가는 초장 유닛 — 글자 단위 강제 분해. 어절 단위에서는 한컴이 먼저 다음 줄로
+      // 넘긴 뒤 쪼갠다(코퍼스 어절 단위 문단 400개: 넘긴 뒤 347·제자리 340 일치, 갈리는 13건은 넘긴 뒤가 맞음)
+      if (mode === "keep" && lineW > 0) breakBefore(pos, 0)
       let sub = 0
       for (const ch of u) {
         const c = charWAt(pos + sub, ch)

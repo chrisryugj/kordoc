@@ -18,7 +18,7 @@ import { type Scheme, type LevelStyle, pickScheme, taHu } from "./gongmun-scheme
 import { buildOutline, type Outline, type OutlineNode } from "./outline.js"
 import { StyleRegistry, inlineMapper } from "./style-registry.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
-import { fitOneLine, fitParagraph } from "./fit-line.js"
+import { fitOneLine, fitParagraph, fitCharBreaks } from "./fit-line.js"
 import { faceClassForGen } from "./text-metrics.js"
 import { markerLayout, markerRunXml } from "./gen-marker.js"
 import { polishGongmunText } from "./gongmun-typo.js"
@@ -222,17 +222,21 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     const lay = markerLayout(st.font, st.pt, st.leadTa, mk)
     // 첫 줄(탭 뒤)과 둘째 줄 이후 내용 폭이 같다 — 둘 다 left + hang 에서 시작
     const textW = W - lay.left - lay.hang
-    let ratio = 100, spacing = 0
+    let ratio = 100, spacing = 0, charBreaks = false
     if (st.oneLine) {
       // □ 는 크기를 줄이지 않는다(형제 □ 끼리 크기·굵기가 달라 보이던 결함, 라운드 3) — 장평 90·자간 -5 까지만.
       // 그래도 넘치면 억지로 우겨넣지 않고 자연 줄바꿈(내어쓰기) + 경고: 문장을 줄이는 게 정답
       const fit = fitOneLine(plain(node.text), st.font, st.pt, textW, st.pt, 90)
       if (fit.overflow) warnings.push(`□ 항목이 한 줄에 담기지 않아 두 줄로 꺾입니다 — 문장을 줄이세요(장평 90%·자간 -5 로도 초과): "${node.text.slice(0, 30)}…"`)
       else { ratio = fit.ratio; spacing = fit.spacing }
-    } else if (g.autoFitMinRatio !== null) {
-      // 한 줄 근접·고아 줄 → 자간 -1%씩(Shift+Alt+N 관행)·장평 조합, 벌어진 줄 → 자간 -1…-4
-      const f = fitParagraph(plain(node.text), st.font, st.pt, textW, textW, g.autoFitMinRatio)
+    } else {
+      // 한 줄보다 긴 어절(가운뎃점 목록 등)이 있으면 글자 단위 + 목록 구분자 뒤에서만 끊는 압축. 그 밖엔 짧은 꼬리 줄 올리기·
+      // 벌어진 줄 완화(자간 -1%씩 Shift+Alt+N 관행·장평 조합). autoFit false 면 압축 없이 줄나눔만 고른다
+      const t = plain(node.text)
+      const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101)
+      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio) : null)
       if (f) { ratio = f.ratio; spacing = f.spacing }
+      charBreaks = !!cb
     }
     // 압축은 내용 run 에만 — 부호는 형제 항목과 같은 모양(부호 폭이 줄어도 내용 시작은 탭이 고정)
     const base = { font: st.font, pt: st.pt, bold: st.bold, ratio, spacing }
@@ -247,7 +251,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     // 어절 줄바꿈(BREAK_WORD — 이름 역전 주의) + 양쪽정렬 + 외톨이줄 보호. 글자 단위(라운드 2)는 "동대/문"·"실/국"처럼
     // 낱말을 쪼갰다(유저 지시 2026-09-23). 긴 어절이 넘어가 앞 줄이 벌어지는 것은 fitParagraph 가 자간으로 완화한다.
     const keepNext = !!st.keepWithNext && !!nextNode && ((nextNode.kind === "item" && nextNode.depth > depth) || nextNode.kind === "ref")
-    const paraSpec = { align: "JUSTIFY" as const, left: lay.left, indent: -lay.hang, before, lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: keepNext, autoTab: lay.hang > 0, widowOrphan: true }
+    const paraSpec = { align: "JUSTIFY" as const, left: lay.left, indent: -lay.hang, before, lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: keepNext, keepWord: !charBreaks, autoTab: lay.hang > 0, widowOrphan: true }
     const markerRun = mk ? markerRunXml(mk, reg.char({ font: st.font, pt: st.pt, bold: st.bold }), lay) : ""
     if (isMinistry) {
       // 실측: 문단 뒤 6~7pt(줄피치 21.7 → 문단 간 27.6~29). (키워드)는 □·❶ 파랑 bold / ㅇ 이하 검정 bold
@@ -266,9 +270,11 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     const lay = markerLayout(st.font, st.pt, 0, marker)
     const left = isMinistry ? st.leadTa * taHu(st.pt) : leadLeft(node.depth, st.pt)
     const textW = W - left - lay.hang
-    const f = g.autoFitMinRatio !== null ? fitParagraph(plain(node.text), st.font, st.pt, textW, textW, g.autoFitMinRatio) : null
+    const t = plain(node.text)
+    const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101)
+    const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio) : null)
     const base = { font: st.font, pt: st.pt, bold: st.bold, ratio: f?.ratio ?? 100, spacing: f?.spacing ?? 0 }
-    const paraId = reg.para({ align: "JUSTIFY", left, indent: -lay.hang, after: isMinistry ? 400 : 0, lineSp: isMinistry ? 130 : st.lineSp ?? scheme.lineSp, autoTab: true, widowOrphan: true })
+    const paraId = reg.para({ align: "JUSTIFY", left, indent: -lay.hang, after: isMinistry ? 400 : 0, lineSp: isMinistry ? 130 : st.lineSp ?? scheme.lineSp, keepWord: !cb, autoTab: true, widowOrphan: true })
     const markerRun = markerRunXml(marker, reg.char({ font: st.font, pt: st.pt, bold: st.bold }), lay)
     return `<hp:p paraPrIDRef="${paraId}" styleIDRef="0">${markerRun}${generateRuns(node.text, reg.char(base), inlineMapper(reg, base))}</hp:p>`
   }
@@ -282,13 +288,16 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
         if (pics.every(Boolean)) return `<hp:p paraPrIDRef="${reg.para({ align: "CENTER", lineSp: scheme.lineSp })}" styleIDRef="0"><hp:run charPrIDRef="${reg.char({ font: st.font, pt: st.pt })}">${pics.join("")}</hp:run></hp:p>`
       }
     }
-    let ratio = 100, spacing = 0
-    if (!node.align && g.autoFitMinRatio !== null) {
-      const f = fitParagraph(plain(node.text), st.font, st.pt, W, W, g.autoFitMinRatio)
+    let ratio = 100, spacing = 0, charBreaks = false
+    if (!node.align) {
+      const t = plain(node.text)
+      const cb = fitCharBreaks(t, st.font, st.pt, W, W, g.autoFitMinRatio ?? 101)
+      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, W, W, g.autoFitMinRatio) : null)
       if (f) { ratio = f.ratio; spacing = f.spacing }
+      charBreaks = !!cb
     }
     const base = { font: st.font, pt: st.pt, bold: st.bold, ratio, spacing }
-    const paraId = reg.para({ align: node.align ?? "JUSTIFY", lineSp: scheme.lineSp, widowOrphan: true })
+    const paraId = reg.para({ align: node.align ?? "JUSTIFY", lineSp: scheme.lineSp, keepWord: !charBreaks, widowOrphan: true })
     return generateParagraph(node.text, paraId, reg.char(base), inlineMapper(reg, base))
   }
 
