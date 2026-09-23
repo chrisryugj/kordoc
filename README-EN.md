@@ -655,7 +655,13 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `parseXls(buffer, options?)` | XLS (Excel 97–2003, BIFF8) only |
 | `parseDocx(buffer, options?)` | DOCX only |
 | `parseHwpml(buffer, options?)` | HWPML (XML-based HWP) only |
-| `detectFormat(buffer)` | `"hwpx" \| "hwp" \| "hwp3" \| "hwpml" \| "pdf" \| "xlsx" \| "xls" \| "docx" \| "unknown"` |
+| `detectFormat(buffer)` | Synchronous magic-byte detection — returns `hwpx` for ZIP and `hwp` for OLE2 for backward compatibility |
+| `await detectZipFormat(buffer)` | Inspects ZIP entries to distinguish `hwpx`, `xlsx`, `docx`, `pptx`, and `unknown` |
+| `detectOle2Format(buffer)` | Inspects OLE2 streams to distinguish `hwp`, `xls`, and `unknown` |
+
+PPTX is detected but cannot be parsed. `parse()` returns `success: false`, `fileType: "pptx"`,
+and `code: "UNSUPPORTED_FORMAT"` for PPTX input. Wrappers/APIs that route ZIP formats should
+call `await detectZipFormat(buffer)` when `detectFormat()` returns `hwpx`.
 
 ### Advanced functions
 

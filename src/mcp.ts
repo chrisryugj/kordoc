@@ -251,7 +251,7 @@ server.tool(
 
 server.tool(
   "detect_format",
-  "파일의 포맷을 매직 바이트로 감지합니다 (hwpx, hwp, hwp3, hwpml, pdf, xls, xlsx, docx, unknown).",
+  "파일의 포맷을 매직 바이트와 컨테이너 내부 구조로 감지합니다 (hwpx, hwp, hwp3, hwpml, pdf, xls, xlsx, docx, pptx, image, unknown). PPTX는 감지만 지원합니다.",
   {
     file_path: z.string().min(1).describe("감지할 파일의 절대 경로"),
   },
@@ -260,7 +260,7 @@ server.tool(
       const resolved = safePath(file_path, PARSE_EXTENSIONS)
       let format: string = detectFormatFromHeader(resolved)
       // 16바이트 헤더로는 모든 ZIP이 'hwpx'로 나온다 — 파일을 읽어 내부 구조로
-      // hwpx/xlsx/docx 세분화 (parse_metadata와 판정 일치, v4.0.6)
+      // hwpx/xlsx/docx/pptx 세분화 (parse_metadata와 판정 일치)
       // 크기 상한은 parse_document와 동일(500MB) — 50MB 초과 ZIP 감지 실패 방지
       if (format === "hwpx") {
         const { buffer } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
@@ -307,15 +307,17 @@ server.tool(
       const { buffer } = await readValidatedFile(file_path, MAX_METADATA_FILE_SIZE, PARSE_EXTENSIONS)
 
       let metadata
-      // ZIP(hwpx→xlsx/docx)·OLE2(hwp→xls) 모두 내부 구조로 세분화 — parse()와 판정 일치
+      // ZIP(hwpx→xlsx/docx/pptx)·OLE2(hwp→xls) 모두 내부 구조로 세분화 — parse()와 판정 일치
       let effectiveFormat: ReturnType<typeof detectFormat> = format
       if (format === "hwpx") {
         const zipFormat = await detectZipFormat(buffer)
-        if (zipFormat === "xlsx" || zipFormat === "docx") effectiveFormat = zipFormat
+        if (zipFormat !== "unknown") effectiveFormat = zipFormat
       } else if (format === "hwp") {
         if (detectOle2Format(buffer) === "xls") effectiveFormat = "xls"
       }
       switch (effectiveFormat) {
+        case "pptx":
+          throw new KordocError("PPTX 파일은 지원하지 않는 파일 형식입니다.")
         case "hwp":
           metadata = extractHwp5MetadataOnly(Buffer.from(buffer))
           break
@@ -347,7 +349,7 @@ server.tool(
       }
 
       return {
-        content: [{ type: "text", text: JSON.stringify({ format, ...metadata }, null, 2) }],
+        content: [{ type: "text", text: JSON.stringify({ format: effectiveFormat, ...metadata }, null, 2) }],
       }
     } catch (err) {
       return {

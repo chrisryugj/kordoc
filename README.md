@@ -1102,7 +1102,13 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `parseDocx(buffer, options?)` | DOCX 전용 |
 | `parseHwpml(buffer, options?)` | HWPML (XML 기반 HWP) 전용 |
 | `parseImage(buffer, options?)` | 이미지(PNG/JPG/WebP) 전용 — 내장 OCR 상시 적용 (v4.2.1) |
-| `detectFormat(buffer)` | `"hwpx" \| "hwp" \| "hwp3" \| "hwpml" \| "pdf" \| "xlsx" \| "xls" \| "docx" \| "image" \| "unknown"` |
+| `detectFormat(buffer)` | 동기 매직 바이트 감지 — 하위 호환을 위해 ZIP은 `hwpx`, OLE2는 `hwp` 반환 |
+| `await detectZipFormat(buffer)` | ZIP 내부 구조로 `hwpx`, `xlsx`, `docx`, `pptx`, `unknown` 구분 |
+| `detectOle2Format(buffer)` | OLE2 내부 스트림으로 `hwp`, `xls`, `unknown` 구분 |
+
+PPTX는 감지만 지원합니다. `parse()`는 PPTX 입력에 `success: false`, `fileType: "pptx"`,
+`code: "UNSUPPORTED_FORMAT"`을 반환합니다. ZIP을 구분해 라우팅하는 래퍼/API는
+`detectFormat()` 결과가 `hwpx`일 때 `await detectZipFormat(buffer)`로 세분화하세요.
 
 ### 고급 함수
 
