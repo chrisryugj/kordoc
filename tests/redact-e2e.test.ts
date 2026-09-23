@@ -1,4 +1,5 @@
-/** redact 배선 e2e — 생성 HWPX의 PII를 parse→redactMarkdown→patchHwpx로 서식 보존 마스킹 (killer feature #2) */
+/** redactMarkdown + patchHwpx 라이브러리 조합 e2e (killer feature #2). CLI/MCP 배선은 파일 전체를 가리는
+ *  redactDocument — redact-doc.test.ts·redact-cli-mcp.test.ts */
 import { describe, it } from "node:test"
 import assert from "node:assert"
 import { markdownToHwpx, parse, patchHwpx, redactMarkdown } from "../src/index.js"

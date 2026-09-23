@@ -1,8 +1,8 @@
 /** kordoc CLI 명령 — 생성·검수 — generate·profile·lint·redact */
 
-import { readFileSync, writeFileSync, mkdirSync } from "fs"
+import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve } from "path"
-import { parse, detectFormat, markdownToHwpx, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "../index.js"
+import { detectFormat, markdownToHwpx, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "../index.js"
 import { parseFormatProfileJson } from "../hwpx/profile-io.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, parseLevelsSpec, levelFontRecord } from "../hwpx/gongmun-surface.js"
 import type { FormatProfile } from "../hwpx/gen-profile.js"
@@ -310,8 +310,8 @@ export function registerGenerateCommands(program: Command): void {
 
   program
     .command("redact <files...>")
-    .description("개인정보 서식 보존 마스킹 — 주민번호·전화·이메일·카드·계좌를 탐지해 HWPX/HWP는 원본 서식 그대로 patch, 그 외 포맷은 마스킹된 마크다운 출력. 자동 검출 보조 도구이므로 결과는 반드시 사람이 최종 확인하세요 (이미지 안 텍스트는 탐지 불가)")
-    .option("--rules <csv>", "적용 룰 (기본: rrn,phone,email,card,account — passport,driver는 opt-in)")
+    .description("개인정보 서식 보존 마스킹 — 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허를 탐지해 HWPX/HWP는 원본 서식 그대로 같은 길이로 가린 파일(본문·표·머리말/꼬리말·각주·글상자·미리보기·메타데이터 포함), 그 외 포맷(PDF 등)은 원본을 건드리지 않고 마스킹된 마크다운만 출력. 자동 검출 보조 도구이므로 결과는 반드시 사람이 최종 확인하세요 (이미지 속 글자는 탐지 불가)")
+    .option("--rules <csv>", "적용 룰 (기본: rrn,phone,email,card,account,brn,passport,driver — crn(법인등록번호),ip는 opt-in)")
     .option("--mask-char <ch>", "마스크 문자 1글자 (기본: ●)")
     .option("-o, --output <path>", "출력 경로 (단일 파일 시)")
     .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")
@@ -319,11 +319,14 @@ export function registerGenerateCommands(program: Command): void {
     .option("--json", "리포트를 JSON으로 stdout 출력")
     .option("--silent", "진행 메시지 숨기기")
     .action(async (files: string[], opts) => {
-      const { redactMarkdown, DEFAULT_REDACT_RULES, patchHwpx, patchHwp } = await import("../index.js")
+      const { ALL_REDACT_RULES, DEFAULT_REDACT_RULES, redactText } = await import("../redact.js")
+      const { redactDocument } = await import("../redact-doc.js")
       const rootOpts = program.opts()
       const output: string | undefined = opts.output ?? rootOpts.output
+      // 루트 명령도 -d/--out-dir 를 정의해 먼저 삼킨다 — -o 와 같은 방식으로 양쪽을 본다
+      const outDir: string | undefined = opts.outDir ?? rootOpts.outDir
       const silent: boolean = opts.silent ?? rootOpts.silent
-      const KNOWN_RULES = new Set(["rrn", "phone", "email", "card", "account", "passport", "driver"])
+      const KNOWN_RULES = new Set<string>(ALL_REDACT_RULES)
       const rules = opts.rules
         ? String(opts.rules).split(",").map((r: string) => r.trim()).filter(Boolean)
         : [...DEFAULT_REDACT_RULES]
@@ -332,71 +335,113 @@ export function registerGenerateCommands(program: Command): void {
         process.stderr.write(`[kordoc] 알 수 없는 룰: ${badRule} (허용: ${[...KNOWN_RULES].join(", ")})\n`)
         process.exit(1)
       }
+      const maskChar: string = opts.maskChar ?? "●"
+      try { redactText("", { maskChar }) } catch (err) {
+        process.stderr.write(`[kordoc] ${sanitizeError(err)}\n`)
+        process.exit(1)
+      }
       if (output && files.length > 1) {
         process.stderr.write(`[kordoc] ⚠️ -o/--output 은 단일 파일 전용이라 무시됩니다 — 다중 파일은 -d/--out-dir 를 사용하세요\n`)
       }
+      // 파일 이름에도 PII 가 있을 수 있다 — 결과 파일 이름·메시지·JSON 에는 가린 이름을 쓴다
+      // (디렉토리 이름은 그대로). 윈도가 파일 이름에 못 쓰는 마스크 문자(* ?)는 ●로
+      const nameMask = /[*?]/.test(maskChar) ? "●" : maskChar
+      const maskName = (name: string): string => {
+        // 파일 이름은 _ 로 낱말을 잇는다("민원_010-2345-6789") — 탐지만 공백으로 보고 같은 자리를 가린다
+        const probe = name.replace(/_/g, " ")
+        const out = [...name]
+        for (const h of redactText(probe, { rules: rules as never, maskChar: nameMask }).hits) {
+          for (let k = 0; k < h.length; k++) if (h.masked[k] !== probe[h.index + k]) out[h.index + k] = nameMask
+        }
+        return out.join("")
+      }
+      const shown = (p: string): string => resolve(dirname(p), maskName(basename(p)))
+      const inputs = files.map((f) => resolve(f))
+      const sameFile = (a: string, b: string): boolean => {
+        if (a === b) return true
+        try {
+          const sa = statSync(a), sb = statSync(b)
+          return sa.ino === sb.ino && sa.dev === sb.dev // 대소문자 무시 파일시스템·하드링크
+        } catch { return false }
+      }
+      const written = new Set<string>()
+      /** 기본 출력 경로 — 입력 파일·이번 실행의 다른 출력과 겹치면 -2, -3 … 을 붙인다 */
+      const defaultOut = (absPath: string, ext: string): string => {
+        const stem = maskName(basename(absPath)).replace(/\.[^.]+$/, "")
+        const dir = resolve(outDir ?? dirname(absPath))
+        for (let n = 1; ; n++) {
+          const p = resolve(dir, `${stem}${n > 1 ? `-${n}` : ""}.redacted${ext}`)
+          if (!written.has(p) && !inputs.some((i) => sameFile(i, p))) return p
+        }
+      }
+      const MAX_LINES = 200
       const jsonReports: unknown[] = []
-      for (const filePath of files) {
-        const absPath = resolve(filePath)
-        const fileName = basename(absPath)
+      for (const absPath of inputs) {
+        const fileName = maskName(basename(absPath))
+        if (output && files.length === 1 && !opts.dryRun && sameFile(absPath, resolve(output))) {
+          process.stderr.write(`[kordoc] ERROR: ${fileName} — 출력 경로가 입력 파일과 같습니다. 원본을 덮어쓰지 않습니다 — 다른 -o 경로를 지정하세요\n`)
+          process.exitCode = 1
+          continue
+        }
         try {
           const buffer = readFileSync(absPath)
-          const arrayBuffer = toArrayBuffer(buffer)
-          const format = detectFormat(arrayBuffer)
-          const parsed = await parse(arrayBuffer, { filePath: absPath })
-          if (!parsed.success) {
-            process.stderr.write(`[kordoc] FAIL: ${fileName} — ${parsed.error}\n`)
-            process.exitCode = 1
-            continue
-          }
-          const r = redactMarkdown(parsed.markdown, { rules: rules as never, maskChar: opts.maskChar })
+          const r = await redactDocument(toArrayBuffer(buffer), {
+            rules: rules as never, maskChar, filePath: absPath, dryRun: opts.dryRun,
+          })
+          // 리포트 기준: HWPX/HWP 는 파일 안 위치(본문·머리말·미리보기 …), 그 외 포맷은 본문 마크다운
+          const listed = r.fileHits.length > 0
+            ? r.fileHits.map((h) => ({ rule: h.rule, masked: h.masked, at: `${h.where} @ ${h.part}` }))
+            : r.markdownHits.map((h) => ({ rule: h.rule, masked: h.masked, at: "" }))
           const byRule = new Map<string, number>()
-          for (const h of r.hits) byRule.set(h.rule, (byRule.get(h.rule) ?? 0) + 1)
+          for (const h of listed) byRule.set(h.rule, (byRule.get(h.rule) ?? 0) + 1)
           const ruleSummary = [...byRule.entries()].map(([k, v]) => `${k} ${v}건`).join(", ") || "0건"
+          const failed = r.residual.length > 0 || r.unscanned.length > 0
 
           let outPath: string | null = null
-          let patchNote = ""
-          if (!opts.dryRun && r.hits.length > 0) {
-            const patchable = format === "hwpx" || format === "hwp"
-            if (patchable) {
-              const original = new Uint8Array(arrayBuffer)
-              const result = format === "hwp"
-                ? await patchHwp(original, r.text)
-                : await patchHwpx(original, r.text)
-              if (!result.success || !result.data) {
-                process.stderr.write(`[kordoc] 패치 실패: ${fileName} — ${result.error ?? "알 수 없는 오류"}\n`)
-                process.exitCode = 1
-                continue
-              }
-              const ext = format === "hwp" ? ".hwp" : ".hwpx"
-              outPath = resolve(
-                output && files.length === 1
-                  ? output
-                  : resolve(opts.outDir ?? dirname(absPath), fileName.replace(/\.[^.]+$/, "") + ".redacted" + ext),
-              )
-              mkdirSync(dirname(outPath), { recursive: true })
-              writeFileSync(outPath, result.data)
-              if (result.skipped.length > 0) {
-                patchNote = ` (⚠️ 미적용 ${result.skipped.length}건 — 해당 위치는 원문 잔존, 수동 확인 필요)`
-                process.exitCode = 2
-              }
-            } else {
-              outPath = resolve(
-                output && files.length === 1
-                  ? output
-                  : resolve(opts.outDir ?? dirname(absPath), fileName.replace(/\.[^.]+$/, "") + ".redacted.md"),
-              )
-              mkdirSync(dirname(outPath), { recursive: true })
-              writeFileSync(outPath, r.text, "utf-8")
-              patchNote = ` (${format}는 서식 보존 미지원 — 마스킹된 마크다운으로 출력)`
+          let note = ""
+          // HWPX/HWP 는 결과 바이트가 원본과 다르면 저장 (탐지 0건이어도 미할당 영역을 비웠으면 저장),
+          // 그 외 포맷은 본문에서 찾은 게 있을 때 마스킹된 마크다운을 저장
+          const save = r.data ? r.changed : r.markdownHits.length > 0
+          if (!opts.dryRun && save) {
+            const ext = r.data ? (r.format === "hwp" ? ".hwp" : ".hwpx") : ".md"
+            outPath = output && files.length === 1 ? resolve(output) : defaultOut(absPath, ext)
+            mkdirSync(dirname(outPath), { recursive: true })
+            if (r.data) writeFileSync(outPath, r.data)
+            else {
+              writeFileSync(outPath, r.markdown, "utf-8")
+              note = ` (${r.format} 원본은 수정하지 않음 — 마스킹된 마크다운만 출력)`
             }
+            written.add(outPath)
+          } else if (!opts.dryRun && r.data && listed.length > 0) {
+            note = " (❌ 파일에서 가린 곳이 없어 출력하지 않음)"
           }
+          if (failed && process.exitCode !== 1) process.exitCode = 2 // 실패(1)가 우선
           if (opts.json) {
-            jsonReports.push({ file: absPath, format, rules, hits: r.hits, output: outPath })
+            jsonReports.push({
+              file: shown(absPath), format: r.format, rules, hits: r.markdownHits, fileHits: r.fileHits,
+              residual: r.residual, unscanned: r.unscanned, warnings: r.warnings, output: outPath,
+            })
           }
           if (!silent) {
-            process.stderr.write(`[kordoc] ${fileName}: ${ruleSummary}${outPath ? ` → ${outPath}` : opts.dryRun ? " (dry-run)" : ""}${patchNote}\n`)
-            for (const h of r.hits) process.stderr.write(`  - [${h.rule}] ${h.masked}\n`)
+            process.stderr.write(`[kordoc] ${fileName}: ${ruleSummary}${outPath ? ` → ${outPath}` : opts.dryRun ? " (dry-run)" : ""}${note}\n`)
+            // 같은 값·같은 위치는 한 줄로 (미리보기·메타데이터에 같은 번호가 반복되는 경우), 너무 길면 자른다
+            const grouped = new Map<string, number>()
+            for (const h of listed) {
+              const key = `  - [${h.rule}] ${h.masked}${h.at ? ` (${h.at})` : ""}`
+              grouped.set(key, (grouped.get(key) ?? 0) + 1)
+            }
+            const lines = [...grouped].map(([line, n]) => `${line}${n > 1 ? ` ×${n}` : ""}`)
+            for (const line of lines.slice(0, MAX_LINES)) process.stderr.write(`${line}\n`)
+            if (lines.length > MAX_LINES) process.stderr.write(`  … 외 ${lines.length - MAX_LINES}줄 (전체는 --json)\n`)
+            if (r.residual.length > 0) {
+              process.stderr.write(`[kordoc] ❌ 마스킹 후 재검사에서 PII ${r.residual.length}건이 남아 있습니다 — 출력 파일을 공개하지 말고 수동 확인하세요:\n`)
+              for (const h of r.residual.slice(0, MAX_LINES)) process.stderr.write(`  - [${h.rule}] ${h.masked} (${h.where} @ ${h.part})\n`)
+              if (r.residual.length > MAX_LINES) process.stderr.write(`  … 외 ${r.residual.length - MAX_LINES}건 (전체는 --json)\n`)
+            }
+            if (r.unscanned.length > 0) {
+              process.stderr.write(`[kordoc] ❌ 글자를 검사하지 못한 곳이 있습니다 — 출력 파일을 공개하지 말고 수동 확인하세요: ${r.unscanned.join(", ")}\n`)
+            }
+            for (const w of r.warnings) process.stderr.write(`[kordoc] ⚠️ ${w}\n`)
           }
         } catch (err) {
           process.stderr.write(`[kordoc] ERROR: ${fileName} — ${sanitizeError(err)}\n`)

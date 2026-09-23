@@ -546,8 +546,9 @@ npx kordoc lint report.md                                            # 13-rule o
 npx kordoc patch original.hwpx edited.md -o patched.hwpx  # format-preserving roundtrip patch (.hwp auto-detected)
 npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx  # place a stamp/signature
 npx kordoc validate output.hwpx                     # HWPX structure validation (ZIP, required parts, XML)
-npx kordoc redact complaint.hwpx -o redacted.hwpx   # PII detection + format-preserving masking (v4.1)
+npx kordoc redact complaint.hwpx -o redacted.hwpx   # PII detection + format-preserving masking, incl. headers/footnotes/preview/document info; re-scans the output (exit 2 if anything remains)
 npx kordoc redact complaint.hwpx --mask-char '*' -o redacted.hwpx  # mask character (default ●)
+npx kordoc redact notice.pdf                        # PDF/DOCX/etc.: the original file is NOT modified — masked markdown (.redacted.md) only; no PDF redaction
 npx kordoc profile agency-form.hwpx                 # extract table format profile (JSON) → reuse via generate --profile
 npx kordoc render approval.hwpx -o preview.svg      # layout-preserving SVG render (documents without a layout cache are reflowed; --no-reflow disables)
 npx kordoc render approval.hwpx --reflow-mode charAll -o preview.svg  # reflow line breaking: keep (word, default) | charAll (character)
@@ -645,7 +646,7 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (v3.5) |
 | `place_seal` | Place a stamp/signature image over an anchor phrase (v3.16) |
 | `render_document` | Render HWPX/HWP exactly as typeset to PNG/JPEG (inline) or SVG/HTML/PDF files — lets the AI visually verify generated/edited documents (v4.1, HWP + formats v4.13.1) |
-| `redact_document` | Detect PII (resident registration no., phone, email, card, account) + format-preserving masking with a report (v4.1) |
+| `redact_document` | Detect PII (resident/foreigner registration no., phone, email, card, account, business registration no., passport, driver license; opt-in corporate registration no. and IP) + format-preserving masking. HWPX/HWP: also headers/footers, footnotes, text boxes, fields, preview text/image and document info, with a post-mask re-scan; other formats: masked markdown only (v4.1) |
 | `parse_chunks` | Structure-preserving chunk JSON for RAG — heading/outline hierarchy breadcrumbs + standalone table chunks (v4.1) |
 | `crop_regions` | Crop rendered regions (tables/images/paragraphs/shapes) from page images at true scale + regions.json (v4.13) |
 | `extract_tables` | Table classification (data table / layout-like / uncertain) + page·bbox + policy-based crops — org charts as images, data tables as structure (v4.13.1) |

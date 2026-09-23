@@ -84,7 +84,7 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 *   **✏️ 양식 자동 채우기**: 공문서 양식 템플릿(신청서, 보고서)에 값을 넣으면 자동으로 빈칸을 채웁니다. 원본 서식(글꼴, 크기, 정렬)을 100% 보존합니다.
 *   **👓 내장 OCR — API 키 없이 (v4.2)**: 스캔본·이미지 PDF와 PNG/JPG/WebP 이미지를 **로컬 CPU 추론**(PP-OCRv5 korean)으로 읽습니다. 외부 서비스도 API 키도 없이, 텍스트층이 깨진 페이지만 골라 OCR 하고, 래스터 괘선까지 찾아 스캔본에서도 표를 복원합니다.
 *   **📑 RAG·인용 대응 (v4.1~4.8)**: 헤딩·개조식 위계를 breadcrumb으로 보존한 구조 청크(`--format chunks`)와, 조판 캐시로 복원한 **실제 쪽 번호** 기준 페이지별 마크다운(`pages`)을 냅니다 — 답변에 "몇 쪽" 각주를 붙일 수 있습니다.
-*   **🕶️ 개인정보 마스킹 (v4.1)**: 주민번호·전화·이메일·카드·계좌를 탐지해 **원본 서식 그대로** 가린 문서를 냅니다 (`kordoc redact`). 자동 검출 보조 도구이므로 공개 전 사람 확인은 필수입니다.
+*   **🕶️ 개인정보 마스킹 (v4.1)**: 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허를 탐지해 **원본 서식 그대로** 가린 HWPX/HWP를 냅니다 (`kordoc redact`). 본문·표·머리말/꼬리말·각주·글상자·필드·미리보기(텍스트·이미지)·문서 정보(제목·작성자)까지 가리고, 결과 파일을 다시 훑어 남은 개인정보가 있으면 실패(exit 2)로 알립니다. **PDF·DOCX·XLSX 등은 원본 파일을 고치지 않고 마스킹된 마크다운만** 냅니다 — PDF 자체의 가림(redaction)은 지원하지 않습니다. 이미지 속 글자·이름·주소는 탐지하지 못하는 자동 검출 보조 도구이므로 공개 전 사람 확인은 필수입니다.
 *   **🤖 AI 에이전트 연동 (MCP)**: `Claude Desktop`, `Cursor`, `Codex`와 같은 도구에서 직접 `kordoc`을 호출해 문서를 읽고 코딩할 수 있습니다.
 
 ---
@@ -973,8 +973,10 @@ npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx      # 서식 보존 라�
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx  # 도장/서명 날인
 npx kordoc validate 산출물.hwpx                      # HWPX 구조 검증 (ZIP·필수 파트·XML)
 npx kordoc lint 보고서.md                            # 공문서 표기법 검수 19룰 — 입력은 md/txt('-'=stdin), error 있으면 exit 1
-npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx       # 개인정보 탐지 + 서식 보존 마스킹 (v4.1)
+npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx       # 개인정보 탐지 + 서식 보존 마스킹 (머리말·각주·미리보기·문서 정보 포함, 잔존 재검사 — 남으면 exit 2)
 npx kordoc redact 민원서류.hwpx --mask-char '*' -o 마스킹.hwpx   # 마스크 문자 지정 (기본 ●)
+npx kordoc redact 계약서.hwp --rules rrn,phone,crn --json --dry-run  # 룰 선택(법인등록번호 crn·IP 는 opt-in) + 위치별 리포트만
+npx kordoc redact 공문.pdf                            # PDF·DOCX 등은 원본을 고치지 않고 마스킹된 마크다운(.redacted.md)만 — PDF 가림 미지원
 npx kordoc profile 기관서식.hwpx                     # 표 서식 프로필(JSON) 추출 → generate --profile 로 재현
 npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더 (캐시 없는 문서는 자동 reflow 조판, --no-reflow로 끔)
 npx kordoc render 결재문서.hwpx --reflow-mode charAll -o 미리보기.svg  # reflow 줄바꿈: keep(어절, 기본) | charAll(글자)
@@ -1091,7 +1093,7 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `generate_document` | 마크다운(표·수식·차트 포함) → HWPX 생성, 공문서 프리셋 (v3.5) |
 | `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
 | `render_document` | HWPX·HWP를 조판 그대로 PNG/JPEG 이미지(응답)·SVG/HTML/PDF 파일로 렌더 — 생성·수정 결과를 AI가 눈으로 검증 (v4.1, HWP·포맷 확장 v4.13.1) |
-| `redact_document` | 개인정보(주민번호·전화·이메일·카드·계좌) 탐지 + 서식 보존 마스킹, 리포트 반환 (v4.1) |
+| `redact_document` | 개인정보(주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허, opt-in 법인등록번호·IP) 탐지 + 서식 보존 마스킹 — HWPX/HWP는 머리말·각주·미리보기·문서 정보까지 가리고 잔존 재검사, 그 외 포맷은 마스킹된 마크다운만 (v4.1) |
 | `parse_chunks` | RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 (v4.1) |
 | `crop_regions` | 렌더 영역(표·이미지·문단·도형)을 페이지 이미지에서 실배율로 잘라 저장 + regions.json (v4.13) |
 | `extract_tables` | 표 분류(데이터표/조직도류/불확실) + 페이지·bbox + 정책별 crop — 조직도는 이미지로, 데이터표는 구조로 (v4.13.1) |
@@ -1148,7 +1150,7 @@ PPTX는 감지만 지원합니다. `parse()`는 PPTX 입력에 `success: false`,
 | `placeSealHwpx(buffer, seals)` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
 | `validateHwpx(buffer)` | HWPX 구조 검증 — ZIP·mimetype·필수 파트·XML 웰폼드 (v3.16) |
 | `lintGongmunText(text, { document? })` | 공문서 표기법 검수 19룰 + AI 슬롭 2룰 — 텍스트/마크다운 입력 (v4.0.1, v4.12.1 보강). `document: true` 면 붙임/"끝." 문서 단위 검사 포함 |
-| `redactMarkdown(text, options?)` / `redactText(...)` | 개인정보 탐지 + 마스킹 (기본 룰: 주민번호·전화·이메일·카드·계좌, v4.1) |
+| `redactMarkdown(text, options?)` / `redactText(...)` | 개인정보 탐지 + 마스킹 (기본 룰: 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허, opt-in: 법인등록번호·IP — 텍스트 단위, 파일 단위 마스킹은 CLI `redact`/MCP `redact_document`, v4.1) |
 | `blocksToChunks(blocks, options?)` | RAG용 구조 청크 — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 (v4.1) |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown 문자열 |
 | `blocksToPages(blocks)` | IRBlock[] → `[{ pageNumber, markdown }]` 페이지별 마크다운 (v4.8) |

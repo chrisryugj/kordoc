@@ -18,6 +18,15 @@ export function buildFillInputs(fields: Record<string, string>, formats?: Record
   return out
 }
 
+/** 같은 파일인가 — 경로가 같거나(정규화 후) 대소문자 무시 파일시스템·하드링크로 같은 inode */
+async function isSameFile(a: string, b: string): Promise<boolean> {
+  if (a === b) return true
+  try {
+    const [sa, sb] = await Promise.all([stat(a), stat(b)])
+    return sa.ino === sb.ino && sa.dev === sb.dev
+  } catch { return false }
+}
+
 export function registerFormTools(server: McpServer): void {
   // ─── 도구: parse_form ───────────────────────────────
 
@@ -346,19 +355,22 @@ export function registerFormTools(server: McpServer): void {
 
   server.tool(
     "redact_document",
-    "문서의 개인정보(주민번호·전화·이메일·카드·계좌)를 탐지해 서식 보존 마스킹합니다. HWPX/HWP는 원본 서식 1바이트 그대로 patch, 그 외 포맷은 마스킹된 마크다운으로 출력. 자동 검출 보조 도구 — 결과 리포트를 사람이 최종 확인해야 하며 이미지 안 텍스트는 탐지하지 못합니다. 마스킹 후 render_document로 눈으로 확인하는 것을 권장합니다.",
+    "문서의 개인정보(주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허)를 탐지해 서식 보존 마스킹합니다. HWPX/HWP는 원본 서식 그대로 같은 길이로 가린 파일 — 본문·표·중첩표·머리말/꼬리말·각주·글상자·필드·미리보기(텍스트·이미지)·문서 정보(제목·작성자)까지 가리고, 저장 전 결과 파일을 다시 훑어 남은 PII를 보고합니다. 그 외 포맷(PDF·DOCX·XLSX 등)은 원본을 건드리지 않고 마스킹된 마크다운만 출력합니다. 자동 검출 보조 도구 — 결과 리포트를 사람이 최종 확인해야 하며 이미지 속 글자는 탐지하지 못합니다. 마스킹 후 render_document로 눈으로 확인하는 것을 권장합니다.",
     {
       file_path: z.string().min(1).describe("대상 문서의 절대 경로"),
-      rules: z.array(z.enum(["rrn", "phone", "email", "card", "account", "passport", "driver"])).optional()
-        .describe("적용 룰 (기본: rrn·phone·email·card·account — passport·driver는 opt-in)"),
+      rules: z.array(z.enum(["rrn", "phone", "email", "card", "account", "brn", "passport", "driver", "crn", "ip"])).optional()
+        .describe("적용 룰 (기본: rrn·phone·email·card·account·brn·passport·driver — crn(법인등록번호)·ip는 opt-in)"),
       mask_char: z.string().min(1).max(1).optional().describe("마스크 문자 1글자 (기본: ●)"),
       output_path: z.string().min(1).optional().describe("출력 경로 (HWPX/HWP는 같은 확장자, 그 외는 .md) — dry_run이 아니면 필수"),
       dry_run: z.boolean().default(false).describe("탐지 리포트만 반환, 파일 미생성"),
     },
     async ({ file_path, rules, mask_char, output_path, dry_run }) => {
       try {
-        const { buffer } = await readValidatedFile(file_path)
-        const format = detectFormat(buffer)
+        const { buffer, resolved } = await readValidatedFile(file_path)
+        // ZIP·OLE 내부 구조까지 세분화 — PPTX·XLS 를 hwpx·hwp 로 보고 확장자를 잘못 요구하지 않게 (#80)
+        let format: string = detectFormat(buffer)
+        if (format === "hwpx") { const z = await detectZipFormat(buffer); if (z !== "unknown") format = z }
+        else if (format === "hwp") { const o = detectOle2Format(buffer); if (o !== "unknown") format = o }
         const patchable = format === "hwpx" || format === "hwp"
         if (!dry_run && !output_path) {
           return { content: [{ type: "text", text: "output_path가 필요합니다 (탐지만 원하면 dry_run: true)." }], isError: true }
@@ -366,43 +378,53 @@ export function registerFormTools(server: McpServer): void {
         const outPath = !dry_run
           ? safeOutputPath(output_path!, new Set(patchable ? [format === "hwp" ? ".hwp" : ".hwpx"] : [".md", ".markdown", ".txt"]))
           : undefined
-        const parsed = await parse(buffer, { filePath: file_path })
-        if (!parsed.success) {
-          return { content: [{ type: "text", text: `파싱 실패: ${parsed.error}` }], isError: true }
+        if (outPath && await isSameFile(outPath, resolved)) {
+          return { content: [{ type: "text", text: "output_path가 입력 파일과 같습니다 — 원본을 덮어쓰지 않습니다. 다른 경로를 지정하세요." }], isError: true }
         }
-        const { redactMarkdown } = await import("../redact.js")
-        const r = redactMarkdown(parsed.markdown, { rules, maskChar: mask_char })
+        const { redactDocument } = await import("../redact-doc.js")
+        const r = await redactDocument(buffer, { rules, maskChar: mask_char, filePath: file_path, dryRun: dry_run })
+        // HWPX/HWP 는 파일 안 위치 기준, 그 외는 본문 마크다운 기준. 명단 수천 행이면 응답이 넘치므로 자른다
+        const MAX_LINES = 50
+        const listed = r.fileHits.length > 0
+          ? r.fileHits.map(h => `  - [${h.rule}] ${h.masked} (${h.where} @ ${h.part})`)
+          : r.markdownHits.map(h => `  - [${h.rule}] ${h.masked}`)
         const byRule = new Map<string, number>()
-        for (const h of r.hits) byRule.set(h.rule, (byRule.get(h.rule) ?? 0) + 1)
+        for (const h of r.fileHits.length > 0 ? r.fileHits : r.markdownHits) byRule.set(h.rule, (byRule.get(h.rule) ?? 0) + 1)
+        const grouped = new Map<string, number>()
+        for (const l of listed) grouped.set(l, (grouped.get(l) ?? 0) + 1)
+        const groupedLines = [...grouped].map(([l, n]) => n > 1 ? `${l} ×${n}` : l)
         const lines = [
-          `탐지: ${r.hits.length}건 (${[...byRule.entries()].map(([k, v]) => `${k} ${v}`).join(", ") || "없음"})`,
-          ...r.hits.map(h => `  - [${h.rule}] ${h.masked}`),
+          `탐지: ${[...byRule.values()].reduce((a, b) => a + b, 0)}건 (${[...byRule.entries()].map(([k, v]) => `${k} ${v}`).join(", ") || "없음"})`,
+          ...groupedLines.slice(0, MAX_LINES),
+          ...(groupedLines.length > MAX_LINES ? [`  … 외 ${groupedLines.length - MAX_LINES}줄`] : []),
         ]
-        if (!dry_run && r.hits.length > 0) {
-          if (patchable) {
-            const original = new Uint8Array(buffer)
-            const result = format === "hwp" ? await patchHwp(original, r.text) : await patchHwpx(original, r.text)
-            if (!result.success || !result.data) {
-              return { content: [{ type: "text", text: `마스킹 패치 실패: ${result.error ?? "알 수 없는 오류"}` }], isError: true }
-            }
-            await mkdir(dirname(outPath!), { recursive: true })
-            await writeFile(outPath!, Buffer.from(result.data))
+        // HWPX/HWP 는 결과 바이트가 원본과 다르면 저장 (탐지 0건이어도 미할당 영역을 비웠으면 저장),
+        // 그 외 포맷은 본문에서 찾은 게 있을 때 마스킹된 마크다운을 저장
+        const save = r.data ? r.changed : r.markdownHits.length > 0
+        if (!dry_run && save) {
+          await mkdir(dirname(outPath!), { recursive: true })
+          if (r.data) {
+            await writeFile(outPath!, Buffer.from(r.data))
             lines.push(`저장: ${outPath} (원본 서식 보존)`)
-            if (result.skipped.length > 0) {
-              lines.push(`⚠️ 미적용 ${result.skipped.length}건 — 해당 위치는 원문이 남아 있으니 반드시 수동 확인:`)
-              for (const s of result.skipped) lines.push(`  - ${s.reason}`)
-            }
-            lines.push("render_document로 마스킹 결과를 눈으로 확인하세요.")
           } else {
-            await mkdir(dirname(outPath!), { recursive: true })
-            await writeFile(outPath!, r.text, "utf-8")
-            lines.push(`저장: ${outPath} (${format}는 서식 보존 미지원 — 마스킹된 마크다운)`)
+            await writeFile(outPath!, r.markdown, "utf-8")
+            lines.push(`저장: ${outPath} (${r.format} 원본은 수정하지 않음 — 마스킹된 마크다운)`)
           }
         } else if (!dry_run) {
-          lines.push("탐지 0건 — 출력 파일을 만들지 않았습니다.")
+          lines.push(listed.length > 0 ? "❌ 파일에서 가린 곳이 없어 출력 파일을 만들지 않았습니다." : "탐지 0건 — 출력 파일을 만들지 않았습니다.")
         }
-        lines.push("주의: 자동 검출은 보조 수단입니다. 이미지 속 텍스트·표기 변형은 놓칠 수 있으니 최종 공개 전 사람 검토가 필요합니다.")
-        return { content: [{ type: "text", text: capResponseText(lines.join("\n")) }] }
+        const failed = r.residual.length > 0 || r.unscanned.length > 0
+        if (r.residual.length > 0) {
+          lines.push(`❌ 마스킹 후 재검사에서 PII ${r.residual.length}건이 남아 있습니다 — 출력 파일을 공개하지 말고 수동 확인하세요:`)
+          for (const h of r.residual.slice(0, MAX_LINES)) lines.push(`  - [${h.rule}] ${h.masked} (${h.where} @ ${h.part})`)
+          if (r.residual.length > MAX_LINES) lines.push(`  … 외 ${r.residual.length - MAX_LINES}건`)
+        }
+        if (r.unscanned.length > 0) lines.push(`❌ 글자를 검사하지 못한 곳이 있습니다 — 출력 파일을 공개하지 말고 수동 확인하세요: ${r.unscanned.join(", ")}`)
+        if (!failed && r.data && save) lines.push("재검사: 결과 파일 전체(본문·머리말·각주·미리보기·메타데이터·미할당 영역)와 다시 읽은 본문에서 남은 PII 0건")
+        for (const w of r.warnings) lines.push(`⚠️ ${w}`)
+        if (r.data && save) lines.push("render_document로 마스킹 결과를 눈으로 확인하세요.")
+        lines.push("주의: 자동 검출은 보조 수단입니다. 이미지 속 텍스트·표기 변형·이름·주소는 놓칠 수 있으니 최종 공개 전 사람 검토가 필요합니다.")
+        return { content: [{ type: "text", text: capResponseText(lines.join("\n")) }], ...(failed ? { isError: true } : {}) }
       } catch (err) {
         return { content: [{ type: "text", text: `마스킹 실패: ${describeError(err)}` }], isError: true }
       }

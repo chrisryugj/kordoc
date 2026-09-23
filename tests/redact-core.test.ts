@@ -125,11 +125,11 @@ describe("redactText", () => {
       assert.equal(r.hits[0].rule, "account")
     })
 
-    it("사업자등록번호(123-45-67890)는 10자리라 걸린다 (계약 명시)", () => {
+    it("사업자등록번호 라벨이 붙은 3-2-5 는 brn 으로 — 뒤 5자리 마스크 (체크섬 불일치여도 라벨 우선)", () => {
       const r = redactText("사업자등록번호 123-45-67890")
       assert.equal(r.hits.length, 1)
-      assert.equal(r.hits[0].rule, "account")
-      assert.equal(r.text, "사업자등록번호 ●●●-●●-67890")
+      assert.equal(r.hits[0].rule, "brn")
+      assert.equal(r.text, "사업자등록번호 123-45-●●●●●")
     })
 
     it("날짜 2026-07-16 → 미탐 (총 자릿수 미달)", () => {
@@ -148,10 +148,10 @@ describe("redactText", () => {
     })
   })
 
-  describe("passport 여권번호 (기본 OFF)", () => {
-    it("기본 룰셋에서는 미탐", () => {
-      const r = redactText("여권번호 M12345678")
-      assert.equal(r.hits.length, 0)
+  describe("passport 여권번호 (기본 ON — 구형은 여권 라벨 필요)", () => {
+    it("기본 룰셋: 여권 라벨이 붙은 구형 번호는 탐지, 라벨 없으면 미탐", () => {
+      assert.equal(redactText("여권번호 M12345678").hits[0]?.rule, "passport")
+      assert.equal(redactText("모델명 M12345678").hits.length, 0)
     })
 
     it("룰 켜면 첫 글자만 남기고 마스크", () => {
@@ -166,10 +166,10 @@ describe("redactText", () => {
     })
   })
 
-  describe("driver 운전면허 (기본 OFF)", () => {
-    it("기본 룰셋에서는 account로 잡힌다 (12자리 4그룹 포섭)", () => {
-      const r = redactText("12-34-567890-12")
-      assert.equal(r.hits[0]?.rule, "account")
+  describe("driver 운전면허 (기본 ON)", () => {
+    it("기본 룰셋에서는 driver 로, driver 를 끄면 account 로 폴백 (12자리 4그룹 포섭)", () => {
+      assert.equal(redactText("12-34-567890-12").hits[0]?.rule, "driver")
+      assert.equal(redactText("12-34-567890-12", { rules: ["account"] }).hits[0]?.rule, "account")
     })
 
     it("룰 켜면 뒷 8자리 마스크, account보다 우선", () => {
@@ -241,11 +241,14 @@ describe("redactText", () => {
       assert.throws(() => redactText("x", { maskChar: "" }))
     })
 
-    it("DEFAULT_REDACT_RULES — passport·driver 제외 5종", () => {
+    it("DEFAULT_REDACT_RULES — crn·ip 제외 8종", () => {
       assert.deepEqual([...DEFAULT_REDACT_RULES].sort(), [
         "account",
+        "brn",
         "card",
+        "driver",
         "email",
+        "passport",
         "phone",
         "rrn",
       ])

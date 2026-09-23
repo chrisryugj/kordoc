@@ -46,6 +46,18 @@ export function replaceOleStream(file: Buffer, path: string, newData: Buffer): B
   return surgeon.finish()
 }
 
+/**
+ * 미할당 영역 바이트를 0으로 — 어느 체인(디렉토리·FAT·DIFAT·miniFAT·미니 스트림·스트림)에도 닿지 않는
+ * 섹터·미니섹터, 각 스트림 마지막 섹터의 크기 너머 꼬리. 한컴이 저장하며 남긴 옛 스트림 사본(실측:
+ * PrvText 옛 사본이 FREESECT 섹터에 잔존)을 지운다 — 개인정보 마스킹(redact)용. 할당된 스트림 내용·
+ * FAT·디렉토리는 그대로다.
+ */
+export function wipeFreeSectors(file: Buffer): Buffer {
+  const surgeon = new Surgeon(file)
+  surgeon.wipeUnallocated()
+  return surgeon.finish()
+}
+
 class Surgeon {
   private buf: Buffer
   /** 논리 파일 길이 — buf는 성장 시 기하급수 capacity로 재할당되므로 buf.length와 다를 수 있음 */
@@ -367,6 +379,48 @@ class Surgeon {
     }
     entry.size = newData.length
     this.writeDirEntry(entry)
+  }
+
+  /**
+   * wipeFreeSectors 본체 — 어느 체인에도 닿지 않는 섹터·미니섹터와 스트림 꼬리 슬랙을 0으로.
+   * FREESECT 표시를 믿지 않고 도달성으로 판정한다(쓰는 쪽에 따라 빈 FAT 칸을 ENDOFCHAIN 으로 채우기도 한다).
+   */
+  wipeUnallocated(): void {
+    const used = new Set<number>([...this.fatSectors, ...this.miniFatSectors, ...this.dirSectors])
+    let d = this.buf.readUInt32LE(68)
+    for (let guard = 0; d !== ENDOFCHAIN && d !== FREESECT && guard < 1_000_000; guard++) {
+      used.add(d)
+      d = this.buf.readUInt32LE(this.sectorOffset(d) + 127 * 4)
+    }
+    const root = this.rootEntry()
+    const rootChain = root.start === ENDOFCHAIN || root.size === 0 ? [] : this.chain(root.start)
+    for (const s of rootChain) used.add(s)
+    const usedMini = new Set<number>()
+    for (const e of this.entries) {
+      if (e.type !== 2 || e.size === 0 || e.start === ENDOFCHAIN) continue
+      if (e.size < MINI_CUTOFF) {
+        const chain = this.miniChain(e.start)
+        for (const s of chain) usedMini.add(s)
+        const tail = e.size - (chain.length - 1) * MINI_SECTOR
+        const off = this.miniOffset(chain[chain.length - 1], rootChain)
+        if (tail > 0 && tail < MINI_SECTOR) this.buf.fill(0, off + tail, off + MINI_SECTOR)
+      } else {
+        const chain = this.chain(e.start)
+        for (const s of chain) used.add(s)
+        const tail = e.size - (chain.length - 1) * SECTOR
+        const off = this.sectorOffset(chain[chain.length - 1])
+        if (tail > 0 && tail < SECTOR) this.buf.fill(0, off + tail, off + SECTOR)
+      }
+    }
+    for (let i = 0; SECTOR + (i + 1) * SECTOR <= this.len; i++) {
+      if (!used.has(i)) this.buf.fill(0, SECTOR + i * SECTOR, SECTOR + (i + 1) * SECTOR)
+    }
+    const capacity = rootChain.length * (SECTOR / MINI_SECTOR)
+    for (let i = 0; i < capacity; i++) {
+      if (usedMini.has(i)) continue
+      const off = this.miniOffset(i, rootChain)
+      this.buf.fill(0, off, off + MINI_SECTOR)
+    }
   }
 
   finish(): Buffer {
