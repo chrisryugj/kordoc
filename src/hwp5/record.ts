@@ -377,10 +377,16 @@ export interface ParaTextState {
   fieldRanges: HwpFieldRange[]
   /** 채움(리더) 탭을 "\t" 대신 LEADER_TAB_MARK 로 — 본문 파서만 켠다(목차 쪽번호 절단, HWPX \x1F 정책과 대칭) */
   leaderMark?: boolean
+  /** 리터럴 "$" 를 LITERAL_DOLLAR_MARK 한 글자로 — 본문 파서만 켠다. 필드 범위가 글자 위치라
+   *  두 글자 "\$" 를 바로 넣지 않고, 필드 처리 뒤 본문 파서가 "\$" 로 바꾼다(escapeLiteralDollar 규약) */
+  dollarMark?: boolean
 }
 
 /** 채움 탭 표지 — 뒤는 목차 쪽번호라 본문 파서가 문단 텍스트를 여기서 자른다 (HWPX section-walker 와 같은 문자) */
 export const LEADER_TAB_MARK = "\x1F"
+
+/** 리터럴 "$" 표지 (dollarMark) — 유니코드 비문자라 문서 글에 나오지 않는다 */
+export const LITERAL_DOLLAR_MARK = "\uFDD0"
 
 export function createParaTextState(): ParaTextState {
   return { text: "", ctrlIdx: 0, fieldStack: [], fieldRanges: [] }
@@ -505,7 +511,7 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
               break
             }
           }
-          result += String.fromCharCode(ch)
+          result += ch === 0x24 && state.dollarMark ? LITERAL_DOLLAR_MARK : String.fromCharCode(ch)
         }
         break
     }

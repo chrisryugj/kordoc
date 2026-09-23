@@ -17,10 +17,12 @@ import { normText, normKey } from "./normalize.mjs"
 function cellOwnText(cell, withNotes = false) {
   // withNotes: 문단 블록의 각주 본문을 렌더(builder)·칸 text 와 같은 " (주: …)" 꼴로 붙인다 — 칸에 blocks 가 있는 IR 과
   // text 만 있는 IR 을 맞대는 HWP5 쌍 트랙용. 자기참조 트랙은 각주 본문을 주석 유닛으로 따로 채점하므로 넣지 않는다
+  // 미기입 누름틀 안내문(placeholder span)은 IR 글에만 남는 인쇄 안 되는 글 — 참조와 같이 뺀다 (whitelist: clickhere-placeholder)
+  const ownText = b => b.spans?.some(s => s.placeholder) ? b.spans.filter(s => !s.placeholder).map(s => s.text).join("") : (b.text ?? "")
   const raw = cell.blocks?.length
     ? cell.blocks
         .filter(b => b.type !== "table" && b.type !== "image")
-        .map(b => (b.text ?? "") + (withNotes && b.footnoteText && b.text ? ` (주: ${b.footnoteText})` : ""))
+        .map(b => ownText(b) + (withNotes && b.footnoteText && b.text ? ` (주: ${b.footnoteText})` : ""))
         .filter(Boolean)
         .join("\n")
     : cell.text ?? ""

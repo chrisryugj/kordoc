@@ -205,20 +205,33 @@ export function escapeGfm(text: string): string {
   //   같은 한글·숫자·공백 뒤따름은 HTML 이 아니라 그대로 둔다.
   // 단 $...$ / $$...$$ 수식 스팬은 KaTeX 문법이라 이스케이프하면 파스 에러가 나므로 보호한다
   // (스팬을 임시 필러로 가린 뒤 escape → 복원). NUL 필러는 마크다운 본문에 등장하지 않는다.
+  // 리터럴 달러는 파서가 \$ 로 담으므로(escapeLiteralDollar) 이스케이프된 $ 에서는 스팬을 열지 않는다.
   // ![image](image_001.png) 이미지 참조 스팬과 링크 URL부 `](스킴...)`(sanitizeHref 허용
   // 스킴 한정 — 우연한 "[라벨](식별자)" 평문은 제외)도 동일 보호 — _ 이스케이프 시 문법 파괴.
   const NUL = String.fromCharCode(0) // 마크다운 본문에 없는 안전한 필러 (소스에 raw NUL 미기입)
   const spans: string[] = []
-  const masked = text.replace(/!\[[^\]]*\]\([^)\n]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\n]*\)|\$\$[^$]*\$\$|\$[^$\n]*\$/gi, (m) => {
+  const masked = text.replace(/!\[[^\]]*\]\([^)\n]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\n]*\)|(?<!\\)\$\$(?:\\[\s\S]|[^\\$])*\$\$|(?<!\\)\$(?:\\[^\n]|[^\\$\n])*\$/gi, (m) => {
     spans.push(m)
     return NUL + (spans.length - 1) + NUL
   })
   const escaped = masked
+    // 원문의 리터럴 역슬래시 + ASCII 구두점은 CommonMark 가 이스케이프로 읽어 역슬래시를 지운다("C:\.Pls"·
+    // "cd \!*"·"{} \;") → \\ 로. IR 규약 이스케이프 \$(escapeLiteralDollar)·\|(convertTableToText)는 그대로 (v4.14.3)
+    .replace(/\\(?=[!-#%-\/:-@\[-\x60{}~])/g, "\\\\")
     .replace(/([~*_`])/g, "\\$1")
     .replace(/(?<!\\)\|/g, "\\|")
     .replace(/^([ \t]*)(?=#{1,6}(?:[ \t]|$))/gm, "$1\\")
     .replace(/<(?!\/?u>)(?=[A-Za-z/!?])/g, "\\<")
   return escaped.replace(new RegExp(NUL + "(\\d+)" + NUL, "g"), (_, n) => spans[Number(n)])
+}
+
+/**
+ * IR 글 규약: 원문의 리터럴 `$` 는 `\$` 로 담는다. `$…$`·`$$…$$` 는 파서가 넣은 수식 스팬에만 쓴다
+ * (HWPX·HWP5·HWP3). 둘이 같은 글자면 셸 변수 "echo $HOME $PATH" 가 마크다운 렌더러·채점에서
+ * 수식으로 읽혔다 (v4.14.3). `\$` 는 CommonMark 백슬래시 이스케이프라 렌더 결과는 `$` 그대로다.
+ */
+export function escapeLiteralDollar(text: string): string {
+  return text.includes("$") ? text.replace(/\$/g, "\\$") : text
 }
 
 /** HWP 자동생성 도형/개체 대체텍스트 정규식 — 한컴오피스가 삽입하는 모든 알려진 패턴.
@@ -404,6 +417,7 @@ export function dedupeRunningHeaders(blocks: IRBlock[]): IRBlock[] {
 function spansToMarkdown(spans: IRSpan[]): string {
   let out = ""
   for (const s of spans) {
+    if (s.placeholder) continue // 미기입 누름틀 안내문 — 인쇄되지 않는 글 (IR 글에는 남는다)
     // 서식 run 도 문단 텍스트와 같은 PUA 계약을 탄다 — 종전엔 이 경로만 sanitize 를
     // 건너뛰어, 글머리표·괘선 조각이 span 을 타면 원시 PUA 가 마크다운에 그대로 실렸다
     // (hwp3-sample10-hwpx: U+F080F·U+F0827 116자)
@@ -587,6 +601,11 @@ export function noteSuffix(b: IRBlock): string {
   return b.footnoteText && b.text ? ` (주: ${b.footnoteText})` : ""
 }
 
+/** 블록의 보이는 글 — 미기입 누름틀 안내문(placeholder span)은 뺀다 (마크다운 방출 전용, IR text 는 그대로) */
+function visibleText(b: IRBlock): string {
+  return b.spans?.some(s => s.placeholder) ? b.spans.filter(s => !s.placeholder).map(s => s.text).join("") : (b.text ?? "")
+}
+
 /** 셀 내부 콘텐츠 → HTML — blocks(중첩표/다중문단) 있으면 구조 보존 재귀 렌더링 */
 function cellInnerHtml(cell: IRCell): string {
   if (cell.blocks?.length) {
@@ -598,7 +617,7 @@ function cellInnerHtml(cell: IRCell): string {
           return (cap ? cap + "<br>" : "") + tableToHtml(b.table)
         }
         if (b.type === "image" && b.text) return `<img src="${b.text}" alt="image">`
-        const t = sanitizeText(b.text ?? "")
+        const t = sanitizeText(visibleText(b))
         return t ? (t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
       })
       .filter(Boolean)

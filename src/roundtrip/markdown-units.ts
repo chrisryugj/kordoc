@@ -207,14 +207,15 @@ export function sanitizeText(text: string): string {
   return result
 }
 
-/** 매칭용 정규화 — sanitize + 공백 붕괴. 스캔 텍스트(IR 변환 전)와 IR 텍스트 양쪽에 적용 */
+/** 매칭용 정규화 — sanitize + 공백 붕괴. 스캔 텍스트(IR 변환 전)와 IR 텍스트 양쪽에 적용.
+ *  IR 은 리터럴 $ 를 \$ 로 담으므로(escapeLiteralDollar) 원문 쪽과 같게 푼다 */
 export function normForMatch(text: string): string {
-  return sanitizeText(text).replace(/\s+/g, " ").trim()
+  return sanitizeText(text.replace(/\\\$/g, "$")).replace(/\s+/g, " ").trim()
 }
 
-/** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환 — \| \# \< 포함, 없으면 hp:t 에 백슬래시가 샌다) */
+/** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환 — \| \# \< \$ \\ 포함, 없으면 hp:t 에 백슬래시가 샌다) */
 export function unescapeGfm(text: string): string {
-  return text.replace(/\\([~*_`|#<])/g, "$1")
+  return text.replace(/\\([~*_`|#<$\\])/g, "$1")
 }
 
 /** 스킵 보고용 내용 요약 (최대 80자) */
@@ -310,7 +311,7 @@ export function parseGfmTable(lines: string[]): string[][] {
 
 /** GFM 셀 텍스트 → 평문 */
 export function unescapeGfmCell(text: string): string {
-  return text.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|").replace(/\\([~*_`#<])/g, "$1")
+  return text.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|").replace(/\\([~*_`#<$\\])/g, "$1")
 }
 
 // ─── HTML 표 — 좌표 추적 렌더 재현 + 파서 ───────────

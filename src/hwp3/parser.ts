@@ -23,7 +23,7 @@
 import { inflateRawSync } from "zlib"
 import type { DocumentMetadata, IRBlock, InternalParseResult, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError } from "../utils.js"
-import { blocksToMarkdown, flattenLayoutTables } from "../table/builder.js"
+import { blocksToMarkdown, escapeLiteralDollar, flattenLayoutTables } from "../table/builder.js"
 import { hwpEquationToLatex } from "../hwp5/equation.js"
 import { formatNumber, type NumFmt } from "../hwp5/numbering.js"
 import {
@@ -330,7 +330,7 @@ function parseCharStream(reader: Reader, charCount: number, ctx: ParaContext, pa
     if (ch >= 32) {
       // 일반 hchar (ASCII < 0x80 영역도 u16 으로 들어옴).
       // 아래아 음절은 자모 2~3개가 되므로 문자열 단위로 받는다
-      para.text += decodeJohabText(ch) ?? ""
+      para.text += escapeLiteralDollar(decodeJohabText(ch) ?? "") // 리터럴 $ 는 \$ — $…$ 는 수식 전용
       continue
     }
     if (ch === 9) {

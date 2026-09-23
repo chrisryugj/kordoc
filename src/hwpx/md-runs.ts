@@ -332,11 +332,11 @@ interface InlineSpan {
 }
 
 export function parseInlineMarkdown(text: string): InlineSpan[] {
-  // 마크다운 백슬래시 이스케이프(\* \~ \| \< 등 — kordoc 파서 escapeGfm 출력 포함)를
+  // 마크다운 백슬래시 이스케이프(\* \~ \| \< \$ 등 — kordoc 파서 escapeGfm·escapeLiteralDollar 출력 포함)를
   // 센티널로 마스킹 — 강조/링크 정규식이 이스케이프된 문자를 델리미터로 오인해
   // 소비하는 것을 차단. span 조립 후 리터럴로 복원한다.
   const literals: string[] = []
-  text = text.replace(/\x00/g, "").replace(/\\([\\`*_{}[\]()#+\-.!|<>~])/g, (_, c: string) => {
+  text = text.replace(/\x00/g, "").replace(/\\([\\`*_{}[\]()#+\-.!|<>~$])/g, (_, c: string) => {
     literals.push(c)
     return `\x00${literals.length - 1}\x00`  // 인덱스 내장 — 전처리가 일부 구간을 버려도 정렬 유지
   })

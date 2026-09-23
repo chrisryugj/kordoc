@@ -41,6 +41,7 @@ export const WHITELIST = [
   { id: "note-marks", desc: "각주·미주 본문 참조 부호(개체 number·prefixChar·suffixChar·userChar + 구역 footNotePr/endNotePr 번호 모양)와 주석·캡션 머리 hp:autoNum(FOOTNOTE·ENDNOTE·PICTURE·TABLE·EQUATION) 번호를 참조 글에 넣는다 — 한컴 PDF 실렌더(footnote-01 '액체1)와'·'1) 플라스틱 액체란', 3-09월 '문1）', ta-pic '<그림 1>'). 쪽번호 PAGE 는 종전대로 제외" },
   { id: "note-presence-host", desc: "fnPresence 모수 = 비어 있지 않은 주석을 가진 문단 수 — 파서는 한 문단의 주석을 '(주: 1) …; 2) …)' 하나로 담는다(IRBlock.footnoteText 단일 문자열, HWP5 동일). 주석 글 자체는 recall(주석 유닛)이 채점" },
   { id: "page-text-parts", desc: "머리말·꼬리말은 조각(문단 글·표 셀·글상자, 문서 순서) 단위로 이어 찾는다 — 파서가 머리말 표를 ' / '·줄바꿈으로 평탄화. 전 머리말을 1회씩 소비한 뒤 재등장만 위반. 본문 문자 6자 미만은 문서 첫머리(머리말)·끝(꼬리말) 구간에서만 소비" },
+  { id: "clickhere-placeholder", desc: "미기입 누름틀(CLICK_HERE·dirty≠1)의 값 자리 글이 안내문(Direction) 그대로면 한컴이 화면에만 흐리게 보이고 인쇄하지 않는다 — 파서는 IR 글에 placeholder span 으로 표시하고 마크다운에서 뺀다, 참조도 모수 제외(표 채점은 placeholder span 을 뺀 칸 글). rhwp form-01·form-02·issue1893 (v4.14.3)" },
   { id: "autonum-forms", desc: "자동번호 phantom 관용·셀 장식 관용에 한컴 번호 서식 전 계열 — 자모(ㄱ.)·괄호형((1)·(가))·로마자(I.) 추가, OUTLINE(개요) 문단도 자동부호 문단 (한컴 2020 PDF '1. 3. 단계별…')" },
 ]
 

@@ -7,8 +7,8 @@
  */
 
 import { KordocError, sanitizeHref, stripDtd } from "../utils.js"
-import { convertTableToText, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { IRBlock, IRCell, IRTable, InlineStyle, ParseWarning } from "../types.js"
+import { convertTableToText, escapeLiteralDollar, MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, ParseWarning } from "../types.js"
 import { hmlToLatex } from "./equation.js"
 import {
   clampSpan,
@@ -192,7 +192,7 @@ function walkSection(
         // 실제 페이지 갱신 (#66) — 프리패스 맵은 top-level 문단만 담아 중첩 문단은 자연 상속
         const paraPg = ctx.paraPage?.get(el)
         if (paraPg !== undefined && ctx.pageBase !== undefined) ctx.page = ctx.pageBase + paraPg + 1
-        const { text: rawText, href, footnote, style, segments } = extractParagraphInfo(el, ctx.styleMap, ctx)
+        const { text: rawText, href, footnote, style, segments, placeholderSpans } = extractParagraphInfo(el, ctx.styleMap, ctx)
         let text = rawText
         let headingLevel: number | undefined
         // 자동번호/글머리표/개요 접두 재현 (v3.0). 텍스트 유무와 무관하게 호출 —
@@ -273,6 +273,7 @@ function walkSection(
                 cellBlock.spans = spans
               }
             }
+            if (!cellBlock.spans && placeholderSpans) cellBlock.spans = withPrefixSpan(placeholderSpans, ph?.prefix)
             ;(cell.blocks ??= []).push(cellBlock)
           } else if (!tableCtx) {
             // 구분선 문단('─' 연속 — kordoc 생성기의 hr 렌더) → separator 복원.
@@ -321,6 +322,7 @@ function walkSection(
               // 방출돼 여기 안 옴 — 글리프 재분류가 왕복 담당)
               if (spanMode !== "foreign" && el.getAttribute("paraPrIDRef") === KORDOC_PARA_QUOTE) block.quote = true
             }
+            if (!headingLevel && !block.spans && placeholderSpans) block.spans = withPrefixSpan(placeholderSpans, ph?.prefix)
             blocks.push(block)
           } else {
             // 표 내부지만 셀 밖(비정상 경로) — 무음 드롭 대신 본문 문단으로 보존
@@ -805,6 +807,39 @@ interface ParagraphInfo {
    * text는 기존과 동일한 전체 평탄화본 (하위 호환).
    */
   segments?: string[]
+  /** 미기입 누름틀 안내문이 든 문단 — 안내문 조각만 placeholder 표시한 span (마크다운에서 뺀다, IR 글엔 남긴다) */
+  placeholderSpans?: IRSpan[]
+}
+
+/** 누름틀 안내문 구간 표지 — 문단 글 정리(공백 붕괴·링크 삽입·절단)를 거친 뒤 span 으로 가른다 */
+const PH_OPEN = "\x1C"
+const PH_CLOSE = "\x1D"
+
+/**
+ * 미기입 누름틀의 안내문 — CLICK_HERE 이고 수정 안 됨(dirty≠1)일 때만. 이런 필드의 값 자리 글이 안내문과
+ * 같으면 한컴은 화면에만 흐리게 보이고 인쇄하지 않는다(한컴 PDF 실측, HWP5 body.ts 수정 비트 규칙과 같은 판정).
+ * 안내문은 stringParam Direction, 없으면 Command 의 "Direction:wstring:<N>:" 뒤 N자.
+ */
+function clickHereGuide(fieldBegin: Element): string | undefined {
+  if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "CLICK_HERE") return undefined
+  if (fieldBegin.getAttribute("dirty") === "1") return undefined
+  const children = findChildByLocalName(fieldBegin, "parameters")?.childNodes
+  if (!children) return undefined
+  let fromCommand: string | undefined
+  for (let i = 0; i < children.length; i++) {
+    const ch = children[i] as Element
+    if (ch.nodeType !== 1) continue
+    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
+    if (tag !== "stringParam") continue
+    const name = ch.getAttribute("name")
+    if (name === "Direction") return ch.textContent || undefined
+    if (name === "Command") {
+      const cmd = ch.textContent || ""
+      const m = /Direction:wstring:(\d+):/.exec(cmd)
+      if (m) fromCommand = cmd.slice(m.index + m[0].length, m.index + m[0].length + Number(m[1])) || undefined
+    }
+  }
+  return fromCommand
 }
 
 /** fieldBegin이 HYPERLINK면 stringParam name="Path"에서 URL 추출 (살균 포함) */
@@ -844,7 +879,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   // 인라인 [anchor](url)로 방출 (HWP5 fieldRanges와 동일 모델). extent를 못 닫으면
   // (문단 경계 걸침 등) 기존 문단 전체 href로 폴백.
   const linkRanges: Array<{ url: string; start: number; end?: number }> = []
-  const openFields: Array<{ rangeIdx?: number }> = []
+  const openFields: Array<{ rangeIdx?: number; guide?: string; start?: number }> = []
   const onFieldBegin = (el: Element) => {
     const url = extractHyperlinkHref(el)
     if (url) {
@@ -852,12 +887,20 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
       openFields.push({ rangeIdx: linkRanges.length - 1 })
       if (!href) href = url
     } else {
-      openFields.push({})
+      const guide = clickHereGuide(el)
+      openFields.push(guide ? { guide, start: text.length } : {})
     }
   }
   const onFieldEnd = () => {
     const open = openFields.pop()
     if (open?.rangeIdx !== undefined) linkRanges[open.rangeIdx].end = text.length
+    // 미기입 누름틀: 값 자리 글이 안내문 그대로면 표지로 감싼다 (글은 IR 에 남고 마크다운에서만 빠진다)
+    if (open?.guide !== undefined && open.start !== undefined) {
+      const value = text.slice(open.start).replace(/\\\$/g, "$")
+      if (value && (value === open.guide || value.trimEnd() === open.guide)) {
+        text = text.slice(0, open.start) + PH_OPEN + text.slice(open.start) + PH_CLOSE
+      }
+    }
   }
 
   // 문단의 스타일 참조 → charPr로 간접 조회
@@ -960,8 +1003,9 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
             ctx.warnings?.push({ page: ctx.page, message: "변경추적 삭제 텍스트 출력 제외", code: "HIDDEN_TEXT_FILTERED" })
           }
         } else {
-          // \x1E는 인라인 표 경계 마커로 예약 — 원문 혼입 방지 (#49/#50)
-          text += t.replace(/\x1E/g, "")
+          // \x1E는 인라인 표 경계 마커로 예약 — 원문 혼입 방지 (#49/#50).
+          // 리터럴 $ 는 \$ — $…$ 는 아래 수식 스팬 전용 (escapeLiteralDollar)
+          text += escapeLiteralDollar(t.replace(/\x1E/g, ""))
         }
         continue
       }
@@ -1048,7 +1092,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           if (raw.trim()) {
             try {
               const latex = hmlToLatex(raw).trim()
-              if (latex) text += " $" + latex + "$ "
+              if (latex) text += " $" + latex.replace(/\$/g, "\\$") + "$ "
             } catch {
               // 변환 실패 시 드롭 — 깨진 대체 텍스트 누출 방지. 드롭 사실은 경고로 남긴다
               if (ctx?.warnings) {
@@ -1115,10 +1159,22 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   // text는 마커 제거 후 기존과 동일 파이프라인 (표 없는 문단은 바이트 동일)
   let segments: string[] | undefined
   if (text.includes("\x1E")) {
-    segments = text.split("\x1E").map(cleanParaText)
+    // 인라인 표 문단은 조각 방출이라 안내문 표시 없이 원문 유지
+    segments = text.split("\x1E").map(s => cleanParaText(stripPlaceholderMarks(s)))
     text = text.replace(/\x1E/g, "")
   }
-  const cleanText = cleanParaText(text)
+  let cleanText = cleanParaText(segments ? stripPlaceholderMarks(text) : text)
+  let placeholderSpans: IRSpan[] | undefined
+  if (cleanText.includes(PH_OPEN)) {
+    placeholderSpans = []
+    for (const part of cleanText.split(/(\x1C[^\x1C\x1D]*\x1D)/)) {
+      if (!part) continue
+      if (part.startsWith(PH_OPEN)) placeholderSpans.push({ text: part.slice(1, -1), placeholder: true })
+      else placeholderSpans.push({ text: stripPlaceholderMarks(part) })
+    }
+    cleanText = stripPlaceholderMarks(cleanText)
+    if (!placeholderSpans.some(s => s.placeholder && s.text)) placeholderSpans = undefined
+  }
 
   // 스타일 정보 조회
   let style: InlineStyle | undefined
@@ -1134,5 +1190,14 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
     }
   }
 
-  return { text: cleanText, href, footnote, style, segments }
+  return { text: cleanText, href, footnote, style, segments, placeholderSpans }
+}
+
+/** 자동번호 접두가 붙은 문단이면 접두를 평문 span 으로 앞에 — span 을 이으면 블록 글과 같다 */
+function withPrefixSpan(spans: IRSpan[], prefix?: string): IRSpan[] {
+  return prefix ? [{ text: prefix + " " }, ...spans] : spans
+}
+
+function stripPlaceholderMarks(s: string): string {
+  return s.includes(PH_OPEN) || s.includes(PH_CLOSE) ? s.replace(/[\x1C\x1D]/g, "") : s
 }

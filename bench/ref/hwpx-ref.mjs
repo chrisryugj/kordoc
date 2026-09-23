@@ -152,6 +152,26 @@ function bump(counters, tag) {
   counters.excludedElements[tag] = (counters.excludedElements[tag] ?? 0) + 1
 }
 
+/** 미기입 누름틀의 안내문 — CLICK_HERE·dirty≠1 일 때만 (whitelist: clickhere-placeholder, 파서와 독립 구현).
+ *  stringParam Direction, 없으면 Command 의 "Direction:wstring:<N>:" 뒤 N자 */
+function clickHereGuide(fb) {
+  if ((fb.attrs?.type ?? "").toUpperCase() !== "CLICK_HERE" || fb.attrs?.dirty === "1") return undefined
+  let fromCommand
+  for (const params of fb.children) {
+    if (typeof params === "string" || params.tag !== "parameters") continue
+    for (const c of params.children) {
+      if (typeof c === "string" || c.tag !== "stringparam") continue
+      const t = c.children.filter(x => typeof x === "string").join("")
+      if (c.attrs?.name === "Direction") return t || undefined
+      if (c.attrs?.name === "Command") {
+        const m = /Direction:wstring:(\d+):/.exec(t)
+        if (m) fromCommand = t.slice(m.index + m[0].length, m.index + m[0].length + Number(m[1])) || undefined
+      }
+    }
+  }
+  return fromCommand
+}
+
 // 파서 handleShape가 이미지를 추출하는 호스트 태그 (extractImageRef 미러)
 const IMG_HOST_TAGS = new Set(["pic", "shape", "drawingobject"])
 const IMG_REF_TAGS = new Set(["imgrect", "img", "imgclip"])
@@ -312,6 +332,7 @@ export async function extractRef(buffer) {
     }
 
     const notes = [] // 이 문단의 각주/미주 — 호출자가 문단 글 유닛 뒤에 둔다 (파서: 문단 끝 "(주: …)")
+    const openFields = [] // fieldBegin 스택 — 미기입 누름틀이면 {guide, start}
     const handleCtrl = ctrl => {
       for (const ch of ctrl.children) {
         if (typeof ch === "string") continue
@@ -333,6 +354,26 @@ export async function extractRef(buffer) {
             if (RENDERED_AUTONUM.has(ch.attrs.numtype)) { addText(noteAutoNumText(ch)); break }
             bump(counters, ch.tag)
             break
+          // 미기입 누름틀(CLICK_HERE·dirty≠1)의 값 자리 글이 안내문 그대로면 한컴이 인쇄하지 않는다 —
+          // 모수에서 뺀다 (whitelist: clickhere-placeholder, 파서는 IR 글에 표시만 남기고 마크다운에서 뺀다)
+          case "fieldbegin": {
+            const guide = clickHereGuide(ch)
+            openFields.push(guide !== undefined ? { guide, start: text.length } : null)
+            bump(counters, ch.tag)
+            break
+          }
+          case "fieldend": {
+            const open = openFields.pop()
+            if (open && !leaderCut) {
+              const value = text.slice(open.start)
+              if (value && (value === open.guide || value.trimEnd() === open.guide)) {
+                text = text.slice(0, open.start)
+                bump(counters, "clickhere-placeholder")
+              }
+            }
+            bump(counters, ch.tag)
+            break
+          }
           default:
             bump(counters, ch.tag) // autoNum(쪽번호 등), pageNum, colPr, bookmark 등 — 모수 제외
         }

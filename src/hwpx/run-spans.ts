@@ -5,6 +5,7 @@
 
 import type { IRSpan } from "../types.js"
 import { extractTextFromNode, type WalkCtx } from "./parser-shared.js"
+import { escapeLiteralDollar } from "../table/builder.js"
 
 /** kordoc 생성 default 레이아웃의 인라인 코드 charPr id (gen-ids CHAR_CODE와 동기) */
 const KORDOC_CHAR_CODE = "4"
@@ -58,7 +59,7 @@ export function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, req
         const tkids = rc.childNodes
         for (let k = 0; k < (tkids?.length ?? 0); k++) {
           const tk = tkids![k]
-          if (tk.nodeType === 3 || tk.nodeType === 4) text += tk.textContent || ""
+          if (tk.nodeType === 3 || tk.nodeType === 4) text += escapeLiteralDollar(tk.textContent || "") // 평문 경로와 같은 IR 규약
           else if (tk.nodeType === 1) {
             // 탭·빈칸 컨트롤은 공백(평문 경로와 같은 모델 — 항목부호 뒤 탭 run 이 강조 복원을 막지 않게),
             // 줄바꿈 등 나머지는 평문 경로

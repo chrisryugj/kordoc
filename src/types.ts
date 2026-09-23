@@ -24,10 +24,16 @@ export interface IRSpan {
   /** 밑줄 — 개정문 추가·변경 표시 등. GFM 문법이 없어 <u>…</u> 인라인 HTML 로 방출 */
   underline?: boolean
   code?: boolean
+  /**
+   * 미기입 누름틀의 안내문(HWPX CLICK_HERE, 수정 안 됨). 한컴은 화면에만 흐리게 보이고 인쇄하지 않는다.
+   * 블록 `text` 에는 남기고(양식 채우기·패치가 원문 자리와 맞대도록) 마크다운에서는 뺀다 (v4.14.3)
+   */
+  placeholder?: boolean
 }
 
 export interface IRBlock {
   type: IRBlockType
+  /** 블록 글. HWPX·HWP5·HWP3 은 원문의 리터럴 `$` 를 `\$` 로 담고 `$…$`·`$$…$$` 는 수식 스팬에만 쓴다 (v4.14.3) */
   text?: string
   table?: IRTable
   /** 헤딩 레벨 (1-6), type="heading"일 때 사용 */

@@ -6,10 +6,10 @@
 //           탭/전각공백 변환 차이를 전부 흡수. 양쪽 동일 적용이라 가짜 일치 위험은
 //           유닛 경계에 한정되며 무시 가능 수준.
 
-/** 마크다운 이스케이프 역변환 (\| \* \~ \[ \< 등) — kordoc escapeGfm 은 원시 HTML 로 읽힐 < 를
- *  \< 로 낸다 (리터럴 "<Table 18-4: …>"·"<br>" 글, v4.14.3) */
+/** 마크다운 이스케이프 역변환 (\| \* \~ \[ \< \$ 등) — kordoc escapeGfm 은 원시 HTML 로 읽힐 < 를
+ *  \< 로 내고(리터럴 "<Table 18-4: …>"·"<br>" 글), 리터럴 달러는 IR 부터 \$ 다(escapeLiteralDollar, v4.14.3) */
 export function unescapeMd(s) {
-  return s.replace(/\\([\\`*_{}[\]()#+\-.!|<>~])/g, "$1")
+  return s.replace(/\\([\\`*_{}[\]()#+\-.!|<>~$])/g, "$1")
 }
 
 // ─── 한컴 PUA → 표준 유니코드 매핑 (파서 정책 미러 — whitelist: pua-map) ───
@@ -87,6 +87,9 @@ export function normText(s) {
   if (!s) return ""
   return mapPua(s)
     .normalize("NFC")
+    // IR 은 리터럴 $ 를 \$ 로 담는다(escapeLiteralDollar, v4.14.3) — 표 칸처럼 마크다운을 거치지 않는
+    // IR 글도 원문과 같은 꼴로. 원문에 "\$" 가 있어도 양쪽 동일 적용이라 대칭
+    .replace(/\\\$/g, "$")
     // 밑줄 태그 <u>…</u> — PDF 파서가 보존하는 서식 마커(v4.7.0)로 콘텐츠가 아니다.
     // hwpx GT는 밑줄을 방출하지 않으므로 태그를 남기면 서식 보존이 감점되는 역전이
     // 생긴다. <img>/표 태그와 동일하게 채점 전 제거 — 양쪽 동일 적용이라 대칭.

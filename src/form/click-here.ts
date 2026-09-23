@@ -8,8 +8,10 @@
  * 값을 비교하지 않고 무조건 사이 영역을 값으로 치환한다 — 값이 안내문과 동일해도
  * 침묵 유실이 없다 (rhwp 코어 결함 #3380 교훈).
  *
- * 치환은 filler-hwpx와 같은 철학의 원본 XML splice — fieldBegin/fieldEnd·안내문
- * 파라미터·둘러싼 run(charPr)을 1바이트도 건드리지 않고 사이 영역만 바꾼다.
+ * 치환은 filler-hwpx와 같은 철학의 원본 XML splice — fieldEnd·안내문 파라미터·둘러싼
+ * run(charPr)을 1바이트도 건드리지 않고 사이 영역만 바꾼다. 값을 넣으면 fieldBegin 의 수정
+ * 표시(dirty)만 "1" 로 켠다 — 미수정(dirty=0) 필드의 값이 안내문과 같으면 한컴은 화면에만 흐리게
+ * 보이고 인쇄하지 않으며 kordoc 파서도 그렇게 읽는다(v4.14.3). 한컴이 직접 채운 필드도 dirty=1.
  */
 
 import JSZip from "jszip"
@@ -41,6 +43,9 @@ interface ClickHereRegion {
   end: number
   /** 태그 네임스페이스 접두사 (예: "hp:") — 삽입 요소도 같은 접두사 사용 */
   prefix: string
+  /** fieldBegin 여는 태그 범위 — 값을 넣을 때 수정 표시(dirty)만 켠다 */
+  beginTagStart: number
+  beginTagEnd: number
 }
 
 const FIELD_BEGIN_RE = /<([A-Za-z0-9_]+:)?fieldBegin\b([^>]*?)(\/?)>/g
@@ -137,6 +142,8 @@ export function scanClickHereRegions(xml: string): ClickHereRegion[] {
       start,
       end,
       prefix,
+      beginTagStart: m.index,
+      beginTagEnd: m.index + m[0].length,
     })
   }
   return regions
@@ -184,6 +191,16 @@ export function fillClickHereInXml(
     const current = xml.slice(region.start, region.end)
     matchedKeys.add(key)
     filled.push({ label: region.name, value, row: -1, col: -1, key, source: "clickhere" })
+    // 값을 넣은 필드는 수정됨 — 빈 값은 안내문 노출 그대로(미수정 유지)
+    if (value !== "") {
+      const tag = xml.slice(region.beginTagStart, region.beginTagEnd)
+      if (attrOf(tag, "dirty") !== "1") {
+        const dirtyTag = /\sdirty="[^"]*"/.test(tag)
+          ? tag.replace(/(\sdirty=")[^"]*"/, (_, head: string) => head + '1"')
+          : tag.replace(/(\/?>)$/, ' dirty="1"$1')
+        splices.push({ start: region.beginTagStart, end: region.beginTagEnd, replacement: dirtyTag })
+      }
+    }
     if (current === replacement) continue // 이미 같은 내용 — 바이트 보존
     splices.push({ start: region.start, end: region.end, replacement })
   }
