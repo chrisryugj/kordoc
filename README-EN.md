@@ -72,6 +72,16 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.14.2
+
+Official-document output re-checked against a Hangul 2024 rendered PDF and polished to read like a real government document.
+
+- **📐 Continuation lines now align exactly with the first line's text**: item markers (□ ○ - ※ 1. 가.) are followed by a tab instead of a space, using Hangul's hanging-indent auto tab stop. Justification can no longer stretch the gap after the marker, and squeezed lines no longer pull their text left. Applies to every official-document preset.
+- **✂️ No more words split at line ends**: body text uses word-level line breaking ("동대/문" → "동대문") with widow/orphan control. Dates and amounts are bound with non-breaking spaces so "2026. 1. 22." never splits; straight quotes become ‘ ’ “ ”.
+- **📏 Layout simulated with real Hangul font metrics**: advance widths of 8 bundled Hancom fonts reproduce all 154 line breaks of the reference PDF. Short trailing lines are pulled up and over-stretched lines are tightened with small letter-spacing changes instead of heavy squeezing.
+- **🧩 PPTX detection** (#80, PR #81 @LimePencil): PPTX input now reports an unsupported format instead of a misleading "HWPX section not found".
+- **🧹 Tech debt**: the four files over 1,200 lines (`mcp.ts`, `cli.ts`, `hwp5/parser.ts`, `svg-render.ts`) were split into feature modules; the parser no longer drops non-breaking spaces, and `kordoc render` previews honor tab stops and trailing-space justification.
+
 ## What's New in v4.14.0
 
 - **🏛️ Central-government business-report preset `업무보고` (`ministry`)**: built by exhaustively measuring the Ministry of Economy and Finance's written report to the National Assembly (2026-07-15, 17 pages) — fonts, sizes, colors and shape coordinates. Cover (red "대외주의" box via `--cover-label`, two blue bars), TOC box, `##` chapter band (gradient + blue double rule, one chapter per page), `###` blue numbered section box, `####` navy sub-heading box, `#####` ① sky-blue item band, `> ▪ …` pale-yellow summary box, `## 별첨 …` appendix band. Body 함초롬바탕 15, footnotes 맑은 고딕 12, tables 맑은 고딕 12; **`(keyword)`/`[keyword]` right after □ is rendered blue bold** (black bold after ㅇ); leading ❶⇒↳ glyphs are kept. `kordoc generate report.md --preset 업무보고 --date "2026. 7. 15." --cover-label 대외주의`. Verified against the original with Hancom COM rendering.
