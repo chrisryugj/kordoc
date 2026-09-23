@@ -280,7 +280,8 @@ describe("회귀 rhwp-9: 표 cell_count 고정 상한(256) 제거", () => {
       u16seq([B]),
     ])
     const r = parseHwp3Document(buildHwp3(buildBody(stream, 6)))
-    assert.equal(r.markdown, "AB")
+    // 글자처럼 취급 표(기준 위치 0)는 문단 글을 앞뒤로 나눈다 — 스트림 동기만 본다 (빈 표는 방출 없음)
+    assert.equal(r.markdown.replace(/\s+/g, ""), "AB")
     assert.ok(!r.warnings?.some(w => w.code === "PARTIAL_PARSE"), "정상 표를 죽이면 안 됨")
   })
 

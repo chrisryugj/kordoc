@@ -274,6 +274,16 @@ function decodeHwp3Extra(ch: number): number {
     case 0x2022: return 0x2022 // • hwp3-sample 글머리표 4건 (항등)
     case 0x2f17: return 0x2022 // • hwp3-sample10 글머리표 3건
     case 0x2f06: return 0x25a0 // ■ hwp3-sample10 "제목차례" 좌우 장식 2건
+    // SO-SUEOP ↔ 한컴 HWP3→HWPX 변환본 문맥 정렬 — 코드 개수와 변환본 글자 증가분이 전부 일치
+    // (“ 13·” 14·‧ 4·《 3·》 3·— 1·∣ 6·↳ 18). 앞 셋은 항등, 0x3062~0x30BD 는 사적 문장부호
+    case 0x2014: return 0x2014 // —
+    case 0x2223: return 0x2223 // ∣
+    case 0x21b3: return 0x21b3 // ↳
+    case 0x3062: return 0x201c // “
+    case 0x3063: return 0x201d // ”
+    case 0x3066: return 0x2027 // ‧
+    case 0x30bb: return 0x300a // 《
+    case 0x30bd: return 0x300b // 》
     // 관인·서명란 도장 기호. rhwp 는 U+F012B 로 보존하고 렌더러가 `(인)` 으로 편다 —
     // kordoc 도 PUA 를 그대로 내보내면 shared/pua.ts 의 검증표가 같은 문자열로 편다.
     case 0x2bce: return 0xf012b

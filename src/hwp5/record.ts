@@ -375,7 +375,12 @@ export interface ParaTextState {
   ctrlIdx: number
   fieldStack: Array<{ start: number; ctrlIdx: number }>
   fieldRanges: HwpFieldRange[]
+  /** 채움(리더) 탭을 "\t" 대신 LEADER_TAB_MARK 로 — 본문 파서만 켠다(목차 쪽번호 절단, HWPX \x1F 정책과 대칭) */
+  leaderMark?: boolean
 }
+
+/** 채움 탭 표지 — 뒤는 목차 쪽번호라 본문 파서가 문단 텍스트를 여기서 자른다 (HWPX section-walker 와 같은 문자) */
+export const LEADER_TAB_MARK = "\x1F"
 
 export function createParaTextState(): ParaTextState {
   return { text: "", ctrlIdx: 0, fieldStack: [], fieldRanges: [] }
@@ -453,8 +458,9 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
       case CHAR_FIXED_WIDTH: result += " "; break  // 고정폭 공백
 
       // ── inline 타입 (2바이트 + 14바이트 확장) ──
+      // 확장 u16[7] 중 [2] 의 하위 바이트 = 채움 모양(0 없음·3 점선 …), 상위 = 탭 종류+1 (rhwp tab_extended 실측)
       case CHAR_TAB:
-        result += "\t"
+        result += state.leaderMark && i + 14 <= data.length && data[i + 4] !== 0 ? LEADER_TAB_MARK : "\t"
         if (i + 14 <= data.length) i += 14
         break
 

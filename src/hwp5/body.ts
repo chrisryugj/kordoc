@@ -1,14 +1,17 @@
 /** HWP 5.x 본문 파서 — 섹션 레코드 → 문단 리스트·컨트롤 디스패치(표·그리기 개체·수식·각주·머리말·필드) → IRBlock */
 
 import {
-  extractEquationText, createParaTextState, appendParaText, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
+  extractEquationText, createParaTextState, appendParaText, LEADER_TAB_MARK, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
   TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE, TAG_EQEDIT, TAG_SHAPE_COMPONENT, TAG_SHAPE_COMPONENT_CONTAINER,
   TAG_SHAPE_COMPONENT_PICTURE, type HwpRecord, type HwpDocInfo, type IndexedControlResolver,
 } from "./record.js"
 import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
 import { hwpEquationToLatex } from "./equation.js"
-import { buildTable, convertTableToText, flattenLayoutTables, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { CellContext, IRBlock, IRCell, IRTable, ParseOptions, ParseWarning, InlineStyle } from "../types.js"
+import { buildTable, flattenLayoutTables, MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import {
+  INLINE_TABLE_MARK, blocksPlainText, buildAddressedTable, cellTextFromBlocks, emitParagraphBlocks,
+} from "./ir-assemble.js"
+import type { CellContext, IRBlock, IRTable, ParseOptions, ParseWarning, InlineStyle } from "../types.js"
 import { sanitizeHref } from "../utils.js"
 
 /** 중첩표/글상자 재귀 깊이 상한 — 표 "중첩 단계" 기준.
@@ -197,6 +200,8 @@ interface ParsedCtrl {
   footnote?: string
   /** 하이퍼링크 URL (%hlk) */
   href?: string
+  /** 미기입 누름틀(%clk, 속성 bit 15 = 0)의 안내문 — 본문 run 에 같은 글이 있으면 값이 아니다 */
+  guide?: string
   /** resolver 중복 매칭 방지 */
   resolved?: boolean
 }
@@ -240,10 +245,15 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
   // 컨트롤별 효과 계산 (인라인 치환/파생 블록/각주/링크)
   for (const ctrl of ctrls) {
     applyCtrlEffect(ctrl, records, ctx)
+    // 글자처럼 취급 표는 문단 글 흐름 안의 자리 — 표지를 심어 앞뒤 글을 나눈다 (#49/#50 HWPX 대칭)
+    if (ctrl.id === CTRL_TBL && ctrl.afterBlocks && ctrl.data.length >= 8 && (ctrl.data.readUInt32LE(4) & 1)) {
+      ctrl.inlineText = INLINE_TABLE_MARK
+    }
   }
 
   // 텍스트 렌더링 — 확장 컨트롤 인덱스 ↔ CTRL_HEADER 순서 매핑
   const state = createParaTextState()
+  state.leaderMark = true
   const resolver: IndexedControlResolver = (idx, id) => {
     let ctrl = idx >= 0 && idx < ctrls.length ? ctrls[idx] : undefined
     if (!ctrl || (ctrl.idRaw !== id && ctrl.id !== id)) {
@@ -257,25 +267,35 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     appendParaText(state, data, resolver)
   }
 
-  // FIELD_BEGIN/END 범위에 하이퍼링크 적용 — 시작 위치 내림차순으로 안전하게 치환
+  // FIELD_BEGIN/END 범위 — 시작 위치 내림차순으로 안전하게 치환. 하이퍼링크는 [anchor](url),
+  // 미기입 누름틀의 안내문 run 은 지운다(한컴은 화면에만 흐리게 보이고 인쇄하지 않는다 — PDF 실측)
   let text = state.text
   if (state.fieldRanges.length > 0) {
     const ranges = [...state.fieldRanges].sort((a, b) => b.start - a.start)
     const applied: Array<[number, number]> = []
     for (const r of ranges) {
       const ctrl = ctrls[r.ctrlIdx]
-      if (!ctrl?.href || r.end <= r.start) continue
+      if (!ctrl || r.end <= r.start) continue
       if (applied.some(([s, e]) => r.start < e && r.end > s)) continue
+      const anchor = text.slice(r.start, r.end)
+      if (ctrl.guide !== undefined) {
+        if (anchor === ctrl.guide || anchor.trimEnd() === ctrl.guide) {
+          text = text.slice(0, r.start) + text.slice(r.end)
+          applied.push([r.start, r.end])
+        }
+        continue
+      }
+      if (!ctrl.href) continue
       const href = sanitizeHref(ctrl.href)
       if (!href) continue
-      const anchor = text.slice(r.start, r.end)
-      if (!anchor.trim()) continue
+      if (!anchor.trim() || anchor.includes(INLINE_TABLE_MARK) || anchor.includes(LEADER_TAB_MARK)) continue
       text = text.slice(0, r.start) + `[${anchor}](${href})` + text.slice(r.end)
       applied.push([r.start, r.end])
     }
   }
-
-  const trimmed = text.replace(/\$\$/g, "$ $").trim()
+  // 채움 탭 뒤(목차 쪽번호)는 버린다 — HWPX 파서의 리더 탭 절단 정책(bench leader-tab-cut)과 대칭
+  const leaderAt = text.indexOf(LEADER_TAB_MARK)
+  if (leaderAt >= 0) text = text.slice(0, leaderAt)
 
   // 문단번호/글머리표/개요 처리 (DocInfo PARA_SHAPE headType)
   let headingLevel = 0
@@ -307,42 +327,16 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     }
   }
 
-  const blocks: IRBlock[] = []
-  const footnotes = ctrls.filter(c => c.footnote).map(c => c.footnote!)
-
-  if (trimmed) {
-    const block: IRBlock = {
-      type: headingLevel > 0 ? "heading" : "paragraph",
-      text: headMarker ? `${headMarker} ${trimmed}` : trimmed,
-      pageNumber: ctx.page,
-    }
-    if (headingLevel > 0) block.level = headingLevel
-    if (ctx.docInfo && charShapeIds.length > 0) {
-      const style = resolveCharStyle(charShapeIds, ctx.docInfo)
-      if (style) {
-        block.style = style
-        // 취소선·밑줄 문단(법령 개정문 삭제·개정 표시 등)은 ~~…~~ / <u>…</u> 로 방출 —
-        // 대표(최빈) 스타일 기준이라 문단 전체가 그어진 경우만 잡는다 (부분 서식은 미지원)
-        if (style.strike || style.underline) {
-          let deco = style.strike ? `~~${trimmed}~~` : trimmed
-          if (style.underline) deco = `<u>${deco}</u>`
-          block.text = headMarker ? `${headMarker} ${deco}` : deco
-        }
-      }
-    }
-    if (footnotes.length > 0) block.footnoteText = footnotes.join("; ")
-    blocks.push(block)
-  } else if (footnotes.length > 0) {
-    // 본문 없는 각주 anchor — 각주 내용 자체를 문단으로 보존
-    blocks.push({ type: "paragraph", text: `(주: ${footnotes.join("; ")})`, pageNumber: ctx.page })
-  }
-
-  // 컨트롤 파생 블록 (표/이미지/글상자) — 컨트롤 순서대로
-  for (const ctrl of ctrls) {
-    if (ctrl.afterBlocks) blocks.push(...ctrl.afterBlocks)
-  }
-
-  return blocks
+  return emitParagraphBlocks({
+    text,
+    headMarker,
+    headingLevel,
+    style: ctx.docInfo && charShapeIds.length > 0 ? resolveCharStyle(charShapeIds, ctx.docInfo) : undefined,
+    footnotes: ctrls.filter(c => c.footnote).map(c => c.footnote!),
+    // 컨트롤 파생 블록 (표/이미지/글상자) — 컨트롤 순서대로
+    objects: ctrls.filter(c => c.afterBlocks).map(c => ({ blocks: c.afterBlocks!, table: c.id === CTRL_TBL, inline: c.inlineText === INLINE_TABLE_MARK })),
+    pageNumber: ctx.page,
+  })
 }
 
 /** 컨트롤 종류별 디스패치 (rhwp control.rs parse_control 대응) */
@@ -448,21 +442,6 @@ function parseListHeaderParagraphs(ctrl: ParsedCtrl, records: HwpRecord[], ctx: 
   return []
 }
 
-/** 블록 리스트 → 평문 (각주 인라인 포함, 표/이미지는 제외) */
-function blocksPlainText(blocks: IRBlock[], sep: string): string {
-  const parts: string[] = []
-  for (const b of blocks) {
-    if (b.type === "image") continue
-    if (b.type === "table") continue
-    if (b.text) {
-      let t = b.text
-      if (b.footnoteText) t += ` (주: ${b.footnoteText})`
-      parts.push(t)
-    }
-  }
-  return parts.join(sep).trim()
-}
-
 /** 각주('fn  ')/미주('en  ') — 번호 + 장식문자 + 내용 (rhwp parse_footnote_control) */
 function applyNoteEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx, autoType: number): void {
   // ctrl 데이터: ctrl_id(4) + number(u32) + before(WCHAR) + after(WCHAR) + numberShape(u32)
@@ -512,8 +491,23 @@ function applyFieldEffect(ctrl: ParsedCtrl): void {
       const url = hyperlinkUrlFromCommand(command)
       if (url) ctrl.href = url
     }
+  } else if (ctrl.id === FIELD_CLK && ctrl.data.length >= 8 && !(ctrl.data.readUInt32LE(4) & (1 << 15))) {
+    // 누름틀 — 속성 bit 15(내용 수정됨)가 꺼진 미기입 필드는 한컴이 안내문(command Direction)을 본문 run 으로
+    // 저장해 두고 화면에만 흐리게 그린다(인쇄·PDF 에 없음). 같은 글이면 값이 아니므로 parseParagraph 가 지운다
+    // (rhwp clear_initial_field_texts 와 같은 이중 조건 — 수정됨 비트 + 안내문 일치)
+    const command = parseFieldCommand(ctrl.data)
+    const guide = command ? clickHereGuide(command) : undefined
+    if (guide) ctrl.guide = guide
   }
-  // %clk(누름틀) 등 기타 필드: anchor 텍스트는 PARA_TEXT에 있으므로 그대로 보존됨
+  // 그 밖의 필드: anchor 텍스트는 PARA_TEXT에 있으므로 그대로 보존됨
+}
+
+/** 누름틀 command 의 안내문 — `Direction:wstring:<N>:` 뒤 N자 (UTF-16) */
+function clickHereGuide(command: string): string | undefined {
+  const m = /Direction:wstring:(\d+):/.exec(command)
+  if (!m) return undefined
+  const start = m.index + m[0].length
+  return command.slice(start, start + Number(m[1])) || undefined
 }
 
 /** 필드 CTRL_HEADER 데이터에서 command 추출 — ctrl_id(4) + 속성(4) + 기타(1) + len(u16) + UTF-16LE */
@@ -562,19 +556,22 @@ function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx)
   // sourceId — CTRL_HEADER 레코드 인덱스(childStart − 1)로 프리패스 순번을 찾는다 (렌더 어댑터와 같은 키)
   const sourceId = ctx.tableIds?.get(childStart - 1)
 
-  // HWPTAG_TABLE 레코드에서 행/열 수
+  // HWPTAG_TABLE 레코드에서 행/열 수 — 직계 자식 레벨(CTRL_HEADER + 1)의 것만. 캡션 문단 안 표는 자기 TABLE
+  // 레코드를 바깥 TABLE 보다 먼저 방출하므로 첫 TABLE 을 집으면 행/열이 그 표 것이 되고 캡션이 잘린다
+  // (rhwp #3528 — 저장 순서 CTRL_HEADER → 캡션 LIST_HEADER·문단 → TABLE → 셀). hwp5-patch 스캔과 같은 규칙
+  const directLevel = records[childStart - 1].level + 1
   let rows = 0
   let cols = 0
   let tableIdx = -1
   for (let i = childStart; i < childEnd; i++) {
-    if (records[i].tagId === TAG_TABLE && records[i].data.length >= 8) {
+    if (records[i].tagId === TAG_TABLE && records[i].level === directLevel && records[i].data.length >= 8) {
       rows = Math.min(records[i].data.readUInt16LE(4), MAX_ROWS)
       cols = Math.min(records[i].data.readUInt16LE(6), MAX_COLS)
       tableIdx = i
       break
     }
   }
-  if (tableIdx < 0 || rows === 0 || cols === 0) return null
+  if (tableIdx < 0) return null
 
   // 캡션: TABLE 레코드 이전의 LIST_HEADER
   let caption: string | undefined
@@ -610,22 +607,17 @@ function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx)
 
   if (cells.length === 0) return null
 
-  // colAddr/rowAddr가 있으면 arrangeCells가 완성된 그리드를 반환 — 직접 IRTable 생성
-  const hasAddr = cells.some(c => c.colAddr !== undefined && c.rowAddr !== undefined)
-  if (hasAddr) {
-    const cellRows = arrangeCells(rows, cols, cells)
-    const irCells: IRCell[][] = cellRows.map(row => row.map(c => {
-      const ir: IRCell = { text: c.text.trim(), colSpan: c.colSpan, rowSpan: c.rowSpan }
-      if (c.blocks?.length) ir.blocks = c.blocks
-      if (c.isHeader) ir.isHeader = true
-      return ir
-    }))
-    const table: IRTable = { rows, cols, cells: irCells, hasHeader: rows > 1 }
+  // colAddr/rowAddr 절대 좌표 — builder 직접 배치로 HWPX 와 같은 표 계약(후행 빈 열 트림 등, ir-assemble.ts)
+  if (cells.some(c => c.colAddr !== undefined && c.rowAddr !== undefined)) {
+    const table = buildAddressedTable(cells, rows, cols, ctx.doc.keepTrailingEmptyCols)
+    if (!table) return null
     if (caption) table.caption = caption
     if (sourceId) table.sourceId = sourceId
     return table
   }
 
+  // 좌표 없는 셀 + 행·열 0 손상 레코드 — 셀마다 한 행으로 (글 손실 금지)
+  if (rows === 0 || cols === 0) { rows = Math.min(cells.length, MAX_ROWS); cols = 1 }
   const cellRows = arrangeCells(rows, cols, cells)
   const table = buildTable(cellRows, { keepAnchoredEmptyCols: ctx.doc.keepTrailingEmptyCols })
   if (caption && table.rows > 0) table.caption = caption
@@ -661,44 +653,22 @@ function parseCell(records: HwpRecord[], lhIdx: number, end: number, ctx: Hwp5Ct
     ? parseParagraphList(records, lhIdx + 1, end, { ...ctx, depth: ctx.depth + 1 })
     : []
 
-  // 하위 호환 텍스트: 문단 평탄화 + 이미지 sentinel + 중첩표 평문
-  const parts: string[] = []
-  let hasStructure = false
-  for (const b of blocks) {
-    if (b.type === "image" && b.text) {
-      parts.push(`![image](hwp5bin:${b.text})`)
-      hasStructure = true
-    } else if (b.type === "table" && b.table) {
-      // flattenLayoutTables 경유 시를 위한 평문 — 구조는 blocks가 보존
-      const flat = convertTableToText(b.table.cells)
-      if (flat) parts.push(flat)
-      hasStructure = true
-    } else if (b.text) {
-      let t = b.text
-      if (b.footnoteText) {
-        t += ` (주: ${b.footnoteText})`
-        hasStructure = true
-      }
-      parts.push(t)
-    }
-  }
-  const cell: Hwp5Cell = { text: parts.join("\n"), colSpan, rowSpan, colAddr, rowAddr }
+  // 하위 호환 텍스트: 문단 평탄화 + 이미지 sentinel + 중첩표 평문 (각주는 문단 글에 접힌다)
+  const { text, hasStructure } = cellTextFromBlocks(blocks)
+  const cell: Hwp5Cell = { text, colSpan, rowSpan, colAddr, rowAddr }
   if (hasStructure && blocks.length > 0) cell.blocks = blocks
   if (isHeader) cell.isHeader = true
   return cell
 }
 
+/** colAddr 없는 셀(짧은 LIST_HEADER)의 순차 배치 폴백 — 좌표가 있으면 parseTableControl 이 builder 직접 배치 */
 function arrangeCells(rows: number, cols: number, cells: Hwp5Cell[]): Hwp5Cell[][] {
   const grid: (Hwp5Cell | null)[][] = Array.from({ length: rows }, () => Array(cols).fill(null))
-
-  // colAddr/rowAddr가 있으면 직접 배치 (HWP5 병합 테이블 정확도 향상)
-  const hasAddr = cells.some(c => c.colAddr !== undefined && c.rowAddr !== undefined)
-
-  if (hasAddr) {
-    for (const cell of cells) {
-      const r = cell.rowAddr ?? 0
-      const c = cell.colAddr ?? 0
-      if (r >= rows || c >= cols) continue
+  let cellIdx = 0
+  for (let r = 0; r < rows && cellIdx < cells.length; r++) {
+    for (let c = 0; c < cols && cellIdx < cells.length; c++) {
+      if (grid[r][c] !== null) continue
+      const cell = cells[cellIdx++]
       grid[r][c] = cell
 
       for (let dr = 0; dr < cell.rowSpan; dr++) {
@@ -709,26 +679,7 @@ function arrangeCells(rows: number, cols: number, cells: Hwp5Cell[]): Hwp5Cell[]
         }
       }
     }
-  } else {
-    // fallback: 순차 배치 (colAddr 없는 경우)
-    let cellIdx = 0
-    for (let r = 0; r < rows && cellIdx < cells.length; r++) {
-      for (let c = 0; c < cols && cellIdx < cells.length; c++) {
-        if (grid[r][c] !== null) continue
-        const cell = cells[cellIdx++]
-        grid[r][c] = cell
-
-        for (let dr = 0; dr < cell.rowSpan; dr++) {
-          for (let dc = 0; dc < cell.colSpan; dc++) {
-            if (dr === 0 && dc === 0) continue
-            if (r + dr < rows && c + dc < cols)
-              grid[r + dr][c + dc] = { text: "", colSpan: 1, rowSpan: 1 }
-          }
-        }
-      }
-    }
   }
-
   return grid.map(row => row.map(c => c || { text: "", colSpan: 1, rowSpan: 1 }))
 }
 

@@ -372,10 +372,16 @@ function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo): void {
 
 // ─── 메타데이터 추출 (best-effort) ───────────────────
 
+const VT_I2 = 0x02, VT_LPSTR = 0x1e, VT_LPWSTR = 0x1f, VT_FILETIME = 0x40
+/** VT_LPSTR 코드 페이지 → TextDecoder 레이블 (1250~1258 은 windows-N) */
+const CODE_PAGE_LABELS: Record<number, string> = { 949: "euc-kr", 932: "shift_jis", 936: "gbk", 950: "big5", 65001: "utf-8" }
+
 /**
- * OLE2 SummaryInformation 스트림에서 제목/작성자 추출.
+ * OLE2 SummaryInformation 스트림에서 제목/작성자/설명/키워드/날짜 추출.
  * HWP5는 \005HwpSummaryInformation 또는 \005SummaryInformation에 저장.
  * OLE2 Property Set 포맷의 간이 파싱 — 실패 시 조용히 무시.
+ * 한컴 HwpSummaryInformation(FMTID 9FA2B660-1061-11D4-B4C6-006097C09D8C)은 코드 페이지 속성 없이 문자열을 전부
+ * VT_LPWSTR 로 쓴다(코퍼스 1,435건 전부) — 종전엔 VT_LPSTR 만 읽어 제목·지은이가 한 번도 안 나왔다.
  */
 function extractHwp5Metadata(cfb: CfbContainer, metadata: DocumentMetadata): void {
   try {
@@ -400,34 +406,64 @@ function extractHwp5Metadata(cfb: CfbContainer, metadata: DocumentMetadata): voi
     const numProps = data.readUInt32LE(setOffset + 4)
     if (numProps === 0 || numProps > 100) return
 
+    // 속성 ID → 값 위치(type 4바이트부터). 코드 페이지(1)가 문자열 뒤에 올 수 있어 표를 먼저 모은다
+    const props = new Map<number, number>()
     for (let i = 0; i < numProps; i++) {
       const entryOffset = setOffset + 8 + i * 8
       if (entryOffset + 8 > data.length) break
-
-      const propId = data.readUInt32LE(entryOffset)
       const propOffset = setOffset + data.readUInt32LE(entryOffset + 4)
-      if (propOffset + 8 > data.length) continue
-
-      // Property ID: 2=Title, 4=Author, 6=Subject/Description
-      if (propId !== 2 && propId !== 4 && propId !== 6) continue
-
-      const propType = data.readUInt32LE(propOffset)
-      // Type 0x1E = VT_LPSTR (ANSI string)
-      if (propType !== 0x1e) continue
-
-      const strLen = data.readUInt32LE(propOffset + 4)
-      if (strLen === 0 || strLen > 10000 || propOffset + 8 + strLen > data.length) continue
-
-      const str = data.subarray(propOffset + 8, propOffset + 8 + strLen).toString("utf8").replace(/\0+$/, "").trim()
-      if (!str) continue
-
-      if (propId === 2) metadata.title = str
-      else if (propId === 4) metadata.author = str
-      else if (propId === 6) metadata.description = str
+      if (propOffset + 8 <= data.length) props.set(data.readUInt32LE(entryOffset), propOffset)
     }
+    const cpAt = props.get(1) // PID_CODEPAGE (VT_I2) — VT_LPSTR 해석용
+    const codePage = cpAt !== undefined && data.readUInt32LE(cpAt) === VT_I2 ? data.readUInt16LE(cpAt + 4) : 0
+    const text = (id: number) => { const at = props.get(id); return at === undefined ? undefined : readPropString(data, at, codePage) }
+    const time = (id: number) => { const at = props.get(id); return at === undefined ? undefined : readPropFileTime(data, at) }
+
+    // SummaryInformation 번호(한컴 FMTID 도 같음): 2 제목·3 주제·4 지은이·5 키워드·6 설명·12 만든 날짜·13 마지막 저장.
+    // HWPX 짝 content.hpf 의 opf:title·subject·creator·keyword·description·CreatedDate 와 같은 값(한컴 저장 쌍 209건 실측).
+    // 설명이 비면 주제 — HWPX metadata.ts(description → subject)·PDF(Subject) 와 같은 자리
+    const title = text(2), author = text(4), description = text(6) || text(3)
+    if (title) metadata.title = title
+    if (author) metadata.author = author
+    if (description) metadata.description = description
+    const keywords = text(5)?.split(/[,;]/).map(k => k.trim()).filter(Boolean)
+    if (keywords?.length) metadata.keywords = keywords
+    const createdAt = time(12), modifiedAt = time(13)
+    if (createdAt) metadata.createdAt = createdAt
+    if (modifiedAt) metadata.modifiedAt = modifiedAt
   } catch {
     // best-effort — 실패 시 조용히 무시
   }
+}
+
+/**
+ * 문자열 속성 값 (at = type 위치). VT_LPWSTR: 글자 수(UTF-16 단위, NUL 포함) + UTF-16LE,
+ * VT_LPSTR: 바이트 수(NUL 포함) + 코드 페이지 문자열(1200 = UTF-16LE, 없음·모름 = UTF-8 — 종전 동작).
+ * 값 뒤 4바이트 정렬 패딩은 오프셋 표로 찾으므로 무관
+ */
+function readPropString(data: Buffer, at: number, codePage: number): string | undefined {
+  const type = data.readUInt32LE(at)
+  const unit = type === VT_LPWSTR ? 2 : type === VT_LPSTR ? 1 : 0
+  const count = data.readUInt32LE(at + 4)
+  if (!unit || count === 0 || count > 10000 || at + 8 + count * unit > data.length) return undefined
+  const bytes = data.subarray(at + 8, at + 8 + count * unit)
+  let s: string
+  if (unit === 2 || codePage === 1200) s = bytes.toString("utf16le")
+  else {
+    const label = CODE_PAGE_LABELS[codePage] ?? (codePage >= 1250 && codePage <= 1258 ? `windows-${codePage}` : "utf-8")
+    try { s = new TextDecoder(label).decode(bytes) } catch { s = bytes.toString("utf8") } // ICU 없는 Node — 레이블 미지원
+  }
+  const nul = s.indexOf("\0")
+  return (nul >= 0 ? s.slice(0, nul) : s).trim() || undefined
+}
+
+/** VT_FILETIME — 1601-01-01 UTC 부터 100ns 단위 u64 → ISO 8601 초 단위(content.hpf CreatedDate 꼴). 0(미기록)은 undefined */
+function readPropFileTime(data: Buffer, at: number): string | undefined {
+  if (data.readUInt32LE(at) !== VT_FILETIME || at + 12 > data.length) return undefined
+  const ticks = data.readBigUInt64LE(at + 4)
+  if (ticks === 0n) return undefined
+  // 초로 먼저 나눠 정수 연산 — u64 를 double 로 옮기면 정각 값이 1초 앞당겨질 수 있다
+  return new Date((Number(ticks / 10000000n) - 11644473600) * 1000).toISOString().replace(".000Z", "Z")
 }
 
 /** 메타데이터만 추출 (전체 파싱 없이) — MCP parse_metadata용 */

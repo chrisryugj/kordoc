@@ -8,7 +8,7 @@
 
 import { decompressStream } from "./record.js"
 import type { LenientCfbContainer } from "./cfb-lenient.js"
-import type { ExtractedImage, IRBlock, IRCell, ParseWarning } from "../types.js"
+import type { ExtractedImage, IRBlock, ParseWarning } from "../types.js"
 
 /** CFB FileIndex 엔트리 (cfb 모듈 호환 최소 형태) */
 export interface BinCfbEntry { name?: string; content?: Buffer | Uint8Array }
@@ -21,8 +21,25 @@ export function detectImageMime(data: Buffer | Uint8Array): string | null {
   if (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) return "image/gif"
   if (data[0] === 0x42 && data[1] === 0x4d) return "image/bmp"
   if (data[0] === 0xd7 && data[1] === 0xcd && data[2] === 0xc6 && data[3] === 0x9a) return "image/wmf"
+  // 배치 헤더 없는 표준 WMF — mtType 1(메모리)·2(디스크) + mtHeaderSize 9워드. 한컴 BinData 의 .wmf 는 대개 이 꼴
+  // (법령 서식 BIN0001.wmf 실측 01 00 09 00 00 03). 종전엔 "알 수 없는 형식"이라 셀에 [이미지: …] 글이 박혔다
+  if ((data[0] === 0x01 || data[0] === 0x02) && data[1] === 0x00 && data[2] === 0x09 && data[3] === 0x00) return "image/wmf"
   if (data[0] === 0x01 && data[1] === 0x00 && data[2] === 0x00 && data[3] === 0x00) return "image/emf"
+  // TIFF — 리틀(II*\0)·빅(MM\0*) 엔디언 (행정업무편람 BIN016C.TIF 실측)
+  if ((data[0] === 0x49 && data[1] === 0x49 && data[2] === 0x2a && data[3] === 0x00) || (data[0] === 0x4d && data[1] === 0x4d && data[2] === 0x00 && data[3] === 0x2a)) return "image/tiff"
   return null
+}
+
+/** MIME → 추출 파일 확장자 (HWPX images.ts mimeToExt 와 같은 표) */
+function mimeExt(mime: string): string {
+  if (mime.includes("jpeg")) return "jpg"
+  if (mime.includes("png")) return "png"
+  if (mime.includes("gif")) return "gif"
+  if (mime.includes("bmp")) return "bmp"
+  if (mime.includes("tiff")) return "tif"
+  if (mime.includes("wmf")) return "wmf"
+  if (mime.includes("emf")) return "emf"
+  return "bin"
 }
 
 /**
@@ -62,31 +79,34 @@ function collectImageBlocks(blocks: IRBlock[], out: IRBlock[], depth = 0): void 
   }
 }
 
-/** 블록 트리의 모든 표 셀 순회 (중첩표 포함) */
-function forEachTableCell(blocks: IRBlock[], fn: (cell: IRCell) => void): void {
-  for (const b of blocks) {
-    if (b.table) {
-      for (const row of b.table.cells) {
-        for (const cell of row) {
-          fn(cell)
-          if (cell.blocks) forEachTableCell(cell.blocks, fn)
-        }
-      }
-    }
-    if (b.children) forEachTableCell(b.children, fn)
-  }
-}
-
-/** 셀 텍스트의 이미지 sentinel("![image](hwp5bin:ID)")을 추출된 파일명으로 치환 */
-const CELL_IMAGE_SENTINEL_RE = /!\[image\]\(hwp5bin:(\d+)\)/g
-function resolveCellImageSentinels(blocks: IRBlock[], renamed: Map<number, string>): void {
-  forEachTableCell(blocks, cell => {
-    if (!cell.text.includes("hwp5bin:")) return
-    cell.text = cell.text.replace(CELL_IMAGE_SENTINEL_RE, (_m, idStr: string) => {
+/**
+ * 이미지 sentinel("![image](hwp5bin:ID)")을 추출된 파일명으로 치환 — 표 셀 텍스트, 그리고 머리말·각주·캡션처럼
+ * 표를 평문으로 편 글(ir-assemble tableFlatText)에도 남으므로 블록 트리 전체(문단 글·각주·캡션·셀)를 훑는다.
+ * 파일명이 없으면(BinData 없음·페이지 필터로 스윕 안 함) "[이미지]"
+ */
+const IMAGE_SENTINEL_RE = /!\[image\]\(hwp5bin:(\d+)\)/g
+function resolveImageSentinels(blocks: IRBlock[], renamed: Map<number, string>, depth = 0): void {
+  if (depth > MAX_BLOCK_DEPTH) return
+  const fix = (s: string): string => s.includes("hwp5bin:")
+    ? s.replace(IMAGE_SENTINEL_RE, (_m, idStr: string) => {
       const filename = renamed.get(Number(idStr))
       return filename ? `![image](${filename})` : "[이미지]"
     })
-  })
+    : s
+  for (const b of blocks) {
+    if (b.text) b.text = fix(b.text)
+    if (b.footnoteText) b.footnoteText = fix(b.footnoteText)
+    if (b.table) {
+      if (b.table.caption) b.table.caption = fix(b.table.caption)
+      for (const row of b.table.cells) {
+        for (const cell of row) {
+          cell.text = fix(cell.text)
+          if (cell.blocks) resolveImageSentinels(cell.blocks, renamed, depth + 1)
+        }
+      }
+    }
+    if (b.children) resolveImageSentinels(b.children, renamed, depth + 1)
+  }
 }
 
 /** binDataMap 기반 이미지 블록 해결 — strict/lenient 공용 */
@@ -124,7 +144,7 @@ function resolveImageBlocks(
           resolved.set(storageId, null)
         } else {
           imageIndex++
-          const ext = mime.includes("jpeg") ? "jpg" : mime.includes("png") ? "png" : mime.includes("gif") ? "gif" : mime.includes("bmp") ? "bmp" : "bin"
+          const ext = mimeExt(mime)
           img = { filename: `image_${String(imageIndex).padStart(3, "0")}.${ext}`, data: new Uint8Array(bin.data), mime }
           resolved.set(storageId, img)
           images.push({ filename: img.filename, data: img.data, mimeType: img.mime, source: bin.name })
@@ -152,15 +172,17 @@ function resolveImageBlocks(
       const mime = detectImageMime(bin.data)
       if (!mime) continue
       imageIndex++
-      const ext = mime.includes("jpeg") ? "jpg" : mime.includes("png") ? "png" : mime.includes("gif") ? "gif" : mime.includes("bmp") ? "bmp" : "bin"
+      const ext = mimeExt(mime)
       const filename = `image_${String(imageIndex).padStart(3, "0")}.${ext}`
       const data = new Uint8Array(bin.data)
       images.push({ filename, data, mimeType: mime, source: bin.name })
       blocks.push({ type: "image", text: filename, imageData: { data, mimeType: mime, filename: bin.name } })
+      // 머리말·각주 안 표를 편 글의 sentinel 도 이 파일을 가리킨다 (본문 image 블록이 없던 그림)
+      renamed.set(storageId, filename)
     }
   }
 
-  resolveCellImageSentinels(blocks, renamed)
+  resolveImageSentinels(blocks, renamed)
   return images
 }
 
@@ -207,7 +229,7 @@ export function extractHwp5Images(
 
   if (binDataMap.size === 0) {
     // 이미지 블록이 있는데 BinData가 없으면 sentinel 정리만 수행
-    resolveCellImageSentinels(blocks, new Map())
+    resolveImageSentinels(blocks, new Map())
     return []
   }
   return resolveImageBlocks(binDataMap, blocks, warnings, sweepUnreferenced)
@@ -222,7 +244,7 @@ export function extractHwp5ImagesLenient(
 ): ExtractedImage[] {
   const binDataMap = collectHwp5BinDataLenient(lcfb)
   if (binDataMap.size === 0) {
-    resolveCellImageSentinels(blocks, new Map())
+    resolveImageSentinels(blocks, new Map())
     return []
   }
   return resolveImageBlocks(binDataMap, blocks, warnings, sweepUnreferenced)

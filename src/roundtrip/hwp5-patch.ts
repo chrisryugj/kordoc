@@ -458,6 +458,12 @@ function resolveTableMappings(blocks: IRBlock[], scanTables: ScanTable5[]): Map<
     for (let k = si; k < scanTables.length; k++) {
       if (scanTables[k].rows === table.rows && scanTables[k].cols === table.cols) cands.push(k)
     }
+    // IR 은 후행 빈 열을 자른다(#47 기본 계약) — 열이 더 많은 스캔 표도 후보. 잘린 열은 항상 뒤쪽이라 (행, 열) 좌표가 그대로다
+    if (cands.length === 0) {
+      for (let k = si; k < scanTables.length; k++) {
+        if (scanTables[k].rows === table.rows && scanTables[k].cols > table.cols) cands.push(k)
+      }
+    }
     if (cands.length === 0) continue
     let pick = cands[0]
     if (cands.length > 1) {
@@ -973,7 +979,7 @@ function crc32(buf: Buffer): number {
  * 한컴 실저장본의 BodyText/DocInfo 압축 스트림 전수에서 확인된 형식(#71, 코퍼스 실측 7/7).
  * 꼬리 없이도 inflateRawSync 는 열리지만, 원본 충실성을 위해 재작성 스트림에도 복원한다.
  */
-function compressWithTail(raw: Buffer): Buffer {
+export function compressWithTail(raw: Buffer): Buffer {
   const tail = Buffer.alloc(8)
   tail.writeUInt32LE(crc32(raw), 0)
   tail.writeUInt32LE(raw.length >>> 0, 4)
