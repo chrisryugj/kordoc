@@ -208,7 +208,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
   // (부처별 양식 3종, QA-2). 부호폭 기준 크기 1600 = buildCharProperties h2와 동기.
   const h2MarkerWidth = markerWidth(gongmun.h2Marker === "box" ? "□" : "1.", 1600)
   const h2Geom = gongmun.h2Marker !== "none"
-    ? { spaceBefore: Math.round(gongmun.bodyHeight * 2), spaceAfter: 0, indent: -h2MarkerWidth }
+    ? { spaceBefore: Math.round(gongmun.bodyHeight * 2), spaceAfter: 0, indent: -h2MarkerWidth, autoTab: true }
     : { spaceBefore: 600, spaceAfter: 150 }
   // h2 제목 글자가 시작하는 자리 — 부호를 안 쓰면(none) 들여쓸 기준이 없으므로 0
   const h3Left = gongmun.h2Marker !== "none" ? h2MarkerWidth : 0
@@ -243,7 +243,8 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
       : 0
     // □ 대항목은 다음 문단과 같은 쪽에 — 쪽 하단 고아 표제 방지 (장헤더와 동일 관행)
     const keepNext = (gongmun.numbering === "gaejosik" || gongmun.numbering === "report") && d === 0
-    base.push(paraPr(GONGMUN_LIST_BASE + d, { align: listAlign, lineSpacing: ls, left, indent, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext }))
+    // 부호 뒤 탭이 내어쓰기 위치에 선다(autoTab) — 첫 줄 내용 = 둘째 줄 시작
+    base.push(paraPr(GONGMUN_LIST_BASE + d, { align: listAlign, lineSpacing: ls, left, indent, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext, autoTab: true }))
   }
   // 가운데정렬 본문 단락(발신명의 등)
   base.push(paraPr(GONGMUN_CENTER, { align: "CENTER", lineSpacing: ls, keepWord: true }))
@@ -258,7 +259,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
     const cham = gaejosikChamIndent(gongmun.bodyHeight, gongmun.sizes)
     const toc = gaejosikTocItemIndent(gongmun.bodyHeight, gongmun.sizes)
     base.push(
-      paraPr(GJ_PARA_CHAM, { align: "LEFT", lineSpacing: ls, left: cham.left, indent: cham.indent, spaceBefore: gaejosikSpaceBefore(3, gongmun.bodyHeight), keepWord: true }),
+      paraPr(GJ_PARA_CHAM, { align: "LEFT", lineSpacing: ls, left: cham.left, indent: cham.indent, spaceBefore: gaejosikSpaceBefore(3, gongmun.bodyHeight), keepWord: true, autoTab: true }),
       paraPr(GJ_PARA_COVER, { align: "CENTER", lineSpacing: 130, keepWord: true }),
       paraPr(GJ_PARA_TOC_ITEM, { align: "LEFT", lineSpacing: 160, left: toc.left, indent: toc.indent, spaceBefore: 1800, keepWord: true }),
       // 장 헤더는 다음 문단과 같은 쪽에 — 쪽 하단 고아 헤더 방지 (실렌더 확인 이슈)
@@ -289,7 +290,7 @@ function buildParaProperties(gongmun: ResolvedGongmun | null, listIndentVariants
       ? gaejosikSpaceBefore(depth, gongmun.bodyHeight)
       : 0
     const keepNext = (gongmun.numbering === "gaejosik" || gongmun.numbering === "report") && depth === 0
-    base.push(paraPr(GONGMUN_LIST_VARIANT_BASE + vi, { align: listAlign, lineSpacing: ls, left, indent: -widthHu, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext }))
+    base.push(paraPr(GONGMUN_LIST_VARIANT_BASE + vi, { align: listAlign, lineSpacing: ls, left, indent: -widthHu, spaceBefore: sectionGap, keepWord: true, keepWithNext: keepNext, autoTab: true }))
   }
   assertSequentialIds(base, "paraPr", 0)
   return `<hh:paraProperties itemCnt="${base.length}">\n${base.join("\n")}\n    </hh:paraProperties>`
@@ -451,6 +452,15 @@ function buildStyles(gongmun: ResolvedGongmun | null): string {
 }
 
 /**
+ * 공문서 탭 정의 — 한글 기본 서식과 같은 꼴. id 1 = 내어쓰기용 자동 탭(autoTabLeft): 항목부호 뒤 탭이
+ * 내어쓰기 위치에 정확히 서서 첫 줄 내용 시작 = 둘째 줄 시작(법제처 서식 "(a)⇥" 실측: 부호폭 + 탭폭 = 내어쓰기)
+ */
+const TAB_PROPS_GONGMUN = `<hh:tabProperties itemCnt="2">
+      <hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"/>
+      <hh:tabPr id="1" autoTabLeft="1" autoTabRight="0"/>
+    </hh:tabProperties>`
+
+/**
  * v5 엔진(gen-gongmun.ts) 헤더 모드 — 정적 블록은 비실측 공문서 최소 세트(charPr 0~16·paraPr 0~7·
  * 정적 글꼴 3종)만 두고, 나머지는 StyleRegistry가 발급한 XML을 이어붙인다.
  */
@@ -472,7 +482,7 @@ export function generateHeaderXml(theme: ResolvedTheme, gongmun: ResolvedGongmun
     ${buildFontFaces(gongmun, bodyFace, extraFonts, !!v5)}
     ${buildBorderFills(gongmun, extraBorderFills, !!v5)}
     ${charPropsXml}
-    <hh:tabProperties itemCnt="0"/>
+    ${v5 || gongmun ? TAB_PROPS_GONGMUN : `<hh:tabProperties itemCnt="0"/>`}
     ${buildNumberings()}
     <hh:bullets itemCnt="0"/>
     ${paraPropsXml}

@@ -14,12 +14,14 @@ import { precomputeGongmunList } from "../src/hwpx/gen-gongmun-fit.js"
 import { parseMarkdownToBlocks } from "../src/hwpx/md-runs.js"
 import { resolveGongmun, markerWidth, levelIndent } from "../src/hwpx/gongmun.js"
 import { GONGMUN_LIST_BASE, GONGMUN_LIST_VARIANT_BASE } from "../src/hwpx/gen-ids.js"
+import { flatSec } from "./gen-xml.js"
+import { markerLayout } from "../src/hwpx/gen-marker.js"
 
 async function parts(buf: ArrayBuffer): Promise<{ header: string; section: string }> {
   const zip = await JSZip.loadAsync(buf)
   return {
     header: await zip.file("Contents/header.xml")!.async("text"),
-    section: await zip.file("Contents/section0.xml")!.async("text"),
+    section: await zip.file("Contents/section0.xml")!.async("text").then(flatSec),
   }
 }
 
@@ -50,9 +52,9 @@ describe("v4.0.5 두 자리 부호 내어쓰기 회귀 (P1-1)", () => {
   it("생성 — '10.' 항목은 자기 부호폭 내어쓰기 paraPr, '9.'는 대표 부호폭 (v5 레지스트리)", async () => {
     const buf = await markdownToHwpx(items12, { gongmun: { preset: "official" } })
     const { header, section } = await parts(buf)
-    const g = resolveGongmun({ preset: "official" })
-    const rep = markerWidth("1.", g.bodyHeight)
-    const wide = markerWidth("10.", g.bodyHeight)
+    // v5: 내어쓰기 = 그 항목 부호의 실폭(굴림체 12) + 1타 — 부호마다 자기 폭(부호 뒤 내어쓰기용 자동 탭)
+    const rep = markerLayout("굴림체", 12, 0, "1.").hang
+    const wide = markerLayout("굴림체", 12, 0, "10.").hang
     assert.ok(wide > rep, "두 자리 부호가 대표 부호보다 넓다")
     const intentOfText = (text: string) => {
       const pid = section.slice(section.lastIndexOf("<hp:p ", section.indexOf(text))).match(/paraPrIDRef="(\d+)"/)![1]

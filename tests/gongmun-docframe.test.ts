@@ -4,10 +4,12 @@ import assert from "node:assert"
 import JSZip from "jszip"
 import { markdownToHwpx } from "../src/index.js"
 import { resolveGongmun } from "../src/hwpx/gongmun.js"
+import { flatSec } from "./gen-xml.js"
 
 async function part(buf: ArrayBuffer, name: string): Promise<string> {
   const zip = await JSZip.loadAsync(buf)
-  return await zip.file(name)!.async("text")
+  const xml = await zip.file(name)!.async("text")
+  return name.endsWith("section0.xml") ? flatSec(xml) : xml
 }
 const texts = (sec: string) => [...sec.matchAll(/<hp:t>([^<]*)<\/hp:t>/g)].map((m) => m[1]).filter(Boolean)
 
@@ -207,9 +209,12 @@ describe("QA 반려 결함 회귀 (v4.0.2)", () => {
     const md = "| 구분 | 추진과제 | 소요예산(백만원) | 추진일정 | 담당부서 |\n| --- | --- | --- | --- | --- |\n| 단기 | 문서 자동화 시스템 구축 및 시범 운영 실시 | 350 | 2026. 3.~6. | 정보화담당관 |"
     const buf = await markdownToHwpx(md, { gongmun: { preset: "plan" } })
     const sec = await part(buf, "Contents/section0.xml")
-    // "구분" 열 폭 = 첫 셀 width — 셀 12pt 2자(2400) + 실패딩(1020) 이상이어야 세로로 안 갈라짐 (v5 셀 12pt)
+    // "구분" 열 폭 = 첫 셀 width — 셀 글자 2자 + 실패딩(1020) 이상이어야 세로로 안 갈라짐.
+    // 셀 크기는 v5 자동 축소(12→11→10pt)를 따르므로 실제 셀 charPr 높이로 잰다
     const w = Number(sec.match(/<hp:cellSz width="(\d+)"/)![1])
-    assert.ok(w >= 3420, `구분 열폭 ${w} ≥ 3420 (2자+실패딩)`)
+    const cid = sec.match(/<hp:tc[\s\S]*?<hp:run charPrIDRef="(\d+)"/)![1]
+    const h = Number((await part(buf, "Contents/header.xml")).match(new RegExp(`<hh:charPr id="${cid}" height="(\\d+)"`))![1])
+    assert.ok(w >= 2 * h + 1020, `구분 열폭 ${w} ≥ ${2 * h + 1020} (2자+실패딩)`)
   })
 })
 

@@ -2,6 +2,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
+import { createRequire } from "node:module"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -10,6 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import JSZip from "jszip"
 
+const CFB = createRequire(import.meta.url)("cfb")
 const ROOT = fileURLToPath(new URL("../", import.meta.url))
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 const MCP = fileURLToPath(new URL("../src/mcp.ts", import.meta.url))
@@ -123,6 +125,24 @@ test("#80 MCP: unsupported PPTX and supported ZIP metadata stay distinct", { tim
         const text = (result.content as { type: string; text?: string }[]).map(item => item.text ?? "").join("\n")
         assert.equal(result.isError, true, text)
         assert.match(text, /감지된 포맷: pptx/)
+      })
+    }
+
+    // Containers that cannot be classified (damaged or unusual) still go to the HWPX/HWP patcher;
+    // only a positively identified other format is rejected by name.
+    const unknownZip = join(dir, "unknown.hwpx")
+    writeFileSync(unknownZip, await makeZip({ "notes.txt": "x" }))
+    const cfb = CFB.utils.cfb_new()
+    CFB.utils.cfb_add(cfb, "/Notes", Buffer.from("x"))
+    const unknownOle = join(dir, "unknown.hwp")
+    writeFileSync(unknownOle, Buffer.from(CFB.write(cfb, { type: "buffer" })))
+    for (const [path, ext] of [[unknownZip, "hwpx"], [unknownOle, "hwp"]] as const) {
+      await t.test(`patch_document hands an unclassified .${ext} container to its patcher`, async () => {
+        const args = { file_path: path, edited_markdown: "본문", output_path: join(dir, `patched-unknown.${ext}`) }
+        const result = await client.callTool({ name: "patch_document", arguments: args }, undefined, { timeout: 10000 })
+        const text = (result.content as { type: string; text?: string }[]).map(item => item.text ?? "").join("\n")
+        assert.equal(result.isError, true, text)
+        assert.doesNotMatch(text, /감지된 포맷/)
       })
     }
 

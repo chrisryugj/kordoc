@@ -91,6 +91,14 @@ export function escapeXml(text: string): string {
     .replace(/"/g, "&quot;")
 }
 
+/**
+ * `<hp:t>` 본문용 이스케이프 — U+00A0(묶음 빈칸)은 한글 묶음 빈칸 요소 `<hp:nbSpace/>` 로 방출한다
+ * (줄 끝에서 갈라지지 않는 공백. 실결재 법제처 서식의 "1.<hp:nbSpace/>허가신청" 꼴). 속성값에는 escapeXml 을 쓸 것.
+ */
+export function escapeTextXml(text: string): string {
+  return escapeXml(text).replace(/\u00a0/g, "<hp:nbSpace/>")
+}
+
 export function headingParaPrId(level: number): number {
   if (level === 1) return PARA_H1
   if (level === 2) return PARA_H2
@@ -139,8 +147,8 @@ export function charPr(
 
 // ─── paraPr 생성 헬퍼 ───────────────────────────────
 
-export function paraPr(id: number, opts: { align?: string; spaceBefore?: number; spaceAfter?: number; lineSpacing?: number; indent?: number; left?: number; right?: number; keepWord?: boolean; keepWithNext?: boolean; outlineLevel?: number } = {}): string {
-  const { align = "JUSTIFY", spaceBefore = 0, spaceAfter = 0, lineSpacing = 160, indent = 0, left = 0, right = 0, keepWord = false, keepWithNext = false, outlineLevel } = opts
+export function paraPr(id: number, opts: { align?: string; spaceBefore?: number; spaceAfter?: number; lineSpacing?: number; indent?: number; left?: number; right?: number; keepWord?: boolean; keepWithNext?: boolean; outlineLevel?: number; autoTab?: boolean; widowOrphan?: boolean } = {}): string {
+  const { align = "JUSTIFY", spaceBefore = 0, spaceAfter = 0, lineSpacing = 160, indent = 0, left = 0, right = 0, keepWord = false, keepWithNext = false, outlineLevel, autoTab = false, widowOrphan = false } = opts
   // keepWord=true면 한글도 어절(단어) 단위로만 줄바꿈 — 단어 중간에서 끊기지 않음.
   // 주의: breakNonLatinWord의 한컴 실구현 의미는 이름과 반대다 —
   //   "BREAK_WORD"=어절 유지, "KEEP_WORD"=글자 단위 (2026-07 한글 COM 실렌더 A/B 실측.
@@ -154,10 +162,12 @@ export function paraPr(id: number, opts: { align?: string; spaceBefore?: number;
   const heading = outlineLevel !== undefined
     ? `<hh:heading type="OUTLINE" idRef="0" level="${outlineLevel}"/>`
     : `<hh:heading type="NONE" idRef="0" level="0"/>`
-  return `      <hh:paraPr id="${id}" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="${snapGrid}" suppressLineNumbers="0" checked="0" textDir="AUTO">
+  // autoTab: 내어쓰기용 자동 탭(tabPr 1, autoTabLeft) — 부호 뒤 탭이 내어쓰기 위치에 서서 첫 줄 내용이
+  // 둘째 줄과 같은 x 에서 시작한다(양쪽 정렬이 부호 뒤 공백을 늘려 어긋나던 것 방지, v5 전용 — 헤더가 tabPr 을 방출할 때만)
+  return `      <hh:paraPr id="${id}" tabPrIDRef="${autoTab ? 1 : 0}" condense="0" fontLineHeight="0" snapToGrid="${snapGrid}" suppressLineNumbers="0" checked="0" textDir="AUTO">
         <hh:align horizontal="${align}" vertical="BASELINE"/>
         ${heading}
-        <hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="${breakNonLatin}" widowOrphan="0" keepWithNext="${keepWithNext ? 1 : 0}" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>
+        <hh:breakSetting breakLatinWord="KEEP_WORD" breakNonLatinWord="${breakNonLatin}" widowOrphan="${widowOrphan ? 1 : 0}" keepWithNext="${keepWithNext ? 1 : 0}" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>
         <hh:autoSpacing eAsianEng="0" eAsianNum="0"/>
         <hh:margin><hc:intent value="${indent}" unit="HWPUNIT"/><hc:left value="${left}" unit="HWPUNIT"/><hc:right value="${right}" unit="HWPUNIT"/><hc:prev value="${spaceBefore}" unit="HWPUNIT"/><hc:next value="${spaceAfter}" unit="HWPUNIT"/></hh:margin>
         <hh:lineSpacing type="PERCENT" value="${lineSpacing}"/>

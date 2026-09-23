@@ -19,7 +19,7 @@ import { blocksToMarkdown } from "../table/builder.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
 import type { IRBlock, PatchOptions, PatchResult, PatchSkip, DiffResult, BlockDiff } from "../types.js"
 import {
-  scanSectionXml, buildParagraphSplices, applySplices, allLinesegRemovalSplices, findElementEnd,
+  scanSectionXml, buildParagraphSplices, markerRunSplices, applySplices, allLinesegRemovalSplices, findElementEnd,
   type SectionScan, type ScanParagraph, type ScanCell, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
 import { patchZipEntries } from "./zip-patch.js"
@@ -464,7 +464,8 @@ function patchParagraphUnit(
     return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
   }
 
-  const splices = buildParagraphSplices(mapping.para, newPlain, ctx.scans[mapping.para.sectionIndex]?.xml)
+  const xml = ctx.scans[mapping.para.sectionIndex]?.xml
+  const splices = (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
   if (splices === null) return skip("문단에 텍스트 노드를 만들 수 없음")
   ctx.sectionSplices[mapping.para.sectionIndex].push(...splices)
   return 1

@@ -17,6 +17,8 @@
  * 이 테이블로 근사한다(오차 수 % 이내 — 공문서 본문은 어차피 함초롬바탕 관행).
  */
 
+import { fontAdvanceEm1000, hasFontMetrics } from "./font-metrics.js"
+
 /** ASCII 0x20~0x7E advance (em×1000). 0x20은 useFontSpace=1일 때의 글꼴값(300) */
 const ASCII_W = [
   300, 320, 320, 610, 610, 830, 724, 320, 320, 320, 550, 550, 320, 550, 320, 550, // 0x20-0x2F
@@ -67,7 +69,7 @@ export const SPACE_EM_FONT = 300
  * 넓어 함초롬 테이블로 재면 줄당 1~2자 과대적재로 wrap 지점이 어긋난다
  * (bench/verify-linebreak.mjs seoul 코퍼스 실측: fixedPitch 테이블로 74/75 일치).
  */
-export type FaceClass = "hcr" | "fixedPitch" | "gothic"
+export type FaceClass = "hcr" | "fixedPitch" | "gothic" | `font:${string}`
 
 /**
  * HWP 글꼴명 → 폭 테이블 클래스. 미상/미지정은 hcr (기존 동작 불변).
@@ -75,16 +77,19 @@ export type FaceClass = "hcr" | "fixedPitch" | "gothic"
  * 함초롬(0.97/0.55)보다 넉넉히 잡는다. 표 열폭·□ 한 줄 맞춤이 실렌더보다 좁게 재어 꺾이던 것 방지.
  */
 export function faceClassOf(face: string | null | undefined): FaceClass {
+  if (face && hasFontMetrics(face)) return `font:${face.trim()}`
   return face && /^(굴림체|돋움체|바탕체|궁서체)$/.test(face.trim()) ? "fixedPitch" : "hcr"
 }
 
 /**
  * 생성(v5) 전용 폭 클래스 — 렌더(reflow)는 faceClassOf 그대로(게이트 baseline 불변).
- * 굵은 고딕 계열은 'gothic'으로 넉넉히 재어 표 열폭·□ 한 줄 맞춤이 실렌더에서 꺾이지 않게 한다.
+ * 실측 폭표(font-metrics.ts)가 있는 글꼴은 그 표(`font:이름`), 없으면 근사 클래스 — 굵은 고딕 계열은
+ * 'gothic'으로 넉넉히 재어 표 열폭·□ 한 줄 맞춤이 실렌더에서 꺾이지 않게 한다.
  */
 export function faceClassForGen(face: string | null | undefined): FaceClass {
   if (!face) return "hcr"
   const f = face.trim()
+  if (hasFontMetrics(f)) return `font:${f}`
   if (/^(굴림체|돋움체|바탕체|궁서체)$/.test(f)) return "fixedPitch"
   if (/^(한컴돋움|맑은 고딕|HY견고딕|HY헤드라인M|HY중고딕|한양중고딕|나눔고딕|나눔스퀘어|돋움|굴림)$/.test(f)) return "gothic"
   return "hcr"
@@ -110,6 +115,22 @@ function fixedPitchWidthEm1000(cp: number): number {
   return cp < 0x80 ? 500 : 1000
 }
 
+/** 폭 클래스 → advance 함수. `font:이름` 은 실측 폭표(없는 글꼴명이면 gothic 근사) */
+function widthFnOf(faceClass: FaceClass | undefined): (cp: number) => number {
+  if (faceClass === "fixedPitch") return fixedPitchWidthEm1000
+  if (faceClass === "gothic") return gothicWidthEm1000
+  if (faceClass?.startsWith("font:")) {
+    const face = faceClass.slice(5)
+    return (cp) => fontAdvanceEm1000(face, cp) ?? gothicWidthEm1000(cp)
+  }
+  return charWidthEm1000
+}
+
+/** 공백류 — 일반 공백과 묶음 빈칸(U+00A0 → hp:nbSpace)은 한컴 고정 반각 공백 폭 */
+function isSpaceCp(cp: number): boolean {
+  return cp === 0x20 || cp === 0xa0
+}
+
 export interface MeasureOptions {
   /** 공백 폭(em×1000). 기본 SPACE_EM_FIXED(500) = useFontSpace 0 */
   spaceEm?: number
@@ -131,11 +152,11 @@ export function measureTextWidth(
 ): number {
   const spaceEm = opts?.spaceEm ?? SPACE_EM_FIXED
   const spacing = opts?.spacingPct ?? 0
-  const widthEm = opts?.faceClass === "fixedPitch" ? fixedPitchWidthEm1000 : opts?.faceClass === "gothic" ? gothicWidthEm1000 : charWidthEm1000
+  const widthEm = widthFnOf(opts?.faceClass)
   let em = 0
   for (const ch of text) {
     const cp = ch.codePointAt(0)!
-    const w = cp === 0x20 ? spaceEm : widthEm(cp)
+    const w = isSpaceCp(cp) ? spaceEm : widthEm(cp)
     em += w * (1 + spacing / 100)
   }
   return (em / 1000) * height * (ratioPct / 100)
@@ -158,6 +179,11 @@ const FORBID_START = new Set([..."!%),.:;?]}¢°′″℃〉》」』】〕!%),.
 const FORBID_END = new Set([..."$([{£¥〈《「『【〔$([{₩"])
 
 export type WrapMode = "keep" | "charAll"
+
+export interface WrapOptions extends MeasureOptions {
+  /** UTF-16 단위별 실폭(HWPUNIT) — 주면 height·장평·폭 클래스 대신 쓴다(여러 run 문단, 탭 전진폭) */
+  widths?: number[]
+}
 
 export interface WrapResult {
   /** 줄 수 */
@@ -187,24 +213,34 @@ export function simulateWrap(
   height: number,
   ratioPct: number,
   mode: WrapMode = "keep",
-  opts?: MeasureOptions,
+  opts?: WrapOptions,
 ): WrapResult {
   const EPS = 0.5
   const spaceEm = opts?.spaceEm ?? SPACE_EM_FIXED
   const spacing = opts?.spacingPct ?? 0
-  const widthEm = opts?.faceClass === "fixedPitch" ? fixedPitchWidthEm1000 : opts?.faceClass === "gothic" ? gothicWidthEm1000 : charWidthEm1000
+  const widthEm = widthFnOf(opts?.faceClass)
   const k = (height * ratioPct) / 100 / 1000
-  const cwCp = (cp: number): number =>
-    (cp === 0x20 ? spaceEm : widthEm(cp)) * (1 + spacing / 100) * k
-  const charW = (ch: string): number => cwCp(ch.codePointAt(0)!)
+  const unitW = opts?.widths
+  /** i 위치(UTF-16) 글자 ch 의 폭 — widths 가 있으면 그 값(서로게이트 쌍은 두 칸 합) */
+  const charWAt = (i: number, ch: string): number => {
+    if (unitW) return (unitW[i] ?? 0) + (ch.length === 2 ? unitW[i + 1] ?? 0 : 0)
+    const cp = ch.codePointAt(0)!
+    return (isSpaceCp(cp) ? spaceEm : widthEm(cp)) * (1 + spacing / 100) * k
+  }
   const rangeW = (from: number, to: number): number => {
     let w = 0
-    for (const ch of text.slice(from, to)) w += charW(ch)
+    for (let i = from; i < to;) {
+      const ch = String.fromCodePoint(text.codePointAt(i)!)
+      w += charWAt(i, ch)
+      i += ch.length
+    }
     return w
   }
 
-  // u 플래그 필수 — 없으면 astral 문자(𝐀·이모지 등)가 서로게이트 반쪽 2개로 쪼개져 폭이 2배로 계산된다
-  const units = text.match(mode === "keep" ? / +|[^ ]+/gu : / +|[^ ]/gu) ?? []
+  // u 플래그 필수 — 없으면 astral 문자(𝐀·이모지 등)가 서로게이트 반쪽 2개로 쪼개져 폭이 2배로 계산된다.
+  // 글자 단위에서도 ASCII 연속열("1.):", "LLM),")은 한 단어 — breakLatinWord=KEEP_WORD(한글 2024 실렌더 PDF 대조).
+  // 묶음 빈칸(U+00A0)은 어느 모드에서도 끊지 않는다 — 글자 단위에선 앞뒤 단위를 하나로 묶는다
+  const units = text.match(mode === "keep" ? / +|[^ ]+/gu : / +|(?:[\x21-\x7e]+|[^ ])(?:\u00a0(?:[\x21-\x7e]+|[^ \u00a0])?)*/gu) ?? []
 
   const starts = [0]
   let lineW = 0
@@ -228,7 +264,7 @@ export function simulateWrap(
 
   for (const u of units) {
     if (u[0] === " ") {
-      lineW += charW(" ") * u.length // 줄 끝 공백은 hang
+      lineW += rangeW(pos, pos + u.length) // 줄 끝 공백은 hang
       pos += u.length
       continue
     }
@@ -242,7 +278,7 @@ export function simulateWrap(
       // 빈 줄이거나 다음 줄에도 안 들어가는 초장 유닛 — 글자 단위 강제 분해
       let sub = 0
       for (const ch of u) {
-        const c = charW(ch)
+        const c = charWAt(pos + sub, ch)
         if (lineW + c > avail + EPS && lineW > 0) breakBefore(pos + sub, 0)
         lineW += c
         sub += ch.length

@@ -10,6 +10,8 @@ import { markdownToHwpx } from "../src/hwpx/generator.js"
 import { resolveGongmun, levelIndent, levelMarkerHeight, markerWidth } from "../src/hwpx/gongmun.js"
 import { buildGongmunOptions, parseLevelsSpec, levelFontRecord } from "../src/hwpx/gongmun-surface.js"
 import { levelCharIds, levelFontFaces } from "../src/hwpx/gen-levels.js"
+import { flatSec } from "./gen-xml.js"
+import { markerLayout } from "../src/hwpx/gen-marker.js"
 
 const MD = `# 제목
 
@@ -88,7 +90,7 @@ describe("levels — HWPX 방출", () => {
   it("법정형(통지): levels 글꼴은 전 언어 목록에 append, charPr 7슬롯이 같은 글꼴 (v5 — 한컴 툴바 글꼴명 표시 조건)", async () => {
     const buf = await markdownToHwpx(MD, { gongmun: { preset: "notice", levels: { 0: { font: "HY견고딕", pt: 17, bold: true }, 1: { font: "한컴돋움", bold: true } } } })
     const header = await unzipText(buf, "Contents/header.xml")
-    const section = await unzipText(buf, "Contents/section0.xml")
+    const section = flatSec(await unzipText(buf, "Contents/section0.xml"))
     const fid = (face: string) => header.match(new RegExp(`<hh:fontface lang="HANGUL"[\\s\\S]*?<hh:font id="(\\d+)" face="${face}"`))![1]
     const gyeon = fid("HY견고딕"), dotum = fid("한컴돋움")
     assert.equal(gyeon, "2", "HY견고딕은 정적 3종(id 2) 재사용")
@@ -106,15 +108,15 @@ describe("levels — HWPX 방출", () => {
     const run1 = section.match(/<hp:run charPrIDRef="(\d+)"><hp:t>가\. 둘째 <\/hp:t><\/hp:run><hp:run charPrIDRef="(\d+)"><hp:t>강조<\/hp:t>/)
     assert.ok(run1, "가. 둘째 + 강조 run")
     for (const id of [run1![1], run1![2]]) assert.match(header, new RegExp(`<hh:charPr id="${id}" height="1200"[^>]*bold="1">\\s*<hh:fontRef hangul="${dotum}"`))
-    // 1단계 문단 내어쓰기 = 17pt '1.' 부호폭
+    // 1단계 문단 내어쓰기 = 17pt HY견고딕 '1.' 실폭 + 1타 (부호 뒤는 내어쓰기용 자동 탭)
     const pid = section.slice(section.lastIndexOf("<hp:p ", section.indexOf("1. 첫째 항목"))).match(/paraPrIDRef="(\d+)"/)![1]
-    assert.match(header, new RegExp(`<hh:paraPr id="${pid}"[\\s\\S]*?<hc:intent value="-${markerWidth("1.", 1700)}"`))
+    assert.match(header, new RegExp(`<hh:paraPr id="${pid}"[\\s\\S]*?<hc:intent value="-${markerLayout("HY견고딕", 17, 0, "1.").hang}"`))
   })
 
   it("보고서: 명시 levels 가 서울 실측 □(HY견고딕 17b)보다 우선 (v5)", async () => {
     const buf = await markdownToHwpx(MD, { gongmun: { preset: "report", levels: { 0: { font: "나눔고딕", pt: 18, bold: false } } } })
     const header = await unzipText(buf, "Contents/header.xml")
-    const section = await unzipText(buf, "Contents/section0.xml")
+    const section = flatSec(await unzipText(buf, "Contents/section0.xml"))
     const fid = header.match(/<hh:fontface lang="HANGUL"[\s\S]*?<hh:font id="(\d+)" face="나눔고딕"/)![1]
     const lv0 = header.match(new RegExp(`<hh:charPr id="(\\d+)" height="1800"[^>]*>\\s*<hh:fontRef hangul="${fid}"`))
     assert.ok(lv0, "보고서 1단계 전용 charPr(나눔고딕 18pt)")

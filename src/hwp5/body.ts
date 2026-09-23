@@ -1,0 +1,865 @@
+/** HWP 5.x 본문 파서 — 섹션 레코드 → 문단 리스트·컨트롤 디스패치(표·그리기 개체·수식·각주·머리말·필드) → IRBlock */
+
+import {
+  extractEquationText, createParaTextState, appendParaText, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
+  TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE, TAG_EQEDIT, TAG_SHAPE_COMPONENT, TAG_SHAPE_COMPONENT_CONTAINER,
+  TAG_SHAPE_COMPONENT_PICTURE, type HwpRecord, type HwpDocInfo, type IndexedControlResolver,
+} from "./record.js"
+import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
+import { hwpEquationToLatex } from "./equation.js"
+import { buildTable, convertTableToText, flattenLayoutTables, MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import type { CellContext, IRBlock, IRCell, IRTable, ParseOptions, ParseWarning, InlineStyle } from "../types.js"
+import { sanitizeHref } from "../utils.js"
+
+/** 중첩표/글상자 재귀 깊이 상한 — 표 "중첩 단계" 기준.
+ *  실무 문서 중첩은 2~3단이라 8이면 충분하며, 바이너리 파싱 비용상
+ *  filler/소스맵(16)보다 보수적으로 둔다. hwpx MAX_XML_DEPTH(200)는
+ *  XML 요소 깊이라 좌표계가 다름 — 상수 통일 대상 아님 */
+const MAX_NEST_DEPTH = 8
+
+// ─── 컨트롤 ID (u32 LE 정규화) ───────────────────────
+// HWP는 ctrl_id를 DWORD(LE)로 저장한다. "tbl "은 파일에 [0x20,0x6c,0x62,0x74](" lbt")로
+// 기록되므로, readUInt32LE로 읽으면 BE 문자열 상수 0x74626c20과 일치한다 (rhwp tags.rs 방식).
+
+/** 4바이트 ASCII 문자열 → u32 컨트롤 ID 상수 ("tbl " → 0x74626c20) */
+function cid(s: string): number {
+  return ((s.charCodeAt(0) << 24) | (s.charCodeAt(1) << 16) | (s.charCodeAt(2) << 8) | s.charCodeAt(3)) >>> 0
+}
+
+const CTRL_TBL = cid("tbl ")    // 표
+const CTRL_GSO = cid("gso ")    // 그리기 개체 (그림/글상자)
+const CTRL_EQED = cid("eqed")   // 수식
+const CTRL_HEAD = cid("head")   // 머리말
+const CTRL_FOOT = cid("foot")   // 꼬리말
+const CTRL_FN = cid("fn  ")     // 각주
+const CTRL_EN = cid("en  ")     // 미주
+const CTRL_ATNO = cid("atno")   // 자동 번호
+const CTRL_NWNO = cid("nwno")   // 새 번호
+const CTRL_PGNP = cid("pgnp")   // 쪽 번호 위치
+const CTRL_PGHD = cid("pghd")   // 감추기
+const CTRL_IDXM = cid("idxm")   // 찾아보기 표식
+const CTRL_BOKM = cid("bokm")   // 책갈피
+const CTRL_TCPS = cid("tcps")   // 글자 겹침
+const CTRL_TDUT = cid("tdut")   // 덧말
+const CTRL_TCMT = cid("tcmt")   // 숨은 설명
+const CTRL_SECD = cid("secd")   // 구역 정의
+const CTRL_COLD = cid("cold")   // 단 정의
+const CTRL_FORM = cid("form")   // 양식 개체
+const CTRL_OLE = cid("ole ")    // OLE 개체
+const FIELD_HLK = cid("%hlk")   // 필드: 하이퍼링크
+const FIELD_CLK = cid("%clk")   // 필드: 누름틀
+
+const KNOWN_CTRL_IDS = new Set([
+  CTRL_TBL, CTRL_GSO, CTRL_EQED, CTRL_HEAD, CTRL_FOOT, CTRL_FN, CTRL_EN,
+  CTRL_ATNO, CTRL_NWNO, CTRL_PGNP, CTRL_PGHD, CTRL_IDXM, CTRL_BOKM,
+  CTRL_TCPS, CTRL_TDUT, CTRL_TCMT, CTRL_SECD, CTRL_COLD, CTRL_FORM, CTRL_OLE,
+])
+
+/** 필드 컨트롤 여부 (첫 바이트 '%') */
+function isFieldCtrlId(id: number): boolean {
+  return (id >>> 24) === 0x25
+}
+
+/** 바이트 순서 뒤집기 — 비표준 작성기의 BE 저장 ctrl_id 방어 */
+function swap32(id: number): number {
+  return (((id & 0xff) << 24) | (((id >>> 8) & 0xff) << 16) | (((id >>> 16) & 0xff) << 8) | ((id >>> 24) & 0xff)) >>> 0
+}
+
+/** LE로 읽은 ctrl_id를 정규화 — 알려진 ID/필드가 아니고 스왑하면 일치할 때만 스왑 */
+function normalizeCtrlId(raw: number): number {
+  if (KNOWN_CTRL_IDS.has(raw) || isFieldCtrlId(raw)) return raw
+  const sw = swap32(raw)
+  if (KNOWN_CTRL_IDS.has(sw) || isFieldCtrlId(sw)) return sw
+  return raw
+}
+
+// ─── 수식 ────────────────────────────────────────────
+
+function formatEquationForMarkdown(equation: string): string {
+  const normalized = hwpEquationToLatex(equation)
+  if (!normalized) return ""
+  return `$${normalized.replace(/\$/g, "\\$")}$`
+}
+
+/** 컨트롤 자식 레코드 범위에서 EQEDIT 수식 추출 */
+function extractEquationFromSlice(records: HwpRecord[], start: number, end: number): string | null {
+  for (let i = start; i < end; i++) {
+    if (records[i].tagId !== TAG_EQEDIT) continue
+    const equation = extractEquationText(records[i].data)
+    return equation ? formatEquationForMarkdown(equation) : null
+  }
+  return null
+}
+
+// ─── 본문 파싱 (문단 리스트 + 컨트롤 디스패치) ───────
+
+/** 문서 전역 파싱 상태 — 섹션 간 유지 (번호 카운터, 머리말/꼬리말 등) */
+export interface Hwp5DocState {
+  numbering: NumberingState
+  /** 구역 정의(secd)의 개요 번호 ID */
+  outlineNumberingId: number
+  /** 자동 번호 종류(0=쪽,1=각주,2=미주,3=그림,4=표,5=수식)별 다음 번호 */
+  autoCounters: Map<number, number>
+  headerTexts: Set<string>
+  headerBlocks: IRBlock[]
+  footerBlocks: IRBlock[]
+  /** 표 후행 빈 열(앵커 있는 입력란) 보존 — ParseOptions.keepTrailingEmptyCols (#47) */
+  keepTrailingEmptyCols?: boolean
+}
+
+export function createHwp5DocState(): Hwp5DocState {
+  return {
+    numbering: new NumberingState(),
+    outlineNumberingId: 0,
+    autoCounters: new Map(),
+    headerTexts: new Set(),
+    headerBlocks: [],
+    footerBlocks: [],
+  }
+}
+
+interface Hwp5Ctx {
+  docInfo: HwpDocInfo | null
+  warnings: ParseWarning[]
+  sectionNum: number
+  doc: Hwp5DocState
+  depth: number
+  /** 현재 페이지 (#66) — layout 모드에서 top-level 문단마다 갱신, 셀/중첩은 호스트 상속.
+   *  섹션 근사 모드에선 sectionNum 고정 */
+  page: number
+  /** 프리패스 페이지 맵 — base: 이전 섹션 누적 페이지, pageAtPara: top-level 문단 순번별 페이지 */
+  pageMap?: { base: number; pageAtPara: number[] }
+  /** 지금까지 만난 top-level 문단 수 (pageAtPara 인덱스) */
+  topOrdinal: number
+  /** 표 CTRL_HEADER 레코드 인덱스 → sourceId (table-ids.ts 프리패스, 렌더 region 조인 키 #76) */
+  tableIds?: Map<number, string>
+}
+
+/** 섹션 레코드 → IRBlock[] (테스트에서 직접 사용 가능하도록 export) */
+export function parseSection(
+  records: HwpRecord[],
+  docInfo: HwpDocInfo | null,
+  warnings: ParseWarning[],
+  sectionNum: number,
+  doc?: Hwp5DocState,
+  pageMap?: { base: number; pageAtPara: number[] },
+  tableIds?: Map<number, string>,
+): IRBlock[] {
+  const ctx: Hwp5Ctx = {
+    docInfo, warnings, sectionNum, doc: doc ?? createHwp5DocState(), depth: 0,
+    page: pageMap ? pageMap.base + 1 : sectionNum, pageMap, topOrdinal: 0, tableIds,
+  }
+  return parseParagraphList(records, 0, records.length, ctx)
+}
+
+/**
+ * 레코드 범위에서 문단 리스트 파싱 (rhwp body_text.rs parse_paragraph_list 패턴).
+ * 표 셀/글상자/머리말/각주 내부에서도 동일하게 재귀 사용된다.
+ */
+function parseParagraphList(records: HwpRecord[], start: number, end: number, ctx: Hwp5Ctx): IRBlock[] {
+  const blocks: IRBlock[] = []
+  let i = start
+  while (i < end) {
+    if (records[i].tagId === TAG_PARA_HEADER) {
+      const baseLevel = records[i].level
+      // 실제 페이지 갱신 (#66) — 프리패스의 top-level 문단 열거와 같은 순서(level 0)
+      if (baseLevel === 0 && ctx.depth === 0 && ctx.pageMap) {
+        const pg = ctx.pageMap.pageAtPara[ctx.topOrdinal]
+        if (pg !== undefined) ctx.page = ctx.pageMap.base + pg + 1
+        ctx.topOrdinal++
+      }
+      let j = i + 1
+      while (j < end && records[j].level > baseLevel) j++
+      blocks.push(...parseParagraph(records, i, j, ctx))
+      i = j
+    } else {
+      i++
+    }
+  }
+  return blocks
+}
+
+/** 문단 내 CTRL_HEADER 1개의 파싱 상태 */
+interface ParsedCtrl {
+  /** 정규화된 컨트롤 ID (u32, BE 문자열 상수와 비교 가능) */
+  id: number
+  /** LE로 읽은 원본 ID — PARA_TEXT 인라인 컨트롤과의 대조용 */
+  idRaw: number
+  /** CTRL_HEADER 레코드 데이터 (ctrl_id 4바이트 포함) */
+  data: Buffer
+  childStart: number
+  childEnd: number
+  /** 인라인 치환 텍스트 (수식/자동번호/각주 마커) */
+  inlineText?: string
+  /** 문단 뒤에 붙는 블록 (표/이미지/글상자) */
+  afterBlocks?: IRBlock[]
+  /** 각주/미주 내용 ("1) 내용" 형식) */
+  footnote?: string
+  /** 하이퍼링크 URL (%hlk) */
+  href?: string
+  /** resolver 중복 매칭 방지 */
+  resolved?: boolean
+}
+
+/** 문단 1개 파싱 → [문단 블록?, ...컨트롤 파생 블록] */
+function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: Hwp5Ctx): IRBlock[] {
+  const header = records[start]
+  const baseLevel = header.level
+  const paraShapeId = header.data.length >= 10 ? header.data.readUInt16LE(8) : -1
+
+  const textRecords: Buffer[] = []
+  const charShapeIds: number[] = []
+  const ctrls: ParsedCtrl[] = []
+
+  let i = start + 1
+  while (i < end) {
+    const rec = records[i]
+
+    if (rec.tagId === TAG_CTRL_HEADER && rec.level === baseLevel + 1 && rec.data.length >= 4) {
+      // 컨트롤 자식 레코드 범위 수집 (rhwp parse_paragraph 패턴)
+      const childStart = i + 1
+      let j = childStart
+      while (j < end && records[j].level > baseLevel + 1) j++
+      const idRaw = rec.data.readUInt32LE(0)
+      ctrls.push({ id: normalizeCtrlId(idRaw), idRaw, data: rec.data, childStart, childEnd: j })
+      i = j
+      continue
+    }
+
+    if (rec.tagId === TAG_PARA_TEXT && rec.level === baseLevel + 1) {
+      textRecords.push(rec.data)
+    } else if (rec.tagId === TAG_CHAR_SHAPE && rec.level === baseLevel + 1 && rec.data.length >= 8) {
+      // 구조: [position(u32) + charShapeId(u32)] * N
+      for (let offset = 0; offset + 7 < rec.data.length; offset += 8) {
+        charShapeIds.push(rec.data.readUInt32LE(offset + 4))
+      }
+    }
+    i++
+  }
+
+  // 컨트롤별 효과 계산 (인라인 치환/파생 블록/각주/링크)
+  for (const ctrl of ctrls) {
+    applyCtrlEffect(ctrl, records, ctx)
+  }
+
+  // 텍스트 렌더링 — 확장 컨트롤 인덱스 ↔ CTRL_HEADER 순서 매핑
+  const state = createParaTextState()
+  const resolver: IndexedControlResolver = (idx, id) => {
+    let ctrl = idx >= 0 && idx < ctrls.length ? ctrls[idx] : undefined
+    if (!ctrl || (ctrl.idRaw !== id && ctrl.id !== id)) {
+      ctrl = ctrls.find(c => !c.resolved && (c.idRaw === id || c.id === id))
+    }
+    if (!ctrl) return null
+    ctrl.resolved = true
+    return ctrl.inlineText ?? null
+  }
+  for (const data of textRecords) {
+    appendParaText(state, data, resolver)
+  }
+
+  // FIELD_BEGIN/END 범위에 하이퍼링크 적용 — 시작 위치 내림차순으로 안전하게 치환
+  let text = state.text
+  if (state.fieldRanges.length > 0) {
+    const ranges = [...state.fieldRanges].sort((a, b) => b.start - a.start)
+    const applied: Array<[number, number]> = []
+    for (const r of ranges) {
+      const ctrl = ctrls[r.ctrlIdx]
+      if (!ctrl?.href || r.end <= r.start) continue
+      if (applied.some(([s, e]) => r.start < e && r.end > s)) continue
+      const href = sanitizeHref(ctrl.href)
+      if (!href) continue
+      const anchor = text.slice(r.start, r.end)
+      if (!anchor.trim()) continue
+      text = text.slice(0, r.start) + `[${anchor}](${href})` + text.slice(r.end)
+      applied.push([r.start, r.end])
+    }
+  }
+
+  const trimmed = text.replace(/\$\$/g, "$ $").trim()
+
+  // 문단번호/글머리표/개요 처리 (DocInfo PARA_SHAPE headType)
+  let headingLevel = 0
+  let headMarker: string | null = null
+  const ps = ctx.docInfo && paraShapeId >= 0 && paraShapeId < ctx.docInfo.paraShapes.length
+    ? ctx.docInfo.paraShapes[paraShapeId]
+    : null
+  if (ps && ps.headType > 0) {
+    if (ps.headType === 1) {
+      // 개요 — paraLevel 0-6 → heading 1-6 (개요 7수준은 H6로 클램프)
+      headingLevel = Math.min(ps.paraLevel + 1, 6)
+    }
+    if (ps.headType === 1 || ps.headType === 2) {
+      // 개요/번호 → NUMBERING 카운터 전진 + ^N 치환
+      const nid = ps.numberingId || (ps.headType === 1 ? ctx.doc.outlineNumberingId : 0)
+      const numbering = nid >= 1 ? ctx.docInfo?.numberings[nid - 1] : undefined
+      if (numbering) {
+        const counters = ctx.doc.numbering.advance(nid, ps.paraLevel)
+        const fmt = numbering.levelFormats[Math.min(ps.paraLevel, 6)]
+        if (fmt) {
+          const headText = expandNumberingFormat(fmt, counters, numbering)
+          if (headText) headMarker = headText
+        }
+      }
+    } else if (ps.headType === 3) {
+      // 글머리표 — U+FFFF는 이미지 글머리표 (문자 렌더링 불가)
+      const bullet = ps.numberingId >= 1 ? ctx.docInfo?.bullets[ps.numberingId - 1] : undefined
+      if (bullet && bullet.char !== "￿") headMarker = bullet.char
+    }
+  }
+
+  const blocks: IRBlock[] = []
+  const footnotes = ctrls.filter(c => c.footnote).map(c => c.footnote!)
+
+  if (trimmed) {
+    const block: IRBlock = {
+      type: headingLevel > 0 ? "heading" : "paragraph",
+      text: headMarker ? `${headMarker} ${trimmed}` : trimmed,
+      pageNumber: ctx.page,
+    }
+    if (headingLevel > 0) block.level = headingLevel
+    if (ctx.docInfo && charShapeIds.length > 0) {
+      const style = resolveCharStyle(charShapeIds, ctx.docInfo)
+      if (style) {
+        block.style = style
+        // 취소선·밑줄 문단(법령 개정문 삭제·개정 표시 등)은 ~~…~~ / <u>…</u> 로 방출 —
+        // 대표(최빈) 스타일 기준이라 문단 전체가 그어진 경우만 잡는다 (부분 서식은 미지원)
+        if (style.strike || style.underline) {
+          let deco = style.strike ? `~~${trimmed}~~` : trimmed
+          if (style.underline) deco = `<u>${deco}</u>`
+          block.text = headMarker ? `${headMarker} ${deco}` : deco
+        }
+      }
+    }
+    if (footnotes.length > 0) block.footnoteText = footnotes.join("; ")
+    blocks.push(block)
+  } else if (footnotes.length > 0) {
+    // 본문 없는 각주 anchor — 각주 내용 자체를 문단으로 보존
+    blocks.push({ type: "paragraph", text: `(주: ${footnotes.join("; ")})`, pageNumber: ctx.page })
+  }
+
+  // 컨트롤 파생 블록 (표/이미지/글상자) — 컨트롤 순서대로
+  for (const ctrl of ctrls) {
+    if (ctrl.afterBlocks) blocks.push(...ctrl.afterBlocks)
+  }
+
+  return blocks
+}
+
+/** 컨트롤 종류별 디스패치 (rhwp control.rs parse_control 대응) */
+function applyCtrlEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): void {
+  switch (ctrl.id) {
+    case CTRL_TBL: {
+      const table = parseTableControl(ctrl, records, ctx)
+      if (table) ctrl.afterBlocks = [{ type: "table", table, pageNumber: ctx.page }]
+      return
+    }
+    case CTRL_GSO: {
+      const blocks = parseGsoControl(ctrl, records, ctx)
+      if (blocks.length > 0) ctrl.afterBlocks = blocks
+      return
+    }
+    case CTRL_EQED: {
+      const eq = extractEquationFromSlice(records, ctrl.childStart, ctrl.childEnd)
+      if (eq) ctrl.inlineText = eq
+      return
+    }
+    case CTRL_FN:
+    case CTRL_EN: {
+      applyNoteEffect(ctrl, records, ctx, ctrl.id === CTRL_FN ? 1 : 2)
+      return
+    }
+    case CTRL_HEAD:
+    case CTRL_FOOT: {
+      applyHeaderFooterEffect(ctrl, records, ctx, ctrl.id === CTRL_HEAD)
+      return
+    }
+    case CTRL_ATNO: {
+      // 자동 번호 (표 144): attr(u32) + number(u16) + 사용자기호 + 앞장식 + 뒤장식 (WCHAR)
+      if (ctrl.data.length >= 8) {
+        const attr = ctrl.data.readUInt32LE(4)
+        const type = attr & 0x0f
+        const format = (attr >>> 4) & 0xff
+        const num = ctx.doc.autoCounters.get(type) ?? 1
+        ctx.doc.autoCounters.set(type, num + 1)
+        const prefix = ctrl.data.length >= 14 ? wcharAt(ctrl.data, 12) : ""
+        const suffix = ctrl.data.length >= 16 ? wcharAt(ctrl.data, 14) : ""
+        ctrl.inlineText = `${prefix}${formatNumber(num, shapeFormatToNumFmt(format))}${suffix}`
+      }
+      return
+    }
+    case CTRL_NWNO: {
+      // 새 번호 지정 — 해당 종류의 카운터를 재설정 (표시 없음)
+      if (ctrl.data.length >= 10) {
+        const attr = ctrl.data.readUInt32LE(4)
+        const type = attr & 0x0f
+        const num = ctrl.data.readUInt16LE(8)
+        if (num > 0) ctx.doc.autoCounters.set(type, num)
+      }
+      return
+    }
+    case CTRL_SECD: {
+      // 구역 정의 — 개요 번호 ID (ctrl_id 4 + flags 4 + 간격 2*3 + tab 4 = offset 18)
+      if (ctrl.data.length >= 20) {
+        ctx.doc.outlineNumberingId = ctrl.data.readUInt16LE(18)
+      }
+      return
+    }
+    case CTRL_OLE: {
+      ctx.warnings.push({ page: ctx.page, message: "스킵된 OLE 개체", code: "SKIPPED_OLE" })
+      return
+    }
+    // 숨은 설명/단 정의/쪽번호 위치/감추기/찾아보기/책갈피/글자겹침/덧말 — 본문 텍스트 없음 또는 의도적 스킵
+    case CTRL_TCMT:
+    case CTRL_COLD:
+    case CTRL_PGNP:
+    case CTRL_PGHD:
+    case CTRL_IDXM:
+    case CTRL_BOKM:
+    case CTRL_TCPS:
+    case CTRL_TDUT:
+    case CTRL_FORM:
+      return
+    default: {
+      if (isFieldCtrlId(ctrl.id)) {
+        applyFieldEffect(ctrl)
+        return
+      }
+      // 알 수 없는 컨트롤 — LIST_HEADER 문단 리스트가 있으면 텍스트 보존 (정보손실 방지)
+      const blocks = parseListHeaderParagraphs(ctrl, records, ctx)
+      if (blocks.length > 0) ctrl.afterBlocks = blocks
+    }
+  }
+}
+
+/** WCHAR 1글자 읽기 (0이면 빈 문자열) */
+function wcharAt(data: Buffer, offset: number): string {
+  const code = data.readUInt16LE(offset)
+  return code > 0 ? String.fromCharCode(code) : ""
+}
+
+/** 컨트롤 자식에서 첫 LIST_HEADER 이후의 문단 리스트 파싱 (rhwp find_list_header_paragraphs) */
+function parseListHeaderParagraphs(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): IRBlock[] {
+  if (ctx.depth >= MAX_NEST_DEPTH) return []
+  for (let i = ctrl.childStart; i < ctrl.childEnd; i++) {
+    if (records[i].tagId === TAG_LIST_HEADER) {
+      return parseParagraphList(records, i + 1, ctrl.childEnd, { ...ctx, depth: ctx.depth + 1 })
+    }
+  }
+  return []
+}
+
+/** 블록 리스트 → 평문 (각주 인라인 포함, 표/이미지는 제외) */
+function blocksPlainText(blocks: IRBlock[], sep: string): string {
+  const parts: string[] = []
+  for (const b of blocks) {
+    if (b.type === "image") continue
+    if (b.type === "table") continue
+    if (b.text) {
+      let t = b.text
+      if (b.footnoteText) t += ` (주: ${b.footnoteText})`
+      parts.push(t)
+    }
+  }
+  return parts.join(sep).trim()
+}
+
+/** 각주('fn  ')/미주('en  ') — 번호 + 장식문자 + 내용 (rhwp parse_footnote_control) */
+function applyNoteEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx, autoType: number): void {
+  // ctrl 데이터: ctrl_id(4) + number(u32) + before(WCHAR) + after(WCHAR) + numberShape(u32)
+  // 번호는 각주 내용 안의 atno(자동번호)가 같은 카운터를 소비하므로 peek만 하고,
+  // 내용 파싱 후 카운터가 안 움직였으면(atno 없음) 직접 전진시킨다 (rhwp assign_auto_numbers 정합)
+  const num = ctx.doc.autoCounters.get(autoType) ?? 1
+
+  let before = ""
+  let after = ""
+  let shape = 0
+  if (ctrl.data.length >= 12) {
+    before = wcharAt(ctrl.data, 8)
+    after = wcharAt(ctrl.data, 10)
+  }
+  if (ctrl.data.length >= 16) {
+    shape = ctrl.data.readUInt32LE(12) & 0xff
+  }
+  const formatted = formatNumber(num, shapeFormatToNumFmt(shape))
+  const marker = before || after ? `${before}${formatted}${after}` : `${formatted})`
+
+  const content = blocksPlainText(parseListHeaderParagraphs(ctrl, records, ctx), " ")
+  if ((ctx.doc.autoCounters.get(autoType) ?? 1) <= num) {
+    ctx.doc.autoCounters.set(autoType, num + 1)
+  }
+  ctrl.inlineText = marker
+  // 각주 내용 첫머리의 atno가 이미 같은 마커를 생성했으면 중복 방지
+  if (content) ctrl.footnote = content.startsWith(marker) ? content : `${marker} ${content}`
+}
+
+/** 머리말('head')/꼬리말('foot') — 문서당 1회, 동일 텍스트 중복 제거 */
+function applyHeaderFooterEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx, isHeader: boolean): void {
+  const text = blocksPlainText(parseListHeaderParagraphs(ctrl, records, ctx), "\n")
+  if (!text) return
+  const key = (isHeader ? "h:" : "f:") + text
+  if (ctx.doc.headerTexts.has(key)) return
+  ctx.doc.headerTexts.add(key)
+  const block: IRBlock = { type: "paragraph", text, pageNumber: ctx.page }
+  if (isHeader) ctx.doc.headerBlocks.push(block)
+  else ctx.doc.footerBlocks.push(block)
+}
+
+/** 필드 컨트롤(%hlk/%clk 등) — command 파싱 (rhwp parse_field_control, 표 154) */
+function applyFieldEffect(ctrl: ParsedCtrl): void {
+  if (ctrl.id === FIELD_HLK) {
+    const command = parseFieldCommand(ctrl.data)
+    if (command) {
+      const url = hyperlinkUrlFromCommand(command)
+      if (url) ctrl.href = url
+    }
+  }
+  // %clk(누름틀) 등 기타 필드: anchor 텍스트는 PARA_TEXT에 있으므로 그대로 보존됨
+}
+
+/** 필드 CTRL_HEADER 데이터에서 command 추출 — ctrl_id(4) + 속성(4) + 기타(1) + len(u16) + UTF-16LE */
+function parseFieldCommand(data: Buffer): string | null {
+  if (data.length < 11) return null
+  const cmdLen = data.readUInt16LE(9)
+  if (cmdLen === 0) return null
+  const start = 11
+  const end = start + cmdLen * 2
+  if (end > data.length) return null
+  return data.subarray(start, end).toString("utf16le").replace(/\0+$/, "")
+}
+
+/** %hlk command에서 URL 추출 — 첫 ';' 구분 토큰 ('\;' 이스케이프 존중). mailto/책갈피(#) 포함 */
+function hyperlinkUrlFromCommand(command: string): string | null {
+  let url = ""
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+    if (c === "\\" && i + 1 < command.length) {
+      url += command[i + 1]
+      i++
+      continue
+    }
+    if (c === ";") break
+    url += c
+  }
+  url = url.trim()
+  return url.length > 0 && url.length < 2000 ? url : null
+}
+
+// ─── 표 파싱 ─────────────────────────────────────────
+
+/** HWP5 셀 — CellContext + 중첩 구조 */
+interface Hwp5Cell extends CellContext {
+  blocks?: IRBlock[]
+  isHeader?: boolean
+}
+
+/**
+ * 표 컨트롤 파싱 (rhwp parse_table_control).
+ * HWPTAG_TABLE 레코드 '이전'의 LIST_HEADER는 캡션, '이후'는 셀.
+ */
+function parseTableControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): IRTable | null {
+  if (ctx.depth >= MAX_NEST_DEPTH) return null
+  const { childStart, childEnd } = ctrl
+  // sourceId — CTRL_HEADER 레코드 인덱스(childStart − 1)로 프리패스 순번을 찾는다 (렌더 어댑터와 같은 키)
+  const sourceId = ctx.tableIds?.get(childStart - 1)
+
+  // HWPTAG_TABLE 레코드에서 행/열 수
+  let rows = 0
+  let cols = 0
+  let tableIdx = -1
+  for (let i = childStart; i < childEnd; i++) {
+    if (records[i].tagId === TAG_TABLE && records[i].data.length >= 8) {
+      rows = Math.min(records[i].data.readUInt16LE(4), MAX_ROWS)
+      cols = Math.min(records[i].data.readUInt16LE(6), MAX_COLS)
+      tableIdx = i
+      break
+    }
+  }
+  if (tableIdx < 0 || rows === 0 || cols === 0) return null
+
+  // 캡션: TABLE 레코드 이전의 LIST_HEADER
+  let caption: string | undefined
+  for (let i = childStart; i < tableIdx; i++) {
+    if (records[i].tagId === TAG_LIST_HEADER) {
+      const capBlocks = parseParagraphList(records, i + 1, tableIdx, { ...ctx, depth: ctx.depth + 1 })
+      const capText = blocksPlainText(capBlocks, " ")
+      if (capText) caption = capText
+      break
+    }
+  }
+
+  // 셀: TABLE 레코드 이후의 LIST_HEADER
+  const cells: Hwp5Cell[] = []
+  let i = tableIdx + 1
+  while (i < childEnd) {
+    const rec = records[i]
+    if (rec.tagId === TAG_LIST_HEADER) {
+      const cellLevel = rec.level
+      let j = i + 1
+      while (j < childEnd) {
+        const r = records[j]
+        if (r.level < cellLevel) break
+        if (r.level === cellLevel && (r.tagId === TAG_LIST_HEADER || r.tagId === TAG_TABLE)) break
+        j++
+      }
+      cells.push(parseCell(records, i, j, ctx))
+      i = j
+      continue
+    }
+    i++
+  }
+
+  if (cells.length === 0) return null
+
+  // colAddr/rowAddr가 있으면 arrangeCells가 완성된 그리드를 반환 — 직접 IRTable 생성
+  const hasAddr = cells.some(c => c.colAddr !== undefined && c.rowAddr !== undefined)
+  if (hasAddr) {
+    const cellRows = arrangeCells(rows, cols, cells)
+    const irCells: IRCell[][] = cellRows.map(row => row.map(c => {
+      const ir: IRCell = { text: c.text.trim(), colSpan: c.colSpan, rowSpan: c.rowSpan }
+      if (c.blocks?.length) ir.blocks = c.blocks
+      if (c.isHeader) ir.isHeader = true
+      return ir
+    }))
+    const table: IRTable = { rows, cols, cells: irCells, hasHeader: rows > 1 }
+    if (caption) table.caption = caption
+    if (sourceId) table.sourceId = sourceId
+    return table
+  }
+
+  const cellRows = arrangeCells(rows, cols, cells)
+  const table = buildTable(cellRows, { keepAnchoredEmptyCols: ctx.doc.keepTrailingEmptyCols })
+  if (caption && table.rows > 0) table.caption = caption
+  if (sourceId && table.rows > 0) table.sourceId = sourceId
+  return table.rows > 0 ? table : null
+}
+
+/**
+ * 표 셀 파싱 (rhwp parse_cell) — LIST_HEADER 구조:
+ *   paraCount(u16) + listAttr(u32) + widthRef(u16) + colAddr(u16) + rowAddr(u16) + colSpan(u16) + rowSpan(u16)
+ *   offset: 0          2              6              8              10             12             14
+ * widthRef bit 2 = 제목 셀(is_header).
+ * 셀 내부 문단 리스트는 재귀 파싱 — 중첩표는 IRCell.blocks에 IRBlock(type:'table')로 보존.
+ */
+function parseCell(records: HwpRecord[], lhIdx: number, end: number, ctx: Hwp5Ctx): Hwp5Cell {
+  const rec = records[lhIdx]
+  let colSpan = 1
+  let rowSpan = 1
+  let colAddr: number | undefined
+  let rowAddr: number | undefined
+  let isHeader = false
+  if (rec.data.length >= 16) {
+    isHeader = (rec.data.readUInt16LE(6) & 0x04) !== 0
+    colAddr = rec.data.readUInt16LE(8)
+    rowAddr = rec.data.readUInt16LE(10)
+    const cs = rec.data.readUInt16LE(12)
+    const rs = rec.data.readUInt16LE(14)
+    if (cs > 0) colSpan = Math.min(cs, MAX_COLS)
+    if (rs > 0) rowSpan = Math.min(rs, MAX_ROWS)
+  }
+
+  const blocks = ctx.depth < MAX_NEST_DEPTH
+    ? parseParagraphList(records, lhIdx + 1, end, { ...ctx, depth: ctx.depth + 1 })
+    : []
+
+  // 하위 호환 텍스트: 문단 평탄화 + 이미지 sentinel + 중첩표 평문
+  const parts: string[] = []
+  let hasStructure = false
+  for (const b of blocks) {
+    if (b.type === "image" && b.text) {
+      parts.push(`![image](hwp5bin:${b.text})`)
+      hasStructure = true
+    } else if (b.type === "table" && b.table) {
+      // flattenLayoutTables 경유 시를 위한 평문 — 구조는 blocks가 보존
+      const flat = convertTableToText(b.table.cells)
+      if (flat) parts.push(flat)
+      hasStructure = true
+    } else if (b.text) {
+      let t = b.text
+      if (b.footnoteText) {
+        t += ` (주: ${b.footnoteText})`
+        hasStructure = true
+      }
+      parts.push(t)
+    }
+  }
+  const cell: Hwp5Cell = { text: parts.join("\n"), colSpan, rowSpan, colAddr, rowAddr }
+  if (hasStructure && blocks.length > 0) cell.blocks = blocks
+  if (isHeader) cell.isHeader = true
+  return cell
+}
+
+function arrangeCells(rows: number, cols: number, cells: Hwp5Cell[]): Hwp5Cell[][] {
+  const grid: (Hwp5Cell | null)[][] = Array.from({ length: rows }, () => Array(cols).fill(null))
+
+  // colAddr/rowAddr가 있으면 직접 배치 (HWP5 병합 테이블 정확도 향상)
+  const hasAddr = cells.some(c => c.colAddr !== undefined && c.rowAddr !== undefined)
+
+  if (hasAddr) {
+    for (const cell of cells) {
+      const r = cell.rowAddr ?? 0
+      const c = cell.colAddr ?? 0
+      if (r >= rows || c >= cols) continue
+      grid[r][c] = cell
+
+      for (let dr = 0; dr < cell.rowSpan; dr++) {
+        for (let dc = 0; dc < cell.colSpan; dc++) {
+          if (dr === 0 && dc === 0) continue
+          if (r + dr < rows && c + dc < cols)
+            grid[r + dr][c + dc] = { text: "", colSpan: 1, rowSpan: 1 }
+        }
+      }
+    }
+  } else {
+    // fallback: 순차 배치 (colAddr 없는 경우)
+    let cellIdx = 0
+    for (let r = 0; r < rows && cellIdx < cells.length; r++) {
+      for (let c = 0; c < cols && cellIdx < cells.length; c++) {
+        if (grid[r][c] !== null) continue
+        const cell = cells[cellIdx++]
+        grid[r][c] = cell
+
+        for (let dr = 0; dr < cell.rowSpan; dr++) {
+          for (let dc = 0; dc < cell.colSpan; dc++) {
+            if (dr === 0 && dc === 0) continue
+            if (r + dr < rows && c + dc < cols)
+              grid[r + dr][c + dc] = { text: "", colSpan: 1, rowSpan: 1 }
+          }
+        }
+      }
+    }
+  }
+
+  return grid.map(row => row.map(c => c || { text: "", colSpan: 1, rowSpan: 1 }))
+}
+
+// ─── 그리기 개체(GSO) 파싱 ───────────────────────────
+
+/**
+ * GSO 컨트롤 파싱 (rhwp parse_gso_control).
+ * - SHAPE_COMPONENT '이전' LIST_HEADER = 캡션
+ * - SHAPE_COMPONENT '이후' 첫 LIST_HEADER = 글상자 문단 리스트
+ * - SHAPE_COMPONENT_PICTURE 레코드 → binDataId(고정 오프셋 71) → 이미지 블록
+ */
+function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): IRBlock[] {
+  if (ctx.depth >= MAX_NEST_DEPTH) return []
+  const { childStart, childEnd } = ctrl
+  const blocks: IRBlock[] = []
+
+  // 첫 SHAPE_COMPONENT(_CONTAINER) 위치
+  let scIdx = -1
+  for (let i = childStart; i < childEnd; i++) {
+    const t = records[i].tagId
+    if (t === TAG_SHAPE_COMPONENT || t === TAG_SHAPE_COMPONENT_CONTAINER) {
+      scIdx = i
+      break
+    }
+  }
+
+  // 캡션: SHAPE_COMPONENT 이전의 LIST_HEADER
+  if (scIdx > childStart) {
+    for (let i = childStart; i < scIdx; i++) {
+      if (records[i].tagId === TAG_LIST_HEADER) {
+        blocks.push(...parseParagraphList(records, i + 1, scIdx, { ...ctx, depth: ctx.depth + 1 }))
+        break
+      }
+    }
+  }
+
+  // 글상자: SHAPE_COMPONENT 이후 첫 LIST_HEADER부터 끝까지
+  const scanStart = scIdx >= 0 ? scIdx + 1 : childStart
+  let textListIdx = -1
+  for (let i = scanStart; i < childEnd; i++) {
+    if (records[i].tagId === TAG_LIST_HEADER) {
+      textListIdx = i
+      break
+    }
+  }
+
+  // 그림: 글상자 리스트 이전 구간에서 SHAPE_COMPONENT_PICTURE 스캔
+  // (글상자 내부의 중첩 gso 그림은 문단 리스트 재귀에서 처리되므로 이중 집계 없음)
+  const picEnd = textListIdx >= 0 ? textListIdx : childEnd
+  for (let i = scanStart; i < picEnd; i++) {
+    if (records[i].tagId === TAG_SHAPE_COMPONENT_PICTURE) {
+      const img = pictureToImageBlock(records[i].data, ctx)
+      if (img) blocks.push(img)
+    }
+  }
+
+  if (textListIdx >= 0) {
+    blocks.push(...parseParagraphList(records, textListIdx + 1, childEnd, { ...ctx, depth: ctx.depth + 1 }))
+  }
+
+  return blocks
+}
+
+/**
+ * SHAPE_COMPONENT_PICTURE → 이미지 블록.
+ * rhwp parse_picture(shape.rs)의 고정 레이아웃:
+ *   borderColor(4) + borderWidth(4) + borderAttr(4) + 꼭짓점 x4/y4(32) + crop(16)
+ *   + padding(8) + 밝기(1)/대비(1)/효과(1) = 71 → binDataId(u16 @71)
+ * binDataId는 DocInfo BIN_DATA 1-based 인덱스 → storage_id로 변환 (스트림명 BIN%04X 16진).
+ */
+function pictureToImageBlock(data: Buffer, ctx: Hwp5Ctx): IRBlock | null {
+  if (data.length < 73) return null
+  const binDataId = data.readUInt16LE(71)
+  if (binDataId === 0) return null
+
+  const item = ctx.docInfo?.binData[binDataId - 1]
+  if (item?.kind === "link") {
+    ctx.warnings.push({ page: ctx.page, message: `외부 연결 이미지 (binDataId ${binDataId})`, code: "SKIPPED_IMAGE" })
+    return null
+  }
+  // DocInfo BIN_DATA가 없으면 binDataId == storageId 관례에 폴백
+  const storageId = item && item.storageId > 0 ? item.storageId : binDataId
+  return { type: "image", text: String(storageId), pageNumber: ctx.page }
+}
+
+// ─── 스타일 ──────────────────────────────────────────
+
+/** CHAR_SHAPE ID 배열에서 대표 스타일 결정 (최빈값) */
+function resolveCharStyle(charShapeIds: number[], docInfo: HwpDocInfo): InlineStyle | undefined {
+  if (charShapeIds.length === 0 || docInfo.charShapes.length === 0) return undefined
+
+  // 가장 많이 나타나는 charShapeId 사용
+  const freq = new Map<number, number>()
+  let maxCount = 0, dominantId = charShapeIds[0]
+  for (const id of charShapeIds) {
+    const count = (freq.get(id) || 0) + 1
+    freq.set(id, count)
+    if (count > maxCount) { maxCount = count; dominantId = id }
+  }
+
+  const cs = docInfo.charShapes[dominantId]
+  if (!cs) return undefined
+
+  const style: InlineStyle = {}
+  if (cs.fontSize > 0) style.fontSize = cs.fontSize / 10  // 0.1pt → pt
+  if (cs.attrFlags & 0x01) style.italic = true
+  if (cs.attrFlags & 0x02) style.bold = true
+  if (hasRealStrike(cs.attrFlags)) style.strike = true
+  if (hasRealUnderline(cs.attrFlags)) style.underline = true
+
+  return (style.fontSize || style.bold || style.italic || style.strike || style.underline) ? style : undefined
+}
+
+/**
+ * CharShape attr 의 취소선 판정 — 비트(18-20)만 믿으면 안 된다: 한컴은 취소선 없는
+ * 문자에도 1을 기본값으로 넣는다. 진짜 판별자는 취소선 모양(bit 26-29)이며, 취소선이
+ * 없으면 표 27 선 종류(0~12)가 아닌 placeholder(15 등)가 들어온다. 알 수 없는 값은
+ * fail-closed 로 no-strike (rhwp 0a967e0d, HWPX isRealStrikeShape 와 같은 원리).
+ */
+export function hasRealStrike(attrFlags: number): boolean {
+  const strikeBits = (attrFlags >> 18) & 0x07
+  const shapeId = (attrFlags >> 26) & 0x0f
+  return strikeBits !== 0 && shapeId <= 12
+}
+
+/**
+ * CharShape attr 의 밑줄 판정 — bit 2-3 밑줄 종류 (0=없음, 1=글자 아래, 3=글자 위;
+ * rhwp doc_info 직렬화와 동일 레이아웃). 취소선과 달리 종류 비트 자체가 판별자다
+ * (HWPX 실측: 밑줄 없는 charPr 는 type="NONE"=비트 0). BOTTOM(1)만 인정 —
+ * 윗줄(3)·미지 값은 fail-closed.
+ */
+export function hasRealUnderline(attrFlags: number): boolean {
+  return ((attrFlags >> 2) & 0x03) === 1
+}

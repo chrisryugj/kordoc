@@ -12,6 +12,7 @@ import { buildOutline } from "../src/hwpx/outline.js"
 import { parseMarkdownToBlocks } from "../src/hwpx/md-runs.js"
 import { pickScheme } from "../src/hwpx/gongmun-scheme.js"
 import { lintMuncheText } from "../src/hwpx/munche-lint.js"
+import { flatSec } from "./gen-xml.js"
 
 const md = `# 재정경제부 업무보고
 
@@ -53,7 +54,7 @@ const md = `# 재정경제부 업무보고
 
 const unzip = async (buf: ArrayBuffer) => {
   const z = await JSZip.loadAsync(buf)
-  return { head: await z.file("Contents/header.xml")!.async("text"), sec: await z.file("Contents/section0.xml")!.async("text") }
+  return { head: await z.file("Contents/header.xml")!.async("text"), sec: await z.file("Contents/section0.xml")!.async("text").then(flatSec) }
 }
 
 describe("업무보고(ministry) 프리셋 — 해석", () => {
@@ -131,7 +132,7 @@ describe("업무보고 — 생성 XML", () => {
     assert.ok(sec.includes("① ") && sec.includes("② "), "항목 띠 원숫자 1부터")
     assert.ok(sec.includes(">별 첨<"))
     assert.ok(sec.includes("➊ "))
-    assert.ok(sec.includes(">(확실한 제도 개선) <"), "키워드 별도 런")
+    assert.ok(/<hp:t>(□ )?\(확실한 제도 개선\) </.test(sec), "키워드 별도 런")
     // 키워드 파랑 bold charPr 존재 (함초롬바탕 15 bold #0000FF)
     assert.ok(/<hh:charPr[^>]*height="1500"[^>]*textColor="#0000FF"[^>]*>[\s\S]*?<hh:bold\/>/.test(head) || /textColor="#0000FF"/.test(head), "파랑 charPr")
     // 각주 * 마커, 쪽번호 숨김·리셋

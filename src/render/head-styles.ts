@@ -44,6 +44,8 @@ export interface RenderParaGeom {
    *  주의: 저장 속성 의미는 이름과 반대 — breakNonLatinWord "BREAK_WORD"=어절,
    *  "KEEP_WORD"=글자 (한글 COM 실렌더 실측) */
   wrapMode?: "keep" | "charAll"
+  /** 탭 정의(tabPrIDRef)가 내어쓰기용 자동 탭(autoTabLeft) — 첫 줄 탭이 내어쓰기 위치에 선다 */
+  autoTabLeft?: boolean
 }
 
 export const DEFAULT_PARA_GEOM: RenderParaGeom = {
@@ -237,6 +239,9 @@ export function parseRenderStyles(headXml: string): RenderStyles {
 
   // fontfaces(HANGUL) 선파싱 — charPr fontRef 해석에 쓴다
   const hangulFonts = collectHangulFonts(root)
+  // 탭 정의 — 문단의 tabPrIDRef 는 워크가 끝난 뒤 해석(순서 무관)
+  const autoTabPr = new Set<string>()
+  const paraTabRef = new Map<string, string>()
 
   const walk = (el: Element): void => {
     const tag = (el.tagName || "").replace(/^[^:]+:/, "")
@@ -262,12 +267,17 @@ export function parseRenderStyles(headXml: string): RenderStyles {
           face,
         })
       }
+    } else if (tag === "tabPr") {
+      const id = el.getAttribute("id")
+      if (id != null && el.getAttribute("autoTabLeft") === "1") autoTabPr.add(id)
     } else if (tag === "paraPr") {
       const id = el.getAttribute("id")
       if (id != null) {
         const align = findChildByLocalName(el, "align")
         styles.paraAlign.set(id, (align?.getAttribute("horizontal") as ParaAlign) || "JUSTIFY")
         styles.paraGeom.set(id, parseParaGeom(el))
+        const tab = el.getAttribute("tabPrIDRef")
+        if (tab != null) paraTabRef.set(id, tab)
       }
     } else if (tag === "borderFill") {
       const id = el.getAttribute("id")
@@ -292,5 +302,9 @@ export function parseRenderStyles(headXml: string): RenderStyles {
     }
   }
   walk(root)
+  for (const [id, tab] of paraTabRef) {
+    const g = styles.paraGeom.get(id)
+    if (g && autoTabPr.has(tab)) g.autoTabLeft = true
+  }
   return styles
 }

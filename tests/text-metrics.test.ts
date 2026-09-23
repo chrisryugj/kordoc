@@ -85,11 +85,10 @@ describe("fitRatioForFewerLines — 자동 장평(orphan 축소)", () => {
 })
 
 describe("faceClass — 고정폭 글꼴 폭 테이블 (v4.0.6 회귀)", () => {
-  it("굴림체·돋움체·바탕체·궁서체만 fixedPitch, 그 외·미지정은 hcr", () => {
-    for (const f of ["굴림체", "돋움체", "바탕체", "궁서체"]) assert.equal(faceClassOf(f), "fixedPitch")
-    for (const f of ["함초롬바탕", "굴림", "HY견고딕", "맑은 고딕", "", undefined, null]) {
-      assert.equal(faceClassOf(f), "hcr")
-    }
+  it("실측 폭표 글꼴은 font:이름, 나머지 '체' 고정폭은 fixedPitch, 그 외·미지정은 hcr", () => {
+    for (const f of ["굴림체", "굴림", "HY견고딕", "맑은 고딕", "한컴돋움", "휴먼명조"]) assert.equal(faceClassOf(f), `font:${f}`)
+    for (const f of ["돋움체", "바탕체", "궁서체"]) assert.equal(faceClassOf(f), "fixedPitch")
+    for (const f of ["함초롬바탕", "나눔고딕", "", undefined, null]) assert.equal(faceClassOf(f), "hcr")
   })
   it("fixedPitch: 한글 1.0em·ASCII 0.5em (함초롬 0.97em·비례폭과 구분)", () => {
     assert.equal(measureTextWidth("가나다라", 1000, 100, { faceClass: "fixedPitch" }), 4000)

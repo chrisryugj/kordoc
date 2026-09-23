@@ -6,7 +6,7 @@
 import {
   CHAR_NORMAL, CHAR_BOLD, CHAR_ITALIC, CHAR_BOLD_ITALIC, CHAR_CODE,
   PARA_NORMAL, PARA_CODE,
-  escapeXml,
+  escapeXml, escapeTextXml,
 } from "./gen-ids.js"
 import { sanitizeHref } from "../utils.js"
 
@@ -512,7 +512,7 @@ export function generateRuns(text: string, defaultCharPr: number = CHAR_NORMAL, 
       }
     }
     const charId = span.code || span.bold || span.italic ? spanToCharPrId(span) : defaultCharPr
-    out.push(`<hp:run charPrIDRef="${mapped(charId)}"><hp:t>${escapeXml(span.text)}</hp:t></hp:run>`)
+    out.push(`<hp:run charPrIDRef="${mapped(charId)}"><hp:t>${escapeTextXml(span.text)}</hp:t></hp:run>`)
   }
   closeField()
   return out.join("")

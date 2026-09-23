@@ -14,7 +14,7 @@ import {
   GJ_PARA_COVER, GJ_PARA_TOC_ITEM, GJ_PARA_CHAPTER, GJ_PARA_BAR,
   GJ_BF_CHAPTER_NUM, GJ_BF_CHAPTER_GAP, GJ_BF_CHAPTER_TITLE,
   GJ_BF_BAR_DARK, GJ_BF_BAR_LIGHT, GJ_BF_TOC_BOX, GJ_BF_TOC_STRIPE,
-  escapeXml,
+  escapeTextXml,
 } from "./gen-ids.js"
 
 // ─── 공통 조각 ──────────────────────────────────────
@@ -84,7 +84,7 @@ export function buildGaejosikCover(title: string, gongmun: ResolvedGongmun, body
   const titleCharPr = simulateWrap(title, innerW, innerW, sz.coverTitle, 100, "keep").lines > 2
     ? GJ_CHAR_COVER_SUB
     : GJ_CHAR_COVER_TITLE
-  const titlePara = `<hp:p paraPrIDRef="${GJ_PARA_COVER}" styleIDRef="0"><hp:run charPrIDRef="${titleCharPr}"><hp:t>${escapeXml(title)}</hp:t></hp:run></hp:p>`
+  const titlePara = `<hp:p paraPrIDRef="${GJ_PARA_COVER}" styleIDRef="0"><hp:run charPrIDRef="${titleCharPr}"><hp:t>${escapeTextXml(title)}</hp:t></hp:run></hp:p>`
   // 장식 바 셀 빈 문단 — 전용 소형 charPr(6pt)·저줄간격 paraPr. 기본(15pt·160%)이면
   // 줄높이가 바 높이 818을 넘어 한컴이 행을 3배로 확장한다 (실측 원본도 전용 소형 charPr 사용)
   const barEmpty = emptyPara(GJ_PARA_BAR, false, GJ_CHAR_BAR)
@@ -101,7 +101,7 @@ export function buildGaejosikCover(title: string, gongmun: ResolvedGongmun, body
   const date = gongmun.cover?.date ?? formatGaejosikDate(new Date())
   const org = gongmun.cover?.org ?? ""
   const sub = (t: string) =>
-    `<hp:p paraPrIDRef="${GJ_PARA_COVER}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_COVER_SUB}"><hp:t>${escapeXml(t)}</hp:t></hp:run></hp:p>`
+    `<hp:p paraPrIDRef="${GJ_PARA_COVER}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_COVER_SUB}"><hp:t>${escapeTextXml(t)}</hp:t></hp:run></hp:p>`
   // 실측 양식 수직 배치: 빈 5 → 제목 표 → 빈 5 → 날짜 → 빈 4(25pt 행) → 기관명
   // (날짜~기관명 사이 빈 문단은 원본이 25pt charPr — 본문 빈 줄보다 간격이 넓다)
   const subEmpty = emptyPara(GJ_PARA_COVER, false, GJ_CHAR_COVER_SUB)
@@ -143,7 +143,7 @@ export function buildGaejosikToc(chapters: string[], gongmun: ResolvedGongmun, b
   const items = chapters.map((title, i) =>
     `<hp:p paraPrIDRef="${GJ_PARA_TOC_ITEM}" styleIDRef="0">`
     + `<hp:run charPrIDRef="${GJ_CHAR_TOC_ROMAN}"><hp:t>${chapterRoman(i + 1)}</hp:t></hp:run>`
-    + `<hp:run charPrIDRef="${GJ_CHAR_TOC_ITEM}"><hp:t>. ${escapeXml(title)}</hp:t></hp:run>`
+    + `<hp:run charPrIDRef="${GJ_CHAR_TOC_ITEM}"><hp:t>. ${escapeTextXml(title)}</hp:t></hp:run>`
     + `</hp:p>`,
   ).join("")
   // 실측: 박스 셀 수직 CENTER — 항목 블록이 고정 높이 박스 안에서 가운데 배치
@@ -167,7 +167,7 @@ export function buildGaejosikBodyTitle(title: string, gongmun: ResolvedGongmun, 
   const g = coverGeom(gongmun.bodyHeight, gongmun.sizes, bodyWidth)
   const bt = bodyTitleGeom(gongmun.bodyHeight, gongmun.sizes)
   const barEmpty = emptyPara(GJ_PARA_BAR, false, GJ_CHAR_BAR)
-  const titlePara = `<hp:p paraPrIDRef="${GONGMUN_CENTER}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_BODY_TITLE}"><hp:t>${escapeXml(title)}</hp:t></hp:run></hp:p>`
+  const titlePara = `<hp:p paraPrIDRef="${GONGMUN_CENTER}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_BODY_TITLE}"><hp:t>${escapeTextXml(title)}</hp:t></hp:run></hp:p>`
   const topRow = cell({ bf: GJ_BF_BAR_DARK, col: 0, colSpan: 2, row: 0, w: g.topDarkW, h: bt.barH, paras: barEmpty })
     + cell({ bf: GJ_BF_BAR_LIGHT, col: 2, row: 0, w: g.topLightW, h: bt.barH, paras: barEmpty })
   // 왕복 채널 (P2) — 표지 제목의 반복(파생물): 재파싱 시 스킵해 h1 중복 방지
@@ -188,7 +188,7 @@ export function buildGaejosikChapter(n: number, title: string, gongmun?: Resolve
   // 행높이는 chapter 크기에, 폭은 본문폭에 비례 스케일 (A3 기하연동 + margins 대응)
   const g = gongmun ? chapterGeom(gongmun.bodyHeight, gongmun.sizes, bodyWidth) : chapterGeom(1500, {}, bodyWidth)
   const numPara = `<hp:p paraPrIDRef="${GONGMUN_CENTER}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_CHAPTER_NUM}"><hp:t>${chapterRoman(n)}</hp:t></hp:run></hp:p>`
-  const titlePara = `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_CHAPTER_TITLE}"><hp:t> ${escapeXml(title)}</hp:t></hp:run></hp:p>`
+  const titlePara = `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_CHAPTER_TITLE}"><hp:t> ${escapeTextXml(title)}</hp:t></hp:run></hp:p>`
   // 왕복 채널 (P2) — 제목 셀에 원본 헤딩 레벨 마커. 재파싱 시 장식표 대신 헤딩으로 복원
   const row = cell({ bf: GJ_BF_CHAPTER_NUM, col: 0, w: g.numW, h: g.rowH, paras: numPara })
     + cell({ bf: GJ_BF_CHAPTER_GAP, col: 1, w: g.gapW, h: g.rowH })

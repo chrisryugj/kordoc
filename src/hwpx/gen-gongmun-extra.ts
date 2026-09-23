@@ -9,7 +9,7 @@
  *   "끝." — 행정업무규정(본문 끝 2타+"끝.") + GT12 실측(단독 문단).
  */
 
-import { PARA_NORMAL, CHAR_NORMAL, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_PARA_APPROVAL, GJ_PARA_BAR, escapeXml } from "./gen-ids.js"
+import { PARA_NORMAL, CHAR_NORMAL, GONGMUN_RIGHT, GONGMUN_TBL_CENTER, GONGMUN_PARA_APPROVAL, GJ_PARA_BAR, escapeXml, escapeTextXml } from "./gen-ids.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
 import { EXTRA_TABLE_ID_BASE } from "./geometry.js"
 
@@ -38,7 +38,7 @@ export function tc(opts: { bf: number; row: number; col: number; w: number; h: n
 }
 
 export function para(text: string, paraPrId: number, charPrId: number): string {
-  return `<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"><hp:run charPrIDRef="${charPrId}"><hp:t>${escapeXml(text)}</hp:t></hp:run></hp:p>`
+  return `<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"><hp:run charPrIDRef="${charPrId}"><hp:t>${escapeTextXml(text)}</hp:t></hp:run></hp:p>`
 }
 
 // ─── 결재란 (B5) ────────────────────────────────────

@@ -12,14 +12,16 @@
  *   - charPr/paraPr는 StyleRegistry 동적 발급 — 손계산 id 파티션 없음.
  */
 
-import { type MdBlock, generateParagraph } from "./md-runs.js"
+import { type MdBlock, generateParagraph, generateRuns } from "./md-runs.js"
 import { type ResolvedGongmun, GongmunNumberer, computeSuppression, mmToHwpunit } from "./gongmun.js"
-import { type Scheme, type LevelStyle, pickScheme, levelGeometry, taHu } from "./gongmun-scheme.js"
+import { type Scheme, type LevelStyle, pickScheme, taHu } from "./gongmun-scheme.js"
 import { buildOutline, type Outline, type OutlineNode } from "./outline.js"
 import { StyleRegistry, inlineMapper } from "./style-registry.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
-import { fitOneLine, fitOrphanLine } from "./fit-line.js"
+import { fitOneLine, fitParagraph } from "./fit-line.js"
 import { faceClassForGen } from "./text-metrics.js"
+import { markerLayout, markerRunXml } from "./gen-marker.js"
+import { polishGongmunText } from "./gongmun-typo.js"
 import { generateTable, generateHtmlTableXml, requiredTableWidth, DATA_TABLE_INSET, resetTableIds, type GongmunTableStyle } from "./gen-table.js"
 import { type ProfileRemap } from "./gen-profile.js"
 import { ImageRegistry, splitImageRefs } from "./gen-image.js"
@@ -27,7 +29,7 @@ import { type ResolvedPage } from "./gen-page.js"
 import { type ChartPart, generateSecPr } from "./gen-section.js"
 import { generateEquationParagraph } from "./equation-generate.js"
 import { parseChartFence, buildChartSpaceXml, buildChartElementXml } from "./chart-gen.js"
-import { CHART_TABLE_ID_BASE, A4_W_HU } from "./geometry.js"
+import { CHART_TABLE_ID_BASE } from "./geometry.js"
 import { PARA_CODE, CHAR_CODE, NS_SECTION, NS_PARA, escapeXml, newPageNumCtrl, pageHidingCtrl } from "./gen-ids.js"
 import { hasEndMark } from "./gen-gongmun-extra.js"
 import { buildNoticeHead, buildNoticeFoot, isInternalApproval } from "./gen-docframe.js"
@@ -86,7 +88,9 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     : { gaejosik: true, consumeTitle: true, summaryFromQuote: isReport })
   const scheme = pickScheme(g, pre.hasBoxMarkers)
   const gaejosik = scheme.kind === "gaejosik"
-  const outline: Outline = gaejosik ? pre : buildOutline(blocks, { gaejosik: false, consumeTitle: true, summaryFromQuote: false })
+  const raw: Outline = gaejosik ? pre : buildOutline(blocks, { gaejosik: false, consumeTitle: true, summaryFromQuote: false })
+  // 문자 다듬기(날짜·금액 묶음 빈칸, ‘’“”) — 폭 계산·방출이 같은 문자열을 보도록 조판 전에
+  const outline: Outline = { ...raw, title: raw.title && polishGongmunText(raw.title), nodes: raw.nodes.map(polishNode) }
   const frame: FrameCtx = { reg, bf: bfReg, frame: scheme.frame, W }
   const lineHu = (st: LevelStyle) => Math.round(st.pt * 100 * ((st.lineSp ?? scheme.lineSp) / 100))
   const paras: string[] = []
@@ -115,16 +119,17 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   // 요약박스 — 한 문장 3줄 이내, 넘치면 경고
   const pushSummary = (t: string) => {
     frontKind = "summary"
-    const box = buildSummaryBox(t, frame)
+    const box = buildSummaryBox(polishGongmunText(t), frame)
     if (box.lines > 3) warnings.push(`요약박스가 ${box.lines}줄입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 줄이세요`)
     paras.push(box.xml)
   }
   // ─── 전면부 ───────────────────────────────────────
-  const docTitle = g.docHead?.title ?? outline.title ?? ""
+  const docTitle = polishGongmunText(g.docHead?.title ?? outline.title ?? "")
+  const reportInfo = g.reportInfo && polishGongmunText(g.reportInfo)
   if (preset === "official") {
     if (g.docHead) paras.push(buildDocHeadTable({ ...g.docHead, title: docTitle }, frame))
     else if (outline.title) paras.push(generateParagraph(outline.title, reg.para({ align: "CENTER", lineSp: scheme.lineSp, after: lineHu(scheme.body) }), reg.char({ font: scheme.body.font, pt: scheme.body.pt + 2, bold: true }), undefined, 1))
-    if (g.reportInfo) paras.push(generateParagraph(g.reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
+    if (reportInfo) paras.push(generateParagraph(reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
     if (g.approval) paras.push(buildApprovalSeoul(g.approval, null, frame))
   } else if (isMinistry) {
     // 표지 → 목차 → 첫 장 띠(쪽번호 1). 표지·목차는 쪽번호 숨김
@@ -160,14 +165,14 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
       paras.push(buildApprovalSeoul(g.approval, null, frame))
     }
     if (docTitle) {
-      const t = buildReportTitleTable(docTitle, g.reportInfo, frame)
+      const t = buildReportTitleTable(docTitle, reportInfo, frame)
       if (t.overflow) warnings.push(`제목이 길어 한 줄에 담지 못했습니다(20pt·장평 85%까지 축소) — 제목을 줄이세요: "${docTitle.slice(0, 30)}…"`)
       if (pendingPageBreak) { paras.push(t.xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `).replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`)); pendingPageBreak = false }
       else paras.push(t.xml)
       frontKind = "title"
     }
     // 제목 없는 보고서의 담당자 행 — 우상단 12pt (기안문 보고정보 행과 동일)
-    if (!docTitle && g.reportInfo) paras.push(generateParagraph(g.reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
+    if (!docTitle && reportInfo) paras.push(generateParagraph(reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
     if (g.summary) pushSummary(g.summary)
     else if (!outline.nodes.some((n) => n.kind === "summary")) warnings.push("보고서 요약박스가 없습니다 — 제목 직후 인용문(>)에 보고 목적을 한 문장(쉼표 허용) 3줄 이내 \"…하고자 함\"으로 넣거나 summary 옵션을 지정하세요")
   } else {
@@ -212,25 +217,25 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     if (sub) marker = node.legalMarker!
     else if (gaejosik) marker = scheme.marker(depth, 0)
     else { const sup = suppress ? suppress[itemSeq] : false; marker = numberer.next(depth, sup); itemSeq++ }
-    const text = marker ? `${marker} ${node.text}` : node.text
-    const geom = levelGeometry(st, marker)
-    const availFirst = W - geom.left
-    const availCont = W - geom.left + geom.indent // indent 음수 = 둘째 줄부터 오른콝
-    let pt = st.pt, ratio = 100, spacing = 0
+    // ❶⇒↳(업무보고 보존 부호)는 스킴 부호 대신 그 글리프
+    const mk = isMinistry && node.marker ? node.marker : marker
+    const lay = markerLayout(st.font, st.pt, st.leadTa, mk)
+    // 첫 줄(탭 뒤)과 둘째 줄 이후 내용 폭이 같다 — 둘 다 left + hang 에서 시작
+    const textW = W - lay.left - lay.hang
+    let ratio = 100, spacing = 0
     if (st.oneLine) {
       // □ 는 크기를 줄이지 않는다(형제 □ 끼리 크기·굵기가 달라 보이던 결함, 라운드 3) — 장평 90·자간 -5 까지만.
       // 그래도 넘치면 억지로 우겨넣지 않고 자연 줄바꿈(내어쓰기) + 경고: 문장을 줄이는 게 정답
-      const fit = fitOneLine(plain(text), st.font, st.pt, availFirst, st.pt, 90)
+      const fit = fitOneLine(plain(node.text), st.font, st.pt, textW, st.pt, 90)
       if (fit.overflow) warnings.push(`□ 항목이 한 줄에 담기지 않아 두 줄로 꺾입니다 — 문장을 줄이세요(장평 90%·자간 -5 로도 초과): "${node.text.slice(0, 30)}…"`)
       else { ratio = fit.ratio; spacing = fit.spacing }
     } else if (g.autoFitMinRatio !== null) {
-      // 고아 줄(둘째 줄 ≤ 20%) → 자간 -1%씩(Shift+Alt+N 관행) → 장평 조합으로 한 줄에
-      const f = fitOrphanLine(plain(text), st.font, st.pt, availFirst, availCont)
+      // 한 줄 근접·고아 줄 → 자간 -1%씩(Shift+Alt+N 관행)·장평 조합, 벌어진 줄 → 자간 -1…-4
+      const f = fitParagraph(plain(node.text), st.font, st.pt, textW, textW, g.autoFitMinRatio)
       if (f) { ratio = f.ratio; spacing = f.spacing }
     }
-    const base = { font: st.font, pt, bold: st.bold, ratio, spacing }
-    const geom2 = pt !== st.pt ? levelGeometry({ ...st, pt }, marker) : geom
-    // □ 앞 빈 줄(실측 74%) — 장·제목·요약 직후 첫 □는 제외
+    // 압축은 내용 run 에만 — 부호는 형제 항목과 같은 모양(부호 폭이 줄어도 내용 시작은 탭이 고정)
+    const base = { font: st.font, pt: st.pt, bold: st.bold, ratio, spacing }
     // □ 앞 빈 줄(실측 76%) — 장·제목·요약 직후 첫 □ 와 **연속 □**(직전이 하위 항목 없는 □, 실측 52%·실무자 요청) 는 제외.
     // 띠 표 장 제목 바로 아래 첫 □ 는 밑줄에 붙지 않게 반 줄
     const consecutiveBox = prevKind === "item" && prevItemDepth === 0 && depth === 0
@@ -239,33 +244,33 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     const afterBand = depth === 0 && ((prevKind === "chapter" && chapterStyle === "band") || (prevKind === "title" && !!st.blankBefore))
     const before = afterBand ? BOX_GAP_AFTER_BAND
       : st.blankBefore && !consecutiveBox && prevKind !== "chapter" && prevKind !== "start" && prevKind !== "summary" ? BOX_BLANK_HU : 0
-    // 글자 단위 줄바꿈(KEEP_WORD — 이름 역전 주의) + 양쪽정렬: 실결재 개조식 `-` 문단 76%(다줄 88%)·법정형 97%.
-    // 라운드 1의 어절유지+양쪽정렬(실측 1.2%)은 긴 어절이 통째로 다음 줄로 밀려 앞 줄 어절 간격이 벌어졌다
-    // (실렌더 확인, 2026-09-06). 라틴·숫자 토큰은 breakLatinWord=KEEP_WORD 로 계속 통째 유지.
+    // 어절 줄바꿈(BREAK_WORD — 이름 역전 주의) + 양쪽정렬 + 외톨이줄 보호. 글자 단위(라운드 2)는 "동대/문"·"실/국"처럼
+    // 낱말을 쪼갰다(유저 지시 2026-09-23). 긴 어절이 넘어가 앞 줄이 벌어지는 것은 fitParagraph 가 자간으로 완화한다.
     const keepNext = !!st.keepWithNext && !!nextNode && ((nextNode.kind === "item" && nextNode.depth > depth) || nextNode.kind === "ref")
+    const paraSpec = { align: "JUSTIFY" as const, left: lay.left, indent: -lay.hang, before, lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: keepNext, autoTab: lay.hang > 0, widowOrphan: true }
+    const markerRun = mk ? markerRunXml(mk, reg.char({ font: st.font, pt: st.pt, bold: st.bold }), lay) : ""
     if (isMinistry) {
-      // 실측: 문단 뒤 6~7pt(줄피치 21.7 → 문단 간 27.6~29). ❶⇒↳ 선두 글리프는 그대로, (키워드)는 □·❶ 파랑 bold / ㅇ 이하 검정 bold
-      const mk = node.marker ?? marker
-      const g2 = node.marker ? levelGeometry(st, mk) : geom2
-      const paraId = reg.para({ align: "JUSTIFY", left: g2.left, indent: g2.indent, before, after: 600, lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: keepNext, keepWord: false })
-      const runs = ministryRuns(mk, node.text, frame, base, depth === 0 ? MINISTRY.blue : null)
+      // 실측: 문단 뒤 6~7pt(줄피치 21.7 → 문단 간 27.6~29). (키워드)는 □·❶ 파랑 bold / ㅇ 이하 검정 bold
+      const paraId = reg.para({ ...paraSpec, after: 600 })
+      const runs = markerRun + ministryRuns("", node.text, frame, base, depth === 0 ? MINISTRY.blue : null)
       return `<hp:p paraPrIDRef="${paraId}" styleIDRef="${styleId}">${runs}</hp:p>`
     }
-    const paraId = reg.para({ align: "JUSTIFY", left: geom2.left, indent: geom2.indent, before, lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: keepNext, keepWord: false })
-    return generateParagraph(text, paraId, reg.char(base), inlineMapper(reg, base), styleId)
+    const paraId = reg.para(paraSpec)
+    return `<hp:p paraPrIDRef="${paraId}" styleIDRef="${styleId}">${markerRun}${generateRuns(node.text, reg.char(base), inlineMapper(reg, base))}</hp:p>`
   }
 
   const renderRef = (node: Extract<OutlineNode, { kind: "ref" }>): string => {
     const st = scheme.ref
     // 업무보고 각주는 * (실측 맑은 고딕 12, 선두 4칸) — ※ 는 원문에 없다
     const marker = isMinistry ? "*" : "※"
+    const lay = markerLayout(st.font, st.pt, 0, marker)
     const left = isMinistry ? st.leadTa * taHu(st.pt) : leadLeft(node.depth, st.pt)
-    const geom = levelGeometry({ ...st, leadTa: 0 }, marker)
-    const base = { font: st.font, pt: st.pt, bold: st.bold }
-    const f = fitOrphanLine(plain(`${marker} ${node.text}`), st.font, st.pt, W - left, W - left + geom.indent)
-    const baseF = f ? { ...base, ratio: f.ratio, spacing: f.spacing } : base
-    const paraId = reg.para({ align: "JUSTIFY", left, indent: geom.indent, after: isMinistry ? 400 : 0, lineSp: isMinistry ? 130 : st.lineSp ?? scheme.lineSp, keepWord: false })
-    return generateParagraph(`${marker} ${node.text}`, paraId, reg.char(baseF), inlineMapper(reg, baseF))
+    const textW = W - left - lay.hang
+    const f = g.autoFitMinRatio !== null ? fitParagraph(plain(node.text), st.font, st.pt, textW, textW, g.autoFitMinRatio) : null
+    const base = { font: st.font, pt: st.pt, bold: st.bold, ratio: f?.ratio ?? 100, spacing: f?.spacing ?? 0 }
+    const paraId = reg.para({ align: "JUSTIFY", left, indent: -lay.hang, after: isMinistry ? 400 : 0, lineSp: isMinistry ? 130 : st.lineSp ?? scheme.lineSp, autoTab: true, widowOrphan: true })
+    const markerRun = markerRunXml(marker, reg.char({ font: st.font, pt: st.pt, bold: st.bold }), lay)
+    return `<hp:p paraPrIDRef="${paraId}" styleIDRef="0">${markerRun}${generateRuns(node.text, reg.char(base), inlineMapper(reg, base))}</hp:p>`
   }
 
   const renderPara = (node: Extract<OutlineNode, { kind: "para" }>): string => {
@@ -279,11 +284,11 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     }
     let ratio = 100, spacing = 0
     if (!node.align && g.autoFitMinRatio !== null) {
-      const f = fitOrphanLine(plain(node.text), st.font, st.pt, W, W)
+      const f = fitParagraph(plain(node.text), st.font, st.pt, W, W, g.autoFitMinRatio)
       if (f) { ratio = f.ratio; spacing = f.spacing }
     }
     const base = { font: st.font, pt: st.pt, bold: st.bold, ratio, spacing }
-    const paraId = reg.para({ align: node.align ?? "JUSTIFY", lineSp: scheme.lineSp, keepWord: false })
+    const paraId = reg.para({ align: node.align ?? "JUSTIFY", lineSp: scheme.lineSp, widowOrphan: true })
     return generateParagraph(node.text, paraId, reg.char(base), inlineMapper(reg, base))
   }
 
@@ -314,7 +319,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     const fit = fitOneLine(plain(text), st.font, st.pt, W, st.pt - 2)
     const base = { font: st.font, pt: fit.pt, bold: st.bold, ratio: fit.ratio, spacing: fit.spacing }
     const before = prevKind === "start" || prevKind === "title" || prevKind === "summary" ? 0 : lineHu(scheme.body)
-    const paraId = reg.para({ align: "LEFT", before, after: Math.round(lineHu(scheme.body) * 0.3), lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: true, keepWord: false })
+    const paraId = reg.para({ align: "LEFT", before, after: Math.round(lineHu(scheme.body) * 0.3), lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: true })
     return generateParagraph(text, paraId, reg.char(base), inlineMapper(reg, base), 2)
   }
 
@@ -324,7 +329,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     let text = node.text
     if (/^\s*붙\s*임/.test(text)) text = text.replace(/^\s*붙\s*임\s*[:：]?\s*/, "붙임  ")
     else text = text.replace(/\s+$/, "")
-    const paraId = reg.para({ align: "LEFT", before: first ? lineHu(scheme.body) : 0, lineSp: st.lineSp ?? scheme.lineSp, keepWord: false })
+    const paraId = reg.para({ align: "LEFT", before: first ? lineHu(scheme.body) : 0, lineSp: st.lineSp ?? scheme.lineSp })
     const base = { font: st.font, pt: st.pt, bold: st.bold }
     return generateParagraph(text, paraId, reg.char(base), inlineMapper(reg, base))
   }
@@ -454,6 +459,15 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   }
 }
 
+/** 노드 텍스트·GFM 표 셀에 문자 다듬기 — HTML 표 원문(태그 속성 따옴표)은 건드리지 않는다 */
+function polishNode(n: OutlineNode): OutlineNode {
+  if (n.kind === "block") {
+    const b = n.block
+    return b.type === "table" && b.rows ? { ...n, block: { ...b, rows: b.rows.map((r) => r.map(polishGongmunText)) } } : n
+  }
+  return { ...n, text: polishGongmunText(n.text) }
+}
+
 function legalDepthOf(marker: string): number {
   if (/^\d{1,2}\.$/.test(marker)) return 0
   if (/^[가-힣]\.$/.test(marker)) return 1
@@ -464,4 +478,3 @@ function legalDepthOf(marker: string): number {
   return 6
 }
 
-void A4_W_HU

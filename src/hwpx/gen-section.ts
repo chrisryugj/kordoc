@@ -20,7 +20,7 @@ import {
   GONGMUN_TBL_CHAR, GONGMUN_TBL_CHAR_BOLD, GONGMUN_TBL_PT, GONGMUN_TITLE_BAR_CHAR, GONGMUN_BODY_RATIO,
   GONGMUN_SRC_CHAR, GONGMUN_SRC_CHAR_BOLD, GJ_CHAR_SRC, GJ_CHAR_SRC_BOLD, srcCaptionPt,
   charVariantBase, pageNumCtrl, newPageNumCtrl, pageHidingCtrl,
-  escapeXml, headingParaPrId, headingCharPrId,
+  escapeXml, escapeTextXml, headingParaPrId, headingCharPrId,
   type ResolvedTheme,
 } from "./gen-ids.js"
 import { type MdBlock, generateParagraph, generateRuns } from "./md-runs.js"
@@ -246,6 +246,24 @@ function buildPreamble(blocks: MdBlock[], ctx: SectionCtx): void {
 
 // ─── 블록 타입별 렌더 핸들러 ─────────────────────────
 
+/**
+ * 부호 문단 — 부호 run(부호 + 탭) + 내용 run. 공문서 항목 paraPr 는 내어쓰기용 자동 탭(tabPr 1)이라 탭이
+ * 내어쓰기 위치에 서서 첫 줄 내용이 둘째 줄과 같은 x 에서 시작한다(v5 와 같은 방식 — 부호 폭 추정과 무관).
+ * 탭 폭 속성은 한컴이 조판 때 다시 잰다(값은 반각 근사).
+ */
+function markedParagraph(marker: string, content: string, paraPrId: number, charPrId: number, halfEm: number, mapCharId?: (id: number) => number, styleId = 0): string {
+  const cid = mapCharId ? mapCharId(charPrId) : charPrId
+  const run = `<hp:run charPrIDRef="${cid}"><hp:t>${escapeTextXml(marker)}<hp:tab width="${Math.round(halfEm)}" leader="0" type="1"/></hp:t></hp:run>`
+  return `<hp:p paraPrIDRef="${paraPrId}" styleIDRef="${styleId}">${run}${generateRuns(content, charPrId, mapCharId)}</hp:p>`
+}
+
+/** "※ 내용"·"* 내용" → [부호, 내용]. "**강조**" 의 별표는 부호가 아니다(뒤가 공백일 때만) */
+function refParagraph(text: string, ctx: SectionCtx): string {
+  const m = /^(※|\*(?=\s))\s*/.exec(text)
+  const [mk, rest] = m ? [m[1], text.slice(m[0].length)] : ["※", text]
+  return markedParagraph(mk, rest, GJ_PARA_CHAM, GJ_CHAR_CHAM, ctx.gongmun!.bodyHeight / 2, ctx.chamMap)
+}
+
 function renderHeading(block: MdBlock, blockIdx: number, ctx: SectionCtx): string {
   const { gongmun, dfIds, tableStyle, bfReg, measured, richAssets, gjBodyW } = ctx
   if (gongmun && blockIdx === ctx.coverH1Idx) return "" // 표지가 소비한 h1
@@ -276,25 +294,27 @@ function renderHeading(block: MdBlock, blockIdx: number, ctx: SectionCtx): strin
       return buildGaejosikChapter(ctx.chapterNo, stripChapterNumber(block.text || ""), gongmun!, gjBodyW, lvl)
     } else if (lvl === 3) {
       // h3 → □ 대항목 (HY헤드라인M 16pt)
-      return generateParagraph(`□ ${block.text || ""}`, GONGMUN_LIST_BASE, GJ_CHAR_DAE,
+      return markedParagraph("□", block.text || "", GONGMUN_LIST_BASE, GJ_CHAR_DAE, gongmun!.bodyHeight / 2,
         (id) => (id === CHAR_BOLD ? GJ_CHAR_DAE_BOLD : id))
     }
     // h4~h6 → ○/ㅇ 중항목 (bullet2)
-    return generateParagraph(`${gongmun!.bullet2} ${block.text || ""}`, GONGMUN_LIST_BASE + 1, CHAR_NORMAL)
+    return markedParagraph(gongmun!.bullet2, block.text || "", GONGMUN_LIST_BASE + 1, CHAR_NORMAL, gongmun!.bodyHeight / 2)
   }
   const pId = headingParaPrId(block.level || 1)
   const cId = headingCharPrId(block.level || 1)
   // 공문서 모드: OUTLINE 대신 명명 스타일("개요 N")로 헤딩 의미 보존 —
   // 한글이 개요 번호("1.")를 강제 렌더하는 결함 회피 + 재파싱 헤딩 감지 유지
   const styleId = gongmun ? Math.min(block.level || 1, 4) : 0
-  let hText = block.text || ""
   if (gongmun && (block.level || 1) === 2 && gongmun.h2Marker !== "none") {
     // h2 섹션 제목 말머리 (QA-2) — OUTLINE 번호 제거의 대체. 실측: □ 대항목(보고서
     // 양식 3종) 기본 / 아라비아 번호(공고문 관행) 옵션. 선행 번호는 제거 후 재부여
-    const title = stripChapterNumber(hText)
-    hText = gongmun.h2Marker === "box" ? `□ ${title}` : `${++ctx.h2Seq}. ${title}`
+    const title = stripChapterNumber(block.text || "")
+    const mk = gongmun.h2Marker === "box" ? "□" : `${++ctx.h2Seq}.`
+    // 두 자리 번호("10.")는 내어쓰기("1." 폭 기준)보다 넓어 탭이 다음 기본 탭(40pt)까지 튄다 — 공백으로 잇는다
+    if (mk.length > 2) return generateParagraph(`${mk} ${title}`, pId, cId, undefined, styleId)
+    return markedParagraph(mk, title, pId, cId, gongmun.bodyHeight / 2, undefined, styleId)
   }
-  return generateParagraph(hText, pId, cId, undefined, styleId)
+  return generateParagraph(block.text || "", pId, cId, undefined, styleId)
 }
 
 function renderParagraph(block: MdBlock, blockIdx: number, ctx: SectionCtx): string {
@@ -317,7 +337,7 @@ function renderParagraph(block: MdBlock, blockIdx: number, ctx: SectionCtx): str
   // (한양중고딕 13pt — 실측 t1·t3·실결재 다수가 참고를 *로 표기, v4.1.0 GAP-15)
   const pTrim = (block.text || "").trimStart()
   if (measured && (pTrim.startsWith("※") || /^\*\s/.test(pTrim))) {
-    return generateParagraph((block.text || "").trim(), GJ_PARA_CHAM, GJ_CHAR_CHAM, ctx.chamMap)
+    return refParagraph((block.text || "").trim(), ctx)
   }
   // 공문서 모드: <center>…</center> → 가운데 정렬 (행정기관명·발신명의)
   const ctr = gongmun && /^<center>([\s\S]*)<\/center>$/i.exec((block.text || "").trim())
@@ -368,7 +388,7 @@ function renderBlockquote(block: MdBlock, ctx: SectionCtx): string {
   // (공백 결합 — 줄마다 ※가 붙는 쪼개짐 방지), 기본 경로는 줄별 문단(종전 시각 유지)
   if (ctx.measured) {
     const t = (block.text || "").replace(/\n+/g, " ").trim()
-    return t ? generateParagraph(t.startsWith("※") ? t : `※ ${t}`, GJ_PARA_CHAM, GJ_CHAR_CHAM, ctx.chamMap) : ""
+    return t ? refParagraph(t, ctx) : ""
   }
   // baseline 호환: quoteColor 옵션 없으면 기존처럼 CHAR_NORMAL (이탤릭 아님)
   const quoteChar = ctx.theme.hasQuoteOption ? CHAR_QUOTE : CHAR_NORMAL
@@ -389,15 +409,14 @@ function renderListItem(block: MdBlock, blockIdx: number, ctx: SectionCtx): stri
     // 실결재·부처별 양식(t1·t3)에서 참고를 '*'로 표기하는 관행이 ※보다 많음.
     // 공문서 모드에서 '* 항목'은 □ 리스트가 아니라 참고 문단으로 해석)
     if (measured && content.trimStart().startsWith("※")) {
-      return generateParagraph(content.trim(), GJ_PARA_CHAM, GJ_CHAR_CHAM, ctx.chamMap)
+      return refParagraph(content.trim(), ctx)
     }
     if (measured && block.marker === "*") {
-      return generateParagraph(`* ${content.trim()}`, GJ_PARA_CHAM, GJ_CHAR_CHAM, ctx.chamMap)
+      return refParagraph(`* ${content.trim()}`, ctx)
     }
-    // 부호 + 1타(공백 1개) + 내용 (부호 없으면 내용만).
+    // 부호 + 탭(내어쓰기용 자동 탭) + 내용 (부호 없으면 내용만).
     // 부호 생략 항목은 내어쓰기 없는 전용 paraPr — depth 공용을 쓰면 유령
     // 내어쓰기로 둘째 줄이 첫 줄보다 더 들어간다 (v4.0.2 실렌더 QA)
-    const text = marker ? `${marker} ${content}` : content
     // 두 자리 부호('10.')는 자기 부호폭 내어쓰기 전용 paraPr (v4.0.5 P1-1)
     const listParaPr = marker
       ? (info?.indentVariant !== undefined ? GONGMUN_LIST_VARIANT_BASE + info.indentVariant : GONGMUN_LIST_BASE + depth)
@@ -423,7 +442,9 @@ function renderListItem(block: MdBlock, blockIdx: number, ctx: SectionCtx): stri
       listCharPr = lv.normal
       mapId = (id) => (id === CHAR_BOLD ? lv.bold : id === CHAR_NORMAL ? lv.normal : id)
     }
-    return generateParagraph(text, listParaPr, listCharPr, mapId)
+    return marker
+      ? markedParagraph(marker, content, listParaPr, listCharPr, gongmun.bodyHeight / 2, mapId)
+      : generateParagraph(content, listParaPr, listCharPr, mapId)
   }
   const indent = block.indent || 0
   let marker: string

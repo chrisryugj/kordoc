@@ -8,6 +8,7 @@ import {
 } from "../src/hwpx/equation-generate.js"
 import { hmlToLatex } from "../src/hwpx/equation.js"
 import { parseMarkdownToBlocks } from "../src/hwpx/md-runs.js"
+import { flatSec } from "./gen-xml.js"
 
 const compact = (value: string) => value.replace(/\s+/g, " ").trim()
 const noSpace = (value: string) => value.replace(/\s+/g, "")
@@ -243,7 +244,7 @@ describe("markdownToHwpx equation generation", () => {
   it("display math block을 section0.xml의 native equation으로 렌더링한다", async () => {
     const buf = await markdownToHwpx("피타고라스\n\n$$\na^2 + b^2 = c^2\n$$")
     const zip = await JSZip.loadAsync(buf)
-    const section = await zip.file("Contents/section0.xml")!.async("text")
+    const section = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
 
     assert.ok(section.includes("<hp:equation"), "equation 요소 생성")
     assert.ok(section.includes("<hp:script>a ^{2} + b ^{2} = c ^{2}</hp:script>"), "script 생성")
@@ -253,14 +254,14 @@ describe("markdownToHwpx equation generation", () => {
   it("수식 문단은 다른 생성 문단과 같은 최소 셸 — lineseg/고정 id 없음", async () => {
     const buf = await markdownToHwpx("$$a+b$$")
     const zip = await JSZip.loadAsync(buf)
-    const section = await zip.file("Contents/section0.xml")!.async("text")
+    const section = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.ok(!section.includes("<hp:linesegarray"), "lineseg는 한컴 재계산에 맡긴다")
   })
 
   it("수식이 첫 블록이면 secPr 전용 더미 문단 뒤에 equation 문단을 둔다", async () => {
     const buf = await markdownToHwpx("$$\\frac{a}{b}$$")
     const zip = await JSZip.loadAsync(buf)
-    const section = await zip.file("Contents/section0.xml")!.async("text")
+    const section = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     const secPrIdx = section.indexOf("<hp:secPr")
     const equationIdx = section.indexOf("<hp:equation")
 
@@ -286,7 +287,7 @@ describe("markdownToHwpx equation generation", () => {
   it("여러 수식 block은 서로 다른 equation id를 가진다", async () => {
     const buf = await markdownToHwpx("$$x$$\n\n본문\n\n$$y$$")
     const zip = await JSZip.loadAsync(buf)
-    const section = await zip.file("Contents/section0.xml")!.async("text")
+    const section = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     const ids = [...section.matchAll(/<hp:equation id="(\d+)"/g)].map(m => m[1])
 
     assert.deepEqual(ids, ["2000000001", "2000000003"])
@@ -296,7 +297,7 @@ describe("markdownToHwpx equation generation", () => {
     const md = "1. 첫째 항목\n\n$$a+b$$\n\n2. 둘째 항목\n\n3. 셋째 항목"
     const buf = await markdownToHwpx(md, { gongmun: { preset: "기안문" } })
     const zip = await JSZip.loadAsync(buf)
-    const section = await zip.file("Contents/section0.xml")!.async("text")
+    const section = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
 
     assert.ok(section.includes("1. 첫째 항목"), "1번 유지 (단일형제 생략 미발동)")
     assert.ok(section.includes("2. 둘째 항목"), "수식 뒤 번호 연속")

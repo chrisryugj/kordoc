@@ -11,6 +11,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { markdownToHwpx, parse } from "../src/index.js"
+import { flatSec } from "./gen-xml.js"
 
 async function roundtrip(md: string, opts?: Parameters<typeof markdownToHwpx>[1]): Promise<string> {
   const buf = await markdownToHwpx(md, opts)

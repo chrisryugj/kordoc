@@ -918,7 +918,8 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           if ((child.getAttribute("type") || "line") === "line") text += "\n"
           break
         case "lineBreak": text += "\n"; break // 강제 줄바꿈 — ref 추출기·소스맵 스캐너와 동일 모델
-        case "fwSpace": case "hwSpace": text += " "; break
+        // 고정폭·묶음 빈칸 — 묶음 빈칸(nbSpace)을 빠뜨리면 "2026.<nbSpace/>9." 가 "2026.9." 로 붙는다
+        case "fwSpace": case "hwSpace": case "nbSpace": text += " "; break
         // 테이블 자체는 walkSection에서 처리 — 글자취급(inline) 표만 경계 마커를 남겨
         // 표 앞뒤 텍스트를 문서 순서대로 분할 방출할 수 있게 한다 (#49/#50).
         // float·페이지 앵커 표는 텍스트 흐름 불참(reflow 모델 정합) — 종전대로 텍스트 뒤 방출
@@ -1119,7 +1120,13 @@ function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, requireMix
         for (let k = 0; k < (tkids?.length ?? 0); k++) {
           const tk = tkids![k]
           if (tk.nodeType === 3 || tk.nodeType === 4) text += tk.textContent || ""
-          else if (tk.nodeType === 1) return null // tab/br 등 — 평문 경로
+          else if (tk.nodeType === 1) {
+            // 탭·빈칸 컨트롤은 공백(평문 경로와 같은 모델 — 항목부호 뒤 탭 run 이 강조 복원을 막지 않게),
+            // 줄바꿈 등 나머지는 평문 경로
+            const ttag = ((tk as Element).tagName || (tk as Element).localName || "").replace(/^[^:]+:/, "")
+            if (ttag === "tab" || ttag === "fwSpace" || ttag === "hwSpace" || ttag === "nbSpace") text += " "
+            else return null
+          }
         }
       } else if (rtag === "secPr" || rtag === "colPr") {
         // 첫 run이 나르는 섹션 속성 — 텍스트 무관

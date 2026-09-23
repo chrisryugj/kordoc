@@ -5,6 +5,8 @@ import assert from "node:assert/strict"
 import JSZip from "jszip"
 import { markdownToHwpx, parse, validateHwpx } from "../src/index.js"
 import { measureTextWidth, simulateWrap, faceClassForGen } from "../src/hwpx/text-metrics.js"
+import { flatSec } from "./gen-xml.js"
+import { markerLayout } from "../src/hwpx/gen-marker.js"
 import {
   hangulOrdinal,
   circledNumber,
@@ -154,7 +156,7 @@ describe("gongmun 순수 로직", () => {
 
 async function sectionTexts(buf: ArrayBuffer): Promise<string[]> {
   const zip = await JSZip.loadAsync(buf)
-  const sec = await zip.file("Contents/section0.xml")!.async("text")
+  const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
   return [...sec.matchAll(/<hp:t>([^<]*)<\/hp:t>/g)].map((m) => m[1]).filter(Boolean)
 }
 async function headerXml(buf: ArrayBuffer): Promise<string> {
@@ -231,7 +233,7 @@ describe("gongmun 렌더링", () => {
   it("기안문 여백(위20/아래15/좌20/우15) + 머리말·꼬리말 0", async () => {
     const buf = await markdownToHwpx("# 제목\n\n본문", { gongmun: { preset: "official" } })
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     const m = sec.match(/<hp:margin header="(\d+)" footer="(\d+)" gutter="0" left="(\d+)" right="(\d+)" top="(\d+)" bottom="(\d+)"/)!
     assert.ok(m, "secPr margin 존재")
     assert.equal(m[5], "5669") // top 20mm
@@ -247,7 +249,7 @@ describe("gongmun 렌더링", () => {
   it("colPr 방출 — secPr 뒤 같은 run에 단 컬럼 정의", async () => {
     const buf = await markdownToHwpx("본문", { gongmun: { preset: "official" } })
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.match(sec, /<\/hp:secPr><hp:ctrl><hp:colPr[^>]*colCount="1"/)
   })
 
@@ -286,7 +288,7 @@ describe("gongmun 렌더링", () => {
   it("<center> → 가운데정렬 단락", async () => {
     const buf = await markdownToHwpx("<center>광 진 구 청</center>", { gongmun: { preset: "official" } })
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     const head = await zip.file("Contents/header.xml")!.async("text")
     assert.match(prOf(sec, head, "광 진 구 청").para, /horizontal="CENTER"/)
     const texts = await sectionTexts(buf)
@@ -394,11 +396,11 @@ describe("gaejosik 개조식 보고서", () => {
   it("표지·목차 끄기 + 쪽나눔 플래그", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "개조식", cover: false, toc: false } })
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.ok(!sec.includes("목  차"), "목차 없음")
     assert.ok(!sec.includes('pageBreak="1"'), "전면부 없으면 쪽나눔 없음")
     const withAll = await markdownToHwpx(md, { gongmun: { preset: "개조식" } })
-    const sec2 = await (await JSZip.loadAsync(withAll)).file("Contents/section0.xml")!.async("text")
+    const sec2 = await (await JSZip.loadAsync(withAll)).file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.ok((sec2.match(/pageBreak="1"/g) || []).length >= 2, "표지→목차→본문 쪽나눔 2회")
   })
 
@@ -406,7 +408,7 @@ describe("gaejosik 개조식 보고서", () => {
     const buf = await markdownToHwpx(md, {
       gongmun: { preset: "report", cover: { date: "2026. 7. 11.", org: "테스트기관", dept: "스마트도시과" }, approval: ["주무관", "팀장", "과장"], docInfo: { docNum: "스마트도시과-1" } },
     })
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.ok(!sec.includes("목  차"), "v5 보고서는 목차 없음")
     assert.ok(/테\s+스\s+트\s+기\s+관/.test(sec), "표지 기관명(자간 띄움)")
     assert.ok(sec.includes("(스마트도시과)") && sec.includes("문서번호") && sec.includes("스마트도시과-1"), "부서명·문서정보표")
@@ -441,7 +443,7 @@ describe("gaejosik 개조식 보고서", () => {
   it("표지 수직 배치 — 빈5/제목/빈5/날짜/25pt빈4/기관명 (실측 구조)", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "개조식", cover: { date: "2026. 7. 10.", org: "테스트기관" } } })
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     // 날짜~기관명 사이 빈 문단은 25pt(charPr 18) — 실측 원본과 동일한 간격 체계
     const between = sec.slice(sec.indexOf("2026. 7. 10."), sec.indexOf("테스트기관"))
     const subEmpties = between.match(/charPrIDRef="18"><hp:t><\/hp:t>/g) || []
@@ -452,7 +454,7 @@ describe("gaejosik 개조식 보고서", () => {
     const tblMd = `## 장\n\n| 항목 | 값 |\n|---|---|\n| 기간 | 2026.01.01 ~ 07.09 실사용자 체험 메시지 전수 기준으로 집계한 장문 셀 내용 |\n| 계정 | **975개** |\n`
     const buf = await markdownToHwpx(tblMd, { gongmun: { preset: "개조식", cover: false, toc: false } })
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     const hdr = await headerXml(buf)
     // 셀 전용 charPr 22(맑은 고딕 12pt)·bold 23, 폰트 목록에 맑은 고딕
     assert.match(hdr, /<hh:charPr id="22" height="1200"/)
@@ -478,7 +480,7 @@ describe("gaejosik 개조식 보고서", () => {
     const tblMd = `| 라벨 | 아주 길게 늘어나는 내용 열입니다 반복 반복 반복 반복 |\n|---|---|\n| a | 짧음 |\n`
     const buf = await markdownToHwpx(tblMd)
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.match(sec, /repeatHeader="0"/)
     assert.ok(!sec.includes('borderFillIDRef="9"'), "비공문서엔 음영 bf 없음")
     const widths = [...sec.matchAll(/<hp:cellSz width="(\d+)"/g)].map((m) => +m[1])
@@ -491,7 +493,7 @@ describe("gaejosik 개조식 보고서", () => {
     const sep = `|${"---|".repeat(10)}`
     const row = `| ${long} | ${long} | ${long} | ${long} | ${long} | a | b | c | d | e |`
     const buf = await markdownToHwpx(`## 장\n\n${header}\n${sep}\n${row}\n`, { gongmun: { preset: "개조식", cover: false, toc: false } })
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     const dataTbl = sec.slice(sec.indexOf('repeatHeader="1"'))
     const firstRow = dataTbl.match(/<hp:tr>[\s\S]*?<\/hp:tr>/)![0]
     const widths = [...firstRow.matchAll(/<hp:cellSz width="(-?\d+)"/g)].map((m) => +m[1])
@@ -504,7 +506,7 @@ describe("gaejosik 개조식 보고서", () => {
 
   it("GFM 셀 <br> — 문단 분리로 렌더 (리터럴 노출 금지)", async () => {
     const buf = await markdownToHwpx(`| a | b |\n|---|---|\n| 첫줄<br>둘째줄 | x |\n`)
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.ok(!sec.includes("&lt;br&gt;"), "리터럴 <br> 없음")
     const cell = sec.slice(sec.indexOf("첫줄") - 200, sec.indexOf("둘째줄") + 100)
     assert.ok((cell.match(/<hp:p /g) || []).length >= 2, "<br>이 문단 분리로")
@@ -513,7 +515,7 @@ describe("gaejosik 개조식 보고서", () => {
   it("theme 표헤더 옵션은 공문서 표 스타일에 누수되지 않음", async () => {
     const tblMd = `## 장\n\n| 항목 | 값 |\n|---|---|\n| a | b |\n`
     const buf = await markdownToHwpx(tblMd, { theme: { tableHeaderBold: true }, gongmun: { preset: "개조식", cover: false, toc: false } })
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     const dataTbl = sec.slice(sec.indexOf('repeatHeader="1"'))
     assert.ok(!dataTbl.includes('charPrIDRef="9"'), "공문서 표엔 CHAR_TABLE_HEADER(9) 미사용")
     assert.ok(dataTbl.includes('charPrIDRef="22"'), "표 전용 charPr 22 사용")
@@ -522,7 +524,7 @@ describe("gaejosik 개조식 보고서", () => {
   it("표지 장식 바 셀 — 전용 소형 charPr(6pt)·저줄간격으로 바 높이 유지", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "개조식", cover: { date: "2026. 7. 10." } } })
     const zip = await JSZip.loadAsync(buf)
-    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    const sec = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     const hdr = await headerXml(buf)
     assert.match(hdr, /<hh:charPr id="24" height="600"/)
     const coverTbl = sec.slice(sec.indexOf("<hp:tbl"), sec.indexOf("</hp:tbl>"))
@@ -539,11 +541,11 @@ describe("gaejosik 개조식 보고서", () => {
   it("긴 표지 제목 — 30pt로 2줄 초과 시 25pt 자동 축소", async () => {
     const longTitle = "3단계 Chat Log 분석 — Waka Shorts 2026 사용자 니즈 종합 정리 (8,522건)"
     const buf = await markdownToHwpx(`# ${longTitle}\n\n## 장\n\n내용`, { gongmun: { preset: "개조식" } })
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     const titleRun = sec.slice(0, sec.indexOf(escapeStub(longTitle)) + 10).lastIndexOf('charPrIDRef="18"')
     assert.ok(titleRun >= 0, "긴 제목은 charPr 18(25pt)")
     const short = await markdownToHwpx(`# 짧은 제목\n\n## 장\n\n내용`, { gongmun: { preset: "개조식" } })
-    const sec2 = await (await JSZip.loadAsync(short)).file("Contents/section0.xml")!.async("text")
+    const sec2 = await (await JSZip.loadAsync(short)).file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.ok(sec2.slice(0, sec2.indexOf("짧은 제목")).includes('charPrIDRef="17"'), "짧은 제목은 30pt 유지")
   })
 
@@ -577,20 +579,23 @@ describe("어절 줄나눔 저장값 — breakNonLatinWord 이름 역전 매핑"
       assert.ok(!hdr.includes('breakLatinWord="BREAK_WORD"'), "라틴이 글자 단위로 방출됨")
     }
   })
-  // v5 본문은 글자 단위(KEEP_WORD)+양쪽정렬 — 서울 실결재 개조식 `-` 문단 76%(다줄 88%)·법정형 97%.
-  // 라운드 1의 어절유지+양쪽정렬(실측 1.2%)은 긴 어절이 통째로 다음 줄로 밀려 앞 줄 어절 간격이 벌어졌다
-  // (2026-09-06 실렌더, 유저 결정으로 전환). 라틴·숫자는 breakLatinWord=KEEP_WORD 로 계속 단어 유지.
-  it("v5(기안문·보고서) 본문 항목·서술 문단은 글자 단위(KEEP_WORD)+양쪽정렬, 라틴 단어 유지", async () => {
+  // v5 본문은 어절 단위(BREAK_WORD — 이름 역전)+양쪽정렬+외톨이줄 보호 — 글자 단위(라운드 2)는 "동대/문"·"실/국"처럼
+  // 낱말을 쪼갰다(2026-09-23 유저 지시). 긴 어절이 넘어가 앞 줄이 벌어지는 것은 fitParagraph 가 자간으로 완화.
+  // 항목 문단은 부호 뒤 탭 + 내어쓰기용 자동 탭(tabPr 1) — 첫 줄 내용이 둘째 줄과 같은 x.
+  it("v5(기안문·보고서) 본문 항목·서술 문단은 어절 단위(BREAK_WORD)+양쪽정렬, 라틴 단어 유지", async () => {
     const md = "# 제목\n\n본문 문단입니다.\n\n- 항목 하나"
     for (const [preset, marker] of [["official", "1. 항목 하나"], ["report", "□ 항목 하나"]] as const) {
       const buf = await markdownToHwpx(md, { gongmun: { preset } })
-      const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text"), hdr = await headerXml(buf)
+      const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec), hdr = await headerXml(buf)
       for (const text of [marker, "본문 문단입니다."]) {
         const { para } = prOf(sec, hdr, text)
-        assert.ok(para.includes('breakNonLatinWord="KEEP_WORD"'), `${preset} ${text}: 글자 단위 아님`)
+        assert.ok(para.includes('breakNonLatinWord="BREAK_WORD"'), `${preset} ${text}: 어절 단위 아님`)
         assert.ok(para.includes('breakLatinWord="KEEP_WORD"'), `${preset} ${text}: 라틴 단어 유지 없음`)
         assert.ok(para.includes('horizontal="JUSTIFY"'), `${preset} ${text}: 양쪽정렬 아님`)
+        assert.ok(para.includes('widowOrphan="1"'), `${preset} ${text}: 외톨이줄 보호 없음`)
       }
+      assert.ok(prOf(sec, hdr, marker).para.includes('tabPrIDRef="1"'), `${preset}: 항목 문단은 내어쓰기용 자동 탭`)
+      assert.match(hdr, /<hh:tabPr id="1" autoTabLeft="1" autoTabRight="0"\/>/)
     }
   })
 })
@@ -598,7 +603,7 @@ describe("어절 줄나눔 저장값 — breakNonLatinWord 이름 역전 매핑"
 describe("공문서 v4 구조 요소 — 쪽번호·제목박스·배너·결재란·끝표시", () => {
   const md = "# 보고서 제목\n\n## 첫 장\n\n- 항목 하나\n\n## 둘째 장\n\n- 항목 둘"
   const sectionOf = async (buf: ArrayBuffer) =>
-    await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
 
   it("쪽번호 — 개조식 하단 중앙 + 본문 newNum 1 리셋 (실측 GT3)", async () => {
     const buf = await markdownToHwpx(md, { gongmun: { preset: "개조식", cover: { org: "기관" } } })
@@ -732,7 +737,7 @@ describe("v4.0.1 실측 폰트 프리셋 (QA-1)", () => {
   it("보고서 프리셋 — 서울 실측 세트: □ HY견고딕 17b·ㅇ 한컴돋움 15b·- 휴먼명조 14·※ 한컴돋움 14 (v5)", async () => {
     const buf = await markdownToHwpx("# 제목\n\n- 대항목\n  - 중항목\n    - 소항목\n\n※ 자료: 행안부", { gongmun: { preset: "보고서" } })
     const head = await headerXml(buf)
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     for (const f of ["HY견고딕", "한컴돋움", "휴먼명조", "HY헤드라인M"]) assert.ok(head.includes(`face="${f}"`), `폰트 세트에 ${f}`)
     const expect = (text: string, face: string, h: number, bold: boolean) => {
       const { char } = prOf(sec, head, text)
@@ -756,11 +761,12 @@ describe("v4.0.1 실측 폰트 프리셋 (QA-1)", () => {
   it("보고서 들여쓰기 — □ 0타·ㅇ 1타·- 3타, 내어쓰기 = 부호폭+1타 (v5)", async () => {
     const buf = await markdownToHwpx("- 대항목\n  - 중항목\n    - 소항목", { gongmun: { preset: "보고서" } })
     const head = await headerXml(buf)
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     const geom = (t: string) => { const p = prOf(sec, head, t).para; return { left: Number(p.match(/<hc:left value="(-?\d+)"/)![1]), indent: Number(p.match(/<hc:intent value="(-?\d+)"/)![1]) } }
-    assert.deepEqual(geom("□ 대항목"), { left: 0, indent: -markerWidth("□", 1700) })
-    assert.deepEqual(geom("ㅇ 중항목"), { left: 750, indent: -markerWidth("ㅇ", 1500) })
-    assert.deepEqual(geom("- 소항목"), { left: 2100, indent: -markerWidth("-", 1400) })
+    // 내어쓰기 = 그 단계 글꼴의 부호 실폭 + 1타(부호 뒤 탭이 이 위치에 선다)
+    assert.deepEqual(geom("□ 대항목"), { left: 0, indent: -markerLayout("HY견고딕", 17, 0, "□").hang })
+    assert.deepEqual(geom("ㅇ 중항목"), { left: 750, indent: -markerLayout("한컴돋움", 15, 0, "ㅇ").hang })
+    assert.deepEqual(geom("- 소항목"), { left: 2100, indent: -markerLayout("휴먼명조", 14, 0, "-").hang })
   })
 })
 
@@ -773,7 +779,7 @@ describe("v4.0.1 h2 말머리 (QA-2)", () => {
       const texts = await sectionTexts(buf)
       assert.ok(texts.includes("Ⅰ") && texts.includes("개요"), `${preset} 띠 표 번호칸·제목칸: ${texts}`)
       assert.ok(texts.includes("Ⅱ") && texts.includes("추진 성과"), `${preset} 선행 번호 제거 후 Ⅱ`)
-      const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+      const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
       assert.ok(sec.includes('name="__kordoc_h2"'), "왕복 채널 셀 이름")
       assert.ok(/faceColor="#003366"/.test(await headerXml(buf)), "번호칸 채움 #003366")
       // 왕복 — 파서가 띠 표를 heading 2 로 복원 (표로 남지 않는다)
@@ -821,7 +827,7 @@ describe("v4.0.2 프로덕션 리뷰 회귀", () => {
   it("통지 bodyFont gothic — 본문 문단이 맑은 고딕을 참조한다 (v5)", async () => {
     const buf = await markdownToHwpx("본문", { gongmun: { preset: "notice", bodyFont: "gothic" } })
     const head = await headerXml(buf)
-    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+    const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
     const id = fontIdOf(head, "맑은 고딕")
     assert.ok(id, "맑은 고딕 글꼴 등록")
     assert.ok(prOf(sec, head, "본문").char.includes(`hangul="${id}"`), "본문 charPr가 맑은 고딕 참조")
@@ -849,7 +855,7 @@ describe("v4.0.2 프로덕션 리뷰 회귀", () => {
     const buf = await markdownToHwpx("본문", { gongmun: { preset: "official", approval: ["담당", "팀장"] } })
     const head = await headerXml(buf)
     const zip = await JSZip.loadAsync(buf)
-    const secXml = await zip.file("Contents/section0.xml")!.async("text")
+    const secXml = await zip.file("Contents/section0.xml")!.async("text").then(flatSec)
     assert.match(prOf(secXml, head, "담당").para, /<hh:lineSpacing[^>]*value="100"/, "라벨 줄간격 100% (실측 결재선)")
     const validation = await validateHwpx(buf)
     assert.equal(validation.ok, true, validation.issues.map((i) => i.message).join("\n"))
@@ -857,7 +863,7 @@ describe("v4.0.2 프로덕션 리뷰 회귀", () => {
 })
 
 describe("v5 실무 요청 (2026-09-06)", () => {
-  const secOf = async (buf: ArrayBuffer) => (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text")
+  const secOf = async (buf: ArrayBuffer) => (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
 
   it("출처·자료·근거 항목 → ※ 참고 13pt (당구장표시, 작은 글씨)", async () => {
     const buf = await markdownToHwpx("- 대항목\n  - 2023년 45.4%\n  - 출처: KOSIS e-지방지표\n\n자료: 행안부", { gongmun: { preset: "보고서" } })
@@ -877,24 +883,26 @@ describe("v5 실무 요청 (2026-09-06)", () => {
     assert.ok(ts.includes("※ 출처: KOSIS e-지방지표 「1인가구비율(시도/시/군/구)」") && ts.includes("□ 건축HUB 화양동 표제부 집계"), `${ts}`)
   })
 
-  it("고아 줄 — 한 줄 근접(가용폭 90~108%) 항목은 자간·장평을 줄여 한 줄에, 긴 문단은 그대로", async () => {
-    // 15pt 한컴돋움 ㅇ 항목(left 750) — 추정폭이 가용폭의 ~100% 되도록 어절을 더한다 (실렌더는 추정보다 2~4% 넓어 꼬리가 넘침)
-    const W = mmToHwpunit(210 - 18 - 18), first = W - 750
+  it("고아 줄 — 마지막 줄이 짧은(≤22%) 항목은 자간·장평을 줄여 한 줄 줄이고, 둘째 줄이 넉넉하면 그대로", async () => {
+    // 15pt 한컴돋움 ㅇ 항목(left 750, 부호 뒤 탭) — 내용 폭 = 본문폭 − left − 내어쓰기. 실측 폭표로 어절 줄바꿈을 재현해
+    // 둘째 줄에 짧은 꼬리 한 어절만 남는 길이를 만든다
+    const W = mmToHwpunit(210 - 18 - 18), textW = W - 750 - markerLayout("한컴돋움", 15, 0, "ㅇ").hang
     const fc = faceClassForGen("한컴돋움")
-    let long = "2023년 45.4% → 2024년 46.0% → 2025년 46.9% 서울 40.5% 전국 43.1%"
-    for (let i = 0; i < 40 && measureTextWidth(`ㅇ ${long}`, 1500, 100, { faceClass: fc }) < first * 0.98; i++) long += i % 2 ? " 증가" : " 추세"
+    const wrap = (t: string) => simulateWrap(t, textW * 0.995, textW * 0.995, 1500, 100, "keep", { faceClass: fc })
+    let long = "2023년 45.4% → 2024년 46.0% → 2025년 46.9%"
+    for (let i = 0; i < 60 && !(wrap(long).lines === 2 && wrap(long).lastLineWidth < textW * 0.12); i++) long += i % 2 ? " 증가" : " 추세"
+    assert.equal(wrap(long).lines, 2, "짧은 꼬리 문단 구성")
     const buf = await markdownToHwpx(`- 대항목\n  - ${long}`, { gongmun: { preset: "보고서" } })
     const sec = await secOf(buf); const head = await headerXml(buf)
     const { char } = prOf(sec, head, `ㅇ ${long.slice(0, 10)}`)
     const sp = Number(char.match(/<hh:spacing hangul="(-?\d+)"/)![1])
     const ratio = Number(char.match(/<hh:ratio hangul="(\d+)"/)![1])
     assert.ok(sp < 0 || ratio < 100, `자간/장평 축소 적용: spacing=${sp} ratio=${ratio}`)
-    // 둘째 줄이 길면(40~85%) 손대지 않는다 — 어절 시뮬레이션으로 그런 길이를 만든다
-    const cont = first - markerWidth("ㅇ", 1500)
+    // 둘째 줄이 길면(40~85%) 손대지 않는다
     let longer = long
     for (let i = 0; i < 60; i++) {
-      const w = simulateWrap(`ㅇ ${longer}`, first * 0.95, cont * 0.95, 1500, 100, "keep", { faceClass: fc })
-      if (w.lines === 2 && w.lastLineWidth > cont * 0.4 && w.lastLineWidth < cont * 0.85) break
+      const w = wrap(longer)
+      if (w.lines === 2 && w.lastLineWidth > textW * 0.4 && w.lastLineWidth < textW * 0.85) break
       longer += i % 2 ? " 세부내역" : " 참조"
     }
     const buf2 = await markdownToHwpx(`- 대항목\n  - ${longer}`, { gongmun: { preset: "보고서" } })
@@ -911,10 +919,10 @@ describe("v5 실무 요청 (2026-09-06)", () => {
     assert.ok(at > 0, "요약박스")
     const cell = sec.slice(at, sec.indexOf("</hp:tc>", at))
     assert.ok(cell.includes("<hp:t>안부확인 서비스 확대 방향을 검토하고자 함</hp:t>"), "선두 ㅇ 제거·선두 공백 없음(문단 여백으로 대체)")
-    // 실측(요약박스 133건): 문단 좌우 여백 1000/1000 55% — 글자가 테두리에 붙지 않게. 줄바꿈은 본문과 같은 글자 단위
+    // 실측(요약박스 133건): 문단 좌우 여백 1000/1000 55% — 글자가 테두리에 붙지 않게. 줄바꿈은 본문과 같은 어절 단위
     const { para } = prOf(sec, await headerXml(buf), "안부확인 서비스 확대 방향을 검토하고자 함")
     assert.ok(para.includes('<hc:left value="1000"') && para.includes('<hc:right value="1000"'), "요약박스 문단 좌우 여백 1000")
-    assert.ok(para.includes('breakNonLatinWord="KEEP_WORD"'), "요약박스 글자 단위 줄바꿈")
+    assert.ok(para.includes('breakNonLatinWord="BREAK_WORD"'), "요약박스 어절 단위 줄바꿈")
     assert.ok(!warnings.some((w) => w.includes("요약박스")))
     const w3: string[] = []
     await markdownToHwpx(`# 검토보고\n\n> ${"매우 긴 문장을 반복해서 넣어 세 줄을 넘기게 한다 ".repeat(8)}\n\n- 항목`, { gongmun: { preset: "보고서" }, warnings: w3 })
@@ -928,7 +936,7 @@ describe("v5 실무 요청 (2026-09-06)", () => {
 describe("v4.0.4 프로덕션 리뷰 회귀", () => {
   const sectionXml = async (buf: ArrayBuffer): Promise<string> => {
     const zip = await JSZip.loadAsync(buf)
-    return zip.file("Contents/section0.xml")!.async("text")
+    return zip.file("Contents/section0.xml")!.async("text").then(flatSec)
   }
 
   it("참고(※) 항목이 법정번호(standard) 순번을 먹지 않는다 — 번호 증발 방지", async () => {

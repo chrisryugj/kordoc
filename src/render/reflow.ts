@@ -18,8 +18,8 @@
  * (seoul 코퍼스 자기일관성 59/59 — 36264961 전 문단 d=0 실측).
  */
 
-import { buildPara, measureTableHeight } from "./svg-render.js"
-import { simulateWrap, faceClassOf, type WrapMode } from "../hwpx/text-metrics.js"
+import { buildPara, measureTableHeight, tabAdvance } from "./para-model.js"
+import { simulateWrap, measureTextWidth, faceClassOf, type WrapMode } from "../hwpx/text-metrics.js"
 import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
 import { toInt32 } from "./layout.js"
@@ -87,18 +87,33 @@ function reflowPara(
   const m = buildPara(p)
   if (m.segs.length > 0) return null // 이미 캐시 있음 — Tier-1 무회귀
 
-  // 실텍스트 + UTF-16 유닛 → chars 슬롯 인덱스 매핑 (서로게이트 쌍은 슬롯 1개, 유닛 2개)
+  const geom = styles.paraGeom.get(m.paraPrId ?? "") ?? DEFAULT_PARA_GEOM
+  // 실텍스트 + UTF-16 유닛 → chars 슬롯 인덱스 매핑 (서로게이트 쌍은 슬롯 1개, 유닛 2개).
+  // 폭은 글자마다 제 charPr(글꼴·크기·장평·자간)로 — 부호 run 과 압축된 내용 run 이 섞인 문단도 한컴과 같게.
+  // 탭은 "\t" 한 글자로 넣고 폭 = 탭 전진폭(첫 줄 기준 — 항목부호 뒤 내어쓰기용 자동 탭).
+  // 묶음 빈칸은 U+00A0 — 공백 폭이지만 줄을 끊지 않는다("2026. 9. 23."·"3억 원")
   const realIdx: number[] = []
+  const widths: number[] = []
   let text = ""
+  let x = Math.max(geom.marginIntent, 0) // 탭 정지점은 왼쪽 여백 기준 — 첫 줄 들여쓰기만큼 들어가서 시작
   for (let i = 0; i < m.chars.length; i++) {
-    const ch = m.chars[i].ch
-    if (ch === "") continue
-    for (let u = 0; u < ch.length; u++) realIdx.push(i)
-    text += ch
+    const c = m.chars[i]
+    if (c.tab) {
+      const adv = tabAdvance(x, true, geom, c.tabW)
+      realIdx.push(i); widths.push(adv); text += "\t"; x += adv
+      continue
+    }
+    if (c.ch === "") continue
+    const st = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
+    // 폭 테이블: 고정폭 글꼴(굴림체류)은 전용 클래스 — 함초롬 테이블(한글 0.97em)로 재면 줄당 1~2자
+    // 과대적재로 wrap 이 어긋난다 (seoul 코퍼스 3건 실측)
+    const w = measureTextWidth(c.ch, st.height, st.ratio, { spacingPct: st.spacing, faceClass: faceClassOf(st.face) })
+    for (let u = 0; u < c.ch.length; u++) { realIdx.push(i); widths.push(u === 0 ? w : 0) }
+    text += c.nb ? "\u00a0" : c.ch
+    x += w
   }
 
-  const geom = styles.paraGeom.get(m.paraPrId ?? "") ?? DEFAULT_PARA_GEOM
-  // 문단 지배 charPr — 첫 실문자 우선(height/장평/자간)
+  // 문단 지배 charPr — 첫 실문자 우선(줄 높이·기준선. 가로 폭은 위 widths 가 글자별로 잰다)
   let domChar = DEFAULT_CHAR
   for (const c of m.chars) {
     if (c.ch !== "" && c.prId != null) {
@@ -117,8 +132,6 @@ function reflowPara(
     }
   }
   const height = domChar.height || 1000
-  const ratio = domChar.ratio || 100
-  const spacingPct = domChar.spacing || 0
 
   const marginL = geom.marginLeft
   const avail = Math.max(1000, areaW - marginL - geom.marginRight)
@@ -129,12 +142,9 @@ function reflowPara(
 
   // 문단 paraPr의 breakSetting이 있으면 그 선언(어절/글자)을 따르고, 없으면 호출자 모드
   const paraMode = geom.wrapMode ?? mode
-  // 폭 테이블: 지배 charPr 글꼴이 고정폭(굴림체류)이면 전용 클래스 — 함초롬 테이블(한글
-  // 0.97em)로 재면 줄당 1~2자 과대적재로 wrap이 어긋난다 (seoul 코퍼스 3건 실측)
-  const faceClass = faceClassOf(domChar.face)
   const wrap = text.length === 0
     ? { lines: 1, starts: [0], lastLineWidth: 0 }
-    : simulateWrap(text, firstWidth, contWidth, height, ratio, paraMode, { spacingPct, faceClass })
+    : simulateWrap(text, firstWidth, contWidth, height, 100, paraMode, { widths })
 
   const pitch = pitchFor(height, geom)
   const baseline = Math.round(height * BASELINE_RATIO)

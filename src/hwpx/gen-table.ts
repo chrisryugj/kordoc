@@ -12,7 +12,7 @@
 import { parseHtmlTable, htmlCellInnerToLines, splitCellByTopLevelTables, type HtmlRowInfo } from "../roundtrip/markdown-units.js"
 import { MAX_COLS, MAX_ROWS } from "../table/builder.js"
 import { clampSpan } from "./parser-shared.js"
-import { CHAR_NORMAL, CHAR_BOLD, CHAR_TABLE_HEADER, PARA_NORMAL, escapeXml, type ResolvedTheme } from "./gen-ids.js"
+import { CHAR_NORMAL, CHAR_BOLD, CHAR_TABLE_HEADER, PARA_NORMAL, escapeXml, escapeTextXml, type ResolvedTheme } from "./gen-ids.js"
 import { generateRuns } from "./md-runs.js"
 import { measureTextWidth } from "./text-metrics.js"
 import { TableBfRegistry, dataCellSpec } from "./gen-table-bf.js"
@@ -140,7 +140,8 @@ function cellContentWidth(text: string, charHeight: number): number {
 function cellMinWordWidth(text: string, charHeight: number): number {
   let max = 0
   for (const seg of text.replace(/!\[[^\]]*\]\([^)\s]+\)/g, "").replace(/\*\*|__|`/g, "").split(/<br\s*\/?>/i)) {
-    for (const word of seg.trim().split(/\s+/)) {
+    // 일반 공백에서만 끊는다 — 묶음 빈칸(U+00A0, 날짜·금액)은 JS \s 에 걸리지만 한 어절이다
+    for (const word of seg.trim().split(/[ \t]+/)) {
       const w = measureTextWidth(word, charHeight, 100, { faceClass: curFace })
       if (w > max) max = w
     }
@@ -179,7 +180,12 @@ export function colRoles(headers: string[]): ColRole[] {
  *    확정 열이 각자 균등분할분 이하만 가져가므로 잔여 ≥ 남은 열 수 × 균등분할분
  *    ≥ 남은 열 수 × minW — 음수 폭 불가 불변식 유지.
  */
-export function computeColWidths(colMax: number[], totalWidth: number, colMinWord: number[] = [], roles: ColRole[] = []): number[] {
+/** 짧은 열 실폭 여유 — 근사 폭 클래스는 12%(실제 셀 글꼴이 더 넓을 수 있음), 실측 폭표 글꼴은 반올림 여유 3% */
+export function colSlack(faceClass: import("./text-metrics.js").FaceClass): number {
+  return faceClass.startsWith("font:") ? 1.03 : 1.12
+}
+
+export function computeColWidths(colMax: number[], totalWidth: number, colMinWord: number[] = [], roles: ColRole[] = [], slack = 1.12): number[] {
   const colCnt = colMax.length
   const minW = Math.min(Math.max(2000, Math.round(totalWidth * 0.06)), Math.floor(totalWidth / colCnt))
   const cap = Math.round(totalWidth * 0.8)
@@ -195,15 +201,15 @@ export function computeColWidths(colMax: number[], totalWidth: number, colMinWor
   const free = new Set(raw.map((_, i) => i))
   let budget = totalWidth
   let sumFloorFree = floor.reduce((a, b) => a + b, 0)
-  // 1) 짧은 열부터 실폭(×1.12 여유 — 측정은 함초롬 기준, 실제 셀 폰트가 더 넓을 수
+  // 1) 짧은 열부터 실폭(×slack 여유 — 근사 폭 클래스는 실제 셀 폰트가 더 넓을 수
   //    있음) 확정하고 최장 열(서술 열)만 유연하게 남긴다 — 실측 관행: 라벨·수치·날짜
   //    열은 한 줄에 딱 맞고 서술 열이 잔여를 흡수하며 줄바꿈. 종전 "균등분할분 이하만
   //    확정"은 "소요예산(백만원)"류 중간 폭 헤더가 비례 배분에 밀려 세로로 갈라지는
   //    결함. 남은 열들이 각자 하한을 못 받게 되면 확정 중단.
   for (const i of [...raw.keys()].sort((a, b) => raw[a] - raw[b])) {
     if (free.size <= 1) break
-    // remark 열은 1.12 여유를 줘도 상한을 넘지 않는다
-    const fixed = roles[i] === "remark" ? Math.min(Math.round(raw[i] * 1.12), capOf[i]) : Math.round(raw[i] * 1.12)
+    // remark 열은 여유를 줘도 상한을 넘지 않는다
+    const fixed = roles[i] === "remark" ? Math.min(Math.round(raw[i] * slack), capOf[i]) : Math.round(raw[i] * slack)
     if (budget - fixed < sumFloorFree - floor[i]) break
     widths[i] = fixed; free.delete(i); budget -= fixed; sumFloorFree -= floor[i]
   }
@@ -271,7 +277,7 @@ function estimateRowHeight(cells: string[], widths: number[], charHeight: number
 // ─── GFM 그리드 표 ──────────────────────────────────
 
 /**
- * 표가 한 줄 셀로 다 들어가기 위한 자연 폭(HWPUNIT) — 열별 최장 내용 + 패딩(×1.12 여유) 합.
+ * 표가 한 줄 셀로 다 들어가기 위한 자연 폭(HWPUNIT) — 열별 최장 내용 + 패딩(×colSlack 여유) 합.
  * v5 엔진이 셀 글자 크기 자동 축소(12→11→10pt, 실측 셀 pt 분포) 판단에 쓴다.
  */
 export function requiredTableWidth(rows: string[][], charHeight: number, faceClass: import("./text-metrics.js").FaceClass = "hcr"): number {
@@ -281,7 +287,7 @@ export function requiredTableWidth(rows: string[][], charHeight: number, faceCla
   const colMax = Array<number>(colCnt).fill(0)
   for (const row of rows) row.forEach((cell, c) => { const w = cellContentWidth(cell, charHeight); if (w > colMax[c]) colMax[c] = w })
   curFace = prev
-  return colMax.reduce((a, w) => a + Math.round((w + CELL_PAD) * 1.12), 0)
+  return colMax.reduce((a, w) => a + Math.round((w + CELL_PAD) * colSlack(faceClass)), 0)
 }
 
 export function generateTable(rows: string[][], theme: ResolvedTheme, style: GongmunTableStyle | null = null, remap: ProfileRemap | null = null, seq = 0, images: ImageRegistry | null = null): string {
@@ -311,7 +317,7 @@ export function generateTable(rows: string[][], theme: ResolvedTheme, style: Gon
   }))
   // 열 역할(내용 넓게·비고 좁게)은 공문서 모드만 — 범용 경로 산출물 바이트 불변
   const roles = style ? colRoles(rows[0] ?? []) : []
-  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalW, colMinWord, roles)
+  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalW, colMinWord, roles, colSlack(curFace))
   // 본문 셀이 전부 한 줄에 들어가는 열은 가운데 정렬 (숫자·라벨 열 관행) — 내용(서술) 열은 넓혀서 한 줄에
   // 들어가도 LEFT (실측 TBL-11 장문 열 LEFT, 2026-09-06 실렌더: 가운데 정렬된 서술 셀이 떠 보임)
   const colCentered = colWidths.map((w, c) => roles[c] !== "content" && colMaxBody[c] + CELL_PAD <= w)
@@ -486,6 +492,8 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   if (rowCnt === 0 || colCnt === 0) return null
 
   const measureH = style?.charHeight ?? 1000
+  // 폭 클래스 — 종전엔 설정하지 않아 직전 GFM 표의 값(또는 초기 hcr)을 물려받았다
+  curFace = style?.faceClass ?? "hcr"
   // 서식 프로필 매칭 (#41) — 첫 행 전체 지문(0.3.0)은 병합 셀의 시작 열 위치에 텍스트,
   // 커버 열은 빈 문자열 (추출기의 row0Texts 키 공간과 동일)
   const first = placed.find(p => p.r === 0 && p.c === 0) ?? placed[0]
@@ -502,7 +510,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   const cellParsed = placed.map((cell) => htmlCellInnerToLines(cell.inner))
   const cellLines = cellParsed.map((p) => p.lines)
   placed.forEach((cell, i) => {
-    const w = Math.max(...cellLines[i].map((l) => measureTextWidth(unescapeHtml(l).trim(), measureH, 100)), 0) / cell.colSpan
+    const w = Math.max(...cellLines[i].map((l) => measureTextWidth(unescapeHtml(l).trim(), measureH, 100, { faceClass: curFace })), 0) / cell.colSpan
     // 최장 어절(열 하한) — 병합 셀은 첫 열에만 기여 (분할 배분 시 하한 과대 방지)
     const mw = cell.colSpan === 1 ? Math.max(...cellLines[i].map((l) => cellMinWordWidth(unescapeHtml(l), measureH)), 0) : 0
     for (let dc = 0; dc < cell.colSpan; dc++) {
@@ -515,7 +523,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   const headers = Array.from({ length: colCnt }, () => "")
   for (const [i, cell] of placed.entries()) if (cell.r === 0 && cell.c < colCnt) headers[cell.c] = unescapeHtml(cellLines[i].join(" "))
   const roles = style ? colRoles(headers) : []
-  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalWidth, colMinWord, roles)
+  const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalWidth, colMinWord, roles, colSlack(curFace))
   const colCentered = colWidths.map((w, c) => roles[c] !== "content" && colMaxBody[c] + CELL_PAD <= w)
 
   const cellH = style ? Math.round(measureH * 1.6) + 282 : 1500
@@ -561,7 +569,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     // 셀폭 기준 줄바꿈 수 — <br> 분리 각 줄이 폭을 넘으면 추가로 접힌다
     const usable = Math.max(spanW(cell) - CELL_PAD, 1000)
     let wrapLines = 0
-    for (const line of lines) wrapLines += Math.max(1, Math.ceil(measureTextWidth(unescapeHtml(line).trim(), measureH, 100) / usable))
+    for (const line of lines) wrapLines += Math.max(1, Math.ceil(measureTextWidth(unescapeHtml(line).trim(), measureH, 100, { faceClass: curFace }) / usable))
     const lineH = style ? Math.round(measureH * 1.6) : 800
     const contentH = Math.max(cellH * rowSpan, Math.max(wrapLines, 1) * lineH + nestedH)
     const cellHeight = Math.max(prof?.cellH.get(`${cell.r},${cell.c}`) ?? 0, contentH)
@@ -594,7 +602,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
       }
       // 이미지 참조만으로 구성된 라인은 텍스트 문단 생략 — 아래 pic 문단이 대체
       if (!images || text.trim() || picUrls.length === 0) {
-        paras.push(`<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"><hp:run charPrIDRef="${charPrId}"><hp:t>${escapeXml(text)}</hp:t></hp:run></hp:p>`)
+        paras.push(`<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"><hp:run charPrIDRef="${charPrId}"><hp:t>${escapeTextXml(text)}</hp:t></hp:run></hp:p>`)
       }
     }
     // 텍스트 조각·중첩표를 원문 배치 순서대로 방출 (#49) — 종전 텍스트 전량 선방출은

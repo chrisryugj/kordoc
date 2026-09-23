@@ -127,12 +127,12 @@ export function decodeXmlEntities(text: string): string {
   })
 }
 
-/** hp:t 콘텐츠에서 텍스트 추출 — 파서가 공백류로 취급하는 태그(tab/fwSpace/hwSpace/
+/** hp:t 콘텐츠에서 텍스트 추출 — 파서가 공백류로 취급하는 태그(tab/fwSpace/hwSpace/nbSpace/
  *  br/lineBreak)만 공백, 나머지 태그(markpen 등 파서가 무시)는 제거 (파서 모델 정합) */
 function tContentToText(raw: string): string {
   return decodeXmlEntities(
     raw
-      .replace(/<\/?(?:[A-Za-z0-9_]+:)?(?:tab|fwSpace|hwSpace|br|lineBreak)(?:\s[^>]*)?\/?>/g, " ")
+      .replace(/<\/?(?:[A-Za-z0-9_]+:)?(?:tab|fwSpace|hwSpace|nbSpace|br|lineBreak)(?:\s[^>]*)?\/?>/g, " ")
       .replace(/<[^>]*>/g, ""),
   )
 }
@@ -323,7 +323,7 @@ export function scanSectionXml(xml: string, sectionIndex: number): SectionScan {
       if (local === "t") {
         const para = owningPara()
         if (para) para.tRanges.push({ contentStart: m.index, contentEnd: m.index + full.length, selfClosing: true, prefix: prefixOf(qname) })
-      } else if (local === "tab" || local === "fwSpace" || local === "hwSpace" || local === "br" || local === "lineBreak") {
+      } else if (local === "tab" || local === "fwSpace" || local === "hwSpace" || local === "nbSpace" || local === "br" || local === "lineBreak") {
         // pendingT 내부면 t 콘텐츠 추출이 공백 처리하므로 중복 방지
         if (!pendingT) {
           const para = owningPara()
@@ -435,7 +435,7 @@ export function scanSectionXml(xml: string, sectionIndex: number): SectionScan {
       if (stack.some(f => f.local === "ctrl")) {
         ctrlSubStack.push({ kind: local, texts: [] })
       }
-    } else if (local === "tab" || local === "fwSpace" || local === "hwSpace" || local === "br" || local === "lineBreak") {
+    } else if (local === "tab" || local === "fwSpace" || local === "hwSpace" || local === "nbSpace" || local === "br" || local === "lineBreak") {
       const para = owningPara()
       if (para) para.text += " "
     }
@@ -609,6 +609,19 @@ export function buildParagraphSplices(para: ScanParagraph, newText: string, xml?
     return [{ start, end, replacement: `${opened}<${prefix}t>${escaped}</${prefix}t></${qname}>` }]
   }
   return newText ? null : []
+}
+
+/**
+ * 선두 부호 run 보존 — kordoc 공문서 항목은 부호를 따로 된 run(부호 + 탭)으로 낸다(내어쓰기용 자동 탭 정렬).
+ * 편집이 부호 뒤 내용만 바꿨으면 부호 run 은 그대로 두고 나머지 hp:t 만 다시 쓴다. 문단 전체 재작성은 부호와 내용을
+ * 첫 hp:t 하나에 합치며 탭을 공백으로 바꿔 정렬이 깨진다. 부호가 바뀌었거나 그 꼴이 아니면 null(호출자가 전체 재작성).
+ */
+export function markerRunSplices(para: ScanParagraph, xml: string, newText: string): SpliceEdit[] | null {
+  const first = para.tRanges[0]
+  if (!first || first.selfClosing || para.tRanges.length < 2) return null
+  const m = /^([^<&\s]{1,6})<(?:\w+:)?tab\b[^>]*\/>$/.exec(xml.slice(first.contentStart, first.contentEnd))
+  if (!m || !newText.startsWith(m[1] + " ")) return null
+  return buildParagraphSplices({ ...para, tRanges: para.tRanges.slice(1) }, newText.slice(m[1].length + 1), xml)
 }
 
 /**

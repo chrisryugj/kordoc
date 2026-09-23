@@ -24,10 +24,12 @@ import JSZip from "jszip"
 import { KordocError, precheckZipSize } from "../utils.js"
 import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES } from "../hwpx/parser-shared.js"
 import { toInt32, solveBoundaries, solveRowHeights, type SpanConstraint } from "./layout.js"
-import { measureTextWidth, type WrapMode } from "../hwpx/text-metrics.js"
-import { parseRenderStyles, DEFAULT_CHAR, type RenderStyles, type RenderBorderEdge } from "./head-styles.js"
+import { measureTextWidth, faceClassOf, type WrapMode } from "../hwpx/text-metrics.js"
+import { parseRenderStyles, DEFAULT_CHAR, type RenderStyles, type RenderBorderEdge, type RenderParaGeom } from "./head-styles.js"
 import { reflowSection } from "./reflow.js"
 import { RegionCollector, type PageBBox, type RenderRegion, type RenderScene } from "./scene.js"
+import { ln, elements, num, findFirst, type Seg, type ParaChar, OBJ_TAGS, type ParaObj, type ParaModel, buildPara, tabAdvance, type ExtentMemo, cellContentExtent, collectCells, measureTableHeight } from "./para-model.js"
+export { buildPara, measureTableHeight, tabAdvance, type Seg, type ParaChar, type ParaModel, type ExtentMemo } from "./para-model.js"
 
 export interface RenderSvgOptions {
   /** 이미지 1장당 허용 최대 바이트 (기본 40MB) */
@@ -60,34 +62,6 @@ export interface RenderSvgResult {
 
 // ─── XML 헬퍼 ─────────────────────────────────────
 
-function ln(el: Element): string {
-  return (el.tagName || "").replace(/^[^:]+:/, "")
-}
-
-function elements(el: Element): Element[] {
-  const out: Element[] = []
-  const children = el.childNodes
-  if (!children) return out
-  for (let i = 0; i < children.length; i++) {
-    if (children[i].nodeType === 1) out.push(children[i] as Element)
-  }
-  return out
-}
-
-function num(el: Element | null, attr: string, fallback = 0): number {
-  return el ? toInt32(el.getAttribute(attr) ?? undefined, fallback) : fallback
-}
-
-function findFirst(el: Element, name: string, depth = 0): Element | null {
-  if (depth > 64) return null
-  for (const ch of elements(el)) {
-    if (ln(ch) === name) return ch
-    const found = findFirst(ch, name, depth + 1)
-    if (found) return found
-  }
-  return null
-}
-
 export function escapeXml(s: string): string {
   return s
     // XML 1.0 금지 C0 제어문자 제거(탭 0x09·개행 0x0A·CR 0x0D는 유지) — 남기면 산출 SVG가
@@ -100,20 +74,6 @@ export function escapeXml(s: string): string {
 // ─── 내부 모델 ────────────────────────────────────
 
 interface PageGeom { PW: number; PH: number; ML: number; MT: number; BODY_W: number; BODY_H: number }
-
-export interface Seg { textpos: number; vertpos: number; horzpos: number; horzsize: number; textheight: number; baseline: number }
-
-export interface ParaChar { ch: string; prId: string | null }
-
-/** 렌더 대상 개체 태그 — 이 외(도형류)는 경고 후 생략 */
-const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", "ellipse", "polygon", "curv", "line", "arc", "ole", "textart"])
-
-/** omL/omR: TAC 인라인 표의 outMargin 좌/우(HWPUNIT) — 한글은 TAC 표를 "outMargin 포함
- * 폭의 문자"로 배치한다: 가로 전진폭 = om좌 + 표폭 + om우, 괘선(표 자체)은 pen + om좌
- * (rhwp #3396 동종 — 오라클 실측이 표뿐이라 표 외 개체는 0). */
-interface ParaObj { el: Element; tag: string; index: number; inline: boolean; width: number; height: number; omL: number; omR: number }
-
-export interface ParaModel { chars: ParaChar[]; segs: Seg[]; objs: ParaObj[]; paraPrId: string | null }
 
 interface Ctx {
   /** 페이지별 SVG 버퍼 — emit()이 현재 페이지(page)로 라우팅 */
@@ -175,92 +135,6 @@ function warnOnce(ctx: Ctx, key: string, msg: string): void {
 
 // ─── 문단 모델 구축 ────────────────────────────────
 
-/** hp:t 안에서 1슬롯을 차지하는 문자형 컨트롤 (HWP5 문자 스트림 모델) —
- * 탭(0x09)은 char가 아니라 inline 컨트롤 = 8슬롯(16바이트)이라 여기 넣으면 안 된다
- * (record.ts 0x09 처리의 i+=14와 같은 모델. 1슬롯로 세면 탭당 7슬롯씩 줄 경계가 밀린다) */
-const CHAR_CTRL_1SLOT = new Set(["lineBreak", "hyphen", "nbSpace", "fwSpace"])
-
-/** lineseg textpos 정합용 0폭 필러 슬롯 — 컨트롤이 차지하는 문자 위치를 채운다 */
-function pushFillers(chars: ParaChar[], n: number, prId: string | null): void {
-  for (let i = 0; i < n; i++) chars.push({ ch: "", prId })
-}
-
-/**
- * hp:t 내용을 슬롯 스트림으로 변환 — lineseg textpos 는 HWP5 문자 스트림 기준이라
- * 텍스트 1문자=1슬롯(서로게이트 쌍은 2), tab 등 문자형 컨트롤도 1슬롯을 차지한다.
- * markpen 등 래퍼 요소는 슬롯 없이 내용만 재귀한다.
- * (탭 폭은 탭스톱 미해석으로 0 — 경계 정합이 우선, 폭 오차는 줄 스케일이 흡수)
- */
-function pushTextSlots(t: Element, chars: ParaChar[], prId: string | null, depth: number): void {
-  if (depth > 32) return
-  const kids = t.childNodes
-  if (!kids) return
-  for (let i = 0; i < kids.length; i++) {
-    const c = kids[i]
-    if (c.nodeType === 3 || c.nodeType === 4) {  // CDATA(4) 포함 — 누락 시 해당 런이 렌더에서 사라진다
-      for (const cp of c.textContent ?? "") {
-        chars.push({ ch: cp, prId })
-        if (cp.length === 2) chars.push({ ch: "", prId }) // UTF-16 두 번째 유닛 슬롯
-      }
-    } else if (c.nodeType === 1) {
-      const el = c as Element
-      const tag = ln(el)
-      if (tag === "tab") {
-        pushFillers(chars, 8, prId) // inline 컨트롤 8슬롯 (전부 폭 0 — 탭스톱 미해석)
-      } else if (CHAR_CTRL_1SLOT.has(tag)) {
-        chars.push({ ch: tag === "nbSpace" || tag === "fwSpace" ? " " : "", prId })
-      } else {
-        pushTextSlots(el, chars, prId, depth + 1)
-      }
-    }
-  }
-}
-
-export function buildPara(p: Element): ParaModel {
-  const chars: ParaChar[] = []
-  const objs: ParaObj[] = []
-  let segs: Seg[] = []
-  for (const runEl of elements(p)) {
-    const tag = ln(runEl)
-    if (tag === "run") {
-      const prId = runEl.getAttribute("charPrIDRef")
-      for (const ch of elements(runEl)) {
-        const cn = ln(ch)
-        if (cn === "t") {
-          pushTextSlots(ch, chars, prId, 0)
-        } else if (OBJ_TAGS.has(cn)) {
-          const sz = findChildByLocalName(ch, "sz")
-          const pos = findChildByLocalName(ch, "pos")
-          // 그리기 도형은 hp:sz가 없다 — curSz(>0) → orgSz 폴백
-          const w = num(sz, "width") || num(findChildByLocalName(ch, "curSz"), "width") || num(findChildByLocalName(ch, "orgSz"), "width")
-          const h = num(sz, "height") || num(findChildByLocalName(ch, "curSz"), "height") || num(findChildByLocalName(ch, "orgSz"), "height")
-          const inline = pos?.getAttribute("treatAsChar") === "1"
-          // TAC 표만 outMargin 좌/우를 가로 배선 (ParaObj.omL 주석 — rhwp #3396 동종)
-          const om = inline && cn === "tbl" ? findChildByLocalName(ch, "outMargin") : null
-          objs.push({
-            el: ch, tag: cn, index: chars.length,
-            inline,
-            width: w, height: h,
-            omL: num(om, "left"), omR: num(om, "right"),
-          })
-          // 확장 컨트롤(GSO 등)은 문자 스트림에서 8슬롯 — 실측: 데모 코퍼스 1,132개
-          // 멀티라인 문단에서 textpos 가 8슬롯 블록 중간에 걸린 경계 0건
-          pushFillers(chars, 8, prId)
-        } else {
-          // secPr·ctrl(구역/단 정의)·필드 등 나머지 run 자식도 확장/인라인 컨트롤 8슬롯
-          pushFillers(chars, 8, prId)
-        }
-      }
-    } else if (tag === "linesegarray") {
-      segs = elements(runEl).filter(s => ln(s) === "lineseg").map(s => ({
-        textpos: num(s, "textpos"), vertpos: num(s, "vertpos"), horzpos: num(s, "horzpos"),
-        horzsize: num(s, "horzsize"), textheight: num(s, "textheight", 1000), baseline: num(s, "baseline", 850),
-      }))
-    }
-  }
-  return { chars, segs, objs, paraPrId: p.getAttribute("paraPrIDRef") }
-}
-
 // ─── 줄 렌더 (run별 charPr + 정렬) ──────────────────
 
 interface LinePlan {
@@ -271,11 +145,17 @@ interface LinePlan {
   scale: number
   start: number
   end: number
+  /** 탭 슬롯 → 전진폭(HWPUNIT, 스케일 불변) */
+  tabs: Map<number, number>
+  /** 이 인덱스 앞(줄의 마지막 탭까지)은 스케일 없이 — 양쪽 정렬은 마지막 탭 뒤 글에만 걸린다 */
+  fixedTo: number
+  /** 줄 끝 공백을 뺀 끝 — 줄 끝 공백은 걸리기만 하고(hang) 정렬·그리기에서 빠진다 */
+  textEnd: number
 }
 
 function charW(c: ParaChar, styles: RenderStyles): number {
   const st = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
-  return measureTextWidth(c.ch, st.height, st.ratio, { spacingPct: st.spacing })
+  return measureTextWidth(c.ch, st.height, st.ratio, { spacingPct: st.spacing, faceClass: faceClassOf(st.face) })
 }
 
 /** 줄 자연폭 = 텍스트 조각 + 인라인 개체 폭 (개체 폭은 스케일 불변, TAC 표는 outMargin 좌/우 포함) */
@@ -289,12 +169,34 @@ function lineNaturalWidth(m: ParaModel, styles: RenderStyles, start: number, end
 
 function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
   const align = (m.paraPrId != null ? styles.paraAlign.get(m.paraPrId) : undefined) ?? "JUSTIFY"
+  const geom = m.paraPrId != null ? styles.paraGeom.get(m.paraPrId) : undefined
+  const hang = geom && geom.marginIntent < 0 ? -geom.marginIntent : 0
   const plans: LinePlan[] = []
   for (let i = 0; i < m.segs.length; i++) {
     const seg = m.segs[i]
     const start = seg.textpos
     const end = i + 1 < m.segs.length ? m.segs[i + 1].textpos : Math.max(m.chars.length, start)
-    const nat = lineNaturalWidth(m, styles, start, end)
+    // 탭 해석 — 자연폭으로 정지점을 잡고, 마지막 탭까지는 스케일 없이 고정폭으로 둔다
+    const tabs = new Map<number, number>()
+    let x = i === 0 ? Math.max(geom?.marginIntent ?? 0, 0) : hang // 첫 줄은 들여쓰기(양수 intent)만큼 들어가서 시작
+    let fixedTo = start
+    let fixedW = 0
+    for (let k = start; k < end && k < m.chars.length; k++) {
+      const c = m.chars[k]
+      if (!c.tab) { x += charW(c, styles); continue }
+      const adv = tabAdvance(x, i === 0, geom, c.tabW)
+      tabs.set(k, adv)
+      x += adv
+      fixedTo = k + 1
+    }
+    if (fixedTo > start) fixedW = lineNaturalWidth(m, styles, start, fixedTo).text + [...tabs.values()].reduce((a, b) => a + b, 0)
+    // 줄 끝 공백 제외 — 어절 줄바꿈은 줄마다 끝에 공백이 걸린다. 넣고 늘이면 글이 오른쪽 끝에 못 닿는다
+    let textEnd = Math.min(end, m.chars.length)
+    while (textEnd > fixedTo && m.chars[textEnd - 1].ch === " ") textEnd--
+    const nat = lineNaturalWidth(m, styles, fixedTo, textEnd)
+    for (const o of m.objs) if (o.inline && o.index >= textEnd && o.index < end) nat.obj += o.omL + o.width + o.omR
+    nat.obj += fixedW
+    for (const o of m.objs) if (o.inline && o.index >= start && o.index < fixedTo) nat.obj += o.omL + o.width + o.omR
     const isLast = i === m.segs.length - 1
     let xoff = 0
     let scale = 1
@@ -309,7 +211,7 @@ function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
     }
     if (!Number.isFinite(scale) || scale <= 0) scale = 1
     scale = Math.min(4, Math.max(0.25, scale))
-    plans.push({ seg, xoff, scale, start, end })
+    plans.push({ seg, xoff, scale, start, end, tabs, fixedTo, textEnd })
   }
   return plans
 }
@@ -317,7 +219,9 @@ function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
 /** 줄 안 [start, upto) 구간의 전진폭 (텍스트×스케일 + 인라인 개체 — TAC 표는 outMargin 좌/우 포함) */
 function advanceTo(m: ParaModel, styles: RenderStyles, plan: LinePlan, upto: number): number {
   let x = 0
-  for (let i = plan.start; i < upto && i < m.chars.length; i++) x += charW(m.chars[i], styles) * plan.scale
+  for (let i = plan.start; i < upto && i < m.chars.length; i++) {
+    x += m.chars[i].tab ? plan.tabs.get(i) ?? 0 : charW(m.chars[i], styles) * (i < plan.fixedTo ? 1 : plan.scale)
+  }
   for (const o of m.objs) if (o.inline && o.index >= plan.start && o.index < upto) x += o.omL + o.width + o.omR
   return x
 }
@@ -367,18 +271,22 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
     let cursor = ox + seg.horzpos + plan.xoff
     const y = oy + seg.vertpos + seg.baseline
     while (i < plan.end && i < m.chars.length) {
+      if (i >= plan.textEnd && m.chars[i].ch === " ") { i++; continue }
       // 필러 슬롯(컨트롤·서로게이트 자리)은 그리지 않고 건너뛴다 —
       // 인라인 개체의 폭 전진은 개체 첫 슬롯에서 1회 수행
       if (m.chars[i].ch === "") {
+        if (m.chars[i].tab) cursor += plan.tabs.get(i) ?? 0
         for (const o of m.objs) if (o.inline && o.index === i) cursor += o.omL + o.width + o.omR
         i++
         continue
       }
+      // 마지막 탭 앞(부호 등)은 양쪽 정렬 스케일 없이 — 탭 뒤 내용 시작이 정지점에 정확히 선다
+      const scale = i < plan.fixedTo ? 1 : plan.scale
       const prId = m.chars[i].prId
       let j = i
       let piece = ""
       // 필러에서 멈추므로 piece 안은 실문자뿐 — 개체 경계 절단이 자연 발생
-      while (j < plan.end && j < m.chars.length && m.chars[j].prId === prId && m.chars[j].ch !== "") { piece += m.chars[j].ch; j++ }
+      while (j < plan.end && j < m.chars.length && m.chars[j].prId === prId && m.chars[j].ch !== "" && !(j >= plan.textEnd && m.chars[j].ch === " ")) { piece += m.chars[j].ch; j++ }
       // 연속 공백(2+) 경계 절단 — 공백 폭 오차(한컴 0.5em 고정 vs 뷰어 폰트)를
       // 공백 구간에 가둔다 (공무원 스페이스 정렬 원문에서 글자 벌어짐 방지)
       // (문자열 인덱스를 슬롯 오프셋으로 쓴다 — 서로게이트 쌍이 섞이면 1슬롯 오차, 무시)
@@ -396,7 +304,7 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
       // 텍스트 앞에 깐다. 세그먼트마다 자체 textLength 를 쓰므로 rect(hit)와 글자가
       // 완전히 같은 폭·위치로 계산돼 형광펜이 어긋나지 않는다.
       const renderSeg = (text: string, cx: number, hit: boolean): number => {
-        const sw = measureTextWidth(text, st.height, st.ratio, { spacingPct: st.spacing }) * plan.scale
+        const sw = measureTextWidth(text, st.height, st.ratio, { spacingPct: st.spacing, faceClass: faceClassOf(st.face) }) * scale
         if (hit) {
           emit(ctx, `<rect x="${pt(cx)}" y="${pt(oy + seg.vertpos)}" width="${pt(sw)}" height="${pt(seg.textheight)}" fill="#ffd54f" fill-opacity="0.45"/>`)
         }
@@ -404,7 +312,7 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
           const attrs: string[] = [`x="${pt(cx)}"`, `y="${pt(y)}"`, `font-size="${pt(st.height)}"`]
           if (st.fontFamily) attrs.push(`font-family="${escapeXml(st.fontFamily)}"`)
           if ([...text].length > 1 && sw > 50) {
-            attrs.push(`textLength="${pt(sw)}"`, `lengthAdjust="${plan.scale < 1 ? "spacingAndGlyphs" : "spacing"}"`)
+            attrs.push(`textLength="${pt(sw)}"`, `lengthAdjust="${scale < 1 ? "spacingAndGlyphs" : "spacing"}"`)
           }
           if (st.bold) attrs.push(`font-weight="bold"`)
           if (st.italic) attrs.push(`font-style="italic"`)
@@ -617,109 +525,9 @@ function drawShape(o: ParaObj, x: number, y: number, ctx: Ctx, depth: number): v
 
 // ─── 표 ───────────────────────────────────────────
 
-interface CellModel {
-  el: Element
-  ca: number; ra: number; cs: number; rs: number
-  w: number; h: number
-  bfId: string | null
-  sub: Element | null
-  marginL: number; marginR: number; marginT: number; marginB: number
-}
-
-/**
- * 셀/표 측정 메모 — drawTable(rowH·yoff)과 cellContentExtent↔measureTableHeight 상호재귀가
- * 중첩 단계마다 하위 표를 재측정해 지수적으로 불어나는 것을 캡. 렌더 1회 안에서만 공유
- * (reflow의 DOM 변형은 드로잉 시작 전에 끝나므로 캐시가 stale해지지 않는다).
- */
-export interface ExtentMemo { cell: WeakMap<Element, number>; table: WeakMap<Element, number> }
-
-/** 셀 콘텐츠 세로 범위 — 줄(vp+th) + 인라인 개체(중첩표·treatAsChar) + PARA 앵커 개체(anchor+h) 최대값 */
-function cellContentExtent(cell: CellModel, memo?: ExtentMemo): number {
-  if (!cell.sub) return 0
-  const hit = memo?.cell.get(cell.el)
-  if (hit !== undefined) return hit
-  let ext = 0
-  for (const p of elements(cell.sub)) {
-    if (ln(p) !== "p") continue
-    const m = buildPara(p)
-    for (const s of m.segs) ext = Math.max(ext, s.vertpos + s.textheight)
-    const baseV = m.segs[0]?.vertpos ?? 0
-    for (const o of m.objs) {
-      if (o.inline) {
-        // 인라인 개체(중첩 표·treatAsChar 이미지)는 줄 위치에서 개체 높이만큼 아래로 뻗는다.
-        // 이를 빼먹으면 중첩 표를 담은 셀 높이가 과소측정돼 표지 중첩표가 겹친다(리뷰: 셀 성장 누락).
-        const h = o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el, memo)) : o.height
-        ext = Math.max(ext, baseV + h)
-        continue
-      }
-      const pos = findChildByLocalName(o.el, "pos")
-      if ((pos?.getAttribute("vertRelTo") ?? "PARA") !== "PARA") continue
-      const om = findChildByLocalName(o.el, "outMargin")
-      const pushed = baseV - (num(om, "top") + o.height + num(om, "bottom"))
-      const anchor = pushed >= -100 ? pushed : baseV
-      ext = Math.max(ext, anchor + num(om, "top") + num(pos, "vertOffset") + o.height)
-    }
-  }
-  memo?.cell.set(cell.el, ext)
-  return ext
-}
-
 function edgeLine(x1: number, y1: number, x2: number, y2: number, e: RenderBorderEdge): string {
   const dash = /DASH|DOT/.test(e.type) ? ` stroke-dasharray="${e.type.includes("DOT") ? "1,1.5" : "3,1.5"}"` : ""
   return `<line x1="${pt(x1)}" y1="${pt(y1)}" x2="${pt(x2)}" y2="${pt(y2)}" stroke="${escapeXml(e.color)}" stroke-width="${e.widthPt.toFixed(2)}"${dash}/>`
-}
-
-/** tbl의 셀 모델 수집 — drawTable과 measureTableHeight가 같은 셀 해석을 공유 */
-function collectCells(tbl: Element): CellModel[] {
-  const inMargin = findChildByLocalName(tbl, "inMargin")
-  const defL = num(inMargin, "left", 141), defR = num(inMargin, "right", 141)
-  const defT = num(inMargin, "top", 141), defB = num(inMargin, "bottom", 141)
-
-  const cells: CellModel[] = []
-  for (const tr of elements(tbl)) {
-    if (ln(tr) !== "tr") continue
-    for (const tc of elements(tr)) {
-      if (ln(tc) !== "tc") continue
-      const addr = findChildByLocalName(tc, "cellAddr")
-      const span = findChildByLocalName(tc, "cellSpan")
-      const csz = findChildByLocalName(tc, "cellSz")
-      const cm = findChildByLocalName(tc, "cellMargin")
-      if (!addr || !csz) continue
-      cells.push({
-        el: tc,
-        // 음수 주소(uint32 역변환·손상 입력) 방어 — colX/rowY 인덱스 이탈로 NaN 좌표 방지
-        ca: Math.max(0, num(addr, "colAddr")), ra: Math.max(0, num(addr, "rowAddr")),
-        cs: Math.max(1, num(span, "colSpan", 1)), rs: Math.max(1, num(span, "rowSpan", 1)),
-        w: num(csz, "width"), h: num(csz, "height"),
-        bfId: tc.getAttribute("borderFillIDRef"),
-        sub: findChildByLocalName(tc, "subList"),
-        marginL: cm ? num(cm, "left", defL) : defL, marginR: cm ? num(cm, "right", defR) : defR,
-        marginT: cm ? num(cm, "top", defT) : defT, marginB: cm ? num(cm, "bottom", defB) : defB,
-      })
-    }
-  }
-  return cells
-}
-
-/**
- * 표 실효 높이(HWPUNIT) — drawTable의 rowH 모델(solveRowHeights + 셀 콘텐츠 성장) 그대로.
- * 선언 hp:sz는 셀 콘텐츠로 자란 높이를 모르므로, reflow가 표 뒤 문단을 실제 그려질
- * 표 바닥 아래로 배치할 때 이 값을 쓴다. 셀 lineseg가 있어야 성장분이 측정된다.
- */
-export function measureTableHeight(tbl: Element, memo?: ExtentMemo): number {
-  const hit = memo?.table.get(tbl)
-  if (hit !== undefined) return hit
-  const cells = collectCells(tbl)
-  if (cells.length === 0 || cells.length > 4096) return 0
-  const nRows = Math.max(...cells.map(c => c.ra + c.rs))
-  const rowH = solveRowHeights(
-    cells.map(c => ({ rowAddr: c.ra, rowSpan: c.rs, height: c.h, contentH: c.rs === 1 ? cellContentExtent(c, memo) : undefined })),
-    nRows,
-  )
-  let sum = 0
-  for (const h of rowH) sum += h
-  memo?.table.set(tbl, sum)
-  return sum
 }
 
 function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number): void {

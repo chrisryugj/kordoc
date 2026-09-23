@@ -15,8 +15,8 @@ import { tc, para } from "./gen-gongmun-extra.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
 import { escapeXml } from "./gen-ids.js"
 import { StyleRegistry } from "./style-registry.js"
-import { fitOneLine, fitOrphanLine } from "./fit-line.js"
-import { simulateWrap, measureTextWidth } from "./text-metrics.js"
+import { fitOneLine, fitParagraph } from "./fit-line.js"
+import { simulateWrap, measureTextWidth, faceClassForGen } from "./text-metrics.js"
 import { EXTRA_TABLE_ID_BASE } from "./geometry.js"
 import type { FrameSpec } from "./gongmun-scheme.js"
 import type { ResolvedGongmun } from "./gongmun.js"
@@ -304,17 +304,17 @@ export function buildSummaryBox(text: string, ctx: FrameCtx): { xml: string; lin
   const { reg, bf, frame } = ctx
   const w = ctx.W - 566
   // 실측(요약박스 133건): 셀 여백은 141 이지만 문단 좌우 여백 1000/1000 이 55%(0/0 35%·2000 7%) — 글자가 테두리에
-  // 붙지 않게 문단 여백으로 띄운다(선두 공백 0 이 53%라 종전 2칸 선두 공백은 뺀다). 줄바꿈은 본문과 같은 글자 단위.
+  // 붙지 않게 문단 여백으로 띄운다(선두 공백 0 이 53%라 종전 2칸 선두 공백은 뺀다). 줄바꿈은 본문과 같은 어절 단위.
   const avail = w - 280 - SUMMARY_PAD * 2
-  const p = reg.para({ align: "JUSTIFY", lineSp: 160, left: SUMMARY_PAD, right: SUMMARY_PAD, keepWord: false })
+  const p = reg.para({ align: "JUSTIFY", lineSp: 160, left: SUMMARY_PAD, right: SUMMARY_PAD })
   // 요약은 한 문장(쉼표 허용) 3줄 이내 "…하고자 함" — 선두 □·ㅇ·- 부호는 벗긴다. 줄이 넘어오면 호출부가 경고.
   // 문장 꼬리 고아 줄("함" 한 글자)은 자간 축소로 끌어올린다
   const bodies = text.split("\n").map((l) => l.trim().replace(/^[□■○ㅇ◦●\-–ㆍ·•]\s*/u, "")).filter(Boolean)
   let lines = 0
   const paras = bodies.map((b) => {
-    const f = fitOrphanLine(b, frame.summaryFont, frame.summaryPt, avail, avail)
+    const f = fitParagraph(b, frame.summaryFont, frame.summaryPt, avail, avail)
     const c = reg.char({ font: frame.summaryFont, pt: frame.summaryPt, bold: true, ratio: f?.ratio ?? 100, spacing: f?.spacing ?? 0 })
-    lines += simulateWrap(b, avail * 0.95, avail * 0.95, frame.summaryPt * 100, f?.ratio ?? 100, "charAll", { faceClass: "gothic", spacingPct: f?.spacing ?? 0 }).lines
+    lines += simulateWrap(b, avail * 0.995, avail * 0.995, frame.summaryPt * 100, f?.ratio ?? 100, "keep", { faceClass: faceClassForGen(frame.summaryFont), spacingPct: f?.spacing ?? 0 }).lines
     return para(b, p, c)
   })
   const h = lines * Math.round(frame.summaryPt * 100 * 1.6) + 280 + 600

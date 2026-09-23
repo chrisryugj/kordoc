@@ -33,6 +33,10 @@ export interface ParaSpec {
   keepWithNext?: boolean
   /** 어절 단위 줄바꿈(공문서 기본 true) */
   keepWord?: boolean
+  /** 내어쓰기용 자동 탭(tabPr 1) — 부호 뒤 탭이 내어쓰기 위치에 선다 */
+  autoTab?: boolean
+  /** 외톨이줄 보호 — 문단 첫·끝 줄이 쪽 끝·머리에 홀로 남지 않게 */
+  widowOrphan?: boolean
 }
 
 export class StyleRegistry {
@@ -76,14 +80,14 @@ export class StyleRegistry {
   }
 
   para(spec: ParaSpec): number {
-    const key = `${spec.align ?? "JUSTIFY"}|${spec.left ?? 0}|${spec.right ?? 0}|${spec.indent ?? 0}|${spec.before ?? 0}|${spec.after ?? 0}|${spec.lineSp ?? 160}|${spec.keepWithNext ? 1 : 0}|${spec.keepWord === false ? 0 : 1}`
+    const key = `${spec.align ?? "JUSTIFY"}|${spec.left ?? 0}|${spec.right ?? 0}|${spec.indent ?? 0}|${spec.before ?? 0}|${spec.after ?? 0}|${spec.lineSp ?? 160}|${spec.keepWithNext ? 1 : 0}|${spec.keepWord === false ? 0 : 1}|${spec.autoTab ? 1 : 0}|${spec.widowOrphan ? 1 : 0}`
     const hit = this.paras.get(key)
     if (hit !== undefined) return hit
     const id = this.paraBase + this.paraXmls.length
     this.paraXmls.push(paraPrXml(id, {
       align: spec.align ?? "JUSTIFY", left: spec.left ?? 0, right: spec.right ?? 0, indent: spec.indent ?? 0,
       spaceBefore: spec.before ?? 0, spaceAfter: spec.after ?? 0, lineSpacing: spec.lineSp ?? 160,
-      keepWithNext: !!spec.keepWithNext, keepWord: spec.keepWord !== false,
+      keepWithNext: !!spec.keepWithNext, keepWord: spec.keepWord !== false, autoTab: !!spec.autoTab, widowOrphan: !!spec.widowOrphan,
     }))
     this.paras.set(key, id)
     return id

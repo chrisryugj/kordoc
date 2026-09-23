@@ -18,8 +18,9 @@
 import { tc, para } from "./gen-gongmun-extra.js"
 import { ftbl, host, type FrameCtx } from "./gen-frame-seoul.js"
 import { generateRuns } from "./md-runs.js"
-import { escapeXml, type BorderSide } from "./gen-ids.js"
-import { fitOneLine, fitOrphanLine } from "./fit-line.js"
+import { escapeXml, escapeTextXml, type BorderSide } from "./gen-ids.js"
+import { fitOneLine } from "./fit-line.js"
+import { markerLayout, markerRunXml } from "./gen-marker.js"
 import { measureTextWidth, faceClassForGen, simulateWrap } from "./text-metrics.js"
 import { inlineMapper } from "./style-registry.js"
 import { circledNumber } from "../shared/numbering.js"
@@ -65,11 +66,11 @@ export function ministryRuns(marker: string, text: string, ctx: FrameCtx, base: 
   const { reg } = ctx
   const baseId = reg.char(base)
   const mapper = inlineMapper(reg, base, emphasisColor)
-  let out = marker ? `<hp:run charPrIDRef="${baseId}"><hp:t>${escapeXml(marker + " ")}</hp:t></hp:run>` : ""
+  let out = marker ? `<hp:run charPrIDRef="${baseId}"><hp:t>${escapeTextXml(marker + " ")}</hp:t></hp:run>` : ""
   const m = KEYWORD_RE.exec(text)
   if (m) {
     const kw = reg.char({ ...base, bold: true, color: keywordColor ?? base.color })
-    out += `<hp:run charPrIDRef="${kw}"><hp:t>${escapeXml(m[1] + " ")}</hp:t></hp:run>`
+    out += `<hp:run charPrIDRef="${kw}"><hp:t>${escapeTextXml(m[1] + " ")}</hp:t></hp:run>`
     text = text.slice(m[0].length)
   }
   return out + generateRuns(text, baseId, mapper)
@@ -148,8 +149,8 @@ export function buildMinistryToc(chapters: MinistryTocChapter[], ctx: FrameCtx):
   const cCh = reg.char({ font: MINISTRY.headFont, pt: t.chapterPt })
   const cSub = reg.char({ font: MINISTRY.headFont, pt: t.subPt })
   const pLabel = reg.para({ align: "LEFT", lineSp: 130, left: pad, before: 1200, after: 2400 })
-  const pCh = reg.para({ align: "LEFT", lineSp: 130, left: pad, before: 2000, keepWord: false })
-  const pSub = reg.para({ align: "LEFT", lineSp: 130, left: pad + 1400, before: 1200, keepWord: false })
+  const pCh = reg.para({ align: "LEFT", lineSp: 130, left: pad, before: 2000 })
+  const pSub = reg.para({ align: "LEFT", lineSp: 130, left: pad + 1400, before: 1200 })
   const paras: string[] = [para("목  차", pLabel, cLabel)]
   let h = 1200 + Math.round(t.labelPt * 130) + 2400
   let roman = 0
@@ -245,11 +246,11 @@ export function buildMinistryItemBand(n: number, text: string, ctx: FrameCtx, be
   const w = ctx.W
   const band = bf.get({ t: s.line, b: s.line, l: NONE, r: NONE, fill: s.fill })
   const base: KeywordRunStyle = { font: MINISTRY.bandFont, pt: s.pt, bold: false }
-  // 한 줄 초과 방어 — 원본 띠 글은 전부 한 줄. 넘치면 장평만 줄인다(글꼴 크기 유지)
-  const f = fitOrphanLine(plain(text), MINISTRY.bandFont, s.pt, w - 1800, w - 1800)
-  const styled = f ? { ...base, ratio: f.ratio, spacing: f.spacing } : base
+  // 한 줄 초과 방어 — 원본 띠 글은 전부 한 줄. 넘치면 장평·자간만 줄인다(글꼴 크기 유지)
+  const f = fitOneLine(plain(text), MINISTRY.bandFont, s.pt, w - 1800, s.pt)
+  const styled = f.overflow || (f.ratio === 100 && f.spacing === 0) ? base : { ...base, ratio: f.ratio, spacing: f.spacing }
   const runs = ministryRuns(circledNumber(n - 1), text, ctx, styled, MINISTRY.blue, MINISTRY.blue)
-  const p = reg.para({ align: "LEFT", lineSp: 130, left: 300, keepWord: false })
+  const p = reg.para({ align: "LEFT", lineSp: 130, left: 300 })
   const cell = tc({ bf: band, row: 0, col: 0, w, h: s.h, paras: `<hp:p paraPrIDRef="${p}" styleIDRef="0">${runs}</hp:p>`, name: "__kordoc_h5" })
   return host(ftbl([cell], w, s.h, 1, { bottomGap: 700 }), reg.para({ align: "LEFT", lineSp: 100, before, keepWithNext: true }), reg.char(base))
 }
@@ -265,20 +266,22 @@ export function buildMinistrySummaryBox(text: string, ctx: FrameCtx): string {
   const s = MINISTRY.summary
   const w = ctx.W - 600
   const avail = w - 280 - 600
-  const pItem = reg.para({ align: "LEFT", lineSp: 140, left: 300, right: 300, indent: -Math.round(s.pt * 100 * 0.9), keepWord: false })
-  const pRef = reg.para({ align: "LEFT", lineSp: 130, left: 300 + Math.round(s.pt * 100 * 0.9), right: 300, keepWord: false })
+  // ▪ 부호 + 탭(내어쓰기용 자동 탭) — 둘째 줄이 첫 줄 내용과 같은 x 에서 시작
+  const lay = markerLayout(MINISTRY.bodyFont, s.pt, 0, "▪")
+  const pItem = reg.para({ align: "LEFT", lineSp: 140, left: 300, right: 300, indent: -lay.hang, autoTab: true })
+  const pRef = reg.para({ align: "LEFT", lineSp: 130, left: 300 + lay.hang, right: 300 })
   const baseItem: KeywordRunStyle = { font: MINISTRY.bodyFont, pt: s.pt, bold: false }
   const cRef = reg.char({ font: MINISTRY.refFont, pt: s.refPt })
   let h = 0
   const paras = text.split("\n").map((raw) => raw.trim()).filter(Boolean).map((line) => {
     const isRef = /^(\*|※)/.test(line)
     if (isRef) {
-      h += Math.round(s.refPt * 100 * 1.3) * simulateWrap(line, avail, avail, s.refPt * 100, 100, "charAll", { faceClass: "gothic" }).lines
+      h += Math.round(s.refPt * 100 * 1.3) * simulateWrap(line, avail - lay.hang, avail - lay.hang, s.refPt * 100, 100, "keep", { faceClass: faceClassForGen(MINISTRY.refFont) }).lines
       return `<hp:p paraPrIDRef="${pRef}" styleIDRef="0">${generateRuns(line, cRef, inlineMapper(reg, { font: MINISTRY.refFont, pt: s.refPt, bold: false }))}</hp:p>`
     }
     const body = line.replace(/^[▪■□○ㅇ●\-–ㆍ·•]\s*/u, "")
-    h += Math.round(s.pt * 100 * 1.4) * simulateWrap(plain(body), avail, avail, s.pt * 100, 100, "charAll").lines
-    return `<hp:p paraPrIDRef="${pItem}" styleIDRef="0">${ministryRuns("▪", body, ctx, baseItem, MINISTRY.blue)}</hp:p>`
+    h += Math.round(s.pt * 100 * 1.4) * simulateWrap(plain(body), avail - lay.hang, avail - lay.hang, s.pt * 100, 100, "keep", { faceClass: faceClassForGen(MINISTRY.bodyFont) }).lines
+    return `<hp:p paraPrIDRef="${pItem}" styleIDRef="0">${markerRunXml("▪", reg.char(baseItem), lay)}${ministryRuns("", body, ctx, baseItem, MINISTRY.blue)}</hp:p>`
   })
   h += 280 + 600
   const box = bf.get({ t: "thin", b: "thin", l: "thin", r: "thin", fill: s.fill })

@@ -31,6 +31,7 @@ import { levelCharIds, levelFontFaces, levelCharPrXmls } from "./gen-levels.js"
 import { ImageRegistry } from "./gen-image.js"
 import { StyleRegistry } from "./style-registry.js"
 import { buildGongmunSectionV5, usesV5Engine } from "./gen-gongmun.js"
+import { polishGongmunBlock } from "./gongmun-typo.js"
 
 export { type HwpxTheme } from "./gen-ids.js"
 export {
@@ -126,7 +127,8 @@ export async function markdownToHwpx(
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 전용 charPr 블록(11~25)이 먼저 온다 (QA-1)
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
   const richAssets = !!gongmun && needsGaejosikAssets(gongmun)
-  const blocks = parseMarkdownToBlocks(md)
+  // 공문서(개조식·보도자료)는 날짜·금액 묶음 빈칸과 ‘’“” 로 다듬는다 — v5 는 gen-gongmun 이 아웃라인에서 같은 처리
+  const blocks = gongmun ? parseMarkdownToBlocks(md).map(polishGongmunBlock) : parseMarkdownToBlocks(md)
   const gongmunList = gongmun ? precomputeGongmunList(blocks, gongmun) : null
   const fit = gongmun && gongmunList ? computeGongmunFitPlan(blocks, gongmun, gongmunList) : null
   // id 배치: 정적 borderFill(기본 2 + 개조식 7 + 공문서 헤더음영 1) → 프로필 → 표 레지스트리.
