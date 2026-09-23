@@ -56,19 +56,21 @@
 // ④물리 세그먼트 병합·컴포넌트 단위 합성은 실측 부작용(pair07 지원서 셀 이동,
 //   pair10 반환청구서 demote 연쇄)으로 보류 — 체인 뷰(판정 전용)가 대체 (10차)
 //
-// 사용법: node bench/pdf-table-gt.mjs [--gate] [--doc=부분문자열] [--verbose]
+// 사용법: node bench/pdf-table-gt.mjs [--gate] [--doc=부분문자열] [--verbose] [--sets=pairs,korea-kr,korea-kr-pairs,rhwp]
 
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { join, relative, basename } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parse } from "../dist/index.js"
 import { irAnchors, scoreTables } from "./lib/table-score.mjs"
+import { hwpxGeoGrids, toGeoAnchors } from "./lib/geo-grid.mjs"
 
 const root = fileURLToPath(new URL(".", import.meta.url))
 const args = process.argv.slice(2)
 const gateMode = args.includes("--gate")
 const verbose = args.includes("--verbose")
 const docFilter = (args.find(a => a.startsWith("--doc=")) ?? "").split("=")[1] ?? null
+const flagValue = (k, d) => (args.find(a => a.startsWith(`--${k}=`)) ?? "").split("=")[1] || d
 
 const round = (x, d = 6) => (x === null || x === undefined ? null : +x.toFixed(d))
 
@@ -80,27 +82,55 @@ const round = (x, d = 6) => (x === null || x === undefined ? null : +x.toFixed(d
 // 상향 잠금 (2026-09-05 v4.12.2 실측: 매칭 1.0 / exact 0.855072 / cellF1 0.945306 / cellExact 0.979575 /
 // NED 0.948432 — 클립 셀 그리드(v4.12.1) + 틀 셀 중첩표·1칸 틀 복원(v4.12.2). 직전 v4.12.1 실측
 // cellF1 0.873·cellExact 0.945·NED 0.842 는 코드에 반영되지 않은 채 11차 플로어가 남아 있었다)
-const GATES = { matchedRate: 0.98, exactRate: 0.85, cellF1: 0.94, cellExactRate: 0.97, contentNED: 0.94, parseErrors: 0, reorderedMax: 3, minPairs: 3, minRefTables: 35 }
+// 무후퇴 플로어 — 2026-09-23 모수 확대(6쌍 69표 → 430쌍 1,784표: korea-kr-pairs 202·rhwp 185 편입)와 기하 정답지·쪽 넘김 잇기
+// 개편 뒤 실측값(매칭 0.9725·exact 0.9008·F1 0.9442·cellExact 0.9274·NED 0.7488·중첩 exact 0.6306) 바로 아래로 잠금
+const GATES = { matchedRate: 0.97, exactRate: 0.9, cellF1: 0.94, cellExactRate: 0.925, contentNED: 0.745, parseErrors: 0, reorderedMax: 15, minPairs: 425, minRefTables: 1750, nestedMatchedRate: 0.65, nestedExactRate: 0.63 }
 
 const t0 = performance.now()
-const dir = join(root, "corpus", "pairs")
-const names = await readdir(dir)
-const pairs = names
-  .filter(n => n.endsWith(".pdf"))
-  .map(n => n.replace(/\.pdf$/, ""))
-  .filter(base => names.includes(base + ".hwpx"))
-  .filter(base => !docFilter || base.includes(docFilter))
-  .sort()
+// 코퍼스 세트 — 같은 폴더의 동명 X.hwpx + X.pdf 짝을 하위 폴더까지 모은다. PDF 는 전부 한컴 산출물
+// (pairs: 기관 게시 원본, korea-kr·korea-kr-pairs: 정책브리핑 첨부 "Hancom PDF 1.3", rhwp: 한글 2022
+// OCX 변환) — hwpx IR 표를 GT 로 PDF 표 복원을 채점한다. --sets=pairs,rhwp 로 좁힐 수 있다
+const SETS = flagValue("sets", "pairs,korea-kr,korea-kr-pairs,rhwp").split(",").filter(Boolean)
+async function* walkFiles(d) {
+  let entries
+  try { entries = await readdir(d, { withFileTypes: true }) } catch { return }
+  for (const e of entries) {
+    const p = join(d, e.name)
+    if (e.isDirectory()) yield* walkFiles(p)
+    else yield p
+  }
+}
+const corpusRoot = join(root, "corpus")
+const pairs = []
+for (const set of SETS) {
+  const files = new Set()
+  for await (const f of walkFiles(join(corpusRoot, set))) files.add(f)
+  for (const f of files) {
+    if (!f.endsWith(".pdf")) continue
+    const base = f.slice(0, -4)
+    if (!files.has(base + ".hwpx")) continue
+    const rel = relative(corpusRoot, base)
+    if (docFilter && !rel.includes(docFilter)) continue
+    pairs.push({ set, base, rel })
+  }
+}
+pairs.sort((a, b) => a.rel.localeCompare(b.rel))
 
 const rows = []
 let parseErrors = 0
-const agg = { refTables: 0, matched: 0, exact: 0, cellTotal: 0, cellExact: 0, contentNum: 0, contentDen: 0, f1Sum: 0, reordered: 0 }
+const newAgg = () => ({ pairs: 0, refTables: 0, matched: 0, exact: 0, cellTotal: 0, cellExact: 0, contentNum: 0, contentDen: 0, f1Sum: 0, reordered: 0 })
+const agg = newAgg()
+const setAgg = new Map(SETS.map(s => [s, newAgg()]))
+const nestedAgg = newAgg()
 
-for (const base of pairs) {
-  const row = { pair: base }
+for (const { set, base, rel } of pairs) {
+  const row = { pair: rel, set }
   try {
-    const hwpx = await parse(await readFile(join(dir, base + ".hwpx")), { filename: base + ".hwpx" })
-    const pdf = await parse(await readFile(join(dir, base + ".pdf")), { filename: base + ".pdf" })
+    const hwpxBytes = await readFile(base + ".hwpx")
+    // 정답지는 기하 격자 — PDF 는 화면만 담아 HWPX 논리 열(행마다 폭이 다른 같은 열)을 되살릴 수 없다 (lib/geo-grid.mjs)
+    const geo = await hwpxGeoGrids(hwpxBytes)
+    const hwpx = await parse(Buffer.from(hwpxBytes), { filename: basename(base) + ".hwpx" })
+    const pdf = await parse(await readFile(base + ".pdf"), { filename: basename(base) + ".pdf" })
     if (!hwpx.success) throw new Error(`hwpx 파싱 실패: ${hwpx.error}`)
     if (!pdf.success) throw new Error(`pdf 파싱 실패: ${pdf.error}`)
 
@@ -134,35 +164,53 @@ for (const base of pairs) {
       walk(table)
       return texts
     }
-    const topGrids = blocks => {
+    // 중첩표 트랙 — 여러 칸 표의 칸 안에 든 표(깊이 무관)를 최상위 트랙과 따로 모아 따로 매칭·채점한다.
+    // 모수 규칙은 최상위와 같다(1×1 틀은 안쪽 표로 승격, 2×2 이상, 흐름띠·거의 빈 표 제외)
+    const topGrids = (blocks, geoOf = null, nestedOut = null) => {
       const out = []
-      const push = (table, depth = 0) => {
+      const push = (table, depth = 0, into = out) => {
         if (depth > 12) return
         const { rows, cols, cells } = table
         if (rows === 1 && cols === 1) {
           for (const b of cells[0]?.[0]?.blocks ?? []) {
-            if (b.type === "table" && b.table) push(b.table, depth + 1)
+            if (b.type === "table" && b.table) push(b.table, depth + 1, into)
           }
           return
         }
-        if (rows < 2 || cols < 2) return
+        // 모수에서 빠지는 표(띠·흐름띠·거의 빈 표)도 칸 안 표는 중첩표 트랙에 든다
+        const walkNested = () => {
+          if (!nestedOut) return
+          for (const row of cells) for (const c of row ?? []) for (const b of c?.blocks ?? []) {
+            if (b.type === "table" && b.table) push(b.table, depth + 1, nestedOut)
+          }
+        }
+        if (rows < 2 || cols < 2) return walkNested()
         // 모수 예외 (10차, 사용자 승인): hwpx가 표를 레이아웃 도구로 쓴 표현 차 —
         // ⓐ흐름띠(화살표 단독 셀 ≥2: 채용공고⇒원서접수⇒…)는 도해라 pdf에 연결
         //   괘선이 없음 ⓑ거의 빈 표(비공백 셀 ≤1)는 겹쳐 얹은 글틀의 스캐폴딩.
         //   양측 대칭 적용 (ref·IR 같은 모수 정의)
+        // 셀 글은 채점(irAnchors cellOwnText)과 같은 기준 — 그림 참조(![image]·<img>)는 글이 아니다.
+        // 종전엔 text(그림 참조 포함)로 세어 사진만 든 격자(보도자료 현장 사진 3×2)가 모수에 들어왔는데,
+        // 채점 앵커는 전부 빈 칸이라 짝이 될 PDF 표(글 없는 클립 격자는 빈 표로 버려짐)가 없는 비대칭이었다
         const flat = []
-        for (const row of cells) for (const c of row ?? []) flat.push((c.text ?? "").trim())
-        if (flat.filter(t => /^[⇒⇨⟹➡→⟶⇾]+$/.test(t)).length >= 2) return
-        if (flat.filter(Boolean).length <= 1) return
-        out.push({ ...irAnchors(table), bagExtra: nestedBagTexts(table) })
+        for (const row of cells) for (const c of row ?? []) flat.push((c.text ?? "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<img\b[^>]*>/gi, "").trim())
+        if (flat.filter(t => /^[⇒⇨⟹➡→⟶⇾]+$/.test(t)).length >= 2) return walkNested()
+        if (flat.filter(Boolean).length <= 1) return walkNested()
+        const logical = irAnchors(table)
+        const g = geoOf && table.sourceId ? toGeoAnchors(logical, geoOf.get(table.sourceId), table) : null
+        into.push({ ...(g ?? logical), bagExtra: nestedBagTexts(table) })
+        walkNested()
       }
       for (const b of blocks ?? []) if (b.type === "table" && b.table) push(b.table)
       return out
     }
     // ref = hwpx IR 그리드 (irAnchors의 anchors를 scoreTables ref 형태 cells로)
-    const refGrids = topGrids(hwpx.blocks).map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors, bagExtra: g.bagExtra }))
-    const irGrids = topGrids(pdf.blocks)
+    const refNested = [], irNested = []
+    const refGrids = topGrids(hwpx.blocks, geo, refNested).map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors, bagExtra: g.bagExtra }))
+    const irGrids = topGrids(pdf.blocks, null, irNested)
     const s = scoreTables(refGrids, irGrids)
+    // 중첩표 — PDF 도 칸 안에 든 표만 짝 후보다 (최상위로 빠져나온 표는 자리를 잃은 것이라 맞힌 것으로 치지 않는다)
+    const ns = refNested.length ? scoreTables(refNested.map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors, bagExtra: g.bagExtra })), irNested) : null
 
     row.ok = true
     row.refTables = s.tableCount
@@ -178,16 +226,35 @@ for (const base of pairs) {
     row.unmatchedRef = s.unmatchedRef
     row.unmatchedIr = s.unmatchedIr
     if (verbose) row.details = s.details
+    if (ns) {
+      row.nested = { ref: ns.tableCount, matched: ns.tableCount - ns.unmatchedRef, exact: ns.exactCount, cellF1: round(ns.cellF1), cellExactRate: round(ns.cellExactRate), contentNED: round(ns.contentNED) }
+      if (verbose) row.nestedDetails = ns.details
+      for (const a of [nestedAgg]) {
+        a.pairs++
+        a.refTables += ns.tableCount
+        a.matched += row.nested.matched
+        a.exact += ns.exactCount
+        a.cellTotal += ns.cellTotal
+        a.cellExact += ns.cellExact
+        a.contentNum += ns.contentNum
+        a.contentDen += ns.contentDen
+        a.f1Sum += ns.cellF1 * ns.tableCount
+        a.reordered += ns.reordered ?? 0
+      }
+    }
 
-    agg.refTables += s.tableCount
-    agg.matched += row.matched
-    agg.exact += s.exactCount
-    agg.cellTotal += s.cellTotal
-    agg.cellExact += s.cellExact
-    agg.contentNum += s.contentNum
-    agg.contentDen += s.contentDen
-    agg.f1Sum += s.cellF1 * s.tableCount
-    agg.reordered += s.reordered ?? 0
+    for (const a of [agg, setAgg.get(set)]) {
+      a.pairs++
+      a.refTables += s.tableCount
+      a.matched += row.matched
+      a.exact += s.exactCount
+      a.cellTotal += s.cellTotal
+      a.cellExact += s.cellExact
+      a.contentNum += s.contentNum
+      a.contentDen += s.contentDen
+      a.f1Sum += s.cellF1 * s.tableCount
+      a.reordered += s.reordered ?? 0
+    }
   } catch (err) {
     parseErrors++
     row.ok = false
@@ -196,26 +263,38 @@ for (const base of pairs) {
   rows.push(row)
 }
 
-const summary = {
-  pairs: rows.length,
-  parseErrors,
-  refTables: agg.refTables,
-  reordered: agg.reordered,
-  matchedRate: round(agg.refTables ? agg.matched / agg.refTables : 1),
-  exactRate: round(agg.refTables ? agg.exact / agg.refTables : 1),
-  cellF1: round(agg.refTables ? agg.f1Sum / agg.refTables : 1),
-  cellExactRate: round(agg.cellTotal ? agg.cellExact / agg.cellTotal : 1),
-  contentNED: round(agg.contentDen ? agg.contentNum / agg.contentDen : 1),
-}
+const summarize = a => ({
+  pairs: a.pairs,
+  refTables: a.refTables,
+  reordered: a.reordered,
+  matchedRate: round(a.refTables ? a.matched / a.refTables : 1),
+  exactRate: round(a.refTables ? a.exact / a.refTables : 1),
+  cellF1: round(a.refTables ? a.f1Sum / a.refTables : 1),
+  cellExactRate: round(a.cellTotal ? a.cellExact / a.cellTotal : 1),
+  contentNED: round(a.contentDen ? a.contentNum / a.contentDen : 1),
+})
+const summary = { ...summarize(agg), pairs: rows.length, parseErrors, nested: summarize(nestedAgg) }
+const bySet = Object.fromEntries([...setAgg].filter(([, a]) => a.pairs > 0).map(([s, a]) => [s, summarize(a)]))
 
 const elapsed = ((performance.now() - t0) / 1000).toFixed(0)
 console.log(`\n══ PDF 표 구조 GT — hwpx↔pdf ${rows.length}쌍 (${elapsed}s) ══`)
 console.log(`  ref 표 ${summary.refTables} | 매칭 ${round(summary.matchedRate * 100, 2)}% | exact ${round(summary.exactRate * 100, 2)}%`)
 console.log(`  cellF1 ${summary.cellF1} | cellExact ${summary.cellExactRate} | contentNED ${summary.contentNED}`)
-for (const r of rows) {
+for (const [s, v] of Object.entries(bySet)) {
+  console.log(`  [${s}] ${v.pairs}쌍 표 ${v.refTables} | 매칭 ${round(v.matchedRate * 100, 2)}% exact ${round(v.exactRate * 100, 2)}% | F1 ${v.cellF1} cellExact ${v.cellExactRate} NED ${v.contentNED}`)
+}
+{
+  const v = summary.nested
+  console.log(`  [중첩표] ${v.pairs}쌍 표 ${v.refTables} | 매칭 ${round(v.matchedRate * 100, 2)}% exact ${round(v.exactRate * 100, 2)}% | F1 ${v.cellF1} cellExact ${v.cellExactRate} NED ${v.contentNED}`)
+}
+// 쌍별 — 완전 일치(표 전부 exact·NED 1)는 줄여서, 나머지는 나쁜 순으로
+const perfect = rows.filter(r => r.ok && r.exact === r.refTables && r.matched === r.refTables && r.contentNED === 1)
+const others = rows.filter(r => !perfect.includes(r)).sort((a, b) => (a.ok ? a.cellF1 : -1) - (b.ok ? b.cellF1 : -1))
+for (const r of others) {
   if (!r.ok) { console.log(`  ❌ ${r.pair}: ${r.error}`); continue }
   console.log(`  ${r.pair}: ref ${r.refTables} → 매칭 ${r.matched} (분할병합 ${r.splitMerged}·순서구제 ${r.reordered}·텍스트 ${r.textMatched}) exact ${r.exact} | F1 ${r.cellF1} NED ${r.contentNED} | pdf잉여 ${r.unmatchedIr}`)
 }
+console.log(`  (완전 일치 ${perfect.length}쌍 생략 — 표 ${perfect.reduce((s, r) => s + r.refTables, 0)})`)
 
 // 게이트 판정 — 무후퇴 플로어 (2026-07-03 bench:gate 편입)
 const gates = {
@@ -226,6 +305,8 @@ const gates = {
   contentNED: { value: summary.contentNED, threshold: GATES.contentNED, pass: summary.contentNED >= GATES.contentNED },
   parseErrors: { value: parseErrors, threshold: GATES.parseErrors, pass: parseErrors <= GATES.parseErrors },
   reordered: { value: summary.reordered, threshold: GATES.reorderedMax, pass: summary.reordered <= GATES.reorderedMax },
+  nestedMatchedRate: { value: summary.nested.matchedRate, threshold: GATES.nestedMatchedRate, pass: docFilter != null || summary.nested.matchedRate >= GATES.nestedMatchedRate },
+  nestedExactRate: { value: summary.nested.exactRate, threshold: GATES.nestedExactRate, pass: docFilter != null || summary.nested.exactRate >= GATES.nestedExactRate },
   // 모수 하한 — 부분 실행(--doc)은 제외
   population: {
     value: `pairs ${summary.pairs}/refTables ${summary.refTables}`,
@@ -239,6 +320,6 @@ for (const [k, g] of Object.entries(gates)) {
 }
 
 await mkdir(join(root, "out"), { recursive: true })
-await writeFile(join(root, "out", "pdf-table.json"), JSON.stringify({ generatedAt: new Date().toISOString(), summary, pass, gates, rows }, null, 1))
+await writeFile(join(root, "out", "pdf-table.json"), JSON.stringify({ generatedAt: new Date().toISOString(), sets: SETS, summary, bySet, pass, gates, rows }, null, 1))
 console.log(`report → bench/out/pdf-table.json | ${pass ? "PASS ✅" : "FAIL ❌"}${gateMode ? "" : " (보고 전용 — --gate 시 exit code 반영)"}`)
 if (gateMode && !pass) process.exit(1)

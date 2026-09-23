@@ -14,15 +14,20 @@ import { normText, normKey } from "./normalize.mjs"
  * 수식 $…$/$$…$$은 제거 — ref 추출기가 셀 텍스트에서 수식을 제외하므로(존재는
  * eqPresence로 별도 채점, whitelist) mdToPlain 본문 경로와 대칭.
  */
-function cellOwnText(cell) {
+function cellOwnText(cell, withNotes = false) {
+  // withNotes: 문단 블록의 각주 본문을 렌더(builder)·칸 text 와 같은 " (주: …)" 꼴로 붙인다 — 칸에 blocks 가 있는 IR 과
+  // text 만 있는 IR 을 맞대는 HWP5 쌍 트랙용. 자기참조 트랙은 각주 본문을 주석 유닛으로 따로 채점하므로 넣지 않는다
   const raw = cell.blocks?.length
     ? cell.blocks
         .filter(b => b.type !== "table" && b.type !== "image")
-        .map(b => b.text ?? "")
+        .map(b => (b.text ?? "") + (withNotes && b.footnoteText && b.text ? ` (주: ${b.footnoteText})` : ""))
         .filter(Boolean)
         .join("\n")
     : cell.text ?? ""
   return raw
+    // 풀 수 없는 이미지 자리표시 "[이미지: ref]"(파서가 image 블록을 문단으로 바꿔 남김) — mdToPlain 과
+    // 같은 의도적 아티팩트 제거 (whitelist: image-placeholder, issue1891 외부 BinData 링크)
+    .replace(/\[이미지:[^\]\n]*\]/g, " ")
     .replace(/\$\$[^$]+\$\$/g, " ")
     .replace(/(^|[^\\$])\$(?!\s)((?:\\.|[^$\n])+?)\$/g, "$1 ")
     // 인라인 링크 [anchor](url) → anchor — ref 셀은 가시 텍스트만 모델링 (mdToPlain 대칭)
@@ -30,7 +35,7 @@ function cellOwnText(cell) {
 }
 
 /** IRTable.cells[][] → 앵커 셀 목록 (tableToHtml과 동일한 skip-set 워크) */
-export function irAnchors(irTable) {
+export function irAnchors(irTable, withNotes = false) {
   const { rows, cols, cells } = irTable
   const anchors = []
   const skip = new Set()
@@ -39,7 +44,7 @@ export function irAnchors(irTable) {
       if (skip.has(r * 100000 + c)) continue
       const cell = cells[r]?.[c]
       if (!cell) continue
-      anchors.push({ r, c, rs: cell.rowSpan, cs: cell.colSpan, text: cellOwnText(cell) })
+      anchors.push({ r, c, rs: cell.rowSpan, cs: cell.colSpan, text: cellOwnText(cell, withNotes) })
       for (let dr = 0; dr < cell.rowSpan; dr++) {
         for (let dc = 0; dc < cell.colSpan; dc++) {
           if (dr === 0 && dc === 0) continue
@@ -55,10 +60,15 @@ export function irAnchors(irTable) {
  * IRBlock[] → IR 그리드 목록 (post-order: 셀 내부 중첩표 먼저, 부모 나중).
  * ref 추출기의 tables[] 적재 순서(processCell 즉시 처리 = 자식 먼저)와 동일한 경계.
  */
-export function collectIrGrids(blocks) {
+export function collectIrGrids(blocks, withNotes = false) {
   const grids = []
   const visitTable = (table, depth = 0) => {
     if (depth > 12) return
+    // 캡션 안 표(#55 IRTable.captionBlocks) — ref 는 캡션을 행보다 먼저 처리하므로 여기도 먼저.
+    // 종전엔 수집하지 않아 캡션 속 표가 "IR 없음"으로 셌다 (issue1891 6×5 공사비 표)
+    for (const b of table.captionBlocks ?? []) {
+      if (b.type === "table" && b.table) visitTable(b.table, depth + 1)
+    }
     // 앵커 워크와 동일한 row-major 순서로 셀 내부 중첩표 재귀
     const { rows, cols, cells } = table
     const skip = new Set()
@@ -78,7 +88,7 @@ export function collectIrGrids(blocks) {
         }
       }
     }
-    grids.push(irAnchors(table))
+    grids.push(irAnchors(table, withNotes))
   }
   for (const b of blocks ?? []) {
     if (b.type === "table" && b.table) visitTable(b.table)
@@ -126,8 +136,9 @@ export function matchTables(refTables, irGrids) {
   const irBags = irGrids.map(g => cellTextBag(g))
   for (let i = 0; i < n; i++) {
     sim.push(new Float64Array(m))
+    const decorRef = (refTables[i].cells ?? []).some(a => a.headingLines?.length)
     for (let j = 0; j < m; j++) {
-      const bs = bagSim(refBags[i], irBags[j])
+      const bs = bagSim(refBags[i], decorRef ? decorAwareBag(refTables[i], irGrids[j]) : irBags[j])
       // 양쪽 다 텍스트가 있는데 교집합 0 = 내용이 모순되는 표 — dims-only 매칭 차단
       // (dimSim 0.25 누수가 진짜 짝을 선점해 순서구제까지 봉쇄하는 것 방지, 10차)
       if (bs === 0 && refBags[i].size > 0 && irBags[j].size > 0) { sim[i][j] = 0; continue }
@@ -251,6 +262,32 @@ export function matchTables(refTables, irGrids) {
   return { pairs, merged, usedIr, reordered, textMatched }
 }
 
+/**
+ * 자동부호 장식 관용을 표 대응(bag)에도 적용 — 셀 채점(stripHeadingDecor)과 같은 좌표·규칙으로
+ * ref 자동부호 문단 셀 자리의 IR 선두 장식 토큰을 떼어 본 bag. 종전엔 대응 단계가 장식을 몰라
+ * 장식 셀뿐인 표(1×1 "2. 표 셀 번호 문단")는 교집합 0 으로 영영 짝을 못 찾았다 (pr4093)
+ */
+function decorAwareBag(ref, ir) {
+  const decor = new Map()
+  for (const a of ref.cells) if (a.headingLines?.length) decor.set(`${a.r},${a.c}`, a)
+  const bag = new Map()
+  for (const a of ir.anchors ?? ir.cells) {
+    let t = a.text
+    const rc = decor.get(`${a.r},${a.c}`)
+    if (rc && normKey(t) !== normKey(rc.text)) {
+      const st = stripHeadingDecor(rc.text, t, rc.headingLines)
+      if (st !== null && normKey(st) === normKey(rc.text)) t = st
+    }
+    const k = normKey(t)
+    if (k) bag.set(k, (bag.get(k) ?? 0) + 1)
+  }
+  for (const t of ir.bagExtra ?? []) {
+    const k = normKey(t)
+    if (k) bag.set(k, (bag.get(k) ?? 0) + 1)
+  }
+  return bag
+}
+
 function mergeGrids(grids) {
   const cols = grids[0].cols
   let rows = 0
@@ -264,9 +301,9 @@ function mergeGrids(grids) {
 
 const tupleKey = a => `${a.r},${a.c},${a.rs},${a.cs}`
 
-// 자동부호 장식 토큰 1개 — 번호형(1. 1) (1) 가. (가) a. Ⅰ ① ㉮)과 단일 부호문자
+// 자동부호 장식 토큰 1개 — 번호형(1. 1) (1) 가. ㄱ. (가) a. Ⅰ ① ㉮)과 단일 부호문자
 // (문자/숫자가 아닌 1글자: - ※ • □ ◆ 등). 문자/숫자 단독은 불허 — 중복문자 버그 마스킹 방지.
-const HEAD_DECOR_RE = /^[ \t]*(?:\d{1,3}[.)]|\(\d{1,3}\)|[가-힣][.)]|\([가-힣]\)|[A-Za-z][.)]|\([A-Za-z]\)|[①-㊿⑴-⒇⒈-⒛㉠-㉿ⓐ-ⓩⅰ-ⅻⅠ-Ⅻ]|[^\p{L}\p{N}\s])[ \t]*/u
+const HEAD_DECOR_RE = /^[ \t]*(?:\d{1,3}[.)]|\(\d{1,3}\)|[가-힣ㄱ-ㅎ][.)]|\([가-힣ㄱ-ㅎ]\)|[IVXivx]{1,4}[.)]|[A-Za-z][.)]|\([A-Za-z]\)|[①-㊿⑴-⒇⒈-⒛㉠-㉿ⓐ-ⓩⅰ-ⅻⅠ-Ⅻ]|[^\p{L}\p{N}\s])[ \t]*/u
 
 /**
  * 자동부호(NUMBER/BULLET) 문단 장식 관용 — ref XML(hp:t)은 무장식이므로, ref가 header.xml

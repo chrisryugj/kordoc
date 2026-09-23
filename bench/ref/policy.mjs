@@ -35,7 +35,13 @@ export const WHITELIST = [
   { id: "img-inline", desc: "셀 내 이미지 인라인 — HTML 표 <img src=… alt=…> / GFM ![image](…) 는 의도적 아티팩트, mdToPlain에서 제거 (phantom 제외). 이미지 보유 셀은 trim 판정 시 비어있지 않음(builder trimAndReturn 미러)" },
   { id: "image-placeholder", desc: "'[이미지: ref]' 플레이스홀더 — phantom 제외" },
   { id: "header-policy", desc: "머리말/꼬리말은 0회 또는 1회 출력 허용 — recall 모수 제외, 정책 위반(2회+)만 검사" },
-  { id: "pua-map", desc: "한컴 PUA 글머리표 → 표준 유니코드 매핑(rhwp 검증 테이블) — 정규화 대칭을 위해 참조에도 동일 적용 (lib/normalize.mjs mapPua)" },
+  { id: "pdf-nounicode-glyph", desc: "한컴 PDF 가 ToUnicode 없는 글리프(자동 글머리·번호·일부 괄호·칸 채움)를 전부 U+F000 으로 낸다 — 원래 글자 복원 불가라 파서가 제거, 정규화도 양쪽 제거 (lib/normalize.mjs normText)" },
+  { id: "pua-map", desc: "한컴 PUA 글머리표 → 표준 유니코드 매핑(rhwp 검증 테이블 + 심볼 PUA U+F021~F0FF 는 Wingdings 코드표) — 정규화 대칭을 위해 참조에도 동일 적용 (lib/normalize.mjs mapPua)" },
+  // v4.14.3 (rhwp 코퍼스 편입) — 한컴이 그리지만 hp:t 에 없는 글을 참조가 XML 속성으로 재구성 (파서와 독립 구현)
+  { id: "note-marks", desc: "각주·미주 본문 참조 부호(개체 number·prefixChar·suffixChar·userChar + 구역 footNotePr/endNotePr 번호 모양)와 주석·캡션 머리 hp:autoNum(FOOTNOTE·ENDNOTE·PICTURE·TABLE·EQUATION) 번호를 참조 글에 넣는다 — 한컴 PDF 실렌더(footnote-01 '액체1)와'·'1) 플라스틱 액체란', 3-09월 '문1）', ta-pic '<그림 1>'). 쪽번호 PAGE 는 종전대로 제외" },
+  { id: "note-presence-host", desc: "fnPresence 모수 = 비어 있지 않은 주석을 가진 문단 수 — 파서는 한 문단의 주석을 '(주: 1) …; 2) …)' 하나로 담는다(IRBlock.footnoteText 단일 문자열, HWP5 동일). 주석 글 자체는 recall(주석 유닛)이 채점" },
+  { id: "page-text-parts", desc: "머리말·꼬리말은 조각(문단 글·표 셀·글상자, 문서 순서) 단위로 이어 찾는다 — 파서가 머리말 표를 ' / '·줄바꿈으로 평탄화. 전 머리말을 1회씩 소비한 뒤 재등장만 위반. 본문 문자 6자 미만은 문서 첫머리(머리말)·끝(꼬리말) 구간에서만 소비" },
+  { id: "autonum-forms", desc: "자동번호 phantom 관용·셀 장식 관용에 한컴 번호 서식 전 계열 — 자모(ㄱ.)·괄호형((1)·(가))·로마자(I.) 추가, OUTLINE(개요) 문단도 자동부호 문단 (한컴 2020 PDF '1. 3. 단계별…')" },
 ]
 
 // ─── 블랙리스트: 출력 마크다운에 있으면 안 되는 문자열 (phantom 보조, pitfall #7) ───
@@ -64,8 +70,9 @@ export const GATES = {
   // 신규 문서). 새 모수의 실측치 바로 아래로 다시 잠근다(래칫 유지). 잔여는 종전과 같은
   // 구조 해석 충돌 영역 + 신규 문서의 각주 별표·성과지표 표(eval-perf 목표치/측정산식 열).
   pdf: { coverage: 0.9955 },
-  // HWP5 2차 트랙 (같은 newsId의 hwp↔hwpx 쌍 상호 정렬) — v3.0에서 정식 게이트 승격
-  hwp: { pairSimilarity: 1, pairCoverage: 1 },
+  // HWP5 2차 트랙 (같은 newsId의 hwp↔hwpx 쌍 상호 정렬) — v3.0에서 정식 게이트 승격.
+  // 표 구조(pairTable*)는 HWPX IR 표를 GT 로 HWP5 IR 표의 셀 좌표·병합·내용을 대조 (v4.14.3)
+  hwp: { pairSimilarity: 1, pairCoverage: 1, pairTableExact: 1, pairCellF1: 1, pairCellExact: 1, pairContentNED: 1 },
 }
 
 /** 정책 드롭 카운터 생성 — 문서별 리포트용 */
@@ -81,8 +88,10 @@ export function newPolicyCounters() {
   }
 }
 
-// 파서(builder.ts / hwpx parser.ts)의 대체텍스트 제거와 동일한 패턴 — 참조에 대칭 적용
-export const SHAPE_ALT_RE = /(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?/g
+// 파서(builder.ts / hwpx parser.ts)의 대체텍스트 제거와 동일한 패턴 — 참조에 대칭 적용.
+// 파서처럼 줄 전체 일치(^…$m)로 한정 — 무앵커면 본문 "전선입니다."의 "선입니다."까지 지워
+// 참조가 파서 출력보다 짧아진다 (exam_kor phantom "선입니다.", v4.14.3)
+export const SHAPE_ALT_RE = /^[ \t]*(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?[ \t]*$/gm
 export const OLE_ALT_HEAD_RE = /^그림입니다\.?\s*원본\s*그림의\s*(이름|크기)/
 export const OLE_ALT_INLINE_RE = /그림입니다\.?\s*원본\s*그림의\s*(이름|크기)[^\n]*(\n[^\n]*원본\s*그림의\s*(이름|크기)[^\n]*)*/g
 

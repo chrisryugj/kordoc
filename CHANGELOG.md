@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+읽기 품질 전면 점검: 코퍼스를 넓히고(rhwp 표본 1,351파일·정책브리핑 hwpx+pdf 짝 200쌍) 포맷마다 정답지 벤치를 다시 세운 뒤,
+표·표 안의 표·PDF·OCR·개인정보 마스킹을 고쳤다. 수치는 모두 새 모수 기준.
+
+### Changed
+
+- **PDF 표 복원** (`src/pdf/table-parts.ts`·`table-meta.ts`·`table-trim.ts` 신설, `clip-cells.ts`·`page-blocks.ts`·`line-extract.ts`):
+  hwpx↔pdf 430쌍 1,784표 exact 64.1% → 90.1%, 셀 F1 0.790 → 0.945, 매칭 97.3%.
+  - 쪽 넘김 표를 열 경계 합집합 격자로 잇는다. 한컴 PDF 는 쪽마다 그 쪽에 그려진 칸만 클립으로 깔아 조각마다 열 구성이 다르고,
+    앞 쪽에서 넘어온 세로 병합 칸은 뒤 쪽에 클립이 없다. 쪼개진 행은 앞 쪽 끝줄이 칸 오른끝까지 찼을 때만 합친다(가운데 정렬 칸 제외).
+    쪽 가장자리 장 표시 글만 끼어 있으면 인접으로 보고, 첨부 머리표(붙임·별지)와 쪽 끝 띠 밖 표는 잇지 않는다.
+  - 후행 빈 열을 HWP 계열 builder 와 같은 규칙으로 자른다(칸 전체를 덮는 배경 그림은 내용 아님).
+  - 칸 클립 묶음과 좌표가 같은 바깥 클립(글자처럼 놓인 표의 겉 클립)을 1×1 틀로 보지 않는다. 틀이 글을 다 가져가 안쪽 표가 빈 표로 버려지던 것.
+  - 클립 없이 배경 채움만 그려지는 폭 3pt 안팎의 가장자리 빈 칸을 채움 사각형으로 되살린다.
+  - 글 없는 표 조각(다음 쪽으로 넘어간 빈 마지막 행)을 쪽 넘김 잇기까지 살려 둔다.
+  - 이웃 칸 판정을 변 공유 0.15pt·직각 변 정렬로 좁혀 캡션·글줄 클립이 표에 붙지 않게, 좌표 묶음을 0.3pt 로 좁혀 원본에서 다른 열 경계를 합치지 않게.
+  - 1pt 안으로 겹친 글자는 콘텐츠 스트림 순서를 따르고(자간 줄인 숫자), 한컴의 ToUnicode 없는 글리프 자리표시 U+F000 을 지운다.
+- **표 안의 표 (PDF)**: 틀 칸 안의 감싸개 클립(칸 안쪽 여백·글상자)을 건너뛰어 중첩표를 틀 칸 `blocks` 에 넣는다. 중첩표 exact 65.9% → 80.2%
+  (칸 안 표 91개 모수, 새 중첩표 트랙 157개 모수로는 63.7%).
+- **HWP5** (`src/hwp5/ir-assemble.ts` 신설): 좌표 셀 표를 builder 로 배치해 HWPX 와 같은 표 계약(후행 빈 열 트림)을 따른다.
+  hwp↔hwpx 쌍 표 exact 0.824 → 1, 셀 F1 0.916 → 1(3,593표). 머리말·꼬리말·각주·캡션 안 표 유실, 캡션 안 표가 바깥 표를 깨던 것,
+  글자처럼 취급 표 뒤 글 순서, 채움 탭 뒤 목차 쪽번호, 미기입 누름틀 안내문, 셀 각주, WMF·TIFF 그림, 문서 요약 정보(제목·지은이 등)를 고쳤다.
+- **HWP3** (`src/hwp3/table.ts` 신설): 표를 셀 기하로 격자 복원(한컴 변환본 표 120개 앵커 일치), 개요 번호·각주·미주·머리말·꼬리말·숨은 설명·
+  자동 번호·사적 문장부호 8코드.
+- **HWPX** (`src/hwpx/notes.ts`·`run-spans.ts` 신설): 각주·미주 참조 부호와 주석 머리 번호, 캡션 번호, `content.hpf` 메타데이터(제목·지은이·설명·
+  키워드·날짜). 전 코퍼스 phantom 0.0047 → 0.00005, 표 exact·셀 F1·수식·각주 게이트 1.
+- **OCR** (`src/ocr/line-split.ts`·`postprocess.ts`·`crop.ts`·`deskew.ts` 신설): 기울기 보정, 세로로 이어진 키 큰 박스를 행 밴드로 갈라 인식,
+  사전에 없는 공문서 기호(○·△·따옴표) 복원, 박스 좌표를 잉크 경계로. CER 0.201 → 0.192, 기울어진 스캔(+3°) 57.6% → 22.0%.
+  PDF 경로 보완 3건: 과소분할 표 열 비교는 본문 행만(`undersegmented.ts`), 2단 판정 통계는 양쪽에 글 있는 줄만(`cluster-detector.ts`),
+  병합 칸에 쌓인 온전한 천 단위 숫자는 잇지 않음(`cell-text.ts`).
+- **개인정보 마스킹** (`src/redact-rules.ts`·`redact-doc.ts`·`redact-hwpx.ts`·`redact-hwp5.ts`·`redact-scrub.ts` 신설): 파일 안 모든 글자 저장소
+  (문단·표·글상자·머리말·각주·메모·필드 명령·속성·미리보기·요약 정보·압축 스트림·OLE 개체)를 같은 길이 치환으로 가리고, HWP5 미할당
+  섹터를 비운다. 창 안 라벨 전부 반영, 변경 추적 조각 결합, 목록 표기·UTF-16 항목·이미지 메타데이터. 5,081문서 오탐 387 → 0,
+  2,000행 명단 71초 → 2.2초.
+- `src/roundtrip/hwp5-patch.ts`: IR 이 후행 빈 열을 자르므로 열이 더 많은 스캔 표도 짝 후보로(표 셀 수정 매핑 실패 563표).
+- HWP5 쌍 벤치: 칸 각주는 HWPX 가 문단 블록 footnoteText, HWP5 가 칸 text 인라인으로 담으므로(칸 text·마크다운은 같다) 양쪽 다 각주 포함으로 맞댄다. 1,060쌍 표 3,739개 exact 1.
+
+### Added
+
+- 벤치: `bench/collect-rhwp.mjs`·`collect-korea-kr-pairs.mjs`(코퍼스 수집), `bench/lib/geo-grid.mjs`(PDF 표 기하 정답지: 폭 0 논리 열 접기),
+  `pdf-table-gt.mjs` 중첩표 트랙·세트별 집계, `bench/ocr-robust.mjs`(열화 입력), `bench/redact-bench.mjs`·`redact-docs.mjs`(합성·코퍼스 마스킹).
+- 게이트 플로어를 새 모수로 다시 잠갔다(PDF 표 매칭 0.97·exact 0.90·F1 0.94·중첩 exact 0.63 등). `bench:gate` 에 마스킹·OCR 정확도 게이트 추가.
+
+### Known issues
+
+- rhwp HWP3 변환본 4건은 본문의 리터럴 `$`(셸 변수)가 인라인 수식 `$…$` 와 구별되지 않아 HWPX recall 게이트를 넘지 못한다. IR 에 리터럴 `$` 이스케이프 규약이 필요하다.
+
 ## [4.14.2] - 2026-09-23
 
 ### Fixed

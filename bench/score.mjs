@@ -13,7 +13,7 @@
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises"
 import { join, extname, basename, relative } from "node:path"
 import { fileURLToPath } from "node:url"
-import { parse } from "../dist/index.js"
+import { parse, flattenLayoutTables, blocksToMarkdown } from "../dist/index.js"
 import { extractRef } from "./ref/hwpx-ref.mjs"
 import { pdfCrossCoverage } from "./ref/pdf-consensus.mjs"
 import { GATES, BLACKLIST, WHITELIST } from "./ref/policy.mjs"
@@ -40,11 +40,17 @@ async function* walk(dir) {
 
 const round = (x, d = 4) => (x === null || x === undefined ? null : +x.toFixed(d))
 
+// 암호 문서 — 샘플 파일명에 열기 암호를 적어 두는 관례(rhwp "…-password-123456.hwp")가 있으면 그 암호로
+// 연다. 복호화 경로의 스모크가 되고, 자기참조 GT(평문 XML)는 만들 수 없으므로 HWPX 는 파싱 성공만 본다
+const passwordOf = file => /password-(\w+)/.exec(basename(file))?.[1]
+const parseOpts = file => ({ filename: basename(file), ...(passwordOf(file) ? { password: passwordOf(file) } : {}) })
+
 // ─── HWPX 채점 ──────────────────────────────────────
 
 async function scoreHwpx(file, buf) {
-  const res = await parse(buf, { filename: basename(file) })
+  const res = await parse(buf, parseOpts(file))
   if (!res.success) return { ok: false, stage: "parse", error: res.error }
+  if (passwordOf(file)) return { ok: true, encrypted: true }
 
   let ref
   try {
@@ -61,16 +67,47 @@ async function scoreHwpx(file, buf) {
   const { perUnit, buf: cbuf } = alignUnits(unitsForAlign, mdKey)
 
   // 머리말/꼬리말 — 0/1회 허용 소비 (recall 모수 제외, phantom 제외; 2회+ = 정책 위반)
+  // 참조는 조각 목록(문단 글·표 셀 글·글상자 글, 문서 순서) — 파서는 머리말 표를 " / "·줄바꿈으로
+  // 평탄화하므로 조각 사이엔 본문 문자 없는 구분자만 허용해 이어 찾는다. 2단계: 전 머리말을 먼저
+  // 1회씩 소비한 뒤 잔여 재등장만 위반으로 센다(한 머리말이 다른 머리말 글의 앞부분이면 1단계
+  // 동시 검사가 거짓 위반을 냈다 — exam_social 홀/짝 머리말). 본문 문자 6자 미만 짧은 머리말은
+  // 우연 일치 위험이 커서 종전엔 채점에서 뺐는데, 그러면 1회 방출이 phantom 으로 남는다("대외주의"
+  // "상공신문") — 파서가 머리말을 문서 첫머리, 꼬리말을 끝에 두므로 그 구간에서만 소비한다
   let headerViolations = 0
-  for (const h of [...ref.specials.headers, ...ref.specials.footers]) {
-    const k = normKey(h)
-    if (k.length < 6) continue
-    const p1 = cbuf.find(k)
-    if (p1 !== -1) {
-      cbuf.consume(p1, p1 + k.length)
-      if (cbuf.find(k) !== -1) headerViolations++
+  const isContent = ch => /[\p{L}\p{N}]/u.test(ch)
+  const findParts = (parts, from = 0) => {
+    for (let p0 = cbuf.find(parts[0], from); p0 !== -1; p0 = cbuf.find(parts[0], p0 + 1)) {
+      let end = p0 + parts[0].length
+      let ok = true
+      for (let i = 1; i < parts.length && ok; i++) {
+        // 다음 조각은 본문 문자 없는 구분자 뒤 어디서든 (조각 자신이 "(" 같은 구두점으로 시작할 수 있다)
+        let j = end
+        for (;;) {
+          if (mdKey.startsWith(parts[i], j) && cbuf.isFree(j, j + parts[i].length)) { end = j + parts[i].length; break }
+          if (j >= mdKey.length || isContent(mdKey[j])) { ok = false; break }
+          j++
+        }
+      }
+      if (ok) return [p0, end]
     }
+    return null
   }
+  const pageTexts = [
+    ...ref.specials.headers.map(h => ({ parts: h, header: true })),
+    ...ref.specials.footers.map(h => ({ parts: h, header: false })),
+  ].map(x => ({ ...x, parts: x.parts.map(normKey).filter(Boolean) })).filter(x => x.parts.length)
+  const bodyStart = cbuf.intervals.length ? cbuf.intervals[0][0] : mdKey.length
+  const bodyEnd = cbuf.intervals.length ? cbuf.intervals[cbuf.intervals.length - 1][1] : 0
+  const consumedPT = []
+  for (const pt of pageTexts) {
+    const short = pt.parts.join("").replace(/[^\p{L}\p{N}]/gu, "").length < 6
+    const hit = findParts(pt.parts, short && !pt.header ? bodyEnd : 0)
+    if (!hit) continue
+    if (short && (pt.header ? hit[1] > bodyStart : hit[0] < bodyEnd)) continue
+    cbuf.consume(hit[0], hit[1])
+    consumedPT.push(pt)
+  }
+  for (const pt of consumedPT) if (findParts(pt.parts)) headerViolations++
 
   // per-kind recall
   const byKind = {}
@@ -110,7 +147,11 @@ async function scoreHwpx(file, buf) {
   // 원문에 없어 미소비로 남는다 — ref가 NUMBER/BULLET heading 문단을 실제로 쓴 문서에
   // 한해, 매칭 소비 구간 직전에 붙은(세그먼트 끝 b가 소비 구간과 인접) 세그먼트 전체가
   // 자동번호 패턴과 정확 일치하는 ≤3자만 관용. 오염 문자가 섞이면 패턴 불일치로 계상.
-  const AUTONUM_RE = /^(\d{1,2}|[가-힣]|[①-⑳㉑-㉟㊱-㊿])[.)]?$/
+  // 한컴 번호 서식 전 계열 — 숫자·가나다·자모(HANGUL_JAMO "ㄱ.")·원문자·로마자(ROMAN "I."·"ⅰ")·
+  // 라틴 1자, 그리고 괄호형 "(1)"·"(가)"(paraHead "(^5)"). 종전엔 괄호형·로마자가 빠져 SO-SUEOP
+  // 개요 번호 "(1) 주제"·"I. 소설의 이해"(한컴 PDF 실렌더 동일)가 phantom 으로 셌다
+  const AUTONUM_TOKEN = "(?:\\d{1,2}|[가-힣]|[ㄱ-ㅎ]|[①-⑳㉑-㉟㊱-㊿]|[ⅰ-ⅻⅠ-Ⅻ]|[IVXivx]{1,4}|[A-Za-z])"
+  const AUTONUM_RE = new RegExp(`^(?:\\(${AUTONUM_TOKEN}\\)|${AUTONUM_TOKEN}[.)]?)$`)
   const hasAutoNumParas = (ref.counters.autoNumHeadingParas ?? 0) > 0
   const unconsumed = cbuf.unconsumed()
   let phantomChars = 0
@@ -201,7 +242,9 @@ async function scoreHwpx(file, buf) {
 
   // ── specials presence ──
   const eqRef = ref.specials.equations
-  const fnRef = ref.specials.footnotes.length + ref.specials.endnotes.length
+  // 주석 presence 모수 = 주석을 가진 문단 수 — 파서는 문단의 주석을 "(주: 1) …; 2) …)" 하나로
+  // 담는다(IRBlock.footnoteText 단일 문자열, HWP5 파서 동일). 주석 글 자체는 recall 이 채점
+  const fnRef = ref.specials.noteHosts
   const eqPresence = eqRef > 0 ? Math.min(1, mdEqCount / eqRef) : 1
   const fnPresence = fnRef > 0 ? Math.min(1, mdFnCount / fnRef) : 1
 
@@ -260,7 +303,9 @@ async function scorePdf(file, buf) {
     return { ok: false, stage: "parse", error: res.error }
   }
 
-  const needsOcrPages = new Set((res.pageQuality ?? []).filter(q => q.needsOcr).map(q => q.page))
+  // 모수 격리는 추출 글자가 깨진 페이지만(PUA·제어문자·대체문자·깨진 한글) — "low_text"(글이 적을 뿐인
+  // 표·차트·수식 페이지)는 텍스트 층이 온전해 두 추출기와 그대로 대조한다 (v4.14.3, rhwp 코퍼스 117건 격리 재검토)
+  const needsOcrPages = new Set((res.pageQuality ?? []).filter(q => q.needsOcr && q.ocrReason !== "low_text").map(q => q.page))
   const totalPages = res.pageCount ?? (res.pageQuality ?? []).length
 
   if (res.isImageBased || (totalPages > 0 && needsOcrPages.size >= totalPages)) {
@@ -302,15 +347,27 @@ function crossCoverage(unitsText, targetKey) {
 
 async function scoreHwpPair(hwpFile, hwpxFile) {
   const [hwpBuf, hwpxBuf] = await Promise.all([readFile(hwpFile), readFile(hwpxFile)])
-  const [hwpRes, hwpxRes] = [await parse(hwpBuf, { filename: basename(hwpFile) }), await parse(hwpxBuf, { filename: basename(hwpxFile) })]
+  const [hwpRes, hwpxRes] = [await parse(hwpBuf, parseOpts(hwpFile)), await parse(hwpxBuf, parseOpts(hwpxFile))]
   if (!hwpRes.success || !hwpxRes.success) {
     return { ok: false, error: !hwpRes.success ? `hwp: ${hwpRes.error}` : `hwpx: ${hwpxRes.error}` }
   }
+  // HWP 계열 파서(HWP5·HWP3)만 레이아웃 표를 문단으로 해체한다(flattenLayoutTables — HWPX 는 왕복 소스맵 때문에
+  // 안 함). 텍스트 대조도 표 대조와 같은 대칭으로 — 같은 함수로 해체한 HWPX IR 을 같은 builder 로 그린다.
+  // 해체할 표가 없으면 hwpxRes.markdown 과 바이트 동일(1,047쌍 실측), 있으면(71쌍) 레이아웃 표 셀 안 중첩표가
+  // HWPX 쪽에서만 " / " 평탄화 줄(GFM·1열 경로)로 그려져 생기던 거짓 차이를 없앤다
+  const hwpxFlat = flattenLayoutTables(hwpxRes.blocks)
   const hwpPlain = mdToPlain(hwpRes.markdown).text
-  const hwpxPlain = mdToPlain(hwpxRes.markdown).text
+  const hwpxPlain = mdToPlain(blocksToMarkdown(hwpxFlat)).text
   const aToB = crossCoverage(hwpxPlain, normKey(hwpPlain)) // hwpx 내용이 hwp 출력에 있는가
   const bToA = crossCoverage(hwpPlain, normKey(hwpxPlain))
-  const ned = 1 - (aToB.matched + bToA.matched) / Math.max(1, aToB.total + bToA.total)
+  // 양쪽 다 채점 유닛(≥4자 줄)이 없으면 같은 출력이다 — 종전 식은 0/0 을 NED 1(완전 불일치)로 셌다(차트 샘플 49쌍)
+  const ned = aToB.total + bToA.total === 0 ? 0 : 1 - (aToB.matched + bToA.matched) / (aToB.total + bToA.total)
+  // 표 구조 — 같은 문서의 HWPX IR 표(XML 자기참조 트랙이 tableExact 1 로 검증)를 GT 로 HWP5 IR 표를
+  // 셀 좌표·병합까지 대조한다. HWP5 파서만 레이아웃 표를 문단으로 해체하므로(flattenLayoutTables) GT 에도
+  // 같은 함수를 적용해 양측 대칭(위 hwpxFlat). 중첩표는 collectIrGrids 가 셀 blocks 를 재귀 수집(post-order)
+  // 칸 각주는 HWPX 가 문단 블록 footnoteText, HWP5 가 칸 text 인라인으로 담는다(칸 text·마크다운은 같다) — 양쪽 다 각주 포함으로 맞댄다
+  const refGrids = collectIrGrids(hwpxFlat, true).map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors }))
+  const tbl = scoreTables(refGrids, collectIrGrids(hwpRes.blocks, true))
   return {
     ok: true,
     hwpxToHwp: round(aToB.coverage),
@@ -318,13 +375,19 @@ async function scoreHwpPair(hwpFile, hwpxFile) {
     crossNED: round(ned),
     hwpChars: aToB.total ? normKey(hwpPlain).length : 0,
     hwpxChars: normKey(hwpxPlain).length,
+    tables: {
+      ref: tbl.tableCount, ir: tbl.irTableCount, exact: tbl.exactCount, cellF1: round(tbl.cellF1, 6),
+      cellTotal: tbl.cellTotal, cellExact: tbl.cellExact, contentNum: tbl.contentNum, contentDen: tbl.contentDen,
+      unmatchedRef: tbl.unmatchedRef, unmatchedIr: tbl.unmatchedIr,
+      mismatches: tbl.details.filter(d => !d.exact).slice(0, 3),
+    },
   }
 }
 
 // ─── 메인 ───────────────────────────────────────────
 
 const t0 = performance.now()
-const hwpxDocs = [], pdfDocs = [], hwpFiles = [], failures = []
+const hwpxDocs = [], pdfDocs = [], hwpFiles = [], failures = [], encryptedDocs = []
 const misnamedOle2 = new Set() // 확장자 .hwpx + OLE2 매직 (실제 HWP5) — 쌍 탐색 제외
 const allFiles = []
 for await (const f of walk(corpusDir)) allFiles.push(f)
@@ -356,7 +419,8 @@ for (const file of allFiles) {
       const row = await scoreHwpx(file, buf)
       row.file = rel
       row.ms = Math.round(performance.now() - td)
-      if (row.ok) hwpxDocs.push(row)
+      if (row.encrypted) encryptedDocs.push(rel)
+      else if (row.ok) hwpxDocs.push(row)
       else failures.push({ file: rel, ...row })
       if (verbose) console.error(`hwpx ${row.ok ? (row.docPass ? "PASS" : "FAIL") : "ERR "} r=${row.recall ?? "-"} ph=${row.phantomRate ?? "-"} ${rel}`)
     } else if (ext === "pdf") {
@@ -387,8 +451,10 @@ for (const hwpFile of hwpFiles) {
     const sibling = allFiles.find(f => f !== hwpFile && f.startsWith(dir) && basename(f).startsWith(m[1] + "_") && /\.hwpx$/i.test(f) && !misnamedOle2.has(f))
     if (sibling) pair = sibling
   } else {
-    const cand = hwpFile.replace(/\.hwp$/i, ".hwpx")
-    if (allFiles.includes(cand)) pair = cand
+    // 같은 이름 .hwpx, 없으면 한컴 변환본 명명(rhwp 샘플 "<원본>-hwpx.hwpx"·"<원본>-hwp5.hwpx" — HWP3 원본을 한글이
+    // HWPX/HWP5→HWPX 로 저장한 것, rhwp mydocs task_m100_554 가 변환 경위 기록). HWP3 표·개요번호·각주의 유일한 GT
+    const stem = hwpFile.replace(/\.hwp$/i, "")
+    pair = [".hwpx", "-hwpx.hwpx", "-hwp5.hwpx"].map(s => stem + s).find(c => allFiles.includes(c)) ?? null
   }
   if (!only || only === "hwp") {
     if (pair) {
@@ -401,7 +467,7 @@ for (const hwpFile of hwpFiles) {
     } else {
       // 쌍 없는 hwp — 파싱 성공 여부만
       try {
-        const res = await parse(await readFile(hwpFile), { filename: base })
+        const res = await parse(await readFile(hwpFile), parseOpts(hwpFile))
         hwpUnpaired.push({ file: relative(join(root, "corpus"), hwpFile), parsed: res.success, mdLen: res.success ? res.markdown.length : 0, error: res.success ? undefined : res.error })
       } catch (err) {
         hwpUnpaired.push({ file: relative(join(root, "corpus"), hwpFile), parsed: false, error: String(err?.message ?? err) })
@@ -494,11 +560,26 @@ const hwp5Agg = (() => {
   const avgCrossNED = round(sum(okPairs, p => p.crossNED) / Math.max(1, okPairs.length))
   const avgHwpxToHwp = round(sum(okPairs, p => p.hwpxToHwp) / Math.max(1, okPairs.length))
   // v3.0 정식 게이트: 쌍 유사도(1-crossNED)·hwpx→hwp 커버 ≥ 기준, 파싱 실패 쌍 0
+  // 표 구조 (HWPX IR = GT) — 마이크로 집계
+  const tRef = sum(okPairs, p => p.tables.ref)
+  const tExact = sum(okPairs, p => p.tables.exact)
+  const tF1 = tRef ? sum(okPairs, p => p.tables.cellF1 * p.tables.ref) / tRef : 1
+  const tCells = sum(okPairs, p => p.tables.cellTotal)
+  const tCellExact = tCells ? sum(okPairs, p => p.tables.cellExact) / tCells : 1
+  const tDen = sum(okPairs, p => p.tables.contentDen)
+  const tNED = tDen ? sum(okPairs, p => p.tables.contentNum) / tDen : 1
   const gates = {
     pairSimilarity: {
       value: round(1 - avgCrossNED, 5), threshold: GATES.hwp.pairSimilarity,
       pass: okPairs.length > 0 && 1 - avgCrossNED >= GATES.hwp.pairSimilarity,
     },
+    pairTableExact: {
+      value: round(tRef ? tExact / tRef : 1, 6), threshold: GATES.hwp.pairTableExact,
+      pass: (tRef ? tExact / tRef : 1) >= GATES.hwp.pairTableExact,
+    },
+    pairCellF1: { value: round(tF1, 6), threshold: GATES.hwp.pairCellF1, pass: tF1 >= GATES.hwp.pairCellF1 },
+    pairCellExact: { value: round(tCellExact, 6), threshold: GATES.hwp.pairCellExact, pass: tCellExact >= GATES.hwp.pairCellExact },
+    pairContentNED: { value: round(tNED, 6), threshold: GATES.hwp.pairContentNED, pass: tNED >= GATES.hwp.pairContentNED },
     pairCoverage: {
       value: avgHwpxToHwp, threshold: GATES.hwp.pairCoverage,
       pass: okPairs.length > 0 && avgHwpxToHwp >= GATES.hwp.pairCoverage,
@@ -510,6 +591,7 @@ const hwp5Agg = (() => {
     ok: okPairs.length,
     avgCrossNED,
     avgHwpxToHwp,
+    tables: { ref: tRef, exact: tExact },
     gates,
     pass: Object.values(gates).every(g => g.pass),
   }
@@ -526,7 +608,9 @@ const population = {
   pass: subPath !== "" || docFilter != null || only != null ||
     (hwpxDocs.length >= MIN_POP.hwpx && pdfDocs.length >= MIN_POP.pdf && hwpPairs.length >= MIN_POP.hwpPairs),
 }
-const overallPass = (hwpxAgg?.pass ?? true) && (pdfAgg?.pass ?? true) && (hwp5Agg?.pass ?? true) && failures.length === 0 && population.pass
+// 쌍 없는 HWP 도 파싱은 성공해야 한다 (종전엔 보고만 — 암호 샘플은 파일명 암호로 연다)
+const hwpUnpairedFail = hwpUnpaired.filter(u => !u.parsed).length
+const overallPass = (hwpxAgg?.pass ?? true) && (pdfAgg?.pass ?? true) && (hwp5Agg?.pass ?? true) && failures.length === 0 && hwpUnpairedFail === 0 && population.pass
 
 const report = {
   generatedAt: new Date().toISOString(),
@@ -538,6 +622,7 @@ const report = {
   hwpx: hwpxAgg ? { ...hwpxAgg, docsDetail: hwpxDocs } : null,
   pdf: pdfAgg ? { ...pdfAgg, docsDetail: pdfDocs } : null,
   hwp5: { pairs: hwpPairs, unpaired: hwpUnpaired, agg: hwp5Agg },
+  encryptedHwpx: encryptedDocs,
   policyWhitelist: WHITELIST.map(w => w.id), // 화이트리스트 항목 수 노출 (비대해지면 적신호)
 }
 
@@ -590,11 +675,22 @@ if (pdfAgg) {
 
 if (hwp5Agg) {
   console.log(`\n[HWP5 쌍 게이트] ${hwp5Agg.pass ? "PASS ✅" : "FAIL ❌"}  쌍=${hwp5Agg.pairs} 유사도=${fmt(hwp5Agg.gates.pairSimilarity.value)} (기준 ${GATES.hwp.pairSimilarity}) | hwpx→hwp 커버=${fmt(hwp5Agg.avgHwpxToHwp)} (기준 ${GATES.hwp.pairCoverage}) | 실패쌍=${hwp5Agg.gates.pairErrors.value}`)
+  const hg = hwp5Agg.gates
+  console.log(`  표 구조: ref=${hwp5Agg.tables.ref} exact=${hwp5Agg.tables.exact} (${fmt(hg.pairTableExact.value)}) cellF1=${fmt(hg.pairCellF1.value)} cellExact=${fmt(hg.pairCellExact.value)} NED=${fmt(hg.pairContentNED.value)}`)
+  // 완전 일치(텍스트 NED 0 + 표 전부 exact) 쌍은 생략 — 문제 쌍만
   for (const p of hwpPairs) {
-    console.log(`  ${p.ok ? `NED=${p.crossNED} hwpx→hwp=${p.hwpxToHwp} hwp→hwpx=${p.hwpToHwpx}` : `ERR ${p.error}`} ${p.file.slice(0, 70)}`)
+    if (p.ok && p.crossNED === 0 && p.tables.exact === p.tables.ref && p.tables.unmatchedIr === 0) continue
+    const t = p.ok ? ` 표 ${p.tables.exact}/${p.tables.ref} f1=${p.tables.cellF1}${p.tables.unmatchedIr ? ` 잉여=${p.tables.unmatchedIr}` : ""}` : ""
+    console.log(`  ${p.ok ? `NED=${p.crossNED} hwpx→hwp=${p.hwpxToHwp} hwp→hwpx=${p.hwpToHwpx}${t}` : `ERR ${p.error}`} ${p.file.slice(0, 70)}`)
   }
 }
 
+if (encryptedDocs.length) console.log(`\n[암호 HWPX] 파일명 암호로 열기 성공 ${encryptedDocs.length}건 (자기참조 GT 불가 — 채점 제외)`)
+const unpairedFail = hwpUnpaired.filter(u => !u.parsed)
+if (unpairedFail.length) { // 게이트 (overallPass)
+  console.log(`\n[HWP 단독 파싱 실패 ${unpairedFail.length}건]`)
+  for (const u of unpairedFail) console.log(`  ${u.file.slice(0, 70)}: ${String(u.error).slice(0, 100)}`)
+}
 if (failures.length) {
   console.log(`\n[채점 실패 ${failures.length}건]`)
   for (const f of failures) console.log(`  [${f.stage}] ${f.file.slice(0, 70)}: ${String(f.error).slice(0, 120)}`)

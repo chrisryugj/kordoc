@@ -41,6 +41,13 @@ HWP5↔PDF 셀 대조 보고 지표는 `node bench/cmp-hwp-pdf.mjs licbyl [--lin
 0.966·별표 0.746·별표 3차 0.787 — 별표가 낮은 원인은 v4.12.3 실측으로 A 1×1 틀 PDF 미감지 8 / B HWP5
 `flattenLayoutTables` 해체 vs PDF 1열 유지 15 / C 구조 차 7(수식 셀·쪽 경계 분할, 파서 결함 아님) — 게이트 아님).
 
+2026-09-23 에 `rhwp/`(rhwp 저장소 samples 1,351파일: hwp 523·hwpx 416·pdf 412, 스템마다 한컴 PDF 한 벌, `bench/collect-rhwp.mjs`)과
+`korea-kr-pairs/`(정책브리핑 보도자료 hwpx+pdf(+hwp) 짝 200쌍, `bench/collect-korea-kr-pairs.mjs --pages=20-120 --exclude=korea-kr,korea-kr2`)이
+들어와 게이트 모수는 hwpx 1,994·pdf 1,561(채점 1,384)·hwp쌍 1,058, PDF 표 GT(`pdf-table-gt.mjs`)는 430쌍 1,784표(중첩표 트랙 157표)다.
+rhwp 의 HWP3 변환본 4건(`hwp3-sample5·10·11·14`)은 hp:t 안 셸 텍스트의 리터럴 `$`(`$HOME`·`$1`)가 인라인 수식 `$…$` 와
+구별되지 않아 HWPX recall·phantom·순서 게이트에 걸린다. 출력 마크다운에서도 수식으로 읽히는 실결함이라 IR 에 리터럴 `$` 이스케이프
+규약(HWPX·HWP5·HWP3 공통)을 넣어야 풀린다(미해결).
+
 hwp쌍 23은 `corpus/pairs`(10) + `corpus/hwp5`(13)이 아니라 **`korea-kr`·`misc` 의 hwp+hwpx
 동명 짝까지 합산한 값**이다. 이 폴더들이 한쪽에만 있으면 쌍이 10으로 떨어져
 `❌ 모수 하한 미달` 로 게이트가 죽는다 — 지표는 전부 만점인데 모수만 미달하는 형태라
@@ -79,7 +86,9 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/para-heading.ts` | 항목부호 자동번호 포맷 해석 |
 | `src/hwpx/table-build.ts` | TableState → IRTable 구성 |
 | `src/hwpx/images.ts` | 이미지 ref → ZIP 바이너리 해제 (dedupe·ZIP bomb 가드) |
-| `src/hwpx/metadata.ts` | Dublin Core 메타데이터 추출 |
+| `src/hwpx/metadata.ts` | 메타데이터: Dublin Core + `Contents/content.hpf`(제목·지은이·설명·키워드·날짜, HWP5 요약 정보와 같은 필드) |
+| `src/hwpx/notes.ts` | 각주·미주 번호 표기: 본문 참조 부호("1)"·"문1）")와 주석 머리 번호를 hp:t 밖 개체 속성·autoNum 에서 재구성 (HWP5 `applyNoteEffect` 와 같은 표기) |
+| `src/hwpx/run-spans.ts` | 왕복 채널 run-span 판독(인라인 강조·인용 paraPr·gongmun 들여쓰기 depth 역산), section-walker 에서 분리 |
 | `src/hwpx/zip-sections.ts` | 손상 ZIP 복구 + Manifest 섹션 경로 해석 |
 | `src/hwpx/parser-shared.ts` | 공유 상수(ZIP 한도)·타입(WalkCtx)·XML 유틸 |
 | `src/hwpx/generator.ts` | Markdown → HWPX 역변환 엔트리 (구현은 7모듈로 분리 — 재수출 허브) |
@@ -116,10 +125,12 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwp5/parser.ts` | HWP 5.x(OLE2) 컨테이너·문서 조립·메타데이터, 배포용·암호 복호화 |
 | `src/hwp5/body.ts` | HWP 5.x 본문: 문단 리스트·컨트롤 디스패치(표·그리기 개체·수식·각주·머리말·필드), 컨트롤 ID 정규화 |
 | `src/hwp5/record.ts` | 레코드 리더, UTF-16LE, zlib 압축해제. 하이픈 제어문자(0x18)는 한컴이 그리지 않아 미방출(v4.12.3, "60g/㎡"). 한컴 PUA-A 접힘 해제(v4.12.2; F00E1 네모 안 "인" 도 "(인)" — 한컴 PDF 실렌더 확인, v4.12.3) — WCHAR U+A000~A48C 는 U+F0000대 기호(결재란 "(인)"=F012B↔A12B), 펴서 `pua.ts` 표로 |
+| `src/hwp5/ir-assemble.ts` | 문단·셀 IR 조립 (HWP5·HWP3 공용): 글자처럼 취급 표 앞뒤 글 분할, 셀 평탄화 줄 모델, 머리말·각주 안 표, 좌표 셀 → builder 직접 배치(후행 빈 열 트림 계약)·손상 표 정리 |
 | `src/hwp5/aes.ts` | AES-128 ECB 순수 JS 구현 (배포용 복호화용) |
 | `src/hwp5/crypto.ts` | HWP 배포용 문서 복호화 (MSVC LCG + AES) |
 | `src/hwp5/cfb-lenient.ts` | 손상된 CFB 파일 복구 파서 (rhwp 포팅) |
-| `src/hwp3/parser.ts` | HWP 3.x(1996~2002, 단일 binary stream) 텍스트 추출 — header + raw deflate + paragraph_list |
+| `src/hwp3/parser.ts` | HWP 3.x(1996~2002, 단일 binary stream) 파싱 — header + raw deflate + paragraph_list, 표·문단 IR 은 `hwp5/ir-assemble.ts` 공용 조립 |
+| `src/hwp3/table.ts` | HWP3 표 격자 복원: 셀 정보 기하(x·y·w·h)로 행·열 경계와 병합 (한컴 HWP3→HWP5/HWPX 변환본 표 120개 재현 규칙) |
 | `src/hwp3/drawing.ts` | 그리기 개체 트리 워커 — ch=11 확장 블록(pic_type 3)의 도형 트리를 훑어 글상자 문단 리스트 회수 (#73). 확장 블록 슬라이스 안에서만 동작해 실패해도 본문 스트림 동기가 안 깨진다 |
 | `src/hwp3/records.ts` | DocInfo 128B / DocSummary 1008B / 헤더 구조 정의 |
 | `src/hwp3/johab.ts` + `johab-symbols.ts` | 상용조합형 cho/jung/jong → 0xAC00 한글 음절 + 5,893개 한자/기호 lookup (rhwp 포팅) |
@@ -137,7 +148,10 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/image-regions.ts` | 이미지 XObject 영역 추출 |
 | `src/pdf/image-extract.ts` | 이미지 XObject 바이트 추출 — 비동기 디코딩 대기 + 순수 JS PNG 인코딩, 표 병합 후 페이지 말미 주입 |
 | `src/pdf/line-types.ts` | 선 감지 공유 타입/상수 |
-| `src/pdf/clip-cells.ts` | 셀 클립 사각형 → 표 그리드 (v4.12.1) — 한컴 PDF 의 셀별 `W n` 클립을 셀 기하로 확정(`TableGrid.cells`). 포함 관계로 층을 나눠 같은 부모끼리만 이웃 묶음(중첩표는 별도 그리드 + `clipParent`, 틀은 자기 층의 셀), 클립 그리드·틀과 면적 절반 이상 겹치는 line 그리드 제거(`dropGridsInside`). 소비측(`page-blocks.ts`)은 클립 그리드를 면적 오름차순으로 먼저 처리하고 `clipParent` 가 있는 표는 틀 셀의 `IRCell.blocks` 에 원문 순서로 넣는다(v4.12.2). 1칸 틀은 **네 변 획**이 있을 때만 1×1 그리드 — 획 없는 큰 컨테이너는 한컴 본문 영역 클립 |
+| `src/pdf/clip-cells.ts` | 셀 클립 사각형 → 표 그리드 (v4.12.1) — 한컴 PDF 의 셀별 `W n` 클립을 셀 기하로 확정(`TableGrid.cells`). 포함 관계로 층을 나눠 같은 부모끼리만 이웃 묶음(중첩표는 별도 그리드 + `clipParent`, 틀은 자기 층의 셀), 클립 그리드·틀과 면적 절반 이상 겹치는 line 그리드 제거(`dropGridsInside`). 칸 클립 묶음과 좌표가 같은 바깥 클립은 표 겉 클립(틀 아님), 격자 끝에 맞붙은 좁은(4pt 미만) 채움 사각형은 클립 없는 가장자리 칸, 틀 칸 안 감싸개 클립은 건너뛰고 중첩표를 틀 칸에 넣는다(v4.14.3). 소비측(`page-blocks.ts`)은 클립 그리드를 면적 오름차순으로 먼저 처리하고 `clipParent` 가 있는 표는 틀 셀의 `IRCell.blocks` 에 원문 순서로 넣는다(v4.12.2). 1칸 틀은 **네 변 획**이 있을 때만 1×1 그리드 — 획 없는 큰 컨테이너는 한컴 본문 영역 클립 |
+| `src/pdf/table-parts.ts` | 쪽 넘김 표 잇기 `mergeCrossPageTables`: 클립 표 조각은 열 경계 합집합 격자에 다시 놓고(뒤 조각에 클립 없는 열은 세로 병합 이어 늘림), 쪼개진 행은 앞 쪽 끝줄이 칸 오른끝까지 찼을 때만 합친다(가운데 정렬 칸 제외). 쪽 가장자리 글(장 표시)만 끼면 인접, 첨부 머리표(붙임·별지)·쪽 끝 띠 밖 표는 잇지 않음 |
+| `src/pdf/table-meta.ts` | PDF 표 IR 곁정보(WeakMap/WeakSet): 클립 표·열 경계 x·채움 칸·빈 조각·칸 글줄 상자. 공개 IR 에 안 나감 |
+| `src/pdf/table-trim.ts` | PDF 표 후행 빈 열 정리: HWP 계열 builder 와 같은 규칙(칸 단위 빈 열, 걸친 병합 칸은 폭 안으로), 그림만 든 칸은 빈 칸 아님 |
 | `src/pdf/text-clean.ts` | PDF 마크다운 최종 정리 — 쪽번호 제거·균등배분·`mergeKoreanLines`(한글 줄 병합). v4.12.3: `normalizeAraea`(한컴 PDF 의 ㆍ→U+119E 되돌림, 셀 blocks 포함)·`splitSingleCellTables`(중첩 없는 1×1 표는 줄마다 문단 — 1×1 줄 결합의 원인은 builder 가 아니라 mergeKoreanLines) |
 | `src/pdf/symbol-fonts.ts` | Wingdings 글리프 코드 → 유니코드 복원 (v4.12.1) — pdfjs 가 심볼 폰트 코드를 Latin-1 로 돌려주는 것(`è`=0xE8 ➔)을 `page.commonObjs` 폰트 실명으로 판별해 되돌림 |
 | `src/pdf/cluster-detector.ts` | 클러스터 기반 테이블 감지 (선 없는 PDF용) |
@@ -165,8 +179,13 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/ocr/models.ts` | OCR 모델 스펙(HF 공식 변환본, SHA 핀) + inference.yml 사전 파서 |
 | `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**) |
 | `src/ocr/ruling-lines.ts` | 래스터 괘선 감지 — 페이지 픽셀 이진화+런렝스로 표 수평/수직 선 추출 → 선 기반 표 파이프라인 공급 (오탐 방어 3겹: 최소길이 20pt·두께 상한 2.5pt·양측 잉크 포위 제외) |
-| `src/ocr/image-ocr.ts` | 이미지(PNG/JPG/WebP) 직접 입력 OCR — sharp 디코딩 → 내장 엔진 상시 적용 + 괘선 감지 (216dpi 가정 좌표 환산) |
+| `src/ocr/image-ocr.ts` | 이미지(PNG/JPG/WebP) 직접 입력 OCR: sharp 디코딩 → 기울기 보정 → 내장 엔진 상시 적용 + 괘선 감지 (해상도는 메타데이터·쪽 비율로 추정, 없으면 216dpi) |
+| `src/ocr/line-split.ts` | 검출 박스 픽셀 분석: 세로로 이어 붙은 키 큰 박스(세로쓰기 머리·균등배분 목차)를 행 밴드로 갈라 따로 인식, 잉크 경계(`inkBounds`)로 박스 좌표 조임 |
+| `src/ocr/postprocess.ts` | OCR 문자열 후처리: 사전에 없는 공문서 기호 복원(○·△·곧은/굽은 따옴표·○○ 자리표시), 쉼표 숫자 붙임, 떠도는 리더 점 제거 |
+| `src/ocr/crop.ts` | 인식 입력 준비: 밴드 서브 박스 좌표·라인 crop 리사이즈(회전 포함) |
+| `src/ocr/deskew.ts` | 스캔 기울기 보정: 투영 프로파일 제곱합으로 각도 추정, PDF·이미지 경로 공통 |
 | `src/shared/offline.ts` | 폐쇄망 게이트 — `KORDOC_OFFLINE` 아웃바운드 킬스위치(`assertNetworkAllowed`), `KORDOC_ROOT` 파일 접근 루트 제한(`assertWithinRoot`, realpath 기준). **새 네트워크 호출은 반드시 여기를 경유** |
+| `src/shared/symbol-fonts.ts` | Wingdings 코드표 SSOT: PDF 심볼 폰트 글리프와 HWP/HWPX 한컴 심볼 PUA(U+F021~F0FF) 공용 |
 | `src/shared/model-bundle.ts` | OCR·수식 모델 오프라인 사이드로드 (`kordoc models --export/--import`) — SHA 스펙이 SSOT, manifest 없음 |
 | `src/page-range.ts` | 페이지 범위 문자열 파싱 (`"1-3,5"` → `Set<number>`) |
 | `src/page-markdown.ts` | 페이지별 마크다운 사영 (#68) — `IRBlock.pageNumber` 로 갈라 페이지마다 `blocksToMarkdown()`. `parse()` 가 `ParseSuccess.pages` 로 붙인다 |
@@ -174,7 +193,11 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/cli.ts` | Commander 기반 CLI 진입점(루트 파싱 명령). 하위 명령은 `src/cli/commands-{docs,generate,render,system}.ts` (등록 순서 = 도움말 순서) |
 | `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 17개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
 | `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) + `rasterizePageSvg` 페이지 단위 png/jpeg(실배율 보고) |
-| `src/redact.ts` | PII 탐지·서식 보존 마스킹 순수 로직 (주민번호·전화·이메일·카드·계좌, 룰 우선순위 겹침 처리) |
+| `src/redact.ts` | PII 탐지·마스킹 엔진: 정규화·겹침 처리·마크다운 표 머리글 문맥(선형 시간). 룰 정의는 `redact-rules.ts` |
+| `src/redact-rules.ts` | redact 룰: 룰별 정규식 변형·검증기(생년월일·Luhn·사업자/법인 체크섬·전화 국번)·라벨 사전(창 안 라벨 전부 반영) |
+| `src/redact-doc.ts` | 파일 단위 마스킹 `redactDocument`(CLI `redact`·MCP `redact_document`): parse → 탐지 → 컨테이너 수술 → 재파싱 잔존 검사 |
+| `src/redact-hwpx.ts` · `redact-hwp5.ts` | 컨테이너 PII 수술: HWPX 는 ZIP 안 모든 XML 문단·텍스트 노드·속성·미리보기, HWP5 는 전 스트림 레코드(같은 길이 치환, 한컴 압축 꼬리 보존, 미할당 섹터 wipe) |
+| `src/redact-scrub.ts` | 파일 마스킹 공용: 텍스트 탐지(룰+리터럴), 바이너리 문자열 조각 훑기(UTF-16·OLE·EMF), 빈 미리보기 이미지 |
 | `src/chunks.ts` | RAG용 구조 청킹 — IR 위계(헤딩·listDepth·표) → breadcrumb 청크 JSON |
 
 ### 주요 설계 결정

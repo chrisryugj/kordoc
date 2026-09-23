@@ -6,9 +6,10 @@
 //           탭/전각공백 변환 차이를 전부 흡수. 양쪽 동일 적용이라 가짜 일치 위험은
 //           유닛 경계에 한정되며 무시 가능 수준.
 
-/** 마크다운 이스케이프 역변환 (\| \* \~ \[ 등) */
+/** 마크다운 이스케이프 역변환 (\| \* \~ \[ \< 등) — kordoc escapeGfm 은 원시 HTML 로 읽힐 < 를
+ *  \< 로 낸다 (리터럴 "<Table 18-4: …>"·"<br>" 글, v4.14.3) */
 export function unescapeMd(s) {
-  return s.replace(/\\([\\`*_{}[\]()#+\-.!|>~])/g, "$1")
+  return s.replace(/\\([\\`*_{}[\]()#+\-.!|<>~])/g, "$1")
 }
 
 // ─── 한컴 PUA → 표준 유니코드 매핑 (파서 정책 미러 — whitelist: pua-map) ───
@@ -32,7 +33,34 @@ const PUA_SUPP = {
   // 한컴 PDF 대조로 확정된 표 (rhwp 44cabad9 verified_hancom_pua)
   0xf012b: "(인)", 0xf00e1: "(인)", 0xf02fc: "►", 0xf031c: "■", 0xf03a0: "↵",
   0xf03ef: "한", 0xf03f0: "글", 0xf03f1: "과", 0xf03f2: "컴", 0xf03f3: "퓨", 0xf03f4: "터",
+  // rhwp VERIFIED_HANCOM_PUA_DISPLAY 후속분 — 파서 pua.ts 에 먼저 들어가고 미러가 뒤처져 있었다
+  // (2025 행정업무운영 편람 "(예시: [1], ⊞, ⊟ 등)" — 한컴 PDF 35쪽 렌더로 확인, v4.14.3 동기화)
+  0xf0090: "✺", 0xf0288: "⓪", 0xf0289: "①", 0xf028a: "②", 0xf028c: "④", 0xf028d: "⑤",
+  0xf028e: "⑥", 0xf028f: "⑦", 0xf0290: "⑧", 0xf0291: "⑨", 0xf02ec: "◇", 0xf02fb: "▸",
+  0xf03a7: "⊟", 0xf03a8: "⊞", 0xf03da: "□", 0xf03ff: "□",
+  0xf0806: "┌", 0xf0807: "┬", 0xf0808: "┐", 0xf080c: "└", 0xf080e: "┘", 0xf0810: "│",
+  0xf081c: "┈", 0xf0832: "═", 0xf0848: "━",
 }
+
+// 검증 표(PUA_BMP)에 없는 심볼 PUA U+F021~F0FF 는 Wingdings 코드표 — 한컴은 이 구간을 글꼴과
+// 무관하게 Wingdings 글리프로 그린다 (156782334 한컴 PDF: 맑은 고딕 run 의 U+F08C → ❶). 파서
+// src/shared/symbol-fonts.ts 와 같은 외부 대응표(alanwood Unicode 7.0) 데이터 미러 (whitelist: pua-map)
+const WINGDINGS = [
+  "🖉", "✂", "✁", "👓", "🕭", "🕮", "🕯", "🕿", "✆", "🖂", "🖃", "📪", "📫", "📬", "📭", "📁",
+  "📂", "📄", "🗏", "🗐", "🗄", "⌛", "🖮", "🖰", "🖲", "🖳", "🖴", "🖫", "🖬", "✇", "✍", "🖎",
+  "✌", "👌", "👍", "👎", "☜", "☞", "☝", "☟", "🖐", "☺", "😐", "☹", "💣", "☠", "🏳", "🏱",
+  "✈", "☼", "💧", "❄", "🕆", "✞", "🕈", "✠", "✡", "☪", "☯", "ॐ", "☸", "♈", "♉", "♊",
+  "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓", "🙰", "🙵", "●", "○", "■", "□", "□",
+  "❑", "❒", "⬧", "⧫", "◆", "❖", "⬥", "⌧", "⮹", "⌘", "🏵", "🏶", "🙶", "🙷", "", "⓪",
+  "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⓿", "❶", "❷", "❸", "❹", "❺",
+  "❻", "❼", "❽", "❾", "❿", "🙢", "🙠", "🙡", "🙣", "🙞", "🙜", "🙝", "🙟", "·", "•", "▪",
+  "⚪", "○", "◯", "◉", "◎", "🔿", "▪", "◻", "🟂", "✦", "★", "✶", "✴", "✹", "✵", "⯐",
+  "⌖", "⟡", "⌑", "⯑", "✪", "✰", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙",
+  "🕚", "🕛", "⮰", "⮱", "⮲", "⮳", "⮴", "⮵", "⮶", "⮷", "🙪", "🙫", "🙕", "🙔", "🙗", "🙖",
+  "🙐", "🙑", "🙒", "🙓", "⌫", "⌦", "⮘", "⮚", "⮙", "⮛", "⮈", "⮊", "⮉", "⮋", "←", "→",
+  "↑", "↓", "↖", "↗", "↙", "↘", "⬅", "➔", "⬆", "⬇", "⬉", "⬈", "⬋", "⬊", "⇦", "⇨",
+  "⇧", "⇩", "⬄", "⇳", "⬀", "⬁", "⬃", "⬂", "🢬", "🢭", "✗", "✔", "☒", "☑", "",
+]
 
 // 사각 안 숫자 ①~⑳ (rhwp b74b5098) — 파서가 텍스트 표면에서 표준 원문자로 옮긴다
 const BOXED_NUM_START = 0xf02b1
@@ -43,7 +71,7 @@ function mapPua(s) {
   let out = ""
   for (const ch of s) {
     const code = ch.codePointAt(0)
-    if (code >= 0xf020 && code <= 0xf0ff) out += PUA_BMP[code - 0xf000] ?? ch
+    if (code >= 0xf020 && code <= 0xf0ff) out += PUA_BMP[code - 0xf000] ?? ((code >= 0xf021 && WINGDINGS[code - 0xf021]) || ch)
     else if (code >= BOXED_NUM_START && code <= BOXED_NUM_END) {
       out += String.fromCodePoint(0x2460 + (code - BOXED_NUM_START))
     } else if (code >= 0xf0000 && code <= 0xf09ff) out += PUA_SUPP[code] ?? ch
@@ -68,6 +96,9 @@ export function normText(s) {
     .replace(/(?<![\u1100-\u115F])\u119E/g, "\u318D")
     // 매핑 안 된 Supplementary PUA — 파서가 의도 제거 (builder sanitizeText와 대칭)
     .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
+    // 한컴 PDF 의 유니코드 없는 글리프 자리표시 U+F000 — 파서(pdf text-clean)가 제거, 추출기(pdftotext·pdfjs)
+    // 합의 텍스트에는 남아 있어 채점 양쪽에서 같이 뺀다 (whitelist: pdf-nounicode-glyph)
+    .replace(/\uF000/g, "")
     // zero-width, BOM, soft hyphen, 제어문자(\x1F 리더탭 마커 포함; \n \t는 아래 공백 처리)
     .replace(ZERO_WIDTH_RE, "")
     // 모든 공백류(전각공백 U+3000, NBSP 포함) → 단일 공백
@@ -113,15 +144,21 @@ export function mdToPlain(md) {
   // 경로라, 그 라인의 bare 별표는 전부 리터럴 마스킹('******' 결재문서) — 제외한다.
   // 중첩표 셀은 </table> 뒤 같은 라인에 후행 문단이 이어지므로 표 태그 계열 전부가
   // 지문이다. 반드시 HTML 태그 제거보다 먼저 (라인의 태그 지문이 판별 근거).
+  // 취소선 ~~ 도 같은 논리 — escapeGfm 이 리터럴 ~ 를 전부 \~ 로 이스케이프하므로 이스케이프 안 된
+  // ~~ 는 파서가 방출한 취소선 마커뿐이다. 남기면 "0.02점~~의~~" 처럼 1자 취소선 글이 조각
+  // 최소 길이 미달로 거짓 miss 가 된다 (113424 evaluation_guideline, v4.14.3)
+  // HTML 표 줄은 원시 HTML 블록 — CommonMark 는 그 안에서 백슬래시 이스케이프를 풀지 않으므로(§4.6)
+  // 셀 글 끝 "\" 뒤에 kordoc 이 붙인 <br> ("\<br>")도 태그다 (소식지 홍보요청 셀 첫 줄 "\", v4.14.3)
   s = s.split("\n").map((line) =>
-    /<\/?(?:table|thead|tbody|tr|td|th)\b/i.test(line)
-      ? line
-      : line.replace(/\\\*/g, "\x02").replace(/\*/g, "").replace(/\x02/g, "\\*"),
+    /(?<!\\)<\/?(?:table|thead|tbody|tr|td|th)\b/i.test(line)
+      ? line.replace(/<\/?(?:table|thead|tbody|tr|td|th)\b[^>]*>/gi, " ").replace(/<br\s*\/?>/gi, "\n")
+      : line.replace(/\\\*/g, "\x02").replace(/\*/g, "").replace(/\x02/g, "\\*")
+        .replace(/\\~/g, "\x02").replace(/~~/g, "").replace(/\x02/g, "\\~"),
   ).join("\n")
 
-  // HTML 테이블 태그(병합표 출력) + <br>
-  s = s.replace(/<\/?(?:table|thead|tbody|tr|td|th)\b[^>]*>/gi, " ")
-  s = s.replace(/<br\s*\/?>/gi, "\n")
+  // 마크다운 줄(GFM 셀)의 <br> — 이스케이프된 \< 는 리터럴 글 (파서 escapeGfm)
+  s = s.replace(/(?<!\\)<\/?(?:table|thead|tbody|tr|td|th)\b[^>]*>/gi, " ")
+  s = s.replace(/(?<!\\)<br\s*\/?>/gi, "\n")
 
   // 표 구분행 | --- | --- |
   s = s.replace(/^\s*\|(?:\s*:?-{3,}:?\s*\|)+\s*$/gm, " ")
