@@ -17,7 +17,7 @@ import { parseXlsxDocument } from "./xlsx/parser.js"
 import { parseXlsDocument } from "./xls/parser.js"
 import { parseDocxDocument } from "./docx/parser.js"
 import { parseHwpmlDocument } from "./hwpml/parser.js"
-import type { ParseResult, ParseOptions } from "./types.js"
+import type { ParseResult, ParseOptions, IRBlock } from "./types.js"
 import { classifyError, sanitizeError, toArrayBuffer } from "./utils.js"
 import { fillFormFields } from "./form/filler.js"
 import type { FillResult } from "./form/filler.js"
@@ -71,6 +71,11 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
   const format = detectFormat(buffer)
 
   const result = await dispatch(format, buffer, opts)
+  // images:false: 포맷별 파서가 풀어 둔 이미지 바이트를 결과에서 뗀다 (PDF 는 파서가 PNG 인코딩부터 건너뜀)
+  if (result.success && opts?.images === false) {
+    delete result.images
+    dropImageBytes(result.blocks)
+  }
   // opt-in 표 분류(#76) — 구조 파싱 뒤 메타만 붙인다. 기본(미지정/false)은 산출 불변
   if (result.success && opts?.classifyTables) classifyTableTree(result.blocks)
   // 페이지별 마크다운(#68)은 파서가 채운 pageNumber 의 사영이라 여기서 한 번에
@@ -81,6 +86,19 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
     if (pages) return { ...result, pages }
   }
   return result
+}
+
+/** 블록 트리(자식·표 셀·캡션)에서 이미지 바이트(imageData)를 뗀다. 그림 자리 표시 블록은 남긴다 */
+function dropImageBytes(blocks: IRBlock[] | undefined, depth = 0): void {
+  if (!blocks || depth > 64) return
+  for (const b of blocks) {
+    if (b.imageData) delete b.imageData
+    dropImageBytes(b.children, depth + 1)
+    if (b.table) {
+      for (const row of b.table.cells) for (const cell of row) dropImageBytes(cell.blocks, depth + 1)
+      dropImageBytes(b.table.captionBlocks, depth + 1)
+    }
+  }
 }
 
 async function dispatch(

@@ -123,6 +123,10 @@ function toRgba(img: PdfImgData): Uint8Array | null {
  * 한 페이지의 operatorList에서 이미지를 추출해 image 블록·바이너리로 반환.
  * 같은 페이지 내 반복 paint(타일링)는 1회만, 이전 페이지와 동일 내용(로고·
  * 워터마크)은 블록·바이너리 모두 재방출하지 않는다.
+ *
+ * `withBytes` 가 false(images:false)면 PNG 인코딩을 건너뛰고 image 블록만 낸다.
+ * 거르기·중복 판정은 같아서 자리 표시가 바이트를 뽑을 때와 같다. 바이트 누적 상한은
+ * 메모리 보호용이라 이때는 걸리지 않는다.
  */
 export async function extractPageImages(
   page: PdfPageObjs,
@@ -131,6 +135,7 @@ export async function extractPageImages(
   pageNumber: number,
   state: PdfImageState,
   warnings: ParseWarning[],
+  withBytes = true,
 ): Promise<{ blocks: IRBlock[]; images: ExtractedImage[] }> {
   const blocks: IRBlock[] = []
   const images: ExtractedImage[] = []
@@ -181,12 +186,14 @@ export async function extractPageImages(
     const rgba = toRgba(imgData)
     if (!rgba) continue // 미지원 픽셀 형태 (bitmap 전용 등)
 
-    const png = encodePng(w, h, rgba)
     state.imageIndex++
-    state.totalBytes += png.length
     const filename = `image_${String(state.imageIndex).padStart(3, "0")}.png`
     state.seen.set(hash, filename)
-    images.push({ filename, data: png, mimeType: "image/png" })
+    if (withBytes) {
+      const png = encodePng(w, h, rgba)
+      state.totalBytes += png.length
+      images.push({ filename, data: png, mimeType: "image/png" })
+    }
     blocks.push({ type: "image", text: filename, pageNumber })
   }
 

@@ -271,7 +271,7 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
 
   let markdown = blocksToMarkdown(flatBlocks)
   // 이미지 인라인 옵션 — BMP→PNG 압축 후 base64 data URI 로 치환 (AI 에이전트 자체 완결형 마크다운)
-  if (options?.inlineImages && images.length > 0) {
+  if (options?.inlineImages && options.images !== false && images.length > 0) {
     try {
       markdown = inlineImagesIntoMarkdown(markdown, images, { compress: true })
     } catch (inlineErr) {

@@ -201,6 +201,24 @@ describe("PDF 이미지 XObject 추출", () => {
     assert.equal(p2.images.length, 0, "페이지 간 동일 내용 dedupe")
   })
 
+  it("withBytes=false(images:false)는 바이트 없이 같은 자리 표시 블록을 낸다", async () => {
+    const logo = rgbImage(32, 32)
+    const run = async (withBytes: boolean) => {
+      const state = createPdfImageState()
+      const p1 = await extractPageImages(fakePage({ a: logo, tiny: rgbImage(4, 4) }),
+        [OPS.paintImageXObject, OPS.paintImageXObject], [["a"], ["tiny"]], 1, state, [], withBytes)
+      const p2 = await extractPageImages(fakePage({ b: logo, c: rgbImage(16, 16) }),
+        [OPS.paintImageXObject, OPS.paintImageXObject], [["b"], ["c"]], 2, state, [], withBytes)
+      return { blocks: [...p1.blocks, ...p2.blocks], images: [...p1.images, ...p2.images] }
+    }
+    const full = await run(true)
+    const lean = await run(false)
+
+    assert.equal(full.images.length, 2)
+    assert.equal(lean.images.length, 0, "바이트 없음")
+    assert.deepEqual(lean.blocks, full.blocks, "장식 거르기·페이지 간 중복 판정이 같아 자리 표시도 같다")
+  })
+
   it("GRAYSCALE_1BPP 비트 패킹을 언팩한다", async () => {
     const w = 9, h = 2, stride = 2 // ceil(9/8)=2
     const data = new Uint8Array(stride * h).fill(0xff)

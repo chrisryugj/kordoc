@@ -180,8 +180,9 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         for (const b of pageBlocks) blocks.push(b)
 
         // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
+        // images:false 면 PNG 인코딩을 건너뛰고 자리 표시 블록만 받는다
         try {
-          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings)
+          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings, options?.images !== false)
           if (imgBlocks.length > 0) pageImageBlocks.set(i, imgBlocks)
           extractedImages.push(...pageImages)
         } catch { /* 이미지 추출 실패가 텍스트 파싱을 막지 않도록 */ }
