@@ -10,8 +10,8 @@ import { hangulOrdinal, circledNumber, circledHangul, romanNumeral } from "../sh
 
 const HANGUL_JAMO_SEQ = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ"
 
-/** 자동번호 카운터 값 → numFormat에 따른 표시 문자열 */
-function formatHeadNumber(n: number, numFormat: string): string {
+/** 자동번호 카운터 값 → numFormat에 따른 표시 문자열 (각주·미주 번호 notes.ts 공용) */
+export function formatHeadNumber(n: number, numFormat: string): string {
   if (n === 0 && numFormat === "DIGIT") return "0" // start="0"은 유효값 — 시퀀스 포맷은 1-based라 아래 클램프 유지
   if (n <= 0) n = 1
   switch (numFormat) {

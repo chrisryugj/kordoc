@@ -8,6 +8,7 @@ import { KordocError } from "../utils.js"
 import type { CellContext, IRBlock, ParseWarning } from "../types.js"
 // WalkCtx.styleMap 타입 참조 — 타입 전용이라 styles.ts와의 순환은 컴파일 시 소거됨
 import type { HwpxStyleMap } from "./styles.js"
+import type { NoteNumberFormat } from "./notes.js"
 
 // 256MB — rhwp 1만 건 실문서 서베이에서 section1.xml 단독 75.2MB(압축비 35:1) 정상
 // 문서가 확인됨 (rhwp #1917). 종전 100MB 총합 컷은 대형 실문서를 ZIP bomb 으로 오인 거부.
@@ -105,6 +106,8 @@ export interface WalkCtx {
   shared: SectionShared
   /** secPr outlineShapeIDRef — 개요(OUTLINE) 문단이 사용하는 numbering id */
   outlineNumId?: string
+  /** secPr footNotePr/endNotePr 번호 모양 — 각주·미주 본문 참조 부호 재구성 (notes.ts) */
+  noteFormats?: { footnote?: NoteNumberFormat; endnote?: NoteNumberFormat }
   /** 현재 페이지 (#66) — top-level 문단 진입 시 paraPage로 갱신, 셀/중첩은 호스트 상속 */
   page?: number
   /** 섹션 프리패스 결과: top-level <hp:p> → 섹션 내 0-based 페이지 */

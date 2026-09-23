@@ -24,7 +24,7 @@ import {
 import { patchZipEntries } from "./zip-patch.js"
 import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import {
-  resolveParagraphMappings, buildTableOrdinals, buildOrigUnits, diffUnitLists,
+  resolveParagraphMappings, removeNoteMarks, buildTableOrdinals, buildOrigUnits, diffUnitLists,
   type ParaMapping,
 } from "./patcher.js"
 import { applyCellEdit, stripCellTokens, extractCellTokens } from "./table-patch.js"
@@ -414,6 +414,13 @@ export class HwpxSession {
 
     // 여러 줄 입력은 한 문단으로 (마크다운 soft-wrap과 동일 규칙)
     let newPlain = newTextRaw.split("\n").map(l => l.trim()).filter(Boolean).join(" ")
+
+    // 각주·미주 참조 부호 — 개체가 그리는 글이라 hp:t 에 쓰지 않는다 (patcher 와 동일 규칙)
+    if (mapping.noteMarks?.length) {
+      const r = removeNoteMarks(newPlain, mapping.noteMarks)
+      newPlain = r.text
+      if (r.missing.length) skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
+    }
 
     // 자동번호 접두 — XML에 없는 텍스트이므로 떼고 기록 (patcher와 동일 규칙)
     if (mapping.prefixStripped) {

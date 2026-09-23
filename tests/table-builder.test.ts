@@ -28,6 +28,21 @@ describe("buildTable", () => {
     assert.equal(table.cells[0][0].colSpan, 2)
   })
 
+  it("후행 빈 열을 자르면 그 열에 걸친 병합 셀 span 도 표 폭 안으로 줄인다", () => {
+    // 보도자료 머리표: 1. | (빈) | 제목(colSpan 2) / 빈 행 4칸 — 4열째는 칸 단위로 전부 비어 잘린다
+    const rows: CellContext[][] = [
+      [{ text: "1.", colSpan: 1, rowSpan: 1, colAddr: 0, rowAddr: 0 }, { text: "", colSpan: 1, rowSpan: 1, colAddr: 1, rowAddr: 0 }, { text: "제목", colSpan: 2, rowSpan: 1, colAddr: 2, rowAddr: 0 }],
+      [0, 1, 2, 3].map(c => ({ text: "", colSpan: 1, rowSpan: 1, colAddr: c, rowAddr: 1 })),
+    ]
+    const table = buildTable(rows)
+    assert.equal(table.cols, 3)
+    assert.equal(table.cells[0][2].text, "제목")
+    assert.equal(table.cells[0][2].colSpan, 1, "span 이 표 폭(3열)을 넘으면 안 된다")
+    for (let r = 0; r < table.rows; r++) for (let c = 0; c < table.cols; c++) {
+      assert.ok(c + table.cells[r][c].colSpan <= table.cols, `(${r},${c}) colSpan 초과`)
+    }
+  })
+
   it("rowSpan 처리", () => {
     const rows: CellContext[][] = [
       [{ text: "span", colSpan: 1, rowSpan: 2 }, { text: "B", colSpan: 1, rowSpan: 1 }],

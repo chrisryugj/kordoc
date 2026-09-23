@@ -417,7 +417,7 @@ export { classifyTable, collectTableBlocks } from "./table/classifier.js"
 export type { ClassifyContext } from "./table/classifier.js"
 export { classifyTableTree, chooseTableRepresentation } from "./table/analyze.js"
 export type { TableRepresentation } from "./table/analyze.js"
-export { hasStructuredCellContent } from "./table/builder.js"
+export { hasStructuredCellContent, flattenLayoutTables } from "./table/builder.js"
 export { extractTables } from "./table/visual.js"
 export type { ExtractTableVisualOptions, ExtractedTable, ExtractedTableCrop, TableVisualPolicy } from "./table/visual.js"
 export type {

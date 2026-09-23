@@ -19,9 +19,10 @@ import { blocksToMarkdown } from "../table/builder.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
 import type { IRBlock, PatchOptions, PatchResult, PatchSkip, DiffResult, BlockDiff } from "../types.js"
 import {
-  scanSectionXml, buildParagraphSplices, markerRunSplices, applySplices, allLinesegRemovalSplices, findElementEnd,
+  scanSectionXml, buildParagraphSplices, markerRunSplices, applySplices, allLinesegRemovalSplices, findElementEnd, decodeXmlEntities,
   type SectionScan, type ScanParagraph, type ScanCell, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
+import { noteFormatFrom, noteRefMark, type NoteNumberFormat } from "../hwpx/notes.js"
 import { patchZipEntries } from "./zip-patch.js"
 import { AUTONUM_PREFIX_RE,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable,
@@ -229,6 +230,8 @@ export interface ParaMapping {
   para?: ScanParagraph
   /** 자동번호 접두가 IR 텍스트에 붙어 있었음 (스캔 텍스트에는 없음) */
   prefixStripped?: boolean
+  /** 파서가 본문에 끼운 각주·미주 참조 부호(문서 순서) — hp:t 에 없으므로 편집 텍스트에서 뺀다 */
+  noteMarks?: string[]
 }
 
 /**
@@ -264,6 +267,16 @@ export function resolveParagraphMappings(blocks: IRBlock[], scans: SectionScan[]
     pageText.add(i)
   }
 
+  // 각주·미주 문단 — 파서가 본문에 끼운 참조 부호("1)"·"문1）")만큼 IR 텍스트가 스캔 텍스트보다 길다.
+  // 부호는 그 문단 XML 의 개체 속성·구역 번호 모양에서 파서와 같은 함수(notes.ts noteRefMark)로 재구성
+  const noted = scans.flatMap(scan => {
+    if (!/<(?:\w+:)?(?:footNote|endNote)\b/.test(scan.xml)) return []
+    const fmts = sectionNoteFormats(scan.xml)
+    return scan.bodyParagraphs
+      .map(p => ({ key: normForMatch(p.text), marks: paraNoteMarks(scan.xml, p, fmts) }))
+      .filter(x => x.key && x.marks.length > 0)
+  })
+
   const counters = new Map<string, number>()
   const result = new Map<number, ParaMapping>()
   for (let i = 0; i < blocks.length; i++) {
@@ -273,21 +286,103 @@ export function resolveParagraphMappings(blocks: IRBlock[], scans: SectionScan[]
 
     let key = normForMatch(b.text)
     let prefixStripped = false
+    let noteMarks: string[] | undefined
     if (!buckets.has(key)) {
       // 자동번호/글머리 접두 제거 후 재시도 (resolveParaHeading가 붙인 prefix)
       const sp = b.text.indexOf(" ")
-      if (sp > 0) {
-        const alt = normForMatch(b.text.slice(sp + 1))
-        if (alt && buckets.has(alt)) { key = alt; prefixStripped = true }
+      const alt = sp > 0 ? normForMatch(b.text.slice(sp + 1)) : ""
+      if (alt && buckets.has(alt)) { key = alt; prefixStripped = true }
+      else {
+        // 각주·미주 참조 부호를 뺀 텍스트가 그 문단 스캔 텍스트와 같으면 그 문단 (접두 제거와도 조합)
+        for (const n of noted) {
+          if (textWithoutMarks(key, n.key, n.marks)) { key = n.key; noteMarks = n.marks; break }
+          if (alt && textWithoutMarks(alt, n.key, n.marks)) { key = n.key; noteMarks = n.marks; prefixStripped = true; break }
+        }
       }
     }
     const list = buckets.get(key)
     if (!list) { result.set(i, {}); continue }
     const occ = counters.get(key) ?? 0
     counters.set(key, occ + 1)
-    result.set(i, occ < list.length ? { para: list[occ], prefixStripped } : {})
+    result.set(i, occ < list.length ? { para: list[occ], prefixStripped, noteMarks } : {})
   }
   return result
+}
+
+/** 구역 첫 secPr 의 footNotePr/endNotePr > autoNumFormat — 파서 notes.readSectionNoteFormats 의 정규식판 */
+function sectionNoteFormats(xml: string): { footnote?: NoteNumberFormat; endnote?: NoteNumberFormat } {
+  const pick = (tag: string): NoteNumberFormat | undefined => {
+    const m = new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*>\\s*<(?:\\w+:)?autoNumFormat\\b([^>]*?)/?>`).exec(xml)
+    return m ? noteFormatFrom(n => xmlAttr(m[1], n)) : undefined
+  }
+  return { footnote: pick("footNotePr"), endnote: pick("endNotePr") }
+}
+
+function xmlAttr(attrs: string, name: string): string | undefined {
+  const m = new RegExp(`(?:^|\\s)${name}\\s*=\\s*"([^"]*)"`).exec(attrs)
+  return m ? decodeXmlEntities(m[1]) : undefined
+}
+
+/**
+ * 문단 자신의 각주·미주 본문 참조 부호(문서 순서) — 문단 안 표·글상자·캡션·주석 본문 속 주석은
+ * 각자 다른 문단 소관이라 세지 않는다 (파서 extractParagraphInfo 가 부호를 끼우는 범위와 같다)
+ */
+export function paraNoteMarks(xml: string, para: ScanParagraph, fmts: { footnote?: NoteNumberFormat; endnote?: NoteNumberFormat }): string[] {
+  const end = findElementEnd(xml, para.start)
+  if (end < 0) return []
+  const seg = xml.slice(para.start, end)
+  if (!/<(?:\w+:)?(?:footNote|endNote)\b/.test(seg)) return []
+  const marks: string[] = []
+  let depth = 0
+  for (const m of seg.matchAll(/<(\/?)(?:\w+:)?(tbl|drawText|caption|footNote|endNote|header|footer|memo|hiddenComment)\b([^>]*?)(\/?)>/g)) {
+    const [, close, tag, attrs, selfClose] = m
+    if (selfClose) continue
+    if (close) { depth = Math.max(0, depth - 1); continue }
+    if (depth === 0 && (tag === "footNote" || tag === "endNote")) {
+      const get = (n: string) => xmlAttr(attrs, n)
+      marks.push(noteRefMark(
+        { number: get("number"), prefixChar: get("prefixChar"), suffixChar: get("suffixChar"), userChar: get("userChar") },
+        tag === "endNote" ? fmts.endnote : fmts.footnote,
+      ))
+    }
+    depth++
+  }
+  return marks
+}
+
+/** IR 정규화 텍스트에서 부호를 (순서대로) 빼면 스캔 정규화 텍스트와 같은가 — 글자 우선 두 포인터 */
+function textWithoutMarks(irKey: string, scanKey: string, marks: string[]): boolean {
+  let i = 0, j = 0, k = 0
+  while (i < irKey.length) {
+    if (j < scanKey.length && irKey[i] === scanKey[j]) { i++; j++; continue }
+    if (k < marks.length && marks[k] && irKey.startsWith(marks[k], i)) { i += marks[k].length; k++; continue }
+    if (irKey[i] === " " && (j === 0 || scanKey[j - 1] === " ")) { i++; continue } // 부호 앞뒤 공백 붕괴 차이
+    return false
+  }
+  return j === scanKey.length && k === marks.length
+}
+
+/**
+ * 편집 텍스트에서 각주·미주 참조 부호를 뺀다 — 부호는 앞 낱말에 붙어 나오므로(“액체1)와”) 앞 글자가
+ * 공백이 아닌 등장을 우선하고, 문단 첫머리 부호(“문1）”)는 0 위치로 인정. 못 찾은 부호는 사용자가
+ * 지운 것 — 주석 개체는 XML 에 그대로 남는다(삭제 미지원)
+ */
+export function removeNoteMarks(text: string, marks: string[]): { text: string; missing: string[] } {
+  let out = text
+  let cursor = 0
+  const missing: string[] = []
+  for (const mark of marks) {
+    if (!mark) continue
+    let at = -1
+    for (let p = out.indexOf(mark, cursor); p !== -1; p = out.indexOf(mark, p + 1)) {
+      if (p === 0 || !/\s/.test(out[p - 1])) { at = p; break }
+      if (at === -1) at = p
+    }
+    if (at === -1) { missing.push(mark); continue }
+    out = out.slice(0, at) + out.slice(at + mark.length)
+    cursor = at
+  }
+  return { text: out, missing }
 }
 
 // ─── 변경 처리 ───────────────────────────────────────
@@ -441,6 +536,13 @@ function patchParagraphUnit(
     } else {
       ctx.skipped.push({ reason: "각주 표기 삭제는 미지원 — 각주 유지, 본문만 적용", before: `(주: ${block.footnoteText})` })
     }
+  }
+
+  // 각주·미주 참조 부호 — 개체가 그리는 글이라 hp:t 에 쓰지 않는다
+  if (mapping.noteMarks?.length) {
+    const r = removeNoteMarks(newPlain, mapping.noteMarks)
+    newPlain = r.text
+    if (r.missing.length) ctx.skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
   }
 
   // 자동번호 접두 — XML에 없는 텍스트이므로 떼고 기록

@@ -87,40 +87,62 @@ export function buildTable(rows: CellContext[][], options?: BuildTableOptions): 
   return trimAndReturn(grid, numRows, maxCols, anchorCols, options)
 }
 
-/** colAddr/rowAddr 절대 좌표 기반 직접 배치 */
+/**
+ * colAddr/rowAddr 절대 좌표 기반 직접 배치.
+ * 셀 글은 어떤 경우에도 버리지 않는다 — ① 앵커 행이 행 수(tr 수) 밖이면 격자를 늘리고(빈 <hp:tr/>
+ * 이 빠진 입력), ② 같은 칸을 두 셀이 주장하면 먼저 온 셀이 자리를 갖고 뒤 셀 글은 그 칸 주인 셀에
+ * 이어 붙이며(종전: 뒤 셀이 덮어써 앞 셀 글 소실 + 병합 덮개 안 앵커), ③ 주소 없는 셀은 자기 tr
+ * 행의 첫 빈 칸에(종전: (0,0) 덮어쓰기), ④ 병합은 격자·다른 앵커를 넘지 않게 자른다 (IR 불변식:
+ * 모든 span 이 표 안, 병합 덮개 아래 앵커 없음). 셀 주소(colAddr/rowAddr)를 넘기는 모든 포맷의 공용 경로.
+ */
 function buildTableDirect(rows: CellContext[][], numRows: number, options?: BuildTableOptions): IRTable {
-  // 전체 셀에서 maxCols 계산 (MAX_COLS 상한 적용)
+  // 전체 셀에서 maxCols 계산 (MAX_COLS 상한 적용). 행은 앵커 행까지 늘리되 셀 수만큼만 — 손상 파일의
+  // 거대 rowAddr 하나가 MAX_ROWS×열 격자를 만들지 않게 (넘는 앵커 글은 아래에서 마지막 행 주인에 이어 붙임)
   let maxCols = 0
+  const rowCap = Math.min(MAX_ROWS, numRows + rows.reduce((n, r) => n + r.length, 0) + 1)
   for (const row of rows) {
     for (const cell of row) {
       const end = (cell.colAddr ?? 0) + cell.colSpan
       if (end > maxCols) maxCols = end
+      if (cell.rowAddr !== undefined && cell.rowAddr >= numRows) numRows = Math.min(cell.rowAddr + 1, rowCap)
     }
   }
   if (maxCols > MAX_COLS) maxCols = MAX_COLS
-  if (maxCols === 0) return { rows: 0, cols: 0, cells: [], hasHeader: false }
+  if (maxCols === 0 || numRows === 0) return { rows: 0, cols: 0, cells: [], hasHeader: false }
 
   const grid: IRCell[][] = Array.from({ length: numRows }, () =>
     Array.from({ length: maxCols }, () => ({ text: "", colSpan: 1, rowSpan: 1 }))
   )
+  // 칸 주인(앵커 또는 병합 덮개의 앵커) — 충돌 판정·글 이어붙이기용
+  const owner: (IRCell | undefined)[][] = Array.from({ length: numRows }, () => new Array(maxCols))
 
   const anchorCols = new Set<number>()
-  for (const row of rows) {
-    for (const cell of row) {
-      const r = cell.rowAddr ?? 0
-      const c = cell.colAddr ?? 0
-      if (r >= numRows || c >= maxCols || r < 0 || c < 0) continue
-
+  for (let ri = 0; ri < rows.length; ri++) {
+    for (const cell of rows[ri]) {
+      const text = options?.keepEmptyParagraphs ? cell.text : cell.text.trim()
+      const r = Math.min(cell.rowAddr ?? ri, numRows - 1)
+      let c = cell.colAddr ?? 0
+      if (r < 0 || c < 0) continue
+      if (cell.colAddr === undefined) while (c < maxCols - 1 && owner[r][c]) c++
+      if (c >= maxCols) c = maxCols - 1
+      const own = owner[r][c]
+      if (own) {
+        if (text.trim()) own.text = own.text ? `${own.text}\n${text}` : text
+        continue
+      }
+      // 병합 — 격자 끝·이미 주인 있는 칸 앞에서 자른다
+      let colSpan = Math.max(1, Math.min(cell.colSpan, maxCols - c))
+      for (let dc = 1; dc < colSpan; dc++) if (owner[r][c + dc]) { colSpan = dc; break }
+      let rowSpan = Math.max(1, Math.min(cell.rowSpan, numRows - r))
+      for (let dr = 1; dr < rowSpan; dr++) {
+        if (owner[r + dr].slice(c, c + colSpan).some(Boolean)) { rowSpan = dr; break }
+      }
+      const ir: IRCell = { text, colSpan, rowSpan }
       anchorCols.add(c)
-      grid[r][c] = { text: options?.keepEmptyParagraphs ? cell.text : cell.text.trim(), colSpan: cell.colSpan, rowSpan: cell.rowSpan }
-
-      // 병합 영역 마킹
-      for (let dr = 0; dr < cell.rowSpan; dr++) {
-        for (let dc = 0; dc < cell.colSpan; dc++) {
-          if (dr === 0 && dc === 0) continue
-          if (r + dr < numRows && c + dc < maxCols) {
-            grid[r + dr][c + dc] = { text: "", colSpan: 1, rowSpan: 1 }
-          }
+      for (let dr = 0; dr < rowSpan; dr++) {
+        for (let dc = 0; dc < colSpan; dc++) {
+          owner[r + dr][c + dc] = ir
+          grid[r + dr][c + dc] = dr === 0 && dc === 0 ? ir : { text: "", colSpan: 1, rowSpan: 1 }
         }
       }
     }
@@ -141,6 +163,14 @@ function trimAndReturn(grid: IRCell[][], numRows: number, maxCols: number, ancho
   }
   if (effectiveCols < maxCols && effectiveCols > 0) {
     const trimmed = grid.map(row => row.slice(0, effectiveCols))
+    // 잘린 열을 덮던 병합 셀은 표 폭 안으로 줄인다 — 빈 열 판정은 칸 단위라 글이 있는 병합 셀이
+    // 걸친 열도 잘리는데, span 을 그대로 두면 "3열 표에 colSpan 3 셀" 처럼 표 밖으로 뻗은 IR 이 된다
+    // (보도자료 머리표 1.|　|제목(colSpan 2)|빈 열 실측 — PDF 는 같은 표를 폭 안의 셀로 낸다)
+    for (const row of trimmed) {
+      for (let c = 0; c < row.length; c++) {
+        if (c + row[c].colSpan > effectiveCols) row[c].colSpan = effectiveCols - c
+      }
+    }
     return { rows: numRows, cols: effectiveCols, cells: trimmed, hasHeader: numRows > 1 }
   }
   return { rows: numRows, cols: maxCols, cells: grid, hasHeader: numRows > 1 }
@@ -158,10 +188,21 @@ export function convertTableToText(rows: CellContext[][]): string {
     .join("\n")
 }
 
-/** 마크다운 GFM 특수문자 이스케이프 — remark-gfm 오해석 방지 */
-function escapeGfm(text: string): string {
+/**
+ * 마크다운 GFM 특수문자 이스케이프 — remark-gfm 오해석 방지. 라운드트립(markdown-units)이 표 재현
+ * 드리프트 검사에 같은 함수를 쓰는 SSOT — 규칙을 바꾸면 그쪽 역변환(unescapeGfm·unescapeGfmCell)도
+ * 같이 바꾼다.
+ */
+export function escapeGfm(text: string): string {
   // ~ → \~ (GFM strikethrough 방지), * → \* (emphasis/HR·마스킹 별표 "******" 방지),
   // _ → \_ (emphasis 방지), ` → \` (inline code 방지).
+  // | → \| — 문단 글의 리터럴 파이프는 GFM 표 구분자와 구별이 안 된다(줄 안 "| 이형식 |").
+  //   이미 이스케이프된 \| (평탄화 표 텍스트 convertTableToText) 는 건드리지 않는다.
+  // 줄 첫 ATX "# " → \# — 본문 "# arch -k"(유닉스 프롬프트)가 헤딩이 되던 것 (hwp3-sample11).
+  // < → \< — 원시 HTML 로 읽히는 모양(< 뒤 영문자·/·!·?)만. 캡션 "<Table 18-4: …>" 가 모든
+  //   렌더러에서 <table> 여는 태그가 되고 "<br>" 글이 줄바꿈이 되던 것. kordoc 자신의 밑줄 마커
+  //   <u>·</u>(HWP5·PDF 가 block.text 에 넣음)는 제외, "<개정 2012.2.14>"·"<신설>"·"< 요약 >"
+  //   같은 한글·숫자·공백 뒤따름은 HTML 이 아니라 그대로 둔다.
   // 단 $...$ / $$...$$ 수식 스팬은 KaTeX 문법이라 이스케이프하면 파스 에러가 나므로 보호한다
   // (스팬을 임시 필러로 가린 뒤 escape → 복원). NUL 필러는 마크다운 본문에 등장하지 않는다.
   // ![image](image_001.png) 이미지 참조 스팬과 링크 URL부 `](스킴...)`(sanitizeHref 허용
@@ -172,7 +213,11 @@ function escapeGfm(text: string): string {
     spans.push(m)
     return NUL + (spans.length - 1) + NUL
   })
-  const escaped = masked.replace(/([~*_`])/g, "\\$1")
+  const escaped = masked
+    .replace(/([~*_`])/g, "\\$1")
+    .replace(/(?<!\\)\|/g, "\\|")
+    .replace(/^([ \t]*)(?=#{1,6}(?:[ \t]|$))/gm, "$1\\")
+    .replace(/<(?!\/?u>)(?=[A-Za-z/!?])/g, "\\<")
   return escaped.replace(new RegExp(NUL + "(\\d+)" + NUL, "g"), (_, n) => spans[Number(n)])
 }
 
@@ -395,7 +440,10 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
     if (block.type === "heading" && block.text) {
       const prefix = "#".repeat(Math.min(block.level || 2, 6))
       const headingText = sanitizeText(block.text)
-      if (headingText) lines.push("", `${prefix} ${escapeGfm(headingText)}`, "")
+      // 헤딩 문단의 각주도 문단과 같은 " (주: …)" — 종전엔 헤딩 경로가 footnoteText 를 버려 개요 문단·
+      // 헤딩 감지 문단의 주석이 마크다운에서 사라졌다 (정책연구 "2. 미국76)" 주석 76)
+      const note = block.footnoteText ? ` (주: ${block.footnoteText})` : ""
+      if (headingText) lines.push("", `${prefix} ${escapeGfm(headingText + note)}`, "")
       continue
     }
 
@@ -533,6 +581,12 @@ export function hasStructuredCellContent(table: IRTable): boolean {
   return false
 }
 
+/** 셀 문단 블록의 각주 표기 — 본문 문단과 같은 " (주: …)" (셀 평탄화 text 와 같은 모양).
+ *  라운드트립 HTML 표 재현(markdown-units replicateCellInnerHtml)과 공용 */
+export function noteSuffix(b: IRBlock): string {
+  return b.footnoteText && b.text ? ` (주: ${b.footnoteText})` : ""
+}
+
 /** 셀 내부 콘텐츠 → HTML — blocks(중첩표/다중문단) 있으면 구조 보존 재귀 렌더링 */
 function cellInnerHtml(cell: IRCell): string {
   if (cell.blocks?.length) {
@@ -545,7 +599,7 @@ function cellInnerHtml(cell: IRCell): string {
         }
         if (b.type === "image" && b.text) return `<img src="${b.text}" alt="image">`
         const t = sanitizeText(b.text ?? "")
-        return t ? t.replace(/\n/g, "<br>") : ""
+        return t ? (t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
       })
       .filter(Boolean)
       .join("<br>")
@@ -597,7 +651,9 @@ function tableToHtml(table: IRTable): string {
       const attrStr = attrs.length ? " " + attrs.join(" ") : ""
       rowHtml.push(`<${tag}${attrStr}>${text}</${tag}>`)
     }
-    if (rowHtml.length) lines.push(`<tr>${rowHtml.join("")}</tr>`)
+    // 위 행 rowspan 에 통째로 덮인 행도 빈 <tr></tr> 로 남긴다 — 빼면 브라우저가 rowspan 을 다음
+    // 행에 먹여 아래 셀이 오른쪽으로 밀리고, md→hwpx 재생성도 행 수가 줄어 병합이 표 밖으로 나간다
+    lines.push(`<tr>${rowHtml.join("")}</tr>`)
   }
 
   lines.push("</table>")
@@ -609,10 +665,12 @@ function tableToMarkdown(table: IRTable): string {
 
   const { cells, rows: numRows, cols: numCols } = table
 
-  // 병합 셀·중첩표가 있으면 HTML 테이블로 출력하되, 수식이 있으면 GFM 표로 출력한다.
-  // 많은 Markdown 렌더러가 raw HTML table 내부의 $...$를 수식으로 다시 처리하지 않는다.
-  // 병합·구조 콘텐츠(중첩표·구분선)는 HTML (#76 — hasNestedTables 일반화)
-  if ((hasMergedCells(table) || hasStructuredCellContent(table)) && !tableContainsInlineMath(table)) {
+  // 구조 콘텐츠(중첩표·구분선)는 항상 HTML (#76 — hasNestedTables 일반화). GFM 은 셀 안 표를 담을 수
+  // 없어 1×1·1열 경로가 중첩표를 " / " 평탄화 줄로 뭉갠다 — 수식이 섞였다고 GFM 으로 보내면 표 구조가
+  // 통째로 사라졌다 (issue1949 3×1 틀 안 중첩표 13개 → 표 0개). 병합만 있는 표는 종전대로: 수식이 있으면
+  // GFM (많은 Markdown 렌더러가 raw HTML table 내부의 $...$를 수식으로 다시 처리하지 않는다)
+  if (hasStructuredCellContent(table)) return tableToHtml(table)
+  if (hasMergedCells(table) && !tableContainsInlineMath(table)) {
     return tableToHtml(table)
   }
 
@@ -658,11 +716,11 @@ function tableToMarkdown(table: IRTable): string {
         ? cell.blocks
           .map(b => b.type === "image" && b.text
             ? `![image](${b.text})`
-            : b.spans ? spansToMarkdown(b.spans) : escapeGfm(sanitizeText(b.text ?? "")))
+            : b.spans ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b)))
           .filter(Boolean)
           .join("<br>")
         : escapeGfm(sanitizeText(cell.text)).replace(/\n/g, "<br>")
-      ).replace(/\|/g, "\\|")
+      ).replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
 
       // colSpan/rowSpan: 병합된 열은 빈 칸으로 유지 (텍스트 중복 방지)
       for (let dr = 0; dr < cell.rowSpan; dr++) {

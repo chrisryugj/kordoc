@@ -9,7 +9,7 @@
  */
 
 import type { IRTable } from "../types.js"
-import { MAX_COLS, MAX_ROWS } from "../table/builder.js"
+import { MAX_COLS, MAX_ROWS, escapeGfm, noteSuffix } from "../table/builder.js"
 import { clampSpan } from "../hwpx/parser-shared.js"
 import { mapPuaText } from "../shared/pua.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
@@ -184,18 +184,8 @@ function bestSimInRange(arr: string[], from: number, to: number, target: string)
 
 // ─── builder.ts 텍스트 변환 재현 (드리프트 시 자기 검증으로 skip) ─────
 
-/** GFM 특수문자 이스케이프 — builder.ts escapeGfm과 동일 (~ 취소선, * 강조/HR·마스킹 런, _ 강조, ` 코드).
- *  ![image](image_001.png) 이미지 참조 스팬·링크 URL부는 builder처럼 보호 — _ 이스케이프 시 문법 파괴 */
-export function escapeGfm(text: string): string {
-  const NUL = String.fromCharCode(0)
-  const spans: string[] = []
-  const masked = text.replace(/!\[[^\]]*\]\([^)\n]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\n]*\)/gi, (m) => {
-    spans.push(m)
-    return NUL + (spans.length - 1) + NUL
-  })
-  const escaped = masked.replace(/([~*_`])/g, "\\$1")
-  return escaped.replace(new RegExp(NUL + "(\\d+)" + NUL, "g"), (_, n) => spans[Number(n)])
-}
+/** GFM 특수문자 이스케이프 — builder.ts escapeGfm 이 SSOT (재현 드리프트 방지, 사본 두지 않음) */
+export { escapeGfm }
 
 /** builder.ts HWP_SHAPE_ALT_TEXT_RE와 동일 (행 전체 일치 ^…$m — 본문 중간 오삭제 방지) */
 const HWP_SHAPE_ALT_TEXT_RE = /^(?:모서리가 둥근 |둥근 )?(?:사각형|직사각형|정사각형|원|타원|삼각형|이등변 삼각형|직각 삼각형|선|직선|곡선|화살표|굵은 화살표|이중 화살표|오각형|육각형|팔각형|별|[4-8]점별|십자|십자형|구름|구름형|마름모|도넛|평행사변형|사다리꼴|부채꼴|호|반원|물결|번개|하트|빗금|블록 화살표|수식|표|그림|개체|그리기\s?개체|묶음\s?개체|글상자|수식\s?개체|OLE\s?개체)\s?입니다\.?$/gm
@@ -222,9 +212,9 @@ export function normForMatch(text: string): string {
   return sanitizeText(text).replace(/\s+/g, " ").trim()
 }
 
-/** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환) */
+/** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환 — \| \# \< 포함, 없으면 hp:t 에 백슬래시가 샌다) */
 export function unescapeGfm(text: string): string {
-  return text.replace(/\\([~*_`])/g, "$1")
+  return text.replace(/\\([~*_`|#<])/g, "$1")
 }
 
 /** 스킵 보고용 내용 요약 (최대 80자) */
@@ -262,7 +252,7 @@ export function replicateGfmTable(table: IRTable): MappedCell[][] | null {
       const cell = cells[r]?.[c]
       if (!cell) continue
       display[r][c] = {
-        text: escapeGfm(sanitizeText(cell.text)).replace(/\|/g, "\\|").replace(/\n/g, "<br>"),
+        text: escapeGfm(sanitizeText(cell.text)).replace(/(?<!\\)\|/g, "\\|").replace(/\n/g, "<br>"),
         gridR: r,
         gridC: c,
       }
@@ -320,7 +310,7 @@ export function parseGfmTable(lines: string[]): string[][] {
 
 /** GFM 셀 텍스트 → 평문 */
 export function unescapeGfmCell(text: string): string {
-  return text.replace(/<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|").replace(/\\([~*_`])/g, "$1")
+  return text.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|").replace(/\\([~*_`#<])/g, "$1")
 }
 
 // ─── HTML 표 — 좌표 추적 렌더 재현 + 파서 ───────────
@@ -346,7 +336,7 @@ function replicateCellInnerHtml(cell: IRTable["cells"][number][number]): string 
         }
         if (b.type === "image" && b.text) return `<img src="${b.text}" alt="image">`
         const t = sanitizeText(b.text ?? "")
-        return t ? t.replace(/\n/g, "<br>") : ""
+        return t ? (t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
       })
       .filter(Boolean)
       .join("<br>")
@@ -367,7 +357,7 @@ export function replicateTableToHtml(table: IRTable): string {
       const attrStr = attrs.length ? " " + attrs.join(" ") : ""
       return `<${tag}${attrStr}>${cell.inner}</${tag}>`
     })
-    if (rowHtml.length) lines.push(`<tr>${rowHtml.join("")}</tr>`)
+    lines.push(`<tr>${rowHtml.join("")}</tr>`) // 덮인 행도 빈 <tr></tr> (builder tableToHtml 동일)
   }
   lines.push("</table>")
   return lines.join("\n")
@@ -405,7 +395,7 @@ export function replicateHtmlTable(table: IRTable): HtmlRowInfo[] {
         gridC: c,
       })
     }
-    if (rowCells.length) result.push({ tag, cells: rowCells })
+    result.push({ tag, cells: rowCells }) // 덮인 행도 빈 행 (builder tableToHtml·parseHtmlTable 과 행 수 정합)
   }
   return result
 }

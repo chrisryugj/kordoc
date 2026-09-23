@@ -8,7 +8,7 @@
 
 import { KordocError, sanitizeHref, stripDtd } from "../utils.js"
 import { convertTableToText, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, ParseWarning } from "../types.js"
+import type { IRBlock, IRCell, IRTable, InlineStyle, ParseWarning } from "../types.js"
 import { hmlToLatex } from "./equation.js"
 import {
   clampSpan,
@@ -26,6 +26,8 @@ import type { HwpxStyleMap } from "./styles.js"
 import { resolveParaHeading } from "./para-heading.js"
 import { completeTable } from "./table-build.js"
 import { detectHwpxSectionPages } from "./page-boundary.js"
+import { noteAttrsOf, noteAutoNumOf, noteRefMark, readSectionNoteFormats } from "./notes.js"
+import { extractRunSpans, gongmunDepthFromIndent, KORDOC_PARA_QUOTE, spanModeOf } from "./run-spans.js"
 
 // ─── 섹션 XML 파싱 ──────────────────────────────────
 
@@ -57,6 +59,8 @@ export function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?:
       break
     }
   }
+  // 각주·미주 번호 모양 — 본문 참조 부호("1)"·"문1）") 재구성 (notes.ts)
+  ctx.noteFormats = readSectionNoteFormats(doc.documentElement as unknown as Element)
 
   const blocks: IRBlock[] = []
   walkSection(doc.documentElement as unknown as Node, blocks, null, [], ctx)
@@ -145,7 +149,9 @@ function walkSection(
         if (tableCtx) {
           tableCtx.currentRow = []
           walkSection(el, blocks, tableCtx, tableStack, ctx, depth + 1)
-          if (tableCtx.currentRow.length > 0) tableCtx.rows.push(tableCtx.currentRow)
+          // 빈 <hp:tr/> 도 행이다 — 위 행 병합에 통째로 덮인 행을 한컴·rhwp 는 빈 tr 로 쓴다.
+          // 버리면 행 수가 줄어 그 아래 앵커가 격자 밖으로 밀렸다 (builder 는 이제 앵커 행으로 격자를 늘림)
+          tableCtx.rows.push(tableCtx.currentRow)
           tableCtx.currentRow = []
         }
         break
@@ -212,10 +218,12 @@ function walkSection(
           }
           let segIdx = 0
           let first = true
+          let lastCellBlock: IRBlock | undefined
           const flush = () => {
             const s = segs[segIdx++]
             if (!s) return
             const block: IRBlock = { type: "paragraph", text: s, pageNumber: ctx.page }
+            if (cell) lastCellBlock = block
             if (first && !cell) {
               first = false
               if (style) block.style = style
@@ -236,18 +244,24 @@ function walkSection(
           }
           tableCtx = walkParagraphChildren(el, blocks, tableCtx, tableStack, ctx, depth + 1, flush)
           while (segIdx < segs.length) flush()
-          // 셀 각주(주석) — 세그먼트 평탄화 뒤 종전과 동일하게 보존 (희소 경로)
-          if (footnote && cell) cell.text += (cell.text ? "\n" : "") + `(주: ${footnote})`
+          // 셀 각주(주석) — 세그먼트 평탄화 뒤 종전과 동일하게 보존 (희소 경로). 셀 blocks 도
+          // 마지막 조각에 footnoteText 로 달아 HTML 셀 렌더가 주석을 잃지 않게 한다
+          if (footnote && cell) {
+            cell.text += (cell.text ? "\n" : "") + `(주: ${footnote})`
+            if (lastCellBlock) lastCellBlock.footnoteText = footnote
+          }
           break
         }
         if (text) {
           if (tableCtx?.cell) {
             const cell = tableCtx.cell
-            if (footnote) text += ` (주: ${footnote})`
-            // 선두 빈 문단 뒤(keepEmptyParagraphs)엔 cell.text가 ""라도 문단 경계 `\n` 필요 (#57)
-            cell.text += ((cell.text || cell.paraSeen) ? "\n" : "") + text
+            // 선두 빈 문단 뒤(keepEmptyParagraphs)엔 cell.text가 ""라도 문단 경계 `\n` 필요 (#57).
+            // 셀 각주는 평탄화 텍스트(GFM 셀)엔 인라인 "(주: …)", 셀 문단 블록엔 본문 문단과 같은
+            // footnoteText 슬롯으로 — 블록 텍스트가 셀 글 그대로라 표 내용 대조·span 복원이 맞는다
+            cell.text += ((cell.text || cell.paraSeen) ? "\n" : "") + (footnote ? `${text} (주: ${footnote})` : text)
             cell.paraSeen = true
             const cellBlock: IRBlock = { type: "paragraph", text, pageNumber: ctx.page }
+            if (footnote) cellBlock.footnoteText = footnote
             // 왕복 채널 — 셀 문단도 인라인 강조 span 복원 (v4.0.4: 최상위 한정 확장,
             // v4.0.5: gongmun·외래 확장). GFM 셀 방출이 마커를 재방출하고 generateRuns가
             // 되읽는다. 자사 default 외에는 혼합 가드 — 전체 볼드 셀은 헤더행·라벨열의
@@ -406,7 +420,8 @@ function userShapeComment(el: Element): string | undefined {
 function mergeBlocksIntoCell(cell: CellCtxEx, sink: IRBlock[]): void {
   for (const b of sink) {
     if ((b.type === "paragraph" || b.type === "heading") && b.text) {
-      cell.text += (cell.text ? "\n" : "") + b.text
+      // 글상자 문단 각주도 셀 문단과 같은 모양 — 평탄화 text 엔 인라인 "(주: …)", 블록엔 footnoteText
+      cell.text += (cell.text ? "\n" : "") + b.text + (b.footnoteText ? ` (주: ${b.footnoteText})` : "")
       ;(cell.blocks ??= []).push(b)
     } else if (b.type === "image" || b.type === "table") {
       if (b.type === "image" && b.text) {
@@ -496,7 +511,7 @@ function collectSubListText(el: Node, ctx: WalkCtx, depth = 0): string {
  * subList 내부를 텍스트와 블록으로 동시 수집 — 캡션 안 중첩표를 구조로도 보존하기
  * 위해 collectSubListText를 확장 (#55). 텍스트 조립 규칙은 종전과 동일.
  */
-function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0): SubListContent {
+function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0, sep = "\n"): SubListContent {
   const out: SubListContent = { text: "", blocks: [], hasStructure: false }
   if (depth > 10) return out
   const parts: string[] = []
@@ -507,7 +522,11 @@ function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0): SubListConten
     if (ch.nodeType !== 1) continue
     const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
     if (tag === "p" || tag === "para") {
-      const t = extractParagraphInfo(ch, ctx.styleMap, ctx).text
+      let t = extractParagraphInfo(ch, ctx.styleMap, ctx).text
+      // 캡션·머리말·주석 문단도 글머리표·번호를 한컴이 그린다 (추진일정 캡션 "※ 상기 추진일정…",
+      // 한컴 PDF 실렌더). 본문·글상자 경로와 같이 텍스트 유무와 무관하게 불러 번호 카운터를 소비
+      const ph = resolveParaHeading(ch, ctx)
+      if (t && ph?.prefix) t = ph.prefix + " " + t
       if (t) {
         parts.push(t)
         out.blocks.push({ type: "paragraph", text: t, pageNumber: ctx.page })
@@ -523,6 +542,12 @@ function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0): SubListConten
           out.hasStructure = true
         }
       }
+      // 문단 안 글상자 글 (hp:rect > hp:drawText) — extractParagraphInfo 는 글상자를 건너뛰므로
+      // 따로 모은다 (미주 풀이 박스·머리말 도형 글이 통째로 빠지던 것, 3-09월_교육_통합 미주)
+      for (const t of drawTextParaTexts(ch, ctx)) {
+        parts.push(t)
+        out.blocks.push({ type: "paragraph", text: t, pageNumber: ctx.page })
+      }
     } else if (tag === "tbl") {
       const built = buildSubListTable(ch, ctx, depth)
       if (built.text) parts.push(built.text)
@@ -531,13 +556,43 @@ function collectSubListContent(el: Node, ctx: WalkCtx, depth = 0): SubListConten
         out.hasStructure = true
       }
     } else {
-      const sub = collectSubListContent(ch, ctx, depth + 1)
+      const sub = collectSubListContent(ch, ctx, depth + 1, sep)
       if (sub.text) parts.push(sub.text)
       out.blocks.push(...sub.blocks)
       if (sub.hasStructure) out.hasStructure = true
     }
   }
-  out.text = parts.join("\n").trim()
+  out.text = parts.join(sep).trim()
+  return out
+}
+
+/**
+ * 문단 안 글상자(drawText) 문단 글 — 자동번호 접두 포함, 표 내부·중첩 글상자 미진입.
+ * 글상자 안 표는 findTopLevelTbls 가 따로 모은다 (중복 방출·번호 이중 전진 방지)
+ */
+function drawTextParaTexts(para: Element, ctx: WalkCtx): string[] {
+  const out: string[] = []
+  const visit = (node: Node, depth: number, inDrawText: boolean) => {
+    if (depth > MAX_XML_DEPTH) return
+    const kids = node.childNodes
+    if (!kids) return
+    for (let i = 0; i < kids.length; i++) {
+      const ch = kids[i] as Element
+      if (ch.nodeType !== 1) continue
+      const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
+      if (tag === "tbl" || tag === "footNote" || tag === "endNote") continue
+      if (tag === "drawText") { if (!inDrawText) visit(ch, depth + 1, true); continue }
+      if (inDrawText && (tag === "p" || tag === "para")) {
+        let t = extractParagraphInfo(ch, ctx.styleMap, ctx).text.trim()
+        const ph = resolveParaHeading(ch, ctx)
+        if (t && ph?.prefix) t = ph.prefix + " " + t
+        if (t) out.push(t)
+        continue
+      }
+      visit(ch, depth + 1, inDrawText)
+    }
+  }
+  visit(para, 0, false)
   return out
 }
 
@@ -809,6 +864,16 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   // HWPX <p>에는 paraPrIDRef/styleIDRef가 있고, charPrIDRef는 <r> 요소에 있음
   // 여기서는 일단 null — <r> 요소에서 charPrIDRef를 가져옴
 
+  // 각주/미주 — 개체 자리에 본문 참조 부호(한컴 실렌더 "액체1)와"), 주석 본문은 문단 모델로
+  // (수식 LaTeX·필드 매개변수 제외·표 구분, HWP5 applyNoteEffect 와 같은 표기 — notes.ts)
+  const addNote = (noteEl: Element, tag: string) => {
+    if (isInDeletedRange(ctx)) return
+    const endnote = tag === "endNote" || tag === "en"
+    text += noteRefMark(noteAttrsOf(noteEl), endnote ? ctx?.noteFormats?.endnote : ctx?.noteFormats?.footnote)
+    const noteText = ctx ? collectSubListContent(noteEl, ctx, 0, " ").text : extractTextFromNode(noteEl)
+    if (noteText) footnote = (footnote ? footnote + "; " : "") + noteText
+  }
+
   /** <hp:ctrl> 자식 선별 순회 — 머리말/꼬리말/각주/미주/하이퍼링크/변경추적 (v3.0) */
   const handleCtrl = (ctrlEl: Element) => {
     const kids = ctrlEl.childNodes
@@ -832,12 +897,8 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           break
         }
 
-        // 각주/미주 — 해당 문단의 footnote로 인라인 보존
-        case "footNote": case "endNote": {
-          const noteText = extractTextFromNode(k)
-          if (noteText) footnote = (footnote ? footnote + "; " : "") + noteText
-          break
-        }
+        // 각주/미주 — 개체 자리에 참조 부호, 본문은 해당 문단의 footnote로 인라인 보존
+        case "footNote": case "endNote": addNote(k, ktag); break
 
         // 하이퍼링크 — fieldBegin type=HYPERLINK의 Path 파라미터 (extent 오프셋 추적)
         case "fieldBegin": onFieldBegin(k); break
@@ -860,9 +921,14 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           break
         }
 
+        // 자동번호 — 주석 머리 번호("1)"·"문1）")·캡션 번호("<그림 1>")만 그린다. 쪽번호 등은 종전대로 미방출
+        case "autoNum":
+          if (!isInDeletedRange(ctx)) text += noteAutoNumOf(k)
+          break
+
         // 콘텐츠 없는 제어 요소 — 스킵
         case "bookmark": case "pageNum": case "pageNumCtrl": case "pageHiding":
-        case "newNum": case "autoNum": case "indexmark": case "colPr":
+        case "newNum": case "indexmark": case "colPr":
           break
 
         // 캡션 — walkParagraphChildren의 caption 분기가 보존하므로 손실 경고 대상 아님
@@ -941,9 +1007,13 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         }
 
         // 각주/미주
-        case "footNote": case "endNote": case "fn": case "en": {
-          const noteText = extractTextFromNode(child)
-          if (noteText) footnote = (footnote ? footnote + "; " : "") + noteText
+        case "footNote": case "endNote": case "fn": case "en": addNote(child, tag); break
+
+        // 대체 표현 묶음 — 한컴은 지원하는 hp:case 하나만 그린다(차트, 없으면 hp:default 의 OLE).
+        // 둘 다 순회하면 같은 캡션이 두 번 나온다 (1790387 [그림 5] 이중 방출)
+        case "switch": {
+          const branch = findChildByLocalName(child, "case") ?? findChildByLocalName(child, "default")
+          if (branch) walk(branch, depth + 1)
           break
         }
 
@@ -1065,134 +1135,4 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   }
 
   return { text: cleanText, href, footnote, style, segments }
-}
-
-/** kordoc 생성 default 레이아웃의 인라인 코드 charPr id (gen-ids CHAR_CODE와 동기) */
-const KORDOC_CHAR_CODE = "4"
-/** kordoc 생성 default 레이아웃의 인용문 paraPr id (gen-ids PARA_QUOTE와 동기) */
-const KORDOC_PARA_QUOTE = "6"
-
-/**
- * run-span 채널 모드 (v4.0.5 확장) — kordoc: 자사 default 레이아웃(고정 id 규약 전부),
- * gongmun: 자사 공문서 레이아웃(기본 charPr 0~10 블록은 default와 동일 — id4 code 유효.
- * 단 구조 볼드(report 1단계 □ 전체 CHAR_BOLD 등)가 있어 혼합 가드 필수),
- * foreign: 메타 없는 외래 한컴 문서(실속성 볼드/이탤릭만 — id 규약 없음).
- * 미지의 자사 레이아웃 값은 null — 채널 꺼짐 (id 재배치 오검출 가드).
- */
-type SpanMode = "kordoc" | "gongmun" | "foreign"
-
-function spanModeOf(layout: string | null | undefined): SpanMode | null {
-  if (layout === "default") return "kordoc"
-  if (layout === "gongmun") return "gongmun"
-  if (!layout) return "foreign"
-  return null
-}
-
-/**
- * 문단 직계 run들의 인라인 강조 span 추출. 볼드/이탤릭은 charPr id가
- * 아니라 styleMap 실속성(<hh:bold/> 등)으로 읽고, 코드만 고정 id로 식별한다(자사 한정).
- * 개체(표·이미지·수식 등)나 run 외 요소가 섞인 문단, 서식 span이 하나도 없는 문단은
- * null — 평문 경로 유지 (마커 재방출 이득이 없으면 켜지 않는다).
- * requireMixed: 무서식 span과 서식 span이 공존할 때만 인정 — 전체가 서식인 문단은
- * 구조적 서식(gongmun 1단계 볼드, 표 헤더행 볼드 등)일 개연성이 높아 마커를 억제한다.
- */
-function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, requireMixed: boolean): IRSpan[] | null {
-  const styleMap = ctx.styleMap
-  if (!styleMap) return null
-  const spans: IRSpan[] = []
-  let styled = false
-  const kids = para.childNodes
-  if (!kids) return null
-  for (let i = 0; i < kids.length; i++) {
-    const child = kids[i] as Element
-    if (child.nodeType !== 1) continue
-    const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
-    if (tag === "linesegarray") continue // 조판 캐시 — 텍스트 무관
-    if (tag !== "run" && tag !== "r") return null
-    let text = ""
-    const rkids = child.childNodes
-    for (let j = 0; j < (rkids?.length ?? 0); j++) {
-      const rc = rkids![j] as Element
-      if (rc.nodeType !== 1) continue
-      const rtag = (rc.tagName || rc.localName || "").replace(/^[^:]+:/, "")
-      if (rtag === "t") {
-        const tkids = rc.childNodes
-        for (let k = 0; k < (tkids?.length ?? 0); k++) {
-          const tk = tkids![k]
-          if (tk.nodeType === 3 || tk.nodeType === 4) text += tk.textContent || ""
-          else if (tk.nodeType === 1) {
-            // 탭·빈칸 컨트롤은 공백(평문 경로와 같은 모델 — 항목부호 뒤 탭 run 이 강조 복원을 막지 않게),
-            // 줄바꿈 등 나머지는 평문 경로
-            const ttag = ((tk as Element).tagName || (tk as Element).localName || "").replace(/^[^:]+:/, "")
-            if (ttag === "tab" || ttag === "fwSpace" || ttag === "hwSpace" || ttag === "nbSpace") text += " "
-            else return null
-          }
-        }
-      } else if (rtag === "secPr" || rtag === "colPr") {
-        // 첫 run이 나르는 섹션 속성 — 텍스트 무관
-      } else if (rtag === "ctrl") {
-        if (extractTextFromNode(rc)) return null
-      } else {
-        return null // 표·이미지·수식 등 개체 동반 문단
-      }
-    }
-    if (!text) continue
-    const prId = child.getAttribute("charPrIDRef") ?? ""
-    const cp = styleMap.charProperties.get(prId)
-    const span: IRSpan = { text }
-    if (mode !== "foreign" && prId === KORDOC_CHAR_CODE) span.code = true
-    else {
-      if (cp?.bold) span.bold = true
-      if (cp?.italic) span.italic = true
-      if (cp?.strike) span.strike = true
-      if (cp?.underline) span.underline = true
-    }
-    if (span.bold || span.italic || span.strike || span.underline || span.code) styled = true
-    spans.push(span)
-  }
-  if (!styled || spans.length === 0) return null
-  // 인접 동일 서식 span 병합 — 한컴은 편집 이력 경계에서 같은 서식 run을 임의 분할
-  // 하므로(외래 문서) 그대로 두면 run마다 마커 쌍이 생긴다('**안****녕**' 오염)
-  const merged: IRSpan[] = []
-  for (const s of spans) {
-    const last = merged[merged.length - 1]
-    if (last && !!last.bold === !!s.bold && !!last.italic === !!s.italic && !!last.strike === !!s.strike && !!last.underline === !!s.underline && !!last.code === !!s.code) {
-      last.text += s.text
-    } else {
-      merged.push(s)
-    }
-  }
-  // requireMixed(구조적 서식 억제)는 bold/italic 에만 적용 — 취소선·밑줄은 전체 문단이
-  // 통째로 그어진 경우(법령 개정문 삭제 조문·개정 표시)가 정상 패턴이라 억제하지 않는다
-  if (requireMixed && !merged.some((s) => s.strike || s.underline) && !merged.some((s) => !(s.bold || s.italic || s.code))) return null
-  return merged
-}
-
-/**
- * gongmun levelIndent 역산 (v4.0.5) — left = depth × 본문크기(standard/report) 또는
- * 개조식 반계단(1.0/1.5/2.0, 이후 +0.5/단계) × 본문크기 HWPUNIT. 단위는 문단 첫 run의
- * charPr 글자크기(pt×100 = HWPUNIT)로 도출 — 생성기 levelIndent가 bodyHeight를 쓰는
- * 것의 미러. 부호 시퀀스상 md 충돌 부호('-'·'*'·'N)')는 전부 법정 2단계에서만 나오므로
- * 역산 결과는 사실상 2 — 그래도 파일 자체가 정본이 되게 지문으로 산출한다.
- */
-function gongmunDepthFromIndent(para: Element, left: number, ctx: WalkCtx): number | null {
-  const styleMap = ctx.styleMap
-  if (!styleMap) return null
-  let unit = 0
-  const kids = para.childNodes
-  for (let i = 0; i < (kids?.length ?? 0); i++) {
-    const child = kids[i] as Element
-    if (child.nodeType !== 1) continue
-    const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
-    if (tag !== "run" && tag !== "r") continue
-    const size = styleMap.charProperties.get(child.getAttribute("charPrIDRef") ?? "")?.fontSize
-    if (size) unit = size * 100
-    break
-  }
-  if (!unit) return null
-  const r = left / unit
-  const nearInt = Math.round(r)
-  // 정수배 = standard/report(depth=r), x.5 계단 = 개조식(depth = 2r-1: 1.5→2, 2.5→4)
-  const depth = Math.abs(r - nearInt) < 0.2 ? nearInt : Math.round(2 * r - 1)
-  return depth >= 1 && depth < 8 ? depth : null
 }

@@ -9,6 +9,8 @@
  * paragraph_layout.rs map_pua_bullet_char — 한컴 PDF 정답지 시각 검증 테이블.
  */
 
+import { wingdingsChar } from "./symbol-fonts.js"
+
 /** BMP Symbol 영역 (U+F020~U+F0FF) 매핑 — 키는 (code - 0xF000) */
 const BMP_SYMBOL_MAP: Record<number, string> = {
   // 도형/기호
@@ -133,7 +135,11 @@ const BOXED_NUMBER_END = 0xf02c4
 /** 단일 코드포인트 매핑 — 매핑 없으면 원본 유지 */
 function mapPuaChar(code: number): string | undefined {
   if (code >= 0xf020 && code <= 0xf0ff) {
-    return BMP_SYMBOL_MAP[code - 0xf000]
+    // 검증 표에 없는 심볼 PUA 는 Wingdings 코드표로 — 한컴은 이 구간을 글꼴과 무관하게 Wingdings
+    // 글리프로 그린다 (156782334 보도자료: 글꼴은 전부 맑은 고딕인데 한컴 PDF 는 U+F08C~F08E 를
+    // Wingdings ❶❷❸ 로 렌더. 코퍼스 U+F021~F0FF 520여 건 모두 비심볼 글꼴 run). 한양 PUA 옛한글
+    // (KTUG 표 U+E0BC~F8F7 5,660자)은 이 구간에 한 자도 없어 충돌하지 않는다
+    return BMP_SYMBOL_MAP[code - 0xf000] ?? wingdingsChar(code - 0xf000)
   }
   if (code >= BOXED_NUMBER_START && code <= BOXED_NUMBER_END) {
     return String.fromCodePoint(0x2460 + (code - BOXED_NUMBER_START))

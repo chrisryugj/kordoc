@@ -439,7 +439,9 @@ function replaceBracket(strList: string[]): string[] {
 export function hmlToLatex(hmlEqStr: string): string {
   if (!hmlEqStr) return ""
 
-  let s = hmlEqStr.replace(/`/g, " ")
+  // 스크립트 안 줄바꿈·탭은 공백 — HULK 행 구분은 `#` 이고 개행은 서식일 뿐이다. 남기면 토큰에
+  // 붙어 LaTeX 로 새고(`5x+a \\ ⏎ }`), 인라인 수식 `$…$` 이 줄을 넘어 수식으로 인식되지 않는다 (math-001 cases)
+  let s = hmlEqStr.replace(/[\r\n\t]+/g, " ").replace(/`/g, " ")
   s = s.replace(/\{/g, " { ").replace(/\}/g, " } ").replace(/&/g, " & ")
 
   let tokens = s.split(" ")
