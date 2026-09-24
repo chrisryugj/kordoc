@@ -49,6 +49,9 @@ const parseOpts = file => ({ filename: basename(file), ...(passwordOf(file) ? { 
 
 async function scoreHwpx(file, buf) {
   const res = await parse(buf, parseOpts(file))
+  // 암호를 모르는 실문서 암호 HWPX(정책브리핑 첨부 등 — 같은 보도자료의 HWP·PDF 판은 평문) 는 ENCRYPTED 로 거절하는 것이 올바른
+  // 동작이다. 그 코드인지만 확인하고 채점에서 뺀다(다른 실패 코드는 그대로 실패)
+  if (!res.success && res.code === "ENCRYPTED" && !passwordOf(file)) return { ok: true, encrypted: true, locked: true }
   if (!res.success) return { ok: false, stage: "parse", error: res.error }
   if (passwordOf(file)) return { ok: true, encrypted: true }
 
@@ -389,6 +392,7 @@ async function scoreHwpPair(hwpFile, hwpxFile) {
 const t0 = performance.now()
 const hwpxDocs = [], pdfDocs = [], hwpFiles = [], failures = [], encryptedDocs = []
 const misnamedOle2 = new Set() // 확장자 .hwpx + OLE2 매직 (실제 HWP5) — 쌍 탐색 제외
+const lockedHwpx = new Set() // 암호를 모르는 HWPX — HWP5 쌍 탐색 제외(HWP 는 단독 파싱 트랙으로)
 const allFiles = []
 for await (const f of walk(corpusDir)) allFiles.push(f)
 allFiles.sort()
@@ -419,6 +423,7 @@ for (const file of allFiles) {
       const row = await scoreHwpx(file, buf)
       row.file = rel
       row.ms = Math.round(performance.now() - td)
+      if (row.locked) lockedHwpx.add(file)
       if (row.encrypted) encryptedDocs.push(rel)
       else if (row.ok) hwpxDocs.push(row)
       else failures.push({ file: rel, ...row })
@@ -448,7 +453,7 @@ for (const hwpFile of hwpFiles) {
   if (misnamedOle2.has(hwpFile)) {
     // 쌍 비교 비대상 — unpaired 경로로
   } else if (m) {
-    const sibling = allFiles.find(f => f !== hwpFile && f.startsWith(dir) && basename(f).startsWith(m[1] + "_") && /\.hwpx$/i.test(f) && !misnamedOle2.has(f))
+    const sibling = allFiles.find(f => f !== hwpFile && f.startsWith(dir) && basename(f).startsWith(m[1] + "_") && /\.hwpx$/i.test(f) && !misnamedOle2.has(f) && !lockedHwpx.has(f))
     if (sibling) pair = sibling
   } else {
     // 같은 이름 .hwpx, 없으면 한컴 변환본 명명(rhwp 샘플 "<원본>-hwpx.hwpx"·"<원본>-hwp5.hwpx" — HWP3 원본을 한글이
@@ -685,7 +690,7 @@ if (hwp5Agg) {
   }
 }
 
-if (encryptedDocs.length) console.log(`\n[암호 HWPX] 파일명 암호로 열기 성공 ${encryptedDocs.length}건 (자기참조 GT 불가 — 채점 제외)`)
+if (encryptedDocs.length) console.log(`\n[암호 HWPX] ${encryptedDocs.length}건 채점 제외 — 파일명 암호로 열기 성공 ${encryptedDocs.length - lockedHwpx.size} · 암호 모름(ENCRYPTED 거절 확인) ${lockedHwpx.size} (자기참조 GT 불가)`)
 const unpairedFail = hwpUnpaired.filter(u => !u.parsed)
 if (unpairedFail.length) { // 게이트 (overallPass)
   console.log(`\n[HWP 단독 파싱 실패 ${unpairedFail.length}건]`)

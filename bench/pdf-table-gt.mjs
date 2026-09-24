@@ -187,9 +187,11 @@ for (const { set, base, rel } of pairs) {
   const row = { pair: rel, set }
   try {
     const hwpxBytes = await readFile(base + ".hwpx")
+    const hwpx = await parse(Buffer.from(hwpxBytes), { filename: basename(base) + ".hwpx" })
+    // 암호를 모르는 실문서 HWPX(같은 보도자료의 PDF·HWP 는 평문)는 정답지가 없다 — ENCRYPTED 거절만 확인하고 모수에서 뺀다
+    if (!hwpx.success && hwpx.code === "ENCRYPTED") { row.locked = true; rows.push(row); continue }
     // 정답지는 기하 격자 — PDF 는 화면만 담아 HWPX 논리 열(행마다 폭이 다른 같은 열)을 되살릴 수 없다 (lib/geo-grid.mjs)
     const geo = await hwpxGeoGrids(hwpxBytes)
-    const hwpx = await parse(Buffer.from(hwpxBytes), { filename: basename(base) + ".hwpx" })
     const pdf = await parse(await readFile(base + ".pdf"), { filename: basename(base) + ".pdf" })
     if (!hwpx.success) throw new Error(`hwpx 파싱 실패: ${hwpx.error}`)
     if (!pdf.success) throw new Error(`pdf 파싱 실패: ${pdf.error}`)
@@ -326,7 +328,7 @@ const summarize = a => ({
   contentNED: round(a.contentDen ? a.contentNum / a.contentDen : 1),
 })
 const noTextRows = rows.filter(r => r.noTextLayer)
-const trackRows = rows.filter(r => !r.noTextLayer)
+const trackRows = rows.filter(r => !r.noTextLayer && !r.locked)
 const summary = { ...summarize(agg), pairs: trackRows.length, parseErrors, nested: summarize(nestedAgg) }
 const bySet = Object.fromEntries([...setAgg].filter(([, a]) => a.pairs > 0).map(([s, a]) => [s, summarize(a)]))
 const noTextLayer = {
@@ -348,6 +350,7 @@ for (const [s, v] of Object.entries(bySet)) {
   const v = summary.nested
   console.log(`  [중첩표] ${v.pairs}쌍 표 ${v.refTables} | 매칭 ${round(v.matchedRate * 100, 2)}% exact ${round(v.exactRate * 100, 2)}% | F1 ${v.cellF1} cellExact ${v.cellExactRate} NED ${v.contentNED}`)
 }
+for (const r of rows.filter(r => r.locked)) console.log(`  [HWPX 암호] ${r.pair} — 암호를 몰라 정답지 없음(ENCRYPTED 거절 확인), 모수 제외`)
 if (noTextRows.length) {
   const line = (label, v) => console.log(`  [${label}] ${v.pairs}쌍 표 ${v.refTables} | 매칭 ${round(v.matchedRate * 100, 2)}% exact ${round(v.exactRate * 100, 2)}% | F1 ${v.cellF1} cellExact ${v.cellExactRate} NED ${v.contentNED}`)
   console.log(`  [텍스트층 없음] ${noTextRows.length}쌍 표 ${noTextLayer.textLayer.refTables}·중첩표 ${noTextLayer.textLayer.nested.refTables} — 텍스트층 트랙 모수 제외 (PDF 텍스트층 한글 < HWPX 한글의 ${NO_TEXT_LAYER_RATIO * 100}%)`)

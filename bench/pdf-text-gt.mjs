@@ -138,6 +138,8 @@ for (const { set, base, rel, gtExt } of pairs) {
   try {
     const hwpxBytes = await readFile(base + gtExt)
     const hwpx = await parse(Buffer.from(hwpxBytes), { filename: basename(base) + gtExt })
+    // 암호를 모르는 실문서 HWPX(같은 보도자료의 PDF·HWP 는 평문)는 정답지가 없다 — ENCRYPTED 거절만 확인하고 모수에서 뺀다
+    if (!hwpx.success && hwpx.code === "ENCRYPTED") { excluded.push({ pair: rel, reason: "HWPX 암호(암호 모름) — 정답지 없음" }); continue }
     const pdf = await parse(await readFile(base + ".pdf"), { filename: basename(base) + ".pdf" })
     if (!hwpx.success) throw new Error(`hwpx 파싱 실패: ${hwpx.error}`)
     if (!pdf.success) throw new Error(`pdf 파싱 실패: ${pdf.error}`)
@@ -224,7 +226,7 @@ console.log(`  recall ${summary.recall} | precision ${summary.precision} | order
 for (const [s, v] of Object.entries(bySet)) {
   console.log(`  [${s}] ${v.pairs}쌍 | recall ${v.recall} precision ${v.precision} order ${v.order} spaceF1 ${v.spaceF1}`)
 }
-for (const e of excluded) console.log(`  (제외) ${e.pair} — PDF 텍스트층 한글 ${e.pdfLayerHangul} / HWPX ${e.refHangul}`)
+for (const e of excluded) console.log(`  (제외) ${e.pair} — ${e.pdfLayerHangul !== undefined ? `PDF 텍스트층 한글 ${e.pdfLayerHangul} / HWPX ${e.refHangul}` : e.reason}`)
 const worst = rows.filter(r => r.ok).sort((a, b) => (a.recall + a.precision + a.order + a.spaceF1) - (b.recall + b.precision + b.order + b.spaceF1))
 for (const r of worst.slice(0, 25)) {
   console.log(`  ${r.pair.slice(0, 90)}: recall ${r.recall} precision ${r.precision} order ${r.order} spaceF1 ${r.spaceF1}`)
