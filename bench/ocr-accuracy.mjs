@@ -40,13 +40,15 @@ const MIN_PAGE_CHARS = 200      // 정답지로 쓸 최소 글자 수 (표지·�
 const MAX_CMP_CHARS = 20000     // CER 대조 상한 (O(n·m) DP 가드)
 const MIN_GLYPH_COVERAGE = 0.8  // 래스터 글자 검사 하한 (코퍼스 82쪽 실측: 정상 ≥ 0.971, 글꼴 미렌더 nanet-seoul-minutes 0.088/0.071)
 
-// 무후퇴 플로어 — 2026-09-23 실측(AGENT-REPORT.md) 래칫. 같은 기기 반복 실행은 출력 해시까지 동일,
-// 여유는 기기 간 onnxruntime 스레드·부동소수 차이 흡수용(CER +0.2pp, 문자 P/R −0.2pp). 지표를 올리면 여기도 올린다
-//   실측: cerMicro 0.19225 · charRecall 0.98114 · charPrecision 0.97497 · hangulRecall 0.99597 ·
-//         표 37/59 매칭(0.6271) · cellF1 0.3898 · 40문서/80쪽
+// 무후퇴 플로어 — 2026-09-24 실측(읽기 품질 2차: OCR 쪽 + 정답지인 텍스트층 파싱의 자간 숫자·괘선 조각 표 수정) 래칫.
+// 같은 기기 반복 실행은 출력 해시까지 동일, 여유는 기기 간 onnxruntime 스레드·부동소수 차이 흡수용(CER +0.2pp, 문자 P/R −0.2pp,
+// 표 매칭 한 표 차). 지표를 올리면 여기도 올린다
+//   실측: cerMicro 0.09627 · charRecall 0.9834 · charPrecision 0.9775 · hangulRecall 0.99597 ·
+//         표 41/51 매칭(0.8039) · exact 21 · cellF1 0.6179 · 40문서/80쪽 (OCR 쪽만 고친 중간값: 0.14729 · 표 41/58 · cellF1 0.5362,
+//         종전 1차 라운드: 0.19225 · 표 37/59 · cellF1 0.3898). 표 모수 58 → 51 은 정답지 예산서 표가 괘선 표로 제대로 모인 결과
 const GATES = {
-  cerMicroMax: 0.1945, charRecallMin: 0.979, charPrecisionMin: 0.973, hangulRecallMin: 0.995,
-  tableMatchedMin: 0.62, tableCellF1Min: 0.385, minDocs: 40, minPages: 80,
+  cerMicroMax: 0.0985, charRecallMin: 0.981, charPrecisionMin: 0.975, hangulRecallMin: 0.995,
+  tableMatchedMin: 0.78, tableCellF1Min: 0.60, minDocs: 40, minPages: 80,
 }
 
 const toAB = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)

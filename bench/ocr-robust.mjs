@@ -46,11 +46,12 @@ const VARIANTS = {
 }
 const wanted = opt("variants", null)?.split(",") ?? Object.keys(VARIANTS)
 
-// 무후퇴 플로어 (열화별 CER 상한·페이지 수) — 2026-09-23 실측 + 0.5pp 래칫 (AGENT-REPORT.md).
-// 실측: clean 0.2198 · skew+1 0.2247 · skew-2 0.2229 · skew+3 0.2199 · noise 0.2134 · blur 0.2221 ·
-//       dpi150 0.2190 · jpeg50 0.2153 · scan 0.2204 (각 40쪽). 종전 엔진: skew+3 0.576 · scan 0.315
+// 무후퇴 플로어 (열화별 CER 상한·페이지 수) — 2026-09-24 v4.14.4 실측(OCR 쪽 + 정답지인 텍스트층 파싱의 자간 숫자·조각 표 수정) + 0.5pp 래칫.
+// 실측: clean 0.0884 · skew+1 0.0921 · skew-2 0.0885 · skew+3 0.0985 · noise 0.0886 · blur 0.0926 ·
+//       dpi150 0.0899 · jpeg50 0.0889 · scan 0.1022 (각 40쪽). OCR 쪽만 고친 중간값: clean 0.1731 · scan 0.1868,
+//       v4.14.3: clean 0.1902 · skew+1 0.2250 · scan 0.2208, 2026-09-23: clean 0.2198 · scan 0.2204, 종전 엔진: skew+3 0.576 · scan 0.315
 const GATES = {
-  cerMax: { clean: 0.225, "skew+1": 0.230, "skew-2": 0.228, "skew+3": 0.225, noise: 0.219, blur: 0.227, dpi150: 0.224, jpeg50: 0.221, scan: 0.226 },
+  cerMax: { clean: 0.094, "skew+1": 0.098, "skew-2": 0.094, "skew+3": 0.104, noise: 0.094, blur: 0.098, dpi150: 0.095, jpeg50: 0.094, scan: 0.108 },
   minPages: 40,
 }
 

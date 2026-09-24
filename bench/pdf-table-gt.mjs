@@ -56,9 +56,17 @@
 // ④물리 세그먼트 병합·컴포넌트 단위 합성은 실측 부작용(pair07 지원서 셀 이동,
 //   pair10 반환청구서 demote 연쇄)으로 보류 — 체인 뷰(판정 전용)가 대체 (10차)
 //
-// 사용법: node bench/pdf-table-gt.mjs [--gate] [--doc=부분문자열] [--verbose] [--sets=pairs,korea-kr,korea-kr-pairs,rhwp]
+// 사용법: node bench/pdf-table-gt.mjs [--gate] [--doc=부분문자열] [--verbose] [--sets=pairs,korea-kr,korea-kr-pairs,rhwp] [--no-ocr]
+//
+// 텍스트층 없음 모수 정책 (2026-09-24): PDF 텍스트층 한글이 HWPX 한글의 1% 미만인 쌍은 텍스트층 표 복원 채점이 성립하지
+// 않는다 — rhwp 자체 렌더(cairo) PDF 13쌍은 한글을 채운 곡선 경로로 그려 텍스트층에 ASCII·기호만 있다(칸 글이 빈칸이라
+// 맞는 표는 숫자·가림표(*) 칸 표의 우연). 이런 쌍은 텍스트층 트랙 모수(최상위·중첩표·세트별)에서 빼 목록·사유를 남기고,
+// [텍스트층 없음·OCR] 보고 트랙에서 ocr:true 로 파싱해 같은 채점을 한다(OCR 모델이 없거나 --no-ocr 면 SKIP, 게이트 아님).
+// HWPX 에도 한글이 없는 쌍(영문만 쓴 rhwp 조판 시험 3쌍)은 텍스트층이 온전하므로 그대로 둔다
 
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import { homedir } from "node:os"
 import { join, relative, basename } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parse } from "../dist/index.js"
@@ -84,7 +92,18 @@ const round = (x, d = 6) => (x === null || x === undefined ? null : +x.toFixed(d
 // cellF1 0.873·cellExact 0.945·NED 0.842 는 코드에 반영되지 않은 채 11차 플로어가 남아 있었다)
 // 무후퇴 플로어 — 2026-09-23 모수 확대(6쌍 69표 → 430쌍 1,784표: korea-kr-pairs 202·rhwp 185 편입)와 기하 정답지·쪽 넘김 잇기
 // 개편 뒤 실측값(매칭 0.9725·exact 0.9008·F1 0.9442·cellExact 0.9274·NED 0.7488·중첩 exact 0.6306) 바로 아래로 잠금
-const GATES = { matchedRate: 0.97, exactRate: 0.9, cellF1: 0.94, cellExactRate: 0.925, contentNED: 0.745, parseErrors: 0, reorderedMax: 15, minPairs: 425, minRefTables: 1750, nestedMatchedRate: 0.65, nestedExactRate: 0.63 }
+// 모수 하한 2026-09-24: 텍스트층 없음 13쌍(표 46·중첩표 27)을 모수에서 빼 417쌍 1,738표 — 하한을 같은 여유 비율로 내림
+// (종전 425/1750 = 430/1784 의 98.8%/98.1%)
+// 상향 잠금 (2026-09-24 읽기 품질 2차: 쪽 넘김 잇기·쪽을 넘는 칸·걸친 덮개·괘선 틈·비한컴 선 표 + 텍스트층 없는 13쌍 모수 제외 뒤,
+// 417쌍 1,738표 실측 매칭 0.9885·exact 0.9453·F1 0.9722·cellExact 0.9698·NED 0.9031·중첩(130표) 매칭 0.9077·exact 0.8692 바로 아래로)
+const GATES = { matchedRate: 0.985, exactRate: 0.94, cellF1: 0.97, cellExactRate: 0.965, contentNED: 0.9, parseErrors: 0, reorderedMax: 15, minPairs: 412, minRefTables: 1705, nestedMatchedRate: 0.9, nestedExactRate: 0.86 }
+/** 텍스트층 없음: PDF 텍스트층 한글 / HWPX 한글 이 이 값 미만 (머리 주석 모수 정책) */
+const NO_TEXT_LAYER_RATIO = 0.01
+const hangulCount = s => (s?.match(/[가-힣]/g) ?? []).length
+// OCR 트랙 — 모델이 있을 때만 (ocr-accuracy.mjs 와 같은 확인)
+const modelDir = join(process.env.KORDOC_MODEL_CACHE?.trim() || join(homedir(), ".cache", "kordoc", "models"), "ppocr")
+const ocrSkip = args.includes("--no-ocr") ? "--no-ocr"
+  : ["det.onnx", "rec_korean.onnx", "rec_korean.yml"].every(f => existsSync(join(modelDir, f))) ? null : `OCR 모델 없음(${modelDir})`
 
 const t0 = performance.now()
 // 코퍼스 세트 — 같은 폴더의 동명 X.hwpx + X.pdf 짝을 하위 폴더까지 모은다. PDF 는 전부 한컴 산출물
@@ -122,6 +141,47 @@ const newAgg = () => ({ pairs: 0, refTables: 0, matched: 0, exact: 0, cellTotal:
 const agg = newAgg()
 const setAgg = new Map(SETS.map(s => [s, newAgg()]))
 const nestedAgg = newAgg()
+// [텍스트층 없음·OCR] 트랙 — 같은 쌍의 텍스트층 채점(noText*)도 모아 나란히 보인다
+const ocrRows = []
+let ocrErrors = 0, ocrMs = 0
+const ocrAgg = newAgg()
+const ocrNestedAgg = newAgg()
+const noTextAgg = newAgg()
+const noTextNestedAgg = newAgg()
+
+/** scoreTables 결과(최상위 s·중첩 ns) → 쌍 행 */
+function fillRow(row, s, ns) {
+  row.ok = true
+  row.refTables = s.tableCount
+  row.pdfTables = s.irTableCount
+  row.matched = s.tableCount - s.unmatchedRef
+  row.exact = s.exactCount
+  row.splitMerged = s.splitTables
+  row.reordered = s.reordered
+  row.textMatched = s.textMatched
+  row.cellF1 = round(s.cellF1)
+  row.cellExactRate = round(s.cellExactRate)
+  row.contentNED = round(s.contentNED)
+  row.unmatchedRef = s.unmatchedRef
+  row.unmatchedIr = s.unmatchedIr
+  if (verbose) row.details = s.details
+  if (ns) {
+    row.nested = { ref: ns.tableCount, matched: ns.tableCount - ns.unmatchedRef, exact: ns.exactCount, cellF1: round(ns.cellF1), cellExactRate: round(ns.cellExactRate), contentNED: round(ns.contentNED) }
+    if (verbose) row.nestedDetails = ns.details
+  }
+}
+function addScore(a, s) {
+  a.pairs++
+  a.refTables += s.tableCount
+  a.matched += s.tableCount - s.unmatchedRef
+  a.exact += s.exactCount
+  a.cellTotal += s.cellTotal
+  a.cellExact += s.cellExact
+  a.contentNum += s.contentNum
+  a.contentDen += s.contentDen
+  a.f1Sum += s.cellF1 * s.tableCount
+  a.reordered += s.reordered ?? 0
+}
 
 for (const { set, base, rel } of pairs) {
   const row = { pair: rel, set }
@@ -210,50 +270,42 @@ for (const { set, base, rel } of pairs) {
     const irGrids = topGrids(pdf.blocks, null, irNested)
     const s = scoreTables(refGrids, irGrids)
     // 중첩표 — PDF 도 칸 안에 든 표만 짝 후보다 (최상위로 빠져나온 표는 자리를 잃은 것이라 맞힌 것으로 치지 않는다)
-    const ns = refNested.length ? scoreTables(refNested.map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors, bagExtra: g.bagExtra })), irNested) : null
+    const refNestedGrids = refNested.map(g => ({ rows: g.rows, cols: g.cols, cells: g.anchors, bagExtra: g.bagExtra }))
+    const ns = refNested.length ? scoreTables(refNestedGrids, irNested) : null
+    fillRow(row, s, ns)
 
-    row.ok = true
-    row.refTables = s.tableCount
-    row.pdfTables = s.irTableCount
-    row.matched = s.tableCount - s.unmatchedRef
-    row.exact = s.exactCount
-    row.splitMerged = s.splitTables
-    row.reordered = s.reordered
-    row.textMatched = s.textMatched
-    row.cellF1 = round(s.cellF1)
-    row.cellExactRate = round(s.cellExactRate)
-    row.contentNED = round(s.contentNED)
-    row.unmatchedRef = s.unmatchedRef
-    row.unmatchedIr = s.unmatchedIr
-    if (verbose) row.details = s.details
-    if (ns) {
-      row.nested = { ref: ns.tableCount, matched: ns.tableCount - ns.unmatchedRef, exact: ns.exactCount, cellF1: round(ns.cellF1), cellExactRate: round(ns.cellExactRate), contentNED: round(ns.contentNED) }
-      if (verbose) row.nestedDetails = ns.details
-      for (const a of [nestedAgg]) {
-        a.pairs++
-        a.refTables += ns.tableCount
-        a.matched += row.nested.matched
-        a.exact += ns.exactCount
-        a.cellTotal += ns.cellTotal
-        a.cellExact += ns.cellExact
-        a.contentNum += ns.contentNum
-        a.contentDen += ns.contentDen
-        a.f1Sum += ns.cellF1 * ns.tableCount
-        a.reordered += ns.reordered ?? 0
+    // 텍스트층 없음 — 텍스트층 트랙 모수에서 빼고 OCR 트랙으로 (머리 주석 모수 정책)
+    const hwpxHangul = hangulCount(hwpx.markdown), pdfHangul = hangulCount(pdf.markdown)
+    if (hwpxHangul > 0 && pdfHangul < hwpxHangul * NO_TEXT_LAYER_RATIO) {
+      row.noTextLayer = { pdfHangul, hwpxHangul }
+      addScore(noTextAgg, s)
+      if (ns) addScore(noTextNestedAgg, ns)
+      if (!ocrSkip) {
+        const orow = { pair: rel, set }
+        try {
+          const t = performance.now()
+          const ocr = await parse(await readFile(base + ".pdf"), { filename: basename(base) + ".pdf", ocr: true })
+          ocrMs += performance.now() - t
+          orow.sec = round((performance.now() - t) / 1000, 1)
+          if (!ocr.success) throw new Error(`pdf OCR 파싱 실패: ${ocr.error}`)
+          const oNested = []
+          const os = scoreTables(refGrids, topGrids(ocr.blocks, null, oNested))
+          const ons = refNested.length ? scoreTables(refNestedGrids, oNested) : null
+          fillRow(orow, os, ons)
+          orow.ocrPages = (ocr.pageQuality ?? []).filter(q => q.ocrApplied).length
+          orow.pages = ocr.pageQuality?.length ?? 0
+          addScore(ocrAgg, os)
+          if (ons) addScore(ocrNestedAgg, ons)
+        } catch (err) {
+          ocrErrors++
+          orow.ok = false
+          orow.error = String(err?.message ?? err).slice(0, 160)
+        }
+        ocrRows.push(orow)
       }
-    }
-
-    for (const a of [agg, setAgg.get(set)]) {
-      a.pairs++
-      a.refTables += s.tableCount
-      a.matched += row.matched
-      a.exact += s.exactCount
-      a.cellTotal += s.cellTotal
-      a.cellExact += s.cellExact
-      a.contentNum += s.contentNum
-      a.contentDen += s.contentDen
-      a.f1Sum += s.cellF1 * s.tableCount
-      a.reordered += s.reordered ?? 0
+    } else {
+      if (ns) addScore(nestedAgg, ns)
+      for (const a of [agg, setAgg.get(set)]) addScore(a, s)
     }
   } catch (err) {
     parseErrors++
@@ -273,11 +325,20 @@ const summarize = a => ({
   cellExactRate: round(a.cellTotal ? a.cellExact / a.cellTotal : 1),
   contentNED: round(a.contentDen ? a.contentNum / a.contentDen : 1),
 })
-const summary = { ...summarize(agg), pairs: rows.length, parseErrors, nested: summarize(nestedAgg) }
+const noTextRows = rows.filter(r => r.noTextLayer)
+const trackRows = rows.filter(r => !r.noTextLayer)
+const summary = { ...summarize(agg), pairs: trackRows.length, parseErrors, nested: summarize(nestedAgg) }
 const bySet = Object.fromEntries([...setAgg].filter(([, a]) => a.pairs > 0).map(([s, a]) => [s, summarize(a)]))
+const noTextLayer = {
+  textLayer: { ...summarize(noTextAgg), nested: summarize(noTextNestedAgg) },
+  pairs: noTextRows.map(r => ({ pair: r.pair, pdfHangul: r.noTextLayer.pdfHangul, hwpxHangul: r.noTextLayer.hwpxHangul, refTables: r.refTables, nestedRef: r.nested?.ref ?? 0 })),
+}
+const ocrTrack = ocrSkip || !noTextRows.length
+  ? { skipped: ocrSkip ?? "대상 없음" }
+  : { ...summarize(ocrAgg), errors: ocrErrors, sec: round(ocrMs / 1000, 1), nested: summarize(ocrNestedAgg), rows: ocrRows }
 
 const elapsed = ((performance.now() - t0) / 1000).toFixed(0)
-console.log(`\n══ PDF 표 구조 GT — hwpx↔pdf ${rows.length}쌍 (${elapsed}s) ══`)
+console.log(`\n══ PDF 표 구조 GT — hwpx↔pdf ${trackRows.length}쌍 (${elapsed}s) ══`)
 console.log(`  ref 표 ${summary.refTables} | 매칭 ${round(summary.matchedRate * 100, 2)}% | exact ${round(summary.exactRate * 100, 2)}%`)
 console.log(`  cellF1 ${summary.cellF1} | cellExact ${summary.cellExactRate} | contentNED ${summary.contentNED}`)
 for (const [s, v] of Object.entries(bySet)) {
@@ -287,14 +348,31 @@ for (const [s, v] of Object.entries(bySet)) {
   const v = summary.nested
   console.log(`  [중첩표] ${v.pairs}쌍 표 ${v.refTables} | 매칭 ${round(v.matchedRate * 100, 2)}% exact ${round(v.exactRate * 100, 2)}% | F1 ${v.cellF1} cellExact ${v.cellExactRate} NED ${v.contentNED}`)
 }
+if (noTextRows.length) {
+  const line = (label, v) => console.log(`  [${label}] ${v.pairs}쌍 표 ${v.refTables} | 매칭 ${round(v.matchedRate * 100, 2)}% exact ${round(v.exactRate * 100, 2)}% | F1 ${v.cellF1} cellExact ${v.cellExactRate} NED ${v.contentNED}`)
+  console.log(`  [텍스트층 없음] ${noTextRows.length}쌍 표 ${noTextLayer.textLayer.refTables}·중첩표 ${noTextLayer.textLayer.nested.refTables} — 텍스트층 트랙 모수 제외 (PDF 텍스트층 한글 < HWPX 한글의 ${NO_TEXT_LAYER_RATIO * 100}%)`)
+  line("텍스트층 없음·텍스트층 채점(참고)", noTextLayer.textLayer)
+  if (ocrTrack.skipped) console.log(`  [텍스트층 없음·OCR] SKIP — ${ocrTrack.skipped}`)
+  else {
+    line("텍스트층 없음·OCR", ocrTrack)
+    line("텍스트층 없음·OCR 중첩표", ocrTrack.nested)
+    console.log(`    OCR ${ocrRows.reduce((s, r) => s + (r.ocrPages ?? 0), 0)}/${ocrRows.reduce((s, r) => s + (r.pages ?? 0), 0)}쪽 ${ocrTrack.sec}s${ocrErrors ? ` · 실패 ${ocrErrors}` : ""}`)
+  }
+}
 // 쌍별 — 완전 일치(표 전부 exact·NED 1)는 줄여서, 나머지는 나쁜 순으로
-const perfect = rows.filter(r => r.ok && r.exact === r.refTables && r.matched === r.refTables && r.contentNED === 1)
-const others = rows.filter(r => !perfect.includes(r)).sort((a, b) => (a.ok ? a.cellF1 : -1) - (b.ok ? b.cellF1 : -1))
+const perfect = trackRows.filter(r => r.ok && r.exact === r.refTables && r.matched === r.refTables && r.contentNED === 1)
+const others = trackRows.filter(r => !perfect.includes(r)).sort((a, b) => (a.ok ? a.cellF1 : -1) - (b.ok ? b.cellF1 : -1))
 for (const r of others) {
   if (!r.ok) { console.log(`  ❌ ${r.pair}: ${r.error}`); continue }
   console.log(`  ${r.pair}: ref ${r.refTables} → 매칭 ${r.matched} (분할병합 ${r.splitMerged}·순서구제 ${r.reordered}·텍스트 ${r.textMatched}) exact ${r.exact} | F1 ${r.cellF1} NED ${r.contentNED} | pdf잉여 ${r.unmatchedIr}`)
 }
 console.log(`  (완전 일치 ${perfect.length}쌍 생략 — 표 ${perfect.reduce((s, r) => s + r.refTables, 0)})`)
+// 텍스트층 없음 쌍 — 텍스트층 채점(참고) → OCR 채점
+for (const r of noTextRows) {
+  const o = ocrRows.find(x => x.pair === r.pair)
+  const ocrPart = !o ? "" : o.ok ? ` → OCR(${o.ocrPages}/${o.pages}쪽) 매칭 ${o.matched} exact ${o.exact} F1 ${o.cellF1} NED ${o.contentNED}${o.nested ? ` 중첩 ${o.nested.exact}/${o.nested.ref}` : ""}` : ` → OCR ❌ ${o.error}`
+  console.log(`  ◌ ${r.pair} (PDF 한글 ${r.noTextLayer.pdfHangul}/HWPX ${r.noTextLayer.hwpxHangul}): ref ${r.refTables} 텍스트층 exact ${r.exact} F1 ${r.cellF1} NED ${r.contentNED}${r.nested ? ` 중첩 ${r.nested.exact}/${r.nested.ref}` : ""}${ocrPart}`)
+}
 
 // 게이트 판정 — 무후퇴 플로어 (2026-07-03 bench:gate 편입)
 const gates = {
@@ -320,6 +398,6 @@ for (const [k, g] of Object.entries(gates)) {
 }
 
 await mkdir(join(root, "out"), { recursive: true })
-await writeFile(join(root, "out", "pdf-table.json"), JSON.stringify({ generatedAt: new Date().toISOString(), sets: SETS, summary, bySet, pass, gates, rows }, null, 1))
+await writeFile(join(root, "out", "pdf-table.json"), JSON.stringify({ generatedAt: new Date().toISOString(), sets: SETS, summary, bySet, noTextLayer, ocrTrack, pass, gates, rows }, null, 1))
 console.log(`report → bench/out/pdf-table.json | ${pass ? "PASS ✅" : "FAIL ❌"}${gateMode ? "" : " (보고 전용 — --gate 시 exit code 반영)"}`)
 if (gateMode && !pass) process.exit(1)

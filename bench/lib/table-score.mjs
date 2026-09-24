@@ -31,7 +31,7 @@ function cellOwnText(cell, withNotes = false) {
     // 같은 의도적 아티팩트 제거 (whitelist: image-placeholder, issue1891 외부 BinData 링크)
     .replace(/\[이미지:[^\]\n]*\]/g, " ")
     .replace(/\$\$[^$]+\$\$/g, " ")
-    .replace(/(^|[^\\$])\$(?!\s)((?:\\.|[^$\n])+?)\$/g, "$1 ")
+    .replace(/(^|[^\\$])\$(?!\s)((?:\\.|[^$\n\\])+?)\$/g, "$1 ") // 역슬래시는 \\. 로만 — mdToPlain 과 같은 역추적 방지
     // 인라인 링크 [anchor](url) → anchor — ref 셀은 가시 텍스트만 모델링 (mdToPlain 대칭)
     .replace(/\[([^\[\]]*)\]\((?:https?:|mailto:|tel:|#)[^)\s]*\)/gi, "$1")
 }
