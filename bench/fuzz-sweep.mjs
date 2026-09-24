@@ -79,7 +79,7 @@ async function* walk(dir) {
   for (const e of await readdir(dir, { withFileTypes: true })) {
     const p = join(dir, e.name)
     if (e.isDirectory()) yield* walk(p)
-    else if (/\.(hwpx|hwp|pdf|docx|xlsx|hml)$/i.test(e.name)) yield p
+    else if (/\.(hwpx|hwp|pdf|docx|xlsx|xls|hml)$/i.test(e.name)) yield p
   }
 }
 

@@ -5,7 +5,7 @@
 // hwpx IR 표를 GT 로 PDF 표 구조를 채점할 수 있다(pdf-table-gt) — 그래서 짝이 없는 첨부는 받지 않는다.
 //
 // 사용법: node bench/collect-korea-kr-pairs.mjs [최대짝수=150] [출력서브디렉토리=korea-kr-pairs]
-//          [--pages=시작-끝(기본 20-120)] [--exclude=korea-kr,korea-kr2]
+//          [--pages=시작-끝(기본 20-120)] [--exclude=korea-kr,korea-kr2] [--also=docx,xlsx,xls,hml [--also-dir=폴더]]
 // 파일명: {newsId}_{첨부 이름} — 기존 korea-kr 수집기와 같은 규약 (score.mjs 가 newsId 접두로 hwp 쌍을 잇는다).
 import { writeFile, mkdir, readdir } from "node:fs/promises"
 import { join } from "node:path"
@@ -25,6 +25,9 @@ const pause = () => sleep(1000 + Math.random() * 600)
 const headers = { "User-Agent": UA }
 
 await mkdir(outDir, { recursive: true })
+const ALSO = new Set(flag("also", "").split(",").filter(Boolean).map(s => s.toLowerCase()))
+const alsoDir = join(corpusRoot, flag("also-dir", `${outName}-formats`))
+if (ALSO.size) await mkdir(alsoDir, { recursive: true })
 // 이미 받은 newsId (출력 폴더 + 제외 폴더) — 같은 보도자료 중복 방지
 const seenNews = new Set()
 for (const d of [outName, ...flag("exclude", "korea-kr,korea-kr2").split(",")]) {
@@ -34,7 +37,7 @@ for (const d of [outName, ...flag("exclude", "korea-kr,korea-kr2").split(",")]) 
   }
 }
 
-const decode = s => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
+const decode = s => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#0*39;/g, "'").trim()
 const safeName = t => t.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim()
 
 async function attachments(newsId) {
@@ -64,6 +67,17 @@ outer: for (let page = P0; page <= P1; page++) {
     let files
     try { files = await attachments(newsId) } catch (e) { console.log(`! ${newsId}: ${e.message}`); continue }
     await pause()
+    // 곁가지(--also=docx,xlsx,xls,hml): 짝과 무관하게 이 포맷 첨부도 받는다 — formats 트랙 모수 보강용
+    for (const f of files) {
+      const m = /\.([a-z0-9]+)$/i.exec(f.name)
+      if (!m || !ALSO.has(m[1].toLowerCase())) continue
+      const res = await fetch(`https://www.korea.kr/common/download.do?fileId=${f.fileId}&tblKey=GMN`, { headers })
+      const buf = Buffer.from(await res.arrayBuffer())
+      await pause()
+      if (!res.ok || buf.length < 1000) { console.log(`  ! ${newsId} ${f.name} HTTP ${res.status} ${buf.length}B`); continue }
+      await writeFile(join(alsoDir, `${newsId}_${safeName(f.name)}`), buf)
+      console.log(`  ~ ${newsId}_${f.name.slice(0, 60)}`)
+    }
     // 같은 이름(확장자 제외) 묶음 — hwpx 와 pdf 가 둘 다 있어야 짝
     const byStem = new Map()
     for (const f of files) {

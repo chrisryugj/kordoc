@@ -56,7 +56,7 @@
 // ④물리 세그먼트 병합·컴포넌트 단위 합성은 실측 부작용(pair07 지원서 셀 이동,
 //   pair10 반환청구서 demote 연쇄)으로 보류 — 체인 뷰(판정 전용)가 대체 (10차)
 //
-// 사용법: node bench/pdf-table-gt.mjs [--gate] [--doc=부분문자열] [--verbose] [--sets=pairs,korea-kr,korea-kr-pairs,rhwp] [--no-ocr]
+// 사용법: node bench/pdf-table-gt.mjs [--gate] [--doc=부분문자열] [--verbose] [--sets=pairs,korea-kr,korea-kr-pairs,korea-kr-pairs2,rhwp] [--no-ocr]
 //
 // 텍스트층 없음 모수 정책 (2026-09-24): PDF 텍스트층 한글이 HWPX 한글의 1% 미만인 쌍은 텍스트층 표 복원 채점이 성립하지
 // 않는다 — rhwp 자체 렌더(cairo) PDF 13쌍은 한글을 채운 곡선 경로로 그려 텍스트층에 ASCII·기호만 있다(칸 글이 빈칸이라
@@ -109,7 +109,7 @@ const t0 = performance.now()
 // 코퍼스 세트 — 같은 폴더의 동명 X.hwpx + X.pdf 짝을 하위 폴더까지 모은다. PDF 는 전부 한컴 산출물
 // (pairs: 기관 게시 원본, korea-kr·korea-kr-pairs: 정책브리핑 첨부 "Hancom PDF 1.3", rhwp: 한글 2022
 // OCX 변환) — hwpx IR 표를 GT 로 PDF 표 복원을 채점한다. --sets=pairs,rhwp 로 좁힐 수 있다
-const SETS = flagValue("sets", "pairs,korea-kr,korea-kr-pairs,rhwp").split(",").filter(Boolean)
+const SETS = flagValue("sets", "pairs,korea-kr,korea-kr-pairs,korea-kr-pairs2,rhwp").split(",").filter(Boolean)
 async function* walkFiles(d) {
   let entries
   try { entries = await readdir(d, { withFileTypes: true }) } catch { return }

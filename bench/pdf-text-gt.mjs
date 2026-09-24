@@ -13,7 +13,9 @@
 // 재현율·정밀도는 조각 매칭이 흡수하고 순서만 조금 깎는다.
 // 제외: PDF 텍스트층 한글이 HWPX 한글의 1% 미만인 쌍(글자를 곡선 경로로 그림 — OCR 대상, pdftotext 로 판정). 목록은 출력·JSON 에 남긴다.
 //
-// 사용법: node bench/pdf-text-gt.mjs [--gate] [--doc=부분문자열] [--sets=pairs,korea-kr,korea-kr-pairs,rhwp] [--verbose]
+// lo-pairs(2026-09-24 v4.15): 공공·학술 DOCX 를 LibreOffice 26.2 로 PDF 로 뽑은 짝 — 비한컴 제작기 PDF 를 DOCX 파싱 글(formats 트랙이
+// 원본 XML 로 검증하는 파서) 정답으로 잰다. 머리글·바닥글은 DOCX 파서가 안 내므로 word/header*·footer* 글을 양쪽에서 같이 뺀다.
+// 사용법: node bench/pdf-text-gt.mjs [--gate] [--doc=부분문자열] [--sets=pairs,korea-kr,korea-kr-pairs,korea-kr-pairs2,rhwp,lo-pairs] [--verbose]
 // 산출: bench/out/pdf-text.json. --gate: 무후퇴 플로어(GATES) 미달 시 exit 1 (부분 실행 --doc 은 보고만)
 
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises"
@@ -23,6 +25,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { parse } from "../dist/index.js"
 import { extractRef } from "./ref/hwpx-ref.mjs"
+import JSZip from "jszip"
 import { normKey, normText, mdToPlain } from "./lib/normalize.mjs"
 import { alignUnits, lisLength } from "./lib/align.mjs"
 
@@ -36,7 +39,7 @@ const gateMode = args.includes("--gate")
 const GATES = { recall: 0.993, precision: 0.96, order: 0.976, spaceF1: 0.97, parseErrors: 0, minPairs: 412 }
 const flagValue = (k, d) => (args.find(a => a.startsWith(`--${k}=`)) ?? "").split("=")[1] || d
 const docFilter = flagValue("doc", null)
-const SETS = flagValue("sets", "pairs,korea-kr,korea-kr-pairs,rhwp").split(",").filter(Boolean)
+const SETS = flagValue("sets", "pairs,korea-kr,korea-kr-pairs,korea-kr-pairs2,rhwp,lo-pairs").split(",").filter(Boolean)
 const round = (x, d = 5) => (x === null || x === undefined ? null : +x.toFixed(d))
 
 async function* walkFiles(d) {
@@ -57,10 +60,12 @@ for (const set of SETS) {
   for (const f of files) {
     if (!f.endsWith(".pdf")) continue
     const base = f.slice(0, -4)
-    if (!files.has(base + ".hwpx")) continue
+    // 정답 원본: HWPX(한컴 PDF 짝) 또는 DOCX(lo-pairs: LibreOffice 로 뽑은 비한컴 PDF 짝)
+    const gtExt = files.has(base + ".hwpx") ? ".hwpx" : files.has(base + ".docx") ? ".docx" : null
+    if (!gtExt) continue
     const rel = relative(corpusRoot, base)
     if (docFilter && !rel.includes(docFilter)) continue
-    pairs.push({ set, base, rel })
+    pairs.push({ set, base, rel, gtExt })
   }
 }
 pairs.sort((a, b) => a.rel.localeCompare(b.rel))
@@ -128,11 +133,11 @@ const agg = { pairs: 0, recallM: 0, recallT: 0, precM: 0, precT: 0, orderLis: 0,
 const setAgg = new Map(SETS.map(s => [s, { ...agg }]))
 let parseErrors = 0
 
-for (const { set, base, rel } of pairs) {
+for (const { set, base, rel, gtExt } of pairs) {
   const row = { pair: rel, set }
   try {
-    const hwpxBytes = await readFile(base + ".hwpx")
-    const hwpx = await parse(Buffer.from(hwpxBytes), { filename: basename(base) + ".hwpx" })
+    const hwpxBytes = await readFile(base + gtExt)
+    const hwpx = await parse(Buffer.from(hwpxBytes), { filename: basename(base) + gtExt })
     const pdf = await parse(await readFile(base + ".pdf"), { filename: basename(base) + ".pdf" })
     if (!hwpx.success) throw new Error(`hwpx 파싱 실패: ${hwpx.error}`)
     if (!pdf.success) throw new Error(`pdf 파싱 실패: ${pdf.error}`)
@@ -149,9 +154,21 @@ for (const { set, base, rel } of pairs) {
     // 머리말·꼬리말 — HWPX 파서 1회·PDF 파서 반복 제거의 정책 차라 양쪽에서 같이 뺀다
     const chrome = new Set()
     try {
-      const ref = await extractRef(hwpxBytes)
-      for (const parts of [...ref.specials.headers, ...ref.specials.footers]) {
-        for (const p of parts) for (const line of p.split(/\n+/)) { const k = normKey(line); if (k) chrome.add(k) }
+      if (gtExt === ".docx") {
+        // DOCX 머리글·바닥글(word/header*.xml·footer*.xml) — kordoc DOCX 파서는 본문만 내고 PDF 는 쪽마다 찍는다
+        const zip = await JSZip.loadAsync(hwpxBytes)
+        for (const name of Object.keys(zip.files).filter(n => /^word\/(header|footer)\d*\.xml$/.test(n))) {
+          const xml = await zip.file(name).async("string")
+          for (const para of xml.split(/<\/w:p>/)) {
+            const k = normKey([...para.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(m => m[1]).join(""))
+            if (k) chrome.add(k)
+          }
+        }
+      } else {
+        const ref = await extractRef(hwpxBytes)
+        for (const parts of [...ref.specials.headers, ...ref.specials.footers]) {
+          for (const p of parts) for (const line of p.split(/\n+/)) { const k = normKey(line); if (k) chrome.add(k) }
+        }
       }
     } catch { /* 참조 추출 실패(깨진 ZIP) — 머리말 제외 없이 채점 */ }
 
