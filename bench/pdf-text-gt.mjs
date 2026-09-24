@@ -72,11 +72,12 @@ pairs.sort((a, b) => a.rel.localeCompare(b.rel))
 
 const hangulCount = s => (s.match(/[가-힣]/g) ?? []).length
 
-async function pdftotextHangul(file) {
+/** PDF 텍스트층(pdftotext) 한글 자수·공백 뺀 글자 수 — 둘 다 모수 정책(아래 제외 규칙)에만 쓴다 */
+async function pdftotextCounts(file) {
   for (const bin of ["/opt/homebrew/bin/pdftotext", "pdftotext"]) {
     try {
       const { stdout } = await execFileP(bin, ["-enc", "UTF-8", "-q", file, "-"], { maxBuffer: 256 * 1024 * 1024 })
-      return hangulCount(stdout)
+      return { hangul: hangulCount(stdout), chars: stdout.replace(/\s+/g, "").length }
     } catch { /* 다음 후보 */ }
   }
   return null
@@ -147,9 +148,19 @@ for (const { set, base, rel, gtExt } of pairs) {
     const pdfPlain = mdToPlain(pdf.markdown).text
 
     const refHangul = hangulCount(hwpxPlain)
-    const layerHangul = await pdftotextHangul(base + ".pdf")
+    const layer = await pdftotextCounts(base + ".pdf")
+    const layerHangul = layer?.hangul ?? null
     if (refHangul >= 50 && layerHangul !== null && layerHangul < refHangul * 0.01) {
       excluded.push({ pair: rel, refHangul, pdfLayerHangul: layerHangul, reason: "PDF 텍스트층 한글 없음(글자 곡선) — OCR 대상" })
+      continue
+    }
+    // 정답지가 PDF 를 다 담지 못한 쌍 — PDF 텍스트층 글자(공백 제외)가 HWPX 글의 3배를 넘으면 HWPX 에 없는 부록이 PDF 에 붙은 것이다
+    // (2026-09-24 korea-kr-pairs2/156775700 가계동향조사: HWPX 는 보도자료 본문·표 7개, PDF 는 뒤에 통계표 수십 쪽 — 같은 표는 별도 xlsx
+    // 첨부. 한 쌍이 PDF 글 어절 F1 손실의 25%·precision 0.32 였다). 752쌍 분포: 이 쌍 3.14배, 다음이 수식 많은 2단 시험지 4건 2.5~2.6배
+    // (정답 평문이 수식 스팬을 빼는 다른 원인 — 모수 유지), 나머지는 1.3배 이하
+    const refChars = hwpxPlain.replace(/\s+/g, "").length
+    if (refChars >= 200 && layer && layer.chars > refChars * 3) {
+      excluded.push({ pair: rel, reason: `정답지 부족 — PDF 텍스트층 ${layer.chars}자가 HWPX ${refChars}자의 3배 초과(HWPX 에 없는 부록)` })
       continue
     }
 
