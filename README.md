@@ -84,10 +84,21 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 *   **✏️ 양식 자동 채우기**: 공문서 양식 템플릿(신청서, 보고서)에 값을 넣으면 자동으로 빈칸을 채웁니다. 원본 서식(글꼴, 크기, 정렬)을 100% 보존합니다.
 *   **👓 내장 OCR — API 키 없이 (v4.2)**: 스캔본·이미지 PDF와 PNG/JPG/WebP 이미지를 **로컬 CPU 추론**(PP-OCRv5 korean)으로 읽습니다. 외부 서비스도 API 키도 없이, 텍스트층이 깨진 페이지만 골라 OCR 하고, 래스터 괘선까지 찾아 스캔본에서도 표를 복원합니다.
 *   **📑 RAG·인용 대응 (v4.1~4.8)**: 헤딩·개조식 위계를 breadcrumb으로 보존한 구조 청크(`--format chunks`)와, 조판 캐시로 복원한 **실제 쪽 번호** 기준 페이지별 마크다운(`pages`)을 냅니다 — 답변에 "몇 쪽" 각주를 붙일 수 있습니다.
-*   **🕶️ 개인정보 마스킹 (v4.1)**: 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허를 탐지해 **원본 서식 그대로** 가린 HWPX/HWP를 냅니다 (`kordoc redact`). 본문·표·머리말/꼬리말·각주·글상자·필드·미리보기(텍스트·이미지)·문서 정보(제목·작성자)까지 가리고, 결과 파일을 다시 훑어 남은 개인정보가 있으면 실패(exit 2)로 알립니다. **PDF·DOCX·XLSX 등은 원본 파일을 고치지 않고 마스킹된 마크다운만** 냅니다 — PDF 자체의 가림(redaction)은 지원하지 않습니다. 이미지 속 글자·이름·주소는 탐지하지 못하는 자동 검출 보조 도구이므로 공개 전 사람 확인은 필수입니다.
+*   **🕶️ 개인정보 마스킹 (v4.1)**: 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허(v4.14.4 부터 opt-in 으로 이름·주소)를 탐지해 **원본 서식 그대로** 가린 HWPX/HWP를 냅니다 (`kordoc redact`). 본문·표·머리말/꼬리말·각주·글상자·필드·미리보기(텍스트·이미지)·문서 정보(제목·작성자)까지 가리고, 결과 파일을 다시 훑어 남은 개인정보가 있으면 실패(exit 2)로 알립니다. **PDF·DOCX·XLSX 등은 원본 파일을 고치지 않고 마스킹된 마크다운만** 냅니다 — PDF 자체의 가림(redaction)은 지원하지 않습니다. 이미지 속 글자와 문맥 없는 맨이름은 탐지하지 못하는 자동 검출 보조 도구이므로 공개 전 사람 확인은 필수입니다.
 *   **🤖 AI 에이전트 연동 (MCP)**: `Claude Desktop`, `Cursor`, `Codex`와 같은 도구에서 직접 `kordoc`을 호출해 문서를 읽고 코딩할 수 있습니다.
 
 ---
+
+## v4.14.4 변경사항
+
+읽기 품질을 한 번 더 점검했습니다. 원본 HWPX 를 정답으로 PDF 글을 재는 벤치를 새로 세워 띄어쓰기·읽기 순서까지 보고, PDF 표·OCR·개인정보 마스킹을 고쳤습니다.
+
+- **📊 PDF 표**: 쪽을 넘는 표의 쪼개진 행과 반복 머리 행, 쪽을 넘는 한 칸, 표 위에 걸친 그림·글상자, 셀 간격 표를 바로잡았습니다. hwpx↔pdf 430쌍 1,784표 정확 일치 90.1% → 92.9%, 표 안의 표 63.7% → 72.0%. 텍스트층이 있는 417쌍만 보면 94.5%, 칸 글이 제자리에 있는 비율 0.768 → 0.903.
+- **✍️ PDF 띄어쓰기·줄 이음**: 본문을 시각 줄이 아니라 문단으로 복원합니다. 한글이 글자 단위로 줄바꿈된 문서에서 "재 일학도의용군인"·"또 는" 처럼 낱말 중간에 공백이 들어가던 것을 조사·어미·문서 안 어휘로 판정해 붙입니다. 어절 F1 0.925 → 0.971.
+- **🧮 한컴 밖에서 만든 PDF**: 예산서처럼 글자마다 떨어져 찍힌 숫자("2 0 , 7 7 5" → "20,775"), 행마다 끊어 그은 괘선, 빈칸 위에 따로 얹은 숫자를 바로잡았습니다. PDF 글자 커버리지 0.99569 → 0.99760.
+- **🔎 글자를 곡선으로 그린 PDF**: 한글을 글꼴 대신 곡선으로 그린 쪽은 텍스트층에 한글이 없어 종전엔 경고 없이 한글이 빠졌습니다. 이런 쪽을 찾아(`ocrReason: "vector_text"`) OCR 을 켜면 읽고, 끄면 경고합니다. 표는 그 쪽의 실제 괘선으로 복원합니다.
+- **👓 OCR**: 점선 괘선·색 칸 경계·목차 리더 점·숫자 앞 △ 를 바로잡았습니다. 글자 오류율 0.171 → 0.096(정답지인 텍스트층 수정분 포함), OCR 표 셀 F1 0.440 → 0.618.
+- **🕶️ 개인정보 마스킹 인명·주소** (opt-in, `--rules …,name,address`): 역할어·호칭·라벨·표 머리글 문맥으로 이름을, 도로명·지번 문법으로 주소를 찾아 가립니다(주소는 시·군·구까지 남김). 외부 정답(473문장) 인명 354/411·주소 141/141, 실문서 표본 오탐 0. 공무원 결재란 이름은 정보공개 관행상 공개 대상이라 기본값에는 넣지 않았습니다.
 
 ## v4.14.3 변경사항
 
@@ -921,7 +932,7 @@ CLI 는 `kordoc 문서.pdf --format json --no-images`. 대량 변환은 `kordoc 
 stdin 으로 한 줄씩 요청합니다 (한 줄 = 한 JSON).
 
 ```text
-시작  {"ready":true,"version":"4.14.3","protocol":1}
+시작  {"ready":true,"version":"4.14.4","protocol":1}
 요청  {"id":1,"file":"문서.hwpx","images":false,"ocr":"off"}
 응답  {"id":1,"rss":183500800,"result":{ …--format json 과 같은 결과, 실패도 success:false 로… }}
 종료  {"cmd":"quit"}  (또는 stdin 닫기)
@@ -977,7 +988,7 @@ for (const p of r.pageQuality ?? []) {
 }
 ```
 
-신호 키: `textChars`, `hangulRatio`, `controlCharRatio`, `replacementCharRatio`, `puaRatio` / `needsOcr` (페이지·문서 단위) / `ocrReason` (`low_text` | `high_pua` | `high_control` | `high_replacement`).
+신호 키: `textChars`, `hangulRatio`, `controlCharRatio`, `replacementCharRatio`, `puaRatio` / `needsOcr` (페이지·문서 단위) / `ocrReason` (`low_text` | `high_pua` | `high_control` | `high_replacement` | `garbled_hangul` | `vector_text`). `vector_text` 는 글자를 곡선으로 그려 텍스트층에 글이 없는 쪽입니다(v4.14.4).
 
 ## CLI
 
@@ -1007,6 +1018,7 @@ npx kordoc lint 보고서.md                            # 공문서 표기법 �
 npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx       # 개인정보 탐지 + 서식 보존 마스킹 (머리말·각주·미리보기·문서 정보 포함, 잔존 재검사 — 남으면 exit 2)
 npx kordoc redact 민원서류.hwpx --mask-char '*' -o 마스킹.hwpx   # 마스크 문자 지정 (기본 ●)
 npx kordoc redact 계약서.hwp --rules rrn,phone,crn --json --dry-run  # 룰 선택(법인등록번호 crn·IP 는 opt-in) + 위치별 리포트만
+npx kordoc redact 민원서류.hwpx --rules rrn,phone,email,name,address -o 마스킹.hwpx  # 이름·주소까지 (opt-in)
 npx kordoc redact 공문.pdf                            # PDF·DOCX 등은 원본을 고치지 않고 마스킹된 마크다운(.redacted.md)만 — PDF 가림 미지원
 npx kordoc profile 기관서식.hwpx                     # 표 서식 프로필(JSON) 추출 → generate --profile 로 재현
 npx kordoc render 결재문서.hwpx -o 미리보기.svg      # 레이아웃 보존 SVG 렌더 (캐시 없는 문서는 자동 reflow 조판, --no-reflow로 끔)
@@ -1124,7 +1136,7 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `generate_document` | 마크다운(표·수식·차트 포함) → HWPX 생성, 공문서 프리셋 (v3.5) |
 | `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 (v3.16) |
 | `render_document` | HWPX·HWP를 조판 그대로 PNG/JPEG 이미지(응답)·SVG/HTML/PDF 파일로 렌더 — 생성·수정 결과를 AI가 눈으로 검증 (v4.1, HWP·포맷 확장 v4.13.1) |
-| `redact_document` | 개인정보(주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허, opt-in 법인등록번호·IP) 탐지 + 서식 보존 마스킹 — HWPX/HWP는 머리말·각주·미리보기·문서 정보까지 가리고 잔존 재검사, 그 외 포맷은 마스킹된 마크다운만 (v4.1) |
+| `redact_document` | 개인정보(주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허, opt-in 법인등록번호·IP·이름·주소) 탐지 + 서식 보존 마스킹 — HWPX/HWP는 머리말·각주·미리보기·문서 정보까지 가리고 잔존 재검사, 그 외 포맷은 마스킹된 마크다운만 (v4.1) |
 | `parse_chunks` | RAG용 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 (v4.1) |
 | `crop_regions` | 렌더 영역(표·이미지·문단·도형)을 페이지 이미지에서 실배율로 잘라 저장 + regions.json (v4.13) |
 | `extract_tables` | 표 분류(데이터표/조직도류/불확실) + 페이지·bbox + 정책별 crop — 조직도는 이미지로, 데이터표는 구조로 (v4.13.1) |

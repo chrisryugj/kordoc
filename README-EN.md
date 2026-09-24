@@ -72,6 +72,17 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.14.4
+
+A second reading-quality pass. A new benchmark scores PDF text against the source HWPX, including word spacing and reading order, and PDF tables, OCR and PII masking were fixed.
+
+- **📊 PDF tables**: split rows and repeated header rows across page breaks, a single cell that runs over several pages, pictures or text boxes laid over a table, and tables with cell spacing. Exact match on 430 hwpx↔pdf pairs (1,784 tables) 90.1% → 92.9%, tables inside cells 63.7% → 72.0%. On the 417 pairs that have a text layer: 94.5%, cell text in the right cell (NED) 0.768 → 0.903.
+- **✍️ PDF word spacing and line joins**: body text is rebuilt as paragraphs instead of visual lines. When Hangul wraps mid-word, lines are now joined without a stray space, judged from particles, endings and the document's own vocabulary. Word F1 0.925 → 0.971.
+- **🧮 PDFs not made by Hancom**: letter-spaced numbers in budget PDFs ("2 0 , 7 7 5" → "20,775"), ruling lines drawn in short pieces, and numbers overlaid on blank runs. PDF text coverage 0.99569 → 0.99760.
+- **🔎 PDFs that draw text as outlines**: pages whose Hangul is drawn as filled curves have no Hangul in the text layer and used to lose it silently. They are now detected (`ocrReason: "vector_text"`): read by OCR when OCR is on, flagged otherwise, with tables rebuilt from the page's real vector lines.
+- **👓 OCR**: dotted ruling lines, shaded-cell edges, table-of-contents leader dots and the △ before numbers. Character error rate 0.171 → 0.096 (includes fixes to the text-layer answer key), OCR table cell F1 0.440 → 0.618.
+- **🕶️ PII masking: names and addresses** (opt-in, `--rules …,name,address`): names are found from role words, honorifics, labels and table headers; addresses from road-name and lot-number grammar (province and city/district are kept). External answer set (473 sentences): names 354/411, addresses 141/141; 0 false positives in a real-document sample. Officials' names in sign-off blocks are public under disclosure practice, so the rules are not on by default.
+
 ## What's New in v4.14.3
 
 A full reading-quality pass: a wider corpus (1,351 rhwp samples and 200 policy-briefing hwpx+pdf pairs), fresh ground-truth benchmarks per format, and fixes to tables, PDF, OCR and PII masking. Plus two additions for callers that only need the text, such as search indexers.
@@ -501,7 +512,7 @@ From the CLI: `kordoc doc.pdf --format json --no-images`. For bulk conversion ke
 running and send one JSON request per stdin line.
 
 ```text
-ready     {"ready":true,"version":"4.14.3","protocol":1}
+ready     {"ready":true,"version":"4.14.4","protocol":1}
 request   {"id":1,"file":"doc.hwpx","images":false,"ocr":"off"}
 response  {"id":1,"rss":183500800,"result":{ …same ParseResult as --format json, failures as success:false… }}
 quit      {"cmd":"quit"}  (or close stdin)
@@ -556,7 +567,7 @@ for (const p of r.pageQuality ?? []) {
 }
 ```
 
-Signal keys: `textChars`, `hangulRatio`, `controlCharRatio`, `replacementCharRatio`, `puaRatio` / `needsOcr` (page & document level) / `ocrReason` (`low_text` | `high_pua` | `high_control` | `high_replacement`).
+Signal keys: `textChars`, `hangulRatio`, `controlCharRatio`, `replacementCharRatio`, `puaRatio` / `needsOcr` (page & document level) / `ocrReason` (`low_text` | `high_pua` | `high_control` | `high_replacement` | `garbled_hangul` | `vector_text`). `vector_text` marks pages whose text is drawn as outlines, so the text layer has none (v4.14.4).
 
 ## CLI
 
@@ -579,6 +590,7 @@ npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx  # p
 npx kordoc validate output.hwpx                     # HWPX structure validation (ZIP, required parts, XML)
 npx kordoc redact complaint.hwpx -o redacted.hwpx   # PII detection + format-preserving masking, incl. headers/footnotes/preview/document info; re-scans the output (exit 2 if anything remains)
 npx kordoc redact complaint.hwpx --mask-char '*' -o redacted.hwpx  # mask character (default ●)
+npx kordoc redact complaint.hwpx --rules rrn,phone,email,name,address -o redacted.hwpx  # names and addresses too (opt-in)
 npx kordoc redact notice.pdf                        # PDF/DOCX/etc.: the original file is NOT modified — masked markdown (.redacted.md) only; no PDF redaction
 npx kordoc profile agency-form.hwpx                 # extract table format profile (JSON) → reuse via generate --profile
 npx kordoc render approval.hwpx -o preview.svg      # layout-preserving SVG render (documents without a layout cache are reflowed; --no-reflow disables)
@@ -677,7 +689,7 @@ codex mcp add kordoc -- npx -y kordoc mcp
 | `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (v3.5) |
 | `place_seal` | Place a stamp/signature image over an anchor phrase (v3.16) |
 | `render_document` | Render HWPX/HWP exactly as typeset to PNG/JPEG (inline) or SVG/HTML/PDF files — lets the AI visually verify generated/edited documents (v4.1, HWP + formats v4.13.1) |
-| `redact_document` | Detect PII (resident/foreigner registration no., phone, email, card, account, business registration no., passport, driver license; opt-in corporate registration no. and IP) + format-preserving masking. HWPX/HWP: also headers/footers, footnotes, text boxes, fields, preview text/image and document info, with a post-mask re-scan; other formats: masked markdown only (v4.1) |
+| `redact_document` | Detect PII (resident/foreigner registration no., phone, email, card, account, business registration no., passport, driver license; opt-in corporate registration no., IP, names and addresses) + format-preserving masking. HWPX/HWP: also headers/footers, footnotes, text boxes, fields, preview text/image and document info, with a post-mask re-scan; other formats: masked markdown only (v4.1) |
 | `parse_chunks` | Structure-preserving chunk JSON for RAG — heading/outline hierarchy breadcrumbs + standalone table chunks (v4.1) |
 | `crop_regions` | Crop rendered regions (tables/images/paragraphs/shapes) from page images at true scale + regions.json (v4.13) |
 | `extract_tables` | Table classification (data table / layout-like / uncertain) + page·bbox + policy-based crops — org charts as images, data tables as structure (v4.13.1) |

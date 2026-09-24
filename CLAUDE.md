@@ -13,7 +13,7 @@ npm 패키지로 배포되며, 3가지 인터페이스 제공: 라이브러리 A
 npm run build          # tsup으로 ESM+CJS 듀얼 빌드 → dist/
 npm run dev            # watch 모드
 npm test               # node --test + tsx 로더 (tests/*.test.ts)
-npm run bench:gate     # 코퍼스 회귀 게이트 체인 (pages·score·roundtrip·pdf-table·formats·fuzz·reflow·redact·ocr) — prepublishOnly에 배선
+npm run bench:gate     # 코퍼스 회귀 게이트 체인 (pages·score·roundtrip·pdf-table·pdf-text·formats·fuzz·reflow·redact·ocr) — prepublishOnly에 배선
 npm run bench:visual   # 한컴 실렌더 시각 오라클 (macOS GUI 전용, 발행 전 수동 1회 — bench/visual/, 순수 로직은 hash-lib.mjs)
 node bench/predict-layout.mjs 문서.hwpx --loose  # 생성 공문서의 한글 조판 예측(실글꼴 폭표, 한글 2024 PDF 154줄 재현), 한컴 없이 벌어진 줄·고아 줄·압축 확인
 ```
@@ -44,6 +44,10 @@ HWP5↔PDF 셀 대조 보고 지표는 `node bench/cmp-hwp-pdf.mjs licbyl [--lin
 2026-09-23 에 `rhwp/`(rhwp 저장소 samples 1,351파일: hwp 523·hwpx 416·pdf 412, 스템마다 한컴 PDF 한 벌, `bench/collect-rhwp.mjs`)과
 `korea-kr-pairs/`(정책브리핑 보도자료 hwpx+pdf(+hwp) 짝 200쌍, `bench/collect-korea-kr-pairs.mjs --pages=20-120 --exclude=korea-kr,korea-kr2`)이
 들어와 게이트 모수는 hwpx 1,994·pdf 1,561(채점 1,384)·hwp쌍 1,058, PDF 표 GT(`pdf-table-gt.mjs`)는 430쌍 1,784표(중첩표 트랙 157표)다.
+2026-09-24 부터 PDF 텍스트층 한글이 HWPX 한글의 1% 미만인 쌍(rhwp cairo 렌더가 한글을 채운 곡선으로 그린 13쌍 표 46·중첩표 27)은 텍스트층 트랙
+모수에서 빼고 `[텍스트층 없음·OCR]` 보고 트랙(`ocr:true`, 게이트 아님, `--no-ocr` 로 끔)에서 채점한다. 텍스트층 트랙은 417쌍 1,738표(중첩표 130).
+같은 쌍으로 PDF 글을 HWPX 정답과 대조하는 `pdf-text-gt.mjs`(recall·precision·순서·어절 F1)도 게이트다. 개인정보 외부 정답은 `bench/corpus/schift/`
+(`node bench/collect-schift.mjs`: Schift License 데이터라 커밋 금지, 없으면 redact-bench 외부 트랙 SKIP).
 rhwp 의 HWP3 변환본 4건(`hwp3-sample5·10·11·14`)은 hp:t 안 셸 텍스트의 리터럴 `$`(`$HOME`·`$1`)가 인라인 수식 `$…$` 와
 구별되지 않아 HWPX recall·phantom·순서 게이트에 걸렸다. v4.14.3 에서 IR 리터럴 `$` 규약(원문 `$` → `\$`, `escapeLiteralDollar`)으로 풀었다.
 미기입 누름틀 안내문(rhwp form-01·form-02·issue1893)은 IR 글에 `placeholder` span 으로 남기고 마크다운·참조 모두에서 뺀다
@@ -141,25 +145,28 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpml/parser.ts` | HWPML 2.x(XML 기반 HWP) 파싱, ParaShape HeadingType 기반 헤딩 감지 |
 | `src/pdf/parser.ts` | PDF 텍스트 추출, XY-Cut 읽기 순서, 헤딩 감지, 머리글/바닥글 제거 (텍스트+y클러스터링) |
 | `src/pdf/line-detector.ts` | 선 기반 테이블 감지 엔트리 (구현은 7모듈로 분리 — 재수출 허브) |
-| `src/pdf/line-extract.ts` | 그래픽 ops → 수평/수직 선 추출 + 전처리 (음영 스택 필터, 개방 변 가상 테두리 합성) |
-| `src/pdf/table-grid.ts` | 선 교차점(Vertex) 기반 테이블 그리드 구성 |
+| `src/pdf/line-extract.ts` | 그래픽 ops → 수평/수직 선 추출 + 전처리 (음영 스택 필터, 개방 변 가상 테두리 합성). 행마다 끊어 그은 짧은 획 조각 사슬 잇기 `chainShortSegments`(칸 클립 격자 없는 쪽만, 예산서 세로선 구멍) |
+| `src/pdf/table-grid.ts` | 선 교차점(Vertex) 기반 테이블 그리드 구성. 음영 칸에만 깐 클립 조각 격자 버리기 `dropShadingClipGrids`(cairo·한컴 구버전) |
 | `src/pdf/cell-extract.ts` | 그리드 → 병합 셀 구조 (createMatrix) |
-| `src/pdf/cell-text.ts` | 텍스트→셀 매핑 + 셀 텍스트 조립 |
+| `src/pdf/cell-text.ts` | 텍스트→셀 매핑 + 셀 텍스트 조립. 괘선 없는 칸 경계를 걸친 글자 단위 낱말은 한 칸(`keepWordsInOneCell`), 칸 안 한글 줄 이음은 칸 상자가 있으면 꺾임 판정(line-wrap), 온전한 숫자 두 줄(천 단위·세 자리 이하)은 잇지 않음 |
 | `src/pdf/undersegmented.ts` | 과소분할 표 재구성 (row band 재유도) |
 | `src/pdf/underline.ts` | 밑줄 감지 — baseline 밀착 수평선↔텍스트 상관, `<u>` 보존 (표 괘선·배지 오탐 방어 5겹) |
 | `src/pdf/links.ts` | 링크 어노테이션(/Annots /URI) → [text](url) 래핑 (sanitizeHref 살균, 줄 단위) |
 | `src/pdf/image-regions.ts` | 이미지 XObject 영역 추출 |
 | `src/pdf/image-extract.ts` | 이미지 XObject 바이트 추출 — 비동기 디코딩 대기 + 순수 JS PNG 인코딩, 표 병합 후 페이지 말미 주입 |
 | `src/pdf/line-types.ts` | 선 감지 공유 타입/상수 |
-| `src/pdf/clip-cells.ts` | 셀 클립 사각형 → 표 그리드 (v4.12.1) — 한컴 PDF 의 셀별 `W n` 클립을 셀 기하로 확정(`TableGrid.cells`). 포함 관계로 층을 나눠 같은 부모끼리만 이웃 묶음(중첩표는 별도 그리드 + `clipParent`, 틀은 자기 층의 셀), 클립 그리드·틀과 면적 절반 이상 겹치는 line 그리드 제거(`dropGridsInside`). 칸 클립 묶음과 좌표가 같은 바깥 클립은 표 겉 클립(틀 아님), 격자 끝에 맞붙은 좁은(4pt 미만) 채움 사각형은 클립 없는 가장자리 칸, 틀 칸 안 감싸개 클립은 건너뛰고 중첩표를 틀 칸에 넣는다(v4.14.3). 소비측(`page-blocks.ts`)은 클립 그리드를 면적 오름차순으로 먼저 처리하고 `clipParent` 가 있는 표는 틀 셀의 `IRCell.blocks` 에 원문 순서로 넣는다(v4.12.2). 1칸 틀은 **네 변 획**이 있을 때만 1×1 그리드 — 획 없는 큰 컨테이너는 한컴 본문 영역 클립 |
-| `src/pdf/table-parts.ts` | 쪽 넘김 표 잇기 `mergeCrossPageTables`: 클립 표 조각은 열 경계 합집합 격자에 다시 놓고(뒤 조각에 클립 없는 열은 세로 병합 이어 늘림), 쪼개진 행은 앞 쪽 끝줄이 칸 오른끝까지 찼을 때만 합친다(가운데 정렬 칸 제외). 쪽 가장자리 글(장 표시)만 끼면 인접, 첨부 머리표(붙임·별지)·쪽 끝 띠 밖 표는 잇지 않음 |
-| `src/pdf/table-meta.ts` | PDF 표 IR 곁정보(WeakMap/WeakSet): 클립 표·열 경계 x·채움 칸·빈 조각·칸 글줄 상자. 공개 IR 에 안 나감 |
+| `src/pdf/clip-cells.ts` | 셀 클립 사각형 → 표 그리드 (v4.12.1) — 한컴 PDF 의 셀별 `W n` 클립을 셀 기하로 확정(`TableGrid.cells`). 포함 관계로 층을 나눠 같은 부모끼리만 이웃 묶음(중첩표는 별도 그리드 + `clipParent`, 틀은 자기 층의 셀), 클립 그리드·틀과 면적 절반 이상 겹치는 line 그리드 제거(`dropGridsInside`). 칸 클립 묶음과 좌표가 같은 바깥 클립은 표 겉 클립(틀 아님), 격자 끝에 맞붙은 좁은(4pt 미만) 채움 사각형은 클립 없는 가장자리 칸, 틀 칸 안 감싸개 클립은 건너뛰고 중첩표를 틀 칸에 넣는다(v4.14.3). 소비측(`page-blocks.ts`)은 클립 그리드를 면적 오름차순으로 먼저 처리하고 `clipParent` 가 있는 표는 틀 셀의 `IRCell.blocks` 에 원문 순서로 넣는다(v4.12.2). 1칸 틀은 **네 변 획**이 있을 때만 1×1 그리드 — 획 없는 큰 컨테이너는 한컴 본문 영역 클립. 표 위에 걸친 덮개(워터마크·덮개 1칸 표, 상대 클립 10~90%)는 부모가 못 되고, 괘선이 칸 클립 변에 그어진 좁은 틈(셀 간격 표·짧게 깐 문서번호 표 칸)은 이웃으로 이어 표 단위로 닫으며, 쪽을 넘는 한 칸의 뒤 쪽 조각(이웃 없는 클립, 좌우 변 0.1pt·쪽 마지막/첫 내용)은 `continues` 로 낸다(v4.14.4) |
+| `src/pdf/table-parts.ts` | 쪽 넘김 표 잇기 `mergeCrossPageTables`: 클립 표 조각은 열 경계 합집합 격자에 다시 놓고(뒤 조각에 클립 없는 열은 세로 병합 이어 늘림), 짝·홀 쪽 대칭 여백·2단 지면으로 옮겨진 조각은 쪼개진 행·글 있는 반복 머리 행 증거가 있을 때만 잇는다. 쪼개진 행은 글 이어짐(끝줄이 칸 글 오른끝까지·내어쓰기 이어짐) 또는 칸 조각 이어짐(한컴은 글 없이 쪽을 넘은 칸 조각에 클립을 안 깖)일 때 합치고, 한 줄로 끝난 이름표 뒤 다른 글이면 새 행. 쪽 경계에 걸친 세로 병합 칸 글은 다른 열이 경계를 넘을 때만 잇는다. 첫 행 이름표를 되풀이하며 값만 다른 표(서식 되풀이)는 새 표. 쪽 가장자리 글만 끼면 인접, 첨부 머리표(붙임·별지)·쪽 끝 띠 밖 표는 잇지 않음 |
+| `src/pdf/cell-continuation.ts` | 쪽을 넘는 칸 잇기 `mergeContinuedCells`: 이어짐 1칸 조각(clip-cells `continues`)을 앞 쪽 표 마지막 행의 좌우 변 같은 칸에 붙이고 칸 안에서 쪽 경계로 갈린 표를 `mergeCrossPageTables` 로 다시 잇는다. parser 에서 `mergeCrossPageTables` 보다 먼저 |
+| `src/pdf/table-meta.ts` | PDF 표 IR 곁정보(WeakMap/WeakSet): 클립 표·열 경계 x·채움 칸·빈 조각·칸 글줄 상자·이어짐 칸 조각(`CONT_PARTS`). 공개 IR 에 안 나감 |
 | `src/pdf/table-trim.ts` | PDF 표 후행 빈 열 정리: HWP 계열 builder 와 같은 규칙(칸 단위 빈 열, 걸친 병합 칸은 폭 안으로), 그림만 든 칸은 빈 칸 아님 |
-| `src/pdf/text-clean.ts` | PDF 마크다운 최종 정리 — 쪽번호 제거·균등배분·`mergeKoreanLines`(한글 줄 병합). v4.12.3: `normalizeAraea`(한컴 PDF 의 ㆍ→U+119E 되돌림, 셀 blocks 포함)·`splitSingleCellTables`(중첩 없는 1×1 표는 줄마다 문단 — 1×1 줄 결합의 원인은 builder 가 아니라 mergeKoreanLines) |
+| `src/pdf/text-clean.ts` | PDF 마크다운 최종 정리 — 쪽번호 제거·균등배분·`mergeKoreanLines`(한글 줄 병합). v4.12.3: `normalizeAraea`(한컴 PDF 의 ㆍ→U+119E 되돌림, 셀 blocks 포함)·`splitSingleCellTables`(중첩 없는 1×1 표는 줄마다 문단 — 1×1 줄 결합의 원인은 builder 가 아니라 mergeKoreanLines). v4.14.4: 본문 줄 이음은 line-wrap(블록 조립 단계)으로 옮겨 `mergeKoreanLines` 는 블록 안 `\n`(강등 표 글·글상자)만 |
 | `src/pdf/symbol-fonts.ts` | Wingdings 글리프 코드 → 유니코드 복원 (v4.12.1) — pdfjs 가 심볼 폰트 코드를 Latin-1 로 돌려주는 것(`è`=0xE8 ➔)을 `page.commonObjs` 폰트 실명으로 판별해 되돌림 |
-| `src/pdf/cluster-detector.ts` | 클러스터 기반 테이블 감지 (선 없는 PDF용) |
+| `src/pdf/cluster-detector.ts` | 클러스터 기반 테이블 감지 (선 없는 PDF용). 칸 글은 선 표와 같은 공백 규칙(`joinCellItems`, 글자 단위 제작기의 "2 0 , 7 7 5" 방지) |
 | `src/pdf/polyfill.ts` | pdfjs-dist 호환 심 (DOMMatrix, Path2D) |
-| `src/pdf/quality.ts` | PDF 페이지별 텍스트 품질 신호 계산 (한글/제어문자/PUA 비율, needsOcr 판정) |
+| `src/pdf/quality.ts` | PDF 페이지별 텍스트 품질 신호 계산 (한글/제어문자/PUA 비율, needsOcr 판정). 사유 `vector_text`: 글자를 곡선으로 그린 쪽(vector-glyphs) |
+| `src/pdf/vector-glyphs.ts` | 벡터 글자 감지: 글자를 채운 곡선 경로로 그린 쪽(rhwp cairo·윤곽 인쇄): 음절 모양 채움 경로의 글줄 → quality `vector_text`(코퍼스 16,775쪽 한컴 PDF 오탐 0), OCR 쪽 그래픽 추림(글자 경로·클립 제외, cairo 는 음영 칸에만 클립) |
+| `src/pdf/line-wrap.ts` | PDF 줄 꺾임 이음: 본문 줄을 문단으로 복원(찬 줄·새 항목 아님), 칸 안 어절 중간 꺾임, 쪽 넘김 꺾임(`joinPageBreakWraps`). 한컴 텍스트층은 줄 끝 공백을 싣지 않아 어절 중간/경계는 기하로 못 가르고 글로 판정: 조사·어미, 문서 어휘 증거(`WrapLexicon`), 한 음절 조각, 날짜 줄(HWPX 정답 22,911곳 92.9%) |
 | `src/xlsx/parser.ts` | XLSX(ZIP+XML) 파싱, 공유 문자열/병합 셀 처리 |
 | `src/docx/parser.ts` | DOCX(ZIP+XML) 파싱, 스타일/번호매기기/각주 처리 |
 | `src/table/builder.ts` | 2-pass 그리드 테이블 빌더 + 마크다운 변환 |
@@ -180,11 +187,11 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/form/filler-hwpx.ts` | HWPX XML 직접 조작으로 양식 채우기 (원본 서식 100% 보존) |
 | `src/ocr/engine.ts` | 내장 텍스트 OCR 엔진 — PP-OCRv5 korean det(DBNet)+rec(CTC) ONNX 추론, 세션 싱글턴 |
 | `src/ocr/models.ts` | OCR 모델 스펙(HF 공식 변환본, SHA 핀) + inference.yml 사전 파서 |
-| `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**) |
-| `src/ocr/ruling-lines.ts` | 래스터 괘선 감지 — 페이지 픽셀 이진화+런렝스로 표 수평/수직 선 추출 → 선 기반 표 파이프라인 공급 (오탐 방어 3겹: 최소길이 20pt·두께 상한 2.5pt·양측 잉크 포위 제외) |
+| `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**). 벡터 글자 쪽(`vector_text`)은 기울기 보정 없이 그 쪽 실제 벡터 괘선으로 표 복원 |
+| `src/ocr/ruling-lines.ts` | 래스터 괘선 감지 — 페이지 픽셀 이진화+런렝스로 표 수평/수직 선 추출 → 선 기반 표 파이프라인 공급 (오탐 방어 3겹: 최소길이 20pt·두께 상한 2.5pt·양측 잉크 포위 제외). 점선 괘선·채움 사각형 변(표 괘선에 맞물린 것만)·흐린 선(잉크 상한 205) |
 | `src/ocr/image-ocr.ts` | 이미지(PNG/JPG/WebP) 직접 입력 OCR: sharp 디코딩 → 기울기 보정 → 내장 엔진 상시 적용 + 괘선 감지 (해상도는 메타데이터·쪽 비율로 추정, 없으면 216dpi) |
-| `src/ocr/line-split.ts` | 검출 박스 픽셀 분석: 세로로 이어 붙은 키 큰 박스(세로쓰기 머리·균등배분 목차)를 행 밴드로 갈라 따로 인식, 잉크 경계(`inkBounds`)로 박스 좌표 조임 |
-| `src/ocr/postprocess.ts` | OCR 문자열 후처리: 사전에 없는 공문서 기호 복원(○·△·곧은/굽은 따옴표·○○ 자리표시), 쉼표 숫자 붙임, 떠도는 리더 점 제거 |
+| `src/ocr/line-split.ts` | 검출 박스 픽셀 분석: 세로로 이어 붙은 키 큰 박스(세로쓰기 머리·균등배분 목차)를 행 밴드로 갈라 따로 인식, 잉크 경계(`inkBounds`)로 박스 좌표 조임. 목차 리더 점 무리(`leaderRuns`)·숫자 앞 △▲ 판정 |
+| `src/ocr/postprocess.ts` | OCR 문자열 후처리: 사전에 없는 공문서 기호 복원(○·△·곧은/굽은 따옴표·○○ 자리표시), 쉼표 숫자 붙임, 떠도는 리더 점 제거, 목차 한 줄 잇기(리더 양쪽·쪽번호 열 맞춤), "(cid:)"·배경 도안 환각 제거 |
 | `src/ocr/crop.ts` | 인식 입력 준비: 밴드 서브 박스 좌표·라인 crop 리사이즈(회전 포함) |
 | `src/ocr/deskew.ts` | 스캔 기울기 보정: 투영 프로파일 제곱합으로 각도 추정, PDF·이미지 경로 공통 |
 | `src/shared/offline.ts` | 폐쇄망 게이트 — `KORDOC_OFFLINE` 아웃바운드 킬스위치(`assertNetworkAllowed`), `KORDOC_ROOT` 파일 접근 루트 제한(`assertWithinRoot`, realpath 기준). **새 네트워크 호출은 반드시 여기를 경유** |
@@ -196,9 +203,10 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/cli.ts` | Commander 기반 CLI 진입점(루트 파싱 명령). 하위 명령은 `src/cli/commands-{docs,generate,render,system,worker}.ts` (등록 순서 = 도움말 순서) |
 | `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 17개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
 | `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) + `rasterizePageSvg` 페이지 단위 png/jpeg(실배율 보고) |
-| `src/redact.ts` | PII 탐지·마스킹 엔진: 정규화·겹침 처리·마크다운 표 머리글 문맥(선형 시간). 룰 정의는 `redact-rules.ts` |
+| `src/redact.ts` | PII 탐지·마스킹 엔진: 정규화·겹침 처리·마크다운 표 머리글 문맥(선형 시간). 룰 정의는 `redact-rules.ts`(번호형)·`redact-name-address.ts`(인명·주소) |
 | `src/redact-rules.ts` | redact 룰: 룰별 정규식 변형·검증기(생년월일·Luhn·사업자/법인 체크섬·전화 국번)·라벨 사전(창 안 라벨 전부 반영) |
-| `src/redact-doc.ts` | 파일 단위 마스킹 `redactDocument`(CLI `redact`·MCP `redact_document`): parse → 탐지 → 컨테이너 수술 → 재파싱 잔존 검사 |
+| `src/redact-name-address.ts` | opt-in 룰 `name`·`address` (v4.14.4): 인명은 문맥 게이트(역할어·호칭·라벨·연락처 괄호·나열·표 머리글 "성명") + 성씨 사전, 문맥 없는 맨이름은 안 잡음. 주소는 도로명·지번 문법 + 행정구역 사전, 시·도·시·군·구는 남기고 그 아래를 가림, 행정구역만 있는 글은 주소 아님. 룰을 손대면 `redact-bench.mjs --corpus --corpus-rules=name,address` 로 오탐 재실측 |
+| `src/redact-doc.ts` | 파일 단위 마스킹 `redactDocument`(CLI `redact`·MCP `redact_document`): parse → 탐지 → 컨테이너 수술 → 재파싱 잔존 검사. 본문에서 찾은 값(리터럴)은 마크다운 출력 다른 자리에도 전파, 바이너리 조각에는 인명·주소 룰 대신 리터럴만 |
 | `src/redact-hwpx.ts` · `redact-hwp5.ts` | 컨테이너 PII 수술: HWPX 는 ZIP 안 모든 XML 문단·텍스트 노드·속성·미리보기, HWP5 는 전 스트림 레코드(같은 길이 치환, 한컴 압축 꼬리 보존, 미할당 섹터 wipe) |
 | `src/redact-scrub.ts` | 파일 마스킹 공용: 텍스트 탐지(룰+리터럴), 바이너리 문자열 조각 훑기(UTF-16·OLE·EMF), 빈 미리보기 이미지 |
 | `src/chunks.ts` | RAG용 구조 청킹 — IR 위계(헤딩·listDepth·표) → breadcrumb 청크 JSON |
@@ -262,5 +270,12 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
   **제목 아래 틀** 기하로만 삼는다(`titledFrame`: 윗변 ≥ 페이지 20%·폭 ≥ 60%·머리말 띠 아래 위쪽에 글 존재·안에 글 존재).
   "문서 전 페이지 반복 클립 = 본문 영역" 가설은 반증됨(본문 영역 클립은 쪽마다 y1 이 다르고 별표는 1쪽). 폭 조건을
   빼면 2단 채용공고 단 상자(폭 38%)가 틀이 되어 pdf-table-gt cellF1 0.945 → 0.933 회귀(pair06 실측)
+- **PDF 본문은 문단 블록이다 (v4.14.4)**: 시각 줄마다 블록을 만들던 것을 line-wrap 이 문단으로 복원한다(어절 중간 꺾임은 붙이고 경계는 띄움).
+  `extractPageBlocksWithLines` 는 쪽 순서로 부를 때 `carry`(쪽을 넘는 칸, clip-cells)와 `lexicon`(문서 어휘, line-wrap)을 받는다(OCR 경로는 둘 다 없이 쪽 단위).
+  헤딩 판정의 글꼴 크기 중앙값은 **아이템 수** 기준이라 아이템을 쪼개는 변경은 중앙값을 흔든다(성과평가 보고서: 낱말 조각 +535개로 14→13pt, 본문 2,180줄이 `###`)
+- **한컴 PDF 쪽 넘김 증거 (v4.14.4 실측)**: 글 없이 쪽을 넘은 칸 조각에는 클립을 깔지 않는다(1.3.0.550. 546·538 은 깔기도 하니 뒤 쪽 빈 클립을 새 칸
+  증거로 쓰지 말 것). 칸 테두리 괘선은 칸 클립 **변**에 그어진다. 틈 한가운데 괘선(글줄마다 클립을 까는 Microsoft Print To PDF)은 칸 경계 증거가 아니다.
+  클립 좌표 묶음 `CLIP_COORD_TOL` 0.3 → 0.1 은 반증됐다(0.1~0.3pt 차 같은 경계가 흔함, exact −0.33pp). 머리글 제거(상하 12%·3쪽 반복)는 제목 행 반복으로
+  쪽마다 찍힌 절 제목의 원본 1회분까지 지운다(규제영향분석서 "Ⅲ. 규제의 실효성"). 커버리지 채점기도 반복 줄을 빼서 안 보이고 `pdf-text-gt` 로만 보인다(잔여)
 - **본문폭급 표(48180)는 outMargin 좌우 0**: 283이면 진행폭(w+566)이 컬럼폭을 넘어 1mm
   침범 — 실물(t2)도 표지 표만 0. `gen-gaejosik.ts table()`이 w 기준 자동 분기 (v4.0.2)

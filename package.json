@@ -1,6 +1,6 @@
 {
   "name": "kordoc",
-  "version": "4.14.3",
+  "version": "4.14.4",
   "description": "Parse Korean documents (HWP3-5, HWPX, HWPML, PDF, XLS(X), DOCX) to Markdown — CLI + MCP server with lossless patch/roundtrip, form-filler, document diff, print & layout-preserving SVG renderer",
   "type": "module",
   "exports": {
@@ -28,7 +28,7 @@
     "dev": "tsup --watch",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "bench:gate": "node bench/verify-pages.mjs --gate && node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate && node bench/redact-bench.mjs --gate && node bench/ocr-accuracy.mjs --gate",
+    "bench:gate": "node bench/verify-pages.mjs --gate && node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate --no-ocr && node bench/pdf-text-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate && node bench/redact-bench.mjs --gate && node bench/ocr-accuracy.mjs --gate",
     "bench:visual": "node bench/visual/verify-visual.mjs --gate",
     "sync-meta": "node scripts/sync-meta.mjs",
     "prepublishOnly": "node scripts/sync-meta.mjs --check && node scripts/check-notices.mjs && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs"
