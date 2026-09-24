@@ -95,6 +95,10 @@ export function resolveParaHeading(paraEl: Element, ctx: WalkCtx): ResolvedParaH
     const n = counters![lv] >= 0 ? counters![lv] : (refHead?.start ?? 1)
     return formatHeadNumber(n, refHead?.numFormat || "DIGIT")
   })
+    // 레벨 숫자가 아닌 글자(공백·기호) 앞의 ^ 는 한컴이 그리지 않는다 — 서식 "^  □"·"^   ㅇ" 이 한컴 PDF 에서
+    // "□"·"ㅇ" 로만 나온다(정책브리핑 156775690, Hwp 2022). 문자·숫자 앞(^N 등)은 근거가 없어 그대로 둔다
+    .replace(/\^(?![\p{L}\p{N}])/gu, "")
+    .trim()
   return { prefix: prefix || undefined, headingLevel }
 }
 

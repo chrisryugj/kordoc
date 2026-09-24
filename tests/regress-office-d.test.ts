@@ -10,7 +10,7 @@
  *   #6  날짜 시리얼 → ISO 문자열 (XLSX styles.xml + XLS XF/Format)
  *   #7  omml \frac 분자 다중그룹 오판 ({x}^{2} 통짜 취급)
  *   #8  xls SST segments 선형 스캔 → 단조 커서 (#3 테스트로 동작 잠금)
- *   #9  xls MAX_ROWS 65536 하향 (BIFF8 실제 최대 행)
+ *   #9  xls MAX_ROWS 65536 하향 (BIFF8 실제 최대 행) → 밀집 격자 제거로 대체 (sheet-blocks.test.ts)
  *   #10 xls 공유수식 첫 셀 String 레코드 skip 탐색 (ShrFmla/Array 개재)
  *   #11 xls 시트 BOF 폴백 최근접(≥) 선택 (전부 시트1 복제 방지)
  *   #12 docx w:br/w:cr → \n, w:tab → 공백
@@ -21,8 +21,6 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import JSZip from "jszip"
 import { DOMParser } from "@xmldom/xmldom"
 import { parseXlsx, parseDocx } from "../src/index.js"
@@ -224,6 +222,23 @@ describe("regress-D #6: 날짜 시리얼 → ISO (XLSX)", () => {
     assert.equal(table.cells[0][3].text, "45306")                 // 서식 없음 — 숫자 유지
   })
 
+  it("동아시아 판 내장 번호(numFmt 정의 없이 31·57·32)도 날짜·시각 — 인사혁신처 고시일 \"42734\" 실측", async () => {
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cellXfs count="4"><xf numFmtId="0"/><xf numFmtId="31"/><xf numFmtId="57"/><xf numFmtId="32"/></cellXfs>
+</styleSheet>`
+    const buffer = await buildXlsx({
+      sheetXml: `<sheetData><row r="1"><c r="A1" s="1"><v>42734</v></c><c r="B1" s="2"><v>45306</v></c><c r="C1" s="3"><v>0.5625</v></c></row></sheetData>`,
+      stylesXml,
+    })
+    const r = await parseXlsx(buffer)
+    assert.equal(r.success, true)
+    if (!r.success) return
+    const table = r.blocks.find(b => b.type === "table")?.table
+    assert.ok(table)
+    assert.deepEqual(table.cells[0].map(c => c.text), ["2016-12-30", "2024-01-15", "1899-12-31T13:30:00"]) // 시각만인 값은 종전 계약대로 1900 체계 기준일 붙은 ISO
+  })
+
   it("date1904 체계 반영", async () => {
     const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -339,13 +354,8 @@ describe("regress-D #3/#8: SST rgb가 CONTINUE 경계 정각 시작", () => {
 })
 
 // ─── #9 — XLS MAX_ROWS ────────────────────────────────
-
-describe("regress-D #9: XLS 밀집 그리드 상한 = BIFF8 실제 최대 행", () => {
-  it("MAX_ROWS 상수가 65536으로 고정되어 있다 (u16 주소 공간)", () => {
-    const src = readFileSync(join(process.cwd(), "src/xls/parser.ts"), "utf8")
-    assert.match(src, /const MAX_ROWS = 65536/)
-  })
-})
+// 밀집 격자 자체를 없앴다 (희소 행 + 칸 예산, src/xlsx/sheet-blocks.ts). 65536행 상한 고정 격자는 셀 하나로
+// 65536×1000 칸을 깔았다(프로덕션 리뷰 P2) — 먼 좌표 셀 회귀는 tests/sheet-blocks.test.ts 가 동작으로 잠근다.
 
 // ─── #10 · #11 — XLS 레코드 시퀀스 ────────────────────
 

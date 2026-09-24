@@ -358,6 +358,16 @@ describe("hwpx v3 — 글머리표/자동번호 (numbering/bullet)", () => {
     const tableBlock = result.blocks.find(b => b.type === "table")
     assert.equal(tableBlock?.table?.cells[0][0].text, "1. 셀 항목")
   })
+
+  it("레벨 숫자가 아닌 글자 앞 ^ 는 그리지 않는다 — \"^  □\"·\"^   ㅇ\" → □·ㅇ (한컴 PDF 실측, 정책브리핑 156775690)", async () => {
+    const header = HEADER_WITH_NUMBERING
+      .replace(`<hh:paraHead start="1" level="1" numFormat="DIGIT">^1.</hh:paraHead>`, `<hh:paraHead start="1" level="1" numFormat="DIGIT">^  □</hh:paraHead>`)
+      .replace(`<hh:paraHead start="1" level="2" numFormat="HANGUL_SYLLABLE">^2.</hh:paraHead>`, `<hh:paraHead start="1" level="2" numFormat="HANGUL_SYLLABLE">^   ㅇ</hh:paraHead>`)
+    const body = [para("상위", `paraPrIDRef="10"`), para("하위", `paraPrIDRef="11"`)].join("")
+    const result = await parseHwpxDocument(await makeHwpx(sec(body), { headerXml: header }))
+
+    assert.deepEqual(result.blocks.map(b => b.text), ["□ 상위", "ㅇ 하위"])
+  })
 })
 
 describe("hwpx v3 — outline 헤딩", () => {

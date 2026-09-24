@@ -8,8 +8,12 @@ import { mapPuaText } from "../shared/pua.js"
 export const MAX_COLS = 200
 /** 테이블 행 수 상한 — 메모리 폭주 방지 */
 export const MAX_ROWS = 10000
+/** 표 칸 수 상한 (행 상한 × 열 상한) — 열이 적은 긴 시트는 이 예산 안에서 행 상한을 늘린다 (`maxRows`) */
+export const MAX_TABLE_CELLS = MAX_ROWS * MAX_COLS
 
 export interface BuildTableOptions {
+  /** 행 수 상한 (기본 MAX_ROWS). 시트 파서가 열 수에 맞춰 칸 예산(MAX_TABLE_CELLS) 안에서 늘린다 (xlsx/sheet-blocks.ts) */
+  maxRows?: number
   /** 실제 셀 앵커가 있는 빈 후행 열(서식 문서의 입력란)을 보존한다 (#47).
    *  앵커 없는 유령 열(span 인플레이션)은 이 옵션과 무관하게 트림.
    *  기본 false: 종전대로 텍스트 기준 전부 트림 (마크다운 가독성·벤치 계약). */
@@ -21,7 +25,8 @@ export interface BuildTableOptions {
 }
 
 export function buildTable(rows: CellContext[][], options?: BuildTableOptions): IRTable {
-  if (rows.length > MAX_ROWS) rows = rows.slice(0, MAX_ROWS)
+  const maxRows = options?.maxRows ?? MAX_ROWS
+  if (rows.length > maxRows) rows = rows.slice(0, maxRows)
   const numRows = rows.length
 
   // colAddr/rowAddr가 있으면 직접 배치 (HWPX cellAddr, HWP5 colAddr/rowAddr)

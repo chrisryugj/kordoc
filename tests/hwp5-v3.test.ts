@@ -437,6 +437,13 @@ describe("번호 포맷터 (rhwp format_number 포팅)", () => {
     assert.equal(expandNumberingFormat("제^1장", [3, 0, 0, 0, 0, 0, 0], numbering), "제7장") // (5-1)+3
     assert.equal(expandNumberingFormat("^1.^2", [1, 2, 0, 0, 0, 0, 0], numbering), "5.2")
   })
+
+  it("expandNumberingFormat: 레벨 숫자가 아닌 글자 앞 ^ 는 그리지 않는다 (한컴 PDF 실측 \"^  □\" → □)", () => {
+    const numbering = { levelFormats: ["", "", "", "", "", "", ""], numberFormats: [0, 0, 0, 0, 0, 0, 0], startNumbers: [1, 1, 1, 1, 1, 1, 1] }
+    assert.equal(expandNumberingFormat("^  □", [1, 0, 0, 0, 0, 0, 0], numbering).trim(), "□")
+    assert.equal(expandNumberingFormat("^-", [1, 0, 0, 0, 0, 0, 0], numbering), "-")
+    assert.equal(expandNumberingFormat("^N", [1, 0, 0, 0, 0, 0, 0], numbering), "^N") // 문자 앞은 근거 없음 — 그대로
+  })
 })
 
 // ─── 머리말/꼬리말 + 자동번호 ────────────────────────

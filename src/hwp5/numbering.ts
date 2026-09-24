@@ -166,6 +166,12 @@ export function expandNumberingFormat(formatStr: string, counters: number[], num
       i += 2
       continue
     }
+    // 레벨 숫자가 아닌 글자(공백·기호) 앞의 ^ 는 한컴이 그리지 않는다 — HWPX para-heading 과 같은 규칙
+    // ("^  □" → "□", 정책브리핑 156775690 한컴 PDF). 문자·숫자 앞은 근거가 없어 그대로 둔다
+    if (ch === "^" && !/[\p{L}\p{N}]/u.test(formatStr[i + 1] ?? "")) {
+      i++
+      continue
+    }
     result += ch
     i++
   }

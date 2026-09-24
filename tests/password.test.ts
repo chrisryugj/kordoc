@@ -16,6 +16,7 @@ import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "fs"
 import { dirname, resolve } from "path"
 import { fileURLToPath } from "url"
+import JSZip from "jszip"
 import { parse, parseHwp, parseHwp3, parseHwpx } from "../src/index.js"
 import { deriveDesKey } from "../src/hwp3/crypto.js"
 import { derivePasswordKey, readEncryptVersion } from "../src/hwp5/pw-crypto.js"
@@ -83,6 +84,18 @@ describe("HWPX manifest 파싱", () => {
     const stripped = stripEncryptionData(manifest)
     assert.ok(!stripped.includes("encryption-data"))
     assert.ok(stripped.includes("full-path=\"Contents/section0.xml\""))
+  })
+
+  it("배포용(hpf:distribution=\"1\") 암호 HWPX 는 열기 암호 안내 대신 배포용이라고 알린다 (ENCRYPTED 유지)", async () => {
+    const zip = new JSZip()
+    zip.file("mimetype", "application/hwp+zip")
+    zip.file("META-INF/manifest.xml", manifest)
+    zip.file("Contents/content.hpf", `<?xml version="1.0"?><opf:package xmlns:opf="http://www.idpf.org/2007/opf/" xmlns:hpf="http://www.hancom.co.kr/schema/2011/hpf" hpf:distribution="1"/>`)
+    zip.file("Contents/section0.xml", Buffer.alloc(96))
+    const r = await parseHwpx(await zip.generateAsync({ type: "arraybuffer" }))
+    assert.equal(r.success, false)
+    assert.equal((r as { code?: string }).code, "ENCRYPTED")
+    assert.match(String((r as { error?: string }).error), /배포용/)
   })
 })
 

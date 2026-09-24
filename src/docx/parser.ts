@@ -316,6 +316,10 @@ function fieldUrlFromInstr(instr: string): string | null {
   return null
 }
 
+/** 쪽 번호 필드(PAGE·NUMPAGES·SECTIONPAGES) — 표시값은 마지막으로 그린 쪽의 캐시("2"·"－ii－")라 내지 않는다
+ *  (HWPX 쪽 번호 컨트롤과 같은 정책). 코퍼스 docx 머리글·바닥글 PAGE 18개, 본문 0개 — PAGEREF(목차 쪽 참조)는 대상 아님 */
+const PAGE_FIELD_RE = /^\s*(?:PAGE|NUMPAGES|SECTIONPAGES)\b/i
+
 /** 표시 텍스트를 안전한 href로 감싸 마크다운 인라인 링크 생성 (스킴 미허용 시 평문) */
 function makeLink(text: string, rawHref: string | null | undefined): string {
   if (!text) return ""
@@ -356,7 +360,7 @@ function collectInline(
   let fieldDisplay = ""
   const flushField = () => {
     if (!fieldActive) return
-    if (fieldDisplay) {
+    if (fieldDisplay && !PAGE_FIELD_RE.test(fieldInstr)) {
       const url = fieldUrlFromInstr(fieldInstr)
       parts.push(url ? makeLink(fieldDisplay, url) : fieldDisplay)
     }
@@ -383,7 +387,7 @@ function collectInline(
 
     if (matchesLocal(el, "fldSimple")) {
       const t = findElements(el, "r").map(r => extractRun(r).text).join("")
-      if (!t) continue
+      if (!t || PAGE_FIELD_RE.test(getAttr(el, "instr") ?? "")) continue
       const url = fieldUrlFromInstr(getAttr(el, "instr") ?? "")
       parts.push(url ? makeLink(t, url) : t)
       continue
@@ -752,6 +756,63 @@ function emitParagraphImages(
 
 // ─── 메인 파서 ─────────────────────────────────────────
 
+// ─── 머리글·바닥글 ──────────────────────────────────────
+
+/**
+ * 머리글·바닥글 — 절 속성(sectPr)이 참조하는 header*.xml·footer*.xml 의 문단·표를 문서당 1회 낸다. HWPX 머리말 정책과 같다
+ * (머리글은 본문 앞, 바닥글은 본문 뒤, 같은 글은 한 번 — 여러 절·첫 쪽·짝수 쪽 판이 같은 글을 되풀이한다). 종전엔 버려서
+ * 머리글에만 있는 회사명·문서 종류·표준 번호가 사라졌다(formats docx 36건 중 6건: "Kintetsu World Express(Korea), Inc."·
+ * "Request for Proposal"·"KS X ISO 704:2022"·학회지 권호·용지 규격). 쪽 번호 필드는 collectInline 이 빼고, 그림(로고)은 내지 않는다.
+ * 제목 스타일 문단도 본문 개요가 아니므로 일반 문단으로 낸다.
+ */
+async function parseHeaderFooterBlocks(
+  zip: JSZip,
+  doc: Document,
+  rels: Map<string, string>,
+  kind: "header" | "footer",
+  styles: Map<string, StyleInfo>,
+  numbering: Map<string, Map<number, NumberingInfo>>,
+  footnotes: Map<string, string>,
+): Promise<IRBlock[]> {
+  const out: IRBlock[] = []
+  const seenParts = new Set<string>()
+  const seenText = new Set<string>()
+  for (const ref of findElements(doc, `${kind}Reference`)) {
+    const target = rels.get(getAttr(ref, "id") ?? "")
+    if (!target) continue
+    const path = target.startsWith("/") ? target.slice(1) : `word/${target}`
+    const file = seenParts.has(path) ? null : zip.file(path)
+    seenParts.add(path)
+    if (!file) continue
+    const xml = await file.async("text")
+    const partDoc = parseXml(xml)
+    const relsFile = zip.file(path.replace(/([^/]+)$/, "_rels/$1.rels"))
+    const partRels = relsFile ? parseRels(await relsFile.async("text")) : new Map<string, string>()
+    const found: IRBlock[] = []
+    for (const el of partDoc.documentElement ? effectiveChildElements(partDoc.documentElement) : []) {
+      if (matchesLocal(el, "p")) {
+        for (const p of [el, ...collectTextboxParagraphs(el)]) {
+          const b = parseParagraph(p, styles, numbering, footnotes, partRels)
+          if (b) found.push(b.type === "heading" ? { type: "paragraph", text: b.text } : b)
+        }
+      } else if (matchesLocal(el, "tbl")) {
+        const t = parseTable(el, styles, numbering, footnotes, partRels)
+        if (t) found.push(t)
+      }
+    }
+    // 쪽 번호 크롬 — 쪽 번호 필드가 있고 남은 글에 문자가 없으면("－ii－"·"- 7 -" → "－－"·"- -") 통째로 뺀다 (HWPX hasPageAutoNum 과 같은 판정)
+    const hasPageField = /(?:w:instr="|<w:instrText[^>]*>)\s*(?:PAGE|NUMPAGES|SECTIONPAGES)\b/i.test(xml)
+    if (hasPageField && !found.some(b => /\p{L}/u.test(b.text ?? "") || b.table)) continue
+    for (const b of found) {
+      const key = b.table ? JSON.stringify(b.table.cells.map(r => r.map(c => c.text))) : b.text ?? ""
+      if (seenText.has(key)) continue
+      seenText.add(key)
+      out.push(b)
+    }
+  }
+  return out
+}
+
 export async function parseDocxDocument(
   buffer: ArrayBuffer,
   options?: ParseOptions,
@@ -859,6 +920,10 @@ export async function parseDocxDocument(
   for (const [embedId, filename] of imageMap) {
     if (!linkedImages.has(embedId)) blocks.push({ type: "image", text: filename })
   }
+
+  // 머리글은 본문 앞, 바닥글은 문서 끝 (HWPX 머리말·꼬리말 배치와 같다)
+  blocks.unshift(...await parseHeaderFooterBlocks(zip, doc, rels, "header", styles, numbering, footnotes))
+  blocks.push(...await parseHeaderFooterBlocks(zip, doc, rels, "footer", styles, numbering, footnotes))
 
   // 7. 메타데이터
   const metadata: DocumentMetadata = {}

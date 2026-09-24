@@ -86,8 +86,13 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
         }
         // 메시지에 "DRM"을 넣지 않는다 — classifyError가 DRM_PROTECTED(비밀번호로 못 여는
         // 문서보안)로 분류해, 정작 암호만 주면 열리는 문서를 호출자가 포기하게 만든다.
+        // 배포용 문서(content.hpf hpf:distribution="1")는 열기 암호 없이 보는 문서라 "열기 암호" 안내가 틀린다 —
+        // 정책브리핑 보도자료(156776047 산업활동동향)가 섹션까지 AES-256 으로 암호화된 배포용 HWPX 로 올라온다
+        const hpf = await zip.file("Contents/content.hpf")?.async("text").catch(() => "")
         throw new KordocError(
-          "암호로 보호된 HWPX 파일입니다. password 옵션에 열기 암호를 지정하세요.",
+          /\bdistribution="1"/.test(hpf ?? "")
+            ? "배포용으로 암호화된 HWPX 파일입니다 (배포용 복호는 지원하지 않음). 한컴오피스에서 일반 문서로 저장한 뒤 여세요."
+            : "암호로 보호된 HWPX 파일입니다. password 옵션에 열기 암호를 지정하세요.",
         )
       }
     }

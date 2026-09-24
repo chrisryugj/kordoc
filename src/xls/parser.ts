@@ -13,14 +13,13 @@
 
 import type {
   IRBlock,
-  CellContext,
   DocumentMetadata,
   InternalParseResult,
   ParseOptions,
   ParseWarning,
 } from "../types.js"
 import { KordocError } from "../utils.js"
-import { buildTable, blocksToMarkdown } from "../table/builder.js"
+import { blocksToMarkdown, MAX_COLS } from "../table/builder.js"
 import { parseLenientCfb } from "../hwp5/cfb-lenient.js"
 import {
   readRecords,
@@ -41,13 +40,11 @@ import { decodeSST } from "./sst.js"
 import { extractSheetCells, type RawSheet, type CellValue } from "./cell.js"
 import { decodeUtf16Le } from "./encoding.js"
 import { dateKindOfFmt, dateSerialToIso, type DateKind } from "../xlsx/parser.js"
+import { sheetToBlocks } from "../xlsx/sheet-blocks.js"
 
 // ─── 상수 ─────────────────────────────────────────
 
 const MAX_SHEETS = 100
-/** BIFF8 실제 최대 행 수 (u16 주소 공간) — 밀집 그리드 상한 */
-const MAX_ROWS = 65536
-const MAX_COLS = 1_000
 
 // ─── BoundSheet8 ─────────────────────────────────
 
@@ -223,105 +220,31 @@ function cellValueToText(v: CellValue): string {
   return v
 }
 
-function sheetToBlocks(
+/** RawSheet → 행별 칸 글(희소) + 병합 → 공용 시트 표 (xlsx/sheet-blocks). 열은 표 열 상한(MAX_COLS) 안만 —
+ *  그 밖 칸은 builder 가 어차피 버린다 */
+function rawSheetToBlocks(
   sheetName: string,
   sheet: RawSheet,
   sheetIndex: number,
+  warnings: ParseWarning[],
   keepAnchoredEmptyCols?: boolean,
 ): IRBlock[] {
-  const blocks: IRBlock[] = []
-
-  if (sheetName) {
-    blocks.push({
-      type: "heading",
-      text: sheetName,
-      level: 2,
-      pageNumber: sheetIndex + 1,
-    })
-  }
-
-  if (sheet.cells.length === 0) return blocks
-
-  // 그리드 크기 계산
-  let maxRow = -1
+  const rows = new Map<number, string[]>()
   let maxCol = -1
   for (const c of sheet.cells) {
-    if (c.row > maxRow) maxRow = c.row
+    if (c.col >= MAX_COLS) continue
+    let row = rows.get(c.row)
+    if (!row) rows.set(c.row, (row = []))
+    while (row.length <= c.col) row.push("")
+    row[c.col] = cellValueToText(c.value)
     if (c.col > maxCol) maxCol = c.col
   }
-  for (const m of sheet.merges) {
-    if (m.r2 > maxRow) maxRow = m.r2
-    if (m.c2 > maxCol) maxCol = m.c2
-  }
-  if (maxRow < 0 || maxCol < 0) return blocks
-
-  // DOS 방어
-  if (maxRow >= MAX_ROWS || maxCol >= MAX_COLS) {
-    maxRow = Math.min(maxRow, MAX_ROWS - 1)
-    maxCol = Math.min(maxCol, MAX_COLS - 1)
-  }
-
-  // 그리드 채우기
-  const grid: string[][] = Array.from({ length: maxRow + 1 }, () =>
-    Array(maxCol + 1).fill(""),
-  )
-  for (const c of sheet.cells) {
-    if (c.row > maxRow || c.col > maxCol) continue
-    grid[c.row][c.col] = cellValueToText(c.value)
-  }
-
-  // 병합 맵
-  const mergeMap = new Map<string, { colSpan: number; rowSpan: number }>()
-  const mergeSkip = new Set<string>()
-  for (const m of sheet.merges) {
-    const r1 = Math.min(m.r1, maxRow)
-    const c1 = Math.min(m.c1, maxCol)
-    const r2 = Math.min(m.r2, maxRow)
-    const c2 = Math.min(m.c2, maxCol)
-    mergeMap.set(`${r1},${c1}`, { colSpan: c2 - c1 + 1, rowSpan: r2 - r1 + 1 })
-    for (let r = r1; r <= r2; r++) {
-      for (let c = c1; c <= c2; c++) {
-        if (r !== r1 || c !== c1) mergeSkip.add(`${r},${c}`)
-      }
-    }
-  }
-
-  // 유효 행 트리밍
-  let firstRow = -1
-  let lastRow = -1
-  for (let r = 0; r <= maxRow; r++) {
-    if (grid[r].some(v => v !== "")) {
-      if (firstRow === -1) firstRow = r
-      lastRow = r
-    }
-  }
-  if (firstRow === -1) return blocks
-
-  // CellContext[][] 빌드
-  const cellRows: CellContext[][] = []
-  for (let r = firstRow; r <= lastRow; r++) {
-    const row: CellContext[] = []
-    for (let c = 0; c <= maxCol; c++) {
-      const key = `${r},${c}`
-      if (mergeSkip.has(key)) continue
-      const merge = mergeMap.get(key)
-      row.push({
-        text: grid[r][c],
-        colSpan: merge?.colSpan ?? 1,
-        rowSpan: merge?.rowSpan ?? 1,
-      })
-    }
-    cellRows.push(row)
-  }
-
-  if (cellRows.length > 0) {
-    const table = buildTable(cellRows, { keepAnchoredEmptyCols })
-    if (table.rows > 0) {
-      blocks.push({ type: "table", table, pageNumber: sheetIndex + 1 })
-    }
-  }
-
-  return blocks
+  const merges = sheet.merges
+    .filter(m => m.c1 < MAX_COLS)
+    .map(m => ({ r1: m.r1, c1: m.c1, r2: m.r2, c2: Math.min(m.c2, MAX_COLS - 1) }))
+  // 종전과 같이 병합 끝 열까지 표 폭에 넣는다 (셀 없는 병합 머리 행도 열이 산다)
+  for (const m of merges) if (m.c2 > maxCol) maxCol = m.c2
+  return sheetToBlocks(sheetName, rows, maxCol, merges, sheetIndex, warnings, keepAnchoredEmptyCols)
 }
 
 // ─── 메인 ─────────────────────────────────────────
@@ -420,7 +343,7 @@ export async function parseXlsDocument(
 
     try {
       const { sheet } = extractSheetCells(records, bofIdx, globals.sst, convertNum)
-      const blocks = sheetToBlocks(meta.name, sheet, i, options?.keepTrailingEmptyCols)
+      const blocks = rawSheetToBlocks(meta.name, sheet, i, warnings, options?.keepTrailingEmptyCols)
       allBlocks.push(...blocks)
     } catch (e) {
       warnings.push({

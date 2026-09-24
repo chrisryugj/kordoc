@@ -8,19 +8,20 @@
 import JSZip from "jszip"
 import { DOMParser } from "@xmldom/xmldom"
 import type {
-  IRBlock, IRTable, IRCell, CellContext, DocumentMetadata, InternalParseResult,
+  IRBlock, IRTable, IRCell, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage,
 } from "../types.js"
 import { KordocError, precheckZipSize, stripDtd } from "../utils.js"
-import { buildTable, blocksToMarkdown } from "../table/builder.js"
+import { blocksToMarkdown, MAX_COLS } from "../table/builder.js"
+import { sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
 
 // ─── 상수 ────────────────────────────────────────────
 
 const MAX_SHEETS = 100
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
 const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
-const MAX_ROWS = 10000
-const MAX_COLS = 200
+/** 셀 주소 행 상한 — 엑셀 시트 최대 행(1,048,576). 표로 펼치는 행 수는 sheet-blocks 칸 예산이 따로 막는다 */
+const MAX_SHEET_ROWS = 1_048_576
 
 // ─── 숫자값 정리 ──────────────────────────────────────
 
@@ -111,11 +112,16 @@ function parseSharedStrings(xml: string): string[] {
 
 export type DateKind = "date" | "datetime"
 
-/** ECMA-376 내장 날짜 numFmtId (14~17: 날짜, 18~22·45~47: 시각 포함) */
+/** ECMA-376 내장 날짜 numFmtId (14~17: 날짜, 18~22·45~47: 시각 포함).
+ *  27~36·50~58 은 동아시아 판 내장 서식(로캘마다 모양이 다르다, §18.8.30) — 한국어판 표를 따른다: 32·33 은 시각
+ *  (h"시" mm"분"), 나머지는 날짜(31 = yyyy"년" mm"월" dd"일" 등). styles.xml 에 numFmt 정의 없이 번호만 쓰여 종전엔
+ *  시리얼 숫자로 나왔다 (인사혁신처 고시 명단 시트의 고시일 "42734" = 2016년 12월 30일, formats xlsx 3건) */
 const BUILTIN_DATE_FMT: ReadonlyMap<number, DateKind> = new Map<number, DateKind>([
   [14, "date"], [15, "date"], [16, "date"], [17, "date"],
   [18, "datetime"], [19, "datetime"], [20, "datetime"], [21, "datetime"], [22, "datetime"],
   [45, "datetime"], [46, "datetime"], [47, "datetime"],
+  ...[27, 28, 29, 30, 31, 34, 35, 36, 50, 51, 52, 53, 54, 55, 56, 57, 58].map(id => [id, "date"] as [number, DateKind]),
+  [32, "datetime"], [33, "datetime"],
 ])
 
 /**
@@ -217,195 +223,144 @@ function parseRels(xml: string): Map<string, string> {
 
 // ─── 워크시트 파싱 ──────────────────────────────────────
 
-interface MergeInfo {
-  startCol: number
-  startRow: number
-  endCol: number
-  endRow: number
+/** 행 묶음 크기(글자 수) — 시트 XML 을 통째로 DOM 으로 만들면 칸마다 노드가 여럿 남아 5,400만 자 시트(개표 결과 134만 칸)가
+ *  RSS 4.4GB 를 먹었다(압축 해제 상한 100MB 시트면 8GB 대). 이만큼 넘은 첫 행 경계에서 잘라 묶음마다 DOM 을 만들고 버린다
+ *  (행 폭과 무관하게 묶음 DOM 이 수십 MB 안 — 256K 자로 같은 시트 RSS 4.4GB → 0.7~0.9GB) */
+const CHUNK_CHARS = 1 << 18
+
+/**
+ * 시트 XML 을 행 묶음 문서 문자열로 자른다 — 묶음마다 루트 여는 태그(네임스페이스 선언)와 sheetData 여는 태그를 다시 씌워
+ * 행 안 해석(접두어·엔티티)은 통째 파싱과 같다. 마지막 묶음은 sheetData 뒤(병합 목록)를 담은 문서. sheetData 가 없거나
+ * 행 경계 문자열이 글로 끼어들 수 있는 CDATA·주석이 sheetData 안에 있으면 통째로 한 묶음
+ */
+function* sheetXmlChunks(xml: string): Generator<string> {
+  const root = /<([\w.-]+:)?worksheet\b[^>]*>/.exec(xml)
+  const sd = /<(([\w.-]+:)?sheetData)\b[^>]*?(\/?)>/.exec(xml)
+  if (!root || !sd || sd.index < root.index) { yield xml; return }
+  const rootClose = `</${root[1] ?? ""}worksheet>`
+  // 병합 목록을 담는 마지막 묶음에는 sheetData 앞 부분도 싣는다 — 스키마(CT_Worksheet) 순서상 mergeCells 는 sheetData 뒤지만
+  // 앞에 두는 생성기도 있고, 통째 파싱하던 종전 파서는 위치와 무관하게 읽었다
+  const head = xml.slice(root.index + root[0].length, sd.index)
+  if (sd[3] === "/") { yield root[0] + head + xml.slice(sd.index + sd[0].length); return }
+  const bodyStart = sd.index + sd[0].length
+  const sdClose = `</${sd[1]}>`
+  const bodyEnd = xml.indexOf(sdClose, bodyStart)
+  const cdata = xml.indexOf("<![CDATA[", bodyStart), comment = xml.indexOf("<!--", bodyStart)
+  if (bodyEnd < 0 || (cdata >= 0 && cdata < bodyEnd) || (comment >= 0 && comment < bodyEnd)) { yield xml; return }
+  const wrap = (body: string) => `${root[0]}${sd[0]}${body}${sdClose}${rootClose}`
+  const rowEnd = /<\/(?:[\w.-]+:)?row>/g
+  rowEnd.lastIndex = bodyStart
+  let start = bodyStart
+  for (let m = rowEnd.exec(xml); m && m.index < bodyEnd; m = rowEnd.exec(xml)) {
+    if (rowEnd.lastIndex - start < CHUNK_CHARS) continue
+    yield wrap(xml.slice(start, rowEnd.lastIndex))
+    start = rowEnd.lastIndex
+  }
+  if (start < bodyEnd) yield wrap(xml.slice(start, bodyEnd))
+  yield root[0] + head + xml.slice(bodyEnd + sdClose.length)
 }
 
+/** 워크시트 XML → 행별 칸 글(희소, 행 번호 → 열별 글) + 병합. 표로 펼치는 건 sheet-blocks */
 function parseWorksheet(
   xml: string,
   sharedStrings: string[],
   dateXfs: Map<number, DateKind>,
   date1904: boolean,
-): { grid: string[][]; merges: MergeInfo[]; maxRow: number; maxCol: number } {
-  const doc = parseXml(xml)
-  const grid: string[][] = []
-  let maxRow = 0
-  let maxCol = 0
-
-  // 데이터 행 파싱
-  const rows = getElements(doc.documentElement, "row")
+): { rows: Map<number, string[]>; merges: SheetMerge[]; maxCol: number } {
+  const rows = new Map<number, string[]>()
+  let maxCol = -1
   let prevRow = -1 // 직전 행 번호 — r 부재 행의 순차 유도용 (ECMA-376: r은 optional)
-  for (const rowEl of rows) {
-    const rAttr = rowEl.getAttribute("r")
-    const rowNum = rAttr !== null ? parseInt(rAttr, 10) - 1 : prevRow + 1
-    if (rowNum < 0 || rowNum >= MAX_ROWS) continue
-    if (Number.isFinite(rowNum)) prevRow = rowNum
+  let doc: Document | undefined // 마지막 묶음 — sheetData 뒤(병합 목록)가 담긴 문서
 
-    const cells = getElements(rowEl, "c")
-    let prevCol = -1 // 직전 셀 열 — r 부재 셀의 순차 유도용
-    for (const cellEl of cells) {
-      const ref = cellEl.getAttribute("r")
-      const pos = ref !== null ? parseCellRef(ref) : { col: prevCol + 1, row: rowNum }
-      // row도 col처럼 상한 검증 — "A5000000000" 하나로 그리드 폭주 방지
-      if (!pos || !Number.isFinite(pos.row) || pos.row < 0 || pos.row >= MAX_ROWS || pos.col >= MAX_COLS) continue
-      prevCol = pos.col
+  // 데이터 행 파싱 (행 묶음마다)
+  for (const chunk of sheetXmlChunks(xml)) {
+    doc = parseXml(chunk)
+    const rowEls = getElements(doc.documentElement, "row")
+    for (const rowEl of rowEls) {
+      const rAttr = rowEl.getAttribute("r")
+      const rowNum = rAttr !== null ? parseInt(rAttr, 10) - 1 : prevRow + 1
+      if (rowNum < 0 || rowNum >= MAX_SHEET_ROWS) continue
+      if (Number.isFinite(rowNum)) prevRow = rowNum
 
-      // 값 추출
-      const type = cellEl.getAttribute("t")
-      const vElements = getElements(cellEl, "v")
-      const fElements = getElements(cellEl, "f")
-      let value = ""
+      const cells = getElements(rowEl, "c")
+      let prevCol = -1 // 직전 셀 열 — r 부재 셀의 순차 유도용
+      for (const cellEl of cells) {
+        const ref = cellEl.getAttribute("r")
+        const pos = ref !== null ? parseCellRef(ref) : { col: prevCol + 1, row: rowNum }
+        // row도 col처럼 상한 검증 — "A5000000000" 하나로 그리드 폭주 방지
+        if (!pos || !Number.isFinite(pos.row) || pos.row < 0 || pos.row >= MAX_SHEET_ROWS || pos.col >= MAX_COLS) continue
+        prevCol = pos.col
 
-      if (vElements.length > 0) {
-        const raw = getTextContent(vElements[0])
-        if (type === "s") {
-          // shared string
-          const idx = parseInt(raw, 10)
-          value = sharedStrings[idx] ?? ""
-        } else if (type === "b") {
-          value = raw === "1" ? "TRUE" : "FALSE"
-        } else {
-          // 숫자값 부동소수점 아티팩트 정리 (9895607.8000000007 → 9895607.8)
-          value = cleanNumericValue(raw)
-          // 날짜 서식 셀(s → cellXfs 날짜 판정)은 시리얼 → ISO 문자열
-          if (type === null || type === "n") {
-            const sAttr = cellEl.getAttribute("s")
-            const kind = sAttr !== null ? dateXfs.get(parseInt(sAttr, 10)) : undefined
-            if (kind) {
-              const iso = dateSerialToIso(parseFloat(raw), date1904, kind)
-              if (iso) value = iso
+        // 값 추출
+        const type = cellEl.getAttribute("t")
+        const vElements = getElements(cellEl, "v")
+        const fElements = getElements(cellEl, "f")
+        let value = ""
+
+        if (vElements.length > 0) {
+          const raw = getTextContent(vElements[0])
+          if (type === "s") {
+            // shared string
+            const idx = parseInt(raw, 10)
+            value = sharedStrings[idx] ?? ""
+          } else if (type === "b") {
+            value = raw === "1" ? "TRUE" : "FALSE"
+          } else {
+            // 숫자값 부동소수점 아티팩트 정리 (9895607.8000000007 → 9895607.8)
+            value = cleanNumericValue(raw)
+            // 날짜 서식 셀(s → cellXfs 날짜 판정)은 시리얼 → ISO 문자열
+            if (type === null || type === "n") {
+              const sAttr = cellEl.getAttribute("s")
+              const kind = sAttr !== null ? dateXfs.get(parseInt(sAttr, 10)) : undefined
+              if (kind) {
+                const iso = dateSerialToIso(parseFloat(raw), date1904, kind)
+                if (iso) value = iso
+              }
             }
           }
+        } else if (type === "inlineStr") {
+          // <is><t>text</t></is>
+          const isEl = getElements(cellEl, "is")
+          if (isEl.length > 0) {
+            value = collectRichText(isEl[0])
+          }
         }
-      } else if (type === "inlineStr") {
-        // <is><t>text</t></is>
-        const isEl = getElements(cellEl, "is")
-        if (isEl.length > 0) {
-          value = collectRichText(isEl[0])
+
+        // 수식이 있고 값이 없으면 수식 표시
+        if (!value && fElements.length > 0) {
+          value = `=${getTextContent(fElements[0])}`
         }
+
+        // 행 확장 — 행은 희소(Map), 행 안은 그 행 끝 칸까지
+        let row = rows.get(pos.row)
+        if (!row) rows.set(pos.row, (row = []))
+        while (row.length <= pos.col) row.push("")
+        row[pos.col] = value
+
+        if (pos.col > maxCol) maxCol = pos.col
       }
-
-      // 수식이 있고 값이 없으면 수식 표시
-      if (!value && fElements.length > 0) {
-        value = `=${getTextContent(fElements[0])}`
-      }
-
-      // 그리드 확장
-      while (grid.length <= pos.row) grid.push([])
-      while (grid[pos.row].length <= pos.col) grid[pos.row].push("")
-      grid[pos.row][pos.col] = value
-
-      if (pos.row > maxRow) maxRow = pos.row
-      if (pos.col > maxCol) maxCol = pos.col
     }
   }
 
   // 병합 셀 파싱
-  const merges: MergeInfo[] = []
-  const mergeCellElements = getElements(doc.documentElement, "mergeCell")
+  const merges: SheetMerge[] = []
+  const mergeCellElements = doc ? getElements(doc.documentElement, "mergeCell") : []
   for (const el of mergeCellElements) {
     const ref = el.getAttribute("ref")
     if (!ref) continue
     const m = parseMergeRef(ref)
-    // 범위 클램프 — 거대 mergeCell 하나로 병합 맵 폭주 방지 (XLS 쪽과 동일)
+    // 범위 클램프 — 거대 mergeCell 하나로 병합 맵 폭주 방지 (덮인 칸 표시는 sheet-blocks 가 펼칠 범위 안만)
     if (m) {
       merges.push({
-        startCol: Math.min(m.startCol, MAX_COLS - 1),
-        startRow: Math.min(m.startRow, MAX_ROWS - 1),
-        endCol: Math.min(m.endCol, MAX_COLS - 1),
-        endRow: Math.min(m.endRow, MAX_ROWS - 1),
+        r1: Math.min(m.startRow, MAX_SHEET_ROWS - 1),
+        c1: Math.min(m.startCol, MAX_COLS - 1),
+        r2: Math.min(m.endRow, MAX_SHEET_ROWS - 1),
+        c2: Math.min(m.endCol, MAX_COLS - 1),
       })
     }
   }
 
-  return { grid, merges, maxRow, maxCol }
-}
-
-// ─── 시트 → IRBlock[] 변환 ────────────────────────────
-
-function sheetToBlocks(
-  sheetName: string,
-  grid: string[][],
-  merges: MergeInfo[],
-  maxRow: number,
-  maxCol: number,
-  sheetIndex: number,
-  keepAnchoredEmptyCols?: boolean,
-): IRBlock[] {
-  const blocks: IRBlock[] = []
-
-  // 시트명 = heading
-  if (sheetName) {
-    blocks.push({
-      type: "heading",
-      text: sheetName,
-      level: 2,
-      pageNumber: sheetIndex + 1,
-    })
-  }
-
-  // 빈 시트
-  if (maxRow < 0 || maxCol < 0 || grid.length === 0) return blocks
-
-  // 병합 맵: "row,col" → { colSpan, rowSpan }
-  const mergeMap = new Map<string, { colSpan: number; rowSpan: number }>()
-  const mergeSkip = new Set<string>()
-  for (const m of merges) {
-    const colSpan = m.endCol - m.startCol + 1
-    const rowSpan = m.endRow - m.startRow + 1
-    mergeMap.set(`${m.startRow},${m.startCol}`, { colSpan, rowSpan })
-    for (let r = m.startRow; r <= m.endRow; r++) {
-      for (let c = m.startCol; c <= m.endCol; c++) {
-        if (r !== m.startRow || c !== m.startCol) {
-          mergeSkip.add(`${r},${c}`)
-        }
-      }
-    }
-  }
-
-  // 유효 행 범위 감지 (앞뒤 빈 행 제거)
-  let firstRow = -1
-  let lastRow = -1
-  for (let r = 0; r <= maxRow; r++) {
-    const row = grid[r]
-    if (row && row.some(cell => cell !== "")) {
-      if (firstRow === -1) firstRow = r
-      lastRow = r
-    }
-  }
-  if (firstRow === -1) return blocks
-
-  // CellContext[][] → buildTable로 IRTable 생성 (2-pass 알고리즘 재사용)
-  const cellRows: CellContext[][] = []
-
-  for (let r = firstRow; r <= lastRow; r++) {
-    const row: CellContext[] = []
-    for (let c = 0; c <= maxCol; c++) {
-      const key = `${r},${c}`
-      if (mergeSkip.has(key)) continue
-
-      const text = (grid[r] && grid[r][c]) ?? ""
-      const merge = mergeMap.get(key)
-      row.push({
-        text,
-        colSpan: merge?.colSpan ?? 1,
-        rowSpan: merge?.rowSpan ?? 1,
-      })
-    }
-    cellRows.push(row)
-  }
-
-  if (cellRows.length > 0) {
-    const table = buildTable(cellRows, { keepAnchoredEmptyCols })
-    if (table.rows > 0) {
-      blocks.push({ type: "table", table, pageNumber: sheetIndex + 1 })
-    }
-  }
-
-  return blocks
+  return { rows, merges, maxCol }
 }
 
 // ─── 메인 파서 ─────────────────────────────────────────
@@ -503,8 +458,8 @@ export async function parseXlsxDocument(
 
     try {
       const sheetXml = await sheetFile.async("text")
-      const { grid, merges, maxRow, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904)
-      const sheetBlocks = sheetToBlocks(sheet.name, grid, merges, maxRow, maxCol, i, options?.keepTrailingEmptyCols)
+      const { rows, merges, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904)
+      const sheetBlocks = sheetToBlocks(sheet.name, rows, maxCol, merges, i, warnings, options?.keepTrailingEmptyCols)
       blocks.push(...sheetBlocks)
     } catch (err) {
       warnings.push({

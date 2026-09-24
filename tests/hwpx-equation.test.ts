@@ -34,6 +34,28 @@ describe("hmlToLatex — frac (over)", () => {
     const out = hmlToLatex("{ { 1 } over { x } } over { y }").replace(/\s+/g, "")
     assert.equal(out, "\\frac{\\frac{1}{x}}{y}")
   })
+
+  it("over 2,000개도 선형 — 종전 over 마다 식 전체를 다시 가리고 뒤집어 1.25초 (프로덕션 리뷰 P2)", () => {
+    const n = 2000
+    const src = Array.from({ length: n }, (_, i) => `{a${i}} over {b${i}}`).join(" ")
+    // 세 번 중 최솟값 — 병렬 테스트 부하에 한 번 밀린 측정(전체 스위트 중 104ms 실측, 단독 3~8ms)을 거른다
+    let ms = Infinity
+    let out = ""
+    for (let k = 0; k < 3; k++) {
+      const t0 = performance.now()
+      out = hmlToLatex(src)
+      ms = Math.min(ms, performance.now() - t0)
+    }
+    assert.ok(ms < 100, `${ms.toFixed(1)}ms`)
+    assert.equal(out.split("\\frac").length - 1, n)
+    assert.ok(out.startsWith("\\frac{ a0 } { b0 } \\frac{ a1 } { b1 }"), out.slice(0, 60))
+  })
+
+  it("분자 짝 괄호가 없거나 빈 분자면 그 over 부터 원문 그대로 (종전 예외 복귀와 같음)", () => {
+    assert.equal(hmlToLatex("{a} over {b} } over {c}"), "\\frac{ a } { b } } over { c }")
+    assert.equal(hmlToLatex("{a} over {b} over {c}"), "\\frac{ a } \\frac{ b } { c }")
+    assert.equal(hmlToLatex("over {c}"), "over { c }")
+  })
 })
 
 describe("hmlToLatex — root of", () => {

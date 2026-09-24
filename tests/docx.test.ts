@@ -465,3 +465,38 @@ describe("DOCX 텍스트박스 수식 이중 방출 방지 (리뷰 #19)", () => 
     assert.equal(count, 1, `수식이 ${count}회 방출됨 (기대 1): ${result.markdown}`)
   })
 })
+
+describe("DOCX 머리글·바닥글 1회 방출 (HWPX 머리말 정책)", () => {
+  const W = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`
+  const part = (tag: "hdr" | "ftr", inner: string) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:${tag} ${W}>${inner}</w:${tag}>`
+  const p = (text: string) => `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`
+  /** "앞말" + PAGE 필드(캐시 표시값 cached) + "뒷말" */
+  const pageField = (before: string, cached: string, after: string) =>
+    `<w:p><w:r><w:t xml:space="preserve">${before}</w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r><w:t>${cached}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve">${after}</w:t></w:r></w:p>`
+  const rel = (id: string, kind: "header" | "footer", target: string) =>
+    `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}" Target="${target}"/>`
+
+  it("머리글은 본문 앞·바닥글은 끝에 한 번, 쪽 번호만 남는 바닥글은 뺀다", async () => {
+    const body = `<w:p><w:r><w:t>본문</w:t></w:r></w:p>` +
+      `<w:sectPr><w:headerReference w:type="default" r:id="rH1"/><w:headerReference w:type="first" r:id="rH2"/>` +
+      `<w:footerReference w:type="default" r:id="rF1"/><w:footerReference w:type="first" r:id="rF2"/></w:sectPr>`
+    const buf = await createDocx(body, {
+      relationships: rel("rH1", "header", "header1.xml") + rel("rH2", "header", "header2.xml") +
+        rel("rF1", "footer", "footer1.xml") + rel("rF2", "footer", "footer2.xml"),
+      files: {
+        // 첫 쪽 판도 같은 회사명 — 한 번만
+        "word/header1.xml": part("hdr", p("Kintetsu World Express(Korea), Inc.")),
+        "word/header2.xml": part("hdr", p("Kintetsu World Express(Korea), Inc.")),
+        "word/footer1.xml": part("ftr", pageField("페이지 ", "1", " / 19")),
+        "word/footer2.xml": part("ftr", pageField("- ", "7", " -")),
+      },
+    })
+    const r = await parse(buf)
+    assert.equal(r.success, true)
+    if (!r.success) return
+    const texts = r.blocks.map(b => b.text)
+    assert.deepEqual(texts, ["Kintetsu World Express(Korea), Inc.", "본문", "페이지 / 19"])
+  })
+})

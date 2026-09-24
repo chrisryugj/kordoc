@@ -164,6 +164,10 @@ for (const { set, base, rel, gtExt } of pairs) {
           for (const para of xml.split(/<\/w:p>/)) {
             const k = normKey([...para.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(m => m[1]).join(""))
             if (k) chrome.add(k)
+            // DOCX 파서는 쪽 번호 필드(PAGE·NUMPAGES·SECTIONPAGES) 표시값을 빼고 낸다("페이지 1 / 19" → "페이지 / 19") — 그 꼴도 뺀다
+            const noPage = para.replace(/<w:fldChar w:fldCharType="begin"\/>(?:(?!<w:fldChar w:fldCharType="end"\/>)[\s\S])*?<w:instrText[^>]*>\s*(?:PAGE|NUMPAGES|SECTIONPAGES)\b[\s\S]*?<w:fldChar w:fldCharType="end"\/>/g, "")
+            const k2 = normKey([...noPage.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(m => m[1]).join(""))
+            if (k2) chrome.add(k2)
           }
         }
       } else {

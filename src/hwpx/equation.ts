@@ -175,35 +175,22 @@ const BRACE_CONVERT_MAP: Record<string, string> = {
 // ─── Bracket scanning helpers ─────────────────────────────────────────────
 
 /**
- * Find a matching `{...}` pair at/after `startIdx` (direction=1) or before
- * (direction=0). Returns [start, end) such that eqString.slice(start, end)
+ * Find a matching `{...}` pair at/after `startIdx`. Returns [start, end) such that eqString.slice(start, end)
  * is the full bracketed substring including the `{` and `}`.
  * Throws when no matching bracket exists.
+ * (역방향 탐색은 replaceFrac 이 출력 배열 꼬리에서 직접 한다 — 문자열 전체를 뒤집던 방식이 over 마다 O(n))
  */
-function findBrackets(eqString: string, startIdx: number, direction: 0 | 1): [number, number] {
-  if (direction === 1) {
-    const startCur = eqString.indexOf("{", startIdx)
-    if (startCur === -1) throw new Error("cannot find bracket")
-    let bracketCount = 1
-    for (let i = startCur + 1; i < eqString.length; i++) {
-      const ch = eqString[i]
-      if (ch === "{") bracketCount += 1
-      else if (ch === "}") bracketCount -= 1
-      if (bracketCount === 0) return [startCur, i + 1]
-    }
-    throw new Error("cannot find bracket")
+function findBrackets(eqString: string, startIdx: number): [number, number] {
+  const startCur = eqString.indexOf("{", startIdx)
+  if (startCur === -1) throw new Error("cannot find bracket")
+  let bracketCount = 1
+  for (let i = startCur + 1; i < eqString.length; i++) {
+    const ch = eqString[i]
+    if (ch === "{") bracketCount += 1
+    else if (ch === "}") bracketCount -= 1
+    if (bracketCount === 0) return [startCur, i + 1]
   }
-
-  // direction=0: reverse the string (and swap braces) then reuse dir=1 search.
-  const reversed = Array.from(eqString).reverse()
-  for (let i = 0; i < reversed.length; i++) {
-    if (reversed[i] === "{") reversed[i] = "}"
-    else if (reversed[i] === "}") reversed[i] = "{"
-  }
-  const flipped = reversed.join("")
-  const newStartIdx = flipped.length - (startIdx + 1)
-  const [s, e] = findBrackets(flipped, newStartIdx, 1)
-  return [flipped.length - e, flipped.length - s]
+  throw new Error("cannot find bracket")
 }
 
 /**
@@ -233,7 +220,7 @@ function findEnclosingBrackets(eqString: string, startIdx: number): [number, num
         continue
       }
       try {
-        const [start, end] = findBrackets(eqString, idx, 1)
+        const [start, end] = findBrackets(eqString, idx)
         if (start === idx && end > startIdx) return [start, end]
       } catch {
         return null
@@ -268,38 +255,50 @@ function findKeywordToken(eqString: string, word: string, from = 0): number {
   return -1
 }
 
-/** `{1} over {2}` → `\frac{1}{2}` */
+/**
+ * `{1} over {2}` → `\frac{1}{2}`. over 토큰을 왼쪽부터 한 번 훑으며 출력 배열 꼬리에서 분자를 바꾼다.
+ * 종전엔 over 하나마다 식 전체를 다시 가리고(maskLiteralSpans)·뒤집고(findBrackets 역방향)·이어 붙여
+ * over n 개에 O(n²)였다(×2000 1.25초, ×4000 5.3초). 가림은 입력에서 한 번만 한다 — hmlToLatex 토큰화 뒤라
+ * 치환이 따옴표를 더하거나 빼지 않고, \text{…} 안은 공백이 없어 over 토큰이 생기지 않으므로 매번 가린 것과 같다.
+ * 원소는 한 글자(치환이 넣는 "\\frac" 만 한 원소 — 중괄호·공백이 없어 역방향 훑기에 글자열과 같다).
+ */
 function replaceFrac(eqString: string): string {
   const hmlFrac = "over"
-  while (true) {
-    const cursor = findKeywordToken(eqString, hmlFrac)
-    if (cursor === -1) break
-    try {
-      // 분자는 over 바로 앞(공백 스킵)의 인접 토큰 — 왼쪽 가장 가까운 } 그룹을 잡아
-      // 그 사이 콘텐츠를 무음 삭제하던 것 방지 (sqrt {x} + 1 over 2 에서 " + 1 " 증발)
-      let end = cursor
-      // 공백류 클래스를 findKeywordToken 경계(/\s/)와 일치시켜 다중줄 스크립트의 분자 무음
-      // 유실 방지 — over 앞뒤가 \n·\t·nbsp 여도 분자 경계를 옳게 잡는다 (eqrt-3/eqrt-2 정합)
-      while (end > 0 && /\s/.test(eqString[end - 1])) end--
-      let numStart: number, numEnd: number, wrapped: string
-      if (end > 0 && eqString[end - 1] === "}") {
-        [numStart, numEnd] = findBrackets(eqString, end - 1, 0)
-        wrapped = eqString.slice(numStart, numEnd)
-      } else {
-        numEnd = end
-        numStart = end
-        while (numStart > 0 && !/\s/.test(eqString[numStart - 1])) numStart--
-        if (numStart === numEnd) throw new Error("empty numerator")
-        wrapped = "{" + eqString.slice(numStart, numEnd) + "}"
+  const masked = maskLiteralSpans(eqString)
+  const out: string[] = []
+  let pos = 0 // eqString 에서 out 으로 옮긴 끝
+  for (let cursor = masked.indexOf(hmlFrac); cursor !== -1; cursor = masked.indexOf(hmlFrac, cursor + 1)) {
+    const okL = cursor === 0 || /\s/.test(masked[cursor - 1])
+    const okR = cursor + hmlFrac.length === masked.length || /\s/.test(masked[cursor + hmlFrac.length])
+    if (!okL || !okR) continue
+    for (; pos < cursor; pos++) out.push(eqString[pos])
+    // 분자는 over 바로 앞(공백 스킵)의 인접 토큰 — 왼쪽 가장 가까운 } 그룹을 잡아
+    // 그 사이 콘텐츠를 무음 삭제하던 것 방지 (sqrt {x} + 1 over 2 에서 " + 1 " 증발)
+    let end = out.length
+    // 공백류 클래스를 findKeywordToken 경계(/\s/)와 일치시켜 다중줄 스크립트의 분자 무음
+    // 유실 방지 — over 앞뒤가 \n·\t·nbsp 여도 분자 경계를 옳게 잡는다 (eqrt-3/eqrt-2 정합)
+    while (end > 0 && /\s/.test(out[end - 1])) end--
+    let numStart = end
+    if (end > 0 && out[end - 1] === "}") {
+      // 짝 { 까지 거꾸로 (없으면 종전 findBrackets 예외와 같이 여기서 멈춘다)
+      let depth = 0
+      for (numStart = end - 1; numStart >= 0; numStart--) {
+        if (out[numStart] === "}") depth++
+        else if (out[numStart] === "{" && --depth === 0) break
       }
-      const beforeFrac = eqString.slice(0, numStart)
-      const afterFrac = eqString.slice(cursor + hmlFrac.length)
-      eqString = beforeFrac + "\\frac" + wrapped + afterFrac
-    } catch {
-      return eqString
+      if (numStart < 0) break
+      out.length = end
+      out.splice(numStart, 0, "\\frac")
+    } else {
+      while (numStart > 0 && !/\s/.test(out[numStart - 1])) numStart--
+      if (numStart === end) break // 빈 분자
+      out.length = end
+      out.splice(numStart, 0, "\\frac", "{")
+      out.push("}")
     }
+    pos = cursor + hmlFrac.length
   }
-  return eqString
+  return out.join("") + eqString.slice(pos)
 }
 
 /** `root {1} of {2}` → `\sqrt[1]{2}` */
@@ -308,11 +307,11 @@ function replaceRootOf(eqString: string): string {
     const rootCursor = findKeywordToken(eqString, "root")
     if (rootCursor === -1) break
     try {
-      const elem1 = findBrackets(eqString, rootCursor, 1)
+      const elem1 = findBrackets(eqString, rootCursor)
       // of는 root의 지수 그룹 뒤에서만 유효 — 전역 첫 매치는 리터럴/선행 텍스트를 오인한다
       const ofCursor = findKeywordToken(eqString, "of", elem1[1])
       if (ofCursor === -1) return eqString
-      const elem2 = findBrackets(eqString, ofCursor, 1)
+      const elem2 = findBrackets(eqString, ofCursor)
       const e1 = eqString.slice(elem1[0] + 1, elem1[1] - 1)
       const e2 = eqString.slice(elem2[0] + 1, elem2[1] - 1)
       eqString =
@@ -342,7 +341,7 @@ function replaceAllMatrix(eqString: string): string {
       const cursor = input.indexOf(matStr)
       if (cursor === -1) break
       try {
-        const [eStart, eEnd] = findBrackets(input, cursor, 1)
+        const [eStart, eEnd] = findBrackets(input, cursor)
         const elem = replaceElements(input.slice(eStart, eEnd))
         let beforeMat: string
         let afterMat: string
@@ -376,7 +375,7 @@ function replaceAllBar(eqString: string): string {
       const cursor = input.indexOf(barStr)
       if (cursor === -1) break
       try {
-        const [eStart, eEnd] = findBrackets(input, cursor, 1)
+        const [eStart, eEnd] = findBrackets(input, cursor)
         const elem = input.slice(eStart, eEnd)
         const outer = findEnclosingBrackets(input, cursor)
         const [replaceStart, replaceEnd] = outer && outer[1] >= eEnd ? outer : [cursor, eEnd]
@@ -403,8 +402,8 @@ function replaceAllBrace(eqString: string): string {
       const cursor = input.indexOf(braceStr)
       if (cursor === -1) break
       try {
-        const [eStart1, eEnd1] = findBrackets(input, cursor, 1)
-        const [eStart2, eEnd2] = findBrackets(input, eEnd1, 1)
+        const [eStart1, eEnd1] = findBrackets(input, cursor)
+        const [eStart2, eEnd2] = findBrackets(input, eEnd1)
         const elem1 = input.slice(eStart1, eEnd1)
         const elem2 = input.slice(eStart2, eEnd2)
         const beforeBrace = input.slice(0, cursor)
