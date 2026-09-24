@@ -600,4 +600,6 @@ export interface InternalParseResult {
   pageQuality?: PageQuality[]
   /** PDF 전용: 문서 단위 품질 요약 */
   qualitySummary?: DocumentQualitySummary
+  /** PDF 전용: 페이지별 마크다운 — 문서 마크다운과 같은 PDF 마무리(1×1 표 펴기·cleanPdfText)를 쪽마다 적용한 것 */
+  pages?: PageMarkdown[]
 }

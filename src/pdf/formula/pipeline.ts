@@ -169,9 +169,14 @@ export class FormulaPipeline {
     })
   }
 
-  /** 리소스 해제 — 더 이상 사용하지 않을 때 호출. */
+  /** 리소스 해제 — 더 이상 사용하지 않을 때 호출. ONNX 세션은 onnxruntime-node 1.14+ release() 로 (구버전은 GC — ocr/engine.ts destroy 와 같은 방식) */
   async destroy(): Promise<void> {
-    // onnxruntime-node InferenceSession 은 release() 없음 (GC 의존).
+    for (const s of [this.mfd, this.encoder, this.decoder]) {
+      const rel = (s as unknown as { release?: () => Promise<void> }).release
+      if (typeof rel === "function") {
+        try { await rel.call(s) } catch { /* ignore */ }
+      }
+    }
     try {
       this.pdfium.destroy()
     } catch {
@@ -194,13 +199,16 @@ export class FormulaPipeline {
     const doc: PDFiumDocument = await this.pdfium.loadDocument(view)
     try {
       const pages: PageFormulaResult[] = []
-      for (const page of doc.pages()) {
-        // pdfium page.number 는 0-based pageIndex — pdfjs 블록/pageFilter 는 1-based.
-        // 환산 없이는 필터가 한 페이지 밀리고 수식이 이전 페이지 블록에 붙는다 (off-by-one).
-        const pageNo = page.number + 1
-        if (pageFilter && !pageFilter.has(pageNo)) continue
-
-        onPageProgress?.(pageNo, doc.getPageCount())
+      // 대상 쪽만 연다 — doc.pages() 는 모든 쪽을 불러오고 render() 가 끝에서만 닫아, 필터 밖 쪽이 문서를 닫을 때까지 남았다
+      // (ocr/pdf-ocr.ts runPdfOcr 와 같은 수정). pdfium 쪽 번호는 0-based — pdfjs 블록/pageFilter 는 1-based.
+      // 환산 없이는 필터가 한 페이지 밀리고 수식이 이전 페이지 블록에 붙는다 (off-by-one).
+      const count = doc.getPageCount()
+      const pageNos = pageFilter
+        ? [...pageFilter].filter(p => p >= 1 && p <= count).sort((a, b) => a - b)
+        : Array.from({ length: count }, (_, i) => i + 1)
+      for (const pageNo of pageNos) {
+        const page = doc.getPage(pageNo - 1)
+        onPageProgress?.(pageNo, count)
 
         try {
           const result = await withTimeout(

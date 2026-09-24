@@ -185,6 +185,19 @@ describe("address — 도로명 모양·동리 뒤 도로명·참고항목·읍�
 })
 
 describe("name — 회의록 화자 표지 (동그라미를 붙여 쓴 직함·이름)", () => {
+  it("속기록·회의록 라벨 뒤 발언자 직함은 두 글자 이름도 식별한다", () => {
+    for (const label of ["속기록", "회의록"]) {
+      assert.deepEqual(found(`${label}: 한솔 위원이 질의하였다.`, ["name"]), ["name:한솔"])
+      assert.deepEqual(found(`${label}: 사공준 위원이 답변하였다.`, ["name"]), ["name:사공준"])
+      assert.deepEqual(found(`${label}: 탁서준 위원의 발언`, ["name"]), ["name:탁서준"])
+      for (const noun of ["공무원", "상임", "전문", "국회", "신규"]) {
+        assert.deepEqual(found(`${label}: ${noun} 위원이 참석하였다.`, ["name"]), [])
+      }
+    }
+    assert.deepEqual(found("한솔 위원이 질의하였다.", ["name"]), [])
+    assert.deepEqual(redactText("속기록: 한솔 위원이 질의하였다.").hits, [])
+    assert.equal(masked("속기록: 한솔 위원이 질의하였다.", ["name"]), "속기록: 한● 위원이 질의하였다.")
+  })
   it("직함 먼저·이름 먼저, 기관 붙은 직함·직무대리, 끝 글자 장", () => {
     assert.deepEqual(found("○위원장 한도윤 의석을 정돈하여 주시기 바랍니다.", ["name"]), ["name:한도윤"])
     assert.equal(masked("○위원장 한도윤 의석을", ["name"]), "○위원장 한●● 의석을")

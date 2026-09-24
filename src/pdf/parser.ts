@@ -12,7 +12,8 @@
 
 import type { InternalParseResult, IRBlock, DocumentMetadata, ExtractedImage, ParseOptions, ParseWarning, OutlineItem } from "../types.js"
 import { KordocError } from "../utils.js"
-import { parsePageRange } from "../page-range.js"
+import { parsePageRange, hasRequestedPagesAfter } from "../page-range.js"
+import { blocksToPages } from "../page-markdown.js"
 import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
 import { extractImageRegions } from "./line-detector.js"
 import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
@@ -31,7 +32,7 @@ import { applyLinkAnnotations } from "./links.js"
 import { applyFormulaOcr } from "./formula-ocr.js"
 // polyfill 먼저 (ES 모듈 호이스팅되므로 별도 파일 필수)
 import "./polyfill.js"
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { getDocument, GlobalWorkerOptions, OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
 
@@ -64,7 +65,8 @@ try {
 /** getDocument + 타임아웃 래퍼 */
 async function loadPdfWithTimeout(buffer: ArrayBuffer) {
   const loadingTask = getDocument({
-    data: new Uint8Array(buffer),
+    // pdfjs transfers its input to the worker; retain the caller's buffer for reuse.
+    data: new Uint8Array(buffer.slice(0)),
     useSystemFonts: true,
     disableFontFace: true,
     isEvalSupported: false,
@@ -74,7 +76,10 @@ async function loadPdfWithTimeout(buffer: ArrayBuffer) {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      loadingTask.promise,
+      loadingTask.promise.catch((e: unknown) => {
+        if (e instanceof Error && e.name === "PasswordException") throw new KordocError("암호로 보호된 PDF 파일입니다 (PDF 열기 암호는 지원하지 않습니다)")
+        throw e
+      }),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => { loadingTask.destroy(); reject(new KordocError("PDF 로딩 타임아웃 (30초 초과)")) }, PDF_LOAD_TIMEOUT_MS)
       }),
@@ -85,10 +90,9 @@ async function loadPdfWithTimeout(buffer: ArrayBuffer) {
 }
 
 export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
-  // pdfjs-dist 는 전달받은 buffer 의 underlying storage 를 detach 할 수 있다.
-  // 수식/텍스트 OCR 은 같은 버퍼를 pdfium 으로 재사용해야 하므로 옵션 on 일 때만 clone 을 보관.
-  const formulaBuffer: ArrayBuffer | null = options?.formulaOcr ? buffer.slice(0) : null
-  const ocrBuffer: ArrayBuffer | null = options?.ocr ? buffer.slice(0) : null
+  // pdfjs receives a copy; both OCR paths can reuse the caller's original bytes.
+  const formulaBuffer: ArrayBuffer | null = options?.formulaOcr ? buffer : null
+  const ocrBuffer: ArrayBuffer | null = options?.ocr ? buffer : null
   const doc = await loadPdfWithTimeout(buffer)
 
   try {
@@ -108,6 +112,9 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     // 페이지 범위 필터링
     const pageFilter = options?.pages ? parsePageRange(options.pages, effectivePageCount) : null
+    if (pageCount > MAX_PAGES && (!options?.pages || hasRequestedPagesAfter(options.pages, MAX_PAGES, pageCount))) {
+      warnings.push({ message: `${pageCount}쪽 중 앞 ${MAX_PAGES}쪽만 파싱했습니다 (쪽 수 상한)`, code: "PARTIAL_PARSE" })
+    }
     const totalTarget = pageFilter ? pageFilter.size : effectivePageCount
 
     // 전체 문서의 폰트 크기 빈도 수집 (헤딩 감지용) — 빈도 Map으로 메모리 절약
@@ -133,16 +140,20 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     let parsedPages = 0
     for (let i = 1; i <= effectivePageCount; i++) {
       if (pageFilter && !pageFilter.has(i)) continue
+      let loadedPage: Awaited<ReturnType<typeof doc.getPage>> | undefined
       try {
         const page = await doc.getPage(i)
+        loadedPage = page
         const tc = await page.getTextContent()
-        const viewport = page.getViewport({ scale: 1 })
-        pageHeights.set(i, viewport.height)
+        // Text and paths use unrotated user coordinates, including the CropBox origin.
+        const [viewX1, viewY1, viewX2, viewY2] = page.view
+        const pageW = viewX2 - viewX1, pageH = viewY2 - viewY1
+        pageHeights.set(i, pageH)
         const rawItems = tc.items as PdfTextItem[]
         const items = normalizeItems(rawItems)
 
         // hidden text 필터링 + 경고 수집
-        const { visible, hiddenCount } = filterHiddenText(items, viewport.width, viewport.height)
+        const { visible, hiddenCount } = filterHiddenText(items, pageW, pageH, viewX1, viewY1)
         if (hiddenCount > 0) {
           warnings.push({ page: i, message: `${hiddenCount}개 숨겨진 텍스트 요소 필터링됨`, code: "HIDDEN_TEXT_FILTERED" })
         }
@@ -159,7 +170,16 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         } catch { /* 어노테이션 파싱 실패 무시 */ }
 
         // 선 기반 테이블 감지를 위한 operatorList
-        const opList = await page.getOperatorList()
+        const rawOps = await page.getOperatorList()
+        // Downstream table/header/page-break geometry assumes an origin of (0,0).
+        // Translate both text and graphics, after annotations have matched user coordinates.
+        // Filtering alone would retain text but misclassify a repeated body as a header.
+        const shifted = viewX1 !== 0 || viewY1 !== 0
+        if (shifted) for (const item of visible) { item.x -= viewX1; item.y -= viewY1 }
+        const opList = shifted ? {
+          fnArray: [OPS.transform, ...rawOps.fnArray],
+          argsArray: [[1, 0, 0, 1, -viewX1, -viewY1], ...rawOps.argsArray],
+        } : rawOps
 
         // 심볼 폰트(Wingdings) 글리프 복원 — 폰트 실명은 operatorList 로드 뒤에야 commonObjs 에 있다
         remapSymbolFontItems(visible, (loadedName) => {
@@ -171,7 +191,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         for (const it of visible) if (it.text.includes("$")) it.text = escapeLiteralDollar(it.text)
 
         // 이미지 영역 감지 — 텍스트 없는 큰 이미지는 무음 정보손실이므로 가시화 (ODL 아이디어)
-        const pageArea = viewport.width * viewport.height
+        const pageArea = pageW * pageH
         if (pageArea > 0) {
           const imageRegions = extractImageRegions(opList.fnArray, opList.argsArray)
           let uncovered = 0
@@ -189,7 +209,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           if (uncovered > 0) skippedImagePages.set(i, uncovered)
         }
 
-        const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height, undefined, options?.tables !== false, carry, wrapLexicon)
+        const pageBlocks = extractPageBlocksWithLines(visible, i, opList, pageW, pageH, undefined, options?.tables !== false, carry, wrapLexicon)
         for (const b of pageBlocks) blocks.push(b)
 
         // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
@@ -230,12 +250,16 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 크기 초과는 전체 중단
         if (pageErr instanceof KordocError) throw pageErr
         warnings.push({ page: i, message: `페이지 ${i} 파싱 실패: ${pageErr instanceof Error ? pageErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
+      } finally {
+        // Release page-local decoded images/operators on success and failure.
+        // commonObjs (shared fonts/images) remains available to later pages.
+        loadedPage?.cleanup()
       }
     }
 
     const parsedPageCount = parsedPages || (pageFilter ? pageFilter.size : effectivePageCount)
     // 문서 단위 이미지 기반 판정 (평균 10자/페이지 미만 = 텍스트층 부재)
-    const isImageBased = totalChars / Math.max(parsedPageCount, 1) < 10
+    const isImageBased = pageFilter?.size !== 0 && totalChars / Math.max(parsedPageCount, 1) < 10
 
     // ── OCR 실행 (옵션) — 페이지 단위 선정·병합 ──
     // 대상: "force"=전 페이지 / 문서가 이미지 기반=전 페이지 /
@@ -264,10 +288,10 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
             // 페이지 단위 교체: OCR 성공 페이지의 기존(깨진/빈) 블록 제거 후 병합
             for (const p of ocrPageBlocks.keys()) ocrDone.add(p)
             const merged = blocks.filter(b => !(b.pageNumber && ocrDone.has(b.pageNumber)))
-            for (const obs of ocrPageBlocks.values()) merged.push(...obs)
+            for (const obs of ocrPageBlocks.values()) for (const b of obs) merged.push(b)
             merged.sort((a, b) => (a.pageNumber ?? 0) - (b.pageNumber ?? 0)) // stable — 페이지 내 순서 보존
             blocks.length = 0
-            blocks.push(...merged)
+            for (const b of merged) blocks.push(b)
             for (const pq of pageQuality) if (ocrDone.has(pq.page)) pq.ocrApplied = true
             warnings.push({
               message: `${ocrDone.size}개 페이지에 OCR 적용 (${mode === "builtin" ? "내장 PP-OCRv5" : "사용자 프로바이더"})`,
@@ -379,10 +403,12 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const outBlocks = splitSingleCellTables(blocks)
 
     // blocksToMarkdown로 통일 — 헤딩 마크다운 반영 (HWP5/HWPX와 일관성)
-    let markdown = cleanPdfText(blocksToMarkdown(outBlocks))
+    const finishMarkdown = (bs: IRBlock[]): string => cleanPdfText(blocksToMarkdown(bs))
+    let markdown = finishMarkdown(outBlocks)
 
     return {
       markdown,
+      pages: blocksToPages(outBlocks, finishMarkdown),
       blocks,
       metadata,
       outline: outline.length > 0 ? outline : undefined,

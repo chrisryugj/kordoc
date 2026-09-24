@@ -230,6 +230,36 @@ describe("mergeContinuedCells — 이어짐 조각을 앞 쪽 표 그 칸에 붙
     return { type: "table", table: t, pageNumber: page, bbox: { page, x: from.x1, y: 40, width: from.x2 - from.x1, height: 700 } }
   }
 
+  it("쪽 경계의 중첩표 빈 마지막 칸에 1칸 이어짐을 채워 유령 행을 만들지 않는다", () => {
+    const nested = clipTable([[cell("머리1"), cell("머리2")], [cell("", { colSpan: 2 }), cell("")]], [88, 227, 367])
+    const fragment = clipTable([[cell("비고: 육안시험 조건")]], [88, 367])
+    const outer = clipTable([[cell("", { blocks: [{ type: "table", table: nested, pageNumber: 1 }] })]], [58, 536])
+    const blocks: IRBlock[] = [
+      { type: "table", table: outer, pageNumber: 1 },
+      part(cell("", { blocks: [{ type: "table", table: fragment, pageNumber: 2 }] }), { x1: 58, x2: 536 }, 2),
+    ]
+    mergeContinuedCells(blocks)
+    const inner = outer.cells[0][0].blocks!
+    assert.equal(inner.length, 1)
+    assert.equal(inner[0].table!.rows, 2)
+    assert.equal(inner[0].table!.cells[1][0].text, "비고: 육안시험 조건")
+  })
+
+  it("내용 있는 중첩표 마지막 칸은 다음 쪽 1칸 상자로 덮어쓰지 않는다", () => {
+    const nested = clipTable([[cell("머리1"), cell("머리2")], [cell("앞 쪽 별도 설명", { colSpan: 2 }), cell("")]], [88, 227, 367])
+    const fragment = clipTable([[cell("비고: 육안시험 조건")]], [88, 367])
+    const outer = clipTable([[cell("", { blocks: [{ type: "table", table: nested, pageNumber: 1 }] })]], [58, 536])
+    const blocks: IRBlock[] = [
+      { type: "table", table: outer, pageNumber: 1 },
+      part(cell("", { blocks: [{ type: "table", table: fragment, pageNumber: 2 }] }), { x1: 58, x2: 536 }, 2),
+    ]
+    mergeContinuedCells(blocks)
+    const inner = outer.cells[0][0].blocks!
+    assert.equal(inner.length, 2)
+    assert.equal(inner[0].table!.rows, 2)
+    assert.equal(inner[0].table!.cells[1][0].text, "앞 쪽 별도 설명")
+  })
+
   it("세 쪽 조각이 한 칸에 모이고 칸 안 표도 제자리 (5×1 거대 칸)", () => {
     const nested: IRBlock = { type: "table", table: clipTable([[cell("공칭회로전압"), cell("시험전압")], [cell("SELV"), cell("250V")]], [88, 227, 367]), pageNumber: 2 }
     const t = clipTable([[cell("[별표27]")], [cell("1 적용범위")]], [58.05, 536.83])
@@ -327,4 +357,20 @@ describe("쪽 넘김 이어짐 — 쪽마다 같은 자리의 틀 요소는 이�
     const r2 = buildClipCellGrids([same, { x1: 88, y1: 700, x2: 227, y2: 750 }, { x1: 227, y1: 700, x2: 367, y2: 750 }], [], [], 595, 841, [], [], { lastCells: [same], clips: [same] })
     assert.ok(r2.grids.some(g => g.continues))
   })
+})
+
+it("칸 안 클립 표도 클립 표 — 쪽을 넘는 칸에 붙은 조각끼리 클립 표 잇기로 잇게 (휠체어리프트 기준 [표 Ⅰ.1])", () => {
+  const clipOps = (rects: Rect[]) => ({
+    fnArray: rects.flatMap(() => [OPS.constructPath, OPS.eoClip, OPS.endPath]),
+    argsArray: rects.flatMap(r => [[[OPS.rectangle], [r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1]], [], []] as unknown[][]),
+  })
+  const item = (t: string, x: number, y: number): NormItem => ({ text: t, x, y, w: t.length * 10, h: 10, fontSize: 10, fontName: "F", isHidden: false })
+  const frame = [{ x1: 58.05, y1: 746.18, x2: 536.83, y2: 782.98 }, { x1: 58.05, y1: 49.27, x2: 536.83, y2: 746.18 }]
+  const t = [{ x1: 88.15, y1: 700, x2: 227.64, y2: 730 }, { x1: 227.64, y1: 700, x2: 367.12, y2: 730 }]
+  const blocks = extractPageBlocksWithLines([item("머리", 60, 760), item("부품", 95, 710), item("조건", 235, 710), item("본문", 60, 400)], 1,
+    clipOps([...frame, ...t]), 595, 841)
+  const outer = blocks.find(b => b.type === "table")!.table!
+  const nested = outer.cells[1][0].blocks!.find(b => b.type === "table")!.table!
+  assert.ok(CLIP_TABLES.has(nested))
+  assert.deepEqual(TABLE_COLXS.get(nested)?.map(x => +x.toFixed(2)), [88.15, 227.64, 367.12])
 })

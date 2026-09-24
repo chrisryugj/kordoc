@@ -17,12 +17,18 @@ import type { NormItem } from "../pdf/text-line.js"
 import type { LineSegment } from "../pdf/line-types.js"
 import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
-import { getOcrEngine, type OcrItem } from "./engine.js"
+import { getOcrEngine, type OcrItem, type OcrPageStats } from "./engine.js"
 import { deskewPage } from "./deskew.js"
 import { ensureOcrModels } from "./models.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
 const OCR_RENDER_SCALE = 3
+/**
+ * OCR 래스터 픽셀 상한 (쪽·이미지 공통) — 이보다 큰 쪽은 배율을 낮춰 이 안에 맞춘다. 쪽 크기를 가리지 않고 ×3 으로 그리면 628B PDF
+ * (4000pt 정사각 쪽)가 12000² 래스터에 사본·괘선 마스크까지 2.38GB 를 먹었다(16000² PNG 1.84GB). A2(1191×1684pt)도 216dpi 로 18MP 라
+ * 공문서 판형은 줄지 않는다
+ */
+export const MAX_OCR_PIXELS = 24_000_000
 /** 페이지 하나당 OCR 타임아웃 — det+rec 수십 라인 기준 넉넉히 */
 const PAGE_TIMEOUT_MS = 120_000
 
@@ -68,10 +74,11 @@ export async function runPdfOcr(
   const doc = await pdfium.loadDocument(new Uint8Array(buffer))
   try {
     let done = 0
-    for (const page of doc.pages()) {
-      // pdfium page.number 는 0-based pageIndex — 대외 계약(1-based)으로 환산
-      const pageNo = page.number + 1
-      if (!targets.has(pageNo)) continue
+    // 대상 쪽만 연다 — doc.pages() 는 모든 쪽을 불러오고, 쪽은 render() 가 끝에서만 닫아 대상 밖 쪽이 문서를 닫을 때까지 남았다
+    // (changwon 328쪽 문서의 한 쪽 OCR: 6ms·26MB → 전 쪽 순회 970ms·330MB). pdfium 쪽 번호는 0-based — 대외 계약(1-based)으로 환산
+    const count = doc.getPageCount()
+    for (const pageNo of [...targets].filter(p => p >= 1 && p <= count).sort((a, b) => a - b)) {
+      const page = doc.getPage(pageNo - 1)
       onProgress?.(++done, targets.size)
       try {
         const blocks = await withTimeout(
@@ -105,8 +112,12 @@ async function ocrOnePage(
   vectorOps?: PageOps,
 ): Promise<IRBlock[]> {
   const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
+  const renderScale = Math.min(OCR_RENDER_SCALE, Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH)))
+  if (renderScale < OCR_RENDER_SCALE) {
+    warnings.push({ page: pageNo, code: "PARTIAL_PARSE", message: `OCR 래스터 픽셀 상한으로 렌더 해상도를 축소했습니다 (작은 글자 인식 결손 가능)` })
+  }
   const rendered = await page.render({
-    scale: OCR_RENDER_SCALE,
+    scale: renderScale,
     render: async ({ data }) => data,
   })
   const { data: bgra, width: rw, height: rh } = rendered
@@ -116,7 +127,7 @@ async function ocrOnePage(
     // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정.
     // 벡터 글자 쪽은 보정하지 않는다 — 글자 좌표가 돌면 그 쪽 벡터 괘선과 어긋난다
     const upright = vectorOps ? rgba : deskewPage(rgba, rw, rh).rgba
-    const stats = { droppedLowConf: 0 }
+    const stats: OcrPageStats = { droppedLowConf: 0 }
     const items = await engine!.recognizePage(upright, rw, rh, stats)
     if (stats.droppedLowConf > 0) {
       warnings.push({
@@ -124,6 +135,9 @@ async function ocrOnePage(
         message: `페이지 ${pageNo}: 저신뢰 OCR 라인 ${stats.droppedLowConf}개 폐기 (인식 결손 가능)`,
         code: "OCR_LOW_CONF",
       })
+    }
+    if (stats.truncatedBoxes) {
+      warnings.push({ page: pageNo, message: `페이지 ${pageNo}: OCR 검출 상자가 너무 많아 ${stats.truncatedBoxes}개는 인식하지 않음 (일부 글 결손)`, code: "PARTIAL_PARSE" })
     }
     const scale = rh / pdfH
     // 벡터 글자 쪽: 표 구조는 그 쪽의 실제 괘선으로 (rhwp cairo 13쌍 46표 exact: 래스터 괘선 14 → 실제 괘선 20)

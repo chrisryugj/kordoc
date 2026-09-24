@@ -2,7 +2,28 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { parsePageRange } from "../src/page-range.js"
+import { parsePageRange, hasRequestedPagesAfter } from "../src/page-range.js"
+
+describe("hasRequestedPagesAfter", () => {
+  it("작은 범위에서는 기존 파서의 관대한 문법·반올림·클램핑과 결과가 같다", () => {
+    const specs: Array<string | number[]> = [
+      "", " ", "1-10", "0-3", "9-2", "1 - 4, 8", "3abc,5.9,6-foo", "+7,-2,foo", "99", "1,1,4",
+      [], [0, 1, 3.4, 3.5, 11], [NaN, Infinity, -Infinity, 7.6],
+    ]
+    for (const spec of specs) for (const total of [0, 1, 5, 10]) for (const after of [0, 1, 3, 5, 10]) {
+      assert.equal(hasRequestedPagesAfter(spec, after, total), [...parsePageRange(spec, total)].some(p => p > after), JSON.stringify({ spec, after, total }))
+    }
+  })
+
+  it("10억 쪽 범위도 열거하지 않고 상한 이후 요청 여부를 판정한다", () => {
+    assert.equal(hasRequestedPagesAfter("1-1000000000", 5000, 1_000_000_000), true)
+    assert.equal(hasRequestedPagesAfter("1-5000", 5000, 1_000_000_000), false)
+    assert.equal(hasRequestedPagesAfter("5001-1000000000", 5000, 5000), false)
+    assert.equal(hasRequestedPagesAfter("1000000000-5001", 5000, 1_000_000_000), false)
+    assert.equal(hasRequestedPagesAfter([5000.49, 5000.5], 5000, 5001), true)
+    assert.equal(hasRequestedPagesAfter("5001suffix", 5000, 5001), true)
+  })
+})
 
 describe("parsePageRange", () => {
   describe("배열 입력", () => {

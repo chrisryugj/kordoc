@@ -49,6 +49,11 @@ export interface OcrItem {
   confidence: number
 }
 
+export interface OcrPageStats {
+  droppedLowConf: number
+  truncatedBoxes?: number
+}
+
 /**
  * 엔진 튜닝 — 기본값이 제품 동작. 벤치·실험만 덮어쓴다 (공개 API 아님).
  */
@@ -92,7 +97,7 @@ export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
 })
 
 const DET_MIN_SIZE = 3
-const DET_MAX_BOXES = 1000
+const DET_MAX_BOXES = 3000
 const REC_MIN_WIDTH = 320
 /** 배치 텐서 폭 합 상한 — 긴 줄 여러 개를 한 텐서로 묶어 메모리가 튀지 않게 */
 const REC_BATCH_MAX_PIXELS = 48 * 16000
@@ -194,11 +199,11 @@ export class OcrEngine {
     rgba: Uint8Array,
     width: number,
     height: number,
-    stats?: { droppedLowConf: number },
+    stats?: OcrPageStats,
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
   ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
-    const boxes = await this.detect(rgba, width, height, tuning)
+    const boxes = await this.detect(rgba, width, height, tuning, stats)
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
     const jobs: LineJob[] = []
@@ -314,6 +319,7 @@ export class OcrEngine {
     width: number,
     height: number,
     tuning: Readonly<OcrTuning>,
+    stats?: OcrPageStats,
   ): Promise<Box[]> {
     const ratio = tuning.detLongSide / Math.max(width, height)
     const dw = Math.max(32, Math.round((width * ratio) / 32) * 32)
@@ -342,6 +348,7 @@ export class OcrEngine {
     const probMap = out[this.det.outputNames[0]].data as Float32Array
 
     const rawBoxes = componentBoxes(probMap, dw, dh, tuning.detThresh, tuning.detBoxThresh)
+    if (stats) stats.truncatedBoxes = Math.max(0, rawBoxes.length - DET_MAX_BOXES)
     const sx = width / dw
     const sy = height / dh
     const boxes: Box[] = []

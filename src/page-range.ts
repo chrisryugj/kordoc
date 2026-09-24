@@ -39,3 +39,27 @@ export function parsePageRange(spec: number[] | string, maxPages: number): Set<n
 
   return result
 }
+
+/**
+ * 파싱 상한 이후에 실제 문서 범위에 속하는 요청이 있는가. 경고용으로 전체 범위를 Set에 펼치면
+ * 페이지 상한을 우회해 거대한 범위만큼 메모리를 쓰므로 구간 교차만 검사한다.
+ * 배열의 Math.round, 단일 문자열의 parseInt 등 parsePageRange의 기존 문법은 그대로 유지한다.
+ */
+export function hasRequestedPagesAfter(spec: number[] | string, maxParsed: number, total: number): boolean {
+  if (total <= 0 || total <= maxParsed) return false
+  const beyond = (page: number): boolean => page >= 1 && page <= total && page > maxParsed
+  if (Array.isArray(spec)) return spec.some(n => beyond(Math.round(n)))
+  if (typeof spec !== "string" || spec.trim() === "") return false
+
+  for (const part of spec.split(",")) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const rangeMatch = trimmed.match(/^(\d+)\s*-\s*(\d+)$/)
+    if (rangeMatch) {
+      const start = Math.max(1, parseInt(rangeMatch[1], 10), Math.floor(maxParsed) + 1)
+      const end = Math.min(total, parseInt(rangeMatch[2], 10))
+      if (start <= end) return true
+    } else if (beyond(parseInt(trimmed, 10))) return true
+  }
+  return false
+}
