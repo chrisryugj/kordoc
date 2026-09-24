@@ -40,6 +40,9 @@ never touch the network. Only two code paths make outbound requests, both opt-in
 
 Set **`KORDOC_OFFLINE=1`** to block both *before the request is made*. This is a
 single choke point (`src/shared/offline.ts`) — no other module calls `fetch`.
+Printing and PDF rendering disable page JavaScript and block every request except
+`data:` and `about:` through the shared `launchLockedPage` helper, regardless of
+`KORDOC_OFFLINE`. External images, stylesheets and fonts are therefore not fetched.
 See [docs/offline-deployment.md](docs/offline-deployment.md) for air-gapped deployment.
 
 ## Security Measures
@@ -59,7 +62,7 @@ kordoc processes untrusted binary files. The following defenses are in place:
 - HWP5 decompression: 100MB per stream; records 500,000 per section; sections 100 max
 - HWP3 decompression: 100MB cumulative
 - PDF: 5,000 pages, 100MB cumulative text
-- Table dimensions: 200 cols × 10,000 rows (XLSX / markdown builder)
+- Spreadsheet tables: 2,000,000-cell budget; the row limit depends on column count, with truncation warnings. Markdown builder: 200 cols × 10,000 rows
 - MCP tool response capped at 200,000 characters
 
 ### Injection Prevention
@@ -67,6 +70,7 @@ kordoc processes untrusted binary files. The following defenses are in place:
 - No `eval()` or `new Function()` anywhere
 - No shell command construction from user input
 - PDF JavaScript evaluation disabled (`isEvalSupported: false`)
+- HTML table-cell text escaped; Chromium printing/rendering disables JavaScript and external requests
 - MCP error messages sanitized (no filesystem path leakage from non-`KordocError` failures)
 - Hyperlink hrefs sanitized (`sanitizeHref`) on both parse and generate paths
 
@@ -77,7 +81,8 @@ kordoc processes untrusted binary files. The following defenses are in place:
 
 ### Access Confinement (opt-in)
 - **`KORDOC_ROOT=<dir>`** confines every MCP read and write to that directory subtree.
-  Enforcement runs on the `realpath`-resolved path, so symlinks cannot escape it.
+  Enforcement resolves existing ancestors with `realpath`; write targets that are
+  symlinks are rejected, including when parent directories do not yet exist.
   Unset by default — existing behaviour is unchanged.
 
 ### Model Integrity

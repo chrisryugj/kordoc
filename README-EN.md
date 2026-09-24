@@ -72,6 +72,18 @@ Beyond plain text extraction, kordoc automates the **entire lifecycle of Korean 
 
 ---
 
+## What's New in v4.15.0
+
+An expanded real-document corpus and fixes from a production review of parsing, security and performance.
+
+- **Large spreadsheets**: XLSX/XLS no longer silently stop at 10,000 rows; exceeding the cell budget produces a warning. Batched XLSX XML parsing reduces memory use, and XLS uses sparse grids. East Asian date formats and DOCX headers/footers are also handled more accurately.
+- **PDF text**: fixes for word spacing, fragmented table-cell text, blank date fields and paragraph joins with wide line spacing.
+- **Security**: HTML table text is escaped. Printing and PDF rendering disable JavaScript and block requests other than `data:` and `about:`. IPv6 webhook SSRF checks and MCP write-path confinement are strengthened.
+- **Reliability and speed**: diagnostics go to stderr to keep CLI, MCP and parse-worker JSON clean. Lossless patching detects the actual format, and document comparison and batch splicing avoid repeated work.
+- **Name/address masking**: broader opt-in coverage for meeting speakers, officials, sign-off blocks and road-name variants, with false-positive fixes.
+- **Directory watching**: `watch -d` preserves subdirectories, preventing same-name files from overwriting each other. Thanks to @ROTl24 for [PR #82](https://github.com/chrisryugj/kordoc/pull/82).
+- **Corpus**: 300 additional policy-briefing HWPX/PDF pairs, 36 DOCX/LibreOffice PDF pairs and an XLS ground-truth track. See [CHANGELOG](CHANGELOG.md) for measurements.
+
 ## What's New in v4.14.4
 
 A second reading-quality pass. A new benchmark scores PDF text against the source HWPX, including word spacing and reading order, and PDF tables, OCR and PII masking were fixed.
@@ -512,7 +524,7 @@ From the CLI: `kordoc doc.pdf --format json --no-images`. For bulk conversion ke
 running and send one JSON request per stdin line.
 
 ```text
-ready     {"ready":true,"version":"4.14.4","protocol":1}
+ready     {"ready":true,"version":"4.15.0","protocol":1}
 request   {"id":1,"file":"doc.hwpx","images":false,"ocr":"off"}
 response  {"id":1,"rss":183500800,"result":{ …same ParseResult as --format json, failures as success:false… }}
 quit      {"cmd":"quit"}  (or close stdin)

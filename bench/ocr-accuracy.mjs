@@ -46,9 +46,11 @@ const MIN_GLYPH_COVERAGE = 0.8  // 래스터 글자 검사 하한 (코퍼스 82�
 //   실측: cerMicro 0.09627 · charRecall 0.9834 · charPrecision 0.9775 · hangulRecall 0.99597 ·
 //         표 41/51 매칭(0.8039) · exact 21 · cellF1 0.6179 · 40문서/80쪽 (OCR 쪽만 고친 중간값: 0.14729 · 표 41/58 · cellF1 0.5362,
 //         종전 1차 라운드: 0.19225 · 표 37/59 · cellF1 0.3898). 표 모수 58 → 51 은 정답지 예산서 표가 괘선 표로 제대로 모인 결과
+// v4.15.0: PDF 14건 보강 → 54문서/104쪽. 보강 후 기준선과 모든 문서별 품질 수치 동일(기존 모수 무후퇴).
+// 실측 CER .09995·R .98117·P .97495·한글 R .99322·표 56/72(.7778)·cellF1 .5456.
 const GATES = {
-  cerMicroMax: 0.0985, charRecallMin: 0.981, charPrecisionMin: 0.975, hangulRecallMin: 0.995,
-  tableMatchedMin: 0.78, tableCellF1Min: 0.60, minDocs: 40, minPages: 80,
+  cerMicroMax: 0.100, charRecallMin: 0.981, charPrecisionMin: 0.974, hangulRecallMin: 0.993,
+  tableMatchedMin: 0.77, tableCellF1Min: 0.545, minDocs: 54, minPages: 104,
 }
 
 const toAB = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)

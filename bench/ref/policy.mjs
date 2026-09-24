@@ -70,7 +70,8 @@ export const GATES = {
   // 바뀌어 micro 0.99593 실측 — 코드 회귀 아님(파서 무변경 상태에서 확인, 하락분 전원이
   // 신규 문서). 새 모수의 실측치 바로 아래로 다시 잠근다(래칫 유지). 잔여는 종전과 같은
   // 구조 해석 충돌 영역 + 신규 문서의 각주 별표·성과지표 표(eval-perf 목표치/측정산식 열).
-  pdf: { coverage: 0.9955 },
+  // v4.15.0: 보강 코퍼스 실측 .99769 (기존 .99760 무후퇴), 실측 바로 아래로 상향.
+  pdf: { coverage: 0.9976 },
   // HWP5 2차 트랙 (같은 newsId의 hwp↔hwpx 쌍 상호 정렬) — v3.0에서 정식 게이트 승격.
   // 표 구조(pairTable*)는 HWPX IR 표를 GT 로 HWP5 IR 표의 셀 좌표·병합·내용을 대조 (v4.14.3)
   hwp: { pairSimilarity: 1, pairCoverage: 1, pairTableExact: 1, pairCellF1: 1, pairCellExact: 1, pairContentNED: 1 },

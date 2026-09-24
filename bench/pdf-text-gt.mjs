@@ -36,7 +36,9 @@ const verbose = args.includes("--verbose")
 const gateMode = args.includes("--gate")
 // 무후퇴 플로어 — 2026-09-24 읽기 품질 2차(줄 꺾임 이음·비한컴 선 표·자간 숫자) 뒤 417쌍 실측
 // recall 0.99359·precision 0.96072·order 0.97652·spaceF1 0.97069 바로 아래. 모수 하한은 pdf-table-gt 와 같은 여유 비율
-const GATES = { recall: 0.993, precision: 0.96, order: 0.976, spaceF1: 0.97, parseErrors: 0, minPairs: 412 }
+// v4.15.0: 751쌍 실측 .99446/.96933/.97672/.97799. 기존 세트 지표 무후퇴 확인 후 상향.
+// 새 세트의 정답지 부족 1쌍 제외 효과와 파서의 띄어쓰기 개선 효과는 별도로 보고한다.
+const GATES = { recall: 0.994, precision: 0.969, order: 0.9767, spaceF1: 0.9779, parseErrors: 0, minPairs: 751 }
 const flagValue = (k, d) => (args.find(a => a.startsWith(`--${k}=`)) ?? "").split("=")[1] || d
 const docFilter = flagValue("doc", null)
 const SETS = flagValue("sets", "pairs,korea-kr,korea-kr-pairs,korea-kr-pairs2,rhwp,lo-pairs").split(",").filter(Boolean)

@@ -96,7 +96,10 @@ const round = (x, d = 6) => (x === null || x === undefined ? null : +x.toFixed(d
 // (종전 425/1750 = 430/1784 의 98.8%/98.1%)
 // 상향 잠금 (2026-09-24 읽기 품질 2차: 쪽 넘김 잇기·쪽을 넘는 칸·걸친 덮개·괘선 틈·비한컴 선 표 + 텍스트층 없는 13쌍 모수 제외 뒤,
 // 417쌍 1,738표 실측 매칭 0.9885·exact 0.9453·F1 0.9722·cellExact 0.9698·NED 0.9031·중첩(130표) 매칭 0.9077·exact 0.8692 바로 아래로)
-const GATES = { matchedRate: 0.985, exactRate: 0.94, cellF1: 0.97, cellExactRate: 0.965, contentNED: 0.9, parseErrors: 0, reorderedMax: 15, minPairs: 412, minRefTables: 1705, nestedMatchedRate: 0.9, nestedExactRate: 0.86 }
+// v4.15.0: 정책브리핑 299쌍 추가 → 716쌍/2,692표. 기존 세트의 모든 지표는 보강 후 기준선과 동일.
+// 실측 exact .932021·F1 .959194·cellExact .935242·NED .891261; 재정렬은 새 세트 2건으로 15→17.
+// 모수 변경에 따른 전체 플로어 재잠금, 중첩 매칭 .920455·exact .892045는 상향.
+const GATES = { matchedRate: 0.985, exactRate: 0.932, cellF1: 0.959, cellExactRate: 0.935, contentNED: 0.891, parseErrors: 0, reorderedMax: 17, minPairs: 716, minRefTables: 2692, nestedMatchedRate: 0.92, nestedExactRate: 0.892 }
 /** 텍스트층 없음: PDF 텍스트층 한글 / HWPX 한글 이 이 값 미만 (머리 주석 모수 정책) */
 const NO_TEXT_LAYER_RATIO = 0.01
 const hangulCount = s => (s?.match(/[가-힣]/g) ?? []).length

@@ -89,6 +89,18 @@ MCP 등록 대신 스킬(SKILL.md) 형태로 쓰려면:
 
 ---
 
+## v4.15.0 변경사항
+
+실문서 코퍼스를 보강하고 프로덕션 리뷰에서 확인한 파싱·보안·성능 문제를 고쳤습니다.
+
+- **긴 스프레드시트**: XLSX·XLS의 1만 행 무경고 절단을 수정하고, 칸 예산을 초과하면 경고합니다. XLSX는 XML을 행 묶음으로 읽어 대형 시트 메모리를 줄이고, XLS는 희소 격자를 사용합니다. 동아시아 날짜와 DOCX 머리글·바닥글도 보완했습니다.
+- **PDF 글**: 실제 낱말을 붙이던 균등배분 정리, 표 칸의 글자 조각, 날짜 빈칸, 넓은 줄간격의 문단 이음을 고쳤습니다.
+- **보안**: HTML 표 칸의 원문을 이스케이프하고, 인쇄·렌더 PDF는 JavaScript를 끄고 `data:`·`about:` 외 요청을 차단합니다. webhook의 IPv6 SSRF 방어와 MCP 쓰기 경로 제한도 보강했습니다.
+- **안정성과 속도**: CLI·MCP·parse-worker의 진단 메시지를 stderr로 보내 JSON 출력을 보호합니다. 확장자가 실제 형식과 다른 문서의 무손실 패치를 고치고, 문서 비교·여러 구간 치환의 반복 계산을 줄였습니다.
+- **인명·주소 마스킹**: 회의록 발언자·기관 직함 앞 이름·결재란과 도로명 변형을 보강하고 오탐을 줄였습니다(opt-in).
+- **디렉토리 감시**: `watch -d`가 하위 폴더 구조를 보존해 같은 파일명끼리 덮어쓰지 않습니다. [PR #82](https://github.com/chrisryugj/kordoc/pull/82), 기여: @ROTl24.
+- **검증 코퍼스**: 정책브리핑 HWPX↔PDF 300쌍, DOCX↔LibreOffice PDF 36쌍과 XLS 정답지 트랙을 추가했습니다. 자세한 실측은 [CHANGELOG](CHANGELOG.md)를 참고하세요.
+
 ## v4.14.4 변경사항
 
 읽기 품질을 한 번 더 점검했습니다. 원본 HWPX 를 정답으로 PDF 글을 재는 벤치를 새로 세워 띄어쓰기·읽기 순서까지 보고, PDF 표·OCR·개인정보 마스킹을 고쳤습니다.
@@ -932,7 +944,7 @@ CLI 는 `kordoc 문서.pdf --format json --no-images`. 대량 변환은 `kordoc 
 stdin 으로 한 줄씩 요청합니다 (한 줄 = 한 JSON).
 
 ```text
-시작  {"ready":true,"version":"4.14.4","protocol":1}
+시작  {"ready":true,"version":"4.15.0","protocol":1}
 요청  {"id":1,"file":"문서.hwpx","images":false,"ocr":"off"}
 응답  {"id":1,"rss":183500800,"result":{ …--format json 과 같은 결과, 실패도 success:false 로… }}
 종료  {"cmd":"quit"}  (또는 stdin 닫기)

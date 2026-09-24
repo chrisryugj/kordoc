@@ -50,9 +50,11 @@ const wanted = opt("variants", null)?.split(",") ?? Object.keys(VARIANTS)
 // 실측: clean 0.0884 · skew+1 0.0921 · skew-2 0.0885 · skew+3 0.0985 · noise 0.0886 · blur 0.0926 ·
 //       dpi150 0.0899 · jpeg50 0.0889 · scan 0.1022 (각 40쪽). OCR 쪽만 고친 중간값: clean 0.1731 · scan 0.1868,
 //       v4.14.3: clean 0.1902 · skew+1 0.2250 · scan 0.2208, 2026-09-23: clean 0.2198 · scan 0.2204, 종전 엔진: skew+3 0.576 · scan 0.315
+// v4.15.0: 14문서 추가 → 열화별 54쪽. 보강 후 기준선과 모든 문서·열화별 CER 완전 동일.
+// clean .1066·skew+1 .1056·skew-2 .1060·skew+3 .1068·noise .1047·blur .1056·dpi150 .1017·jpeg50 .1105·scan .1175.
 const GATES = {
-  cerMax: { clean: 0.094, "skew+1": 0.098, "skew-2": 0.094, "skew+3": 0.104, noise: 0.094, blur: 0.098, dpi150: 0.095, jpeg50: 0.094, scan: 0.108 },
-  minPages: 40,
+  cerMax: { clean: 0.107, "skew+1": 0.106, "skew-2": 0.107, "skew+3": 0.107, noise: 0.105, blur: 0.106, dpi150: 0.102, jpeg50: 0.111, scan: 0.118 },
+  minPages: 54,
 }
 
 function mulberry32(seed) {

@@ -85,7 +85,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 |------|------|
 | `src/index.ts` | 메인 API (`parse`, `parseHwpx`, `parseHwp`, `parseHwp3`, `parsePdf`, `parseXlsx`, `parseDocx`) |
 | `src/types.ts` | IR 타입 (`IRBlock`, `IRTable`, `IRCell`, `ParseResult`), 공통 상수 |
-| `src/utils.ts` | 공용 유틸 (`toArrayBuffer`, `sanitizeError`, `precheckZipSize`, `sanitizeHref`, `classifyError`, `stripDtd`, `safeMin/Max`) |
+| `src/utils.ts` | 공용 유틸 (`toArrayBuffer`, `sanitizeError`, `precheckZipSize`, `sanitizeHref`, `classifyError`, `stripDtd`, `safeMin/Max`, `unescapeHtml`, `routeConsoleToStderr`) |
 | `src/detect.ts` | 매직바이트 기반 포맷 감지, `detectZipFormat()`으로 HWPX/XLSX/DOCX 구분 |
 | `src/hwpx/parser.ts` | HWPX 파싱 엔트리 (구현은 8모듈로 분리 — 재수출 허브) |
 | `src/hwpx/section-walker.ts` | 섹션 XML 워커 (문단/표/도형 상호재귀 클러스터) |
@@ -168,8 +168,9 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/vector-glyphs.ts` | 벡터 글자 감지: 글자를 채운 곡선 경로로 그린 쪽(rhwp cairo·윤곽 인쇄): 음절 모양 채움 경로의 글줄 → quality `vector_text`(코퍼스 16,775쪽 한컴 PDF 오탐 0), OCR 쪽 그래픽 추림(글자 경로·클립 제외, cairo 는 음영 칸에만 클립) |
 | `src/pdf/line-wrap.ts` | PDF 줄 꺾임 이음: 본문 줄을 문단으로 복원(찬 줄·새 항목 아님), 칸 안 어절 중간 꺾임, 쪽 넘김 꺾임(`joinPageBreakWraps`). 한컴 텍스트층은 줄 끝 공백을 싣지 않아 어절 중간/경계는 기하로 못 가르고 글로 판정: 조사·어미, 문서 어휘 증거(`WrapLexicon`), 한 음절 조각, 날짜 줄(HWPX 정답 22,911곳 92.9%) |
 | `src/xlsx/parser.ts` | XLSX(ZIP+XML) 파싱, 공유 문자열/병합 셀 처리 |
+| `src/xlsx/sheet-blocks.ts` | XLSX·XLS 공용 시트 → 표: 열 수에 따른 칸 예산·절단 경고 |
 | `src/docx/parser.ts` | DOCX(ZIP+XML) 파싱, 스타일/번호매기기/각주 처리 |
-| `src/table/builder.ts` | 2-pass 그리드 테이블 빌더 + 마크다운 변환 |
+| `src/table/builder.ts` | 2-pass 그리드 테이블 빌더 + 마크다운 변환, `escapeHtmlCellText`로 HTML 칸 원문 이스케이프 |
 | `src/render/svg-render.ts` | 레이아웃 보존 렌더 — HWPX 조판 캐시(lineseg·cellAddr·pos)를 SVG 절대배치로. 문단·표·이미지·도형 region 기록 + `<g data-kordoc-*>` 래퍼. 포맷 무관 단계 `renderSectionRoots`(구역 DOM→페이지 버퍼)·`assemblePageSvgs`(페이지별 standalone SVG) 를 HWPX·HWP5 어댑터가 공유 (#75) |
 | `src/render/para-model.ts` | 렌더 문단 모델(슬롯 스트림: 글자·필러·탭)·탭 정지점(`tabAdvance`: autoTabLeft 첫 줄 = 내어쓰기, 기본 40pt)·표 실효 높이. svg-render·reflow 공유(그리기 코드 비의존) |
 | `src/render/scene.ts` | RenderScene 계약 — 1-based 페이지·페이지 로컬 pt bbox·결정적 region id(`table-000017`)·다중 페이지 조각·parentId·sourceId |
@@ -202,10 +203,11 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |
 | `src/cli.ts` | Commander 기반 CLI 진입점(루트 파싱 명령). 하위 명령은 `src/cli/commands-{docs,generate,render,system,worker}.ts` (등록 순서 = 도움말 순서) |
 | `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 17개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
+| `src/print/renderer.ts` | 인쇄용 Chromium 공용 기동 `launchLockedPage`: JavaScript 끔·data:/about: 외 요청 차단·기동 한도 90초. 렌더 PDF도 공유 |
 | `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) + `rasterizePageSvg` 페이지 단위 png/jpeg(실배율 보고) |
 | `src/redact.ts` | PII 탐지·마스킹 엔진: 정규화·겹침 처리·마크다운 표 머리글 문맥(선형 시간). 룰 정의는 `redact-rules.ts`(번호형)·`redact-name-address.ts`(인명·주소) |
 | `src/redact-rules.ts` | redact 룰: 룰별 정규식 변형·검증기(생년월일·Luhn·사업자/법인 체크섬·전화 국번)·라벨 사전(창 안 라벨 전부 반영) |
-| `src/redact-name-address.ts` | opt-in 룰 `name`·`address` (v4.14.4): 인명은 문맥 게이트(역할어·호칭·라벨·연락처 괄호·나열·표 머리글 "성명") + 성씨 사전, 문맥 없는 맨이름은 안 잡음. 주소는 도로명·지번 문법 + 행정구역 사전, 시·도·시·군·구는 남기고 그 아래를 가림, 행정구역만 있는 글은 주소 아님. 룰을 손대면 `redact-bench.mjs --corpus --corpus-rules=name,address` 로 오탐 재실측 |
+| `src/redact-name-address.ts` | opt-in 룰 `name`·`address` (v4.14.4): 인명은 문맥 게이트(역할어·호칭·라벨·연락처 괄호·나열·표 머리글 "성명") + 성씨 사전, 문맥 없는 맨이름은 안 잡음. v4.15.0: 회의록 발언자·기관 직함 앞 이름·결재란·도로명 변형 보강과 오탐 정리. 주소는 도로명·지번 문법 + 행정구역 사전, 시·도·시·군·구는 남기고 그 아래를 가림, 행정구역만 있는 글은 주소 아님. 룰을 손대면 `redact-bench.mjs --corpus --corpus-rules=name,address` 로 오탐 재실측 |
 | `src/redact-doc.ts` | 파일 단위 마스킹 `redactDocument`(CLI `redact`·MCP `redact_document`): parse → 탐지 → 컨테이너 수술 → 재파싱 잔존 검사. 본문에서 찾은 값(리터럴)은 마크다운 출력 다른 자리에도 전파, 바이너리 조각에는 인명·주소 룰 대신 리터럴만 |
 | `src/redact-hwpx.ts` · `redact-hwp5.ts` | 컨테이너 PII 수술: HWPX 는 ZIP 안 모든 XML 문단·텍스트 노드·속성·미리보기, HWP5 는 전 스트림 레코드(같은 길이 치환, 한컴 압축 꼬리 보존, 미할당 섹터 wipe) |
 | `src/redact-scrub.ts` | 파일 마스킹 공용: 텍스트 탐지(룰+리터럴), 바이너리 문자열 조각 훑기(UTF-16·OLE·EMF), 빈 미리보기 이미지 |

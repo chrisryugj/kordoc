@@ -1,7 +1,7 @@
 # 폐쇄망(내부망) 배포 가이드
 
 인터넷이 차단된 망에 kordoc 을 반입·설치·운영하는 절차와, 보안성 검토에서 흔히
-요구되는 항목의 근거를 정리한다. 대상 버전: **4.7.2 이상**.
+요구되는 항목의 근거를 정리한다. 대상 버전: **4.15.0 이상**.
 
 ## 1. 요약
 
@@ -92,6 +92,10 @@ MCP 서버는 기동 시 적용된 제한을 stderr 에 한 줄 남긴다:
 grep -rnE '\bfetch\(' src --include='*.ts'          # 소스 기준 2건
 grep -rn 'await fetch(' dist/*.js dist/*.cjs        # 빌드 산출물 기준(ESM/CJS 중복 포함)
 ```
+
+인쇄·렌더 PDF의 Chromium 페이지는 `launchLockedPage`에서 JavaScript를 끄고
+`data:`·`about:` 외 모든 요청을 차단한다. 이 제한은 `KORDOC_OFFLINE` 설정과 무관하게
+항상 적용되며, 문서가 참조하는 외부 이미지·CSS·글꼴도 가져오지 않는다.
 
 두 경로 모두 `assertNetworkAllowed()`(`src/shared/offline.ts`)를 먼저 통과한다.
 새 통신 경로를 추가하려면 이 함수를 거치도록 강제되어 있으므로, 감사 지점은 하나다.

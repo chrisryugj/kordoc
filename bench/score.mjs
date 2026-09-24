@@ -605,7 +605,8 @@ const hwp5Agg = (() => {
 // 모수 하한 (2026-07-05 실측 hwpx 347/pdf 50/hwp쌍 23의 ~절반) — 트랙 폴더 소실 시
 // agg가 null이 되고 ?? true 로 조용한 만점 PASS가 나는 것 방지 (리뷰 #14).
 // 부분 실행(subPath)은 의도된 축소라 스킵.
-const MIN_POP = { hwpx: 170, pdf: 25, hwpPairs: 12 }
+// v4.15.0 보강 코퍼스 전체 실행 실측 모수로 상향 — 새 세트가 빠진 실행도 통과하지 않도록 한다.
+const MIN_POP = { hwpx: 2286, pdf: 1911, hwpPairs: 1120 }
 const population = {
   value: `hwpx ${hwpxDocs.length}/pdf ${pdfDocs.length}/hwp쌍 ${hwpPairs.length}`,
   threshold: `≥ ${MIN_POP.hwpx}/${MIN_POP.pdf}/${MIN_POP.hwpPairs}`,
