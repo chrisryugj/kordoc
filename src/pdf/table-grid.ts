@@ -64,15 +64,31 @@ const CUT_VCHAIN_GAP = 1.0
 /** 수직선 y-대역 버킷 크기 (pt) */
 const VERTEX_BUCKET_CELL = 100
 
+/** 오름차순 배열에서 key 이상인 첫 위치 */
+function lowerBound(sorted: number[], key: number): number {
+  let lo = 0, hi = sorted.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (sorted[mid] < key) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
 function buildVertices(horizontals: LineSegment[], verticals: LineSegment[]): Vertex[] {
   const vertices: Vertex[] = []
   const tol = CONNECT_TOL
 
+  // 수직선은 수평선이 실제로 조회하는 버킷에만 등록한다 — [b1, b2] 전 구간을 돌면 루프가 선 길이/100 번이라, 좌표가 큰 괘선
+  // 하나(726B PDF 의 길이 1e9 세로선)에 버킷 1,000만 개·3.2GB 를 만들다 "Map maximum size exceeded" 로 쪽을 잃었다. 조회되는
+  // 버킷은 모두 수평선 y 의 버킷이라 등록 집합이 같다(교차 후보·vertex 순서 불변)
+  const queried = [...new Set(horizontals.map(h => Math.floor(h.y1 / VERTEX_BUCKET_CELL)))].filter(Number.isFinite).sort((a, b) => a - b)
   const buckets = new Map<number, Array<LineSegment>>()
   for (const v of verticals) {
     const b1 = Math.floor((v.y1 - tol) / VERTEX_BUCKET_CELL)
     const b2 = Math.floor((v.y2 + tol) / VERTEX_BUCKET_CELL)
-    for (let b = b1; b <= b2; b++) {
+    for (let k = lowerBound(queried, b1); k < queried.length && queried[k] <= b2; k++) {
+      const b = queried[k]
       const arr = buckets.get(b)
       if (arr) arr.push(v)
       else buckets.set(b, [v])
@@ -536,16 +552,23 @@ function groupConnectedLines(lines: TypedLine[]): TypedLine[][] {
     if (ra !== rb) parent[ra] = rb
   }
 
+  // 선마다 bbox 가 덮는 셀 전부가 아니라, 열·행이 어떤 선의 시작 셀(cx1·cy1)인 셀에만 등록한다. 두 bbox 가 겹치면 겹친 구간의
+  // 최소 모서리 (max(cx1), max(cy1)) 는 둘 중 한 선의 시작 열·행이고 두 선 모두 덮으므로 거기서 만난다 — 교차 판정 쌍이 같고
+  // 등록 수는 종전 이하. 전 구간 등록은 좌표가 큰 괘선 하나에 셀 수천만 개를 만들었다(buildVertices 주석)
+  const span = lines.map(l => [
+    Math.floor((Math.min(l.x1, l.x2) - CONNECT_TOL) / GROUP_BUCKET_CELL),
+    Math.floor((Math.max(l.x1, l.x2) + CONNECT_TOL) / GROUP_BUCKET_CELL),
+    Math.floor((Math.min(l.y1, l.y2) - CONNECT_TOL) / GROUP_BUCKET_CELL),
+    Math.floor((Math.max(l.y1, l.y2) + CONNECT_TOL) / GROUP_BUCKET_CELL),
+  ])
+  const startXs = [...new Set(span.map(s => s[0]))].filter(Number.isFinite).sort((a, b) => a - b)
+  const startYs = [...new Set(span.map(s => s[2]))].filter(Number.isFinite).sort((a, b) => a - b)
   const cellMap = new Map<string, number[]>()
   for (let i = 0; i < lines.length; i++) {
-    const l = lines[i]
-    const cx1 = Math.floor((Math.min(l.x1, l.x2) - CONNECT_TOL) / GROUP_BUCKET_CELL)
-    const cx2 = Math.floor((Math.max(l.x1, l.x2) + CONNECT_TOL) / GROUP_BUCKET_CELL)
-    const cy1 = Math.floor((Math.min(l.y1, l.y2) - CONNECT_TOL) / GROUP_BUCKET_CELL)
-    const cy2 = Math.floor((Math.max(l.y1, l.y2) + CONNECT_TOL) / GROUP_BUCKET_CELL)
-    for (let cx = cx1; cx <= cx2; cx++) {
-      for (let cy = cy1; cy <= cy2; cy++) {
-        const key = cx + "," + cy
+    const [cx1, cx2, cy1, cy2] = span[i]
+    for (let a = lowerBound(startXs, cx1); a < startXs.length && startXs[a] <= cx2; a++) {
+      for (let b = lowerBound(startYs, cy1); b < startYs.length && startYs[b] <= cy2; b++) {
+        const key = startXs[a] + "," + startYs[b]
         const arr = cellMap.get(key)
         if (arr) arr.push(i)
         else cellMap.set(key, [i])

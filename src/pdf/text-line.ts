@@ -59,7 +59,7 @@ export function sortLineByX<T extends { x: number; seq?: number }>(items: T[]): 
 // Hidden text 필터링 (prompt injection 방어)
 // ═══════════════════════════════════════════════════════
 
-export function filterHiddenText(items: NormItem[], pageWidth: number, pageHeight: number): { visible: NormItem[]; hiddenCount: number } {
+export function filterHiddenText(items: NormItem[], pageWidth: number, pageHeight: number, originX = 0, originY = 0): { visible: NormItem[]; hiddenCount: number } {
   let hiddenCount = 0
   const visible: NormItem[] = []
 
@@ -68,7 +68,7 @@ export function filterHiddenText(items: NormItem[], pageWidth: number, pageHeigh
     if (item.isHidden) { hiddenCount++; continue }
     // 페이지 범위 밖 (여백 10% 허용)
     const margin = Math.max(pageWidth, pageHeight) * 0.1
-    if (item.x < -margin || item.x > pageWidth + margin || item.y < -margin || item.y > pageHeight + margin) {
+    if (item.x < originX - margin || item.x > originX + pageWidth + margin || item.y < originY - margin || item.y > originY + pageHeight + margin) {
       hiddenCount++; continue
     }
     visible.push(item)
@@ -275,7 +275,7 @@ function splitOverlaidRuns(items: NormItem[]): void {
   const out: NormItem[] = []
   for (const it of items) { const p = replaced.get(it); if (p) out.push(...p); else out.push(it) }
   items.length = 0
-  items.push(...out.sort((a, b) => b.y - a.y || a.x - b.x))
+  for (const item of out.sort((a, b) => b.y - a.y || a.x - b.x)) items.push(item)
 }
 
 function isInside(o: NormItem, c: NormItem): boolean {

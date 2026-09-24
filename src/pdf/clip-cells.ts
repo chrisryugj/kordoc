@@ -389,7 +389,7 @@ const CLIP_SPACING_MAX = 3
 
 /** 괘선 틈 쌍 — 두 클립(i 가 위·왼쪽), 축, 양끝 좌표(y 틈의 lo 는 아래 칸 윗변·hi 는 위 칸 밑변), 두 클립이 겹친 직각 구간 e1~e2,
  *  괘선으로 본 닫을 좌표(ruleEnd) */
-interface RuledGap { i: number; j: number; axis: "x" | "y"; lo: number; hi: number; e1: number; e2: number; to: number }
+interface RuledGap { i: number; j: number; axis: "x" | "y"; lo: number; hi: number; e1: number; e2: number; to: number; both: boolean }
 
 /**
  * 괘선이 그어진 좁은 틈을 사이에 둔 같은 층 이웃 클립 쌍 — 한 표의 칸으로 묶는다(좌표는 격자를 만들 때 closeGaps 가 닫는다).
@@ -416,13 +416,13 @@ function findRuledGaps(cells: ClipRect[], parent: number[], strokedH: LineSegmen
     if (gv > CLIP_ADJ_GAP && gv <= CLIP_SPACING_MAX && overlap(a.x1, a.x2, b.x1, b.x2) > CLIP_EDGE_TOL && (al(a.x1, b.x1) || al(a.x2, b.x2))
       && !occupied(i, j, Math.max(a.x1, b.x1), b.y2, Math.min(a.x2, b.x2), a.y1)) {
       const e1 = Math.max(a.x1, b.x1), e2 = Math.min(a.x2, b.x2)
-      return { i, j, axis: "y", lo: b.y2, hi: a.y1, e1, e2, to: ruleEnd(strokedH, "h", b.y2, a.y1, e1, e2) }
+      return { i, j, axis: "y", lo: b.y2, hi: a.y1, e1, e2, ...ruleEnd(strokedH, "h", b.y2, a.y1, e1, e2) }
     }
     const gh = b.x1 - a.x2
     if (gh > CLIP_ADJ_GAP && gh <= CLIP_SPACING_MAX && overlap(a.y1, a.y2, b.y1, b.y2) > CLIP_EDGE_TOL && (al(a.y1, b.y1) || al(a.y2, b.y2))
       && !occupied(i, j, a.x2, Math.max(a.y1, b.y1), b.x1, Math.min(a.y2, b.y2))) {
       const e1 = Math.max(a.y1, b.y1), e2 = Math.min(a.y2, b.y2)
-      return { i, j, axis: "x", lo: a.x2, hi: b.x1, e1, e2, to: ruleEnd(strokedV, "v", a.x2, b.x1, e1, e2) }
+      return { i, j, axis: "x", lo: a.x2, hi: b.x1, e1, e2, ...ruleEnd(strokedV, "v", a.x2, b.x1, e1, e2) }
     }
     return undefined
   }
@@ -476,11 +476,11 @@ function findRuledGaps(cells: ClipRect[], parent: number[], strokedH: LineSegmen
 
 /** 틈을 닫을 좌표 — 겹친 폭 e1~e2 의 절반 이상을 덮는 괘선이 한쪽 끝(0.5pt 안)에만 있으면 그 끝(행 경계는 괘선 자리 — 문서번호 표는
  *  아래 칸 윗변), 양끝·없음이면 가운데(칸마다 제 테두리를 그리는 셀 간격 표) */
-function ruleEnd(lines: LineSegment[], dir: "h" | "v", lo: number, hi: number, e1: number, e2: number): number {
+function ruleEnd(lines: LineSegment[], dir: "h" | "v", lo: number, hi: number, e1: number, e2: number): { to: number; both: boolean } {
   const at = (p: number): boolean => lines.some(l =>
     Math.abs((dir === "h" ? l.y1 : l.x1) - p) <= 0.5 && (dir === "h" ? overlap(l.x1, l.x2, e1, e2) : overlap(l.y1, l.y2, e1, e2)) >= (e2 - e1) * STROKE_COVER)
   const atLo = at(lo), atHi = at(hi)
-  return atLo && !atHi ? lo : atHi && !atLo ? hi : (lo + hi) / 2
+  return { to: atLo && !atHi ? lo : atHi && !atLo ? hi : (lo + hi) / 2, both: atLo && atHi }
 }
 
 /**
@@ -493,11 +493,14 @@ function ruleEnd(lines: LineSegment[], dir: "h" | "v", lo: number, hi: number, e
  */
 function closeGaps(members: ClipRect[], gaps: RuledGap[]): ClipRect[] {
   const al = (u: number, v: number): boolean => Math.abs(u - v) <= CLIP_COORD_TOL
-  const lines: Array<{ axis: "x" | "y"; lo: number; hi: number; e1: number; e2: number; to: number }> = []
+  const lines: Array<{ axis: "x" | "y"; lo: number; hi: number; e1: number; e2: number; to: number; both: boolean }> = []
   for (const g of gaps) {
     const l = lines.find(k => k.axis === g.axis && al(k.lo, g.lo) && al(k.hi, g.hi))
-    if (l) { l.e1 = Math.min(l.e1, g.e1); l.e2 = Math.max(l.e2, g.e2) } else lines.push({ ...g })
+    if (l) { l.e1 = Math.min(l.e1, g.e1); l.e2 = Math.max(l.e2, g.e2); l.both &&= g.both } else lines.push({ ...g })
   }
+  // 셀 간격은 두 축에 나타난다. 한 축에서만 양쪽 테두리를 따로 그린 틈은 빈 열/행일 수 있다.
+  // 다른 칸이 그 끝을 경계로 쓰면 짧은 클립이므로 아래 shared 판정으로 종전처럼 닫는다.
+  const spacing = gaps.some(g => g.axis === "x") && gaps.some(g => g.axis === "y")
   const out = members.map(r => ({ ...r }))
   for (const l of lines) {
     // 틈 없이 맞닿은 칸 쌍이 틈 한쪽 끝을 경계로 쓰는가 (y: 위 칸 밑변 = 아래 칸 윗변)
@@ -506,6 +509,7 @@ function closeGaps(members: ClipRect[], gaps: RuledGap[]): ClipRect[] {
         ? Math.abs(u.y1 - v.y2) <= CLIP_ADJ_GAP && al(u.y1, p) && overlap(u.x1, u.x2, v.x1, v.x2) > CLIP_EDGE_TOL
         : Math.abs(u.x2 - v.x1) <= CLIP_ADJ_GAP && al(u.x2, p) && overlap(u.y1, u.y2, v.y1, v.y2) > CLIP_EDGE_TOL)))
     const atLo = shared(l.lo), atHi = shared(l.hi)
+    if (l.both && !spacing && !atLo && !atHi) continue
     const to = atLo && !atHi ? l.lo : atHi && !atLo ? l.hi : l.to
     // 틈 끝에 선 칸 — 틈 줄 범위에 걸치거나 셀 간격 하나 거리로 이어지는 칸까지 (옆 열이 셀 간격만큼 떨어져 있고 그 열 칸의 짝이
     // 쪽 넘김으로 없어도 같은 행 경계다: 설계 기준 표 "구분" 칸)

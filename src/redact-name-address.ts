@@ -581,6 +581,12 @@ export const NAME_VARIANTS: readonly Variant[] = [
     span: "n", mask: NAME_MASK,
     ok: (x) => nameOk(x, 0),
   },
+  { // 명시적인 속기록·회의록 라벨 바로 뒤의 발언자 + 의회 직함. 일반 본문의 "상임 위원"과 구분되는
+    // 문맥에서만 두 글자 이름·드문 성을 허용한다. 라벨만 있는 "회의록: 신규 위원 ..."은 명사 필터를 유지한다.
+    re: new RegExp(`(?<![가-힣])(?:속기록|회의록)[ \\t]{0,2}[:：][ \\t]{0,2}(?<n>${hangulName(ALL_SURNAMES, () => `[ \\t](?:${SPEAKER_TITLE_AFTER})(?:${P_ALL})?(?![가-힣])`)})`, "dg"),
+    span: "n", mask: NAME_MASK,
+    ok: (x) => nameOk(x, 2),
+  },
   { // 나열 — 앞에서 찾은 이름에 쉼표·와/과로 이어진 이름 ("문가윤, 방시우, 엄다인 등")
     re: new RegExp(`(?:[,、·]|(?<=[가-힣])(?:와|과))\\s{0,2}(?<n>${hangulName(ALL_SURNAMES, tailRole)})`, "dg"),
     span: "n", mask: NAME_MASK,

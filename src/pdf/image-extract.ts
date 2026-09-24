@@ -6,6 +6,7 @@
  * 여기서는 RGBA 변환 + PNG deflate만 추가된다. 순수 JS (node:zlib) 전용.
  */
 
+import { createHash } from "node:crypto"
 import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { encodePng } from "../image/transcode.js"
 import type { ExtractedImage, IRBlock, ParseWarning } from "../types.js"
@@ -67,36 +68,40 @@ export interface PdfImageState {
   totalBytes: number
   /** 내용 해시 → 파일명 (이전 페이지에서 이미 추출된 이미지) */
   seen: Map<string, string>
+  /** 문서 공용 객체 id("g_…") → 내용 해시 키. 같은 id 는 늘 같은 디코딩 객체(commonObjs)라 다시 훑지 않는다 */
+  globalKeys: Map<string, string>
   capWarned: boolean
 }
 
 export function createPdfImageState(): PdfImageState {
-  return { imageIndex: 0, totalBytes: 0, seen: new Map(), capWarned: false }
+  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false }
 }
 
-/** FNV-1a 32bit — 픽셀 버퍼 내용 해시 (crypto 불필요, 충돌은 dims 결합으로 완화) */
-function fnv1a(data: Uint8Array | Uint8ClampedArray): number {
-  let h = 0x811c9dc5
-  for (let i = 0; i < data.length; i++) {
-    h ^= data[i]
-    h = Math.imul(h, 0x01000193)
-  }
-  return h >>> 0
+/** 픽셀 버퍼 내용 해시 — 네이티브 SHA-1. 종전 FNV-1a JS 루프는 맥미니에서 0.93GB/s(SHA-1 2.97GB/s)라, 쪽마다 같은 그림을
+ *  새로 그리는 행정업무운영 편람 384쪽(그림 968번·8.1GB)에서 파싱 시간의 78%를 먹었다. 키는 중복 판정에만 쓴다 */
+function contentHash(data: Uint8Array | Uint8ClampedArray): string {
+  return createHash("sha1").update(data).digest("hex")
 }
 
-/** kind별 픽셀 → 8bit RGBA. 미지원/불일치 형태는 null. */
-function toRgba(img: PdfImgData): Uint8Array | null {
+/** 바이트를 안 뽑을 때(images:false) toRgba 가 변환 대신 돌려주는 표지 — 판정(null 여부)만 같게 */
+const NO_BYTES = new Uint8Array(0)
+
+/** kind별 픽셀 → 8bit RGBA. 미지원/불일치 형태는 null. convert=false 면 판정만 하고 NO_BYTES (w×h×4 할당·변환 생략) */
+function toRgba(img: PdfImgData, convert = true): Uint8Array | null {
   const { width: w, height: h, kind, data } = img
   if (!data || !w || !h) return null
-  const rgba = new Uint8Array(w * h * 4)
 
   if (kind === ImageKind.RGBA_32BPP) {
     if (data.length < w * h * 4) return null
+    if (!convert) return NO_BYTES
+    const rgba = new Uint8Array(w * h * 4)
     rgba.set(data.subarray(0, w * h * 4))
     return rgba
   }
   if (kind === ImageKind.RGB_24BPP) {
     if (data.length < w * h * 3) return null
+    if (!convert) return NO_BYTES
+    const rgba = new Uint8Array(w * h * 4)
     for (let i = 0, s = 0, d = 0; i < w * h; i++, s += 3, d += 4) {
       rgba[d] = data[s]; rgba[d + 1] = data[s + 1]; rgba[d + 2] = data[s + 2]; rgba[d + 3] = 255
     }
@@ -106,6 +111,8 @@ function toRgba(img: PdfImgData): Uint8Array | null {
     // 행 단위 비트 패킹 (stride = ceil(w/8)), 1=백 0=흑
     const stride = (w + 7) >> 3
     if (data.length < stride * h) return null
+    if (!convert) return NO_BYTES
+    const rgba = new Uint8Array(w * h * 4)
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const bit = (data[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1
@@ -180,10 +187,15 @@ export async function extractPageImages(
     }
 
     // 페이지 간 내용 중복 — 로고·워터마크 재추출 방지
-    const hash = `${w}x${h}k${imgData.kind ?? "?"}h${fnv1a(imgData.data)}${dedupeId ? "" : "inline"}`
+    const globalId = dedupeId?.startsWith("g_") ? dedupeId : undefined
+    let hash = globalId ? state.globalKeys.get(globalId) : undefined
+    if (hash === undefined) {
+      hash = `${w}x${h}k${imgData.kind ?? "?"}h${contentHash(imgData.data)}${dedupeId ? "" : "inline"}`
+      if (globalId) state.globalKeys.set(globalId, hash)
+    }
     if (state.seen.has(hash)) continue
 
-    const rgba = toRgba(imgData)
+    const rgba = toRgba(imgData, withBytes)
     if (!rgba) continue // 미지원 픽셀 형태 (bitmap 전용 등)
 
     state.imageIndex++
@@ -239,5 +251,5 @@ export function injectPageImageBlocks(blocks: IRBlock[], pageImages: Map<number,
   }
 
   blocks.length = 0
-  blocks.push(...result)
+  for (const b of result) blocks.push(b) // push(...result) 는 블록 약 13만 개부터 RangeError — 그림 1장 든 3,500쪽 문서가 통째 실패했다
 }

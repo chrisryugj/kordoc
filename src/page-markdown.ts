@@ -21,8 +21,10 @@ import { blocksToMarkdown } from "./table/builder.js"
  * - 관측된 최소~최대 페이지 사이의 빈 페이지도 항목으로 낸다. 여러 페이지에
  *   걸친 표는 시작 페이지 한 블록이라 중간 페이지가 실제로 비어 있고, 이때
  *   항목을 빼면 소비자가 배열 길이로 페이지 수를 셀 수 없다.
+ * - `render` 는 쪽 블록 → 마크다운. 문서 마크다운에 포맷 고유 마무리가 붙는 파서(PDF: 쪽번호 제거·균등배분 정리)는
+ *   같은 마무리를 넘겨 쪽 마크다운이 문서 마크다운과 어긋나지 않게 한다.
  */
-export function blocksToPages(blocks: IRBlock[]): PageMarkdown[] | undefined {
+export function blocksToPages(blocks: IRBlock[], render: (blocks: IRBlock[]) => string = blocksToMarkdown): PageMarkdown[] | undefined {
   const firstNumbered = blocks.find(b => typeof b.pageNumber === "number")?.pageNumber
   if (firstNumbered === undefined) return undefined
 
@@ -42,7 +44,7 @@ export function blocksToPages(blocks: IRBlock[]): PageMarkdown[] | undefined {
   const pages: PageMarkdown[] = []
   for (let pageNumber = min; pageNumber <= max; pageNumber++) {
     const pageBlocks = byPage.get(pageNumber)
-    pages.push({ pageNumber, markdown: pageBlocks ? blocksToMarkdown(pageBlocks) : "" })
+    pages.push({ pageNumber, markdown: pageBlocks ? render(pageBlocks) : "" })
   }
   return pages
 }

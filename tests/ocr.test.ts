@@ -15,8 +15,8 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { parseCharacterDict, getOcrModelStatus } from "../src/ocr/models.js"
-import { ctcDecode, componentBoxes } from "../src/ocr/engine.js"
-import { runPdfOcr } from "../src/ocr/pdf-ocr.js"
+import { ctcDecode, componentBoxes, OcrEngine, DEFAULT_OCR_TUNING } from "../src/ocr/engine.js"
+import { runPdfOcr, MAX_OCR_PIXELS } from "../src/ocr/pdf-ocr.js"
 import type { OcrProvider, ParseWarning } from "../src/types.js"
 
 describe("OCR 사전 파싱 (parseCharacterDict)", () => {
@@ -134,6 +134,71 @@ trailer << /Root 1 0 R >>`
     const seen: number[] = []
     await runPdfOcr(tinyTwoPagePdf(), new Set([2]), async (_i, n) => { seen.push(n); return "x" }, [])
     assert.deepEqual(seen, [2])
+  })
+})
+
+describe("OCR resource bounds", () => {
+  it("dense detections preserve 1440 boxes and report loss beyond 3000", async () => {
+    // Exercise detector postprocessing without loading model weights.
+    const side = 320
+    const probability = new Float32Array(side * side)
+    const engine = Object.create(OcrEngine.prototype)
+    engine.ort = { Tensor: class {} }
+    engine.det = { inputNames: ["in"], outputNames: ["out"], run: async () => ({ out: { data: probability } }) }
+    engine.sharp = () => ({ resize: () => ({ removeAlpha: () => ({ raw: () => ({ toBuffer: async () => new Uint8Array(side * side * 3) }) }) }) })
+    for (const count of [1440, 3200]) {
+      probability.fill(0)
+      for (let i = 0; i < count; i++) {
+        const x = (i % 64) * 5, y = Math.floor(i / 64) * 5
+        for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 3; dx++) probability[(y + dy) * side + x + dx] = 0.9
+      }
+      const stats = { droppedLowConf: 0, truncatedBoxes: 0 }
+      const boxes = await engine.detect(new Uint8Array(), side, side, { ...DEFAULT_OCR_TUNING, detLongSide: side }, stats)
+      assert.equal(boxes.length, Math.min(count, 3000))
+      assert.equal(stats.truncatedBoxes, Math.max(0, count - 3000))
+    }
+  })
+  it("대상 쪽만 연다 — 전 쪽 순회(doc.pages())는 대상 밖 쪽을 불러 닫지 않았다", async () => {
+    const { PDFiumDocument } = await import("@hyzyla/pdfium")
+    const proto = PDFiumDocument.prototype as unknown as { getPage(i: number): unknown; pages(): unknown }
+    const origGet = proto.getPage, origPages = proto.pages
+    const opened: number[] = []
+    let iterated = false
+    proto.getPage = function (this: unknown, i: number) { opened.push(i); return origGet.call(this, i) }
+    proto.pages = function (this: unknown) { iterated = true; return origPages.call(this) }
+    try {
+      await runPdfOcr(new TextEncoder().encode(`%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] >> endobj
+4 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] >> endobj
+trailer << /Root 1 0 R >>`).buffer, new Set([2, 7]), async () => "x", [])
+    } finally {
+      proto.getPage = origGet
+      proto.pages = origPages
+    }
+    assert.equal(iterated, false)
+    assert.deepEqual(opened, [1], "0-based 1 = 2쪽만, 문서 밖 7쪽은 건너뜀")
+  })
+
+  it("큰 쪽은 래스터 픽셀 상한 안으로 줄여 그린다", async () => {
+    // 4000pt 정사각 쪽 — ×3 이면 12000² (1.44억 픽셀, 사본·마스크까지 2.38GB)
+    const src = `%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 4000 4000] >> endobj
+trailer << /Root 1 0 R >>`
+    const bytes = new TextEncoder().encode(src)
+    let dims: [number, number] = [0, 0]
+    const warnings: ParseWarning[] = []
+    await runPdfOcr(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), new Set([1]), async (png) => {
+      const b = Buffer.from(png)
+      dims = [b.readUInt32BE(16), b.readUInt32BE(20)] // PNG IHDR 가로·세로
+      return "x"
+    }, warnings)
+    assert.ok(warnings.some(w => w.code === "PARTIAL_PARSE" && /해상도/.test(w.message)))
+    assert.ok(dims[0] * dims[1] <= MAX_OCR_PIXELS, `래스터 ${dims.join("×")}`)
+    assert.ok(dims[0] * dims[1] > MAX_OCR_PIXELS * 0.95, `상한 가까이까지는 그린다 ${dims.join("×")}`)
   })
 })
 

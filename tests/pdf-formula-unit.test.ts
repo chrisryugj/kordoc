@@ -409,3 +409,52 @@ describe("formula detector — IoU / NMS / letterbox", () => {
     assert.ok(Math.abs(out.tensor[contentIdx] - 1) < 0.01)
   })
 })
+
+// 수식 파이프라인 자원 — 모델 없이 인스턴스 필드만 채워 쪽 순회·세션 해제를 본다 (생성자는 private, create() 는 모델 필요)
+describe("FormulaPipeline 자원 — 대상 쪽만 열고, destroy 는 ONNX 세션까지 해제", () => {
+  function threePagePdf(): Uint8Array {
+    return new TextEncoder().encode(`%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj
+4 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj
+5 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj
+trailer << /Root 1 0 R >>`)
+  }
+
+  it("pageFilter 쪽만 연다 (종전 doc.pages() 는 전 쪽을 불러 필터 밖 쪽을 닫지 않았다)", async () => {
+    const { FormulaPipeline } = await import("../src/pdf/formula/pipeline.js")
+    const { PDFiumLibrary, PDFiumDocument } = await import("@hyzyla/pdfium")
+    const p = Object.create(FormulaPipeline.prototype) as Record<string, unknown>
+    p.pdfium = await PDFiumLibrary.init()
+    p.opts = { scale: 2, maxRegionsPerPage: 50, pageTimeoutMs: 60_000 }
+    const processed: number[] = []
+    p.processPage = async (n: number) => { processed.push(n); return null }
+    const proto = PDFiumDocument.prototype as unknown as { getPage(i: number): unknown; pages(): unknown }
+    const origGet = proto.getPage, origPages = proto.pages
+    const opened: number[] = []
+    let iterated = false
+    proto.getPage = function (this: unknown, i: number) { opened.push(i); return origGet.call(this, i) }
+    proto.pages = function (this: unknown) { iterated = true; return origPages.call(this) }
+    try {
+      await (p as unknown as InstanceType<typeof FormulaPipeline>).runOnBuffer(threePagePdf(), new Set([3, 9]))
+    } finally {
+      proto.getPage = origGet
+      proto.pages = origPages
+      ;(p.pdfium as { destroy(): void }).destroy()
+    }
+    assert.equal(iterated, false)
+    assert.deepEqual(opened, [2])
+    assert.deepEqual(processed, [3])
+  })
+
+  it("destroy 가 세션 3개를 release", async () => {
+    const { FormulaPipeline } = await import("../src/pdf/formula/pipeline.js")
+    const released: string[] = []
+    const p = Object.create(FormulaPipeline.prototype) as Record<string, unknown>
+    for (const k of ["mfd", "encoder", "decoder"]) p[k] = { release: async () => { released.push(k) } }
+    p.pdfium = { destroy: () => {} }
+    await (p as unknown as InstanceType<typeof FormulaPipeline>).destroy()
+    assert.deepEqual(released, ["mfd", "encoder", "decoder"])
+  })
+})

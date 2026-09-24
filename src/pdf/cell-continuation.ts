@@ -8,7 +8,7 @@
  */
 
 import type { IRBlock, IRCell, IRTable } from "../types.js"
-import { CONT_PARTS, EMPTY_PARTS, TABLE_COLXS } from "./table-meta.js"
+import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, TABLE_COLXS } from "./table-meta.js"
 import { mergeCrossPageTables } from "./table-parts.js"
 
 /** 조각의 좌우 변과 앞 표 열 경계를 같은 것으로 보는 거리 (pt) — 격자 열 경계는 클립 좌표 묶음(0.3pt)의 평균 */
@@ -49,12 +49,31 @@ export function mergeContinuedCells(blocks: IRBlock[], pageHeights?: Map<number,
     const cell = lastRowCell(prev.table, from.x1, from.x2)
     const add = part.table.cells[0]?.[0]
     if (!cell || !add) continue
+    const at = cell.blocks || add.blocks ? cellBlocks(cell, prev.pageNumber).length : -1
     if (cell.blocks || add.blocks) cell.blocks = [...cellBlocks(cell, prev.pageNumber), ...cellBlocks(add, part.pageNumber)]
     cell.text = [cell.text, add.text].filter(s => s.trim()).join("\n")
     // 앞 쪽 조각이 빈 칸뿐이던 표(쪽 끝에 머리 행만 남은 칸)도 이어진 글을 받았으면 더는 빈 조각이 아니다 — 쪽 넘김 잇기가 버리지 않게
     if (cell.text.trim() || cell.blocks?.length) EMPTY_PARTS.delete(prev.table)
     blocks.splice(j, 1)
     // 칸 안에서 쪽 경계로 갈린 표 (반제품 아이스팩 기준 틀의 2×2 계산 예시: 첫 행만 앞 쪽에 남은 것)
+    if (cell.blocks && at > 0) fillNestedContinuation(cell.blocks, at)
     if (cell.blocks) mergeCrossPageTables(cell.blocks, pageHeights)
   }
+}
+
+/** 이미 이어짐으로 확인된 바깥 칸의 쪽 경계에서, 중첩표의 빈 마지막 칸을 같은 폭의 1칸 조각으로 채운다.
+ * 빈 칸은 앞 쪽에 테두리만 그려지고 글은 다음 쪽에 시작할 수 있다. 새 행으로 붙이면 유령 빈 행이 남는다.
+ * 내용 있는 칸은 새 비고/상자와 구별할 증거가 부족하므로 이 경로에서 합치지 않는다. */
+function fillNestedContinuation(blocks: IRBlock[], at: number): void {
+  const prev = blocks[at - 1], next = blocks[at]
+  const t = prev?.table, u = next?.table
+  if (!t || !u || u.rows !== 1 || u.cols !== 1 || !CLIP_TABLES.has(t) || !CLIP_TABLES.has(u)
+    || next.pageNumber !== (prev.pageNumber ?? 0) + 1) return
+  const xs = TABLE_COLXS.get(u)
+  const cell = xs ? lastRowCell(t, xs[0], xs[xs.length - 1]) : undefined
+  const add = u.cells[0]?.[0]
+  if (!cell || !add || cell.text.trim() || cell.blocks?.length) return
+  cell.text = add.text
+  if (add.blocks) cell.blocks = add.blocks
+  blocks.splice(at, 1)
 }

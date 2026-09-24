@@ -12,10 +12,10 @@
 
 import type { IRBlock, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError } from "../utils.js"
-import { getOcrEngine } from "./engine.js"
+import { getOcrEngine, type OcrPageStats } from "./engine.js"
 import { ensureOcrModels } from "./models.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
-import { ocrItemsToBlocks } from "./pdf-ocr.js"
+import { MAX_OCR_PIXELS, ocrItemsToBlocks } from "./pdf-ocr.js"
 import { deskewPage } from "./deskew.js"
 
 /** 좌표 환산 기본 스케일 (px/pt) — PDF OCR 렌더(216dpi)와 동일 기준 */
@@ -61,8 +61,10 @@ export async function parseImageDocument(
     return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: 1 }], warnings }
   }
 
-  const { data: decoded, width, height, density } = await decodeToRgba(buffer)
-  const scale = imageScale(width, height, density)
+  const { data: decoded, width, height, density, shrink } = await decodeToRgba(buffer)
+  if (shrink < 1) warnings.push({ page: 1, code: "PARTIAL_PARSE", message: "OCR 래스터 픽셀 상한으로 이미지 해상도를 축소했습니다 (작은 글자 인식 결손 가능)" })
+  // 픽셀 상한으로 줄인 이미지는 같은 지면을 낮은 해상도로 본 것 — px/pt 도 같은 비율로
+  const scale = imageScale(width / shrink, height / shrink, density) * shrink
   // 스캔·사진 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다
   const { rgba: data } = deskewPage(decoded, width, height)
 
@@ -72,7 +74,7 @@ export async function parseImageDocument(
     }
   })
   const engine = await getOcrEngine()
-  const stats = { droppedLowConf: 0 }
+  const stats: OcrPageStats = { droppedLowConf: 0 }
   const items = await engine.recognizePage(data, width, height, stats)
   if (stats.droppedLowConf > 0) {
     warnings.push({
@@ -80,6 +82,9 @@ export async function parseImageDocument(
       message: `저신뢰 OCR 라인 ${stats.droppedLowConf}개 폐기 (인식 결손 가능)`,
       code: "OCR_LOW_CONF",
     })
+  }
+  if (stats.truncatedBoxes) {
+    warnings.push({ page: 1, message: `OCR 검출 상자가 너무 많아 ${stats.truncatedBoxes}개는 인식하지 않음 (일부 글 결손)`, code: "PARTIAL_PARSE" })
   }
   if (items.length === 0) {
     warnings.push({ page: 1, message: "이미지에서 텍스트를 인식하지 못했습니다", code: "OCR_FAILED" })
@@ -93,14 +98,22 @@ export async function parseImageDocument(
   return { blocks: ocrItemsToBlocks(items, 1, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings }
 }
 
-/** sharp 로 RGBA 디코딩 — 미설치는 MISSING_DEPENDENCY 로 분류되도록 안내 메시지 throw */
-async function decodeToRgba(
+/**
+ * sharp 로 RGBA 디코딩 — 미설치는 MISSING_DEPENDENCY 로 분류되도록 안내 메시지 throw.
+ * EXIF 방향대로 세운다(`rotate()`): 폰으로 세로 촬영한 JPEG 은 픽셀을 눕혀 저장하고 Orientation 6 으로 표시 방향만 적는다 —
+ * 무시하면 누운 글을 읽어 한글 131자 쪽이 쓰레기 57자가 됐다. 픽셀이 MAX_OCR_PIXELS 를 넘으면 그 안으로 줄인다(shrink = 줄인 배율).
+ * (테스트용 export)
+ */
+export async function decodeToRgba(
   buffer: ArrayBuffer,
-): Promise<{ data: Uint8Array; width: number; height: number; density?: number }> {
-  type SharpFactory = (input: Buffer) => {
+): Promise<{ data: Uint8Array; width: number; height: number; density?: number; shrink: number }> {
+  type Chain = {
+    rotate(): Chain
+    resize(w: number, h: number, opts: { fit: "fill" }): Chain
     ensureAlpha(): { raw(): { toBuffer(opts: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number } }> } }
-    metadata(): Promise<{ density?: number }>
+    metadata(): Promise<{ density?: number; width?: number; height?: number; orientation?: number }>
   }
+  type SharpFactory = (input: Buffer) => Chain
   let sharp: SharpFactory
   try {
     const mod = (await import("sharp")) as unknown as SharpFactory | { default?: SharpFactory }
@@ -113,11 +126,17 @@ async function decodeToRgba(
     )
   }
   const input = Buffer.from(buffer)
-  const [{ data, info }, meta] = await Promise.all([
-    sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
-    sharp(input).metadata().catch(() => ({ density: undefined })),
-  ])
-  return { data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height, density: meta.density }
+  const meta: { density?: number; width?: number; height?: number; orientation?: number } = await sharp(input).metadata().catch(() => ({}))
+  // 5~8 은 90° 돌린 방향 — 세운 뒤 가로·세로가 바뀐다
+  const [w0, h0] = (meta.orientation ?? 1) >= 5 ? [meta.height ?? 0, meta.width ?? 0] : [meta.width ?? 0, meta.height ?? 0]
+  const shrink = w0 * h0 > MAX_OCR_PIXELS ? Math.sqrt(MAX_OCR_PIXELS / (w0 * h0)) : 1
+  let chain = sharp(input).rotate()
+  if (shrink < 1) chain = chain.resize(Math.max(1, Math.floor(w0 * shrink)), Math.max(1, Math.floor(h0 * shrink)), { fit: "fill" })
+  const { data, info } = await chain.ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  return {
+    data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height, density: meta.density,
+    shrink: w0 ? info.width / w0 : 1,
+  }
 }
 
 /** OcrProvider 계약용 mime 판별 */

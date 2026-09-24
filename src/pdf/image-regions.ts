@@ -47,6 +47,16 @@ export function extractImageRegions(
         if (Array.isArray(t) && t.length >= 6) ctm = multiplyTransform(ctm, t)
         break
       }
+      // Form XObject 는 /Matrix 공간에서 그린다 — pdfjs 인자 [matrix, bbox], End 에서 복원 (line-extract.ts 와 같음)
+      case OPS.paintFormXObjectBegin: {
+        stack.push(ctm)
+        const m = (argsArray[i] as unknown[])?.[0]
+        if (Array.isArray(m) && m.length >= 6) ctm = multiplyTransform(ctm, m as number[])
+        break
+      }
+      case OPS.paintFormXObjectEnd:
+        ctm = stack.pop() || [1, 0, 0, 1, 0, 0]
+        break
       case OPS.paintImageXObject:
       case OPS.paintInlineImageXObject:
       case OPS.paintImageMaskXObject:

@@ -130,8 +130,17 @@ export function extractLines(
         ctm = ctmStack.pop() ?? [1, 0, 0, 1, 0, 0]
         break
 
-      case OPS.transform: {
-        const t = args as number[]
+      case OPS.transform:
+      case OPS.paintFormXObjectBegin: {
+        // Form XObject 는 /Matrix 를 CTM 에 곱한 공간에서 그린다(End 에서 복원) — 무시하면 0.7배 폼 안 4×3 표 괘선이 글과
+        // 어긋나 뭉개졌다. pdfjs 인자는 [matrix, bbox], matrix 없으면 항등(vector-glyphs.ts 와 같은 처리)
+        let t = args as number[]
+        if (op === OPS.paintFormXObjectBegin) {
+          ctmStack.push(ctm.slice())
+          const m = (args as unknown[])[0]
+          if (!Array.isArray(m) || m.length < 6) break
+          t = m as number[]
+        }
         ctm = [
           ctm[0] * t[0] + ctm[2] * t[1],
           ctm[1] * t[0] + ctm[3] * t[1],
@@ -142,6 +151,9 @@ export function extractLines(
         ]
         break
       }
+      case OPS.paintFormXObjectEnd:
+        ctm = ctmStack.pop() ?? [1, 0, 0, 1, 0, 0]
+        break
 
       case OPS.constructPath: {
         const arg0 = args[0]

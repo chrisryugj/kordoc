@@ -91,20 +91,22 @@ export function detectRulingLines(
 
   // 잉크 마스크 1회 구축 — 수평/수직 두 패스가 공유
   const ink = new Uint8Array(width * height)
+  // 휘도는 채움 경계(fillEdges)도 쓴다 — 한 번만 계산
+  const luma = new Uint8Array(width * height)
   for (let p = 0, i = 0; p < ink.length; p++, i += 4) {
     // ITU-R BT.601 휘도 근사 (정수 시프트)
-    const luma = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8
-    if (luma <= INK_LUMA_MAX && rgba[i + 3] >= 128) ink[p] = 1
+    const l = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8
+    luma[p] = l
+    if (l <= INK_LUMA_MAX && rgba[i + 3] >= 128) ink[p] = 1
   }
 
-  const solid = (at: (line: number, pos: number) => number, line: number, span: number) => solidRuns(at, line, span, minLenPx)
+  const solid: RunReader = (m, base, step, span) => solidRuns(m, base, step, span, minLenPx)
   const dot = {
     maxGap: Math.max(2, Math.round(DOT_MAX_GAP_PT * scale)),
     maxDash: Math.max(2, Math.round(DOT_MAX_DASH_PT * scale)),
     maxPeriod: DOT_MAX_PERIOD_PT * scale,
   }
-  const dotted = (at: (line: number, pos: number) => number, line: number, span: number) =>
-    dottedRuns(at, line, span, minLenPx, dot.maxGap, dot.maxDash, dot.maxPeriod)
+  const dotted: RunReader = (m, base, step, span) => dottedRuns(m, base, step, span, minLenPx, dot.maxGap, dot.maxDash, dot.maxPeriod)
   const horizontals = detectBands(ink, width, height, maxThickPx, false, solid)
   const verticals = detectBands(ink, width, height, maxThickPx, true, solid)
   const dotH = detectBands(ink, width, height, maxThickPx, false, dotted)
@@ -122,7 +124,7 @@ export function detectRulingLines(
   // 세로 괘선과 만나지 않는다)
   const inkV = [...verticals]
   const ruleH = horizontals.filter(p => inkV.some(v => v.x1 >= p.x1 - tol && v.x1 <= p.x2 + tol && p.y1 >= v.y1 - tol && p.y1 <= v.y2 + tol))
-  const fill = fillEdges(rgba, width, height, scale)
+  const fill = fillEdges(luma, width, height, scale)
   const fillH = fill.horizontals.filter(a => ruleH.some(p => Math.abs(p.x1 - a.x1) <= tol && Math.abs(p.x2 - a.x2) <= tol))
   horizontals.push(...fillH)
   const edgeH = [...ruleH, ...fillH]
@@ -137,7 +139,7 @@ export function detectRulingLines(
  * 블록 휘도는 가장 밝은 픽셀(칸 사이 1~3px 흰 틈이 채움에 묻히지 않게). 방향마다 안쪽 연속 채움 길이를 한 번 누적해
  * 경계 마스크를 만들고, 찾은 선은 원래 픽셀 좌표로 되돌린다
  */
-function fillEdges(rgba: Uint8Array, width: number, height: number, scale: number): RulingLines {
+function fillEdges(pageLuma: Uint8Array, width: number, height: number, scale: number): RulingLines {
   const k = Math.max(1, Math.round(scale))
   const w = Math.floor(width / k), h = Math.floor(height / k), n = w * h
   const luma = new Uint8Array(n)
@@ -146,11 +148,8 @@ function fillEdges(rgba: Uint8Array, width: number, height: number, scale: numbe
     for (let x = 0; x < w; x++) {
       let mx = 0
       for (let by = 0; by < k; by++) {
-        let i = ((y * k + by) * width + x * k) * 4
-        for (let bx = 0; bx < k; bx++, i += 4) {
-          const l = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8
-          if (l > mx) mx = l
-        }
+        let i = (y * k + by) * width + x * k
+        for (let bx = 0; bx < k; bx++, i++) if (pageLuma[i] > mx) mx = pageLuma[i]
       }
       luma[y * w + x] = mx
       hist[mx]++
@@ -162,7 +161,7 @@ function fillEdges(rgba: Uint8Array, width: number, height: number, scale: numbe
   for (let p = 0; p < n; p++) if (luma[p] < bg - FILL_DELTA) tint[p] = 1
   const depth = Math.max(2, Math.round(FILL_MIN_DEPTH_PT * scale / k))
   const minLen = Math.round(FILL_MIN_LENGTH_PT * scale / k)
-  const solid = (at: (line: number, pos: number) => number, line: number, span: number) => solidRuns(at, line, span, minLen)
+  const solid: RunReader = (m, base, step, span) => solidRuns(m, base, step, span, minLen)
   const run = new Uint16Array(n)
   const mask = new Uint8Array(n)
   const out: RulingLines = { horizontals: [], verticals: [] }
@@ -213,15 +212,19 @@ function fillEdges(rgba: Uint8Array, width: number, height: number, scale: numbe
   return out
 }
 
-type RunReader = (at: (line: number, pos: number) => number, line: number, span: number) => Array<{ lo: number; hi: number }>
+/**
+ * 스캔라인 하나의 런 판독 — 마스크의 base + pos·step 픽셀(pos = 0..span-1). 가로 스캔은 step 1, 세로 스캔은 step = 쪽 폭.
+ * 픽셀마다 접근 함수를 부르던 종전 모양은 괘선 감지 시간의 40% 가 그 호출이었다(쪽당 4패스 × 450만 픽셀)
+ */
+type RunReader = (mask: Uint8Array, base: number, step: number, span: number) => Array<{ lo: number; hi: number }>
 
 /** 스캔라인 하나의 실선 런 (GAP_TOL_PX 이하 끊김 허용, 최소 길이 이상) */
-function solidRuns(at: (line: number, pos: number) => number, line: number, span: number, minLenPx: number): Array<{ lo: number; hi: number }> {
+function solidRuns(mask: Uint8Array, base: number, step: number, span: number, minLenPx: number): Array<{ lo: number; hi: number }> {
   const runs: Array<{ lo: number; hi: number }> = []
   let runStart = -1
   let gap = 0
   for (let pos = 0; pos <= span; pos++) {
-    const on = pos < span && at(line, pos) === 1
+    const on = pos < span && mask[base + pos * step] === 1
     if (on) {
       if (runStart < 0) runStart = pos
       gap = 0
@@ -239,8 +242,9 @@ function solidRuns(at: (line: number, pos: number) => number, line: number, span
 
 /** 스캔라인 하나의 점선 런 — 짧은 잉크 조각(≤ maxDash)이 간격 ≤ maxGap 으로 DOT_MIN_COUNT 개+ 이어진 사슬 (DOT_* 주석) */
 function dottedRuns(
-  at: (line: number, pos: number) => number,
-  line: number,
+  mask: Uint8Array,
+  base: number,
+  step: number,
   span: number,
   minLenPx: number,
   maxGap: number,
@@ -265,7 +269,7 @@ function dottedRuns(
   }
   let s = -1
   for (let pos = 0; pos <= span; pos++) {
-    const on = pos < span && at(line, pos) === 1
+    const on = pos < span && mask[base + pos * step] === 1
     if (on) { if (s < 0) s = pos; continue }
     if (s < 0) continue
     const lo = s, hi = pos - 1
@@ -300,9 +304,8 @@ function detectBands(
 ): PxSegment[] {
   const lines = transpose ? width : height // 스캔라인 개수 (직교축)
   const span = transpose ? height : width // 런 진행축 길이
-  const at = transpose
-    ? (line: number, pos: number) => ink[pos * width + line]
-    : (line: number, pos: number) => ink[line * width + pos]
+  const step = transpose ? width : 1
+  const baseOf = (line: number) => (transpose ? line : line * width)
 
   const out: PxSegment[] = []
   let open: Band[] = []
@@ -311,9 +314,10 @@ function detectBands(
   const surroundInkRatio = (b: Band, side: number): number => {
     if (side < 0 || side >= lines) return 0
     let dark = 0, total = 0
+    const base = baseOf(side)
     for (let pos = b.lo; pos <= b.hi; pos += 3) {
       total++
-      if (at(side, pos) === 1) dark++
+      if (ink[base + pos * step] === 1) dark++
     }
     return total > 0 ? dark / total : 0
   }
@@ -335,7 +339,7 @@ function detectBands(
 
   for (let line = 0; line < lines; line++) {
     // 1) 이 스캔라인의 런 (실선 또는 점선 사슬)
-    const runs = readRuns(at, line, span)
+    const runs = readRuns(ink, baseOf(line), step, span)
 
     // 2) 열린 밴드와 병합 — 직전 스캔라인까지 이어졌고 범위가 겹치면 확장
     const next: Band[] = []

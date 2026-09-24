@@ -444,6 +444,8 @@ function extractBlocksWithGrids(
       cells: finalGrid,
       hasHeader: finalRows > 1,
     }
+    // 중첩표도 같은 쪽 넘김 규칙을 쓴다 — pendingNested 분기 전에 기하 출처를 기록한다.
+    if (grid.cells) CLIP_TABLES.add(irTable)
     TABLE_COLXS.set(irTable, grid.colXs)
     if (grid.continues) CONT_PARTS.set(irTable, grid.continues)
 
@@ -486,7 +488,6 @@ function extractBlocksWithGrids(
       continue
     }
 
-    if (grid.cells) CLIP_TABLES.add(irTable)
     blocks.push({ type: "table", table: irTable, pageNumber: pageNum, bbox: tableBbox })
   }
   // 틀 셀에 못 붙은 중첩표(틀이 빈 표로 걸러졌거나 셀 좌표가 어긋난 경우) — 종전대로 독립 블록

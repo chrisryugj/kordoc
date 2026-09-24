@@ -584,6 +584,17 @@ export function removeHeaderFooterBlocks(
       if (!repeatedPatterns.has(norm)) continue
       const cand = blocks[e.blockIdx]
       const cb = cand.bbox!
+      // 표 바로 아래의 출처·주석은 반복되어도 표 내용이다. CropBox를 원점으로 옮기면 같은 주석이
+      // 하단 12% 띠에 들어올 수 있어, 영역/반복만으로 지우면 본문을 잃는다. 명시적 표지와
+      // 표 폭 안 + 한 줄 높이 이내의 간격을 함께 요구해 떨어진 running footer는 종전대로 둔다.
+      const tableNote = /^(?:주\s*(?:\d+\s*[).:]|[:：])|(?:자료|출처)\s*[:：])/.test(e.text)
+        && blocks.some(o => {
+          if (o.type !== "table" || !o.bbox || o.bbox.page !== cb.page) return false
+          const gap = o.bbox.y - (cb.y + cb.height)
+          return gap >= 0 && gap <= cb.height
+            && cb.x >= o.bbox.x && cb.x + cb.width <= o.bbox.x + o.bbox.width
+        })
+      if (tableNote) continue
       let sharesLine = false
       for (let bi = 0; bi < blocks.length; bi++) {
         if (bi === e.blockIdx) continue

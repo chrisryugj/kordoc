@@ -225,8 +225,8 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
     }
   }
   try {
-    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images } = await parsePdfDocument(buffer, options)
-    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pageCount: metadata?.pageCount }
+    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages } = await parsePdfDocument(buffer, options)
+    return { success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, pageCount: metadata?.pageCount }
   } catch (err) {
     const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
     return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err), isImageBased }
