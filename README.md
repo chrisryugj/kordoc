@@ -1030,6 +1030,8 @@ npx kordoc watch ./수신함 -d ./변환결과              # 폴더 감시 모�
 npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 ```
 
+`watch -d` 는 감시 폴더 안의 하위 폴더 구조를 출력에도 그대로 둡니다: `수신함/팀/보고서.hwpx` → `변환결과/팀/보고서.md`(또는 `.json`). `수신함` 바로 아래 파일은 종전처럼 `변환결과` 바로 아래에 씁니다.
+
 > `check-ocr-models` · `check-formula-models` 는 이름과 달리 **없거나 SHA 가 안 맞으면 내려받습니다**.
 > 상태만 보려면 `--status-only` 를 붙이세요 (수식 모델은 ~155MB).
 >
