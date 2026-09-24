@@ -2,7 +2,7 @@
 
 import { watch, readFileSync, writeFileSync, mkdirSync, statSync, existsSync, realpathSync } from "fs"
 import { lookup } from "dns/promises"
-import { basename, resolve, extname, sep } from "path"
+import { basename, dirname, resolve, extname, sep } from "path"
 import { parse, detectFormat } from "./index.js"
 import { toArrayBuffer } from "./utils.js"
 import { assertNetworkAllowed } from "./shared/offline.js"
@@ -136,7 +136,8 @@ export async function watchDirectory(options: WatchOptions): Promise<void> {
 
       if (outDir) {
         const outExt = format === "json" ? ".json" : ".md"
-        const outPath = resolve(outDir, fileName.replace(/\.[^.]+$/, outExt))
+        const outPath = resolve(outDir, dirname(filePath), fileName.replace(/\.[^.]+$/, outExt))
+        mkdirSync(dirname(outPath), { recursive: true })
         writeFileSync(outPath, output, "utf-8")
         log(`[kordoc watch] 완료: ${fileName} → ${basename(outPath)}`)
       } else {
