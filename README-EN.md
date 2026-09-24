@@ -590,6 +590,8 @@ npx kordoc watch ./inbox -d ./converted             # folder watch mode
 npx kordoc watch ./docs --webhook https://api/hook  # webhook notification
 ```
 
+With `watch -d`, output preserves the input's relative subdirectories: `inbox/team/report.hwpx` becomes `converted/team/report.md` (or `.json`). Files directly in `inbox` still write directly to `converted`.
+
 > `check-ocr-models` and `check-formula-models` **download** what is missing or fails its SHA check,
 > despite the name. Pass `--status-only` to inspect without downloading (formula models are ~155MB).
 >
