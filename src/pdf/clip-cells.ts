@@ -154,10 +154,26 @@ export function buildClipCellGrids(
   // 같은 사각형은 셀 안 문단마다 반복 클립된다(틀 3회·선서문 안쪽 1칸 표 2회 실측) — 좌표로 중복 제거.
   // 중복을 남기면 1칸 표가 서로 이웃도 포함도 아닌 단독 클립 여러 개로 흩어져 묶이지 않는다
   const cells: ClipRect[] = []
+  // x1·y1 근처만 비교한다. 반복 클립이 많은 쪽에서 전체 선행 셀을 다시 훑지 않는다.
+  const buckets = new Map<number, Map<number, ClipRect[]>>()
   for (const r of rects) {
     if ((r.x2 - r.x1) < CLIP_MIN_W || (r.y2 - r.y1) < CLIP_MIN_H) continue
     if (pageArea > 0 && (r.x2 - r.x1) * (r.y2 - r.y1) >= pageArea * CLIP_MAX_PAGE_FRAC) continue
-    if (!cells.some(c => sameRect(c, r))) cells.push(r)
+    const bx = Math.floor(r.x1 / CLIP_EDGE_TOL), by = Math.floor(r.y1 / CLIP_EDGE_TOL)
+    let duplicate = false
+    for (let dx = -1; dx <= 1 && !duplicate; dx++) {
+      const ys = buckets.get(bx + dx)
+      for (let dy = -1; dy <= 1 && !duplicate; dy++) {
+        duplicate = ys?.get(by + dy)?.some(c => sameRect(c, r)) ?? false
+      }
+    }
+    if (duplicate) continue
+    cells.push(r)
+    let ys = buckets.get(bx)
+    if (!ys) { ys = new Map(); buckets.set(bx, ys) }
+    const row = ys.get(by)
+    if (row) row.push(r)
+    else ys.set(by, [r])
   }
   if (cells.length < 1) return { grids: [], containers: [], page: { lastCells: [], clips: [] } }
 
@@ -227,12 +243,32 @@ export function buildClipCellGrids(
     }
     return -1
   }
-  // 연결 컴포넌트 (같은 층의 변 공유 이웃) — 페이지당 클립은 수백 개라 O(n²) 허용
+  // 연결 컴포넌트 (같은 층의 변 공유 이웃). 변 좌표가 가까운 사각형만 후보로 뽑는다.
+  // 셀이 많은 쪽에서도 서로 멀리 있는 모든 쌍을 비교하지 않는다.
   const root = cells.map((_, i) => i)
   const find = (i: number): number => { while (root[i] !== i) { root[i] = root[root[i]]; i = root[i] } return i }
+  const edgeBin = (v: number): number => Math.floor(v / CLIP_ADJ_GAP)
+  const startsX = new Map<number, number[]>(), endsX = new Map<number, number[]>()
+  const startsY = new Map<number, number[]>(), endsY = new Map<number, number[]>()
+  const addEdge = (map: Map<number, number[]>, v: number, i: number): void => {
+    const k = edgeBin(v), row = map.get(k)
+    if (row) row.push(i)
+    else map.set(k, [i])
+  }
+  for (let i = 0; i < cells.length; i++) {
+    addEdge(startsX, cells[i].x1, i); addEdge(endsX, cells[i].x2, i)
+    addEdge(startsY, cells[i].y1, i); addEdge(endsY, cells[i].y2, i)
+  }
   for (let i = 0; i < cells.length; i++) {
     if (tableClip[i]) continue
-    for (let j = i + 1; j < cells.length; j++) {
+    const candidates = new Set<number>()
+    const near = (map: Map<number, number[]>, v: number): void => {
+      const k = edgeBin(v)
+      for (let d = -1; d <= 1; d++) for (const j of map.get(k + d) ?? []) if (j > i) candidates.add(j)
+    }
+    near(startsX, cells[i].x2); near(endsX, cells[i].x1)
+    near(startsY, cells[i].y2); near(endsY, cells[i].y1)
+    for (const j of [...candidates].sort((a, b) => a - b)) {
       if (tableClip[j] || parent[i] !== parent[j]) continue
       if (adjacent(cells[i], cells[j])) { const ra = find(i), rb = find(j); if (ra !== rb) root[ra] = rb }
     }

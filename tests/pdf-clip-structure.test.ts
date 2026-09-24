@@ -21,6 +21,24 @@ const h = (y: number, x1: number, x2: number): LineSegment => ({ x1, y1: y, x2, 
 const v = (x: number, y1: number, y2: number): LineSegment => ({ x1: x, y1, x2: x, y2, lineWidth: 0.36 })
 
 describe("buildClipCellGrids — 표 위에 걸친 그림·글상자는 부모가 못 된다", () => {
+  it("좌표 버킷 경계를 넘는 반복 클립도 한 칸으로 센다", () => {
+    const left = { x1: 59.9, y1: 100.1, x2: 100, y2: 130 }
+    const repeated = { x1: 61.1, y1: 101.3, x2: 101.2, y2: 131.2 }
+    const right = { x1: 100, y1: 100.1, x2: 150, y2: 130 }
+    const { grids } = buildClipCellGrids([left, repeated, right], [], [], 595, 841)
+    assert.equal(grids.length, 1)
+    assert.equal(grids[0].cells?.filter(c => !c.filler).length, 2)
+    assert.equal(grids[0].colXs.length - 1, 2)
+  })
+
+  it("0.1pt 떨어진 공유 변은 같은 표로 잇고 0.3pt 틈은 가른다", () => {
+    const left = { x1: 60, y1: 100, x2: 100, y2: 130 }
+    const near = { x1: 100.1, y1: 100, x2: 150, y2: 130 }
+    const far = { ...near, x1: 100.3 }
+    assert.equal(buildClipCellGrids([left, near], [], [], 595, 841).grids.length, 1)
+    assert.equal(buildClipCellGrids([left, far], [], [], 595, 841).grids.length, 0, "단독 클립 둘은 표가 아니다")
+  })
+
   it("워터마크가 서명란 가운데 두 열만 품어도 4×4 한 표 (복학원서)", () => {
     const xs = [63.69, 130.97, 434.17, 450.84, 536.83], ys = [407.79, 377.11, 361.52, 344.86, 328.2]
     const cells: Rect[] = []
@@ -258,6 +276,41 @@ describe("mergeContinuedCells — 이어짐 조각을 앞 쪽 표 그 칸에 붙
     assert.equal(inner.length, 2)
     assert.equal(inner[0].table!.rows, 2)
     assert.equal(inner[0].table!.cells[1][0].text, "앞 쪽 별도 설명")
+  })
+
+  it("다음 쪽 감싸개 안의 중첩표 본문을 앞 쪽 머리 행과 잇는다", () => {
+    const head = clipTable([[cell("구분"), cell("‘16"), cell("‘17")]], [88, 188, 288, 388])
+    const body = clipTable([[cell("주거용건물"), cell("88.27"), cell("92.02")], [cell("상승률"), cell("4.3"), cell("4.2")]], [88, 188, 288, 388])
+    const header: IRBlock = { type: "table", table: head, pageNumber: 27, bbox: { page: 27, x: 88, y: 60, width: 300, height: 20 } }
+    const content: IRBlock = { type: "table", table: body, pageNumber: 28, bbox: { page: 28, x: 88, y: 690, width: 300, height: 90 } }
+    const wrapper = clipTable([[cell("주거용건물\n자료출처", { blocks: [content, { type: "paragraph", text: "자료출처", pageNumber: 28 }] })]], [80, 400])
+    const outer = clipTable([[cell("근거설명", { blocks: [header] })]], [58, 536])
+    const blocks: IRBlock[] = [
+      { type: "table", table: outer, pageNumber: 27 },
+      part(cell("주거용건물\n자료출처", { blocks: [{ type: "table", table: wrapper, pageNumber: 28, bbox: { page: 28, x: 80, y: 460, width: 320, height: 320 } }] }), { x1: 58, x2: 536 }, 28),
+    ]
+    mergeContinuedCells(blocks, new Map([[27, 841], [28, 841]]))
+    const inner = outer.cells[0][0].blocks!
+    assert.equal(inner[0].table?.rows, 3)
+    assert.deepEqual(inner[0].table?.cells.map(r => r[0].text), ["구분", "주거용건물", "상승률"])
+    assert.equal(inner[1].text, "자료출처")
+  })
+
+  it("다음 쪽 감싸개 안의 열 경계가 다르면 별도 표로 둔다", () => {
+    const head = clipTable([[cell("구분"), cell("연도")]], [88, 188, 388])
+    const body = clipTable([[cell("별도"), cell("값")], [cell("새 표"), cell("1")]], [100, 200, 400])
+    const header: IRBlock = { type: "table", table: head, pageNumber: 27, bbox: { page: 27, x: 88, y: 60, width: 300, height: 20 } }
+    const content: IRBlock = { type: "table", table: body, pageNumber: 28, bbox: { page: 28, x: 100, y: 690, width: 300, height: 90 } }
+    const wrapper = clipTable([[cell("별도 표", { blocks: [content] })]], [80, 420])
+    const outer = clipTable([[cell("근거설명", { blocks: [header] })]], [58, 536])
+    const blocks: IRBlock[] = [
+      { type: "table", table: outer, pageNumber: 27 },
+      part(cell("별도 표", { blocks: [{ type: "table", table: wrapper, pageNumber: 28, bbox: { page: 28, x: 80, y: 460, width: 340, height: 320 } }] }), { x1: 58, x2: 536 }, 28),
+    ]
+    mergeContinuedCells(blocks, new Map([[27, 841], [28, 841]]))
+    assert.equal(outer.cells[0][0].blocks?.length, 2)
+    assert.equal(outer.cells[0][0].blocks?.[0].table?.rows, 1)
+    assert.equal(outer.cells[0][0].blocks?.[1].table?.rows, 1, "감싸개를 보존한다")
   })
 
   it("세 쪽 조각이 한 칸에 모이고 칸 안 표도 제자리 (5×1 거대 칸)", () => {

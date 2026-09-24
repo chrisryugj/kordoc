@@ -13,6 +13,7 @@ import { mergeCrossPageTables } from "./table-parts.js"
 
 /** 조각의 좌우 변과 앞 표 열 경계를 같은 것으로 보는 거리 (pt) — 격자 열 경계는 클립 좌표 묶음(0.3pt)의 평균 */
 const COL_MATCH_TOL = 0.5
+const CONTINUED_TABLE_PAGE_BAND = 0.16
 
 /** 표 마지막 행까지 내려오는 칸 가운데 좌우 변이 x1~x2 인 칸 (열 경계를 모르는 1열 표는 그 칸) */
 function lastRowCell(t: IRTable, x1: number, x2: number): IRCell | undefined {
@@ -56,9 +57,31 @@ export function mergeContinuedCells(blocks: IRBlock[], pageHeights?: Map<number,
     if (cell.text.trim() || cell.blocks?.length) EMPTY_PARTS.delete(prev.table)
     blocks.splice(j, 1)
     // 칸 안에서 쪽 경계로 갈린 표 (반제품 아이스팩 기준 틀의 2×2 계산 예시: 첫 행만 앞 쪽에 남은 것)
-    if (cell.blocks && at > 0) fillNestedContinuation(cell.blocks, at)
+    if (cell.blocks && at > 0) {
+      const nextAt = cell.blocks[at]
+      fillNestedContinuation(cell.blocks, at)
+      if (cell.blocks[at] === nextAt) unwrapContinuedTable(cell.blocks, at, pageHeights)
+    }
     if (cell.blocks) mergeCrossPageTables(cell.blocks, pageHeights)
   }
+}
+
+/** 이어진 바깥 칸의 다음 쪽 전체 클립이 1×1 감싸개가 되면 그 안의 표 머리/본문이
+ * 서로 다른 깊이에 놓인다. 두 표의 열 경계와 쪽 끝·첫머리 위치가 맞을 때만 감싸개를
+ * 풀어 기존 쪽 넘김 표 병합에 넘긴다. 감싸개 안의 뒤 문단·표 순서는 그대로 둔다. */
+function unwrapContinuedTable(blocks: IRBlock[], at: number, pageHeights?: Map<number, number>): void {
+  const prev = blocks[at - 1], frame = blocks[at]
+  if (!prev?.table || !frame?.table || frame.table.rows !== 1 || frame.table.cols !== 1 || !CLIP_TABLES.has(frame.table)) return
+  const inner = frame.table.cells[0]?.[0]?.blocks
+  const next = inner?.[0]
+  if (!inner || !next?.table || !prev.bbox || !next.bbox || !prev.pageNumber || next.pageNumber !== prev.pageNumber + 1
+    || !CLIP_TABLES.has(prev.table) || !CLIP_TABLES.has(next.table) || prev.table.cols !== next.table.cols) return
+  const px = TABLE_COLXS.get(prev.table), nx = TABLE_COLXS.get(next.table)
+  if (!px || !nx || px.length !== nx.length || px.some((x, i) => Math.abs(x - nx[i]) > COL_MATCH_TOL)) return
+  const ph = pageHeights?.get(prev.pageNumber), nh = pageHeights?.get(next.pageNumber)
+  if (!ph || !nh || prev.bbox.y > ph * CONTINUED_TABLE_PAGE_BAND
+    || next.bbox.y + next.bbox.height < nh * (1 - CONTINUED_TABLE_PAGE_BAND)) return
+  blocks.splice(at, 1, ...inner)
 }
 
 /** 이미 이어짐으로 확인된 바깥 칸의 쪽 경계에서, 중첩표의 빈 마지막 칸을 같은 폭의 1칸 조각으로 채운다.
