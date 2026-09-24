@@ -11,6 +11,9 @@
  * 이건 PUA/제어/대체문자 신호로 못 잡는다. 대신 자소를 분해해 종성(받침) 분포를
  * 본다 — CID 스크램블은 받침을 균등하게 흩뿌리므로, 자연 한국어(받침없음 다수 +
  * 겹받침 희소)와 통계적으로 갈린다. 이것이 garbled_hangul 신호다.
+ *
+ * 텍스트층 밖 신호 하나: 글자를 채운 곡선 경로로 그린 쪽(vector-glyphs.ts 가 연산자 목록 기하로 센 글자 수를
+ * 받는다). 텍스트층에는 ASCII 몇 자만 남아 위 신호로는 멀쩡해 보인다. 이것이 vector_text 신호다.
  */
 
 export interface PageQuality {
@@ -33,7 +36,7 @@ export interface PageQuality {
   /** OCR 검토 권장 여부 (pdfjs 텍스트층 기준 원신호 — OCR 적용 후에도 보존) */
   needsOcr: boolean
   /** needsOcr=true일 때 사유 (단일 신호로 충분, 가장 강한 신호 선택) */
-  ocrReason?: "low_text" | "high_pua" | "high_control" | "high_replacement" | "garbled_hangul"
+  ocrReason?: "vector_text" | "low_text" | "high_pua" | "high_control" | "high_replacement" | "garbled_hangul"
   /** 이 페이지에 OCR 이 실제 적용되어 본문이 OCR 결과로 대체됨 */
   ocrApplied?: boolean
 }
@@ -52,8 +55,20 @@ const MOJIBAKE_MAX_NOBATCHIM = 0.15
 /** 희귀 받침 비율이 이 값 이상이면 비정상 (자연 한국어는 훨씬 낮음) */
 const MOJIBAKE_MIN_RAREBATCHIM = 0.25
 
-/** 페이지 텍스트에서 품질 메트릭을 계산한다. */
-export function computePageQuality(page: number, text: string): PageQuality {
+/**
+ * vector_text 하한: 텍스트층 밖 곡선 글자(vector-glyphs.ts 글줄다운 조각의 글자 수). 코퍼스 비-cairo 표지 로고 곡선
+ * 글자는 34개 이하(국가교통통계 표지 로고 3개 34·기록물관리 지침 표지 30)라 못 넘고, 글줄 몇 개면 넘는다
+ */
+const VECTOR_TEXT_MIN_GLYPHS = 40
+/**
+ * 곡선 글자가 쪽 글자(곡선 + 텍스트층)에서 차지할 최소 비율 — 텍스트층 글이 대부분인 쪽(차트 라벨만 곡선인 보도자료
+ * 안내서 62/434 = 0.14)을 OCR 로 갈아엎지 않는다. 대가: 텍스트층 ASCII 가 대부분인 cairo 숫자 칸 표 쪽(632 + 곡선 65 =
+ * 0.09)과, 한글 대부분이 텍스트층에 있고 일부만 곡선인 cairo 쪽(0.10~0.24)은 OCR 대상이 아니다
+ */
+const VECTOR_TEXT_MIN_SHARE = 0.25
+
+/** 페이지 텍스트에서 품질 메트릭을 계산한다. vectorGlyphs 는 텍스트층 밖 곡선 글자 수 (vector-glyphs.ts) */
+export function computePageQuality(page: number, text: string, vectorGlyphs = 0): PageQuality {
   let total = 0
   let hangul = 0
   let hangulNoBatchim = 0
@@ -109,8 +124,12 @@ export function computePageQuality(page: number, text: string): PageQuality {
 
   let needsOcr = false
   let ocrReason: PageQuality["ocrReason"] | undefined
-  // 우선순위: low_text > high_pua > high_control > high_replacement > garbled_hangul
-  if (total < LOW_TEXT_THRESHOLD) { needsOcr = true; ocrReason = "low_text" }
+  // 우선순위: vector_text > low_text > high_pua > high_control > high_replacement > garbled_hangul.
+  // vector_text 가 low_text 보다 앞선다 — 텍스트층이 비어도 빈 쪽(표지·간지)이 아니라 글이 곡선으로 가득한 쪽이다
+  if (vectorGlyphs >= VECTOR_TEXT_MIN_GLYPHS && vectorGlyphs >= (vectorGlyphs + total) * VECTOR_TEXT_MIN_SHARE) {
+    needsOcr = true; ocrReason = "vector_text"
+  }
+  else if (total < LOW_TEXT_THRESHOLD) { needsOcr = true; ocrReason = "low_text" }
   else if (puaRatio >= HIGH_PUA_THRESHOLD) { needsOcr = true; ocrReason = "high_pua" }
   else if (controlCharRatio >= HIGH_CONTROL_THRESHOLD) { needsOcr = true; ocrReason = "high_control" }
   else if (replacementCharRatio >= HIGH_REPLACEMENT_THRESHOLD) { needsOcr = true; ocrReason = "high_replacement" }

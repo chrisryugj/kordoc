@@ -8,7 +8,9 @@
 
 import type { IRBlock, IRTable, BoundingBox } from "../types.js"
 import { safeMin, safeMax } from "../utils.js"
-import { buildClipCellGrids, dropGridsInside } from "./clip-cells.js"
+import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells.js"
+import { dropShadingClipGrids } from "./table-grid.js"
+import { chainShortSegments } from "./line-extract.js"
 import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
 import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem } from "./cluster-detector.js"
 import { type NormItem, collapseEvenSpacing, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
@@ -19,11 +21,17 @@ import { shouldDemoteTable, demoteTableToText, detectListBlocks, detectSpecialKo
 import { markUnderlineItems, wrapUnderlineRuns } from "./underline.js"
 import { extractImageRegions, type ImageRegion } from "./image-regions.js"
 import { markImageCell } from "./table-trim.js"
-import { CLIP_TABLES, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, recordCellLines } from "./table-meta.js"
+import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, recordCellLines } from "./table-meta.js"
+import { WrapLexicon, bodyLineJoins, PARA_LAST_LINE } from "./line-wrap.js"
+
+/** 쪽 사이로 넘기는 칸 이어짐 상태 — 앞 쪽 번호와 그 쪽 클립 사실 (다음 쪽 첫 클립이 앞 쪽 마지막 칸의 이어짐인지 가른다, clip-cells) */
+export interface PageCarry { page?: number; clip?: ClipPage }
 
 /**
  * 선 기반 테이블 감지를 우선 시도, 실패 시 기존 휴리스틱 fallback.
  * @param extraLines 그래픽 ops 밖에서 얻은 선 (래스터 괘선 감지 등, PDF pt·bottom-up)
+ * @param carry 쪽 순서대로 부를 때 넘기는 칸 이어짐 상태 — 바로 앞 쪽 것만 쓰고 이 쪽 것으로 바꿔 둔다
+ * @param lexicon 문서 어휘 증거(줄 꺾임 이음 판정) — 문서 파싱 동안 쪽마다 쌓는다. 없으면 이 쪽만으로
  */
 export function extractPageBlocksWithLines(
   items: NormItem[],
@@ -33,18 +41,35 @@ export function extractPageBlocksWithLines(
   pageHeight: number,
   extraLines?: { horizontals: LineSegment[]; verticals: LineSegment[] },
   detectTables = true,
+  carry?: PageCarry,
+  lexicon?: WrapLexicon,
 ): IRBlock[] {
-  if (items.length === 0) return []
+  if (items.length === 0) {
+    if (carry) carry.clip = undefined
+    return []
+  }
+  // 줄 꺾임 이음 판정의 어휘 증거 — 이 쪽 줄 글을 먼저 더해 쪽 안 어디서 판정하든 쪽 전체가 증거가 된다
+  const lex = lexicon ?? new WrapLexicon()
+  for (const line of streamLines(items)) lex.addLine(mergeLineSimple(line))
 
   // 1단계: PDF 그래픽 명령에서 선 추출
   const extracted = extractLines(opList.fnArray, opList.argsArray)
   let { horizontals, verticals } = extracted
   // 1.2단계: 셀 클립 사각형 → 테두리 없는 표 그리드 (법령 별지서식 외곽 표). 셀 기하가 확정돼
   // 있어 line 경로를 거치지 않고, 실선 표는 아래 line 경로가 그대로 맡는다 (clip-cells.ts)
+  const prevPage = carry?.page === pageNum - 1 ? carry.clip : undefined
   const clipResult = detectTables
-    ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects)
-    : { grids: [], containers: [] }
+    ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects, prevPage)
+    : { grids: [], containers: [], page: undefined }
+  if (carry) { carry.page = pageNum; carry.clip = clipResult.page }
   const clipGrids = clipResult.grids
+  // 짧은 괘선 조각 잇기는 칸 클립 격자가 없는 쪽에서만 (line-extract chainShortSegments) — 칸마다 클립이 있는 쪽은 잇기가
+  // 필요 없고, 한컴 조직도 박스 조각을 이으면 여러 클립 표를 가로지르는 큰 선 격자가 생겨 클립 격자 틈으로 살아남는다
+  // (rhwp multi-table-002 조직도 17x19 빈 격자가 부서명을 삼킴). 예산서(부천·속초)·MS Print To PDF 글자 클립 쪽은 잇는다
+  if (clipGrids.length === 0) {
+    horizontals = chainShortSegments(horizontals, extracted.shortH, "h")
+    verticals = chainShortSegments(verticals, extracted.shortV, "v")
+  }
   if (extraLines) {
     horizontals = horizontals.concat(extraLines.horizontals)
     verticals = verticals.concat(extraLines.verticals)
@@ -74,16 +99,18 @@ export function extractPageBlocksWithLines(
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
   const lineGrids = detectTables ? buildTableGrids(horizontals, verticals) : []
-  const grids = [...clipGrids, ...dropGridsInside(lineGrids, clipGrids, clipResult.containers)]
+  // 배경 칠한 칸에만 클립을 거는 제작기(cairo·한컴 구버전)의 음영 조각 격자는 버리고 온전한 선 표에 맡긴다 (dropShadingClipGrids)
+  const tableClipGrids = dropShadingClipGrids(clipGrids, lineGrids, extracted.fillRects, verticals)
+  const grids = [...tableClipGrids, ...dropGridsInside(lineGrids, tableClipGrids, clipResult.containers)]
 
   if (grids.length > 0) {
     // 셀 안 그림(로고·서명 등) — 8pt 미만 조각은 장식이라 제외
     const imageRegions = extractImageRegions(opList.fnArray, opList.argsArray).filter(r => r.x2 - r.x1 >= 8 && r.y2 - r.y1 >= 8)
-    return extractBlocksWithGrids(items, pageNum, grids, horizontals, verticals, imageRegions)
+    return extractBlocksWithGrids(items, pageNum, grids, horizontals, verticals, imageRegions, lex)
   }
 
   // Fallback: 기존 휴리스틱 (선이 없는 PDF)
-  return extractPageBlocksFallback(items, pageNum, true, detectTables)
+  return extractPageBlocksFallback(items, pageNum, true, detectTables, lex)
 }
 
 // ─── 취소선 감지 (ODL StrikethroughProcessor 포팅) ─────
@@ -249,13 +276,13 @@ function takePendingNested(
  * 틀 셀의 blocks 조립 — 셀 자기 글(문단)과 안쪽 표를 위→아래 순서로 섞는다. 표의 y 띠 위·옆에
  * 있는 글은 표 앞 문단, 아래 글은 다음 덩어리. text 는 blocks 평탄화(하위 호환, IRCell 계약)
  */
-function buildFrameCellBlocks(cellItems: TextItem[], nested: IRBlock[], pageNum: number): { blocks: IRBlock[]; text: string } {
+function buildFrameCellBlocks(cellItems: TextItem[], nested: IRBlock[], pageNum: number, wrap: CellWrap): { blocks: IRBlock[]; text: string } {
   const tables = [...nested].sort((a, b) => (b.bbox!.y + b.bbox!.height) - (a.bbox!.y + a.bbox!.height))
   const blocks: IRBlock[] = []
   let rest = [...cellItems]
   const pushParagraphs = (items: TextItem[]) => {
     if (items.length === 0) return
-    for (const line of cleanCellText(cellTextToString(items)).split("\n")) {
+    for (const line of cleanCellText(cellTextToString(items, wrap)).split("\n")) {
       const t = line.trim()
       if (t) blocks.push({ type: "paragraph", text: t, pageNumber: pageNum })
     }
@@ -285,6 +312,7 @@ function extractBlocksWithGrids(
   horizontals: LineSegment[],
   verticals: LineSegment[],
   imageRegions: ImageRegion[] = [],
+  lex?: WrapLexicon,
 ): IRBlock[] {
   const blocks: IRBlock[] = []
   const usedItems = new Set<NormItem>()
@@ -365,12 +393,14 @@ function extractBlocksWithGrids(
       const nested = grid.cells ? takePendingNested(pendingNested, cell.bbox) : []
       if (nested.length > 0) {
         nestedAttached = true
-        const built = buildFrameCellBlocks(cellItems, nested, pageNum)
+        const built = buildFrameCellBlocks(cellItems, nested, pageNum, { box: cell.bbox, lex })
         irGrid[cell.row][cell.col] = { text: built.text, colSpan: cell.colSpan, rowSpan: cell.rowSpan, blocks: built.blocks }
+        // 틀 칸 자기 글의 글줄 — 쪽을 넘은 틀 칸의 글 이어짐 판정(table-parts)이 본다 (과제 명세서 "□ 개념" 칸이 다음 쪽 상자 칸으로 이어짐)
+        if (cellItems.length) recordCellLines(irGrid[cell.row][cell.col], cellItems)
         continue
       }
       irGrid[cell.row][cell.col] = {
-        text: cleanCellText(cellTextToString(cellItems)),
+        text: cleanCellText(cellTextToString(cellItems, { box: cell.bbox, lex })),
         colSpan: cell.colSpan,
         rowSpan: cell.rowSpan,
       }
@@ -415,6 +445,7 @@ function extractBlocksWithGrids(
       hasHeader: finalRows > 1,
     }
     TABLE_COLXS.set(irTable, grid.colXs)
+    if (grid.continues) CONT_PARTS.set(irTable, grid.continues)
 
     // 빈 테이블(모든 셀이 빈 문자열) 스킵
     const hasContent = finalGrid.some(row => row.some(cell => cell.text.trim() !== ""))
@@ -520,7 +551,7 @@ function extractBlocksWithGrids(
         if (side.length === 0) continue
         for (const group of xyCutOrder(side, gapThreshold)) {
           if (group.length === 0) continue
-          const groupBlocks = extractPageBlocksFallback(group, pageNum)
+          const groupBlocks = extractPageBlocksFallback(group, pageNum, false, true, lex)
           for (const b of groupBlocks) textBlocks.push(b)
           groupSizes.push(groupBlocks.length)
         }
@@ -534,7 +565,7 @@ function extractBlocksWithGrids(
       const textBlocks: IRBlock[] = []
       for (const group of groups) {
         if (group.length === 0) continue
-        const groupBlocks = extractPageBlocksFallback(group, pageNum)
+        const groupBlocks = extractPageBlocksFallback(group, pageNum, false, true, lex)
         for (const b of groupBlocks) textBlocks.push(b)
         groupSizes.push(groupBlocks.length)
       }
@@ -666,6 +697,57 @@ function splitTwoColumnProse(items: NormItem[], cutX: number): NormItem[][] {
 }
 
 /**
+ * 어휘 증거용 줄 — 콘텐츠 스트림 순서(seq)대로 이어 가다 기준선이 바뀌거나 왼쪽으로 되돌아가거나 탭만큼 벌어지면 끊는다.
+ * 쪽 전체를 y 로만 묶으면 같은 높이의 옆 칸 줄이 한 줄로 붙어("…공상공무 원 및 특별공로순직자의" — 왼 칸 끝 + 오른 칸 머리)
+ * 가짜 띄움 증거가 생긴다. 한컴은 칸마다·줄마다 글을 차례로 내므로 스트림 순서가 칸 줄을 지킨다. seq 없는 아이템(OCR)은 y 묶음
+ */
+function streamLines(items: NormItem[]): NormItem[][] {
+  if (items.some(i => i.seq === undefined)) return groupByY([...items].sort((a, b) => b.y - a.y || a.x - b.x))
+  const lines: NormItem[][] = []
+  let cur: NormItem[] = []
+  for (const it of [...items].sort((a, b) => a.seq! - b.seq!)) {
+    const last = cur[cur.length - 1]
+    if (last && (Math.abs(it.y - last.y) > 3 || it.x < last.x - 1 || it.x - (last.x + last.w) > Math.max(2 * it.fontSize, 30))) {
+      lines.push(cur)
+      cur = []
+    }
+    cur.push(it)
+  }
+  if (cur.length) lines.push(cur)
+  return lines
+}
+
+/** 칸 글 조립에 넘기는 줄 꺾임 판정 재료 — 칸 상자와 문서 어휘 증거 */
+type CellWrap = { box: { x1: number; x2: number }; lex?: WrapLexicon }
+
+/**
+ * 한 묶음(XY-Cut 그룹)의 줄을 문단 블록으로 — 오른끝까지 찬 줄이 다음 줄로 꺾여 넘어간 자리는 한 문단으로 잇는다
+ * (어절 중간이면 붙이고 경계면 띄움, 판정은 line-wrap.ts). 종전엔 줄마다 문단이라 어절 중간 꺾임("재⏎일학도의용군인")이
+ * 두 낱말로 갈렸다 — hwpx↔pdf 417쌍 본문 블록 사이 어절 중간 꺾임 5,292곳(어절 F1 0.0144 몫)
+ */
+function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum: number, lex?: WrapLexicon): void {
+  const lines = yLines.map(items => ({ items, text: mergeLineSimple(items) })).filter(l => l.text.trim())
+  const geo = lines.map(l => {
+    const b = computeBBox(l.items, pageNum)
+    return { text: l.text, left: b.x, right: b.x + b.width, y: l.items.reduce((s, i) => s + i.y, 0) / l.items.length, fontSize: dominantStyle(l.items)?.fontSize ?? 0 }
+  })
+  const joins = bodyLineJoins(geo, lex)
+  for (let i = 0; i < lines.length;) {
+    let text = lines[i].text
+    const items = [...lines[i].items]
+    for (; i + 1 < lines.length && joins[i] !== "\n"; i++) {
+      text += joins[i] + lines[i + 1].text
+      items.push(...lines[i + 1].items)
+    }
+    const block: IRBlock = { type: "paragraph", text, pageNumber: pageNum, bbox: computeBBox(items, pageNum), style: dominantStyle(items) }
+    // 끝줄 기하 — 쪽 넘김 꺾임 잇기(joinPageBreakWraps) 재료
+    PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize })
+    out.push(block)
+    i++
+  }
+}
+
+/**
  * 기존 휴리스틱 기반 페이지 블록 추출 (선이 없는 PDF 대비 fallback).
  *
  * fullPage: 페이지 전체 아이템으로 호출됐을 때만 true — 2단 조판 본문 감지는
@@ -674,7 +756,7 @@ function splitTwoColumnProse(items: NormItem[], cutX: number): NormItem[][] {
  * detectTables: false 면 표 감지(클러스터·다열 정렬·한국어 특수표)를 모두 끄고
  * 자연 읽기순 텍스트만 낸다 (#64 opt-out).
  */
-export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fullPage = false, detectTables = true): IRBlock[] {
+export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fullPage = false, detectTables = true, lex?: WrapLexicon): IRBlock[] {
   if (items.length === 0) return []
 
   const blocks: IRBlock[] = []
@@ -700,15 +782,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
 
     // 테이블에 속하지 않은 나머지 텍스트 → 일반 블록
     const remaining = items.filter((_, idx) => !usedIndices.has(idx))
-    if (remaining.length > 0) {
-      const yLines = mergeSuperscriptLines(groupByY(remaining))
-      for (const line of yLines) {
-        const text = mergeLineSimple(line)
-        if (!text.trim()) continue
-        const bbox = computeBBox(line, pageNum)
-        blocks.push({ type: "paragraph", text, pageNumber: pageNum, bbox, style: dominantStyle(line) })
-      }
-    }
+    if (remaining.length > 0) pushLineParagraphs(blocks, mergeSuperscriptLines(groupByY(remaining)), pageNum, lex)
 
     blocks.sort((a, b) => {
       const ay = a.bbox ? (a.bbox.y + a.bbox.height) : 0
@@ -754,12 +828,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
           const bbox = computeBBox(group, pageNum)
           blocks.push({ type: "paragraph", text: tableText, pageNumber: pageNum, bbox, style: dominantStyle(group) })
         } else {
-          for (const line of yLines) {
-            const text = mergeLineSimple(line)
-            if (!text.trim()) continue
-            const bbox = computeBBox(line, pageNum)
-            blocks.push({ type: "paragraph", text, pageNumber: pageNum, bbox, style: dominantStyle(line) })
-          }
+          pushLineParagraphs(blocks, yLines, pageNum, lex)
         }
       }
     }

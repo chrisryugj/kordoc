@@ -7,6 +7,7 @@
  */
 
 import type { BoundingBox } from "../types.js"
+import type { TextItem } from "./line-types.js"
 import { detectEvenSpacedItems, spaceGapThreshold } from "./line-detector.js"
 
 export interface PdfTextItem {
@@ -203,6 +204,9 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     if (!isDup) deduped.push(sorted[i])
   }
 
+  // 1.5. 겹친 런 분해 — 빈칸 위에 다른 글꼴 글자를 얹은 런을 빈칸에서 가른다 (splitOverlaidRuns, 제자리)
+  splitOverlaidRuns(deduped)
+
   // 2. 공백 아이템 위치를 NormItem.hasSpaceBefore로 전파
   // 같은 Y라인(±3px)에서 공백 바로 오른쪽의 "가장 가까운" 아이템에만 표시.
   // (기존: 20px 윈도 내 모든 아이템 마킹 → "기관 [공백] 내부에서"의 '부'까지
@@ -222,6 +226,118 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
   }
 
   return deduped
+}
+
+// ─── 겹친 런 분해 ──────────────────────────────────────
+/** 낱말 사이 공백 추정 폭 (글자 크기 대비) — MS Print To PDF 보도자료 실측 0.29em */
+const WORD_SPACE_EM = 0.3
+/** 얹힌 글이 런 속 같은 글의 추정 위치에서 이만큼(글자 크기 대비) 안이면 중복 그림(입체·그림자 제목) */
+const OVERLAY_DUP_EM = 0.5
+/** 분해 뒤 추정 끝과 실제 런 끝의 허용 차 (글자 크기 대비) — 넘으면 글자 폭 모델이 안 맞는 런이라 가르지 않는다 */
+const OVERLAY_FIT_EM = 0.6
+
+/** 한글·한자·전각·도형 기호는 1em, 나머지(라틴·숫자·반각 구두점)는 0.5em 으로 보는 폭 단위 */
+function glyphUnits(s: string): number {
+  let u = 0
+  for (const ch of s) u += (ch.codePointAt(0) ?? 0) >= 0x2190 ? 1 : 0.5
+  return u
+}
+
+/**
+ * 겹친 런 분해 — 한 글꼴의 글자를 먼저 긋고 다른 글꼴 글자(숫자·괄호·가운뎃점)를 그 빈칸 위에 나중에 얹는
+ * 제작기(MS Print To PDF, rhwp cairo 렌더, ezPDF 일부)는 pdfjs 가 앞 런을 빈칸까지 공백으로 품은 한 아이템
+ * ("기구인 중장기전략위원회 제 차 전체회의를 개최하였다" x 56.6~394.3)으로 합치고 얹힌 "4"(x 228.1)는 따로 준다.
+ * 줄을 x 로만 세우면 "4" 가 런 뒤로 밀려 "…개최하였다4." 가 된다(중장기위원회 보도자료, 개인정보 규제영향분석서
+ * "제31조제 항1"). 같은 기준선에서 런의 x 범위 안에 통째로 든 아이템을 찾아, 얹힌 글이 들어갈 빈칸을 추정
+ * 위치로 골라 그 빈칸에서 런을 가른다. 글자 폭은 한글 1em·반각 0.5em 비례로 잡고 빈칸마다 얹힌 글 끝으로 다시
+ * 맞춰(anchor) 오차가 쌓이지 않게 한다. 같은 글을 조금씩 밀어 여러 번 그린 입체 제목(한컴 여수 계획서 26겹)은
+ * 런 속 같은 글의 추정 위치와 겹쳐 중복으로 걸러진다.
+ */
+function splitOverlaidRuns(items: NormItem[]): void {
+  let replaced: Map<NormItem, NormItem[]> | null = null
+  for (let ci = 0; ci < items.length; ci++) {
+    const c = items[ci]
+    if (c.w <= 0 || !/\S\s+\S/.test(c.text)) continue
+    // y 내림차순 정렬이라 같은 기준선(±1) 아이템은 앞뒤로 붙어 있다
+    const overlays: NormItem[] = []
+    for (let j = ci - 1; j >= 0 && items[j].y - c.y <= 1; j--) if (isInside(items[j], c)) overlays.push(items[j])
+    for (let j = ci + 1; j < items.length && c.y - items[j].y <= 1; j++) if (isInside(items[j], c)) overlays.push(items[j])
+    if (overlays.length === 0) continue
+    const pieces = splitAroundOverlays(c, overlays)
+    if (pieces) (replaced ??= new Map()).set(c, pieces)
+  }
+  if (!replaced) return
+  const out: NormItem[] = []
+  for (const it of items) { const p = replaced.get(it); if (p) out.push(...p); else out.push(it) }
+  items.length = 0
+  items.push(...out.sort((a, b) => b.y - a.y || a.x - b.x))
+}
+
+function isInside(o: NormItem, c: NormItem): boolean {
+  return o.x >= c.x + 1 && o.x + o.w <= c.x + c.w + 1 && o.w < c.w
+}
+
+function splitAroundOverlays(c: NormItem, overlays: NormItem[]): NormItem[] | null {
+  const words = c.text.split(/\s+/)
+  const fs = c.fontSize > 0 ? c.fontSize : (c.h > 0 ? c.h : 10)
+  const ws = WORD_SPACE_EM * fs
+  const totalU = words.reduce((s, w) => s + glyphUnits(w), 0)
+  if (totalU <= 0) return null
+  // 중복 그림 가드 — 얹힌 글이 런 속 같은 글의 추정 위치에 있으면 빈칸에 든 글이 아니다
+  const a0 = (c.w - (words.length - 1) * ws) / totalU
+  const ov = overlays.filter(o => {
+    for (let at = c.text.indexOf(o.text); at >= 0; at = c.text.indexOf(o.text, at + 1)) {
+      const prefix = c.text.slice(0, at)
+      const est = c.x + glyphUnits(prefix.replace(/\s+/g, "")) * a0 + (prefix.match(/\s+/g)?.length ?? 0) * ws
+      if (Math.abs(est - o.x) <= OVERLAY_DUP_EM * fs) return false
+    }
+    return true
+  }).sort((p, q) => p.x - q.x)
+  if (ov.length === 0) return null
+
+  // 글자 폭 단위 a: 런 폭에서 얹힌 글(빈칸 하나씩)과 낱말 공백을 뺀 나머지
+  const holes = Math.min(ov.length, words.length - 1)
+  let ovW = 0
+  for (const o of ov) ovW += o.w
+  const a = (c.w - ovW - (words.length - 1 - holes) * ws) / totalU
+  if (!(a > 0)) return null
+
+  // 낱말마다 추정 시작·끝을 걸어가며 재고, 얹힌 글이 드는 빈칸(hole) 뒤에서만 새 조각을 연다
+  const starts: number[] = [], ends: number[] = [], holeAfter: boolean[] = []
+  let p = c.x
+  let k = 0
+  let assigned = 0
+  for (let i = 0; i < words.length; i++) {
+    starts.push(p)
+    p += glyphUnits(words[i]) * a
+    ends.push(p)
+    if (i === words.length - 1) break
+    // 다음 낱말 가운데보다 앞에서 시작하는 얹힌 글은 이 빈칸 몫. 낱말 속(빈칸 아님)에서 시작하는 것은 건드리지 않는다
+    while (k < ov.length && ov[k].x < p - a * 0.6) k++
+    const half = glyphUnits(words[i + 1]) * a / 2
+    let hole = false
+    while (k < ov.length && ov[k].x < p + half) {
+      hole = true
+      p = Math.max(p, ov[k].x + ov[k].w)
+      k++
+    }
+    holeAfter.push(hole)
+    if (hole) assigned++; else p += ws
+  }
+  if (assigned === 0 || Math.abs(p - (c.x + c.w)) > Math.max(3, OVERLAY_FIT_EM * fs)) return null
+  // 조각은 빈칸에서만 가른다 — 낱말마다 가르면 아이템 수가 불어 문서 글꼴 크기 중앙값(아이템 수 기준 헤딩 판정)이
+  // 흔들린다(성과평가 보고서 MS Print: 13pt 낱말 조각 +535개로 중앙값 14→13, 16pt 본문 2,180줄이 ### 헤딩으로)
+  const pieces: NormItem[] = []
+  for (let s = 0; s < words.length;) {
+    let e = s
+    while (e < words.length - 1 && !holeAfter[e]) e++
+    pieces.push({
+      ...c, text: words.slice(s, e + 1).join(" "), x: Math.round(starts[s]), w: Math.max(1, Math.round(ends[e] - starts[s])),
+      hasSpaceBefore: s === 0 ? c.hasSpaceBefore : false, seq: c.seq === undefined ? undefined : c.seq + pieces.length / 1e4,
+    })
+    s = e + 1
+  }
+  return pieces
 }
 
 /**
@@ -315,7 +431,7 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   return result
 }
 
-export function mergeLineSimple(items: NormItem[]): string {
+export function mergeLineSimple(items: TextItem[]): string {
   if (items.length <= 1) return items[0]?.text || ""
   const sorted = sortLineByX([...items])
 

@@ -83,7 +83,9 @@ export function cleanPdfText(text: string): string {
     // LaTeX 수식 라인 ($...$ / $$...$$) 은 공백이 토큰 구분자라 collapse 시 `\cdot d` → `\cdotd` 로 망가짐 — skip
     .replace(/^(?!\| ---).*$/gm, line => {
       if (/^\s*\${1,2}.+\${1,2}\s*$/.test(line)) return line
-      return collapseEvenSpacing(line)
+      // 마크다운 머리 표지("# "·"- ")는 한 글자 토큰으로 세지 않는다 — "# 목 차" 가 "#목차"(헤딩 표지 깨짐)로 붙던 것
+      const mark = /^(?:#{1,6}|-) /.exec(line)?.[0] ?? ""
+      return mark + collapseEvenSpacing(line.slice(mark.length))
     })
     // 마커 뒤 2글자 균등배분 합침 ("□ 일 시" → "□ 일시", "□ 장 소" → "□ 장소")
     .replace(/([□■◆○●▶ㅇ])\s+([가-힣])\s+([가-힣])/g, "$1 $2$3")

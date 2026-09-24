@@ -10,6 +10,7 @@
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
 import { sortLineByX } from "./text-line.js"
+import { type WrapLexicon, cellLineWraps, startsNewItem, wrapJoiner } from "./line-wrap.js"
 
 /** 셀 경계 내부 판별 여유 (텍스트 매핑용) */
 const CELL_PADDING = 2
@@ -71,14 +72,58 @@ export function mapTextToCells(
     }
   }
 
+  keepWordsInOneCell(result)
   return result
+}
+
+/**
+ * 낱말 응집 — 한 줄에서 공백 없이 붙은 조각(한 낱말)이 두 칸에 나뉘면 폭을 더 많이 담은 칸으로 모은다. 선 격자는 좁은
+ * 들여쓰기 열(8.5pt 상자 좌변)을 최소 열폭으로 합쳐 경계 하나를 지우는데, 그 행에 괘선이 없는 경계를 걸친 낱말은 첫
+ * 글자만 위 칸(행 병합)으로 떨어졌다("사|회적기업 사업개발비", "단|체교섭" — 부천·속초 세출예산사업명세서, 글자마다 따로
+ * 그린 굴림체). 괘선이 있는 경계는 글이 걸칠 수 없으므로(획·칸 클립) 낱말의 어떤 글자가 제 칸 밖으로 1pt 넘게
+ * 삐져나올 때(글이 경계를 실제로 가로지름)만 모은다 — 좁은 칸에 바짝 붙은 서로 다른 칸 글("10월|11월|12월", 창원
+ * 월별 일정표 머리행)은 글자가 제 칸 안에 있어 그대로 둔다
+ */
+function keepWordsInOneCell(result: Map<ExtractedCell, TextItem[]>): void {
+  const owner = new Map<TextItem, ExtractedCell>()
+  for (const [cell, arr] of result) for (const it of arr) owner.set(it, cell)
+  if (result.size < 2 || owner.size < 2) return
+  const all = [...owner.keys()].sort((a, b) => b.y - a.y || a.x - b.x)
+  for (let i = 0; i < all.length;) {
+    let j = i + 1
+    while (j < all.length && Math.abs(all[j].y - all[i].y) <= 1) j++
+    const line = all.slice(i, j).sort((a, b) => a.x - b.x)
+    for (let k = 0; k < line.length;) {
+      let e = k + 1
+      while (e < line.length && !line[e].hasSpaceBefore
+        && line[e].x - (line[e - 1].x + line[e - 1].w) <= spaceGapThreshold((line[e].fontSize + line[e - 1].fontSize) / 2)) e++
+      const word = line.slice(k, e)
+      const width = new Map<ExtractedCell, number>()
+      for (const it of word) { const c = owner.get(it)!; width.set(c, (width.get(c) ?? 0) + it.w) }
+      const crosses = word.some(it => { const b = owner.get(it)!.bbox; return it.x < b.x1 - 1 || it.x + it.w > b.x2 + 1 })
+      if (width.size > 1 && crosses) {
+        const target = [...width].sort((a, b) => b[1] - a[1])[0][0]
+        for (const it of word) {
+          const c = owner.get(it)!
+          if (c === target) continue
+          result.set(c, result.get(c)!.filter(x => x !== it))
+          result.get(target)!.push(it)
+          owner.set(it, target)
+        }
+      }
+      k = e
+    }
+    i = j
+  }
 }
 
 /**
  * 셀 내 텍스트 아이템을 읽기 순서로 정렬 후 합치기.
  * Y 내림차순 (위→아래) → X 오름차순 (좌→우)
+ * @param wrap 칸 상자·문서 어휘 증거 — 있으면 줄 꺾임을 기하·어휘로 판정해 어절 중간 꺾임만 붙인다(line-wrap.ts).
+ *   없으면(과소분할 재구성 등 칸 상자 없는 호출) 종전 조각 규칙
  */
-export function cellTextToString(items: TextItem[]): string {
+export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; x2: number }; lex?: WrapLexicon }): string {
   if (items.length === 0) return ""
   if (items.length === 1) return items[0].text
 
@@ -136,7 +181,19 @@ export function cellTextToString(items: TextItem[]): string {
     return result
   })
 
-  return mergeCellTextLines(textLines)
+  if (!wrap) return mergeCellTextLines(textLines)
+  // 줄마다 "다음 줄로 꺾여 넘어갔나" — 다음 줄 첫 글자가 이 줄 뒤에 칸 안쪽으로 못 들어갈 때
+  let contentLeft = Infinity
+  for (const it of items) if (it.x < contentLeft) contentLeft = it.x
+  const lineEnds = merged.map(line => {
+    const s = sortLineByX(line)
+    let right = -Infinity
+    for (const it of s) if (it.x + it.w > right) right = it.x + it.w
+    const first = s[0]
+    return { right, fontSize: first.fontSize, firstCharW: first.w / Math.max(1, [...first.text].length) }
+  })
+  const wraps = lineEnds.slice(0, -1).map((a, i) => cellLineWraps(wrap.box, contentLeft, a.right, a.fontSize, lineEnds[i + 1].firstCharW))
+  return mergeCellTextLines(textLines, { wraps, lex: wrap.lex })
 }
 
 /** 첨자 행 병합 — cellTextToString 행 그룹핑 결과에 적용 (규칙은 text-line.ts와 동일) */
@@ -251,26 +308,36 @@ export { detectEvenSpacedItems }
 /**
  * 셀 내 텍스트 아이템을 읽기 순서로 정렬 후 합치기 — 줄바꿈 병합 전용.
  * (cellTextToString 내부에서 사용)
+ * wrap 이 있으면 한글 줄 이음은 꺾임 판정(wraps[i] = textLines[i] 가 다음 줄로 꺾였나)과 어절 판정(wrapJoiner)으로:
+ * 어절 중간 꺾임만 붙이고 어절 경계 꺾임·문단 경계는 줄바꿈으로 둔다(칸은 가운데 정렬 칸의 넓은 줄이 찬 줄처럼 보여 문단
+ * 경계를 공백으로 잇는 건 삼간다). 종전 조각 규칙 — 8자 이하 한글 조각 붙임·쉼표/여는 괄호 뒤 15자 붙임 — 은 hwpx↔pdf 417쌍
+ * 칸 줄 이음 실측에서 정밀도 10%(맞음 101·틀림 874)·2%(맞음 5·틀림 316)라 칸 상자가 있는 호출에서는 쓰지 않는다
  */
-function mergeCellTextLines(textLines: string[]): string {
+function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon }): string {
   // 셀 내 줄바꿈 병합 — 잘린 단어/숫자 조각 복구
   if (textLines.length <= 1) return textLines[0] || ""
   const merged: string[] = [textLines[0]]
   for (let i = 1; i < textLines.length; i++) {
     const prev = merged[merged.length - 1]
     const curr = textLines[i]
-    if (/[가-힣]$/.test(prev) && /^[가-힣]+$/.test(curr) && curr.length <= 8 && !curr.includes(" ")) {
+    if (wrap
+      ? wrap.wraps[i - 1] && !startsNewItem(prev, curr) && wrapJoiner(prev, curr, wrap.lex) === ""
+      : /[가-힣]$/.test(prev) && /^[가-힣]+$/.test(curr) && curr.length <= 8 && !curr.includes(" ")) {
       merged[merged.length - 1] = prev + curr
     }
     else if (curr.trim().length <= 3 && /^[)\]%}]/.test(curr.trim())) {
       merged[merged.length - 1] = prev + curr.trim()
     }
-    else if (/[,(]$/.test(prev.trim()) && curr.trim().length <= 15) {
+    else if (!wrap && /[,(]$/.test(prev.trim()) && curr.trim().length <= 15) {
       merged[merged.length - 1] = prev + curr.trim()
     }
-    // 줄바꿈에 잘린 숫자 조각은 잇되, 천 단위 쉼표까지 온전한 숫자 두 개(병합 칸에 쌓인 "20,775,661" / "5,187,590")는 잇지 않는다
+    // 줄바꿈에 잘린 숫자 조각("1,234,5" / "67")은 잇되, 온전한 숫자 뒤 숫자 줄은 잇지 않는다 — 병합 칸에 쌓인 천 단위 숫자
+    // ("20,775,661" / "5,187,590")와 쉼표 없는 세 자리 이하 숫자("810" / "810" → 종전 "810810810", "2,240" / "0" →
+    // "2,2400", 괴산·부천 예산서 텍스트층·OCR 공통). 쉼표 뒤 세 자리로 끝난 줄에 숫자 줄을 이으면 ",dddd" 꼴이 되므로 늘 끊고,
+    // 쉼표 없는 세 자리 이하 숫자는 다음 줄도 온전한 숫자일 때 끊는다
     else if (/[\d,]$/.test(prev) && /^[\d,]+[)\]]?$/.test(curr.trim()) && curr.trim().length <= 10
-      && !(/\d{1,3}(,\d{3})+$/.test(prev) && /^\d{1,3}(,\d{3})+$/.test(curr.trim()))) {
+      && !(/\d,\d{3}$/.test(prev) && /^\d/.test(curr.trim()))
+      && !(/(?:^|[^\d,])\d{1,3}$/.test(prev) && /^(\d{1,3}(,\d{3})+|\d{1,3})$/.test(curr.trim()))) {
       merged[merged.length - 1] = prev + curr.trim()
     }
     else {

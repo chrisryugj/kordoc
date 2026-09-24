@@ -16,6 +16,7 @@
  */
 
 import type { IRTable, IRCell, BoundingBox } from "../types.js"
+import { spaceGapThreshold } from "./cell-text.js"
 
 /** parser.ts의 NormItem과 동일한 인터페이스 */
 export interface ClusterItem {
@@ -770,7 +771,7 @@ function buildClusterTable(
     // 행별 갭 분석 기반 열 배정
     const assignments = assignRowItems(row.items, columns, numCols)
     for (const { col, items } of assignments) {
-      const text = items.map(i => i.text).join(" ")
+      const text = joinCellItems(items)
       const existing = cells[r][col].text
       cells[r][col].text = existing ? existing + " " + text : text
       for (const item of items) usedItems.add(item)
@@ -801,6 +802,9 @@ function buildClusterTable(
     if (/^[○●▶\-·]/.test(contentText)) continue
     for (let pr = r - 1; pr >= 0; pr--) {
       if (cells[pr].some(c => c.text.trim())) {
+        // 전폭 병합 행(한 아이템 행)의 가려진 칸에 쓰면 렌더에서 글이 사라진다 — 제 행으로 둔다
+        // ("없음" 행 뒤 "3) 행정규제 : …"·"일부개정령안" 뒤 본문 첫 줄이 마크다운에서 빠지던 것, 제약산업 시행규칙 개정령안)
+        if (cells[pr][0].colSpan > 1) break
         for (let c = 0; c < numCols; c++) {
           const prev = cells[pr][c].text.trim()
           const curr = cells[r][c].text.trim()
@@ -862,4 +866,32 @@ function buildClusterTable(
     bbox: { page: pageNum, x: minX, y: minY, width: maxX - minX, height: maxY - minY },
     usedItems,
   }
+}
+
+/**
+ * 칸 아이템 → 칸 글. 글자를 한 자씩 따로 긋는 제작기(지자체 예산 시스템 — 부천 세출예산사업명세서 굴림체, 글자마다
+ * 0~1pt 간격)는 칸 아이템이 글자 하나씩이라 종전처럼 공백으로 이으면 "2 0 , 7 7 5 , 6 6 1"·"활 성 화" 가 된다.
+ * 선 표 칸(cellTextToString)과 같게 간격이 낱말 공백 임계(spaceGapThreshold)를 넘거나 pdfjs 공백 힌트가 있을 때만 띄운다.
+ * 한 행에 합쳐진 여러 줄(mergeMultiLineRows)은 세로로 겹치는 아이템끼리 한 줄로 묶어 위→아래로 잇는다 — x 로만
+ * 세우면 글자 단위 칸에서 두 줄의 글자가 번갈아 섞인다. 첨자(각주 부호·원문자)는 본문 줄과 세로로 겹쳐 같은 줄에 든다
+ */
+function joinCellItems(items: ClusterItem[]): string {
+  const hOf = (i: ClusterItem) => (i.h > 0 ? i.h : i.fontSize)
+  const lines: { bottom: number; top: number; items: ClusterItem[] }[] = []
+  for (const it of [...items].sort((a, b) => b.y - a.y || a.x - b.x)) {
+    const bottom = it.y, top = it.y + hOf(it)
+    const line = lines.find(l => Math.min(l.top, top) - Math.max(l.bottom, bottom) >= Math.min(l.top - l.bottom, top - bottom) * 0.5)
+    if (line) { line.items.push(it); line.bottom = Math.min(line.bottom, bottom); line.top = Math.max(line.top, top) }
+    else lines.push({ bottom, top, items: [it] })
+  }
+  return lines.sort((a, b) => b.top - a.top).map(({ items: line }) => {
+    line.sort((a, b) => a.x - b.x)
+    let s = line[0].text
+    for (let i = 1; i < line.length; i++) {
+      const gap = line[i].x - (line[i - 1].x + line[i - 1].w)
+      const fs = (line[i].fontSize + line[i - 1].fontSize) / 2
+      s += ((line[i].hasSpaceBefore && gap >= fs * 0.05) || gap > spaceGapThreshold(fs) ? " " : "") + line[i].text
+    }
+    return s
+  }).join(" ")
 }

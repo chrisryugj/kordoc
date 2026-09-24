@@ -17,6 +17,8 @@ export const EMPTY_PARTS = new WeakSet<IRTable>()
 export const IMAGE_CELLS = new WeakSet<IRCell>()
 /** 클립이 없던 자리를 메운 칸 — 쪽 넘김 조각을 이을 때 비어 있는 자리로 본다 (앞 쪽 세로 병합이 이어진 칸) */
 export const FILLER_CELLS = new WeakSet<IRCell>()
+/** 앞 쪽 칸의 이어짐인 1칸 조각 → 그 앞 쪽 칸의 클립 사각형 (clip-cells 판정, cell-continuation 이 앞 쪽 표 그 칸에 붙인다) */
+export const CONT_PARTS = new WeakMap<IRTable, { x1: number; x2: number }>()
 
 /** 칸 글줄 상자 (쪽 좌표, y 는 기준선) — 쪽 넘김 이음 행이 한 칸의 두 조각인지 가를 때 쓴다 (table-parts) */
 export interface LineBox { y: number; l: number; r: number; h: number }

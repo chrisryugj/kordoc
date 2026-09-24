@@ -29,6 +29,8 @@ export interface TableGrid {
   /** 이 그리드를 품는 바깥 셀(틀)의 클립 사각형 — 중첩표. 소비측(page-blocks)이 그 셀의
    *  `IRCell.blocks` 에 표로 넣는다 (v4.12.2, HWP 파서의 중첩표 IR 과 같은 모양) */
   clipParent?: { x1: number; y1: number; x2: number; y2: number }
+  /** 앞 쪽 칸의 이어짐인 1칸 조각이면 그 앞 쪽 칸의 클립 사각형 (clip-cells) — 문서 단계가 앞 쪽 표의 그 칸에 붙인다 */
+  continues?: { x1: number; y1: number; x2: number; y2: number }
 }
 
 export interface ExtractedCell {

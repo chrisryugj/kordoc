@@ -35,9 +35,12 @@ const MAX_LINE_WIDTH = 5.0
 export function extractLines(
   fnArray: Uint32Array | number[],
   argsArray: unknown[][],
-): { horizontals: LineSegment[]; verticals: LineSegment[]; clipRects: ClipRect[]; fillRects: ClipRect[] } {
+): { horizontals: LineSegment[]; verticals: LineSegment[]; clipRects: ClipRect[]; fillRects: ClipRect[]; shortH: LineSegment[]; shortV: LineSegment[] } {
   const horizontals: LineSegment[] = []
   const verticals: LineSegment[] = []
+  // MIN_LINE_LENGTH 미만 획 조각 — 칸 클립 격자가 없는 쪽에서 같은 좌표 조각 사슬로 이어 붙일 후보 (chainShortSegments, page-blocks)
+  const shortH: LineSegment[] = []
+  const shortV: LineSegment[] = []
   const clipRects: ClipRect[] = []
   // 채움 사각형 — 한컴은 폭 3pt 안팎의 좁은 빈 칸에는 셀 클립을 깔지 않고 배경 채움만 그린다(행정업무운영 편람
   // 머리 상자 양옆 회색 띠 실측). 클립 격자에 빠진 가장자리 칸을 이것으로 되살린다 (clip-cells)
@@ -105,7 +108,7 @@ export function extractLines(
     pendingClip = false
     const effWidth = lineWidth * ctmScale()
     for (const seg of currentPath) {
-      classifyAndAdd(seg, effWidth, horizontals, verticals, fromFill)
+      classifyAndAdd(seg, effWidth, horizontals, verticals, fromFill, fromFill ? undefined : { h: shortH, v: shortV })
     }
     currentPath = []
   }
@@ -245,7 +248,65 @@ export function extractLines(
     }
   }
 
-  return { horizontals, verticals, clipRects, fillRects }
+  return { horizontals, verticals, clipRects, fillRects, shortH, shortV }
+}
+
+// ─── 짧은 괘선 조각 잇기 ──────────────────────────────
+
+/** 같은 괘선으로 보는 좌표 차 (pt) */
+const SHORT_CHAIN_POS_TOL = 0.5
+/** 끝이 맞닿았다고 보는 간격 (pt) — 행마다 끊어 그은 실선 조각은 끝 좌표가 같다(부천 예산서 0). 한컴 점선 테두리
+ *  (0.5pt 획·0.7pt 간격)를 실선으로 이으면 테두리 "없음" 상자가 1칸 틀이 되어 안쪽 표가 한 단계 더 중첩된다
+ *  (rhwp rowbreak-problem-pages 13쪽 발췌 상자 실측) */
+const SHORT_CHAIN_GAP = 0.2
+
+/**
+ * 짧은 괘선 조각 잇기 — 괘선을 행(열)마다 짧게 끊어 긋는 제작기(지자체 예산 시스템: 재원 "국·균·도·시" 행마다 12pt 세로
+ * 조각)는 조각이 MIN_LINE_LENGTH 미만이라 전부 버려져 표 세로선에 48pt 구멍이 나고, 격자가 여러 조각 표·클러스터 표로
+ * 쪼개진다(부천 세출예산사업명세서 1쪽: 26x5·10x6·6x5). 같은 좌표에서 끝이 맞닿은 획 조각 사슬에 짧은 조각이 하나라도
+ * 끼면 사슬 전체를 한 선으로 잇는다 — 칸 테두리 판정(cell-extract hasVerticalLine)이 선분 하나가 칸 높이 75% 를 덮어야
+ * 하므로 긴 조각까지 함께 이어야 병합 행의 세로 테두리가 선다. 짧은 조각이 없는 사슬은 종전대로 둔다(긴 선분끼리의 물리
+ * 병합은 셀 배치를 바꾼 실측이 있다 — chainCollinearRules 주석). 채움 경로(배경 사각형 변·글자 윤곽)는 대상이 아니다.
+ * 이은 사슬이 여전히 짧으면(체크박스 테두리 같은 장식) 버린다. 호출측(page-blocks)은 칸 클립 격자가 없는 쪽에서만 부른다.
+ */
+export function chainShortSegments(longs: LineSegment[], shorts: LineSegment[], dir: "h" | "v"): LineSegment[] {
+  if (shorts.length === 0) return longs
+  const pos = (l: LineSegment) => (dir === "h" ? l.y1 : l.x1)
+  const lo = (l: LineSegment) => (dir === "h" ? l.x1 : l.y1)
+  const hi = (l: LineSegment) => (dir === "h" ? l.x2 : l.y2)
+  const shortSet = new Set(shorts)
+  const all = [...longs.filter(l => !l.fromFill), ...shorts].sort((a, b) => pos(a) - pos(b) || lo(a) - lo(b))
+  const absorbed = new Set<LineSegment>()
+  const chained: LineSegment[] = []
+  const flush = (chain: LineSegment[]) => {
+    if (!chain.some(l => shortSet.has(l))) return
+    let s = Infinity, e = -Infinity, p = 0, w = 0
+    for (const l of chain) { s = Math.min(s, lo(l)); e = Math.max(e, hi(l)); p += pos(l); w = Math.max(w, l.lineWidth) }
+    if (e - s < MIN_LINE_LENGTH) return
+    p /= chain.length
+    for (const l of chain) absorbed.add(l)
+    chained.push(dir === "h" ? { x1: s, y1: p, x2: e, y2: p, lineWidth: w } : { x1: p, y1: s, x2: p, y2: e, lineWidth: w })
+  }
+  let band: LineSegment[] = []
+  const flushBand = () => {
+    band.sort((a, b) => lo(a) - lo(b))
+    let chain: LineSegment[] = []
+    let end = -Infinity
+    for (const l of band) {
+      if (chain.length && lo(l) > end + SHORT_CHAIN_GAP) { flush(chain); chain = [] }
+      chain.push(l)
+      end = chain.length === 1 ? hi(l) : Math.max(end, hi(l))
+    }
+    if (chain.length) flush(chain)
+    band = []
+  }
+  for (const l of all) {
+    if (band.length && pos(l) - pos(band[0]) > SHORT_CHAIN_POS_TOL) flushBand()
+    band.push(l)
+  }
+  if (band.length) flushBand()
+  if (chained.length === 0) return longs
+  return [...longs.filter(l => !absorbed.has(l)), ...chained]
 }
 
 // ─── 클립 사각형 → 셀 그리드 선 ──────────────────────
@@ -279,12 +340,24 @@ function classifyAndAdd(
   horizontals: LineSegment[],
   verticals: LineSegment[],
   fromFill = false,
+  short?: { h: LineSegment[]; v: LineSegment[] },
 ) {
   const dx = Math.abs(seg.x2 - seg.x1)
   const dy = Math.abs(seg.y2 - seg.y1)
   const length = Math.sqrt(dx * dx + dy * dy)
 
-  if (length < MIN_LINE_LENGTH) return
+  if (length < MIN_LINE_LENGTH) {
+    // 짧은 획 조각은 사슬 잇기 후보로만 (chainShortSegments) — 기울어진 조각·점은 제외
+    if (!short || length <= 0) return
+    if (dy <= ORIENTATION_TOL && dx > dy) {
+      const y = (seg.y1 + seg.y2) / 2
+      short.h.push({ x1: Math.min(seg.x1, seg.x2), y1: y, x2: Math.max(seg.x1, seg.x2), y2: y, lineWidth })
+    } else if (dx <= ORIENTATION_TOL && dy > dx) {
+      const x = (seg.x1 + seg.x2) / 2
+      short.v.push({ x1: x, y1: Math.min(seg.y1, seg.y2), x2: x, y2: Math.max(seg.y1, seg.y2), lineWidth })
+    }
+    return
+  }
 
   if (dy <= ORIENTATION_TOL) {
     const y = (seg.y1 + seg.y2) / 2

@@ -283,6 +283,45 @@ export function buildTableGrids(
   return mergeAdjacentGrids(grids)
 }
 
+/** 음영 클립 판정: 클립 칸과 채움 사각형 좌표 허용 차 (pt) */
+const SHADE_CLIP_TOL = 1.5
+/** 음영 클립 격자가 선 격자에서 차지하는 면적 상한 — 넘으면 표 전체를 덮는 클립(한컴 방식)으로 본다 */
+const SHADE_CLIP_MAX_AREA = 0.5
+
+/**
+ * 음영 칸 클립 격자 버리기 — 한컴 PDF 는 표의 모든 칸에 클립을 깔지만 cairo(rhwp 렌더) 등은 배경을 칠하는 칸에만
+ * 채움용 클립을 건다. 그 클립이 머리행 1x2 같은 조각 격자를 이뤄 먼저 글을 가져가면, 괘선으로 온전한 3x2 선 표는
+ * 머리행이 빈 채 강등돼 본문 행이 "중견기업 : 4개까지 수행 가능" 문단으로 흩어진다(연구개발 지원 공고 cairo 2쪽).
+ * 클립 칸이 전부 같은 좌표의 채움 사각형이고, 그 격자가 열 경계가 맞는 선 격자 안에 들며, 그 선 격자 안의 클립 격자를
+ * 다 합쳐도 선 격자 면적의 절반 이하이면(선 표 대부분에 클립이 없음) 음영이지 표가 아니다 — 선 격자가 표를 맡는다.
+ * 한컴은 모든 칸에 클립을 깔아 선 격자가 여러 표에 걸쳐 커져도 그 안이 클립 격자로 덮인다(벤처투자조합 등록신청서:
+ * 흰색으로 칠한 "신청인" 4x3 클립 표가 서식 전체 선 격자 14x4 안에 있으나 나머지도 클립 표들이 덮는다).
+ * 음영 칸 사이가 획 없이 흰 틈으로만 갈린 머리행(한컴 구버전 성과지표 표 "실적 | 목표치")은 클립이 선에 없는 칸
+ * 경계를 주므로 둔다 — 클립 격자의 안쪽 칸 경계마다 그 띠를 덮는 세로 괘선이 있을 때만 버린다.
+ */
+export function dropShadingClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid[], fillRects: Array<{ x1: number; y1: number; x2: number; y2: number }>, verticals: LineSegment[] = []): TableGrid[] {
+  if (clipGrids.length === 0 || lineGrids.length === 0 || fillRects.length === 0) return clipGrids
+  const near = (a: number, b: number) => Math.abs(a - b) <= SHADE_CLIP_TOL
+  const area = (b: TableGrid["bbox"]) => Math.max(0, b.x2 - b.x1) * Math.max(0, b.y2 - b.y1)
+  const inter = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => area({ x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1), x2: Math.min(a.x2, b.x2), y2: Math.min(a.y2, b.y2) })
+  return clipGrids.filter(c => {
+    if (!c.cells?.length || c.clipParent) return true
+    const shaded = c.cells.every(cell => fillRects.some(f => near(f.x1, cell.bbox.x1) && near(f.x2, cell.bbox.x2) && near(f.y1, cell.bbox.y1) && near(f.y2, cell.bbox.y2)))
+    if (!shaded) return true
+    // 칸 경계마다 괘선 — 칸의 오른변(표 오른끝 제외)이 그 칸 높이의 75% 이상 세로선에 덮여야 한다
+    const ruled = c.cells.every(cell => cell.bbox.x2 >= c.bbox.x2 - SHADE_CLIP_TOL || verticals.some(v =>
+      Math.abs(v.x1 - cell.bbox.x2) <= SHADE_CLIP_TOL * 2
+      && Math.min(v.y2, cell.bbox.y2) - Math.max(v.y1, cell.bbox.y1) >= (cell.bbox.y2 - cell.bbox.y1) * 0.75))
+    if (!ruled) return true
+    const host = lineGrids.find(l =>
+      c.bbox.x1 >= l.bbox.x1 - SHADE_CLIP_TOL && c.bbox.x2 <= l.bbox.x2 + SHADE_CLIP_TOL
+      && c.bbox.y1 >= l.bbox.y1 - SHADE_CLIP_TOL && c.bbox.y2 <= l.bbox.y2 + SHADE_CLIP_TOL
+      && c.colXs.every(x => l.colXs.some(lx => near(lx, x)))
+      && clipGrids.reduce((s, o) => s + inter(o.bbox, l.bbox), 0) <= area(l.bbox) * SHADE_CLIP_MAX_AREA)
+    return !host
+  })
+}
+
 /** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합 */
 function enforceMinWidth(colXs: number[], minWidth: number): number[] {
   if (colXs.length <= 2) return colXs

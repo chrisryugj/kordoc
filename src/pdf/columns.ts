@@ -50,7 +50,13 @@ export function detectColumns(yLines: NormItem[][]): number[] | null {
 
   for (const line of tableYLines) {
     if (isProseSpread(line)) continue
-    for (const item of line) {
+    const byX = [...line].sort((a, b) => a.x - b.x)
+    for (let k = 0; k < byX.length; k++) {
+      const item = byX[k]
+      // 앞 조각에 1em 미만 간격으로 이어진 조각은 열 시작이 아니다 — 한 줄이 글꼴 전환·겹친 런·양쪽 정렬 낱말로
+      // 여러 아이템으로 쪼개진 본문(MS Print To PDF 보도자료 2쪽)은 조각 x 가 가짜 열 7개를 만들어 쪽 전체가 탭 섞인
+      // 한 문단으로 뒤섞였다. 열 사이는 표에서 보통 1em 이상 비어 있다
+      if (k > 0 && item.x - (byX[k - 1].x + byX[k - 1].w) < Math.max(item.fontSize, byX[k - 1].fontSize)) continue
       let found = false
       for (const c of xClusters) {
         if (Math.abs(item.x - c.center) <= CLUSTER_TOL) {

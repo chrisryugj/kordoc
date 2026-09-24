@@ -13,13 +13,16 @@
 import type { InternalParseResult, IRBlock, DocumentMetadata, ExtractedImage, ParseOptions, ParseWarning, OutlineItem } from "../types.js"
 import { KordocError } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
-import { blocksToMarkdown } from "../table/builder.js"
+import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
 import { extractImageRegions } from "./line-detector.js"
 import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
+import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
 import { type PdfTextItem, normalizeItems, filterHiddenText } from "./text-line.js"
-import { extractPageBlocksWithLines } from "./page-blocks.js"
+import { extractPageBlocksWithLines, type PageCarry } from "./page-blocks.js"
+import { WrapLexicon, joinPageBreakWraps } from "./line-wrap.js"
 import { mergeCrossPageTables } from "./table-parts.js"
+import { mergeContinuedCells } from "./cell-continuation.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
 import { computeMedianFontSizeFromFreq, detectHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
@@ -119,6 +122,12 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const imageState = createPdfImageState()
     const extractedImages: ExtractedImage[] = []
     const pageImageBlocks = new Map<number, IRBlock[]>()
+    // 쪽을 넘는 칸 — 앞 쪽 마지막 칸을 다음 쪽 클립 판정에 넘긴다 (clip-cells continues, 문서 단계 mergeContinuedCells)
+    const carry: PageCarry = {}
+    // OCR 로 갈 벡터 글자 쪽의 그래픽(글자 경로·클립 뺀 연산자 목록) — OCR 글자에 이 쪽의 실제 괘선을 붙인다
+    const vectorPageOps = new Map<number, { fnArray: number[]; argsArray: unknown[][] }>()
+    // 줄 꺾임 이음의 문서 어휘 증거 — 쪽을 처리할 때마다 그 쪽 줄 글이 더해진다 (line-wrap.ts)
+    const wrapLexicon = new WrapLexicon()
 
     let parsedPages = 0
     for (let i = 1; i <= effectivePageCount; i++) {
@@ -156,6 +165,9 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           try { return page.commonObjs.has(loadedName) ? (page.commonObjs.get(loadedName) as { name?: string } | null)?.name : undefined }
           catch { return undefined }
         })
+        // 리터럴 $ 는 \$ — $…$ 는 수식 스팬 전용(IR 규약, HWPX·HWP5 와 같음). 종전엔 "단가(US $) … 금액(US $)" 사이가
+        // 마크다운에서 수식으로 읽혀 사라졌다(야생생물 신고서·어셈블리 "lda $30,-16($30)"). 심볼 글꼴 복원 뒤라야 글자 표가 안 어긋난다
+        for (const it of visible) if (it.text.includes("$")) it.text = escapeLiteralDollar(it.text)
 
         // 이미지 영역 감지 — 텍스트 없는 큰 이미지는 무음 정보손실이므로 가시화 (ODL 아이디어)
         const pageArea = viewport.width * viewport.height
@@ -176,7 +188,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           if (uncovered > 0) skippedImagePages.set(i, uncovered)
         }
 
-        const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height, undefined, options?.tables !== false)
+        const pageBlocks = extractPageBlocksWithLines(visible, i, opList, viewport.width, viewport.height, undefined, options?.tables !== false, carry, wrapLexicon)
         for (const b of pageBlocks) blocks.push(b)
 
         // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
@@ -202,7 +214,14 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           totalTextBytes += t.length * 2
           pageText += pageText ? "\n" + t : t
         }
-        pageQuality.push(computePageQuality(i, pageText))
+        // 텍스트층 밖 곡선 글자 — 글자를 채운 경로로 그린 쪽은 텍스트층 신호만으론 멀쩡해 보인다 (vector-glyphs.ts)
+        const vector = scanVectorGlyphs(opList.fnArray, opList.argsArray, visible)
+        const quality = computePageQuality(i, pageText, vector.glyphs)
+        pageQuality.push(quality)
+        // 회전·원점 이동 쪽은 pdfium 래스터 좌표가 사용자 공간과 어긋나 종전대로(래스터 괘선) 둔다
+        if (options?.ocr && quality.ocrReason === "vector_text" && page.rotate % 360 === 0 && page.view[0] === 0 && page.view[1] === 0) {
+          vectorPageOps.set(i, ocrVectorOps(opList, vector.paths))
+        }
         if (totalTextBytes > MAX_TOTAL_TEXT) throw new KordocError("텍스트 추출 크기 초과")
         parsedPages++
         options?.onProgress?.(parsedPages, totalTarget)
@@ -239,7 +258,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         try {
           const { runPdfOcr } = await import("../ocr/pdf-ocr.js")
           const mode = typeof options.ocr === "function" ? options.ocr : ("builtin" as const)
-          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options.onProgress, options.tables !== false)
+          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options.onProgress, options.tables !== false, vectorPageOps)
           if (ocrPageBlocks.size > 0) {
             // 페이지 단위 교체: OCR 성공 페이지의 기존(깨진/빈) 블록 제거 후 병합
             for (const p of ocrPageBlocks.keys()) ocrDone.add(p)
@@ -277,6 +296,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // OCR 이 적용된 페이지는 해소된 것이므로 제외.
     if (!isImageBased) {
       const OCR_REASON_MESSAGES: Record<string, string> = {
+        vector_text: "글자를 곡선(벡터 경로)으로 그린 페이지 (텍스트층에 글자 없음)",
         low_text: "텍스트가 거의 없는 페이지 (스캔/이미지 추정)",
         high_pua: "글꼴 매핑 실패 (PUA 비율 높음) — 추출 텍스트 신뢰 불가",
         high_control: "제어문자 비율 높음 — 추출 텍스트 신뢰 불가",
@@ -307,11 +327,14 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
       }
     }
 
-    // 페이지 걸친 표 병합 — 머리글/바닥글 제거 후 인접해진 표를 하나로
-    // (ODL TableBorderProcessor.checkNeighborTables 포팅)
+    // 쪽을 넘는 칸의 1칸 조각을 앞 쪽 표 그 칸에 붙인 뒤(행으로 갈리지 않게) 페이지 걸친 표 병합 —
+    // 머리글/바닥글 제거 후 인접해진 표를 하나로 (ODL TableBorderProcessor.checkNeighborTables 포팅)
+    mergeContinuedCells(blocks, pageHeights)
     mergeCrossPageTables(blocks, pageHeights)
     // 후행 빈 열 정리 — HWP 계열 표 빌더와 같은 규칙 (병합 뒤: 쪽마다 같은 열 구조일 때 이어 붙인 다음)
     if (!options?.keepTrailingEmptyCols) trimTrailingEmptyTableCols(blocks)
+    // 쪽 넘김으로 꺾인 본문 문단 잇기 — 머리말·꼬리말 제거 뒤, 쪽 끝 그림 주입 전 (line-wrap.ts)
+    joinPageBreakWraps(blocks, wrapLexicon)
 
     // 추출 이미지 참조를 페이지 말미 위치에 주입 (표 병합 뒤 — 인접성 보존)
     injectPageImageBlocks(blocks, pageImageBlocks)

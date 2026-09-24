@@ -32,6 +32,8 @@ const CLIP_MIN_GROUP = 2
 /** 페이지 면적 대비 이 비율 이상인 클립은 페이지/본문 영역 — 셀 아님 */
 const CLIP_MAX_PAGE_FRAC = 0.75
 /** 셀 최소 치수 (pt) */
+/** 걸침 판정 — 상대 클립이 이 비율 넘게, 1-이 비율 못 미치게 들어 있어야 걸침(표 위 덮개). 그 밖은 넘친 안쪽 칸·가장자리 닿음 */
+const STRADDLE_MIN = 0.1
 /** 제목 아래 틀 판정 — 틀 윗변이 페이지 높이의 이 비율 아래에서 시작해야 한다 (본문 영역 클립은 9~11%, 별표 틀 26~52% 실측) */
 const TITLED_FRAME_MIN_TOP = 0.2
 /** 제목 아래 틀 판정 — 틀 폭이 페이지 폭의 이 비율 이상 (별표 틀 70~86% 실측, 2단 상자 38% 제외) */
@@ -119,7 +121,21 @@ export interface ClipCellResult {
   grids: TableGrid[]
   /** 다른 클립을 품어 셀이 아니라 틀로 판정된 사각형(중복 제거) — line 그리드 정리(dropGridsInside)에 쓴다 */
   containers: ClipRect[]
+  /** 다음 쪽 판정에 넘길 이 쪽 사실 — 쪽 넘김 이어짐(continues) */
+  page: ClipPage
 }
+
+/** 쪽 넘김 이어짐 판정에 쓰는 한 쪽의 클립 사실 */
+export interface ClipPage {
+  /** 이 쪽의 마지막 내용인 최상위 표 칸(그 아래엔 꼬리말 띠 글만) — 다음 쪽 첫 클립이 이 칸의 이어짐인지 가른다 */
+  lastCells: ClipRect[]
+  /** 이 쪽의 클립(중복 제거) — 다음 쪽 첫 클립과 같은 사각형이 있으면 쪽마다 같은 자리에 놓인 틀 요소(절 제목 띠)다 */
+  clips: ClipRect[]
+}
+
+/** 쪽 넘김 이어짐 — 앞 쪽 칸과 이 쪽 클립의 좌우 변이 이 거리(pt) 안에서 같아야 한 칸. 한컴은 같은 칸을 쪽마다 같은 좌표로
+ *  깐다(거대 칸 48쪽·규제영향분석서 이어짐 전부 0.01pt 안). 이웃 쪽의 다른 상자("5 | 시험 방법" 머리 상자, 0.12pt 차)는 가른다 */
+const CONT_X_TOL = 0.1
 
 export function buildClipCellGrids(
   rects: ClipRect[],
@@ -129,6 +145,8 @@ export function buildClipCellGrids(
   pageHeight: number,
   textPoints: ReadonlyArray<{ x: number; y: number }> = [],
   fillRects: ClipRect[] = [],
+  /** 바로 앞 쪽의 클립 사실(앞 쪽 결과의 page) — 없으면 쪽 넘김 이어짐을 보지 않는다 */
+  prev: ClipPage = { lastCells: [], clips: [] },
 ): ClipCellResult {
   const pageArea = pageWidth * pageHeight
   const sameRect = (a: ClipRect, b: ClipRect): boolean =>
@@ -141,7 +159,7 @@ export function buildClipCellGrids(
     if (pageArea > 0 && (r.x2 - r.x1) * (r.y2 - r.y1) >= pageArea * CLIP_MAX_PAGE_FRAC) continue
     if (!cells.some(c => sameRect(c, r))) cells.push(r)
   }
-  if (cells.length < 1) return { grids: [], containers: [] }
+  if (cells.length < 1) return { grids: [], containers: [], page: { lastCells: [], clips: [] } }
 
   // 포함 관계로 층을 나눈다 — 각 사각형의 부모 = 자기를 품는 가장 작은 사각형. 중첩표 셀은 바깥
   // 셀 안에 있으므로 같은 부모(그 바깥 셀)끼리만 묶이고, 바깥 셀은 자기 층(최상위 또는 그 위 셀)의
@@ -151,14 +169,29 @@ export function buildClipCellGrids(
   // 되지도 않는다 (영치증 "성 명:/주 소:" 실측)
   const parent = new Array<number>(cells.length).fill(-1)
   const area = (r: ClipRect): number => (r.x2 - r.x1) * (r.y2 - r.y1)
+  // 다른 클립과 걸쳐 겹치는(교차하되 서로 품지 않는) 사각형은 부모가 못 된다 — 한 표의 칸끼리는 겹치지 않으므로 이런
+  // 사각형은 표 위에 얹힌 그림·글상자다. 이것이 우연히 품은 칸들을 자식으로 삼으면 한 표가 그 테두리에서 층이 갈려 둘로
+  // 쪼개진다: 복학원서 워터마크 그림(371pt 정사각)이 4×4 서명란 가운데 두 열만 품어 4×1·4×2·2×1 로, 결재문서 결문표
+  // 아래쪽 10행을 덮은 빈 1칸 표(발신명의 행 중간까지)가 12×39 를 2×3·10×36 으로 갈랐다. 교차 폭은 두 축 다 CLIP_EDGE_TOL
+  // 넘게 — 변을 맞댄 이웃·표 윗변에 0.3pt 겹쳐 깔리는 캡션 클립은 걸침이 아니다. b 가 a 안에 대부분(90% 넘게) 들었거나 거의 안
+  // 들었으면(10% 미만) 걸침이 아니라 칸 폭을 조금 넘친 안쪽 표의 칸이다 — 공문 작성 안내서 "참고 | 첨부물 표시" 칩이 제 칸보다
+  // 5.9pt 넓어 옆 칸에 걸친 것까지 걸침으로 보면 칩이 칸을 잃고 따로 표가 된다
+  const straddles = (a: ClipRect, b: ClipRect): boolean => {
+    const ix = overlap(a.x1, a.x2, b.x1, b.x2), iy = overlap(a.y1, a.y2, b.y1, b.y2)
+    if (ix <= CLIP_EDGE_TOL || iy <= CLIP_EDGE_TOL || contains(a, b) || contains(b, a)) return false
+    const inside = (ix * iy) / area(b)
+    return inside > STRADDLE_MIN && inside < 1 - STRADDLE_MIN
+  }
+  const canParent = cells.map((a, i) => !cells.some((b, j) => i !== j && straddles(a, b)))
   for (let i = 0; i < cells.length; i++) {
     for (let j = 0; j < cells.length; j++) {
       // 부모는 면적이 엄격히 큰 사각형만 — 포함 판정에 오차가 있어 비슷한 크기끼리는 서로를 품을 수 있고, 그러면 부모 사슬이 고리가 된다
-      if (i === j || area(cells[j]) <= area(cells[i]) || !contains(cells[j], cells[i])) continue
+      if (i === j || !canParent[j] || area(cells[j]) <= area(cells[i]) || !contains(cells[j], cells[i])) continue
       const cur = parent[i]
       if (cur < 0 || contains(cells[cur], cells[j])) parent[i] = j
     }
   }
+  const ruledGaps = findRuledGaps(cells, parent, strokedH, strokedV)
   const isContainer = new Array<boolean>(cells.length).fill(false)
   for (const p of parent) if (p >= 0) isContainer[p] = true
   // 표 겉 클립 — 글자처럼 놓인 표는 칸 클립들 바깥에 표 테두리와 같은 사각형 클립이 하나 더 깔린다(행정업무운영
@@ -189,7 +222,7 @@ export function buildClipCellGrids(
   const effParent = (i: number): number => {
     let p = parent[i]
     for (let steps = 0; p >= 0 && steps <= cells.length; steps++) { // 면적이 커지는 사슬이라 고리는 없지만 걸음 수도 묶어 둔다
-      if (!tableClip[p] && (isGridMember(p) || loneFrame(p))) return p
+      if (!tableClip[p] && (isGridMember(p) || loneFrame(p) || continues(p))) return p
       p = parent[p]
     }
     return -1
@@ -203,6 +236,12 @@ export function buildClipCellGrids(
       if (tableClip[j] || parent[i] !== parent[j]) continue
       if (adjacent(cells[i], cells[j])) { const ra = find(i), rb = find(j); if (ra !== rb) root[ra] = rb }
     }
+  }
+  // 괘선 틈을 사이에 둔 이웃(셀 간격 표·짧은 칸 클립)도 한 표 — 좌표는 격자를 만들 때 닫는다(closeGaps)
+  for (const g of ruledGaps) {
+    if (tableClip[g.i] || tableClip[g.j]) continue
+    const ra = find(g.i), rb = find(g.j)
+    if (ra !== rb) root[ra] = rb
   }
   const groups = new Map<number, number[]>()
   for (let i = 0; i < cells.length; i++) {
@@ -233,6 +272,23 @@ export function buildClipCellGrids(
     && textPoints.some(p => p.x > r.x1 && p.x < r.x2 && p.y > r.y1 && p.y < r.y2)
   /** 홀로 선 틀 — 다른 클립을 품고, 그리드 멤버가 아니며, 테두리가 그려져 있거나 제목 아래 틀이다 */
   const loneFrame = (i: number): boolean => isContainer[i] && !isGridMember(i) && (framed(cells[i]) || titledFrame(cells[i]))
+  const headY = pageHeight * (1 - HEADER_BAND)
+  /** 앞 쪽에서 넘어온 칸의 이어짐이면 그 앞 쪽 칸 — 한컴은 쪽을 넘는 칸을 쪽마다 그 쪽에 그려진 부분만 클립으로 깔아, 뒤 쪽
+   *  조각은 이웃 없는 홀로 선 클립이 된다. 테두리 없는 표(경사형 휠체어리프트 기준 5×1 의 본문 칸이 47쪽을 넘음)는 틀로도
+   *  안 잡혀 그 안의 표들이 칸을 잃고 최상위로 빠졌다. 앞 쪽 마지막 내용인 칸과 좌우 변이 같고(CONT_X_TOL) 이 쪽 첫 내용인
+   *  최상위 클립(그 위엔 머리말 띠 글만)만 이어짐으로 본다 — 쪽 첫머리에 서식 번호 "(서식 5)" 가 붙은 다음 서식 틀은 가른다.
+   *  앞 쪽에도 같은 사각형이 있으면(앞 칸 자신 말고) 쪽마다 같은 자리에 놓인 절 제목 띠다(공문 작성 안내서 "[2]"·"[3]" 띠가
+   *  앞 쪽 마지막 틀과 폭이 같아 그 틀에 붙던 것) */
+  const continues = (i: number): ClipRect | undefined => {
+    if (!prev.lastCells.length || parent[i] >= 0 || tableClip[i] || isGridMember(i)) return undefined
+    const c = cells[i]
+    const from = prev.lastCells.find(b => Math.abs(b.x1 - c.x1) <= CONT_X_TOL && Math.abs(b.x2 - c.x2) <= CONT_X_TOL)
+    if (!from) return undefined
+    if (prev.clips.some(k => sameRect(k, c) && !sameRect(k, from))) return undefined
+    if (textPoints.some(p => p.y > c.y2 && p.y < headY)) return undefined
+    if (cells.some(o => o.y1 >= c.y2 - CLIP_EDGE_TOL && (o.y1 + o.y2) / 2 < headY)) return undefined
+    return from
+  }
   /** 이 클립의 부모가 안쪽 표를 받을 수 있는 셀인가 — 그리드의 셀이거나 홀로 선 틀 */
   const parentAttachable = (i: number): boolean => effParent(i) >= 0
   /** 부모 안에 이 클립 하나뿐인가 — 테두리 없는 바깥 틀 안에 테두리 있는 1칸 표 하나(선서문·서약서류).
@@ -248,8 +304,10 @@ export function buildClipCellGrids(
       // 이웃 없는 단독 클립은 원칙적으로 표가 아니다(글상자·그림·머리말·본문 영역). 예외 두 가지 —
       // 1칸 틀: ① 다른 클립을 품고 테두리가 그려진 틀(선서문·각서류의 바깥 1칸 표) ② 그런 틀 안에
       // 홀로 든 테두리 있는 클립(그 안의 1칸 표). 둘 다 HWP 에서는 1×1 표이고 안에 문단·표가 층으로
-      // 들어 있다 — 1×1 그리드로 내서 소비측이 틀 셀의 blocks 에 안쪽 표를 넣게 한다
-      if (!loneFrame(first) && !((parentRect || onlyChild(first)) && framed(cells[first]))) continue
+      // 들어 있다 — 1×1 그리드로 내서 소비측이 틀 셀의 blocks 에 안쪽 표를 넣게 한다. 앞 쪽 칸의 이어짐도 1칸 조각으로
+      // 내고 표시해 둔다 — 문서 단계(mergeContinuedCells)가 앞 쪽 그 칸에 붙인다
+      const from = continues(first)
+      if (!from && !loneFrame(first) && !((parentRect || onlyChild(first)) && framed(cells[first]))) continue
       const r = cells[first]
       grids.push({
         rowYs: [r.y2, r.y1], colXs: [r.x1, r.x2],
@@ -257,10 +315,12 @@ export function buildClipCellGrids(
         vertexRadius: 1,
         cells: [{ row: 0, col: 0, rowSpan: 1, colSpan: 1, bbox: { x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2 } }],
         ...(parentRect ? { clipParent: parentRect } : {}),
+        ...(from ? { continues: from } : {}),
       })
       continue
     }
-    const members = idxs.map(i => cells[i])
+    const gs = ruledGaps.filter(g => find(g.i) === find(first))
+    const members = gs.length ? closeGaps(idxs.map(i => cells[i]), gs) : idxs.map(i => cells[i])
 
     // 테두리 없는 표 판정 — 변 4개씩 획 괘선 유무
     let edges = 0, invisible = 0
@@ -306,7 +366,175 @@ export function buildClipCellGrids(
       ...(parentRect ? { clipParent: parentRect } : {}),
     })
   }
-  return { grids, containers }
+  // 이 쪽 마지막 내용인 최상위 칸 — 가장 낮은 칸들이고, 그 아래엔 꼬리말 띠(HEADER_BAND) 글·클립만 있어야 한다. 본문 영역
+  // 클립(채용공고: 쪽마다 본문 전체를 감싼 클립) 안의 칸은 좌우 변이 같은 그 클립에 싸여 있어 빼낸다 — 다음 쪽 본문 영역
+  // 클립이 쪽 전체를 이어짐으로 삼키지 않게
+  const tops = grids.filter(g => !g.clipParent).flatMap(g => g.cells!.filter(c => !c.filler).map(c => c.bbox))
+  let lastCells: ClipRect[] = []
+  if (tops.length) {
+    const bottom = Math.min(...tops.map(b => b.y1))
+    const footY = pageHeight * HEADER_BAND
+    const below = (y: number): boolean => y < bottom - CLIP_EDGE_TOL && y > footY
+    if (!textPoints.some(p => below(p.y)) && !cells.some(o => o.y2 < bottom && below((o.y1 + o.y2) / 2))) {
+      lastCells = tops.filter(b => Math.abs(b.y1 - bottom) <= CLIP_COORD_TOL
+        && !cells.some(k => Math.abs(k.x1 - b.x1) <= CONT_X_TOL && Math.abs(k.x2 - b.x2) <= CONT_X_TOL && k.y2 > b.y2 + CLIP_EDGE_TOL && contains(k, b)))
+    }
+  }
+  return { grids, containers, page: { lastCells, clips: cells } }
+}
+
+/** 괘선 그어진 틈의 최대 폭 (pt) — 셀 간격 표(행정업무운영 편람 설계 기준 표 1.92~2.52pt)·아래 여백만큼 짧은 칸 클립
+ *  (결재문서 문서번호 표 1.32~1.44pt) 실측 */
+const CLIP_SPACING_MAX = 3
+
+/** 괘선 틈 쌍 — 두 클립(i 가 위·왼쪽), 축, 양끝 좌표(y 틈의 lo 는 아래 칸 윗변·hi 는 위 칸 밑변), 두 클립이 겹친 직각 구간 e1~e2,
+ *  괘선으로 본 닫을 좌표(ruleEnd) */
+interface RuledGap { i: number; j: number; axis: "x" | "y"; lo: number; hi: number; e1: number; e2: number; to: number }
+
+/**
+ * 괘선이 그어진 좁은 틈을 사이에 둔 같은 층 이웃 클립 쌍 — 한 표의 칸으로 묶는다(좌표는 격자를 만들 때 closeGaps 가 닫는다).
+ * 한컴은 셀 간격(cellSpacing)이 있는 표는 칸 클립 사이를 그만큼 띄우고, 결재문서 문서번호 표(4×2)는 칸 클립을 아래 여백
+ * (1.41pt)만큼 짧게 깐다. 변 공유(CLIP_ADJ_GAP 0.15pt)로는 이웃이 안 돼 칸마다 홀로 떨어져, 문서번호 표는 행마다 1×2 표로
+ * 흩어지고 설계 기준 표는 획 경로가 내면서 칸 안 서식 예시(4×7)가 제자리를 잃고 1칸 틀로 따로 나갔다.
+ * 틈 쌍은 틈이 비어 있어야 한다(다른 클립이 없음 — 높이 2.76pt 짜리 진짜 빈 행을 틈으로 먹지 않게, 신구조문대비표 실측).
+ *  ① 직각 두 변이 다 맞고 틈 한쪽 끝(칸 클립 변)에 겹친 폭의 절반 이상을 덮는 괘선이 그어진 쌍 — 표의 틈 폭을 확인한다.
+ *  ② 괘선이 있거나 직각 두 변이 다 맞는 쌍 가운데, 틈 폭이 ①로 확인한 묶음의 틈 폭과 같은(0.3pt 안) 쌍 — 셀 간격은 가로세로 같은
+ *     값이다. 머리 칸 아래 여러 칸(직각 변 한쪽만 맞음, 정책연구 주체별 역할 표)과 세로 테두리를 안 그린 셀 간격 표(응시번호 3×4 가
+ *     열마다 3×1 로 갈리던 것)를 잇는다. 직각 변이 한쪽만 맞는 쌍은 같은 축 틈 폭만 보증한다 — 조직도 상자 사이 2.88pt 가로 틈이
+ *     3pt 아래 다른 표와의 세로 틈을 잇지 않게(mel-001).
+ * 괘선 없는 틈(칸 안 글줄 클립 0.72pt, 머리말 영역과 본문 틀 1.0pt)은 종전대로 가른다.
+ */
+function findRuledGaps(cells: ClipRect[], parent: number[], strokedH: LineSegment[], strokedV: LineSegment[]): RuledGap[] {
+  const al = (u: number, v: number): boolean => Math.abs(u - v) <= CLIP_COORD_TOL
+  /** 틈 사각형 안에 같은 층 다른 클립이 있는가 */
+  const occupied = (i: number, j: number, x1: number, y1: number, x2: number, y2: number): boolean =>
+    cells.some((k, n) => n !== i && n !== j && parent[n] === parent[i] && overlap(k.x1, k.x2, x1, x2) > CLIP_ADJ_GAP && overlap(k.y1, k.y2, y1, y2) > CLIP_ADJ_GAP)
+  /** i·j 사이 틈 — 세로(i 위 j 아래)·가로(i 왼쪽 j 오른쪽) 가운데 조건 맞는 것 */
+  const gapBetween = (i: number, j: number): RuledGap | undefined => {
+    const a = cells[i], b = cells[j]
+    const gv = a.y1 - b.y2
+    if (gv > CLIP_ADJ_GAP && gv <= CLIP_SPACING_MAX && overlap(a.x1, a.x2, b.x1, b.x2) > CLIP_EDGE_TOL && (al(a.x1, b.x1) || al(a.x2, b.x2))
+      && !occupied(i, j, Math.max(a.x1, b.x1), b.y2, Math.min(a.x2, b.x2), a.y1)) {
+      const e1 = Math.max(a.x1, b.x1), e2 = Math.min(a.x2, b.x2)
+      return { i, j, axis: "y", lo: b.y2, hi: a.y1, e1, e2, to: ruleEnd(strokedH, "h", b.y2, a.y1, e1, e2) }
+    }
+    const gh = b.x1 - a.x2
+    if (gh > CLIP_ADJ_GAP && gh <= CLIP_SPACING_MAX && overlap(a.y1, a.y2, b.y1, b.y2) > CLIP_EDGE_TOL && (al(a.y1, b.y1) || al(a.y2, b.y2))
+      && !occupied(i, j, a.x2, Math.max(a.y1, b.y1), b.x1, Math.min(a.y2, b.y2))) {
+      const e1 = Math.max(a.y1, b.y1), e2 = Math.min(a.y2, b.y2)
+      return { i, j, axis: "x", lo: a.x2, hi: b.x1, e1, e2, to: ruleEnd(strokedV, "v", a.x2, b.x1, e1, e2) }
+    }
+    return undefined
+  }
+  /** 틈 한쪽 끝(0.5pt 안)에 e1~e2 의 절반 이상을 덮는 괘선이 있는가 — 칸 테두리는 칸 클립 변에 그어진다. 틈 한가운데 뜬 괘선은
+   *  글줄마다 클립을 까는 PDF 의 줄 사이 표 괘선이다(Microsoft Print To PDF 성과보고서: 행 괘선이 위아래 글줄 클립 사이 0.72pt 안쪽 —
+   *  잇으면 "업무(①-1)" 의 ① 글줄들이 세로 1열 표로 빠져나갔다) */
+  const ruled = (g: RuledGap): boolean => (g.axis === "y" ? strokedH : strokedV).some(l => {
+    const pos = g.axis === "y" ? l.y1 : l.x1
+    return (Math.abs(pos - g.lo) <= 0.5 || Math.abs(pos - g.hi) <= 0.5)
+      && (g.axis === "y" ? overlap(l.x1, l.x2, g.e1, g.e2) : overlap(l.y1, l.y2, g.e1, g.e2)) >= (g.e2 - g.e1) * STROKE_COVER
+  })
+  const root = cells.map((_, i) => i)
+  const find = (i: number): number => { while (root[i] !== i) { root[i] = root[root[i]]; i = root[i] } return i }
+  const found: RuledGap[] = []
+  /** 묶음 뿌리 → 확인된 틈 (축·폭) */
+  const widths = new Map<number, Array<{ axis: "x" | "y"; w: number }>>()
+  const link = (g: RuledGap): void => {
+    found.push(g)
+    const ri = find(g.i), rj = find(g.j)
+    const w = [...(widths.get(rj) ?? []), ...(ri !== rj ? widths.get(ri) ?? [] : []), { axis: g.axis, w: g.hi - g.lo }]
+    root[ri] = rj
+    widths.set(rj, w)
+  }
+  const cand: Array<[RuledGap, boolean]> = []
+  for (let i = 0; i < cells.length; i++) {
+    for (let j = 0; j < cells.length; j++) {
+      if (i === j || parent[i] !== parent[j]) continue
+      const g = gapBetween(i, j)
+      if (!g) continue
+      const a = cells[i], b = cells[j]
+      const both = g.axis === "y" ? al(a.x1, b.x1) && al(a.x2, b.x2) : al(a.y1, b.y1) && al(a.y2, b.y2)
+      const isRuled = ruled(g)
+      if (both && isRuled) link(g)
+      else if (both || isRuled) cand.push([g, both])
+    }
+  }
+  if (!found.length) return []
+  // ② 확인된 틈 폭과 같은 틈 — 이은 묶음이 다시 다른 쌍을 보증할 수 있어 더 늘지 않을 때까지
+  for (let grew = true; grew;) {
+    grew = false
+    for (let k = cand.length - 1; k >= 0; k--) {
+      const [g, both] = cand[k], w = g.hi - g.lo
+      if (![find(g.i), find(g.j)].some(r => (widths.get(r) ?? []).some(s => (both || s.axis === g.axis) && Math.abs(s.w - w) <= CLIP_COORD_TOL))) continue
+      link(g)
+      cand.splice(k, 1)
+      grew = true
+    }
+  }
+  return found
+}
+
+/** 틈을 닫을 좌표 — 겹친 폭 e1~e2 의 절반 이상을 덮는 괘선이 한쪽 끝(0.5pt 안)에만 있으면 그 끝(행 경계는 괘선 자리 — 문서번호 표는
+ *  아래 칸 윗변), 양끝·없음이면 가운데(칸마다 제 테두리를 그리는 셀 간격 표) */
+function ruleEnd(lines: LineSegment[], dir: "h" | "v", lo: number, hi: number, e1: number, e2: number): number {
+  const at = (p: number): boolean => lines.some(l =>
+    Math.abs((dir === "h" ? l.y1 : l.x1) - p) <= 0.5 && (dir === "h" ? overlap(l.x1, l.x2, e1, e2) : overlap(l.y1, l.y2, e1, e2)) >= (e2 - e1) * STROKE_COVER)
+  const atLo = at(lo), atHi = at(hi)
+  return atLo && !atHi ? lo : atHi && !atLo ? hi : (lo + hi) / 2
+}
+
+/**
+ * 한 표(묶음) 칸들의 괘선 틈을 닫은 사본 — 같은 틈(축·양끝)의 쌍들을 한 줄로 모아(직각 구간은 합친 범위), 그 범위에 걸치거나 셀 간격
+ * 하나 거리로 이어진 칸 가운데 틈 끝에 선 변을 한 좌표로 옮긴다. 쌍을 못 이룬 칸(병합 칸, 쪽 넘김으로 옆 칸 클립이 없는 칸)의 변도
+ * 같은 경계가 된다 — 옮긴 변과
+ * 안 옮긴 변이 따로 서면 유령 열·행이 생긴다(관인 종류 표 9×3 → 9×7, 설계 기준 표 5×2 → 5×3). 닫을 좌표는 이 표 안에서 틈
+ * 없이 맞닿은 칸들이 이미 그 끝을 경계로 쓰면 그 끝(조직도 하단: 한 열에서만 아래 칸이 1.08pt 짧음 — 다른 열의 경계와 같은
+ * 좌표여야 유령 행이 없다), 아니면 괘선 자리(ruleEnd)
+ */
+function closeGaps(members: ClipRect[], gaps: RuledGap[]): ClipRect[] {
+  const al = (u: number, v: number): boolean => Math.abs(u - v) <= CLIP_COORD_TOL
+  const lines: Array<{ axis: "x" | "y"; lo: number; hi: number; e1: number; e2: number; to: number }> = []
+  for (const g of gaps) {
+    const l = lines.find(k => k.axis === g.axis && al(k.lo, g.lo) && al(k.hi, g.hi))
+    if (l) { l.e1 = Math.min(l.e1, g.e1); l.e2 = Math.max(l.e2, g.e2) } else lines.push({ ...g })
+  }
+  const out = members.map(r => ({ ...r }))
+  for (const l of lines) {
+    // 틈 없이 맞닿은 칸 쌍이 틈 한쪽 끝을 경계로 쓰는가 (y: 위 칸 밑변 = 아래 칸 윗변)
+    const shared = (p: number): boolean => members.some(u => members.some(v => u !== v
+      && (l.axis === "y"
+        ? Math.abs(u.y1 - v.y2) <= CLIP_ADJ_GAP && al(u.y1, p) && overlap(u.x1, u.x2, v.x1, v.x2) > CLIP_EDGE_TOL
+        : Math.abs(u.x2 - v.x1) <= CLIP_ADJ_GAP && al(u.x2, p) && overlap(u.y1, u.y2, v.y1, v.y2) > CLIP_EDGE_TOL)))
+    const atLo = shared(l.lo), atHi = shared(l.hi)
+    const to = atLo && !atHi ? l.lo : atHi && !atLo ? l.hi : l.to
+    // 틈 끝에 선 칸 — 틈 줄 범위에 걸치거나 셀 간격 하나 거리로 이어지는 칸까지 (옆 열이 셀 간격만큼 떨어져 있고 그 열 칸의 짝이
+    // 쪽 넘김으로 없어도 같은 행 경계다: 설계 기준 표 "구분" 칸)
+    const onEdge = (r: ClipRect): boolean => l.axis === "y" ? al(r.y2, l.lo) || al(r.y1, l.hi) : al(r.x2, l.lo) || al(r.x1, l.hi)
+    const span = (r: ClipRect): [number, number] => l.axis === "y" ? [r.x1, r.x2] : [r.y1, r.y2]
+    const take = new Set<number>()
+    for (let grew = true; grew;) {
+      grew = false
+      for (let n = 0; n < members.length; n++) {
+        if (take.has(n) || !onEdge(members[n])) continue
+        const [a1, a2] = span(members[n])
+        if (overlap(a1, a2, l.e1, l.e2) <= -(CLIP_SPACING_MAX + CLIP_COORD_TOL)) continue
+        take.add(n)
+        l.e1 = Math.min(l.e1, a1); l.e2 = Math.max(l.e2, a2)
+        grew = true
+      }
+    }
+    for (const n of take) {
+      const r = members[n], s = out[n]
+      if (l.axis === "y") {
+        if (al(r.y2, l.lo)) s.y2 = to
+        if (al(r.y1, l.hi)) s.y1 = to
+      } else {
+        if (al(r.x2, l.lo)) s.x2 = to
+        if (al(r.x1, l.hi)) s.x1 = to
+      }
+    }
+  }
+  return out
 }
 
 /**
