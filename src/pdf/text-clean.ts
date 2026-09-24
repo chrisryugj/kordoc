@@ -8,6 +8,7 @@
 import type { IRBlock } from "../types.js"
 import { stripControlChars } from "./quality.js"
 import { collapseEvenSpacing } from "./text-line.js"
+import { wrapJoiner } from "./line-wrap.js"
 
 /**
  * 한컴 PDF 가 가운뎃점(ㆍ U+318D)을 조합형 중성 아래아(ᆞ U+119E)로 내는 것을 되돌린다.
@@ -79,16 +80,25 @@ export function cleanPdfText(text: string): string {
       // 단독 숫자 헤딩 제거 ("# 6\n재무과" → "\n재무과")
       .replace(/^#{1,6}\s*\d{1,4}\s*$/gm, "")
   )
-    // 균등배분 문자열 후처리 (pdfjs가 합친 TextItem + buildGridTable 셀 텍스트)
+    // 균등배분 문자열 후처리 (pdfjs가 합친 TextItem + buildGridTable 셀 텍스트) — 홀로 선 한 글자 셋 이상 연속만 붙인다
+    // (collapseEvenSpacing whole=false). 줄 전체 한 글자 비율 규칙은 기호·등호 토큰까지 한 글자로 세어 원문 띄어쓰기를 통째로
+    // 지웠고("□ 개 요" → "□개요", "N = 잠수펌프의 수" → "N=잠수펌프의수"), 표 칸은 이미 칸 조립(cleanCellText)·builder sanitizeText
+    // 가 다룬다 — 이 단계의 whole 규칙을 끄면 hwpx↔pdf 752쌍 중 30문서 나아지고 2문서(각 1~2어절) 나빠진다
     // LaTeX 수식 라인 ($...$ / $$...$$) 은 공백이 토큰 구분자라 collapse 시 `\cdot d` → `\cdotd` 로 망가짐 — skip
     .replace(/^(?!\| ---).*$/gm, line => {
       if (/^\s*\${1,2}.+\${1,2}\s*$/.test(line)) return line
+      // 표 행은 칸마다(칸 안 <br> 줄마다) — 행 전체를 한 줄로 세면 칸 구분자 "|" 가 한 글자 토큰으로 잡혀 짧은 칸이 늘어선 머리 행이
+      // 통째로 붙었다("| 시 간 | 분 | 내 용 | 비 고 |" → "|시간|분|내용|비고|", 보도자료 세부 일정표 — 원문 칸 글은 "시 간", 86문서)
+      if (line.startsWith("|")) {
+        return line.replace(/(?:\\.|[^|\\])+/g, cell => cell.split("<br>").map(seg => seg.replace(/\S(?:.*\S)?/, t => collapseEvenSpacing(t, false))).join("<br>"))
+      }
       // 마크다운 머리 표지("# "·"- ")는 한 글자 토큰으로 세지 않는다 — "# 목 차" 가 "#목차"(헤딩 표지 깨짐)로 붙던 것
       const mark = /^(?:#{1,6}|-) /.exec(line)?.[0] ?? ""
-      return mark + collapseEvenSpacing(line.slice(mark.length))
+      return mark + collapseEvenSpacing(line.slice(mark.length), false)
     })
-    // 마커 뒤 2글자 균등배분 합침 ("□ 일 시" → "□ 일시", "□ 장 소" → "□ 장소")
-    .replace(/([□■◆○●▶ㅇ])\s+([가-힣])\s+([가-힣])/g, "$1 $2$3")
+    // (종전 "마커 뒤 2글자 균등배분 합침" — "□ 일 시" → "□ 일시" — 은 뺐다: 원문(HWPX)이 공백을 쳐서 띄운 표제라 hwpx↔pdf 에서
+    // 붙이면 틀린 곳이 맞는 곳보다 많았다(규칙을 빼면 11문서 나아지고 1문서 나빠짐). 뒤 글자가 긴 낱말 머리면 "□ 본 보도자료" →
+    // "□ 본보도자료" 로 낱말을 깨기도 했다(47문서))
     // 취소선 복원: builder escapeGfm이 ~를 \~로 이스케이프 — 쌍(~~)만 되살림
     .replace(/\\~\\~/g, "~~")
     // 인접 취소선 run이 붙어 생긴 빈 마크(~~~~) 정리
@@ -135,10 +145,11 @@ function mergeKoreanLines(text: string): string {
       continue
     }
     // 한글 줄바꿈 병합 — 마커(○, □ 등)로 시작하는 이전 줄은 합치지 않음
+    // 이음자는 어절 판정(wrapJoiner, 좌표·문서 어휘 없이 조사·어미 형태만) — 무조건 공백이면 블록 안 어절 중간 꺾임이 "이정표입 니다"
     if (/[가-힣·,\-]$/.test(prev) && /^[가-힣(]/.test(curr) &&
         !startsWithMarker(curr) && !isStandaloneHeader(prev) &&
         !startsWithMarker(prev)) {
-      result[result.length - 1] = prev + " " + curr
+      result[result.length - 1] = prev + wrapJoiner(prev, curr) + curr
     } else {
       result.push(curr)
     }

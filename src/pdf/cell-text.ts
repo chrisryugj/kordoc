@@ -10,7 +10,7 @@
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
 import { sortLineByX } from "./text-line.js"
-import { type WrapLexicon, cellLineWraps, startsNewItem, wrapJoiner } from "./line-wrap.js"
+import { type WrapLexicon, cellLineWraps, cellLineFills, startsNewItem, wrapJoiner } from "./line-wrap.js"
 
 /** 셀 경계 내부 판별 여유 (텍스트 매핑용) */
 const CELL_PADDING = 2
@@ -192,7 +192,10 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
     const first = s[0]
     return { right, fontSize: first.fontSize, firstCharW: first.w / Math.max(1, [...first.text].length) }
   })
-  const wraps = lineEnds.slice(0, -1).map((a, i) => cellLineWraps(wrap.box, contentLeft, a.right, a.fontSize, lineEnds[i + 1].firstCharW))
+  let cellRight = -Infinity
+  for (const e of lineEnds) if (e.right > cellRight) cellRight = e.right
+  const wraps = lineEnds.slice(0, -1).map((a, i) => cellLineWraps(wrap.box, contentLeft, a.right, a.fontSize, lineEnds[i + 1].firstCharW)
+    || (lineEnds.length >= 3 && !textLines[i + 1].startsWith("(") && cellLineFills(wrap.box, contentLeft, cellRight, a.right, a.fontSize)))
   return mergeCellTextLines(textLines, { wraps, lex: wrap.lex })
 }
 
@@ -284,6 +287,12 @@ function detectEvenSpacedItems(items: TextItem[]): boolean[] {
 }
 
 function markEvenRun(items: TextItem[], result: boolean[], start: number, end: number): void {
+  // 별지서식 기입 빈칸 "년   월   일"·"시   분" 은 균등배분이 아니다 — 글자 단위가 전부 날짜·시각 단위면 두고 문자열 안전망
+  // (collapseEvenSpacing isDateUnitBlank)과 같게. 공백 글리프 없이 칸을 벌린 서식은 틈이 3em 안이면 여기서 붙었다
+  // (hwpx↔pdf 칸 줄: 한 글자 조각이 날짜 단위뿐인 줄 46곳 중 원문이 붙여 쓴 곳 0 — 행정업무운영 편람 서식 "년 월 일")
+  let dateOnly = true
+  for (let i = start; i < end; i++) if (!/^[년월일시분초]$/.test(items[i].text)) { dateOnly = false; break }
+  if (dateOnly) return
   const gaps: number[] = []
   for (let i = start + 1; i < end; i++) {
     gaps.push(items[i].x - (items[i - 1].x + items[i - 1].w))

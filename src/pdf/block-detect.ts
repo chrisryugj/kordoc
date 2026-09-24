@@ -52,9 +52,10 @@ export function detectHeadings(blocks: IRBlock[], medianFontSize: number): void 
     if (level > 0) {
       block.type = "heading"
       block.level = level
-      // PDF 균등배분 스페이스 제거 ("기 본 현 황" → "기본현황")
-      // 한글 글자 사이에 단독 공백이 반복되면 균등배분으로 판단
-      block.text = collapseEvenSpacing(text)
+      // PDF 균등배분 스페이스 제거 ("기 본 현 황" → "기본현황") — 홀로 선 한 글자 셋 이상 연속만. 줄 전체 한 글자 비율
+      // 규칙(whole)은 기호·쌍점 토큰까지 한 글자로 세어 헤딩의 원문 띄어쓰기를 통째로 지웠다("□ 개 요" → "□개요",
+      // "성 명 :" → "성명:" — 끄면 hwpx↔pdf 9문서 나아지고 나빠진 문서 0)
+      block.text = collapseEvenSpacing(text, false)
     }
   }
 }

@@ -81,20 +81,25 @@ export function filterHiddenText(items: NormItem[], pageWidth: number, pageHeigh
  * 문자열 기반 균등배분 제거.
  * normalizeItems에서 분해 + 좌표 기반 감지가 주 경로이고, 여기는 안전망.
  * pdfjs가 이미 합친 "홍 보 담 당 관" 같은 TextItem 문자열에 적용.
+ * @param whole 줄 전체 한 글자 비율 규칙(1)까지 쓸지 — false 면 홀로 선 한 글자 셋 이상 연속(2)만. 마크다운 최종 정리·헤딩은 false
+ *   (1이 기호·쌍점·등호 토큰까지 한 글자로 세어 "□ 개 요"·"N = 잠수펌프의 수" 의 원문 띄어쓰기를 통째로 지웠다)
  */
-export function collapseEvenSpacing(text: string): string {
+export function collapseEvenSpacing(text: string, whole = true): string {
   // 1. 전체가 균등배분: 토큰의 70%가 1글자
   const tokens = text.split(" ")
   const singleCharCount = tokens.filter(t => t.length === 1).length
-  if (tokens.length >= 3 && singleCharCount / tokens.length >= 0.7 && !isDateUnitBlank(tokens)) {
+  if (whole && tokens.length >= 3 && singleCharCount / tokens.length >= 0.7 && !isDateUnitBlank(tokens)) {
     return tokens.join("")
   }
 
   // 2. 부분 균등배분: 한글 1자가 3개+ 연속 (2자 단어는 건드리지 않음)
   // "홍 보 담 당 관" → "홍보담당관", "지 역 경 제 과" → "지역경제과"
   // "중동 사태 대응" (2자 단어)는 매칭 안 됨 → 공백 유지
+  // 앞뒤가 공백·줄 끝(또는 밑줄 표지 <u>·</u>)인 한 글자만 — 한글만 막던 종전 경계는 "10월 중 첫"의 "월"(앞이 숫자)·"6명 등 33명"의
+  // "3"(뒤가 숫자)·"제12조 및 제13조"의 "조"를 홀로 선 글자로 보고 붙였다("10월중첫" — 한컴 PDF 는 숫자와 한글을 다른 아이템으로 낸다).
+  // hwpx↔pdf 752쌍: 96문서 나아짐·4문서 나빠짐(각 1~2어절)
   return text.replace(
-    /(?<![가-힣])[가-힣](?: [가-힣\d]){2,}(?![가-힣])/g,
+    /(?<![^\s>])[가-힣](?: [가-힣\d]){2,}(?![^\s<])/g,
     match => (isDateUnitBlank(match.split(" ")) ? match : match.replace(/ /g, "")),
   )
 }

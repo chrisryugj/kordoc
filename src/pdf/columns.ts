@@ -198,14 +198,12 @@ export function extractWithColumns(yLines: NormItem[][], columns: number[]): str
 function buildGridTable(lines: NormItem[][], columns: number[]): string {
   const numCols = columns.length
 
-  // Step 1: 각 y-라인을 열에 배치
+  // Step 1: 각 y-라인을 열에 배치 — 한 칸에 든 조각은 본문 줄과 같은 공백 규칙(mergeLineSimple)으로 잇는다. 종전처럼
+  // 조각마다 공백을 넣으면 글꼴이 바뀔 때마다 쪼개진 낱말이 벌어졌다("입"+"력하"+"면" → "입 력하 면", HWP3 변환 한컴 PDF)
   const yRows: string[][] = lines.map(items => {
-    const row = Array(numCols).fill("")
-    for (const item of items) {
-      const col = findColumn(item.x, columns)
-      row[col] = row[col] ? row[col] + " " + item.text : item.text
-    }
-    return row
+    const byCol: NormItem[][] = Array.from({ length: numCols }, () => [])
+    for (const item of items) byCol[findColumn(item.x, columns)].push(item)
+    return byCol.map(cell => mergeLineSimple(cell))
   })
 
   // Step 2: 행 병합 — 새 논리적 행 판별

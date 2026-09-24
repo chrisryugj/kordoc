@@ -363,7 +363,8 @@ describe("결함 10 — 최종 Y-정렬이 XY-Cut 컬럼 순서를 재인터리�
     const blocks = extractPageBlocksWithLines(items, 1, lineOpList(GRID_SEGS), 612, 792)
     assert.equal(blocks[0].type, "table", "최상단 표가 먼저")
     const paras = blocks.filter(b => b.type !== "table").map(b => (b.text || "").trim())
-    assert.deepEqual(paras, ["좌1", "좌2", "좌3", "우1", "우2", "우3"],
+    // 같은 폭으로 찬 줄이 고른 간격(2em)으로 이어져 단마다 한 문단으로 이어질 수 있다(line-wrap 줄 간격 상대 기준) — 순서만 본다
+    assert.deepEqual(paras.join(" ").split(/\s+/), ["좌1", "좌2", "좌3", "우1", "우2", "우3"],
       `컬럼 순서 보존 (행 인터리브 금지): ${JSON.stringify(paras)}`)
   })
 })
