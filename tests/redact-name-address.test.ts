@@ -154,6 +154,119 @@ describe("name — 문맥 게이트", () => {
   })
 })
 
+describe("address — 도로명 모양·동리 뒤 도로명·참고항목·읍·위치 라벨 (코퍼스 미탐 모양, 값은 합성)", () => {
+  it("기념일 도로·마을 이름 뒤 띄어 쓴 N길·번가길", () => {
+    assert.deepEqual(found("경상남도 창원시 마산회원구 3·15대로 1004 (석전동) 앞"), ["address:경상남도 창원시 마산회원구 3·15대로 1004 (석전동)"])
+    assert.deepEqual(found("서울특별시 강북구 4.19로 101에서"), ["address:서울특별시 강북구 4.19로 101"])
+    assert.deepEqual(found("경기도 화성시 팔탄면 3.1만세로 900-12"), ["address:경기도 화성시 팔탄면 3.1만세로 900-12"])
+    assert.deepEqual(found("울산광역시 북구 동대 9길 17, 복지관 2층"), ["address:울산광역시 북구 동대 9길 17, 복지관 2층"])
+    assert.deepEqual(found("광주광역시 남구 서문대로 700번가길 5"), ["address:광주광역시 남구 서문대로 700번가길 5"])
+  })
+  it("동·리 뒤 도로명", () => {
+    assert.deepEqual(found("서울시 도봉구 창동 우이천로 4다길 9 2층"), ["address:서울시 도봉구 창동 우이천로 4다길 9 2층"])
+    assert.deepEqual(found("충남 서천군 판교면 판교리 대백제로 1999"), ["address:충남 서천군 판교면 판교리 대백제로 1999"])
+  })
+  it("참고항목(법정동)은 스팬·가림 안 — 행정구역이 없어도 참고항목이 있으면 주소", () => {
+    assert.equal(masked("서울특별시 중구 세종대로 110 (태평로1가)"), "서울특별시 중구 ●●●● ●●● (●●●●●)")
+    assert.deepEqual(found("행복교회<br>도봉로 1234(쌍문동)"), ["address:도봉로 1234(쌍문동)"])
+  })
+  it("읍 뒤 도로명·위치 라벨·표 칸 라벨", () => {
+    assert.deepEqual(found("청양읍 칠갑산로 1200 방문"), ["address:청양읍 칠갑산로 1200"])
+    assert.equal(masked("청양읍 칠갑산로 1200"), "●●● ●●●● ●●●●")
+    assert.deepEqual(found("○ 위 치 : 보성읍 녹차로 999 (군청 별관)"), ["address:보성읍 녹차로 999"])
+    assert.deepEqual(found("| 위 치 | 해변길 77(서정동) |"), ["address:해변길 77(서정동)"])
+  })
+  it("행정구역·라벨·참고항목 없는 도로명 모양은 주소가 아니다 (명사+조사+수·교육과정 기호·면 명사 뒤 도로)", () => {
+    for (const s of [
+      "전과별로 2~20년 자격 제한", "가로 4㎝ × 세로 4㎝", "[12진로01-01]", "경사로 1, 입식테이블 2", "비율로 3(이동)",
+      "이면 도로 1, 2구간", "측면 도로 3m", "위치: 3층 로비", "기준으로 3(가동)",
+    ]) assert.deepEqual(found(s), [], s)
+  })
+})
+
+describe("name — 회의록 화자 표지 (동그라미를 붙여 쓴 직함·이름)", () => {
+  it("직함 먼저·이름 먼저, 기관 붙은 직함·직무대리, 끝 글자 장", () => {
+    assert.deepEqual(found("○위원장 한도윤 의석을 정돈하여 주시기 바랍니다.", ["name"]), ["name:한도윤"])
+    assert.equal(masked("○위원장 한도윤 의석을", ["name"]), "○위원장 한●● 의석을")
+    assert.deepEqual(found("◯부의장 서지안 지금부터 회의를 시작하겠습니다.", ["name"]), ["name:서지안"])
+    assert.deepEqual(found("○여성가족실장직무대리 배수아 안녕하십니까?", ["name"]), ["name:배수아"])
+    assert.deepEqual(found("○교육국장 김태장 답변드리겠습니다.", ["name"]), ["name:김태장"])
+    assert.deepEqual(found("○오하람 위원 그런데 제가 자료를 받아 보니", ["name"]), ["name:오하람"])
+  })
+  it("띄어 쓴 동그라미(개조식 항목)·겹동그라미(자리표시자)·붙여 쓴 항목 명사는 아니다", () => {
+    for (const s of [
+      "○ 위원장 선출 결과 보고", "○ 청장 상장 발급 요청", "○○장관 귀하", "◯◯노동조합 위원장 올림", "○위원장 인사말",
+      "○위원장 위촉장 수여", "○위원장 주차장 확보", "○경로당 회장 교육비 지원",
+    ]) assert.deepEqual(found(s, ["name"]), [], s)
+  })
+})
+
+describe("name — 이름 뒤 기관 붙은 직함 (보도자료)", () => {
+  it("붙여 쓴 기관 직함·띄어 쓴 기관 + 직함·차수·직무대행", () => {
+    assert.deepEqual(found("한도윤 농촌진흥청장은 15일 현장을 찾았다.", ["name"]), ["name:한도윤"])
+    assert.deepEqual(found("서지안 기후에너지환경부 장관은 “협력을 넓히겠다”고 말했다.", ["name"]), ["name:서지안"])
+    assert.deepEqual(found("문가람 법무부장관 직무대행은 개회사를 했다.", ["name"]), ["name:문가람"])
+    assert.deepEqual(found("배수아 한국수자원공사 사장(사진 앞줄)이 점검했다.", ["name"]), ["name:배수아"])
+    assert.deepEqual(found("해양수산부 신도현 해운정책관은 설명했다.", ["name"]), ["name:신도현"])
+  })
+  it("이름 자리의 보통명사·대학 약칭은 아니다 (코퍼스 실측 모양)", () => {
+    for (const s of [
+      "시상식 및 전시회 초청장", "주요국 재무장관 양자 면담", "운영의 주체인 행정안전부장관의 지원", "고위직 기관장의 결재",
+      "오늘날 상공부장관이 나와서", "우리가 상공부장관의 조건을", "안보리 이사국 외교장관들과", "IMF 조사국 부국장",
+      "▴한도윤(홍익대 조교수) ▴서지안",
+    ]) assert.deepEqual(found(s, ["name"]), [], s)
+  })
+})
+
+describe("name — 결재란 대결 표지·직위/이름·칸 안 줄바꿈·두 글자 이름·외국 이름", () => {
+  it("결재란 두 글자 이름(흔한 성) — 직함 옆 칸·대결 표지. 옆 칸의 공석·귀하·계급 낱말은 아니다", () => {
+    assert.deepEqual(found("<tr><td>주무관</td><td>한솔</td><td>팀장</td><td>공석</td></tr>", ["name"]), ["name:한솔"])
+    assert.deepEqual(found("<td>代한솔</td>", ["name"]), ["name:한솔"])
+    for (const s of ["<tr><td>과장</td><td>귀하</td></tr>", "<tr><td>담당자</td><td>경정</td></tr>"]) assert.deepEqual(found(s, ["name"]), [], s)
+  })
+  it("代 + 이름 칸, \"…장/이름\", \"이름<br>직함\"", () => {
+    assert.deepEqual(found("<tr><td colspan=\"3\">代한도윤</td></tr>", ["name"]), ["name:한도윤"])
+    assert.deepEqual(found("| 학생회장/서지안 | 2. 사업 |", ["name"]), ["name:서지안"])
+    assert.deepEqual(found("| 연구원/고고학 | 응시자격 |", ["name"]), []) // 직종/분야
+    assert.deepEqual(found("<td>문가람<br>연구사</td>", ["name"]), ["name:문가람"])
+  })
+  it("두 글자 이름 — 직함 뒤는 여격 조사, 역할어 뒤는 주어·주제·관형 조사일 때만 (목적격이면 역할어가 꾸미는 명사)", () => {
+    assert.deepEqual(found("관련 자료는 주무관 한솔에게 보내 주십시오.", ["name"]), ["name:한솔"])
+    for (const s of [
+      "피고인 구속을 명하였다.", "피고인 석방을 명한다.", "피해자 신체를 만졌다.", "피의자 신분으로 조사하였다.",
+      "피해자 남편과 함께 왔다.", "피해자 지인에게 전달했다.", "피고인 선고를 유예한다.", "피해자 이웃의 진술",
+      "원고 지위를 인정한다.", "증인 신문을 실시한다.", "피해자 신원을 확인했다.", "피해자 오빠가 신고했다.",
+      "회장 장남에게 지분을 넘겼다.", "동시에 운전자 방향의 신호등도 바뀐다.",
+    ]) assert.deepEqual(found(s, ["name"]), [], s)
+  })
+  it("외국 이름 — 호칭 뒤 조사, 당사자 번호 나열. 서식 안내의 글꼴 이름은 아니다", () => {
+    assert.deepEqual(found("어제 Daniel Brown 씨가 서류를 보냈다.", ["name"]), ["name:Daniel Brown"])
+    assert.deepEqual(found("피고 1. ○○은행 2. Paul Kim은 연대하여", ["name"]), ["name:Paul Kim"])
+    assert.deepEqual(found("영어 저자이름 : Times New Roman 진하게 10Point", ["name"]), [])
+  })
+})
+
+describe("name — 코퍼스 5,891건 실측 오탐 모양 (새 폴더·표본, 값은 합성)", () => {
+  it("연락처 옆 칸: 시설 주소 칸 꼬리·지점은 아니고, 이름 나열·짧은 괄호 표지 뒤 이름은 이름", () => {
+    assert.deepEqual(found("<tr><td>대전 서구 영골길 900 소망원</td><td>042-234-5678</td></tr>", ["name"]), [])
+    assert.deepEqual(found("<td>하늘심리상담센터 김포점</td><td>031-234-5678</td>", ["name"]), [])
+    assert.deepEqual(found("<tr><td>김철수, 이영희</td><td>02-234-5678</td></tr>", ["name"]), ["name:이영희"])
+    assert.deepEqual(found("<tr><td>주무관</td><td>(선박) 한도윤</td><td>(043-234-9214)</td></tr>", ["name"]), ["name:한도윤"])
+  })
+  it("연락 수단·약칭·관용구·직함 뒤 문서·행사·서식 칸·용언 조각", () => {
+    for (const s of [
+      "★★ 문자(010-2345-6789)로 명함을 보내 주세요", "공정위 부위원장 발언", "외국인정책 담당자 한자리에 모여",
+      "◆전경련 팀장 리더십 과정", "이야기를 나누며 교수님과 학생 간의 교류", "2. 고용노동부 장관 연설문",
+      "**국가대표 선발전**을 겸해 진행됐다.", "자문위원 위촉식을 개최하여", "타 연구회 회장 및 임원의 의견",
+      "한국 YWCA 연합회 회장", "<td>오제이씨 주식회사</td><td>제조업</td>", "동·이업종 팀장 간 정보교류",
+      "국제관계담당관 연례회의(3. 27.)", "국제경영대학원 원우회 부회장", "별도 후견인 선임전까지 관할",
+      "<tr><td>주 소</td><td>성 명</td><td>기계명</td><td>대수</td></tr>", "| 신보직 | 성 명 | 현보직 | 비고 |",
+      "<tr><td colspan=\"5\">발명자 성명</td><td colspan=\"3\">소속학과 및 직위</td></tr>",
+    ]) assert.deepEqual(found(s, ["name"]), [], s)
+    assert.deepEqual(found("CJ 오쇼핑 대표(한도윤 과장)", ["name"]), ["name:한도윤"])
+  })
+})
+
 describe("엔진 — 문맥어를 매치에 넣는 변형(span)", () => {
   it("버린 매치가 뒤 문맥을 삼키지 않는다 — '담당 주무관'의 주무관을 버린 뒤 '주무관 강민준'을 본다", () => {
     assert.deepEqual(found("위원 탁서준: 담당 주무관 강민준에게 확인", ["name"]), ["name:탁서준", "name:강민준"])
@@ -252,6 +365,14 @@ describe("redactDocument — 인명·주소 (파일 단위)", () => {
     assert.deepEqual(res.residual, [])
     const xml = await (await JSZip.loadAsync(res.data!)).file("Contents/section0.xml")!.async("text")
     assert.ok(xml.includes("한 ● ●") && !xml.includes("서 율"), "셀 문단의 띄어 쓴 이름이 가려져야 함")
+  })
+
+  it("HWPX — 결재란 대결 표지 칸(\"代한도윤\")의 이름도 파일 문단에서 가린다", async () => {
+    const doc = await markdownToHwpx("| 협조 | 결재 |\n| --- | --- |\n| 주무관 | 代한도윤 |")
+    const res = await redactDocument(doc, { rules: ["name"] })
+    assert.deepEqual(res.residual, [])
+    const xml = await (await JSZip.loadAsync(res.data!)).file("Contents/section0.xml")!.async("text")
+    assert.ok(xml.includes("代한●●") && !xml.includes("도윤"), "대결 표지 칸의 이름이 가려져야 함")
   })
 
   it("원본 형식 수술 대상이 아닌 포맷(DOCX) — 마크다운에서도 리터럴을 전파해 잔존 0", async () => {
