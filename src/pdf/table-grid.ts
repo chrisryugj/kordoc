@@ -125,12 +125,15 @@ function mergeVertices(vertices: Vertex[]): Vertex[] {
   let maxRadiusAll = 1
   for (const v of vertices) { if (v.radius > maxRadiusAll) maxRadiusAll = v.radius }
   const cell = Math.max(VERTEX_MERGE_FACTOR * maxRadiusAll, 1)
-  const buckets = new Map<string, number[]>()
+  const buckets = new Map<number, Map<number, number[]>>()
   for (let i = 0; i < vertices.length; i++) {
-    const key = Math.floor(vertices[i].x / cell) + "," + Math.floor(vertices[i].y / cell)
-    const arr = buckets.get(key)
+    const cx = Math.floor(vertices[i].x / cell)
+    const cy = Math.floor(vertices[i].y / cell)
+    let column = buckets.get(cx)
+    if (!column) { column = new Map(); buckets.set(cx, column) }
+    const arr = column.get(cy)
     if (arr) arr.push(i)
-    else buckets.set(key, [i])
+    else column.set(cy, [i])
   }
 
   const merged: Vertex[] = []
@@ -148,7 +151,7 @@ function mergeVertices(vertices: Vertex[]): Vertex[] {
     const candidates: number[] = []
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
-        const arr = buckets.get((cx + dx) + "," + (cy + dy))
+        const arr = buckets.get(cx + dx)?.get(cy + dy)
         if (!arr) continue
         for (const j of arr) { if (j > i && !used[j]) candidates.push(j) }
       }

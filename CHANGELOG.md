@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.15.2] - 2026-09-24
+
+PDF 표의 좁은 시각적 간격을 빈 칸으로 잘못 복원하던 경우를 줄였다.
+
+### Fixed
+
+- 한 축의 괘선 틈을 무조건 빈 행·열로 보던 규칙을 좁혔다. 같은 빈 열 경계가 여러 행에 걸쳐 반복되는 표에서는 실제 빈 열을 보존하고, 독립 상자 사이의 간격은 닫는다. PDF 표 정답 716쌍·2,692표의 exact 0.933135와 셀 F1 0.959456은 4.15.1과 같다.
+- 표 교차점 병합의 문자열 버킷 키를 숫자 좌표 버킷으로 바꿨다. 500×500 선 격자 재현에서 시간 629→154ms, 최대 RSS 270→203MiB였다. 일반 PDF 전체 파싱의 추가 속도 개선은 반복 측정에서 확인되지 않았다.
+
+### Known issues
+
+- PDF의 일부 양식에서 실제 빈 칸과 시각적 간격의 기하가 같다. 확인된 사례로 1×3 머리표를 1×2로, 25행 신고서를 23행으로 복원한다. 두 사례는 4.15.1과 대응 HWPX를 대조해 확인했으며, 이번 변경에서는 해결하지 못했다.
+
 ## [4.15.1] - 2026-09-24
 
 PDF 표·좌표 처리와 대형 입력의 자원 사용을 고치고, OCR 입력 처리와 명시적 문맥의 인명 탐지를 보강했다.

@@ -498,9 +498,25 @@ function closeGaps(members: ClipRect[], gaps: RuledGap[]): ClipRect[] {
     const l = lines.find(k => k.axis === g.axis && al(k.lo, g.lo) && al(k.hi, g.hi))
     if (l) { l.e1 = Math.min(l.e1, g.e1); l.e2 = Math.max(l.e2, g.e2); l.both &&= g.both } else lines.push({ ...g })
   }
-  // 셀 간격은 두 축에 나타난다. 한 축에서만 양쪽 테두리를 따로 그린 틈은 빈 열/행일 수 있다.
-  // 다른 칸이 그 끝을 경계로 쓰면 짧은 클립이므로 아래 shared 판정으로 종전처럼 닫는다.
   const spacing = gaps.some(g => g.axis === "x") && gaps.some(g => g.axis === "y")
+  // 실제 빈 열은 같은 좁은 틈이 표 높이 대부분의 여러 행에서 반복된다(정답 17×11: 6행,
+  // 27×5: 19~24행). 독립 상자 사이의 시각적 간격은 한 번뿐이다(창원·조직도·머리표).
+  // 한 축의 양끝 괘선만으로 빈 행까지 추정하지 않는다.
+  const repeatedBlankColumn = (l: typeof lines[number]): boolean => {
+    if (spacing || l.axis !== "x" || !l.both) return false
+    const spans = gaps.filter(g => g.axis === "x" && al(g.lo, l.lo) && al(g.hi, l.hi))
+      .map(g => [g.e1, g.e2] as const).sort((a, b) => a[0] - b[0])
+    if (spans.length < 3) return false
+    let covered = 0, end = -Infinity, distinct = 0
+    for (const [lo, hi] of spans) {
+      if (hi <= end + CLIP_COORD_TOL) continue
+      covered += hi - Math.max(lo, end)
+      end = hi
+      distinct++
+    }
+    const height = Math.max(...members.map(r => r.y2)) - Math.min(...members.map(r => r.y1))
+    return distinct >= 3 && covered >= height * 0.65
+  }
   const out = members.map(r => ({ ...r }))
   for (const l of lines) {
     // 틈 없이 맞닿은 칸 쌍이 틈 한쪽 끝을 경계로 쓰는가 (y: 위 칸 밑변 = 아래 칸 윗변)
@@ -509,7 +525,7 @@ function closeGaps(members: ClipRect[], gaps: RuledGap[]): ClipRect[] {
         ? Math.abs(u.y1 - v.y2) <= CLIP_ADJ_GAP && al(u.y1, p) && overlap(u.x1, u.x2, v.x1, v.x2) > CLIP_EDGE_TOL
         : Math.abs(u.x2 - v.x1) <= CLIP_ADJ_GAP && al(u.x2, p) && overlap(u.y1, u.y2, v.y1, v.y2) > CLIP_EDGE_TOL)))
     const atLo = shared(l.lo), atHi = shared(l.hi)
-    if (l.both && !spacing && !atLo && !atHi) continue
+    if (repeatedBlankColumn(l) && !atLo && !atHi) continue
     const to = atLo && !atHi ? l.lo : atHi && !atLo ? l.hi : l.to
     // 틈 끝에 선 칸 — 틈 줄 범위에 걸치거나 셀 간격 하나 거리로 이어지는 칸까지 (옆 열이 셀 간격만큼 떨어져 있고 그 열 칸의 짝이
     // 쪽 넘김으로 없어도 같은 행 경계다: 설계 기준 표 "구분" 칸)
