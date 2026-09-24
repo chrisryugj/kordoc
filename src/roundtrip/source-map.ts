@@ -709,7 +709,6 @@ export function buildRangeSplices(
   return placed ? splices : null
 }
 
-/** splice 일괄 적용 — 겹침 검증 후 뒤에서부터 치환 */
 /**
  * 섹션 내 모든 <hp:linesegarray> 제거 splice 목록.
  *
@@ -729,17 +728,21 @@ export function allLinesegRemovalSplices(xml: string): SpliceEdit[] {
   return splices
 }
 
+/**
+ * splice 일괄 적용 — 시작 위치로 정렬(같으면 넣은 순서), 겹치면 내부 오류, 원문 조각과 치환 글을 한 번에 잇는다.
+ * 종전엔 뒤에서부터 slice+치환+slice 를 되풀이해 splice 마다 문자열 전체를 복사했다(O(글자 수 × splice 수)) —
+ * 줄 배치 캐시를 전부 지우는 큰 섹션(1,020만 자·26,939 splice)에서 patch·fill·seal 이 32.6초 (v4.14.4 리뷰 실측).
+ * 결과는 종전과 같다 (redact-hwpx.ts applySplicesLinear 와 같은 방식)
+ */
 export function applySplices(xml: string, splices: SpliceEdit[]): string {
   const sorted = [...splices].sort((a, b) => a.start - b.start)
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i].start < sorted[i - 1].end) {
-      throw new Error("소스맵 splice 범위 겹침 — 내부 오류")
-    }
+  const parts: string[] = []
+  let cursor = 0
+  for (const s of sorted) {
+    if (s.start < cursor) throw new Error("소스맵 splice 범위 겹침 — 내부 오류")
+    parts.push(xml.slice(cursor, s.start), s.replacement)
+    cursor = s.end
   }
-  let result = xml
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const s = sorted[i]
-    result = result.slice(0, s.start) + s.replacement + result.slice(s.end)
-  }
-  return result
+  parts.push(xml.slice(cursor))
+  return parts.join("")
 }

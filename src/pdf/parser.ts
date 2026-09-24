@@ -68,6 +68,7 @@ async function loadPdfWithTimeout(buffer: ArrayBuffer) {
     useSystemFonts: true,
     disableFontFace: true,
     isEvalSupported: false,
+    verbosity: 0, // 오류만 — 경고("Warning: Indexing all PDF objects")를 console.log 로 stdout 에 찍어 MCP·CLI JSON 을 깼다
     ...pdfjsAssets,
   })
   let timer: ReturnType<typeof setTimeout> | undefined

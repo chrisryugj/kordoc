@@ -1,7 +1,7 @@
 /** 문서 비교 엔진 — IR 레벨 블록 비교로 신구대조표 생성 */
 
 import { parse } from "../index.js"
-import { normalizedSimilarity } from "./text-diff.js"
+import { normalizedSimilarity, textProfile, similarityUpperBound } from "./text-diff.js"
 import type { IRBlock, IRTable, DiffResult, BlockDiff, CellDiff, DiffChangeType, ParseOptions } from "../types.js"
 
 /** 유사도 임계값 — 이 이상이면 modified, 미만이면 removed+added */
@@ -67,40 +67,45 @@ function alignBlocks(a: IRBlock[], b: IRBlock[]): [IRBlock | null, IRBlock | nul
   // 대형 문서 보호
   if (m * n > 10_000_000) return fallbackAlign(a, b)
 
-  // 길이비 프리필터용 정규화 길이 — normalizedSimilarity와 같은 공백 정규화 기준
-  const lenOf = (blk: IRBlock): number => {
-    const t = blk.text !== undefined
-      ? blk.text
-      : blk.type === "table" && blk.table ? blk.table.cells.flat().map(c => c?.text ?? "").join(" ") : ""
-    return t.replace(/\s+/g, " ").trim().length
-  }
-  const aLen = a.map(lenOf)
-  const bLen = b.map(lenOf)
+  // 블록마다 한 번: 비교 글(표는 셀 글 이음 — blockSimilarity 와 같은 글)의 정규화 길이·글자 구성
+  const textOf = (blk: IRBlock): string => blk.text !== undefined
+    ? blk.text
+    : blk.type === "table" && blk.table ? blk.table.cells.flat().map(c => c?.text ?? "").join(" ") : ""
+  const pa = a.map(blk => textProfile(textOf(blk)))
+  const pb = b.map(blk => textProfile(textOf(blk)))
 
-  // 유사도 매트릭스 캐시
-  const simCache = new Map<string, number>()
-  const getSim = (i: number, j: number): number => {
-    const key = `${i},${j}`
-    let v = simCache.get(key)
-    if (v === undefined) {
-      // 길이비 프리필터 — Levenshtein 하한(sim ≤ 1 − 길이차/max)으로 임계 미달이
-      // 확정인 쌍은 계산 없이 0 (전쌍 O(len²) 캡). 표는 dimSim 0.3 가중이 있어
-      // 6/7 초과일 때만 확정 (0.3 + 0.7×(1/7) = 0.4 = 임계).
-      const mx = Math.max(aLen[i], bLen[j])
-      const cut = a[i].type === "table" || b[j].type === "table" ? 6 / 7 : 1 - SIMILARITY_THRESHOLD
-      v = mx > 0 && (mx - Math.min(aLen[i], bLen[j])) / mx > cut
-        ? 0
-        : blockSimilarity(a[i], b[j])
-      simCache.set(key, v)
+  // 쌍마다 "유사도 ≥ 임계" 만 쓰인다 (값은 diffBlocks 가 짝지은 쌍만 다시 잰다) — 0 모름·1 이상·2 미만.
+  // 종전 Map<"i,j", 유사도> 는 쌍마다 Levenshtein 을 돌려 2,000블록 쌍에 120초·수백 MB 였다 (v4.14.4 리뷰 실측)
+  const passCache = new Uint8Array(m * n)
+  const passes = (i: number, j: number): boolean => {
+    const k = i * n + j
+    if (passCache[k] === 0) passCache[k] = pairReaches(i, j) ? 1 : 2
+    return passCache[k] === 1
+  }
+  const pairReaches = (i: number, j: number): boolean => {
+    const x = a[i], y = b[j]
+    if (x.type !== y.type) return false // blockSimilarity 0
+    // 길이비 프리필터 — Levenshtein 하한(sim ≤ 1 − 길이차/max)으로 임계 미달이
+    // 확정인 쌍은 계산 없이 0 (전쌍 O(len²) 캡). 표는 dimSim 0.3 가중이 있어
+    // 6/7 초과일 때만 확정 (0.3 + 0.7×(1/7) = 0.4 = 임계).
+    const mx = Math.max(pa[i].len, pb[j].len)
+    const cut = x.type === "table" ? 6 / 7 : 1 - SIMILARITY_THRESHOLD
+    if (mx > 0 && (mx - Math.min(pa[i].len, pb[j].len)) / mx > cut) return false
+    // 글자 구성 상한(similarityUpperBound) — 값은 blockSimilarity 와 같고 계산만 건너뛴다. 상한 글이 실제 비교 글과
+    // 같은 두 경우만: 둘 다 text 가 있는 블록, 둘 다 text 없는 표
+    if (x.text !== undefined && y.text !== undefined) {
+      if (similarityUpperBound(pa[i], pb[j]) < SIMILARITY_THRESHOLD) return false
+    } else if (x.text === undefined && y.text === undefined && x.table && y.table) {
+      if (tableDimSim(x.table, y.table) * 0.3 + similarityUpperBound(pa[i], pb[j]) * 0.7 < SIMILARITY_THRESHOLD) return false
     }
-    return v
+    return blockSimilarity(x, y) >= SIMILARITY_THRESHOLD
   }
 
   // LCS with similarity threshold
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
+  const dp: Int32Array[] = Array.from({ length: m + 1 }, () => new Int32Array(n + 1))
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      if (getSim(i - 1, j - 1) >= SIMILARITY_THRESHOLD) {
+      if (passes(i - 1, j - 1)) {
         dp[i][j] = dp[i - 1][j - 1] + 1
       } else {
         dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
@@ -112,7 +117,7 @@ function alignBlocks(a: IRBlock[], b: IRBlock[]): [IRBlock | null, IRBlock | nul
   const pairs: [number, number][] = []
   let i = m, j = n
   while (i > 0 && j > 0) {
-    if (getSim(i - 1, j - 1) >= SIMILARITY_THRESHOLD && dp[i][j] === dp[i - 1][j - 1] + 1) {
+    if (passes(i - 1, j - 1) && dp[i][j] === dp[i - 1][j - 1] + 1) {
       pairs.push([i - 1, j - 1]); i--; j--
     } else if (dp[i - 1][j] >= dp[i][j - 1]) {
       i--
@@ -165,9 +170,13 @@ function blockSimilarity(a: IRBlock, b: IRBlock): number {
   return 0
 }
 
+/** 표 구조 유사도 (차원) */
+function tableDimSim(a: IRTable, b: IRTable): number {
+  return 1 - Math.abs(a.rows * a.cols - b.rows * b.cols) / Math.max(a.rows * a.cols, b.rows * b.cols, 1)
+}
+
 function tableSimilarity(a: IRTable, b: IRTable): number {
-  // 구조 유사도 (차원)
-  const dimSim = 1 - Math.abs(a.rows * a.cols - b.rows * b.cols) / Math.max(a.rows * a.cols, b.rows * b.cols, 1)
+  const dimSim = tableDimSim(a, b)
 
   // 내용 유사도 (셀 텍스트) — ragged 입력 방어(?.)
   const textsA = a.cells.flat().map(c => c?.text ?? "").join(" ")

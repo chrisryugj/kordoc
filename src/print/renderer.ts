@@ -16,7 +16,7 @@ import { existsSync } from "fs"
 import MarkdownIt from "markdown-it"
 import type { IRBlock } from "../types.js"
 import { blocksToMarkdown } from "../table/builder.js"
-import { KordocError } from "../utils.js"
+import { KordocError, escapeHtml } from "../utils.js"
 
 // ─── 타입 ─────────────────────────────────────────
 
@@ -137,16 +137,37 @@ ${body}
 </html>`
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
-
 // ─── PDF 생성 ─────────────────────────────────
+
+/**
+ * 인쇄용 Chromium 을 띄워 잠근 페이지를 준다 — print(htmlToPdf)·render(renderHtmlToPdf) 두 기동 지점 공용.
+ * 페이지 글은 문서에서 온 글이라 정적 조판만 필요하다: JS 를 끄고 data:·about: 밖의 요청(원격 http·로컬 file:)은
+ * 전부 막는다. v4.14.4 까지는 문서가 병합 셀·마크다운 이미지로 심은 <img onerror>·<script>·![](http://…) 가
+ * 헤드리스 Chrome 에서 실행되고 밖으로 요청했다 — KORDOC_OFFLINE(assertNetworkAllowed)은 Node fetch 만 막아
+ * Chromium 요청은 샜다. 기동 timeout 90초: CI(Node 22)가 부하 중 기본 30초 안에 WS 엔드포인트를 못 받아
+ * 실패했다(같은 커밋 재실행은 통과한 플레이크)
+ */
+export async function launchLockedPage(puppeteer: typeof import("puppeteer-core"), executablePath: string) {
+  const browser = await puppeteer.default.launch({
+    executablePath,
+    headless: true,
+    timeout: 90_000,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  })
+  try {
+    const page = await browser.newPage()
+    await page.setJavaScriptEnabled(false)
+    await page.setRequestInterception(true)
+    page.on("request", (req) => {
+      if (/^(?:data|about):/i.test(req.url())) void req.continue()
+      else void req.abort()
+    })
+    return { browser, page }
+  } catch (err) {
+    await browser.close()
+    throw err
+  }
+}
 
 /**
  * puppeteer-core로 HTML → PDF 변환.
@@ -170,14 +191,8 @@ async function htmlToPdf(html: string, options?: PrintOptions): Promise<Buffer> 
     )
   }
 
-  const browser = await puppeteer.default.launch({
-    executablePath,
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  })
-
+  const { browser, page } = await launchLockedPage(puppeteer, executablePath)
   try {
-    const page = await browser.newPage()
     // puppeteer 25 부터 setContent 의 waitUntil 에서 networkidle0 이 빠짐. 같은 의미
     // (연결 0개가 500ms 유지)를 waitForNetworkIdle 로.
     await page.setContent(html, { waitUntil: "load" })

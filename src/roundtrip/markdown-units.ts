@@ -9,7 +9,8 @@
  */
 
 import type { IRTable } from "../types.js"
-import { MAX_COLS, MAX_ROWS, escapeGfm, noteSuffix } from "../table/builder.js"
+import { MAX_COLS, MAX_ROWS, escapeGfm, escapeHtmlCellText, noteSuffix } from "../table/builder.js"
+import { escapeHtml, unescapeHtml } from "../utils.js"
 import { clampSpan } from "../hwpx/parser-shared.js"
 import { mapPuaText } from "../shared/pua.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
@@ -333,16 +334,16 @@ function replicateCellInnerHtml(cell: IRTable["cells"][number][number]): string 
       .map(b => {
         if (b.type === "table" && b.table) {
           const cap = b.table.caption ? sanitizeText(b.table.caption) : ""
-          return (cap ? cap + "<br>" : "") + replicateTableToHtml(b.table)
+          return (cap ? escapeHtmlCellText(cap) + "<br>" : "") + replicateTableToHtml(b.table)
         }
-        if (b.type === "image" && b.text) return `<img src="${b.text}" alt="image">`
+        if (b.type === "image" && b.text) return `<img src="${escapeHtml(b.text, true)}" alt="image">`
         const t = sanitizeText(b.text ?? "")
-        return t ? (t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
+        return t ? escapeHtmlCellText(t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
       })
       .filter(Boolean)
       .join("<br>")
   }
-  return sanitizeText(cell.text).replace(/\n/g, "<br>")
+  return escapeHtmlCellText(sanitizeText(cell.text)).replace(/\n/g, "<br>")
 }
 
 /** builder.ts tableToHtml과 동일한 문자열 출력 (자기 검증용) */
@@ -457,7 +458,7 @@ export function parseHtmlTable(raw: string): HtmlRowInfo[] | null {
 export const AUTONUM_PREFIX_RE =
   /^(?:[0-9０-９a-zA-Z가-힣]{1,6}[.)\]:]|[([][0-9０-９a-zA-Z가-힣]{1,6}[)\]][.:]?|[ⅰ-ⅹⅠ-Ⅹ①-⑮][.)\]:]?)$/u
 
-/** HTML 셀 inner → 평문 라인 — <br> 분리, <img>/중첩표 토큰 제외 */
+/** HTML 셀 inner → 평문 라인 — <br> 분리, <img>/중첩표 토큰 제외, 엔티티 복원(builder escapeHtmlCellText 의 역) */
 export function htmlCellInnerToLines(inner: string): { lines: string[]; hadNonText: boolean; imgSrcs: string[] } {
   let hadNonText = false
   let work = inner
@@ -474,11 +475,11 @@ export function htmlCellInnerToLines(inner: string): { lines: string[]; hadNonTe
     work = work.replace(/<img\s(?:"[^"]*"|'[^']*'|[^>"'])*?>/gi, (tag) => {
       const m = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag)
       const src = m?.[1] ?? m?.[2]
-      if (src) imgSrcs.push(src)
+      if (src) imgSrcs.push(unescapeHtml(src))
       return ""
     })
   }
-  const lines = work.split(/<br\s*\/?>/gi).map(s => s.trim()).filter(s => s.length > 0)
+  const lines = work.split(/<br\s*\/?>/gi).map(s => unescapeHtml(s).trim()).filter(s => s.length > 0)
   return { lines, hadNonText, imgSrcs }
 }
 

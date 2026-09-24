@@ -23,7 +23,7 @@ import { mkdtempSync, writeFileSync, existsSync, rmSync, copyFileSync } from "no
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { createTaskQueue, assertRecursiveWatchSupport, isPrivateIp, SUPPORTED_EXTENSIONS } from "../src/watch.js"
+import { createTaskQueue, assertRecursiveWatchSupport, isPrivateIp, SUPPORTED_EXTENSIONS, watchDirectory } from "../src/watch.js"
 // mcp.ts는 직접 실행이 아니면 서버를 자동 시작하지 않는다 (entry 가드) — 헬퍼만 import
 import {
   ALLOWED_EXTENSIONS, IMAGE_EXTENSIONS, safePath, safeOutputPath,
@@ -117,6 +117,21 @@ describe("P3-10 isPrivateIp — DNS 해석 결과 재검증", () => {
   it("공인 IP는 통과", () => {
     for (const ip of ["8.8.8.8", "1.1.1.1", "172.32.0.1", "100.128.0.1", "2001:4860:4860::8888"]) {
       assert.equal(isPrivateIp(ip), false, `${ip} 는 공인이어야`)
+    }
+  })
+  it("IPv4 를 품은 IPv6 16진 표기 — URL 정규화형 [::ffff:7f00:1] 우회 차단 (v4.14.4 리뷰 재현)", () => {
+    for (const ip of ["::ffff:7f00:1", "::ffff:a9fe:a9fe", "::ffff:a00:1", "::ffff:c0a8:101", "0:0:0:0:0:ffff:7f00:1",
+      "::ffff:0:7f00:1", "::7f00:1", "::127.0.0.1", "64:ff9b::7f00:1", "fe80::1%lo0"]) {
+      assert.equal(isPrivateIp(ip), true, `${ip} 는 사설이어야`)
+    }
+    for (const ip of ["::ffff:808:808", "::ffff:0808:0808", "64:ff9b::808:808", "::ffff:8.8.8.8"]) {
+      assert.equal(isPrivateIp(ip), false, `${ip} 는 공인이어야`)
+    }
+    assert.equal(new URL("http://[::ffff:127.0.0.1]/hook").hostname, "[::ffff:7f00:1]", "Node URL 정규화 전제")
+  })
+  it("watchDirectory 는 사설 IPv6 리터럴 webhook 을 기동 시 거부", { timeout: 10000 }, async () => {
+    for (const hook of ["http://[::ffff:127.0.0.1]:47822/hook", "http://[::ffff:a9fe:a9fe]/latest/meta-data"]) {
+      await assert.rejects(watchDirectory({ dir: ".", webhook: hook }), /내부 네트워크 대상 webhook/)
     }
   })
 })

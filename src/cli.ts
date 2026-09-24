@@ -5,7 +5,7 @@ import { basename, resolve } from "path"
 import { Command } from "commander"
 import { parse, detectFormat } from "./index.js"
 import type { ParseOptions } from "./types.js"
-import { VERSION, toArrayBuffer, sanitizeError, classifyError } from "./utils.js"
+import { VERSION, toArrayBuffer, sanitizeError, classifyError, routeConsoleToStderr } from "./utils.js"
 import { detectImageMime } from "./hwp5/images.js"
 import { registerDocCommands } from "./cli/commands-docs.js"
 import { registerGenerateCommands } from "./cli/commands-generate.js"
@@ -202,5 +202,11 @@ registerGenerateCommands(program)
 registerRenderCommands(program)
 registerSystemCommands(program)
 registerWorkerCommands(program)
+
+// stdout 은 마크다운·JSON·생성 바이너리 채널 — pdfjs 등이 console 로 찍는 경고가 섞이지 않게 stderr 로
+// (parse-worker·MCP 와 같은 처리). setup 은 사람이 보는 설치 화면이라 그대로 둔다
+program.hook("preAction", (_program, action) => {
+  if (action.name() !== "setup") routeConsoleToStderr()
+})
 
 program.parse()

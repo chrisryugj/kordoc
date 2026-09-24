@@ -26,8 +26,9 @@ import {
 } from "../hwp5/record.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  buildOrigUnits, alignUnits, diffUnitLists, textUnitToPlain, type OrigUnit,
+  buildOrigUnits, alignUnits, diffUnitLists, textUnitToPlain, patchHwpx, type OrigUnit,
 } from "./patcher.js"
+import { detectFormat } from "../detect.js"
 import {
   splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
@@ -259,7 +260,7 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
 /**
  * 원본 HWP 5.x와 편집된 마크다운으로 서식 보존 패치본을 만든다.
  *
- * @param original 원본 HWP 바이트 (OLE2/CFB)
+ * @param original 원본 HWP 바이트 (OLE2/CFB — 속이 HWPX(ZIP)인 문서는 patchHwpx 로 넘긴다)
  * @param editedMarkdown parse(original).markdown을 편집한 마크다운
  */
 export async function patchHwp(
@@ -267,6 +268,8 @@ export async function patchHwp(
   editedMarkdown: string,
   options?: PatchOptions,
 ): Promise<PatchResult> {
+  // .hwp 이름의 HWPX 등 속이 HWP 5.x 가 아닌 입력 — 매직 바이트 판정·거절은 patchHwpx 한 곳에서 (설명도 거기)
+  if (detectFormat(new Uint8Array(original.subarray(0, 512)).buffer) !== "hwp") return patchHwpx(original, editedMarkdown, options)
   const skipped: PatchSkip[] = []
   let applied = 0
   const originalBuf = Buffer.from(original.buffer, original.byteOffset, original.byteLength)

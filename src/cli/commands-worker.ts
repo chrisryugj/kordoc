@@ -2,10 +2,9 @@
 
 import { readFileSync, statSync } from "fs"
 import { resolve } from "path"
-import { format } from "util"
 import { parse } from "../index.js"
 import type { ParseOptions, ParseResult } from "../types.js"
-import { VERSION, toArrayBuffer, sanitizeError, classifyError } from "../utils.js"
+import { VERSION, toArrayBuffer, sanitizeError, classifyError, routeConsoleToStderr } from "../utils.js"
 import type { Command } from "commander"
 
 /** 요청·응답 필드가 바뀌면 올린다. 호스트가 ready 줄로 호환을 판단한다 */
@@ -61,11 +60,7 @@ export function registerWorkerCommands(program: Command): void {
       //       {"id":1,"error":"…"}: 요청 자체가 잘못됐을 때
       //  {"cmd":"quit"} 또는 stdin 닫힘으로 종료. rss 는 호스트가 워커 교체 시점을 정하는 데 쓴다.
       // pdfjs 등이 console 로 찍는 경고가 stdout 프로토콜 줄을 깨지 않게 stderr 로 돌린다
-      const toStderr = (...args: unknown[]): void => void process.stderr.write(format(...args) + "\n")
-      console.log = toStderr
-      console.info = toStderr
-      console.warn = toStderr
-      console.debug = toStderr
+      routeConsoleToStderr()
       const { createInterface } = await import("node:readline")
       const rl = createInterface({ input: process.stdin, crlfDelay: Infinity })
       const write = (o: unknown): void => void process.stdout.write(JSON.stringify(o, bytesToBase64) + "\n")

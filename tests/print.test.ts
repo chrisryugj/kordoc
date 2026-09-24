@@ -2,12 +2,16 @@
  * Print Renderer 테스트.
  *
  * `renderHtml`만 단위 테스트한다. `markdownToPdf`/`blocksToPdf`는 puppeteer-core +
- * Chromium 실행파일 의존이라 환경에 따라 결과가 달라지므로 통합 테스트로 분리.
+ * Chromium 실행파일 의존이라 환경에 따라 결과가 달라지므로 통합 테스트로 분리 —
+ * 예외는 페이지 잠금(JS 끔·요청 차단) 한 건: 실제 브라우저로만 확인되어 Chromium 이 있을 때만 돈다.
  */
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { renderHtml } from "../src/print/renderer.js"
+import { existsSync } from "node:fs"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
+import { renderHtml, markdownToPdf, findChromiumPath } from "../src/print/renderer.js"
 
 describe("renderHtml — 기본", () => {
   it("plain markdown → HTML 문서 (DOCTYPE + body)", () => {
@@ -73,5 +77,31 @@ describe("renderHtml — 기본", () => {
     const md = '<table><tr><th colspan="2">제목</th></tr></table>'
     const html = renderHtml(md)
     assert.ok(html.includes('colspan="2"'))
+  })
+})
+
+// Chromium 이 있을 때만 (render-document.test.ts 와 같은 조건) — 페이지 잠금은 실제 브라우저로만 확인된다
+const HAS_CHROMIUM = existsSync("/Applications/Google Chrome.app") || !!findChromiumPath() || !!process.env.PUPPETEER_EXECUTABLE_PATH
+
+describe("markdownToPdf — 인쇄 페이지 잠금 (JS 끔·data:/about: 밖 요청 차단)", { skip: !HAS_CHROMIUM }, () => {
+  it("마크다운에 심은 <script>·원격 <img>·![](http://…) 가 실행·요청되지 않는다", async () => {
+    const hits: string[] = []
+    const srv = createServer((req, res) => { hits.push(req.url ?? ""); res.writeHead(404); res.end() })
+    await new Promise<void>(r => srv.listen(0, "127.0.0.1", () => r()))
+    const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`
+    try {
+      const pdf = await markdownToPdf([
+        "# 잠금",
+        `<img src="${base}/raw.png" onerror="fetch('${base}/onerror')">`,
+        `<script>fetch('${base}/script')</script>`,
+        `![x](${base}/md.png)`,
+        `<img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">`,
+      ].join("\n\n"))
+      assert.equal(pdf.subarray(0, 4).toString(), "%PDF")
+      await new Promise(r => setTimeout(r, 200))
+      assert.deepEqual(hits, [], "로컬 서버가 받은 요청 없음")
+    } finally {
+      srv.close()
+    }
   })
 })

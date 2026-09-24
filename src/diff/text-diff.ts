@@ -26,6 +26,34 @@ function normalize(s: string): string {
 /** 최대 입력 길이 합 — 초과 시 길이 차이 기반 빠른 추정 (O(m*n) CPU 폭발 방지) */
 const MAX_LEVENSHTEIN_LEN = 10_000
 
+/** normalizedSimilarity 상한용 글 구성 — 공백 정규화한 글의 길이와 UTF-16 코드 단위 다중집합(코드 오름차순) */
+export interface TextProfile { len: number; codes: Uint16Array; counts: Uint32Array }
+
+export function textProfile(text: string): TextProfile {
+  const s = normalize(text)
+  const count = new Map<number, number>()
+  for (let i = 0; i < s.length; i++) count.set(s.charCodeAt(i), (count.get(s.charCodeAt(i)) ?? 0) + 1)
+  const codes = Uint16Array.from([...count.keys()].sort((x, y) => x - y))
+  return { len: s.length, codes, counts: Uint32Array.from(codes, c => count.get(c)!) }
+}
+
+/**
+ * normalizedSimilarity 상한 — 편집 거리는 긴 쪽 길이 − 공통 글자 수(다중집합) 이상이다(같은 글자끼리 맞춘 자리만
+ * 비용 0). 그래서 유사도 ≤ 공통 / 긴 쪽 길이. 합 길이가 MAX_LEVENSHTEIN_LEN 을 넘어 근사 거리(bigram)를 쓰는
+ * 쌍은 이 상한이 성립하지 않아 1 (거르지 않음)
+ */
+export function similarityUpperBound(a: TextProfile, b: TextProfile): number {
+  const maxLen = Math.max(a.len, b.len)
+  if (maxLen === 0 || a.len + b.len > MAX_LEVENSHTEIN_LEN) return 1
+  let common = 0
+  for (let i = 0, j = 0; i < a.codes.length && j < b.codes.length;) {
+    if (a.codes[i] === b.codes[j]) common += Math.min(a.counts[i++], b.counts[j++])
+    else if (a.codes[i] < b.codes[j]) i++
+    else j++
+  }
+  return common / maxLen
+}
+
 /**
  * 초과 길이 근사 거리 — 문자 bigram(shingle) 다중집합의 Dice 유사도 기반.
  * 위치 정렬 샘플 비교는 접두 삽입/삭제(shift)에 전량 불일치로 폭주하던 것을 교정.

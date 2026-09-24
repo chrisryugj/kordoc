@@ -1,7 +1,7 @@
 /** 2-pass colSpan/rowSpan 테이블 빌더 및 Markdown 변환 */
 
 import type { CellContext, IRBlock, IRCell, IRSpan, IRTable } from "../types.js"
-import { sanitizeHref } from "../utils.js"
+import { sanitizeHref, escapeHtml } from "../utils.js"
 import { mapPuaText } from "../shared/pua.js"
 
 /** 테이블 열 수 상한 — 한국 공공문서 기준 충분한 값 */
@@ -213,9 +213,11 @@ export function escapeGfm(text: string): string {
   // 리터럴 달러는 파서가 \$ 로 담으므로(escapeLiteralDollar) 이스케이프된 $ 에서는 스팬을 열지 않는다.
   // ![image](image_001.png) 이미지 참조 스팬과 링크 URL부 `](스킴...)`(sanitizeHref 허용
   // 스킴 한정 — 우연한 "[라벨](식별자)" 평문은 제외)도 동일 보호 — _ 이스케이프 시 문법 파괴.
+  // 보호는 공백·<>"'` 없는 목적지만 (sanitizeHref 가 인코딩해 내는 모양) — 종전 [^)\n]* 는 문서 글
+  // "](https://a <img src=x onerror=…>)" 의 날 태그까지 통째 보호해 이스케이프를 비켜 갔다 (v4.14.4 리뷰 재현)
   const NUL = String.fromCharCode(0) // 마크다운 본문에 없는 안전한 필러 (소스에 raw NUL 미기입)
   const spans: string[] = []
-  const masked = text.replace(/!\[[^\]]*\]\([^)\n]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\n]*\)|(?<!\\)\$\$(?:\\[\s\S]|[^\\$])*\$\$|(?<!\\)\$(?:\\[^\n]|[^\\$\n])*\$/gi, (m) => {
+  const masked = text.replace(/!\[[^\]<>\n]*\]\([^)\s<>"'\x60]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\s<>"'\x60]*\)|(?<!\\)\$\$(?:\\[\s\S]|[^\\$])*\$\$|(?<!\\)\$(?:\\[^\n]|[^\\$\n])*\$/gi, (m) => {
     spans.push(m)
     return NUL + (spans.length - 1) + NUL
   })
@@ -611,6 +613,16 @@ function visibleText(b: IRBlock): string {
   return b.spans?.some(s => s.placeholder) ? b.spans.filter(s => !s.placeholder).map(s => s.text).join("") : (b.text ?? "")
 }
 
+/**
+ * HTML 표 셀 글 → HTML 글. 병합·중첩 표는 HTML 로 나가는데 v4.14.4 까지 셀 글을 그대로 실어, 원문
+ * `<script>`·`<img onerror>` 가 살아있는 태그가 되고 "x<y"·"A & B" 가 태그·엔티티로 먹혔다 (GFM 경로는
+ * escapeGfm 이 막는다). kordoc 자신의 밑줄 마커 <u>·</u>(HWP5·PDF 가 글에 넣음)는 escapeGfm 처럼 태그로 둔다.
+ * 셀 줄바꿈 <br> 은 이 뒤에 넣으므로 원문 글자 "<br>"(&lt;br&gt;)와 갈린다. 읽는 쪽은 utils unescapeHtml
+ */
+export function escapeHtmlCellText(text: string): string {
+  return escapeHtml(text).replace(/&lt;(\/?)u&gt;/g, "<$1u>")
+}
+
 /** 셀 내부 콘텐츠 → HTML — blocks(중첩표/다중문단) 있으면 구조 보존 재귀 렌더링 */
 function cellInnerHtml(cell: IRCell): string {
   if (cell.blocks?.length) {
@@ -619,16 +631,16 @@ function cellInnerHtml(cell: IRCell): string {
         if (b.type === "table" && b.table) {
           // 중첩표 캡션도 보존 — 표 위에 텍스트로
           const cap = b.table.caption ? sanitizeText(b.table.caption) : ""
-          return (cap ? cap + "<br>" : "") + tableToHtml(b.table)
+          return (cap ? escapeHtmlCellText(cap) + "<br>" : "") + tableToHtml(b.table)
         }
-        if (b.type === "image" && b.text) return `<img src="${b.text}" alt="image">`
+        if (b.type === "image" && b.text) return `<img src="${escapeHtml(b.text, true)}" alt="image">`
         const t = sanitizeText(visibleText(b))
-        return t ? (t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
+        return t ? escapeHtmlCellText(t + noteSuffix(b)).replace(/\n/g, "<br>") : ""
       })
       .filter(Boolean)
       .join("<br>")
   }
-  return sanitizeText(cell.text).replace(/\n/g, "<br>")
+  return escapeHtmlCellText(sanitizeText(cell.text)).replace(/\n/g, "<br>")
 }
 
 function containsInlineMath(text: string): boolean {

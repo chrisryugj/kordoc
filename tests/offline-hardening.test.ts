@@ -115,4 +115,25 @@ describe("KORDOC_ROOT — 파일 접근 루트 제한", () => {
       assert.throws(() => safePath(link, PARSE_EXTENSIONS), /KORDOC_ROOT/)
     })
   })
+
+  it("safeOutputPath: 루트 안 심볼릭 링크로 쓰기가 밖으로 새지 않는다 (v4.14.4 리뷰 재현)", () => {
+    withEnv({ KORDOC_ROOT: root }, () => {
+      const exts = new Set([".hwpx"])
+      const victim = join(sibling, "victim.hwpx")
+      writeFileSync(victim, "원본")
+      try {
+        symlinkSync(victim, join(root, "out-link.hwpx")) // (a) 파일 링크 → 밖
+        symlinkSync(sibling, join(root, "dir-link")) // (b) 디렉토리 링크 → 밖
+        symlinkSync(join(sibling, "없음"), join(root, "dangling")) // (c) 끊긴 링크
+      } catch {
+        return // 심볼릭 링크 미지원 환경(Windows 비관리자)에서는 검증 생략
+      }
+      assert.throws(() => safeOutputPath(join(root, "out-link.hwpx"), exts), /심볼릭 링크/)
+      assert.throws(() => safeOutputPath(join(root, "dir-link", "newdir", "out2.hwpx"), exts), /KORDOC_ROOT/)
+      assert.throws(() => safeOutputPath(join(root, "dir-link", "out3.hwpx"), exts), /KORDOC_ROOT/)
+      assert.throws(() => safeOutputPath(join(root, "dangling", "x", "out4.hwpx"), exts), /출력 경로 처리 오류/)
+      // 루트 안의 없는 하위 경로는 그대로 허용 (저장 시 생성)
+      assert.equal(safeOutputPath(join(root, "sub", "new", "out5.hwpx"), exts), join(root, "sub", "new", "out5.hwpx"))
+    })
+  })
 })

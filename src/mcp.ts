@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { realpathSync } from "fs"
 import { pathToFileURL } from "url"
-import { VERSION } from "./utils.js"
+import { VERSION, routeConsoleToStderr } from "./utils.js"
 import { getAccessRoot, isOfflineMode } from "./shared/offline.js"
 import { registerParseTools } from "./mcp/tools-parse.js"
 import { registerFormTools } from "./mcp/tools-form.js"
@@ -31,6 +31,8 @@ let serverStarted = false
 export async function startMcpServer(): Promise<void> {
   if (serverStarted) return
   serverStarted = true
+  // stdout 은 JSON-RPC 전용 — pdfjs 등이 console 로 찍는 경고가 프레이밍을 깨지 않게 (parse-worker 와 같은 처리)
+  routeConsoleToStderr()
   // 폐쇄망 배포 감사용 — 적용된 제한을 기동 시 1회 stderr 에 남긴다 (stdout 은 MCP 프로토콜 전용)
   const root = getAccessRoot()
   if (isOfflineMode() || root) {

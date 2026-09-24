@@ -1,6 +1,6 @@
 /** kordoc MCP 공용 — 경로·확장자 검증, 파일 읽기, 오류 문구, 응답 상한 (도구 모듈 공유) */
 
-import { realpathSync, openSync, readSync, closeSync, existsSync } from "fs"
+import { realpathSync, openSync, readSync, closeSync, lstatSync } from "fs"
 import { readFile, stat, realpath } from "fs/promises"
 import { resolve, isAbsolute, extname, dirname, basename } from "path"
 import { detectFormat } from "../index.js"
@@ -38,7 +38,13 @@ export function safePath(filePath: string, allowedExts: ReadonlySet<string> = AL
   return real
 }
 
-/** 출력 경로 정규화 및 검증 — 확장자 allowlist + 부모 디렉토리 realpath (safePath의 쓰기 대응) */
+/**
+ * 출력 경로 정규화 및 검증 — 확장자 allowlist + 가장 가까운 실재 조상 realpath (safePath의 쓰기 대응).
+ * 종전엔 부모만 realpath 해서 KORDOC_ROOT 안 심볼릭 링크로 쓰기가 샜다(v4.14.4 리뷰 재현): 최종 경로가 밖을 가리키는
+ * 링크면 writeFile 이 따라가 덮어썼고, 부모가 없으면 문자열로만 판정해 mkdir(recursive) 가 조상의 디렉토리 링크를
+ * 따라가 밖에 만들었다. 그래서 최종 경로가 링크면 거부하고, 실재하는(링크 포함) 가장 가까운 조상을 realpath 로 푼 뒤
+ * 남은 세그먼트를 이어 판정한다
+ */
 export function safeOutputPath(outputPath: string, allowedExts: ReadonlySet<string>): string {
   if (!outputPath) throw new KordocError("출력 경로가 비어있습니다")
   const resolved = resolve(outputPath)
@@ -46,20 +52,22 @@ export function safeOutputPath(outputPath: string, allowedExts: ReadonlySet<stri
   if (!allowedExts.has(ext)) {
     throw new KordocError(`지원하지 않는 출력 확장자입니다: ${ext || "(없음)"} (허용: ${[...allowedExts].join(", ")})`)
   }
-  // 부모 디렉토리가 이미 있으면 심볼릭 링크 해석 후 정규화 (없으면 저장 시 생성)
-  const parent = dirname(resolved)
-  if (existsSync(parent)) {
-    let real: string
-    try {
-      real = resolve(realpathSync(parent), basename(resolved))
-    } catch (err: any) {
-      throw new KordocError(`출력 경로 처리 오류 [${err?.code ?? "UNKNOWN"}]: ${parent}`)
-    }
-    assertWithinRoot(real)
-    return real
+  const entry = (p: string) => { try { return lstatSync(p) } catch { return null } }
+  if (entry(resolved)?.isSymbolicLink()) throw new KordocError(`출력 경로가 심볼릭 링크입니다: ${resolved}`)
+  let base = dirname(resolved)
+  const rest = [basename(resolved)]
+  while (!entry(base) && dirname(base) !== base) {
+    rest.unshift(basename(base))
+    base = dirname(base)
   }
-  assertWithinRoot(resolved)
-  return resolved
+  let real: string
+  try {
+    real = resolve(realpathSync(base), ...rest) // 끊긴 링크 조상은 여기서 ENOENT — 거부
+  } catch (err: any) {
+    throw new KordocError(`출력 경로 처리 오류 [${err?.code ?? "UNKNOWN"}]: ${base}`)
+  }
+  assertWithinRoot(real)
+  return real
 }
 
 /**

@@ -1,5 +1,7 @@
 /** kordoc 공용 유틸리티 */
 
+import { format } from "util"
+
 /** 빌드 타임에 tsup define으로 주입되는 버전 */
 declare const __KORDOC_VERSION__: string
 export const VERSION: string = typeof __KORDOC_VERSION__ !== "undefined" ? __KORDOC_VERSION__ : "0.0.0-dev"
@@ -134,12 +136,42 @@ export function stripDtd(xml: string): string {
 
 /** 하이퍼링크 URL 살균 — javascript: 등 XSS 위험 스킴 차단 */
 const SAFE_HREF_RE = /^(?:https?:|mailto:|tel:|#)/i
+const HREF_ESCAPE: Record<string, string> = { "(": "%28", ")": "%29", "<": "%3C", ">": "%3E", "\"": "%22", "'": "%27", "`": "%60" }
 export function sanitizeHref(href: string): string | null {
   const trimmed = href.trim()
   if (!trimmed || !SAFE_HREF_RE.test(trimmed)) return null
   // 괄호 percent-encoding — 마크다운 링크 목적지에서 불균형 ')'는 링크를 조기 종료시켜
   // 문법이 깨진다 (원문 하이퍼링크에 ')'가 박힌 실문서 존재). %28/%29는 의미 동일.
-  return trimmed.replace(/\(/g, "%28").replace(/\)/g, "%29")
+  // 공백·<>"'` 도 — 스킴만 보고 통과시키면 "mailto:a <img src=x onerror=…>" 가 링크 목적지를 깨고 날 태그로
+  // 렌더됐다(pdfjs 는 mailto·tel URI 를 정규화하지 않는다, v4.14.4 리뷰 재현). 인코딩해도 같은 주소다
+  return trimmed.replace(/[()<>"'`]/g, c => HREF_ESCAPE[c]).replace(/\s/g, c => encodeURIComponent(c))
+}
+
+/**
+ * HTML 엔티티 이스케이프 — 글은 `& < >`, 속성값(attr)은 `"` 까지. HTML 표 경로(builder tableToHtml)와
+ * 인쇄 렌더러가 같이 쓰는 한 벌. 읽는 쪽은 unescapeHtml 로 푼다
+ */
+export function escapeHtml(text: string, attr = false): string {
+  const s = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  return attr ? s.replace(/"/g, "&quot;") : s
+}
+
+/** escapeHtml 의 역 (+ 손으로 쓴 HTML 표의 &#39;) — 한 번에 풀어 "&amp;lt;" 는 "&lt;" 로 남는다 */
+export function unescapeHtml(text: string): string {
+  return text.replace(/&(lt|gt|quot|#39|amp);/g, (_, e: string) => HTML_ENTITY[e])
+}
+const HTML_ENTITY: Record<string, string> = { lt: "<", gt: ">", quot: "\"", "#39": "'", amp: "&" }
+
+/**
+ * console.log·info·warn·debug 를 stderr 로 — stdout 이 기계 출력 채널(MCP JSON-RPC·CLI 마크다운/JSON·parse-worker
+ * NDJSON)인 진입점용. 라이브러리(pdfjs 등)가 console 로 찍는 경고가 그 채널을 깨지 않게 한다
+ */
+export function routeConsoleToStderr(): void {
+  const toStderr = (...args: unknown[]): void => void process.stderr.write(format(...args) + "\n")
+  console.log = toStderr
+  console.info = toStderr
+  console.warn = toStderr
+  console.debug = toStderr
 }
 
 // ─── 안전한 min/max (스택 오버플로 방지) ─────────────

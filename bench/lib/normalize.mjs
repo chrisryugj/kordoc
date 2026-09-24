@@ -156,9 +156,12 @@ export function mdToPlain(md) {
   // 최소 길이 미달로 거짓 miss 가 된다 (113424 evaluation_guideline, v4.14.3)
   // HTML 표 줄은 원시 HTML 블록 — CommonMark 는 그 안에서 백슬래시 이스케이프를 풀지 않으므로(§4.6)
   // 셀 글 끝 "\" 뒤에 kordoc 이 붙인 <br> ("\<br>")도 태그다 (소식지 홍보요청 셀 첫 줄 "\", v4.14.3)
+  // 셀 글은 v4.15.0 부터 HTML 엔티티로 나간다(builder escapeHtmlCellText) — 태그를 걷은 뒤 푼다. 푼 < > 는
+  // 아래 GFM 줄용 태그·<br>·백슬래시 처리에 걸리지 않게 \x03·\x04 로 두었다가 맨 끝에 되돌린다 (원문 글 "<br>" 보존)
   s = s.split("\n").map((line) =>
     /(?<!\\)<\/?(?:table|thead|tbody|tr|td|th)\b/i.test(line)
       ? line.replace(/<\/?(?:table|thead|tbody|tr|td|th)\b[^>]*>/gi, " ").replace(/<br\s*\/?>/gi, "\n")
+        .replace(/&(lt|gt|quot|#39|amp);/g, (_m, e) => HTML_ENTITY[e])
       : line.replace(/\\\*/g, "\x02").replace(/\*/g, "").replace(/\x02/g, "\\*")
         .replace(/\\~/g, "\x02").replace(/~~/g, "").replace(/\x02/g, "\\~"),
   ).join("\n")
@@ -180,11 +183,14 @@ export function mdToPlain(md) {
   // 헤딩 prefix, 수평선
   s = s.replace(/^#{1,6}\s+/gm, "")
   s = s.replace(/^\s*---\s*$/gm, " ")
-  // 마크다운 이스케이프 역변환
-  s = unescapeMd(s)
+  // 마크다운 이스케이프 역변환 (HTML 표 셀에서 푼 < > 는 그 뒤에 되돌린다)
+  s = unescapeMd(s).replace(/\x03/g, "<").replace(/\x04/g, ">")
 
   return { text: s, eqCount, footnoteCount }
 }
+
+/** HTML 표 셀 엔티티(src/utils.ts unescapeHtml 과 같은 집합) — < > 는 mdToPlain 이 끝에 되돌릴 자리표시로 */
+const HTML_ENTITY = { lt: "\x03", gt: "\x04", quot: "\"", "#39": "'", amp: "&" }
 
 /** PDF 추출 텍스트 공통 정규화 — 리거처 분해 + 하이픈 줄바꿈 결합 + normKey + 리더 도트 붕괴 */
 export function normPdf(s) {

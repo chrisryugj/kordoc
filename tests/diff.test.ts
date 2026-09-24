@@ -2,7 +2,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { similarity, normalizedSimilarity, textDiff } from "../src/diff/text-diff.js"
+import { similarity, normalizedSimilarity, textDiff, textProfile, similarityUpperBound } from "../src/diff/text-diff.js"
 import { diffBlocks } from "../src/diff/compare.js"
 import type { IRBlock } from "../src/types.js"
 
@@ -102,5 +102,40 @@ describe("diffBlocks", () => {
     assert.ok(diff.cellDiffs, "cellDiffs 존재")
     assert.equal(diff.cellDiffs![0][0].type, "unchanged") // "이름" 동일
     assert.equal(diff.cellDiffs![0][1].type, "modified") // 값 변경
+  })
+})
+
+// ─── 정렬 속도 (v4.15.0) — 쌍마다 Levenshtein 을 돌리던 것을 글자 구성 상한으로 먼저 거른다 ───
+
+/** 결정적 난수 (시드 고정) */
+function rng(seed: number): () => number {
+  let x = seed
+  return () => ((x = (x * 1103515245 + 12345) >>> 0) / 2 ** 32)
+}
+
+describe("diffBlocks — 글자 구성 상한 필터", () => {
+  it("상한은 실제 유사도 이상 (거른 쌍은 임계 미달이 확정) — 공백·서로게이트·어휘 겹침 섞인 무작위 쌍", () => {
+    const rand = rng(424242)
+    const vocab = ["사업", "예산", "지원", "대상", " ", "  ", "\n", "①", "𠀀", "a", "1", "·", "(주)", "관리"]
+    const text = () => Array.from({ length: Math.floor(rand() * 30) }, () => vocab[Math.floor(rand() * vocab.length)]).join("")
+    for (let t = 0; t < 3000; t++) {
+      const a = text(), b = rand() < 0.3 ? a.slice(0, Math.floor(rand() * a.length)) + text() : text()
+      const sim = normalizedSimilarity(a, b)
+      const ub = similarityUpperBound(textProfile(a), textProfile(b))
+      assert.ok(ub >= sim - 1e-12, `a=${JSON.stringify(a)} b=${JSON.stringify(b)} sim=${sim} ub=${ub}`)
+    }
+  })
+
+  it("1,000블록 쌍 정렬이 수 초 안 (종전 쌍마다 Levenshtein 은 약 30초)", () => {
+    const rand = rng(7)
+    const para = () => Array.from({ length: 60 + Math.floor(rand() * 20) }, () => String.fromCharCode(0xac00 + Math.floor(rand() * 400))).join("")
+    const A: IRBlock[] = Array.from({ length: 1000 }, () => ({ type: "paragraph", text: para() }))
+    const B: IRBlock[] = A.map((b, i) => i % 10 === 0 ? { type: "paragraph", text: para() } : b)
+    const t0 = performance.now()
+    const r = diffBlocks(A, B)
+    const ms = performance.now() - t0
+    assert.equal(r.stats.unchanged, 900)
+    assert.equal(r.stats.added + r.stats.modified, 100)
+    assert.ok(ms < 10_000, `${ms.toFixed(0)}ms`)
   })
 })

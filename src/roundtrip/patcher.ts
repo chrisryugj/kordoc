@@ -32,6 +32,8 @@ import { AUTONUM_PREFIX_RE,
 import { patchGfmTable, patchHtmlTable, patchTextChunkTable } from "./table-patch.js"
 import { collectMaxNumericId, injectCellBorderFill, buildTableParagraphXml } from "./table-insert.js"
 import { resolveSectionEntryNames } from "./hwpx-entries.js"
+import { detectFormat } from "../detect.js"
+import { patchHwp } from "./hwp5-patch.js"
 
 export type { PatchOptions, PatchResult, PatchSkip } from "../types.js"
 
@@ -40,7 +42,7 @@ export type { PatchOptions, PatchResult, PatchSkip } from "../types.js"
 /**
  * 원본 HWPX와 편집된 마크다운으로 서식 보존 패치본을 만든다.
  *
- * @param original 원본 HWPX 바이트
+ * @param original 원본 HWPX 바이트 (속이 HWP 5.x 인 문서는 patchHwp 로 넘긴다)
  * @param editedMarkdown parse(original).markdown을 편집한 마크다운
  */
 export async function patchHwpx(
@@ -50,6 +52,16 @@ export async function patchHwpx(
 ): Promise<PatchResult> {
   const skipped: PatchSkip[] = []
   let applied = 0
+
+  // 0) 포맷은 parse() 처럼 확장자가 아니라 매직 바이트로 가른다. 정책브리핑 보도자료는 .hwpx 이름에 HWP 5.x
+  //    바이너리를 싣기도 해서(korea-kr-pairs 5건·pairs2 7건, 반대로 .hwp 이름의 HWPX 1건, rhwp·seoul2 9건) 확장자를
+  //    믿고 부르면 parse 는 되는데 패치만 "손상된 HWPX" 로 실패했다 — HWP5 는 patchHwp 로 넘기고, 패처가 없는
+  //    포맷(HWP 3.x·PDF 등)은 손상 오보 대신 포맷을 밝혀 거절한다
+  const format = detectFormat(new Uint8Array(original.subarray(0, 512)).buffer) // Buffer.slice 는 view — 복사해 잰다
+  if (format === "hwp") return patchHwp(original, editedMarkdown, options)
+  if (format !== "hwpx") {
+    return { success: false, applied: 0, skipped, error: `서식 보존 패치는 HWPX·HWP 5.x 문서만 지원합니다 (감지된 포맷: ${format})` }
+  }
 
   // 1) 원본 파싱 (기존 파서 그대로 — IR 블록과 마크다운 확보)
   let origBlocks: IRBlock[]

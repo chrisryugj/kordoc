@@ -470,16 +470,6 @@ function layoutHtmlRows(rows: HtmlRowInfo[]): { placed: PlacedHtmlCell[]; rowCnt
   return { placed, rowCnt: rows.length, colCnt }
 }
 
-/** HTML 엔티티 복원 (sanitizeText 이스케이프의 역변환) — &amp;는 마지막에 */
-function unescapeHtml(s: string): string {
-  return s
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
-}
-
 /**
  * HTML 표 원문 → <hp:tbl> XML. 병합셀은 cellSpan/cellAddr로, 셀 안 중첩표는
  * subList 안에 재귀 생성한다. 파싱 불가면 null (호출부가 문단 폴백).
@@ -510,9 +500,9 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   const cellParsed = placed.map((cell) => htmlCellInnerToLines(cell.inner))
   const cellLines = cellParsed.map((p) => p.lines)
   placed.forEach((cell, i) => {
-    const w = Math.max(...cellLines[i].map((l) => measureTextWidth(unescapeHtml(l).trim(), measureH, 100, { faceClass: curFace })), 0) / cell.colSpan
+    const w = Math.max(...cellLines[i].map((l) => measureTextWidth(l.trim(), measureH, 100, { faceClass: curFace })), 0) / cell.colSpan
     // 최장 어절(열 하한) — 병합 셀은 첫 열에만 기여 (분할 배분 시 하한 과대 방지)
-    const mw = cell.colSpan === 1 ? Math.max(...cellLines[i].map((l) => cellMinWordWidth(unescapeHtml(l), measureH)), 0) : 0
+    const mw = cell.colSpan === 1 ? Math.max(...cellLines[i].map((l) => cellMinWordWidth(l, measureH)), 0) : 0
     for (let dc = 0; dc < cell.colSpan; dc++) {
       const c = cell.c + dc
       if (w > colMax[c]) colMax[c] = w
@@ -521,7 +511,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     }
   })
   const headers = Array.from({ length: colCnt }, () => "")
-  for (const [i, cell] of placed.entries()) if (cell.r === 0 && cell.c < colCnt) headers[cell.c] = unescapeHtml(cellLines[i].join(" "))
+  for (const [i, cell] of placed.entries()) if (cell.r === 0 && cell.c < colCnt) headers[cell.c] = cellLines[i].join(" ")
   const roles = style ? colRoles(headers) : []
   const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalWidth, colMinWord, roles, colSlack(curFace))
   const colCentered = colWidths.map((w, c) => roles[c] !== "content" && colMaxBody[c] + CELL_PAD <= w)
@@ -569,7 +559,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     // 셀폭 기준 줄바꿈 수 — <br> 분리 각 줄이 폭을 넘으면 추가로 접힌다
     const usable = Math.max(spanW(cell) - CELL_PAD, 1000)
     let wrapLines = 0
-    for (const line of lines) wrapLines += Math.max(1, Math.ceil(measureTextWidth(unescapeHtml(line).trim(), measureH, 100, { faceClass: curFace }) / usable))
+    for (const line of lines) wrapLines += Math.max(1, Math.ceil(measureTextWidth(line.trim(), measureH, 100, { faceClass: curFace }) / usable))
     const lineH = style ? Math.round(measureH * 1.6) : 800
     const contentH = Math.max(cellH * rowSpan, Math.max(wrapLines, 1) * lineH + nestedH)
     const cellHeight = Math.max(prof?.cellH.get(`${cell.r},${cell.c}`) ?? 0, contentH)
@@ -595,7 +585,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     const picUrls: string[] = images ? [...imgSrcs] : []
     const paras: string[] = []
     const pushTextLine = (line: string) => {
-      let text = unescapeHtml(line)
+      let text = line
       if (images) {
         const { text: rest, urls } = splitImageRefs(text)
         if (urls.length > 0) { picUrls.push(...urls); text = rest }

@@ -4,7 +4,7 @@
  */
 
 import { KordocError } from "../utils.js"
-import { findChromiumPath } from "../print/renderer.js"
+import { findChromiumPath, launchLockedPage } from "../print/renderer.js"
 
 export interface ScenePdfOptions {
   /** Chromium 실행 파일 — 미지정 시 PUPPETEER_EXECUTABLE_PATH → OS 표준 경로 자동 탐지 */
@@ -23,9 +23,9 @@ export async function renderHtmlToPdf(html: string, options: ScenePdfOptions = {
   if (!executablePath) {
     throw new KordocError("Chromium 실행 파일을 찾을 수 없습니다 — browserExecutablePath 옵션 또는 PUPPETEER_EXECUTABLE_PATH 환경변수를 지정하세요")
   }
-  const browser = await puppeteer.default.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] })
+  // JS 끔·data:/about: 밖 요청 차단·기동 90초 — 인쇄 렌더러와 같은 잠금 (launchLockedPage 주석)
+  const { browser, page } = await launchLockedPage(puppeteer, executablePath)
   try {
-    const page = await browser.newPage()
     await page.setContent(html, { waitUntil: "load" })
     const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true })
     return Buffer.from(pdf)
