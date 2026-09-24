@@ -237,7 +237,7 @@ async function captureHancom(hwpxPath, pngPath) {
       try {
         const b = osa(
           `tell application "System Events" to tell process "${APP}"\n` +
-          `  set w to first window whose name is "${windowName}"\n` +
+          `  set w to first window whose name begins with "${windowName}"\n` +
           `  set frontmost to true\n` +
           `  perform action "AXRaise" of w\n` +
           `  return (position of w as list) & (size of w as list)\nend tell`,
@@ -251,7 +251,7 @@ async function captureHancom(hwpxPath, pngPath) {
     try {
       osa(
         `tell application "System Events" to tell process "${APP}"\n` +
-        `  set w to first window whose name is "${windowName}"\n` +
+        `  set w to first window whose name begins with "${windowName}"\n` +
         `  set position of w to {${VIEW.pos.join(", ")}}\n` +
         `  set size of w to {${VIEW.size.join(", ")}}\n` +
         `  delay 0.3\n` +
@@ -261,16 +261,24 @@ async function captureHancom(hwpxPath, pngPath) {
     await sleep(600)
     bounds = osa(
       `tell application "System Events" to tell process "${APP}"\n` +
-      `  set w to first window whose name is "${windowName}"\n` +
+      `  set w to first window whose name begins with "${windowName}"\n` +
       `  return (position of w as list) & (size of w as list)\nend tell`,
     ).split(", ").map(Number)
     // -R은 z-order 무관 영역 캡처라, 한컴이 front가 아니면 앞 창(브라우저 등)이 찍힌다
-    osa(`tell application "${APP}" to activate`)
-    await sleep(700)
-    const front = osa('tell application "System Events" to name of first process whose frontmost is true')
-    if (front !== APP) throw new Error(`한컴이 front가 아님 (front=${front}) — 다른 창이 캡처를 가림`)
+    const focusHancom = async () => {
+      let front = ""
+      for (let i = 0; i < 5; i++) {
+        osa(`tell application "System Events" to set frontmost of process "${APP}" to true`)
+        await sleep(300)
+        front = osa('tell application "System Events" to name of first process whose frontmost is true')
+        if (front === APP) return
+      }
+      throw new Error(`한컴이 front가 아님 (front=${front}) — 다른 창이 캡처를 가림`)
+    }
+    await focusHancom()
     osa('tell application "System Events" to key code 115 using command down') // Cmd+Home 스크롤 리셋
     await sleep(800)
+    await focusHancom()
     // 툴바·찾기필드·상태바 등 UI 크롬 제거용 대강 크롭 — 종이(순백) 경계는
     // hash-lib pageRect 가 픽셀에서 다시 찾으므로 여기 비율은 크롬만 잘라내면 된다
     const [wx, wy, ww, wh] = bounds
@@ -282,7 +290,7 @@ async function captureHancom(hwpxPath, pngPath) {
       // 한컴 창은 AXClose 액션이 없다(실측: AXRaise뿐) — 표준대로 닫기 버튼(AXCloseButton)을 누른다
       osa(
         `tell application "System Events" to tell process "${APP}"\n` +
-        `  set matchedWindows to every window whose name is "${windowName}"\n` +
+        `  set matchedWindows to every window whose name begins with "${windowName}"\n` +
         `  if (count of matchedWindows) > 0 then click (first button of item 1 of matchedWindows whose subrole is "AXCloseButton")\nend tell`,
         true,
       )
