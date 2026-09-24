@@ -310,8 +310,8 @@ export function registerGenerateCommands(program: Command): void {
 
   program
     .command("redact <files...>")
-    .description("개인정보 서식 보존 마스킹 — 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허를 탐지해 HWPX/HWP는 원본 서식 그대로 같은 길이로 가린 파일(본문·표·머리말/꼬리말·각주·글상자·미리보기·메타데이터 포함), 그 외 포맷(PDF 등)은 원본을 건드리지 않고 마스킹된 마크다운만 출력. 자동 검출 보조 도구이므로 결과는 반드시 사람이 최종 확인하세요 (이미지 속 글자는 탐지 불가)")
-    .option("--rules <csv>", "적용 룰 (기본: rrn,phone,email,card,account,brn,passport,driver — crn(법인등록번호),ip는 opt-in)")
+    .description("개인정보 서식 보존 마스킹 — 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허(--rules 로 인명·주소 opt-in)를 탐지해 HWPX/HWP는 원본 서식 그대로 같은 길이로 가린 파일(본문·표·머리말/꼬리말·각주·글상자·미리보기·메타데이터 포함), 그 외 포맷(PDF 등)은 원본을 건드리지 않고 마스킹된 마크다운만 출력. 자동 검출 보조 도구이므로 결과는 반드시 사람이 최종 확인하세요 (이미지 속 글자는 탐지 불가)")
+    .option("--rules <csv>", "적용 룰 (기본: rrn,phone,email,card,account,brn,passport,driver — crn(법인등록번호),ip,name(인명),address(주소)는 opt-in)")
     .option("--mask-char <ch>", "마스크 문자 1글자 (기본: ●)")
     .option("-o, --output <path>", "출력 경로 (단일 파일 시)")
     .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")

@@ -355,11 +355,11 @@ export function registerFormTools(server: McpServer): void {
 
   server.tool(
     "redact_document",
-    "문서의 개인정보(주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허)를 탐지해 서식 보존 마스킹합니다. HWPX/HWP는 원본 서식 그대로 같은 길이로 가린 파일 — 본문·표·중첩표·머리말/꼬리말·각주·글상자·필드·미리보기(텍스트·이미지)·문서 정보(제목·작성자)까지 가리고, 저장 전 결과 파일을 다시 훑어 남은 PII를 보고합니다. 그 외 포맷(PDF·DOCX·XLSX 등)은 원본을 건드리지 않고 마스킹된 마크다운만 출력합니다. 자동 검출 보조 도구 — 결과 리포트를 사람이 최종 확인해야 하며 이미지 속 글자는 탐지하지 못합니다. 마스킹 후 render_document로 눈으로 확인하는 것을 권장합니다.",
+    "문서의 개인정보(주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허, rules 로 인명·주소 opt-in)를 탐지해 서식 보존 마스킹합니다. HWPX/HWP는 원본 서식 그대로 같은 길이로 가린 파일 — 본문·표·중첩표·머리말/꼬리말·각주·글상자·필드·미리보기(텍스트·이미지)·문서 정보(제목·작성자)까지 가리고, 저장 전 결과 파일을 다시 훑어 남은 PII를 보고합니다. 그 외 포맷(PDF·DOCX·XLSX 등)은 원본을 건드리지 않고 마스킹된 마크다운만 출력합니다. 자동 검출 보조 도구 — 결과 리포트를 사람이 최종 확인해야 하며 이미지 속 글자는 탐지하지 못합니다. 마스킹 후 render_document로 눈으로 확인하는 것을 권장합니다.",
     {
       file_path: z.string().min(1).describe("대상 문서의 절대 경로"),
-      rules: z.array(z.enum(["rrn", "phone", "email", "card", "account", "brn", "passport", "driver", "crn", "ip"])).optional()
-        .describe("적용 룰 (기본: rrn·phone·email·card·account·brn·passport·driver — crn(법인등록번호)·ip는 opt-in)"),
+      rules: z.array(z.enum(["rrn", "phone", "email", "card", "account", "brn", "passport", "driver", "crn", "ip", "name", "address"])).optional()
+        .describe("적용 룰 (기본: rrn·phone·email·card·account·brn·passport·driver — crn(법인등록번호)·ip·name(인명, 문맥 게이트)·address(주소)는 opt-in)"),
       mask_char: z.string().min(1).max(1).optional().describe("마스크 문자 1글자 (기본: ●)"),
       output_path: z.string().min(1).optional().describe("출력 경로 (HWPX/HWP는 같은 확장자, 그 외는 .md) — dry_run이 아니면 필수"),
       dry_run: z.boolean().default(false).describe("탐지 리포트만 반환, 파일 미생성"),

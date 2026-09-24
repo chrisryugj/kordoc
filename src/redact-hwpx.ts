@@ -245,6 +245,10 @@ function scrubLooseText(
 ): void {
   const tokenRe = /<!--([\s\S]*?)-->|<!\[CDATA\[([\s\S]*?)\]\]>|<\?([\s\S]*?)\?>|<!((?:"[^"]*"|'[^']*'|[^>"'])*)>|<(\/?)([^\s/>!?]+)((?:"[^"]*"|'[^']*'|[^>"'])*?)(\/?)>|([^<]+)/g
   const stack: string[] = []
+  // 짧은 글(5자 미만)·영숫자 없는 속성값은 번호가 못 들어간다 — 본문에서 찾은 짧은 이름 리터럴이 있으면 두 글자부터
+  // 본다 (content.hpf 작성자 "홍길동" 등)
+  const shortLits = ctx.literals.some((l) => l.norm.length < 6)
+  const minText = shortLits ? 2 : 5
   let oi = 0
   let pending: Mapped | null = null
   let pendingWhere: RedactWhere = "other"
@@ -259,7 +263,7 @@ function scrubLooseText(
     return fallback
   }
   const flush = (): void => {
-    if (pending && pending.text.length >= 5 && !isBindingPath(pending.text)) {
+    if (pending && pending.text.length >= minText && !isBindingPath(pending.text)) {
       const where = pendingWhere
       maskMapped(pending, ctx, (h) => report(h, where), splices)
     }
@@ -304,7 +308,7 @@ function scrubLooseText(
       const attrBase = at + 1 + m[6].length
       for (const a of attrs.matchAll(/([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
         const val = a[2] ?? a[3] ?? ""
-        if (val.length < 5 || !/[0-9A-Za-z]/.test(val) || isBindingPath(val)) continue
+        if (val.length < minText || (!shortLits && !/[0-9A-Za-z]/.test(val)) || isBindingPath(val)) continue
         const valStart = attrBase + (a.index as number) + a[0].length - val.length - 1
         const mapped: Mapped = { text: "", pos: [] }
         appendDecoded(xml, valStart, valStart + val.length, mapped)

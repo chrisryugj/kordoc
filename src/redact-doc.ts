@@ -81,7 +81,8 @@ export async function redactDocument(input: ArrayBuffer | Uint8Array, options?: 
   if (!parsed.success) throw new Error(`파싱 실패: ${parsed.error}`)
   const md = redactMarkdown(parsed.markdown, { rules, maskChar })
   const ctx: ScrubCtx = { rules, maskChar, literals: literalsFromMarkdown(parsed.markdown, md.hits) }
-  const base = { format, markdown: md.text, markdownHits: md.hits }
+  const lit = maskLiterals(md.text, ctx)
+  const base = { format, markdown: lit.text, markdownHits: [...md.hits, ...lit.hits].sort((a, b) => a.index - b.index) }
 
   if (format === "hwpx" || format === "hwp") {
     const scrub = format === "hwpx" ? scrubHwpx : scrubHwp5
@@ -113,7 +114,35 @@ export async function redactDocument(input: ArrayBuffer | Uint8Array, options?: 
     `${format} 원본 파일은 수정하지 않습니다 — 마스킹된 마크다운만 만듭니다. 원본의 텍스트 레이어·이미지·메타데이터에는 PII 가 그대로 남습니다.`,
   ]
   if (format === "pdf") warnings.push("PDF 를 공개하려면 PDF 편집기의 가림(redaction) 기능으로 텍스트를 실제로 지우거나, 마스킹된 마크다운으로 새 문서를 만드세요.")
-  return { ...base, changed: false, fileHits: [], residual: markdownLeftovers(md.text, ctx), unscanned: [], warnings }
+  return { ...base, changed: false, fileHits: [], residual: markdownLeftovers(lit.text, ctx), unscanned: [], warnings }
+}
+
+/**
+ * 본문에서 찾은 값이 문맥 없이 또 나오는 자리까지 마크다운에서 가린다 — 파일 수술의 리터럴과 같은 기준
+ * ("| 성명 |" 열에서 찾은 이름이 본문에 맨이름으로 다시 나오는 경우). 이미지 data URI 줄은 건드리지 않는다
+ */
+function maskLiterals(markdown: string, ctx: ScrubCtx): { text: string; hits: RedactHit[] } {
+  if (ctx.literals.length === 0) return { text: markdown, hits: [] }
+  const hits: RedactHit[] = []
+  let offset = 0
+  const lines = markdown.split("\n").map((line) => {
+    const at = offset
+    offset += line.length + 1
+    if (line.includes("data:image/")) return line
+    const found = findLiterals(normalizeForDetect(line), ctx.literals)
+    if (found.length === 0) return line
+    let out = ""
+    let cursor = 0
+    for (const { index, lit } of found) {
+      let masked = ""
+      for (let k = 0; k < lit.norm.length; k++) masked += lit.masked[k] !== lit.value[k] ? ctx.maskChar : line[index + k]
+      out += line.slice(cursor, index) + masked
+      cursor = index + lit.norm.length
+      hits.push({ rule: lit.rule, masked, index: at + index, length: lit.norm.length })
+    }
+    return out + line.slice(cursor)
+  })
+  return { text: lines.join("\n"), hits }
 }
 
 /** 마스킹 결과 본문에 남은 PII — 탐지 룰 + 원본 본문에서 찾은 값(리터럴) 그대로 */

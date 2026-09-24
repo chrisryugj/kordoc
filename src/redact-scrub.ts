@@ -6,6 +6,7 @@
 import { createRequire } from "module"
 import JSZip from "jszip"
 import { redactText, normalizeForDetect, mdMarkerRanges, type RedactRule, type RedactHit } from "./redact.js"
+import { nameParticleAt } from "./redact-name-address.js"
 import { deflateSync, inflateSync } from "zlib"
 
 const require = createRequire(import.meta.url)
@@ -52,18 +53,24 @@ function cannotContainPii(text: string): boolean {
   return true
 }
 
-/** 리터럴 색인 — 정규화 값 앞 6글자 → 후보 (긴 값 우선). 목록마다 1회. 수천 개(대형 명단)여도 본문 길이에 선형 */
+/**
+ * 리터럴 색인 — 정규화 값 앞 6글자 → 후보 (긴 값 우선), 6글자보다 짧은 값(인명 "홍길동")은 앞 2글자로 따로.
+ * 목록마다 1회. 수천 개(대형 명단)여도 본문 길이에 선형
+ */
 const LIT_KEY = 6
-const literalIndex = new WeakMap<readonly Literal[], Map<string, Literal[]>>()
-function literalBuckets(lits: readonly Literal[]): Map<string, Literal[]> {
+const LIT_KEY_SHORT = 2
+const literalIndex = new WeakMap<readonly Literal[], { long: Map<string, Literal[]>; short: Map<string, Literal[]> }>()
+function literalBuckets(lits: readonly Literal[]): { long: Map<string, Literal[]>; short: Map<string, Literal[]> } {
   let m = literalIndex.get(lits)
   if (!m) {
-    m = new Map()
+    m = { long: new Map(), short: new Map() }
     for (const l of [...lits].sort((a, b) => b.norm.length - a.norm.length)) {
-      const k = l.norm.slice(0, LIT_KEY)
-      const list = m.get(k)
+      const short = l.norm.length < LIT_KEY
+      const k = l.norm.slice(0, short ? LIT_KEY_SHORT : LIT_KEY)
+      const map = short ? m.short : m.long
+      const list = map.get(k)
       if (list) list.push(l)
-      else m.set(k, [l])
+      else map.set(k, [l])
     }
     literalIndex.set(lits, m)
   }
@@ -71,17 +78,30 @@ function literalBuckets(lits: readonly Literal[]): Map<string, Literal[]> {
 }
 
 const isAlnum = (c: string | undefined): boolean => c !== undefined && /[0-9A-Za-z]/.test(c)
+const isHangul = (c: string | undefined): boolean => c !== undefined && c >= "가" && c <= "힣"
 
-/** 텍스트 안 리터럴 위치 (영숫자 경계, 겹치지 않게 앞에서부터) */
+/**
+ * 리터럴 경계 — 영숫자에 붙은 번호는 더 긴 코드의 일부, 한글로 시작·끝나는 값(인명·주소)은 낱말 한가운데가
+ * 아니어야 한다: 앞 글자가 한글이 아니고, 뒤는 한글이 아니거나 조사·호칭("홍길동은", "홍길동 씨")
+ */
+function literalBoundaryOk(norm: string, i: number, l: Literal): boolean {
+  const end = i + l.norm.length
+  if (isAlnum(norm[end - 1]) && isAlnum(norm[end])) return false
+  if (isHangul(l.norm[0]) && isHangul(norm[i - 1])) return false
+  return !isHangul(l.norm[l.norm.length - 1]) || !isHangul(norm[end]) || nameParticleAt(norm, end)
+}
+
+/** 텍스트 안 리터럴 위치 (영숫자·한글 낱말 경계, 겹치지 않게 앞에서부터) */
 export function findLiterals(norm: string, lits: readonly Literal[]): Array<{ index: number; lit: Literal }> {
   const out: Array<{ index: number; lit: Literal }> = []
   if (lits.length === 0) return out
-  const buckets = literalBuckets(lits)
-  for (let i = 0; i + LIT_KEY <= norm.length; i++) {
+  const { long, short } = literalBuckets(lits)
+  const hit = (cand: Literal[] | undefined, i: number): Literal | undefined =>
+    cand?.find((l) => norm.startsWith(l.norm, i) && literalBoundaryOk(norm, i, l))
+  for (let i = 0; i + LIT_KEY_SHORT <= norm.length; i++) {
     if (isAlnum(norm[i - 1]) && isAlnum(norm[i])) continue
-    const cand = buckets.get(norm.slice(i, i + LIT_KEY))
-    if (!cand) continue
-    const lit = cand.find((l) => norm.startsWith(l.norm, i) && !(isAlnum(norm[i + l.norm.length - 1]) && isAlnum(norm[i + l.norm.length])))
+    const lit = (long.size > 0 ? hit(long.get(norm.slice(i, i + LIT_KEY)), i) : undefined)
+      ?? (short.size > 0 ? hit(short.get(norm.slice(i, i + LIT_KEY_SHORT)), i) : undefined)
     if (!lit) continue
     out.push({ index: i, lit })
     i += lit.norm.length - 1
@@ -89,13 +109,27 @@ export function findLiterals(norm: string, lits: readonly Literal[]): Array<{ in
   return out
 }
 
+/** 인명·주소 룰 — 번호가 없는 글에서도 찾아야 해서 빠른 배제(숫자·@)를 쓸 수 없다 */
+const TEXT_RULES: ReadonlySet<RedactRule> = new Set(["name", "address"])
+
+/**
+ * 바이너리에서 캐낸 문자열 조각용 — 인명·주소 룰은 빼고 번호형 룰과 리터럴만. 압축·이진 데이터를 UTF-16 으로 읽으면
+ * 한자·한글이 섞인 긴 조각이 되고, "…님"·"…씨" 앞 한자 몇 글자가 이름 모양이 된다(코퍼스 HWP 원시 바이트 재검사
+ * 799건이 전부 이것). 본문에서 찾은 이름·주소는 리터럴로 여기서도 가린다
+ */
+function binaryCtx(ctx: ScrubCtx): ScrubCtx {
+  return ctx.rules.some((r) => TEXT_RULES.has(r)) ? { ...ctx, rules: ctx.rules.filter((r) => !TEXT_RULES.has(r)) } : ctx
+}
+
 /**
  * 텍스트 한 단위(문단·텍스트 노드·줄)에서 PII 위치 — 룰 탐지 + 리터럴 일치.
  * 반환 hit 의 masked 는 text 원문 글자에 마스킹을 입힌 것 (길이 동일).
  */
 export function findPii(text: string, ctx: ScrubCtx): RedactHit[] {
-  if (text.length < 5 || cannotContainPii(text)) return []
-  const hits = redactText(text, { rules: ctx.rules, maskChar: ctx.maskChar }).hits
+  // 빠른 배제는 번호형 룰에만 — 리터럴(짧은 이름 포함)은 따로 본다
+  const textRules = ctx.rules.some((r) => TEXT_RULES.has(r))
+  const hits = textRules ? redactText(text, { rules: ctx.rules, maskChar: ctx.maskChar }).hits
+    : text.length < 5 || cannotContainPii(text) ? [] : redactText(text, { rules: ctx.rules, maskChar: ctx.maskChar }).hits
   if (ctx.literals.length === 0) return hits
   for (const { index: i, lit } of findLiterals(normalizeForDetect(text), ctx.literals)) {
     const end = i + lit.norm.length
@@ -104,7 +138,40 @@ export function findPii(text: string, ctx: ScrubCtx): RedactHit[] {
     for (let k = 0; k < lit.norm.length; k++) masked += lit.masked[k] !== lit.value[k] ? ctx.maskChar : text[i + k]
     hits.push({ rule: lit.rule, masked, index: i, length: lit.norm.length })
   }
+  // 파서가 내보내는 모양 — 두 칸 이상 공백은 한 칸("하늘아파트  204동"), 균등배분 글("홍 길 동")은 붙인 값이라 리터럴도
+  // 그 모양이다. 그렇게 본 사본에서 찾아 원문 자리로 되돌린다 (공백은 그대로, 글자만 가림)
+  const view = parserView(text)
+  if (view) {
+    for (const { index: i, lit } of findLiterals(normalizeForDetect(view.text), ctx.literals)) {
+      const start = view.pos[i]
+      const end = view.pos[i + lit.norm.length - 1] + 1
+      if (hits.some((h) => start < h.index + h.length && end > h.index)) continue
+      const chars = text.slice(start, end).split("")
+      for (let k = 0; k < lit.norm.length; k++) if (lit.masked[k] !== lit.value[k]) chars[view.pos[i + k] - start] = ctx.maskChar
+      hits.push({ rule: lit.rule, masked: chars.join(""), index: start, length: end - start })
+    }
+  }
   return hits.sort((a, b) => a.index - b.index)
+}
+
+/**
+ * 파서가 내보내는 모양으로 본 글과 원문 자리 — table/builder.ts sanitizeText 와 같은 기준. 두 칸 이상 공백은 한 칸,
+ * 균등배분(30자 이하, 토큰 셋 이상, 한글 한 글자 토큰 70% 이상, 날짜·시각 단위 빈칸 "년   월   일" 은 아님)은 공백을 다 지운다.
+ * 원문과 같으면 null
+ */
+function parserView(text: string): { text: string; pos: number[] } | null {
+  if (!text.includes(" ")) return null
+  let squeeze = false
+  if (text.length <= 400) { // 한 칸으로 줄여 30자 이하여야 하므로 긴 글(바이너리 조각 등)은 셀 필요가 없다
+    const tokens = text.replace(/ {2,}/g, " ").trim().split(" ")
+    const hangul1 = (t: string): boolean => t.length === 1 && /[\uAC00-\uD7AF\u3131-\u318E]/.test(t)
+    squeeze = tokens.join(" ").length <= 30 && tokens.length >= 3 && tokens.filter(hangul1).length / tokens.length >= 0.7
+      && !tokens.every((t) => !hangul1(t) || /[년월일시분초]/.test(t))
+  }
+  if (!squeeze && !text.includes("  ")) return null
+  const pos: number[] = []
+  for (let i = 0; i < text.length; i++) if (text[i] !== " " || (!squeeze && text[i - 1] !== " ")) pos.push(i)
+  return { text: pos.map((i) => text[i]).join(""), pos }
 }
 
 /** 마크다운 탐지 결과 → 리터럴 (인라인 서식 표지 제거, 값 기준 중복 제거, 너무 짧은 값 제외) */
@@ -128,7 +195,10 @@ export function literalsFromMarkdown(markdown: string, hits: readonly RedactHit[
     const value = rawValue.split("").filter((_, k) => !drop.has(k)).join("")
     const masked = h.masked.split("").filter((_, k) => !drop.has(k)).join("")
     const norm = normalizeForDetect(value)
-    if (norm.replace(/[^0-9A-Za-z]/g, "").length < 6 || out.has(norm)) continue
+    // 번호형은 영숫자 6개 이상(짧은 값은 흔한 숫자 조각), 인명·주소는 두 글자 이상 — 표 칸 이름("| 성명 |" 열)은
+    // 파일 문단에 머리글 문맥이 없어 리터럴로만 가려진다
+    const tooShort = TEXT_RULES.has(h.rule) ? norm.length < 2 : norm.replace(/[^0-9A-Za-z]/g, "").length < 6
+    if (tooShort || out.has(norm)) continue
     out.set(norm, { norm, value, masked, rule: h.rule })
   }
   return [...out.values()]
@@ -241,12 +311,17 @@ export function scrubUtf16Runs(
 ): boolean {
   let changed = false
   const mc = ctx.maskChar.charCodeAt(0)
+  // 조각은 6글자부터 룰 탐지. 본문에서 찾은 짧은 이름 리터럴("홍길동")이 있으면 2~5글자 조각은 리터럴만
+  // 본다(요약 정보 작성자 칸 등) — 짧은 조각에 룰을 돌릴 문맥은 없다
+  const minRun = ctx.literals.some((l) => l.norm.length < 6) ? 2 : 6
+  const literalOnly: ScrubCtx = { ...ctx, rules: [] }
+  const binCtx = binaryCtx(ctx)
   for (let align = 0; align < 2; align++) {
     let runStart = -1
     let text = ""
     const flush = (): void => {
-      if (runStart >= 0 && text.length >= 6 && !(skipBinding && isBindingPath(text))) {
-        for (const h of findPii(text, ctx)) {
+      if (runStart >= 0 && text.length >= minRun && !(skipBinding && isBindingPath(text))) {
+        for (const h of findPii(text, text.length >= 6 ? binCtx : literalOnly)) {
           onHit(h)
           if (mode !== "mask") continue
           const orig = text.slice(h.index, h.index + h.length)
@@ -277,7 +352,7 @@ export function scrubUtf16Runs(
 export function scrubAsciiRuns(buf: Buffer, ctx: ScrubCtx, mode: "mask" | "check", onHit: (h: RedactHit) => void): boolean {
   let changed = false
   let runStart = -1
-  const byteCtx: ScrubCtx = { ...ctx, maskChar: "*" }
+  const byteCtx: ScrubCtx = { ...binaryCtx(ctx), maskChar: "*" }
   const flush = (end: number): void => {
     if (runStart >= 0 && end - runStart >= 6) {
       const text = buf.toString("latin1", runStart, end)

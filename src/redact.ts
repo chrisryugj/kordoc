@@ -16,7 +16,7 @@
  *   임의 번호라 체크섬으로 거르지 않고 생년월일(세기 포함)·성별 자리만 검증한다
  * - 룰 우선순위 겹침 처리 — 우선순위순으로 매치를 수집하고, 이미 점유된 구간과 겹치는 하위 룰
  *   매치는 스킵 (RULE_PRIORITY 참조)
- * - 정규식은 모듈 로드 시 1회 컴파일 (matchAll은 내부 클론이라 lastIndex 안전)
+ * - 정규식은 모듈 로드 시 1회 컴파일, 탐지 루프가 lastIndex 를 0 으로 돌려 그대로 쓴다 (복제 비용 — detect 주석)
  *
  * 룰별 근거·오탐 실측은 bench/redact-bench.mjs (합성 정답 셋 + 실코퍼스) 참조.
  */
@@ -24,7 +24,7 @@
 import { RULES, RULE_PRIORITY, labelsBefore, labelsIn, type Ctx, type Match, type Variant } from "./redact-rules.js"
 
 export type RedactRule =
-  | "rrn" | "phone" | "email" | "card" | "account" | "passport" | "driver" | "brn" | "crn" | "ip"
+  | "rrn" | "phone" | "email" | "card" | "account" | "passport" | "driver" | "brn" | "crn" | "ip" | "name" | "address"
 
 export interface RedactHit {
   rule: RedactRule
@@ -54,13 +54,14 @@ export interface RedactOptions {
  * - passport 는 신형(M123A4567)만 무문맥, 구형(M12345678)은 "여권" 라벨이 있을 때만 → 기본 ON
  * - driver 는 지역코드(11~28)·지역명 검증으로 좁혔고 종전에도 account 로 가려지던 모양 → 기본 ON
  * - crn(법인등록번호)은 개인정보가 아니고, ip 는 "1.2.3.4" 절 번호·버전과 겹쳐 opt-in
+ * - name(인명)·address(주소)는 사전 + 문맥 게이트라 번호형보다 경계가 흐리다 — opt-in (redact-name-address.ts)
  */
 export const DEFAULT_REDACT_RULES: readonly RedactRule[] = [
   "rrn", "phone", "email", "card", "account", "brn", "passport", "driver",
 ]
 
 /** 엔진이 아는 전체 룰 (CLI/MCP 입력 검증·벤치용) */
-export const ALL_REDACT_RULES: readonly RedactRule[] = [...DEFAULT_REDACT_RULES, "crn", "ip"]
+export const ALL_REDACT_RULES: readonly RedactRule[] = [...DEFAULT_REDACT_RULES, "crn", "ip", "name", "address"]
 
 // ─── 정규화 (같은 길이) ───────────────────────────────
 
@@ -85,19 +86,17 @@ export function normalizeForDetect(text: string): string {
 }
 
 /**
- * 매치 원문에 이름 그룹 범위를 maskChar 로 치환한 문자열 (길이 동일). 영숫자 판정은 정규화 텍스트로
- * 해서 전각 숫자도 가린다. maskAll 이면 구분자까지 전부.
+ * 스팬 원문(orig, 정규화 텍스트 start 부터)에 이름 그룹 범위를 maskChar 로 치환한 문자열 (길이 동일).
+ * 글자·숫자 판정(한글 인명·주소 포함)은 정규화 텍스트로 해서 전각 숫자도 가린다. maskAll 이면 구분자까지 전부.
  */
-function maskMatch(orig: string, x: Match, v: Variant, maskChar: string): string {
-  const base = x.m.index as number
-  const norm = x.m[0]
+function maskMatch(orig: string, norm: string, start: number, x: Match, v: Variant, maskChar: string): string {
   const chars = orig.split("")
   const idx = x.m.indices?.groups
   for (const name of v.mask) {
     const r = idx?.[name]
     if (!r) continue
-    for (let i = r[0] - base; i < r[1] - base; i++) {
-      if (v.maskAll || /[0-9A-Za-z]/.test(norm[i])) chars[i] = maskChar
+    for (let i = r[0] - start; i < r[1] - start; i++) {
+      if (v.maskAll || /[\p{L}\p{N}]/u.test(norm[start + i])) chars[i] = maskChar
     }
   }
   return chars.join("")
@@ -135,18 +134,27 @@ function detect(
   for (const rule of RULE_PRIORITY) {
     if (!rules.includes(rule)) continue
     for (const v of RULES[rule]) {
-      for (const m of norm.matchAll(v.re)) {
-        const start = m.index as number
-        const end = start + m[0].length
-        if (occupied.some((o) => start < o.end && end > o.start)) continue
+      // 모듈 정규식을 그대로 lastIndex 0 부터 exec — 복제(matchAll 내부 복제 포함)는 큰 정규식에서 한 번에 수~15µs 라
+      // 24만 줄 문서(hwp5/big_file)에서 변형 하나에 0.2~3.8초였다. detect 는 재진입하지 않아 공유해도 안전.
+      // 문맥어를 매치에 넣는 변형(span)은 버린 매치가 뒤 문맥을 삼키지 않게 값 자리부터 다시 찾는다
+      // ("담당 주무관 강민준" — "주무관"을 이름에서 버린 뒤 "주무관 강민준"을 본다)
+      const re = v.re
+      re.lastIndex = 0
+      for (let m = re.exec(norm); m !== null; m = re.exec(norm)) {
+        const sg = v.span ? m.indices?.groups?.[v.span] : undefined
+        const start = sg ? sg[0] : m.index
+        const end = sg ? sg[1] : start + m[0].length
+        const retry = (): void => { if (sg) re.lastIndex = Math.max(m!.index + 1, start) }
+        if (occupied.some((o) => start < o.end && end > o.start)) { retry(); continue }
         let cached: ReadonlySet<Ctx> | undefined
         const ctx = (): ReadonlySet<Ctx> => {
           if (!cached) {
             let c: ReadonlySet<Ctx> = labelsBefore(norm, start)
             if (c.size === 0) {
               const prev = occupied.find((o) => o.end < start && start - o.end <= 6 && LIST_SEP_RE.test(norm.slice(o.end, start)))
-              // 앞 값의 라벨 + 앞 값이 무엇이었는지 자체가 문맥 (주민번호 다음 무구분 13자리도 주민번호)
-              if (prev) c = prev.rule === "email" ? prev.ctx() : new Set<Ctx>([...prev.ctx(), prev.rule])
+              // 앞 값의 라벨 + 앞 값이 무엇이었는지 자체가 문맥 (주민번호 다음 무구분 13자리도 주민번호).
+              // 인명·주소는 번호 룰 뒤에 돌아(RULE_PRIORITY) 여기서 앞 값으로 잡히지 않는다
+              if (prev) c = prev.rule === "email" ? prev.ctx() : new Set<Ctx>([...prev.ctx(), prev.rule as Ctx])
             }
             if (c.size === 0 && headerAt) {
               const h = headerAt(start)
@@ -156,11 +164,18 @@ function detect(
           }
           return cached
         }
-        const x: Match = { m, ctx }
-        if (v.needs && !ctx().has(v.needs)) continue
-        if (v.ok && !v.ok(x)) continue
+        const x: Match = {
+          m, ctx,
+          header: () => headerAt?.(start),
+          prev: () => {
+            let best: (typeof occupied)[number] | undefined
+            for (const o of occupied) if (o.end <= start && (!best || o.end > best.end)) best = o
+            return best
+          },
+        }
+        if ((v.needs && !ctx().has(v.needs)) || (v.ok && !v.ok(x))) { retry(); continue }
         occupied.push({ start, end, ctx, rule })
-        hits.push({ rule, masked: maskMatch(text.slice(start, end), x, v, maskChar), index: start, length: end - start })
+        hits.push({ rule, masked: maskMatch(text.slice(start, end), norm, start, x, v, maskChar), index: start, length: end - start })
       }
     }
   }

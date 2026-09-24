@@ -129,10 +129,12 @@ describe("CLI kordoc redact", () => {
     assert.match(r.stderr, /원본은 수정하지 않음/)
   })
 
-  it("알 수 없는 룰은 exit 1, opt-in 룰(crn·ip)은 허용", () => {
+  it("알 수 없는 룰은 exit 1, opt-in 룰(crn·ip·name·address)은 허용", () => {
     assert.equal(runCli(["redact", join(dir, "x.hwpx"), "--rules", "rrn,nope"]).status, 1)
     const r = runCli(["redact", join(dir, "없는파일.hwpx"), "--rules", "crn,ip", "--dry-run"])
     assert.doesNotMatch(r.stderr, /알 수 없는 룰/)
+    const r2 = runCli(["redact", join(dir, "없는파일.hwpx"), "--rules", "name,address", "--dry-run"])
+    assert.doesNotMatch(r2.stderr, /알 수 없는 룰/)
   })
 })
 
@@ -140,9 +142,25 @@ describe("MCP redact_document", () => {
   let dir: string
   // 등록 핸들러만 뽑아 쓰는 가짜 서버 (zod 기본값은 여기서 채워지지 않으므로 인자를 다 준다)
   const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>()
+  const schemas = new Map<string, Record<string, { safeParse: (v: unknown) => { success: boolean } }>>()
   before(() => {
     dir = mkdtempSync(join(tmpdir(), "kordoc-redact-mcp-"))
-    registerFormTools({ tool: (name: string, _d: string, _s: unknown, handler: never) => { tools.set(name, handler) } } as never)
+    registerFormTools({ tool: (name: string, _d: string, s: never, handler: never) => { tools.set(name, handler); schemas.set(name, s) } } as never)
+  })
+
+  it("rules 입력 검증이 opt-in 인명·주소 룰을 받고 모르는 룰은 거부한다", async () => {
+    const rules = schemas.get("redact_document")!.rules
+    assert.equal(rules.safeParse(["name", "address", "crn"]).success, true)
+    assert.equal(rules.safeParse(["nope"]).success, false)
+    const src = join(dir, "명단.hwpx")
+    const zip = await JSZip.loadAsync(await buildPiiHwpx())
+    const sec = await zip.file("Contents/section0.xml")!.async("text")
+    zip.file("Contents/section0.xml", sec.replace("</hs:sec>", `<hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>담당 주무관 이서준에게 문의</hp:t></hp:run></hp:p></hs:sec>`))
+    writeFileSync(src, await zip.generateAsync({ type: "uint8array" }))
+    const res = await tools.get("redact_document")!({ file_path: src, rules: ["name"], dry_run: true })
+    assert.ok(!res.isError, res.content[0].text)
+    assert.match(res.content[0].text, /\[name\] 이●●/)
+    assert.ok(!res.content[0].text.includes("이서준"))
   })
   after(() => rmSync(dir, { recursive: true, force: true }))
 

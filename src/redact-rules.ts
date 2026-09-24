@@ -4,14 +4,16 @@
  */
 
 import type { RedactRule } from "./redact.js"
+import { ADDRESS_VARIANTS, NAME_VARIANTS } from "./redact-name-address.js"
 
 /**
  * 룰 우선순위 (앞이 높음). crn 을 rrn 앞에 — 법인 라벨이 붙은 6-7 번호는 법인번호로.
  * email 을 번호 룰들 앞에(로컬파트 숫자 오탐 방지), card·brn 을 phone·account 앞에,
  * driver 를 account 앞에(면허번호 12자리 4그룹이 계좌 패턴에 포섭됨).
+ * 주소·인명(opt-in)은 번호 뒤 — 번호가 먼저 자리를 잡고, 도로명이 사람 이름("세종대로")과 겹치면 주소가 이긴다.
  */
 export const RULE_PRIORITY: readonly RedactRule[] = [
-  "crn", "rrn", "email", "card", "brn", "phone", "driver", "passport", "account", "ip",
+  "crn", "rrn", "email", "card", "brn", "phone", "driver", "passport", "account", "ip", "address", "name",
 ]
 
 // ─── 검증기 ───────────────────────────────────────────
@@ -130,6 +132,10 @@ export interface Match {
   m: RegExpMatchArray
   /** 라벨 문맥 집합 (인라인, 비었으면 표 머리글 — 지연 계산) */
   ctx: () => ReadonlySet<Ctx>
+  /** 이 자리가 표 칸이면 그 열 머리글 원문 — 인명 룰의 "성명" 열 */
+  header: () => string | undefined
+  /** 이 매치 앞에서 가장 가까이 끝난 탐지 — 인명 나열("A, B, C 등") 잇기 */
+  prev: () => { rule: RedactRule; start: number; end: number } | undefined
 }
 
 export interface Variant {
@@ -138,10 +144,12 @@ export interface Variant {
   needs?: Ctx
   /** 추가 검증 — false면 스킵 */
   ok?: (x: Match) => boolean
-  /** 마스킹할 이름 그룹 — 그 범위의 영숫자를 maskChar 로 (구분자·공백·기존 가림표는 유지) */
+  /** 마스킹할 이름 그룹 — 그 범위의 글자·숫자를 maskChar 로 (구분자·공백·기존 가림표는 유지) */
   mask: readonly string[]
   /** 그룹 안 글자를 구분자까지 전부 가린다 (이메일 로컬파트 — 이름 마디 길이도 숨김) */
   maskAll?: boolean
+  /** 탐지 스팬이 되는 이름 그룹 — 문맥어("피고인 ")를 매치에 넣고 값만 스팬으로 (없으면 매치 전체) */
+  span?: string
 }
 
 const g = (x: Match, name: string): string => x.m.groups?.[name] ?? ""
@@ -424,4 +432,7 @@ export const RULES: Record<RedactRule, readonly Variant[]> = {
       mask: ["c", "d"],
     },
   ],
+  // 주소·인명 (opt-in) — 사전 + 문맥 게이트, redact-name-address.ts
+  address: ADDRESS_VARIANTS,
+  name: NAME_VARIANTS,
 }

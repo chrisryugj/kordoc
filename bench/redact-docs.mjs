@@ -11,8 +11,9 @@
 //                비우므로 바이트 대신 OLE 스트림 내용을 비교한다 (비운 문서 수는 따로 센다)
 //   oldLeaks   : 종전 경로 결과 파일을 같은 컨테이너 검사기로 훑은 잔존 — 위치별
 //
-// 사용법: node --import tsx bench/redact-docs.mjs [--gate] [--limit=N] [--dirs=a,b] [--no-old]
-//   기본은 bench/corpus 전체를 하위 폴더까지 (HWPX·HWP). --dirs 는 코퍼스 아래 폴더 목록
+// 사용법: node --import tsx bench/redact-docs.mjs [--gate] [--limit=N] [--dirs=a,b] [--no-old] [--rules=r,…]
+//   기본은 bench/corpus 전체를 하위 폴더까지 (HWPX·HWP). --dirs 는 코퍼스 아래 폴더 목록.
+//   --rules 는 적용 룰(기본 DEFAULT_REDACT_RULES) — opt-in 인명·주소 룰의 파일 단위 잔존 점검용
 //   (src 를 직접 불러 tsx 로더가 필요하다 — redactDocument 는 아직 index 에서 재수출하지 않음)
 
 import { readdir, readFile, realpath, stat } from "node:fs/promises"
@@ -33,6 +34,7 @@ const gateMode = args.includes("--gate")
 const withOld = !args.includes("--no-old")
 const limit = Number(opt("limit") ?? Infinity)
 const DIRS = (opt("dirs") ?? "").split(",")
+const RULES = opt("rules") ? opt("rules").split(",") : DEFAULT_REDACT_RULES
 const CFB = createRequire(import.meta.url)("cfb")
 
 /** 폴더 아래 모든 파일 — 하위 폴더·심링크까지 (같은 실경로는 한 번만) */
@@ -82,7 +84,7 @@ for (const dir of DIRS) {
     const t0 = performance.now()
     let r
     try {
-      r = await redactDocument(bytes)
+      r = await redactDocument(bytes, { rules: RULES })
     } catch (e) {
       tally.errors++
       const k = String(e?.message ?? e).slice(0, 60)
@@ -107,7 +109,7 @@ for (const dir of DIRS) {
       const re = await parse(ab(r.data))
       if (!re.success) { tally.reparseFail++; samples.push(`${f}: 재파싱 실패 ${re.error}`) }
       else {
-        const left = redactMarkdown(re.markdown).hits
+        const left = redactMarkdown(re.markdown, { rules: RULES }).hits
         tally.leftover += left.length
         if (left.length && samples.length < 20) samples.push(`${f}: leftover ${left.map(h => `${h.rule} ${h.masked}`).join("; ")}`)
       }
@@ -116,11 +118,11 @@ for (const dir of DIRS) {
     if (withOld && found) {
       const parsed = await parse(ab(bytes))
       if (!parsed.success) continue
-      const md = redactMarkdown(parsed.markdown)
+      const md = redactMarkdown(parsed.markdown, { rules: RULES })
       const isHwp = r.format === "hwp"
       const p = isHwp ? await patchHwp(bytes, md.text) : await patchHwpx(bytes, md.text)
       if (!p.success || !p.data) { oldPatchFail++; continue }
-      const ctx = { rules: DEFAULT_REDACT_RULES, maskChar: "●", literals: literalsFromMarkdown(parsed.markdown, md.hits) }
+      const ctx = { rules: RULES, maskChar: "●", literals: literalsFromMarkdown(parsed.markdown, md.hits) }
       const check = await (isHwp ? scrubHwp5 : scrubHwpx)(p.data, ctx, "check")
       if (check.hits.length) { oldLeakDocs++; oldLeaks += check.hits.length }
       for (const h of check.hits) oldByWhere[h.where] = (oldByWhere[h.where] ?? 0) + 1
@@ -130,7 +132,7 @@ for (const dir of DIRS) {
 
 times.sort((a, b) => a - b)
 const pct = (p) => times.length ? times[Math.min(times.length - 1, Math.floor(times.length * p))].toFixed(0) : "-"
-console.log(`# redact 문서 단위 실코퍼스 — HWPX/HWP ${tally.docs}건 (PII 탐지 문서 ${tally.withHits})`)
+console.log(`# redact 문서 단위 실코퍼스 — HWPX/HWP ${tally.docs}건 (PII 탐지 문서 ${tally.withHits}) · 룰 ${RULES.join(",")}`)
 console.log(`오류 ${tally.errors} ${JSON.stringify(errKinds)}`)
 console.log(`파일 안 가림 ${tally.fileHits}건 (본문 마크다운 탐지 ${tally.mdHits}) — 위치별 ${JSON.stringify(byWhere)}`)
 console.log(`잔존(residual) ${tally.residual} · 미검사(unscanned) ${tally.unscanned} · 재파싱 잔여(leftover) ${tally.leftover} · 재파싱 실패 ${tally.reparseFail} · 무탐지 문서 내용 변경 ${tally.identityBreak} · 무탐지 HWP 미할당 영역만 비움 ${tally.slackWiped}`)
