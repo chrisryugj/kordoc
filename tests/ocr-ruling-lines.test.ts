@@ -131,6 +131,14 @@ describe("detectRulingLines — 래스터 괘선 감지", () => {
     assert.equal(verticals.length, 0, "색상바 틈새 세로 슬리버 미검출")
   })
 
+  it("두 픽셀로 번진 가는 괘선(휘도 200)도 선으로 감지", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    for (let y = 50; y <= 350; y++) { ink(rgba, w, 450, y, 200); ink(rgba, w, 451, y, 200) }
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.equal(verticals.length, 1)
+  })
+
   it("옅은 셀 배경 음영(회색 220)은 잉크로 취급하지 않음", () => {
     const w = 900, h = 300
     const rgba = makeCanvas(w, h)
@@ -138,6 +146,87 @@ describe("detectRulingLines — 래스터 괘선 감지", () => {
     const { horizontals, verticals } = detectRulingLines(rgba, w, h, SCALE)
     assert.equal(horizontals.length, 0)
     assert.equal(verticals.length, 0)
+  })
+})
+
+/** 점선 수평선: 점 dot px·간격 gap px, 두께 thick px */
+function drawDottedH(rgba: Uint8Array, w: number, x1: number, x2: number, y: number, dot: number, gap: number, thick = 2) {
+  for (let x = x1; x <= x2; x += dot + gap) for (let d = 0; d < dot && x + d <= x2; d++) for (let t = 0; t < thick; t++) ink(rgba, w, x + d, y + t)
+}
+
+/** 채운 사각형 (휘도 v) */
+function fillRect(rgba: Uint8Array, w: number, x1: number, y1: number, x2: number, y2: number, v: number) {
+  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) ink(rgba, w, x, y, v)
+}
+
+describe("detectRulingLines — 점선 괘선", () => {
+  // 텍스트층은 대시 패턴을 무시해 점선 괘선도 실선으로 받는다 — 래스터는 점 사이 3px 간격에서 끊겨
+  // 점선으로 행을 가른 표가 한 행으로 뭉쳤다(changwon-plan2026 정원표). 목차 리더 점은 괘선이 아니다
+  it("세로 괘선 사이의 점선 행 구분선(점 3px·간격 3px)을 한 선으로 감지", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    drawVLine(rgba, w, 100, 50, 350)
+    drawVLine(rgba, w, 800, 50, 350)
+    drawDottedH(rgba, w, 102, 798, 200, 3, 3)
+    const { horizontals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.equal(horizontals.length, 1)
+    assert.ok(Math.abs(horizontals[0].x1 - 102) <= 3 && Math.abs(horizontals[0].x2 - 798) <= 3)
+  })
+
+  it("목차 리더 점(주기 9px — 점 3px·간격 6px)은 세로 괘선에 닿아도 선이 아님", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    drawVLine(rgba, w, 100, 50, 350)
+    drawDottedH(rgba, w, 102, 798, 200, 3, 6)
+    assert.equal(detectRulingLines(rgba, w, h, SCALE).horizontals.length, 0)
+  })
+
+  it("수직 괘선에 닿지 않고 떠 있는 점선은 버린다", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    drawDottedH(rgba, w, 200, 700, 200, 3, 3)
+    assert.equal(detectRulingLines(rgba, w, h, SCALE).horizontals.length, 0)
+  })
+})
+
+describe("detectRulingLines — 채움 경계", () => {
+  // 텍스트층은 채움 사각형의 변도 선으로 받는다. 머리 행만 음영 사각형으로 좌우 변이 있는 개방 변 표는 래스터에서
+  // 그 변이 없어 가상 테두리가 위아래 두 표를 용접했다(ice-election-cases p5)
+  function openTable(rgba: Uint8Array, w: number, top: number, colX: number) {
+    fillRect(rgba, w, 100, top, 800, top + 60, 225) // 머리 행 음영 (좌우 변은 채움 경계뿐)
+    for (let r = 0; r <= 4; r++) drawHLine(rgba, w, 100, 800, top + 60 + r * 60)
+    drawVLine(rgba, w, colX, top + 60, top + 300)
+  }
+  it("머리 행 음영의 좌우 변을 가로 괘선 끝점에 맞물린 세로선으로 낸다", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    openTable(rgba, w, 30, 450)
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    const sides = verticals.filter(v => v.y2 - v.y1 < 80)
+    assert.ok(sides.some(v => Math.abs(v.x1 - 100) <= 3), `왼 변: ${JSON.stringify(verticals)}`)
+    assert.ok(sides.some(v => Math.abs(v.x1 - 800) <= 3), `오른 변: ${JSON.stringify(verticals)}`)
+  })
+
+  it("칸 안에 떠 있는 단색 로고(표 괘선과 안 맞물림)는 선이 아님", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    for (let r = 0; r <= 3; r++) drawHLine(rgba, w, 100, 800, 50 + r * 100)
+    drawVLine(rgba, w, 100, 50, 350)
+    drawVLine(rgba, w, 450, 50, 350)
+    drawVLine(rgba, w, 800, 50, 350)
+    fillRect(rgba, w, 180, 170, 360, 230, 90) // 칸(150~250) 안 로고
+    const { horizontals, verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.equal(horizontals.length, 4)
+    assert.equal(verticals.length, 3)
+  })
+
+  it("크림색 바탕 쪽(휘도 242)의 흰 상자는 채움이 아니다 — 바탕은 최빈 휘도", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 0, 0, w - 1, h - 1, 242)
+    fillRect(rgba, w, 150, 100, 750, 300, 255)
+    const { horizontals, verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.equal(horizontals.length + verticals.length, 0)
   })
 })
 

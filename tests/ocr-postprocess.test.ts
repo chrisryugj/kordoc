@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { restoreSymbols, smartQuotes, isDotFragment, restoreBulletItems, joinDigitGroups } from "../src/ocr/postprocess.js"
+import { isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
 
 describe("restoreSymbols — 사전 밖 기호 복원", () => {
   it("줄 머리 O/o + 한글 → ○", () => {
@@ -32,6 +32,13 @@ describe("restoreSymbols — 사전 밖 기호 복원", () => {
   it("∆·Δ → △ (감액 표시)", () => {
     assert.equal(restoreSymbols("∆1,240"), "△1,240")
     assert.equal(restoreSymbols("Δ25,684"), "△25,684")
+  })
+})
+
+describe("restoreSymbols — 추출기 표기 환각", () => {
+  it("\"(cid:NN)\" 은 지운다 (티끌\u00b7가는 막대 박스 환각)", () => {
+    assert.equal(restoreSymbols("(cid:)"), "")
+    assert.equal(restoreSymbols("8,000 (cid:12)"), "8,000 ")
   })
 })
 
@@ -96,5 +103,43 @@ describe("joinDigitGroups — 천 단위 숫자 공백", () => {
     assert.equal(joinDigitGroups("10, 20명"), "10, 20명")
     assert.equal(joinDigitGroups("2021, 2022년"), "2021, 2022년")
     assert.equal(joinDigitGroups("1,234, 5678"), "1,234, 5678")
+  })
+})
+
+describe("joinLeaderItems — 목차 한 줄 잇기", () => {
+  // 검출기는 목차 줄의 리더 가운데를 비워 [제목 …][… 12] 두 박스로 낸다 — 텍스트층처럼 한 아이템으로 잇는다.
+  // 두 박스로 두면 줄마다 큰 틈이 생겨 클러스터 표 감지가 목차를 표로 잡고 2단 본문을 섞어 읽었다(assembly-minutes-1179)
+  const it0 = (text: string, x: number, w: number, y = 100, h = 20) => ({ text, x, y, w, h, confidence: 0.9 })
+  it("쪽번호 쪽이 리더로 시작하면(lead) 같은 줄 왼쪽 이웃에 붙는다", () => {
+    const title = it0("1. 청원서 심사보고 시정의 건", 100, 400), page = it0("\u20261", 900, 40, 102, 16)
+    const other = it0("다음 줄", 100, 200, 160)
+    const out = joinLeaderItems([title, page, other], new Map([[page, { lead: true, trail: false }]]))
+    assert.equal(out.length, 2)
+    assert.equal(out[0].text, "1. 청원서 심사보고 시정의 건 \u2026 1")
+    assert.equal(out[0].x, 100)
+    assert.equal(out[0].x + out[0].w, 940)
+  })
+  it("제목 쪽이 리더로 끝나면(trail) 오른쪽 이웃을 당겨 붙인다", () => {
+    const title = it0("Ⅱ. 대내외 여건 \u2026", 100, 600), page = it0("4", 900, 20)
+    const out = joinLeaderItems([title, page], new Map([[title, { lead: false, trail: true }]]))
+    assert.equal(out.length, 1)
+    assert.equal(out[0].text, "Ⅱ. 대내외 여건 \u2026 4")
+  })
+  it("리더 표시 없는 아이템끼리는 잇지 않는다", () => {
+    const a = it0("구분", 100, 60), b = it0("내용", 400, 60)
+    assert.equal(joinLeaderItems([a, b], new Map()).length, 2)
+  })
+  it("리더를 못 찾은 줄도 이은 목차 줄 둘 이상의 쪽번호 열에 맞는 숫자면 잇는다 (잡음에 점이 덜 잡힌 줄)", () => {
+    const t1 = it0("1. 목적 \u2026 1", 100, 840, 100), t2 = it0("2. 적용 범위 \u2026 1", 100, 840, 140)
+    const title = it0("3. 근거\u2026", 100, 150, 180), page = it0("\u20262", 915, 25, 182, 16)
+    const out = joinLeaderItems([t1, t2, title, page], new Map())
+    assert.equal(out.length, 3)
+    assert.equal(out[2].text, "3. 근거 \u2026 2")
+  })
+  it("쪽번호 열에 안 맞거나 숫자가 아니면 그대로 둔다", () => {
+    const t1 = it0("1. 목적 \u2026 1", 100, 840, 100), t2 = it0("2. 적용 범위 \u2026 1", 100, 840, 140)
+    const a = it0("구분", 100, 60, 180), b = it0("12", 500, 30, 180)
+    const c = it0("구분", 100, 60, 220), d = it0("내용", 900, 40, 220)
+    assert.equal(joinLeaderItems([t1, t2, a, b, c, d], new Map()).length, 6)
   })
 })

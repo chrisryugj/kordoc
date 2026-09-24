@@ -28,10 +28,15 @@ const PAGE_TIMEOUT_MS = 120_000
 
 export type OcrMode = "builtin" | OcrProvider
 
+/** pdfjs 연산자 목록 (그래픽만 쓴다 — 괘선·채움·그림 영역) */
+export type PageOps = { fnArray: Uint32Array | number[]; argsArray: unknown[][] }
+
 /**
  * 대상 페이지들을 OCR 해 페이지별 블록 맵 반환.
  * @param buffer 원본 PDF (pdfjs 가 detach 하기 전에 clone 해 둔 것)
  * @param targets 1-based 페이지 번호 집합
+ * @param vectorOps 벡터 글자 쪽(글자를 곡선으로 그린 쪽)의 그래픽(vector-glyphs.ts ocrVectorOps) — 그 쪽은 표 구조를
+ *   래스터 괘선 감지 대신 이것(실제 괘선)으로 복원한다. 스캔 쪽은 벡터가 없으니 없다
  */
 export async function runPdfOcr(
   buffer: ArrayBuffer,
@@ -40,6 +45,7 @@ export async function runPdfOcr(
   warnings: ParseWarning[],
   onProgress?: (current: number, total: number) => void,
   detectTables = true,
+  vectorOps?: Map<number, PageOps>,
 ): Promise<Map<number, IRBlock[]>> {
   const result = new Map<number, IRBlock[]>()
   if (targets.size === 0) return result
@@ -69,7 +75,7 @@ export async function runPdfOcr(
       onProgress?.(++done, targets.size)
       try {
         const blocks = await withTimeout(
-          ocrOnePage(page, pageNo, mode, engine, warnings, detectTables),
+          ocrOnePage(page, pageNo, mode, engine, warnings, detectTables, vectorOps?.get(pageNo)),
           PAGE_TIMEOUT_MS,
           `OCR 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`,
         )
@@ -96,6 +102,7 @@ async function ocrOnePage(
   engine: Awaited<ReturnType<typeof getOcrEngine>> | null,
   warnings: ParseWarning[],
   detectTables: boolean,
+  vectorOps?: PageOps,
 ): Promise<IRBlock[]> {
   const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
   const rendered = await page.render({
@@ -106,8 +113,9 @@ async function ocrOnePage(
   const rgba = bgraToRgba(bgra)
 
   if (mode === "builtin") {
-    // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정
-    const { rgba: upright } = deskewPage(rgba, rw, rh)
+    // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정.
+    // 벡터 글자 쪽은 보정하지 않는다 — 글자 좌표가 돌면 그 쪽 벡터 괘선과 어긋난다
+    const upright = vectorOps ? rgba : deskewPage(rgba, rw, rh).rgba
     const stats = { droppedLowConf: 0 }
     const items = await engine!.recognizePage(upright, rw, rh, stats)
     if (stats.droppedLowConf > 0) {
@@ -117,8 +125,10 @@ async function ocrOnePage(
         code: "OCR_LOW_CONF",
       })
     }
-    // 래스터에서 표 괘선 감지 — 스캔본 병합셀 서식도 선 기반 표 파이프라인을 탄다
     const scale = rh / pdfH
+    // 벡터 글자 쪽: 표 구조는 그 쪽의 실제 괘선으로 (rhwp cairo 13쌍 46표 exact: 래스터 괘선 14 → 실제 괘선 20)
+    if (vectorOps) return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, undefined, detectTables, vectorOps)
+    // 래스터에서 표 괘선 감지 — 스캔본 병합셀 서식도 선 기반 표 파이프라인을 탄다
     const ruling = detectRulingLines(upright, rw, rh, scale)
     const extraLines = rulingToPdfLines(ruling, scale, pdfH)
     return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables)
@@ -150,8 +160,9 @@ async function ocrOnePage(
 
 /**
  * OcrItem(렌더 픽셀, top-left origin) → NormItem(PDF pt, bottom-up baseline)
- * 으로 환산해 기존 블록 파이프라인에 태운다. 괘선은 그래픽 ops 대신
- * 래스터 감지 결과(extraLines)로 공급 — 없으면 클러스터 감지기 몫이다.
+ * 으로 환산해 기존 블록 파이프라인에 태운다. 괘선은 래스터 감지 결과(extraLines)로
+ * 공급 — 없으면 클러스터 감지기 몫이다. 벡터 글자 쪽은 그 쪽 그래픽 연산자 목록(opList)을
+ * 넘겨 실제 괘선을 쓴다.
  * (이미지 직접 입력 경로 image-ocr.ts 와 공유)
  */
 export function ocrItemsToBlocks(
@@ -162,6 +173,7 @@ export function ocrItemsToBlocks(
   scale: number,
   extraLines?: { horizontals: LineSegment[]; verticals: LineSegment[] },
   detectTables = true,
+  opList: PageOps = { fnArray: [], argsArray: [] },
 ): IRBlock[] {
   const norm: NormItem[] = items.map(it => {
     const h = it.h / scale
@@ -178,7 +190,7 @@ export function ocrItemsToBlocks(
       isHidden: false,
     }
   })
-  return extractPageBlocksWithLines(norm, pageNumber, { fnArray: [], argsArray: [] }, pdfW, pdfH, extraLines, detectTables)
+  return extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)
 }
 
 async function tryImport<T>(name: string, loader: () => Promise<T>): Promise<T> {

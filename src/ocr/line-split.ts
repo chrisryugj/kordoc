@@ -159,6 +159,137 @@ export function splitRowBands(
   return bands.map(([y0, y1]) => { const [x0, x1] = inkCols(y0, y1); return { y0, y1, x0, x1 } })
 }
 
+type Comp = { x0: number; x1: number; y0: number; y1: number; id: number }
+
+/**
+ * 글자 잉크 연결 성분(8-이웃) — 성분마다 bbox, label 은 픽셀별 성분 번호(0 = 배경). 박스를 관통하는 칸 경계
+ * 괘선 성분(박스 높이·폭의 85%+, inkBounds 와 같은 기준)은 글자가 아니라 뺀다 — 괘선이 가장 큰 성분이 되면
+ * 글자 높이가 부풀어 숫자들이 "점"으로 잡혔다(goesan-budget-2013 두 칸을 문 박스 "8,000 │ 1,000")
+ */
+function components(gray: Uint8Array, w: number, h: number, ink: InkStats): { comps: Comp[]; label: Int32Array } {
+  const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+  const comps: Comp[] = []
+  const label = new Int32Array(w * h)
+  const stack: number[] = []
+  for (let p0 = 0; p0 < w * h; p0++) {
+    if (label[p0] || !isInk(gray[p0])) continue
+    const c = { x0: w, x1: 0, y0: h, y1: 0, id: comps.length + 1 }
+    label[p0] = c.id
+    stack.push(p0)
+    while (stack.length) {
+      const p = stack.pop()!
+      const x = p % w, y = (p / w) | 0
+      if (x < c.x0) c.x0 = x
+      if (x + 1 > c.x1) c.x1 = x + 1
+      if (y < c.y0) c.y0 = y
+      if (y + 1 > c.y1) c.y1 = y + 1
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+        const q = ny * w + nx
+        if (!label[q] && isInk(gray[q])) { label[q] = c.id; stack.push(q) }
+      }
+    }
+    if (c.y1 - c.y0 < h * 0.85 && c.x1 - c.x0 < w * 0.85) comps.push(c)
+  }
+  return { comps, label }
+}
+
+/**
+ * 박스 맨 앞 글자가 삼각형(△ 감액·▲ 증가 표시)인지. 인식 사전에 △·▲ 가 없어 모델은 숫자 앞 삼각형을
+ * 빈칸으로 버린다 — 예산서 "△400,352" → "400,352" (코퍼스 GT △ 81개 중 OCR 30개, 나머지 부호 소실).
+ * 가장 왼쪽 성분(글자 높이 40%+)이 밑변(아래 두 줄이 폭 70%+)·좁은 꼭짓점(위 20% 줄이 폭 40% 이하·가운데)·
+ * 양옆 빗변(높이 60% 줄의 잉크가 폭 30% 안쪽과 70% 바깥 양쪽)을 가지면 삼각형, 그 줄 가운데가 비면 △ 차면 ▲.
+ * 숫자(4·1·2·7 등)는 밑변이나 꼭짓점·빗변 조건 중 하나에서 걸린다.
+ */
+export function leadingTriangle(gray: Uint8Array, w: number, h: number, ink: InkStats): "\u25b3" | "\u25b2" | null {
+  const { comps, label } = components(gray, w, h, ink)
+  let charH = 0
+  for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
+  const first = comps.filter(c => c.y1 - c.y0 >= charH * 0.4).sort((a, b) => a.x0 - b.x0)[0]
+  if (!first || charH < 8) return null
+  const cw = first.x1 - first.x0, ch = first.y1 - first.y0
+  if (cw < ch * 0.8 || cw > ch * 1.8) return null
+  const rowSpan = (y: number): { n: number; lo: number; hi: number; runs: number } => {
+    let n = 0, lo = -1, hi = -1, runs = 0, prev = false
+    for (let x = first.x0; x < first.x1; x++) {
+      const on = label[y * w + x] === first.id
+      if (on) { n++; if (lo < 0) lo = x - first.x0; hi = x - first.x0; if (!prev) runs++ }
+      prev = on
+    }
+    return { n, lo, hi, runs }
+  }
+  const base = Math.max(rowSpan(first.y1 - 1).n, rowSpan(first.y1 - 2).n)
+  if (base < cw * 0.7) return null
+  for (let y = first.y0; y < first.y0 + Math.max(1, Math.round(ch * 0.2)); y++) {
+    const r = rowSpan(y)
+    if (r.n === 0) continue
+    if (r.hi - r.lo + 1 > cw * 0.4 || (r.lo + r.hi) / 2 < cw * 0.25 || (r.lo + r.hi) / 2 > cw * 0.75) return null
+  }
+  const mid = rowSpan(first.y0 + Math.round(ch * 0.6))
+  if (mid.lo < 0 || mid.lo > cw * 0.3 || mid.hi < cw * 0.7) return null
+  return mid.runs >= 2 ? "\u25b3" : "\u25b2"
+}
+
+/**
+ * 목차 리더 점("·········")의 가로 구간들 (박스 로컬 [x0, x1)). 검출기는 쪽번호를 앞쪽 리더 점과 한 박스로
+ * 묶는데, 인식기는 점 무리 뒤 숫자를 망친다 — "·····5"→"…55", "·····141"→"…11", "·····203"→"03"
+ * (changwon-plan2026 목차 실측, 코퍼스 80쪽의 리더 섞인 박스 192개). 점 무리를 빼고 앞뒤 글만 따로 인식한다.
+ * 잉크 연결 성분(8-이웃)을 x 가 겹치는 것끼리 묶은 글자 덩어리 단위로 본다 — 한글 한 글자는 여러 성분("소" = ㅅ+ㅗ)
+ * 이라 성분 하나로 글자 높이를 재면 굵은 리더 점(9px)이 점으로 안 잡혔다(yeosu 목차). 점: 글자 높이(가장 큰 덩어리
+ * 높이) 30% 이하의 작은 덩어리이고 중심이 글자 띠(점 크기를 넘는 성분들의 세로 범위) 안 — 박스 위아래 여백에 걸친
+ * 점선 괘선 조각은 띠 밖이다(changwon 정원표 칸 실측). 무리: x 순서로 연달아 놓인 점들이 세로 중심 한 줄(±20%)·
+ * 간격 글자 높이 이하로 minDots 개+. 리더는 같은 줄 글자를 잇는다 — 무리 앞이나 뒤 글자 높이 2배 안에 점 높이를
+ * 세로로 품는 글자 성분이 있어야 한다. 두 행 사이 점선 괘선을 문 박스(위아래 행 글자가 띠를 넓힘)는 여기서 걸린다.
+ * 리더는 같은 글리프를 고른 간격으로 찍은 것이라 점 크기(최대/최소 2.5배 이내)·주기(1.8배 이내)가 고르다 — 작은
+ * 글꼴의 가는 획이 이진화로 쪼갠 조각("gifted.kaist.ac.kr", pen-cyberbridge 흐름도)은 여기서 걸린다. 박스 끝에 닿아
+ * 잘린 점은 통계에서 빼고, 값이 5개 이상이면 양 끝값도 뺀다.
+ */
+export function leaderRuns(
+  gray: Uint8Array,
+  w: number,
+  h: number,
+  ink: InkStats,
+  minDots: number,
+): Array<[number, number]> {
+  const comps = components(gray, w, h, ink).comps.sort((a, b) => a.x0 - b.x0)
+  // x 구간이 겹치는 성분끼리 한 덩어리
+  const blobs: Array<{ x0: number; x1: number; y0: number; y1: number }> = []
+  for (const c of comps) {
+    const last = blobs[blobs.length - 1]
+    if (last && c.x0 < last.x1) { last.x1 = Math.max(last.x1, c.x1); last.y0 = Math.min(last.y0, c.y0); last.y1 = Math.max(last.y1, c.y1) }
+    else blobs.push({ x0: c.x0, x1: c.x1, y0: c.y0, y1: c.y1 })
+  }
+  let charH = 0
+  for (const b of blobs) charH = Math.max(charH, b.y1 - b.y0)
+  if (charH < 8) return []
+  const small = (c: { x0: number; x1: number; y0: number; y1: number }) => c.x1 - c.x0 <= charH * 0.3 && c.y1 - c.y0 <= charH * 0.3
+  let bandTop = h, bandBot = 0
+  for (const c of comps) if (!small(c)) { bandTop = Math.min(bandTop, c.y0); bandBot = Math.max(bandBot, c.y1) }
+  const cy = (c: { y0: number; y1: number }) => (c.y0 + c.y1) / 2
+  const isDot = (b: { x0: number; x1: number; y0: number; y1: number }) => small(b) && cy(b) >= bandTop && cy(b) <= bandBot
+  const runs: Array<[number, number]> = []
+  for (let i = 0; i < blobs.length;) {
+    if (!isDot(blobs[i])) { i++; continue }
+    let j = i
+    while (j + 1 < blobs.length && isDot(blobs[j + 1]) && blobs[j + 1].x0 - blobs[j].x1 <= charH
+      && Math.abs(cy(blobs[j + 1]) - cy(blobs[i])) <= charH * 0.2) j++
+    const x0 = blobs[i].x0, x1 = blobs[j].x1, y = cy(blobs[i])
+    const onLine = comps.some(c => !small(c) && c.y0 <= y && c.y1 >= y
+      && ((c.x1 <= x0 + 2 && c.x1 >= x0 - 2 * charH) || (c.x0 >= x1 - 2 && c.x0 <= x1 + 2 * charH)))
+    const run = blobs.slice(i, j + 1).filter(b => b.x0 > 0 && b.x1 < w)
+    const spread = (xs: number[]) => {
+      const v = [...xs].sort((a, b) => a - b).slice(xs.length >= 5 ? 1 : 0, xs.length >= 5 ? -1 : undefined)
+      return v[v.length - 1] / Math.max(1, v[0])
+    }
+    const even = run.length >= 2 && spread(run.map(b => b.x1 - b.x0)) <= 2.5 && spread(run.map(b => b.y1 - b.y0)) <= 2.5
+      && spread(run.slice(1).map((b, k) => b.x0 - run[k].x0)) <= 1.8
+    if (j - i + 1 >= minDots && onLine && even) runs.push([x0, x1])
+    i = j + 1
+  }
+  return runs
+}
+
 /**
  * 박스 안 잉크 외곽 (박스 로컬, [x0,x1)·[y0,y1)) — 관통 괘선(행/열 85%+ 잉크)의 픽셀은 뺀다.
  * det 박스는 unclip 여백만큼 글자보다 커서(본문 10pt 에 박스 높이 ≈ 1.5em) 이를 그대로

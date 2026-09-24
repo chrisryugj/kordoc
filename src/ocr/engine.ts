@@ -34,8 +34,8 @@ import {
   getOcrModelsDir,
   parseCharacterDict,
 } from "./models.js"
-import { grayCrop, inkBounds, inkStats, splitRowBands } from "./line-split.js"
-import { isDotFragment, restoreBulletItems, restoreSymbols } from "./postprocess.js"
+import { grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, splitRowBands } from "./line-split.js"
+import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
@@ -73,6 +73,8 @@ export interface OcrTuning {
   postprocess: boolean
   /** 결과 좌표를 det 박스(unclip 여백 포함) 대신 박스 안 잉크 외곽으로 */
   tightBoxes: boolean
+  /** 목차 리더 점 무리를 빼고 앞뒤를 따로 인식 (line-split.ts leaderRuns) */
+  splitLeaders: boolean
 }
 
 export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
@@ -86,6 +88,7 @@ export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
   minInkContrast: 35,
   postprocess: true,
   tightBoxes: true,
+  splitLeaders: true,
 })
 
 const DET_MIN_SIZE = 3
@@ -97,6 +100,12 @@ const REC_BATCH_MAX_PIXELS = 48 * 16000
 const TALL_RATIO = 1.5
 /** 밴드로 갈라지지 않는 키 큰 박스 중 이 비율 이상은 90° 회전 글자 후보 */
 const ROTATE_RATIO = 3
+/** 리더로 볼 최소 점 수 — 말줄임표 "…"(3점)보다 많이. 목차 쪽번호 박스가 무는 점은 코퍼스 실측 4~9개가 대부분 */
+const LEADER_MIN_DOTS = 4
+/** 리더 앞 조각 crop 을 리더 안쪽으로 더 무는 폭 (박스 높이 배수, recognizePage 주석) */
+const LEADER_CONTEXT = 0.5
+/** 박스 잉크 비율 하한 (engine recognizePage 주석) */
+const MIN_INK_RATIO = 0.01
 
 // det: BGR 채널 순서에 yml 기재 순서 그대로 적용 (mean[0]→B)
 const DET_MEAN = [0.485, 0.456, 0.406]
@@ -112,8 +121,9 @@ interface SharpChain {
   raw(): { toBuffer(): Promise<Buffer> }
 }
 
-/** 인식 대상 한 줄 — rot 는 crop 회전(90=반시계, 270=시계) */
-interface LineJob { box: Box; rot: 0 | 90 | 270; group: number }
+/** 인식 대상 한 줄 — rot 는 crop 회전(90=반시계, 270=시계). join: 리더로 가른 박스 번호, dotsBefore: 앞에 리더가 있었는지,
+ *  trimDots: crop 이 뒤 리더 점을 물었는지(결과 끝 점을 지운다) */
+interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; join?: number; dotsBefore?: boolean; trimDots?: boolean }
 
 export class OcrEngine {
   private det: InferenceSession
@@ -192,11 +202,17 @@ export class OcrEngine {
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
     const jobs: LineJob[] = []
+    /** 리더로 가른 검출 박스 — 조각 인식 결과를 모아 한 아이템으로 합친다 */
+    const joins: Array<{ box: Box; parts: Array<{ x: number; text: string; dotsBefore: boolean; confidence: number }>; trailDots: boolean }> = []
     let group = 0
     for (const b of boxes) {
       const gray = grayCrop(rgba, width, b)
       const ink = inkStats(gray)
       if (tuning.minInkContrast > 0 && ink.contrast < tuning.minInkContrast) continue
+      // 잉크가 박스의 1% 미만이면 가는 선·티끌이다 — 연한 배경 도안 띠를 가로지르는 파란 세로선이 대비 검사를
+      // 통과시키고 인식기가 도안을 "D D D … O" 로 읽었다(ice-election-cases 표지, 잉크 0.4%). 가장 가는 글자("-")도
+      // 여백 포함 박스의 1.5% 안팎이라 남는다. 점 하나("·")는 여기서 빠지지만 isDotFragment 가 어차피 버린다
+      if (tuning.minInkContrast > 0 && ink.inkRatio < MIN_INK_RATIO) continue
       if (tuning.splitTall && b.h >= b.w * TALL_RATIO) {
         const bands = splitRowBands(gray, b.w, b.h, ink, 0.45)
         if (bands.length >= 2) {
@@ -208,6 +224,30 @@ export class OcrEngine {
           group++
           continue
         }
+      }
+      // 목차 리더 점 무리는 인식하지 않고 앞뒤 글만 따로 인식한 뒤, 검출 박스 하나로 다시 합쳐 "제목 … 쪽번호" 아이템
+      // 하나를 낸다 — 텍스트층도 목차 줄을 리더 글자까지 한 줄로 준다. 조각을 따로 두면 줄 기하가 바뀌어 뒤 단계가
+      // 흔들렸다: 리더 자리를 비우면 속기록 1면 목차 줄이 2단 본문 줄로 잡혀 단 판정이 무너졌고(assembly-minutes-1179),
+      // 리더를 따로 세우면 클러스터 표가 그것을 열로 삼았다(gwd-info-plan 목차). 리더 앞 조각은 점 한두 개까지 물려
+      // 인식하고 물린 점은 결과 끝에서 지운다 — 끝 글자 바로 뒤에서 자르면 인식기가 오른쪽 맥락을 잃어 로마 숫자 Ⅰ 를
+      // 1 로 읽었다(eval-rda "전략목표 Ⅰ"·"성과목표 Ⅰ-1", 박스 높이 0.5배 물림으로 Ⅰ·Ⅱ·Ⅲ 11줄 복원)
+      const leaders = tuning.splitLeaders ? leaderRuns(gray, b.w, b.h, ink, LEADER_MIN_DOTS) : []
+      if (leaders.length) {
+        const join = joins.length
+        joins.push({ box: b, parts: [], trailDots: false })
+        let x0 = 0, dots = false
+        for (const [a, c] of [...leaders, [b.w, b.w]]) {
+          const bare = { x: b.x + x0, y: b.y, w: a - x0, h: b.h }
+          const end = c > a ? Math.min(c, a + Math.round(b.h * LEADER_CONTEXT)) : a
+          x0 = c
+          if (bare.w >= DET_MIN_SIZE && inkStats(grayCrop(rgba, width, bare)).contrast >= Math.max(1, tuning.minInkContrast)) {
+            jobs.push({ box: { ...bare, w: end - (bare.x - b.x) }, rot: 0, group: group++, join, dotsBefore: dots, trimDots: end > a })
+            dots = false
+          }
+          if (c > a) dots = true
+        }
+        joins[join].trailDots = dots
+        continue
       }
       jobs.push({ box: b, rot: 0, group: group++ })
     }
@@ -223,23 +263,48 @@ export class OcrEngine {
       if (!cur || r.confidence > cur.confidence) best.set(job.group, { job, ...r })
     })
 
-    const items: OcrItem[] = []
+    let items: OcrItem[] = []
     for (const { job, text: raw, confidence } of best.values()) {
-      const text = tuning.postprocess ? restoreSymbols(raw.trim()) : raw
+      let text = tuning.postprocess ? restoreSymbols(raw.trim()) : raw
       if (!text.trim()) continue
+      // 숫자 앞 △·▲ 는 사전 밖이라 빈칸으로 사라진다 — 박스 맨 앞 글자 모양으로 되살린다 (line-split.ts)
+      if (tuning.postprocess && /^\d/.test(text) && job.rot === 0) {
+        const g = grayCrop(rgba, width, job.box)
+        const tri = leadingTriangle(g, job.box.w, job.box.h, inkStats(g))
+        if (tri) text = tri + text
+      }
       if (tuning.postprocess && isDotFragment(text)) continue
       if (confidence < tuning.textScore) { if (stats) stats.droppedLowConf++; continue }
-      let b = job.box
-      if (tuning.tightBoxes) {
-        const gray = grayCrop(rgba, width, b)
-        const t = inkBounds(gray, b.w, b.h, inkStats(gray))
-        b = { x: b.x + t.x0, y: b.y + t.y0, w: t.x1 - t.x0, h: t.y1 - t.y0 }
+      if (job.join !== undefined) {
+        if (job.trimDots) text = text.replace(/[\s.:\u00b7\u2022\u2024\u2025\u2026\u2219\u22c5\u318d]+$/u, "")
+        if (text) joins[job.join].parts.push({ x: job.box.x, text, dotsBefore: job.dotsBefore === true, confidence })
+        continue
       }
-      items.push({ text, x: b.x, y: b.y, w: b.w, h: b.h, confidence })
+      items.push({ text, ...this.itemBox(rgba, width, job.box, tuning), confidence })
     }
+    const leaderEnds = new Map<OcrItem, { lead: boolean; trail: boolean }>()
+    for (const j of joins) {
+      if (!j.parts.length) continue
+      j.parts.sort((a, b) => a.x - b.x)
+      let text = ""
+      for (const p of j.parts) text += (p.dotsBefore ? (text ? " \u2026 " : "\u2026") : text ? " " : "") + p.text
+      if (j.trailDots) text += " \u2026"
+      const item = { text, ...this.itemBox(rgba, width, j.box, tuning), confidence: Math.min(...j.parts.map(p => p.confidence)) }
+      items.push(item)
+      leaderEnds.set(item, { lead: j.parts[0].dotsBefore, trail: j.trailDots })
+    }
+    if (leaderEnds.size) items = joinLeaderItems(items, leaderEnds)
     if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
+  }
+
+  /** 결과 좌표 — det 박스 그대로 또는 박스 안 잉크 외곽 (tightBoxes) */
+  private itemBox(rgba: Uint8Array, width: number, b: Box, tuning: Readonly<OcrTuning>): Box {
+    if (!tuning.tightBoxes) return b
+    const gray = grayCrop(rgba, width, b)
+    const t = inkBounds(gray, b.w, b.h, inkStats(gray))
+    return { x: b.x + t.x0, y: b.y + t.y0, w: t.x1 - t.x0, h: t.y1 - t.y0 }
   }
 
   // ─── det ─────────────────────────────────────────────

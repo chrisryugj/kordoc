@@ -190,6 +190,47 @@ describe("내장 엔진 E2E (모델 있을 때만)", () => {
     }
   })
 
+  it("목차 줄 — 리더 점은 따로 떼어 인식하고 \"제목 … 쪽번호\" 한 아이템으로", async (t) => {
+    const status = await getOcrModelStatus()
+    if (!status.every(s => s.verified)) { t.skip("OCR 모델 미설치"); return }
+    let sharp: typeof import("sharp")["default"]
+    try { sharp = (await import("sharp")).default } catch { t.skip("sharp 미설치"); return }
+    // 종전 엔진은 리더를 버리고 쪽번호를 제목에 붙였다("II. 대내외 여건141") — 코퍼스 목차에선 점 뒤 숫자까지
+    // 망쳤다("·····5"→"…55", "·····141"→"…11")
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="90"><rect width="1400" height="90" fill="white"/>` +
+      `<text x="30" y="58" font-size="34" font-family="sans-serif" font-weight="bold">Ⅱ. 대내외 여건 ${"\u00b7".repeat(8)}141</text></svg>`
+    const { data, info } = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const { OcrEngine } = await import("../src/ocr/engine.js")
+    const engine = await OcrEngine.create()
+    try {
+      const items = await engine.recognizePage(new Uint8Array(data), info.width, info.height)
+      const texts = items.map(i => i.text)
+      assert.ok(texts.some(s => /여건\s*\u2026\s*141$/.test(s)), `인식 결과: ${JSON.stringify(texts)}`)
+    } finally {
+      await engine.destroy()
+    }
+  })
+
+  it("숫자 앞 △ 는 사전 밖이라도 부호를 잃지 않는다", async (t) => {
+    const status = await getOcrModelStatus()
+    if (!status.every(s => s.verified)) { t.skip("OCR 모델 미설치"); return }
+    let sharp: typeof import("sharp")["default"]
+    try { sharp = (await import("sharp")).default } catch { t.skip("sharp 미설치"); return }
+    // 종전 엔진: "△400,352" → "400,352" (감액이 증액으로 읽힘, 부천 예산서 38곳)
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="80"><rect width="600" height="80" fill="white"/>` +
+      `<text x="30" y="52" font-size="30" font-family="sans-serif">\u25b3400,352</text><text x="330" y="52" font-size="30" font-family="sans-serif">1,246,820</text></svg>`
+    const { data, info } = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const { OcrEngine } = await import("../src/ocr/engine.js")
+    const engine = await OcrEngine.create()
+    try {
+      const texts = (await engine.recognizePage(new Uint8Array(data), info.width, info.height)).map(i => i.text)
+      assert.ok(texts.includes("\u25b3400,352"), `인식 결과: ${JSON.stringify(texts)}`)
+      assert.ok(texts.includes("1,246,820"), `△ 없는 숫자에 붙이지 않음: ${JSON.stringify(texts)}`)
+    } finally {
+      await engine.destroy()
+    }
+  })
+
   it("세로로 쌓인 글자(표 칸 세로쓰기)는 글자마다 따로 인식 + 잉크 외곽 좌표", async (t) => {
     const status = await getOcrModelStatus()
     if (!status.every(s => s.verified)) { t.skip("OCR 모델 미설치"); return }

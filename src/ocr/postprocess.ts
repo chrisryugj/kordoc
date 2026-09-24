@@ -24,6 +24,9 @@ export function restoreSymbols(text: string): string {
       ? "\u25cb".repeat(m.length) : m)
   // △ 감액 표시: 사전 밖 → ∆(U+2206)·그리스 Δ(U+0394) 로 읽힘
   s = s.replace(/[\u2206\u0394]/g, "\u25b3")
+  // "(cid:NN)" 은 PDF 텍스트 추출기가 유니코드 없는 글리프에 쓰는 표기 — 인식기가 학습 자료에서 배워 티끌·가는
+  // 막대 박스에 낸다(pcccr·rda-planfarm·yeosu 실측, 박스 5~16px). 인쇄된 글자일 수 없으니 지운다
+  s = s.replace(/\(cid:\d*\)/g, "")
   return smartQuotes(joinDigitGroups(s))
 }
 
@@ -70,6 +73,67 @@ export function smartQuotes(s: string): string {
 /** 점류만으로 된 조각 — 목차 리더·잡티(".", "..", "…", "·"). 단독으로는 뜻이 없다 */
 export function isDotFragment(text: string): boolean {
   return /^[\s.\u00b7\u2024\u2025\u2026\u2027\u2219\u22c5\u318d]+$/.test(text)
+}
+
+type Placed = { text: string; x: number; y: number; w: number; h: number; confidence: number }
+
+/**
+ * 목차 한 줄 잇기. 텍스트층은 목차 줄을 리더 글자까지 한 아이템("제목 ······ 12")으로 주는데, 검출기는 리더
+ * 가운데를 비워 [제목 ···] [··· 12] 두 박스로 낸다. 그러면 줄마다 큰 틈이 생겨 클러스터 표 감지가 목차·머리
+ * 영역을 표로 잡고, 그 뒤 2단 본문을 줄 단위로 섞어 읽었다(assembly-minutes-1179 1면 — 목차 쪽번호 하나를 더
+ * 제대로 읽자 표 감지가 발화). 엔진이 박스 끝에서 확인한 리더 점(ends: lead = 박스가 점으로 시작, trail = 점으로
+ * 끝남)이 마주 보는 같은 줄 가장 가까운 이웃과 "제목 … 12" 한 아이템으로 합친다.
+ */
+export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lead: boolean; trail: boolean }>): T[] {
+  const gone = new Set<T>()
+  const sameLine = (a: T, b: T) => Math.abs(a.y + a.h / 2 - (b.y + b.h / 2)) <= Math.max(a.h, b.h) / 2
+  const merge = (left: T, right: T): void => {
+    const x2 = Math.max(left.x + left.w, right.x + right.w), y2 = Math.max(left.y + left.h, right.y + right.h)
+    left.text = left.text.replace(/\s*\u2026$/, "") + " \u2026 " + right.text.replace(/^\u2026\s*/, "")
+    left.x = Math.min(left.x, right.x)
+    left.y = Math.min(left.y, right.y)
+    left.w = x2 - left.x
+    left.h = y2 - left.y
+    left.confidence = Math.min(left.confidence, right.confidence)
+    gone.add(right)
+  }
+  const neighbor = (it: T, toLeft: boolean): T | null => {
+    let best: T | null = null
+    for (const o of items) {
+      if (o === it || gone.has(o) || !sameLine(o, it)) continue
+      if (toLeft ? o.x + o.w > it.x + 2 : o.x < it.x + it.w - 2) continue
+      if (!best || (toLeft ? o.x + o.w > best.x + best.w : o.x < best.x)) best = o
+    }
+    return best
+  }
+  // 오른쪽부터 — 쪽번호 쪽("… 12")을 왼쪽 이웃에 붙이고, 제목 쪽("제목 …")은 오른쪽 이웃을 당겨 붙인다
+  for (const it of [...items].sort((a, b) => b.x - a.x)) {
+    if (gone.has(it) || !ends.get(it)?.lead) continue
+    const left = neighbor(it, true)
+    if (left) merge(left, it)
+  }
+  for (const it of [...items].sort((a, b) => a.x - b.x)) {
+    if (gone.has(it) || !ends.get(it)?.trail) continue
+    const right = neighbor(it, false)
+    if (right) merge(it, right)
+  }
+  // 리더 점을 못 찾은 목차 줄 — 잡음·흐림에 점이 덜 잡히면 몇 줄만 [제목][쪽번호] 두 아이템으로 남고, 이어진 줄들 사이의
+  // 그 두 줄이 클러스터 표를 불러 목차 전체를 칸에 섞었다(archives-record-duty 잡음 σ12: 29줄 중 3줄). 같은 쪽에서 리더로
+  // 이은 줄 둘 이상과 오른쪽 끝(쪽번호 열)이 맞는 숫자 아이템은 쪽번호로 보고 같은 줄 왼쪽 이웃과 잇는다
+  const toc = items.filter(it => !gone.has(it) && /\s\u2026\s\d{1,4}$/.test(it.text))
+  if (toc.length >= 2) {
+    for (const it of items) {
+      if (gone.has(it) || toc.includes(it) || !/^[\s.:\u00b7\u2026]*\d{1,4}$/.test(it.text)) continue
+      const x2 = it.x + it.w
+      if (toc.filter(t => Math.abs(t.x + t.w - x2) <= Math.max(t.h, it.h)).length < 2) continue
+      const left = neighbor(it, true)
+      if (!left || toc.includes(left)) continue
+      left.text = left.text.replace(/[\s.:\u00b7\u2026]+$/, "")
+      it.text = it.text.replace(/^[\s.:\u00b7\u2026]+/, "")
+      merge(left, it)
+    }
+  }
+  return items.filter(it => !gone.has(it))
 }
 
 /**
