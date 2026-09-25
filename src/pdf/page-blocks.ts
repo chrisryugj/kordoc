@@ -6,7 +6,7 @@
  * 페이지 걸친 표 병합까지 담당한다.
  */
 
-import type { IRBlock, IRTable, BoundingBox } from "../types.js"
+import type { IRBlock, IRTable, BoundingBox, InlineStyle } from "../types.js"
 import { safeMin, safeMax } from "../utils.js"
 import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells.js"
 import { dropShadingClipGrids } from "./table-grid.js"
@@ -766,6 +766,46 @@ function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum: numbe
   }
 }
 
+/** Keep aligned-column tables structural instead of escaping their generated Markdown as prose. */
+export function columnTextToBlocks(text: string, pageNum: number, bbox: BoundingBox, style?: InlineStyle): IRBlock[] {
+  const lines = text.split("\n")
+  const blocks: IRBlock[] = []
+  const prose: string[] = []
+  const flushProse = () => {
+    const content = prose.join("\n").trim()
+    if (content) blocks.push({ type: "paragraph", text: content, pageNumber: pageNum, bbox, style })
+    prose.length = 0
+  }
+  const cells = (line: string) => line.trim().slice(1, -1).split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, "|"))
+  const tableLine = (line: string) => /^\|.*\|\s*$/.test(line.trim())
+
+  for (let i = 0; i < lines.length;) {
+    if (tableLine(lines[i]) && i + 2 < lines.length && tableLine(lines[i + 1]) &&
+        cells(lines[i + 1]).every(c => /^:?-{3,}:?$/.test(c))) {
+      let end = i + 2
+      while (end < lines.length && tableLine(lines[end])) end++
+      const rows = [cells(lines[i]), ...lines.slice(i + 2, end).map(cells)]
+      const cols = rows[0].length
+      const values = rows.slice(1).flat().filter(Boolean)
+      const numeric = values.filter(value => value.length <= 24 && /\d/.test(value)).length
+      if (cols >= 3 && rows.length >= 3 && rows.every(row => row.length === cols) &&
+          rows[0].every(value => value.length <= 80) && numeric >= 3 && numeric / values.length >= 0.25) {
+        flushProse()
+        blocks.push({ type: "table", pageNumber: pageNum, bbox, table: {
+          rows: rows.length, cols, hasHeader: true,
+          cells: rows.map(row => row.map(value => ({ text: value, rowSpan: 1, colSpan: 1 }))),
+        } })
+        i = end
+        continue
+      }
+    }
+    prose.push(lines[i])
+    i++
+  }
+  flushProse()
+  return blocks
+}
+
 /**
  * 기존 휴리스틱 기반 페이지 블록 추출 (선이 없는 PDF 대비 fallback).
  *
@@ -824,7 +864,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     if (columns && columns.length >= 3) {
       const tableText = extractWithColumns(allYLines, columns)
       const bbox = computeBBox(items, pageNum)
-      blocks.push({ type: "paragraph", text: tableText, pageNumber: pageNum, bbox, style: dominantStyle(items) })
+      blocks.push(...columnTextToBlocks(tableText, pageNum, bbox, dominantStyle(items)))
     } else {
       // 3단계: XY-Cut으로 읽기 순서 결정.
       // 2단 조판 본문은 전폭 제목/목차 줄이 X 프로젝션을 막아 XY-Cut이 단을 못
@@ -845,7 +885,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
         if (groupColumns && groupColumns.length >= 3) {
           const tableText = extractWithColumns(yLines, groupColumns)
           const bbox = computeBBox(group, pageNum)
-          blocks.push({ type: "paragraph", text: tableText, pageNumber: pageNum, bbox, style: dominantStyle(group) })
+          blocks.push(...columnTextToBlocks(tableText, pageNum, bbox, dominantStyle(group)))
         } else {
           pushLineParagraphs(blocks, yLines, pageNum, lex)
         }
