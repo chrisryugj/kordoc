@@ -415,27 +415,45 @@ function extractBlocksWithGrids(
     }
 
     // 과소분할 표 재구성 (ODL TableStructureNormalizer):
-    // 행≤2 + 열≥3 + 셀 안에 텍스트 줄이 뭉친 표는 줄 centerY 기반 row band로 행 복원
+    // 행≤5 + 열≥3 + 셀 안에 텍스트 줄이 뭉친 표는 줄 centerY 기반 row band로 행 복원
     // (중첩표를 품은 틀·셀 클립 그리드는 셀 구조가 확정된 것이라 재구성하지 않는다 — 클립 표에 돌리면 상자 안
     // 문단이 줄마다 행·열로 찢긴다: 보도자료 "[참고] SDG 14" 2×2 상자 → 10×3)
     let finalGrid = irGrid
     let finalRows = numRows
     let rebuiltUsed = false
-    if (!grid.cells && numRows <= 2 && numCols >= 3 && !nestedAttached) {
-      const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems)
+    let unitLine: NormItem[] = []
+    let unitText = ""
+    if (!grid.cells && numRows >= 3 && numRows <= 5 && numCols >= 3) {
+      const nearby = items.filter(item => item.y >= grid.bbox.y2 && item.y - grid.bbox.y2 <= 18
+        && item.x >= grid.bbox.x1 - 3 && item.x + item.w <= grid.bbox.x2 + 3)
+      for (const y of [...new Set(nearby.map(item => Math.round(item.y)))].sort((a, b) => a - b)) {
+        const line = nearby.filter(item => Math.abs(item.y - y) <= 1).sort((a, b) => a.x - b.x)
+        const text = line.map(item => item.text).join("")
+        if (!/^\s*\(\s*단위\s*[:：]/.test(text)) continue
+        unitLine = line
+        unitText = text
+        break
+      }
+    }
+    if (!grid.cells && numRows <= 5 && numCols >= 3 && !nestedAttached && (numRows <= 2 || unitLine.length > 0)) {
+      const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs)
       if (rebuilt) {
         rebuiltUsed = true
         finalGrid = rebuilt.map(row => row.map(rawText => ({ text: cleanCellText(rawText), colSpan: 1, rowSpan: 1 })))
         finalRows = finalGrid.length
       }
     }
-
     // 미배정 아이템을 프로즈 경로로 환원 — 과소분할 재구축(rebuiltUsed)은
     // textItems 전체(미배정 포함)를 셀에 재배치하므로 그때는 환원하지 않는다(중복 방지)
     if (!rebuiltUsed) {
       for (let ti = 0; ti < textItems.length; ti++) {
         if (!assignedItems.has(textItems[ti])) usedItems.delete(tableItems[ti])
       }
+    }
+    if (unitLine.length > 0 && rebuiltUsed && !/^\s*\(\s*단위\s*[:：]/.test(finalGrid[0]?.[0]?.text ?? "")) {
+      finalGrid.unshift(Array.from({ length: numCols }, (_, c) => ({ text: c === 0 ? cleanCellText(unitText) : "", colSpan: c === 0 ? numCols : 1, rowSpan: 1 })))
+      finalRows++
+      for (const item of unitLine) usedItems.add(item)
     }
 
     const irTable: IRTable = {

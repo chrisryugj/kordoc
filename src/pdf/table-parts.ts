@@ -355,6 +355,12 @@ function insideTable(b: IRBlock, t: IRBlock): boolean {
   return b.bbox.x >= o.x - 1 && b.bbox.x + b.bbox.width <= o.x + o.width + 1 && b.bbox.y >= o.y - 1 && b.bbox.y + b.bbox.height <= o.y + o.height + 1
 }
 
+/** 첫 행 전체를 차지하는 단위 표기 */
+function startsWithUnitRow(table: IRTable): boolean {
+  return /^\s*\(\s*단위\s*[:：]/.test(table.cells[0]?.[0]?.text ?? "")
+    && table.cells[0]?.slice(1).every(c => !c.text.trim())
+}
+
 export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number, number>): void {
   mergeColumnFlow(blocks, pageHeights)
   for (let i = blocks.length - 2; i >= 0; i--) {
@@ -367,6 +373,8 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
     while (j < blocks.length && (blocks[j].type !== "table" || insideTable(blocks[j], prev) || leftColumnOf(blocks[j], prev)) && (blocks[j].pageNumber ?? 0) <= prev.pageNumber + 1) j++
     const curr = blocks[j]
     if (!curr || curr.type !== "table" || !curr.table || !curr.bbox || curr.pageNumber !== prev.pageNumber + 1) continue
+    // 단위 행이 양쪽에 다시 나타나면 각 쪽에서 새 표를 시작한 것이다.
+    if (startsWithUnitRow(prev.table) && startsWithUnitRow(curr.table)) continue
     const joined = j === i + 1 || blocks.slice(i + 1, j).every(b => besideOwn(b, prev, curr) || insideTable(b, prev))
       ? (looksContinued(prev, curr, pageHeights) && !restartsTable(blocks, i, curr.table, pageHeights) ? joinClipParts(prev, curr, pageHeights) ?? false : null)
       : null
