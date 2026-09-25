@@ -61,6 +61,63 @@ export function detectHeadings(blocks: IRBlock[], medianFontSize: number): void 
 }
 
 /**
+ * A PDF heading can use the body point size but a separate face (often bold).
+ * Font IDs are document-local, so compare each page's face with its prose face
+ * and require surrounding whitespace before promoting a short, single line.
+ */
+export function detectTypographyHeadings(blocks: IRBlock[]): void {
+  const byPage = new Map<number, IRBlock[]>()
+  for (const block of blocks) {
+    if (!block.pageNumber) continue
+    const page = byPage.get(block.pageNumber) ?? []
+    page.push(block)
+    byPage.set(block.pageNumber, page)
+  }
+
+  for (const page of byPage.values()) {
+    // Size-based headings already establish this page's typography; a second
+    // face-based pass there tends to promote captions and emphasized prose.
+    if (page.some(block => block.type === "heading")) continue
+    const faceWeight = new Map<string, number>()
+    for (const block of page) {
+      if (block.type !== "paragraph" || !block.text || !block.style?.fontName) continue
+      const face = block.style.fontName
+      faceWeight.set(face, (faceWeight.get(face) ?? 0) + block.text.length)
+    }
+    const bodyFace = [...faceWeight].sort((a, b) => b[1] - a[1])[0]?.[0]
+    if (!bodyFace || (faceWeight.get(bodyFace) ?? 0) < 250) continue
+
+    for (let i = 0; i < page.length; i++) {
+      const block = page[i]
+      const { text, bbox, style } = block
+      if (block.type !== "paragraph" || !text || !bbox || !style?.fontName || !style.fontSize) continue
+      const title = text.trim()
+      const numbered = /^\d+(?:\.\d+)*\.?\s+[A-Z가-힣]/.test(title)
+      if (style.fontName === bodyFace || title.length < 3 || title.length > 120 ||
+          /^\d+$/.test(title) || /^(?:table|figure|fig\.?|표|그림)\s*\d/i.test(title) ||
+          /^(?:doi:|https?:|[•●○▪▫])/i.test(title) ||
+          /^(?:over|under)\s+\d+$/i.test(title) || /^[\d\s.,:%+\-–]+$/.test(title) ||
+          bbox.height > style.fontSize * (numbered ? 2.4 : 1.6) || title.includes("\n")) continue
+
+      const centerX = bbox.x + bbox.width / 2
+      const nearby = page.filter(other => other !== block && other.bbox &&
+        other.type !== "image" && other.type !== "separator" &&
+        other.bbox.x < centerX && centerX < other.bbox.x + other.bbox.width)
+      const above = nearby.filter(other => other.bbox!.y >= bbox.y + bbox.height)
+        .sort((a, b) => a.bbox!.y - b.bbox!.y)[0]
+      const below = nearby.filter(other => other.bbox!.y + other.bbox!.height <= bbox.y)
+        .sort((a, b) => b.bbox!.y - a.bbox!.y)[0]
+      const gapAbove = above ? above.bbox!.y - bbox.y - bbox.height : Infinity
+      const gapBelow = below ? bbox.y - below.bbox!.y - below.bbox!.height : Infinity
+      if (Math.max(gapAbove, gapBelow) < style.fontSize * (numbered ? 0.7 : 1.2)) continue
+
+      block.type = "heading"
+      block.level = 2
+    }
+  }
+}
+
+/**
  * 의사 테이블 감지: 실제 데이터 테이블이 아닌 텍스트가 우연히 테이블로 감지된 경우.
  */
 export function shouldDemoteTable(table: IRTable): boolean {
