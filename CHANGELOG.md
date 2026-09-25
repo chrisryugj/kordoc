@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.15.4] - 2026-09-25
+
+PDF 표의 밀집 행과 클립 경계를 복원하고, 영문 문서의 제목과 정렬된 수치표를 구조 블록으로 보존한다.
+
+### Fixed
+
+- 한국 PDF 표 정답 716쌍·2,692표에서 exact 2,512 → 2,526, matched 2,653 → 2,660, cellF1 0.959456 → 0.963449, 내용 NED 0.895808 → 0.907209. 여전히 exact가 아닌 표 166개가 남는다.
+- ODL 공개 PDF 200문서의 동일 평가기 실측 종합 0.724617 → 0.775354, 읽기 순서 NID 0.858758 → 0.859066, 표 TEDS 0.597685 → 0.614082(42건), 제목 MHS 0.417945 → 0.607309(107건). 기본 ODL 0.831209와 하이브리드 0.906572는 벤치 저장소의 기존 예측을 같은 평가기로 재채점한 값이며, 이 릴리스의 kordoc는 아직 미달한다.
+- 한국 PDF 표·글 게이트는 ODL 변경 전후 같은 모수에서 유지됐다. PDF 글 751쌍 recall 0.99491, 중첩표 176표 exact 89.77%다.
+
+### Known issues
+
+- ODL 벤치 잔여 손실은 읽기 순서·제목·표의 여러 영역 오류가 겹친다. 다음 설계와 검증 기준은 `.Codex/plans/odl-breakthrough-2026-09-25.md`에 기록했다.
+
 ## [4.15.3] - 2026-09-24
 
 PDF의 쪽 경계를 넘는 중첩표 한 사례를 복원하고, 클립 셀 묶음의 불필요한 전체 쌍 비교를 줄였다.
