@@ -228,6 +228,23 @@ describe("dropShadingClipGrids — 배경 칠한 칸에만 건 클립(cairo)", (
   it("선 표의 머리행 음영 클립 조각은 버린다", () => {
     assert.equal(dropShadingClipGrids([headerClip], [lineGrid], fills, rules).length, 0)
   })
+  it("상단 음영 두 행만 클립이어도 선 격자의 마지막 흰 행을 보존한다", () => {
+    const complete: TableGrid = {
+      rowYs: [323.5, 305.875, 285, 258], colXs: [57.5, 216.75, 375.75, 534],
+      bbox: { x1: 57.5, y1: 258, x2: 534, y2: 323.5 }, vertexRadius: 1,
+    }
+    const shaded: TableGrid = {
+      rowYs: [323, 305, 285], colXs: [58, 217, 376, 534],
+      bbox: { x1: 58, y1: 285, x2: 534, y2: 323 }, vertexRadius: 1,
+      cells: [
+        cell(0, 0, 58, 305, 534, 323),
+        cell(1, 0, 58, 285, 217, 305), cell(1, 1, 217, 285, 376, 305), cell(1, 2, 376, 285, 534, 305),
+      ],
+    }
+    const shades = shaded.cells!.map(c => c.bbox)
+    const dividers = [217, 376].map(x => ({ x1: x, y1: 258, x2: x, y2: 305, lineWidth: 1 }))
+    assert.equal(dropShadingClipGrids([shaded], [complete], shades, dividers).length, 0)
+  })
   it("칸 사이가 괘선 없이 흰 틈으로만 갈린 음영 머리행은 둔다 (한컴 구버전 성과지표 \"실적 | 목표치\")", () => {
     assert.equal(dropShadingClipGrids([headerClip], [lineGrid], fills, []).length, 1)
   })

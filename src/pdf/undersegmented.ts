@@ -13,13 +13,13 @@ import { cellTextToString } from "./cell-text.js"
 // ─── 과소분할 표 재구성 (ODL TableStructureNormalizer 포팅) ──
 //
 // 행 구분선이 생략된 표(헤더 아래만 선이 있는 한국 공문서 표)는 본문 전체가
-// 1~2행으로 합쳐진다. 셀 안에 텍스트 줄이 8개+ 뭉친 경우 줄의 centerY로
+// 소수의 긴 행으로 합쳐진다. 셀 안에 텍스트 줄이 8개+ 뭉친 경우 줄의 centerY로
 // row band를 재유도해 행을 복원한다. 품질이 개선될 때만 교체.
 //
 // Original work: Copyright 2025-2026 Hancom Inc. (Apache-2.0)
 // https://github.com/opendataloader-project/opendataloader-pdf
 
-const MAX_UNDERSEGMENTED_ROWS = 2
+const MAX_UNDERSEGMENTED_ROWS = 5
 const MIN_UNDERSEGMENTED_COLUMNS = 3
 const MIN_UNDERSEGMENTED_TEXT_LINES = 8
 const MIN_ROW_BAND_MISMATCH = 2
@@ -83,7 +83,7 @@ function groupItemsToVisualLines(items: TextItem[]): TextItem[][] {
 }
 
 /**
- * 과소분할 표 재구성. 조건(행≤2 + 열≥3 + dense 컬럼 2개+)을 만족하고
+ * 과소분할 표 재구성. 조건(행≤5 + 열≥3 + dense 컬럼 2개+)을 만족하고
  * row band 재유도가 품질을 개선할 때만 새 셀 행렬을 반환, 아니면 null.
  *
  * @param originalCells 기존 셀 행렬 (품질 비교용)
@@ -94,11 +94,26 @@ export function normalizeUndersegmentedTable(
   originalCells: { text: string }[][],
   colXs: number[],
   items: TextItem[],
+  rowYs?: number[],
 ): string[][] | null {
   const numRows = originalCells.length
   const numCols = colXs.length - 1
   if (numRows > MAX_UNDERSEGMENTED_ROWS || numCols < MIN_UNDERSEGMENTED_COLUMNS) return null
   if (items.length === 0) return null
+  if (numRows >= 3) {
+    if (rowYs?.length !== numRows + 1) return null
+    const rebuilt: string[][] = []
+    let expanded = 0
+    for (let r = 0; r < numRows; r++) {
+      const row = originalCells[r].map(cell => cell.text)
+      if (r === 0 || (numRows === 3 && r === 1)) { rebuilt.push(row); continue }
+      const rowItems = items.filter(item => itemCenterY(item) <= rowYs[r] + 1 && itemCenterY(item) >= rowYs[r + 1] - 1)
+      const body = normalizeUndersegmentedTable([originalCells[r]], colXs, rowItems)
+      if (body) { rebuilt.push(...body); expanded++ }
+      else rebuilt.push(row)
+    }
+    return expanded ? rebuilt : null
+  }
 
   // 1) 컬럼별 의미있는 줄 수 — dense 컬럼(8줄+) 2개 이상이어야 과소분할로 판정
   const itemsByCol: TextItem[][] = Array.from({ length: numCols }, () => [])

@@ -99,6 +99,17 @@ describe("joinSplitParts — 쪽 넘김 클립 표 조각을 열 경계 합집�
 })
 
 describe("mergeCrossPageTables — 클립 표 쪽 넘김 판정", () => {
+  it("두 쪽 모두 단위 행으로 시작하면 열이 같아도 별도 표로 둔다", () => {
+    const make = (name: string, page: number): IRBlock => {
+      const table = grid(3, 3, [[0, 0, "(단위: ha, %)", 3], [1, 0, "지역"], [1, 1, "2025"], [1, 2, "2026"], [2, 0, name], [2, 1, "1"], [2, 2, "2"]])
+      TABLE_COLXS.set(table, [60, 160, 260, 360])
+      return { type: "table", table, pageNumber: page, bbox: { page, x: 60, y: 60, width: 300, height: 700 } }
+    }
+    const blocks = [make("서울", 1), make("부산", 2)]
+    mergeCrossPageTables(blocks, PAGE_H)
+    assert.equal(blocks.length, 2)
+    assert.equal(blocks[1].table!.cells[2][0].text, "부산")
+  })
   it("두 조각 사이에 표와 가로로 겹치지 않는 가장자리 글(장 표시 세로글)만 있으면 잇는다", () => {
     const blocks: IRBlock[] = [
       clipBlock(grid(2, 2, [[0, 0, "구분"], [0, 1, "내용"], [1, 0, "1"], [1, 1, "가"]]), [60, 160, 460], 1, 70, 300),

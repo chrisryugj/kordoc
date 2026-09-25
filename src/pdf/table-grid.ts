@@ -269,10 +269,29 @@ export function buildTableGrids(
     // 4. Vertex 기반 좌표 클러스터링 (동적 tolerance)
     const coordMergeTol = Math.max(VERTEX_MERGE_FACTOR * groupRadius, MIN_COORD_MERGE_TOL)
 
-    // Y좌표: 수평선 y + Vertex y
+    // 좁은 표의 오른쪽 셀 안에서 같은 바깥 테두리까지 반복된 밑줄은 행 경계가
+    // 아니다. 전역적으로 1교차 선을 버리면 부분 괘선인 실제 표까지 손상된다.
+    const leftEdge = Math.min(...vLines.map(v => v.x1))
+    const rightEdge = Math.max(...vLines.map(v => v.x1))
+    const underlines = hLines.filter(h => {
+      const crossings = new Set<number>()
+      for (const v of vLines) {
+        if (v.x1 >= h.x1 - CONNECT_TOL && v.x1 <= h.x2 + CONNECT_TOL
+          && h.y1 >= v.y1 - CONNECT_TOL && h.y1 <= v.y2 + CONNECT_TOL) crossings.add(v.x1)
+      }
+      return crossings.size === 1 && Math.abs(h.x2 - rightEdge) <= CONNECT_TOL
+        && h.x1 > (leftEdge + rightEdge) / 2
+        && h.x2 - h.x1 < (rightEdge - leftEdge) * 0.6
+    })
+    const rowLines = underlines.length >= 3 && hLines.length - underlines.length <= 4
+      ? hLines.filter(h => !underlines.includes(h)) : hLines
+    const rowVertices = rowLines.length === hLines.length ? groupVertices : groupVertices.filter(v =>
+      rowLines.some(h => Math.abs(v.y - h.y1) <= CONNECT_TOL))
+
+    // Y좌표: 행 경계 수평선 y + 해당 Vertex y
     const rawYs = [
-      ...hLines.map(l => l.y1),
-      ...groupVertices.map(v => v.y),
+      ...rowLines.map(l => l.y1),
+      ...rowVertices.map(v => v.y),
     ]
     const rowYs = clusterCoordinates(rawYs, coordMergeTol).sort((a, b) => b - a)
 
@@ -336,7 +355,12 @@ export function dropShadingClipGrids(clipGrids: TableGrid[], lineGrids: TableGri
       c.bbox.x1 >= l.bbox.x1 - SHADE_CLIP_TOL && c.bbox.x2 <= l.bbox.x2 + SHADE_CLIP_TOL
       && c.bbox.y1 >= l.bbox.y1 - SHADE_CLIP_TOL && c.bbox.y2 <= l.bbox.y2 + SHADE_CLIP_TOL
       && c.colXs.every(x => l.colXs.some(lx => near(lx, x)))
-      && clipGrids.reduce((s, o) => s + inter(o.bbox, l.bbox), 0) <= area(l.bbox) * SHADE_CLIP_MAX_AREA)
+      && (clipGrids.reduce((s, o) => s + inter(o.bbox, l.bbox), 0) <= area(l.bbox) * SHADE_CLIP_MAX_AREA
+        // 상단 음영 두 행만 클립이고 마지막 흰 행은 선으로만 그린 표. 클립 면적이 절반을 넘어도
+        // 선 격자가 같은 열·행 경계에 마지막 행 하나를 더 가지면 온전한 선 격자를 쓴다.
+        || (l.rowYs.length === c.rowYs.length + 1 && c.rowYs.every((y, i) => near(y, l.rowYs[i]))
+          && l.colXs.length === c.colXs.length && c.colXs.every((x, i) => near(x, l.colXs[i]))
+          && !clipGrids.some(o => o !== c && inter(o.bbox, l.bbox) > 0))))
     return !host
   })
 }
@@ -626,4 +650,3 @@ function linesIntersect(a: TypedLine, b: TypedLine): boolean {
     h.y1 >= v.y1 - tol && h.y1 <= v.y2 + tol
   )
 }
-

@@ -19,6 +19,18 @@ const h = (y: number, x1: number, x2: number): LineSegment => ({ x1, y1: y, x2, 
 const v = (x: number, y1: number, y2: number): LineSegment => ({ x1: x, y1, x2: x, y2, lineWidth: 1 })
 
 describe("buildTableGrids — 적층 표 분리 (v4.0.6 회귀)", () => {
+  it("한 셀의 밑줄이 오른쪽 테두리에 닿아도 행으로 나누지 않는다", () => {
+    const horizontals = [
+      h(760, 58, 539), h(735, 58, 539), h(84, 58, 539),
+      ...[518, 493, 468, 442, 417, 392, 367, 342, 316].map(y => h(y, 314, 538)),
+    ]
+    const verticals = [v(58, 84, 760), v(300, 84, 760), v(539, 84, 760)]
+    const grids = buildTableGrids(horizontals, verticals)
+    assert.equal(grids.length, 1)
+    assert.deepEqual(grids[0].rowYs, [760, 735, 84])
+    assert.deepEqual(grids[0].colXs, [58, 300, 539])
+  })
+
   it("경계선을 공유한 머리 스트립+본표를 두 그리드로 분리하고 열 경계 오염을 막는다", () => {
     // pair05 응시원서 실측 축소: 스트립(1행, 내부 구분 x=200·300)이 본표(3행,
     // 내부 구분 x=150·350) 위에 경계선 y=600을 공유하고 얹힘. 수직선은 각자
