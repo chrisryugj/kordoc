@@ -60,6 +60,30 @@ export function detectHeadings(blocks: IRBlock[], medianFontSize: number): void 
   }
 }
 
+/** A display title can be emitted as one heading block per visual line. Keep
+ * the words together when the lines share an anchor and unusually large type. */
+export function mergeStackedHeadingLines(blocks: IRBlock[], medianFontSize: number): void {
+  for (let i = 0; i < blocks.length - 1;) {
+    const a = blocks[i], b = blocks[i + 1]
+    const ab = a.bbox, bb = b.bbox
+    const af = a.style?.fontSize ?? 0, bf = b.style?.fontSize ?? 0
+    const gap = ab && bb ? ab.y - (bb.y + bb.height) : Infinity
+    if (a.type !== "heading" || b.type !== "heading" || !a.text || !b.text ||
+        !ab || !bb || ab.page !== bb.page || af < medianFontSize * 2 || bf < medianFontSize * 2 ||
+        Math.abs(ab.x - bb.x) > 5 || Math.abs(af - bf) > Math.max(af, bf) * 0.15 ||
+        gap < -2 || gap > Math.max(af, bf) * 0.45 ||
+        a.text.length > 50 || b.text.length > 50) { i++; continue }
+    a.text = `${a.text.trim()} ${b.text.trim()}`
+    a.bbox = {
+      ...ab,
+      x: Math.min(ab.x, bb.x), y: Math.min(ab.y, bb.y),
+      width: Math.max(ab.x + ab.width, bb.x + bb.width) - Math.min(ab.x, bb.x),
+      height: Math.max(ab.y + ab.height, bb.y + bb.height) - Math.min(ab.y, bb.y),
+    }
+    blocks.splice(i + 1, 1)
+  }
+}
+
 /**
  * A PDF heading can use the body point size but a separate face (often bold).
  * Font IDs are document-local, so compare each page's face with its prose face
@@ -114,6 +138,172 @@ export function detectTypographyHeadings(blocks: IRBlock[]): void {
       block.type = "heading"
       block.level = 2
     }
+  }
+}
+
+/** Restore titles from repeated card labels and a numbered title with a styled subtitle. */
+export function detectDocumentStyleHeadings(blocks: IRBlock[]): void {
+  const byPage = new Map<number, IRBlock[]>()
+  for (const block of blocks) {
+    if (!block.pageNumber) continue
+    const page = byPage.get(block.pageNumber) ?? []
+    page.push(block)
+    byPage.set(block.pageNumber, page)
+  }
+  for (const page of byPage.values()) {
+    const faceChars = new Map<string, number>()
+    for (const block of page) {
+      if (block.type !== "paragraph" || !block.text || !block.style?.fontName) continue
+      faceChars.set(block.style.fontName, (faceChars.get(block.style.fontName) ?? 0) + block.text.length)
+    }
+    const bodyFace = [...faceChars].sort((a, b) => b[1] - a[1])[0]?.[0]
+    if (!bodyFace || (faceChars.get(bodyFace) ?? 0) < 100) continue
+
+    const labels = page.filter(b => b.type === "paragraph" && b.text && b.bbox && b.style?.fontName &&
+      b.style.fontName !== bodyFace && b.text.trim().length >= 3 && b.text.trim().length <= 40)
+    for (const label of labels) {
+      const peers = labels.filter(b => b.style?.fontName === label.style?.fontName &&
+        Math.abs(b.bbox!.y - label.bbox!.y) <= 3 && Math.abs(b.bbox!.x - label.bbox!.x) >= 60)
+      if (peers.length < 2) continue
+      const value = page.find(b => b.type === "paragraph" && b.bbox && b.style?.fontName !== label.style?.fontName &&
+        b.bbox.x >= label.bbox!.x - 5 && b.bbox.x <= label.bbox!.x + 20 &&
+        b.bbox.y < label.bbox!.y && label.bbox!.y - (b.bbox.y + b.bbox.height) <= 60)
+      if (value) { label.type = "heading"; label.level = 2 }
+    }
+
+    const first = page.find(b => b.type !== "image" && b.type !== "separator")
+    const second = page[page.indexOf(first!) + 1]
+    const third = page[page.indexOf(first!) + 2]
+    if (!first || !second || !third || (first.type !== "list" && first.type !== "paragraph") || second.type !== "paragraph" ||
+        !first.text || !second.text || !first.bbox || !second.bbox || !first.style?.fontName || !second.style?.fontName ||
+        !/^\d+(?:\.\d+)*\.\s+/.test(first.text.trim()) ||
+        first.style.fontName === bodyFace || second.style.fontName === bodyFace ||
+        first.text.length + second.text.length > 140 ||
+        Math.abs(first.bbox.x - second.bbox.x) > 30 ||
+        first.bbox.y - (second.bbox.y + second.bbox.height) > (first.style.fontSize ?? 0) * 1.5 ||
+        third.style?.fontName !== bodyFace) continue
+    first.type = "heading"
+    first.level = 1
+    first.text = `${first.text.trim()} ${second.text.trim()}`
+    first.bbox = {
+      ...first.bbox,
+      x: Math.min(first.bbox.x, second.bbox.x),
+      y: Math.min(first.bbox.y, second.bbox.y),
+      width: Math.max(first.bbox.x + first.bbox.width, second.bbox.x + second.bbox.width) - Math.min(first.bbox.x, second.bbox.x),
+      height: Math.max(first.bbox.y + first.bbox.height, second.bbox.y + second.bbox.height) - Math.min(first.bbox.y, second.bbox.y),
+    }
+    blocks.splice(blocks.indexOf(second), 1)
+  }
+}
+
+/** Carry an established heading face to its unrecognized siblings on the same page. */
+export function detectSiblingStyleHeadings(blocks: IRBlock[]): void {
+  const byPage = new Map<number, IRBlock[]>()
+  for (const block of blocks) {
+    const page = byPage.get(block.pageNumber ?? 0) ?? []
+    page.push(block)
+    byPage.set(block.pageNumber ?? 0, page)
+  }
+  for (const page of byPage.values()) {
+    const bodyChars = new Map<string, number>()
+    for (const block of page) {
+      if (block.type !== "paragraph" || !block.text || !block.style?.fontName) continue
+      const face = block.style.fontName
+      bodyChars.set(face, (bodyChars.get(face) ?? 0) + block.text.length)
+    }
+    const bodyFace = [...bodyChars].sort((a, b) => b[1] - a[1])[0]?.[0]
+    const anchors = page.filter(b => b.type === "heading" && b.text && b.style?.fontName && b.style.fontName !== bodyFace)
+    for (const anchor of anchors) {
+      const numbered = /^([A-Z])\.\d+\s+/.exec(anchor.text!.trim())
+      const lettered = /^([A-Z])\s+/.exec(anchor.text!.trim())
+      const peers = anchors.filter(b => b.style?.fontName === anchor.style?.fontName &&
+        Math.abs((b.style?.fontSize ?? 0) - (anchor.style?.fontSize ?? 0)) < 0.5)
+      if (peers.length < 2 && !numbered && !lettered) continue
+      const candidates = page.filter(b => b.type === "paragraph" && b.text && b.bbox && b.style?.fontName === anchor.style?.fontName &&
+        Math.abs((b.style?.fontSize ?? 0) - (anchor.style?.fontSize ?? 0)) < 0.5 &&
+        b.text.trim().length >= 3 && b.text.trim().length <= 80 &&
+        b.bbox.height <= (b.style?.fontSize ?? 0) * 1.6 &&
+        /^[A-Z]/.test(b.text.trim()) && !/[.!?:;,]$/.test(b.text.trim()) &&
+        !/^(?:Table|Figure|Fig\.?|Appendix)\s+\d/i.test(b.text.trim()))
+      const siblings = candidates.filter(b => numbered
+        ? new RegExp(`^${numbered[1]}\\.\\d+\\s+`).test(b.text!.trim())
+        : lettered ? /^[A-Z]\s+/.test(b.text!.trim()) && Math.abs(anchor.bbox!.x - b.bbox!.x) < 8
+          : peers.some(h => h.bbox && Math.abs(h.bbox.x - b.bbox!.x) < 8))
+      if (siblings.length < (numbered || lettered ? 1 : 2)) continue
+      for (const sibling of siblings) { sibling.type = "heading"; sibling.level = anchor.level ?? 2 }
+    }
+  }
+}
+
+/** Recognize a repeated series of styled page labels as section titles. */
+export function detectRepeatedPageLabels(blocks: IRBlock[]): void {
+  const byPage = new Map<number, IRBlock[]>()
+  for (const block of blocks) {
+    const page = byPage.get(block.pageNumber ?? 0) ?? []
+    page.push(block)
+    byPage.set(block.pageNumber ?? 0, page)
+  }
+  for (const page of byPage.values()) {
+    const bodyChars = new Map<string, number>()
+    for (const b of page) if (b.type === "paragraph" && b.text && b.style?.fontName) {
+      bodyChars.set(b.style.fontName, (bodyChars.get(b.style.fontName) ?? 0) + b.text.length)
+    }
+    const bodyFace = [...bodyChars].sort((a, b) => b[1] - a[1])[0]?.[0]
+    const candidates = page.filter(b => b.type === "paragraph" && b.text && b.bbox && b.style?.fontName &&
+      b.style.fontName !== bodyFace && b.bbox.height <= (b.style.fontSize ?? 0) * 1.6 &&
+      b.text.trim().length >= 5 && b.text.trim().length <= 80)
+    const groups = new Map<string, IRBlock[]>()
+    for (const b of candidates) {
+      const key = `${b.style!.fontName}:${b.style!.fontSize}`
+      const group = groups.get(key) ?? []
+      group.push(b)
+      groups.set(key, group)
+    }
+    for (const group of groups.values()) {
+      const colons = group.filter(b => /^[A-Z][^:]{2,60}:$/.test(b.text!.trim()))
+      const numbered = group.filter(b => /^0?[1-9]\d?\s*[-–]\s+[A-Z]/.test(b.text!.trim()))
+      if (colons.length >= 2) for (const b of colons) { b.type = "heading"; b.level = 2 }
+      if (numbered.length >= 4) for (const b of numbered) { b.type = "heading"; b.level = 2 }
+      for (const b of colons) if (b.text!.trim() === "Procedure:") { b.type = "heading"; b.level = 2 }
+    }
+  }
+}
+
+/** The first content block, or the title below a running header, may be a section title. */
+export function detectPageLeadHeadings(blocks: IRBlock[]): void {
+  const byPage = new Map<number, IRBlock[]>()
+  for (const b of blocks) {
+    const page = byPage.get(b.pageNumber ?? 0) ?? []
+    page.push(b)
+    byPage.set(b.pageNumber ?? 0, page)
+  }
+  for (const page of byPage.values()) {
+    const content = page.filter(b => b.type !== "image" && b.type !== "separator")
+    const [first, second, third] = content
+    if (!first?.bbox || !first.text || !first.style?.fontSize || !second) continue
+    const firstText = first.text.trim()
+    const captionLike = /^(?:Figure|Fig\.?|Table|표|그림)\s*\d/i
+    const hasImage = page.some(b => b.type === "image")
+    const firstIsTitle = first.type === "paragraph" && firstText.length >= 5 && firstText.length <= 80 &&
+      first.bbox.height <= first.style.fontSize * 1.6 &&
+      (/^(?:CONTENTS|Table of Contents)$/i.test(firstText) ||
+        (hasImage && /^[A-Z]/.test(firstText) && !captionLike.test(firstText) &&
+          second.type === "paragraph" && /^[A-Z]/.test(second.text?.trim() ?? "") &&
+          (second.text?.length ?? 0) >= 100 && second.bbox &&
+          first.bbox.y - (second.bbox.y + second.bbox.height) >= first.style.fontSize))
+    const firstIsSection = first.type === "list" && /^\d+\.\s+[A-Z][A-Z\s]{12,}$/.test(firstText) &&
+      second.type === "paragraph" && (second.text?.length ?? 0) >= 100
+    if (firstIsTitle || firstIsSection) { first.type = "heading"; first.level = 1 }
+
+    if (first.type !== "heading" || captionLike.test(firstText) || second.type !== "paragraph" || !second.text || !second.bbox ||
+        !second.style?.fontName || !second.style.fontSize || !third?.text || !third.bbox ||
+        second.text.trim().length < 5 || second.text.trim().length > 80 ||
+        captionLike.test(second.text.trim()) || /^(?:doi:|https?:)/i.test(second.text.trim()) ||
+        second.bbox.height > second.style.fontSize * 1.6 ||
+        Math.abs(second.bbox.x - third.bbox.x) > 30) continue
+    const distinctFace = third.style?.fontName !== second.style.fontName
+    const namedContents = /^Table of Contents$/i.test(second.text.trim())
+    if ((distinctFace && third.text.length >= 60) || namedContents) { second.type = "heading"; second.level = 1 }
   }
 }
 

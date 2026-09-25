@@ -175,6 +175,27 @@ export function detectColumnGutter(rects: ColRect[]): number | null {
 }
 
 /**
+ * A footer or full-width caption can hide an otherwise stable column gutter.
+ * Require the same gutter in two overlapping upper-page bands before removing
+ * any text from table detection. A one-off gutter in a form or table is not
+ * enough evidence to partition the page.
+ */
+export function detectPersistentColumnGutter(rects: ColRect[]): number | null {
+  if (rects.length < 24) return null
+  let minY = Infinity, maxY = -Infinity
+  for (const r of rects) {
+    if (r.y < minY) minY = r.y
+    if (r.y > maxY) maxY = r.y
+  }
+  const span = maxY - minY
+  if (!Number.isFinite(span) || span < 200) return null
+  const upper80 = detectColumnGutter(rects.filter(r => r.y >= minY + span * 0.2))
+  if (upper80 === null) return null
+  const upper60 = detectColumnGutter(rects.filter(r => r.y >= minY + span * 0.4))
+  return upper60 !== null && Math.abs(upper80 - upper60) <= 10 ? (upper80 + upper60) / 2 : null
+}
+
+/**
  * 거터 기준 밴드 읽기순 정렬 — 거터를 가로지르는 유닛(전폭 표·머리글·쪽번호)을
  * 위→아래 밴드 경계로 삼고, 각 밴드 안에서 좌단 전체(위→아래) → 우단 전체 순서.
  * 유닛 내부 순서는 건드리지 않는다.

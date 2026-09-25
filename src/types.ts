@@ -134,6 +134,8 @@ export interface IRTable {
   rows: number
   cols: number
   cells: IRCell[][]
+  /** PDF에서 행 경계가 확인된 1열 데이터 표. 목록성 1열 틀의 평탄화와 구분한다. */
+  renderAsTable?: boolean
   /** 첫 행을 헤더로 렌더링할지 여부 (현재: rows > 1이면 true — 의미적 감지가 아닌 레이아웃 힌트) */
   hasHeader: boolean
   /** opt-in 분류(`ParseOptions.classifyTables`) 결과 — #76 */

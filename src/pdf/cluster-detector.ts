@@ -128,9 +128,90 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number): Clus
     }
   }
 
+  if (results.length === 0) results.push(...detectAlignedTwoColumnTables(rows, pageNum))
+  if (results.length === 0) results.push(...detectSparseTwoColumnTables(rows, pageNum))
+
   // 4. 2단 조판 본문 오인 강등 — 걸러진 아이템은 usedItems에서 빠져
   //    XY-Cut(단 분리) 경로로 흘러가 올바른 읽기 순서로 복원된다.
   return results.filter(r => !isTwoColumnProse(r))
+}
+
+/** Recover compact, borderless tables from repeated cell starts, even when
+ * the inter-column whitespace is narrower than the generic gap threshold. */
+function detectAlignedTwoColumnTables(rows: RowGroup[], pageNum: number): ClusterTableResult[] {
+  const found: ClusterTableResult[] = []
+  let i = 0
+  while (i < rows.length - 2) {
+    const first = [...rows[i].items].sort((a, b) => a.x - b.x)
+    if (first.length !== 2 || first.some(c => !c.text.trim() || c.text.length > 48) ||
+        first[1].x - first[0].x < 45 || first[1].x - first[0].x > 260 ||
+        /[.!?]$/.test(first[0].text)) { i++; continue }
+    const body: RowGroup[] = []
+    let j = i
+    for (; j < rows.length; j++) {
+      const cells = [...rows[j].items].sort((a, b) => a.x - b.x)
+      const previous = body.at(-1)
+      if (cells.length !== 2 || cells.some(c => !c.text.trim() || c.text.length > 48) ||
+          Math.abs(cells[0].x - first[0].x) > 5 || Math.abs(cells[1].x - first[1].x) > 5 ||
+          (previous && previous.y - rows[j].y > Math.max(24, first[0].fontSize * 2.8))) break
+      body.push(rows[j])
+    }
+    if (body.length < 3) { i++; continue }
+    const top = rows[i - 1]
+    const title = top?.items.length === 1 && Math.abs(top.items[0].x - first[0].x) <= 5 &&
+      top.items[0].text.length <= 65 && top.y - first[0].y <= Math.max(24, first[0].fontSize * 2.8)
+      ? top : undefined
+    const tableRows = title ? [title, ...body] : body
+    const cells: IRCell[][] = tableRows.map((row, idx) => {
+      if (title && idx === 0) return [{ text: row.items[0].text, colSpan: 2, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1 }]
+      const [left, right] = [...row.items].sort((a, b) => a.x - b.x)
+      return [{ text: left.text, colSpan: 1, rowSpan: 1 }, { text: right.text, colSpan: 1, rowSpan: 1 }]
+    })
+    const usedItems = new Set(tableRows.flatMap(row => row.items))
+    const all = [...usedItems]
+    const minX = Math.min(...all.map(c => c.x)), minY = Math.min(...all.map(c => c.y))
+    const maxX = Math.max(...all.map(c => c.x + c.w))
+    const maxY = Math.max(...all.map(c => c.y + (c.h || c.fontSize)))
+    found.push({ table: { rows: cells.length, cols: 2, cells, hasHeader: Boolean(title) },
+      bbox: { page: pageNum, x: minX, y: minY, width: maxX - minX, height: maxY - minY }, usedItems })
+    i = j
+  }
+  return found
+}
+
+/** A ruled-looking form may omit all vertical strokes and leave its second
+ * data column blank. Its two-cell header and repeated short first-column
+ * values still establish a real grid. */
+function detectSparseTwoColumnTables(rows: RowGroup[], pageNum: number): ClusterTableResult[] {
+  const found: ClusterTableResult[] = []
+  for (let i = 0; i < rows.length - 3; i++) {
+    const header = [...rows[i].items].sort((a, b) => a.x - b.x)
+    if (header.length !== 2 || header.some(c => !/[A-Za-z가-힣]/.test(c.text) || c.text.length > 80) ||
+        header[1].x - (header[0].x + header[0].w) < 5 ||
+        /[.!?]$/.test(header[0].text)) continue
+    const data: RowGroup[] = []
+    for (let j = i + 1; j < rows.length; j++) {
+      const row = rows[j]
+      const cell = row.items[0]
+      if (row.items.length !== 1 || cell.text.length > 20 || !cell.text.trim() ||
+          Math.abs(cell.x - header[0].x) > 4 ||
+          rows[j - 1].y - row.y > Math.max(24, cell.fontSize * 2.8)) break
+      data.push(row)
+    }
+    if (data.length < 3) continue
+    const tableRows = [rows[i], ...data]
+    const cells: IRCell[][] = [header.map(c => ({ text: c.text, colSpan: 1, rowSpan: 1 }))]
+    for (const row of data) cells.push([{ text: row.items[0].text, colSpan: 1, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1 }])
+    const usedItems = new Set(tableRows.flatMap(row => row.items))
+    const all = [...usedItems]
+    const minX = Math.min(...all.map(c => c.x)), minY = Math.min(...all.map(c => c.y))
+    const maxX = Math.max(...all.map(c => c.x + c.w))
+    const maxY = Math.max(...all.map(c => c.y + (c.h || c.fontSize)))
+    found.push({ table: { rows: cells.length, cols: 2, cells, hasHeader: true },
+      bbox: { page: pageNum, x: minX, y: minY, width: maxX - minX, height: maxY - minY }, usedItems })
+    i += data.length
+  }
+  return found
 }
 
 // ─── 2단 조판 본문 판별 ─────────────────────────────────

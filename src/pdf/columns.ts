@@ -109,7 +109,16 @@ export function detectColumns(yLines: NormItem[][]): number[] | null {
     if (rawColumns[i] - columns[columns.length - 1] < MIN_DETECT_COL_WIDTH) continue
     columns.push(rawColumns[i])
   }
-  return columns.length >= 3 ? columns : null
+  if (columns.length < 3) return null
+
+  // Repeated x starts alone are insufficient: equations and justified prose
+  // can create three peaks without any actual multi-cell data row.
+  const shortMultiColumnRows = tableYLines.filter(line => {
+    if (mergeLineSimple(line).length > 80) return false
+    const used = new Set(line.map(item => findColumn(item.x, columns)))
+    return used.size >= 3
+  }).length
+  return shortMultiColumnRows >= 2 ? columns : null
 }
 
 function findColumn(x: number, columns: number[]): number {

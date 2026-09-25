@@ -387,7 +387,7 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
     // 이어짐을 가로막지 않게 (빈 조각의 뒤쪽 이음은 이미 앞선 차례에 시도했다)
     if (EMPTY_PARTS.has(curr.table)) { blocks.splice(j, 1); i++; continue }
     if (joined === null) continue
-    if (prev.table.cols !== curr.table.cols || EMPTY_PARTS.has(prev.table)) continue
+    if (prev.table.cols !== curr.table.cols || prev.table.renderAsTable !== curr.table.renderAsTable || EMPTY_PARTS.has(prev.table)) continue
 
     // 좌우 경계 근접 검증 (폭 대비 비율)
     const width = Math.max(prev.bbox.width, curr.bbox.width, 1)
@@ -419,6 +419,7 @@ export function mergeCrossPageTables(blocks: IRBlock[], pageHeights?: Map<number
       cells: [...prev.table.cells, ...currCells],
       hasHeader: prev.table.hasHeader,
       caption: prev.table.caption,
+      ...(prev.table.renderAsTable ? { renderAsTable: true } : {}),
     }
     if (px ?? cx) TABLE_COLXS.set(merged, (px ?? cx)!)
     if (CLIP_TABLES.has(prev.table) || CLIP_TABLES.has(curr.table)) CLIP_TABLES.add(merged)

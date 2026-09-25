@@ -26,7 +26,7 @@ import { mergeCrossPageTables } from "./table-parts.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
-import { computeMedianFontSizeFromFreq, detectHeadings, detectTypographyHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
+import { computeMedianFontSizeFromFreq, detectHeadings, mergeStackedHeadingLines, detectTypographyHeadings, detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables } from "./text-clean.js"
 import { applyLinkAnnotations } from "./links.js"
 import { applyFormulaOcr } from "./formula-ocr.js"
@@ -382,7 +382,12 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     if (medianFontSize > 0) {
       detectHeadings(blocks, medianFontSize)
     }
+    detectDocumentStyleHeadings(blocks)
     detectTypographyHeadings(blocks)
+    detectSiblingStyleHeadings(blocks)
+    detectRepeatedPageLabels(blocks)
+    detectPageLeadHeadings(blocks)
+    mergeStackedHeadingLines(blocks, medianFontSize)
 
     // □/■ 마커 기반 서브헤딩 감지 (ODL 패턴)
     detectMarkerHeadings(blocks)

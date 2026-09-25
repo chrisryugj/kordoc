@@ -706,6 +706,7 @@ function tableToMarkdown(table: IRTable): string {
   // 통째로 사라졌다 (issue1949 3×1 틀 안 중첩표 13개 → 표 0개). 병합만 있는 표는 종전대로: 수식이 있으면
   // GFM (많은 Markdown 렌더러가 raw HTML table 내부의 $...$를 수식으로 다시 처리하지 않는다)
   if (hasStructuredCellContent(table)) return tableToHtml(table)
+  if (table.renderAsTable) return tableToHtml(table)
   if (hasMergedCells(table) && !tableContainsInlineMath(table)) {
     return tableToHtml(table)
   }

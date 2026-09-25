@@ -6,7 +6,7 @@
  * 페이지 걸친 표 병합까지 담당한다.
  */
 
-import type { IRBlock, IRTable, BoundingBox, InlineStyle } from "../types.js"
+import type { IRBlock, IRTable, IRCell, BoundingBox, InlineStyle } from "../types.js"
 import { safeMin, safeMax } from "../utils.js"
 import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells.js"
 import { dropShadingClipGrids } from "./table-grid.js"
@@ -15,7 +15,7 @@ import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdg
 import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem } from "./cluster-detector.js"
 import { type NormItem, collapseEvenSpacing, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
 import { xyCutOrder } from "./xy-cut.js"
-import { detectColumnGutter, orderByGutter, type ColRect } from "./two-column.js"
+import { detectColumnGutter, detectPersistentColumnGutter, orderByGutter, type ColRect } from "./two-column.js"
 import { detectColumns, extractWithColumns } from "./columns.js"
 import { shouldDemoteTable, demoteTableToText, detectListBlocks, detectSpecialKoreanTables } from "./block-detect.js"
 import { markUnderlineItems, wrapUnderlineRuns } from "./underline.js"
@@ -103,10 +103,24 @@ export function extractPageBlocksWithLines(
   const tableClipGrids = dropShadingClipGrids(clipGrids, lineGrids, extracted.fillRects, verticals)
   const grids = [...tableClipGrids, ...dropGridsInside(lineGrids, tableClipGrids, clipResult.containers)]
 
+  // A rotated illustration can project a one-cell square far beyond the page.
+  // Its lines are not evidence that all page text belongs to one table.
+  if (grids.length === 1 && grids[0].rowYs.length === 2 && grids[0].colXs.length === 2 &&
+      grids[0].bbox.x2 - grids[0].bbox.x1 > pageWidth * 1.2 &&
+      grids[0].bbox.y2 - grids[0].bbox.y1 > pageHeight * 1.2) {
+    return extractPageBlocksFallback(items, pageNum, true, detectTables, lex)
+  }
+
+  // Repeated dense rows with explicit captions form independent table bands.
+  // A broad decorative line grid can otherwise swallow the whole page.
+  if (detectTables && stackedTableBands(items)) {
+    return extractPageBlocksFallback(items, pageNum, true, detectTables, lex)
+  }
+
   if (grids.length > 0) {
     // 셀 안 그림(로고·서명 등) — 8pt 미만 조각은 장식이라 제외
     const imageRegions = extractImageRegions(opList.fnArray, opList.argsArray).filter(r => r.x2 - r.x1 >= 8 && r.y2 - r.y1 >= 8)
-    return extractBlocksWithGrids(items, pageNum, grids, horizontals, verticals, imageRegions, lex)
+    return extractBlocksWithGrids(items, pageNum, pageWidth, pageHeight, grids, horizontals, verticals, imageRegions, lex)
   }
 
   // Fallback: 기존 휴리스틱 (선이 없는 PDF)
@@ -308,6 +322,8 @@ function buildFrameCellBlocks(cellItems: TextItem[], nested: IRBlock[], pageNum:
 function extractBlocksWithGrids(
   items: NormItem[],
   pageNum: number,
+  pageWidth: number,
+  pageHeight: number,
   grids: TableGrid[],
   horizontals: LineSegment[],
   verticals: LineSegment[],
@@ -336,16 +352,15 @@ function extractBlocksWithGrids(
     // (지정서의 "발신명의 | 직인" 1×2 표 실측)
     const numGridRows = grid.rowYs.length - 1
     const numGridCols = grid.colXs.length - 1
+    const gridW = grid.bbox.x2 - grid.bbox.x1
     if (!grid.cells && numGridRows === 1 && numGridCols >= 2) continue
-    // 1열 다행 그리드 (세로선 없는 표) → 스킵하여 클러스터 감지로 열 추론 위임
-    // Why: 행 구분선만 있는 표는 builder.ts 의 1-col branch 에서 세로 일렬로 플래튼되어
-    //      테이블 구조가 무너짐. 클러스터 기반 X좌표 정렬로 열을 복원할 기회 제공.
-    if (!grid.cells && numGridCols === 1 && numGridRows >= 2) continue
-
+    // Full-width one-column frames are usually page layout. The compact
+    // repeated-row candidate is checked again after text is mapped to cells.
+    if (!grid.cells && numGridCols === 1 && numGridRows >= 2 &&
+        (numGridRows < 5 || gridW > pageWidth * 0.7)) continue
     // 그리드 영역 내 텍스트 아이템 수집
     const tableItems: NormItem[] = []
     const pad = 3
-    const gridW = grid.bbox.x2 - grid.bbox.x1
     for (const item of items) {
       if (usedItems.has(item)) continue
       // Y 범위 체크
@@ -456,11 +471,31 @@ function extractBlocksWithGrids(
       for (const item of unitLine) usedItems.add(item)
     }
 
+    // Alternating empty bands are visual row spacing, not empty data records.
+    // Only a repeated, populated sequence is a semantic one-column table.
+    let semanticOneColumn = false
+    if (!grid.cells && numCols === 1 && numGridRows >= 2) {
+      const populatedRows = finalGrid.filter(row => row[0]?.text.trim())
+      if (populatedRows.length >= 4) {
+        const fontSizes = tableItems.map(item => item.fontSize).filter(size => size > 0).sort((a, b) => a - b)
+        const medianFont = fontSizes[Math.floor(fontSizes.length / 2)] ?? 0
+        const meanRowHeight = (grid.bbox.y2 - grid.bbox.y1) / populatedRows.length
+        semanticOneColumn = meanRowHeight <= Math.max(30, medianFont * 2.5)
+      }
+      if (!semanticOneColumn) {
+        for (const it of tableItems) usedItems.delete(it)
+        continue
+      }
+      finalGrid = populatedRows
+      finalRows = finalGrid.length
+    }
+
     const irTable: IRTable = {
       rows: finalRows,
       cols: numCols,
       cells: finalGrid,
       hasHeader: finalRows > 1,
+      ...(semanticOneColumn ? { renderAsTable: true } : {}),
     }
     // 중첩표도 같은 쪽 넘김 규칙을 쓴다 — pendingNested 분기 전에 기하 출처를 기록한다.
     if (grid.cells) CLIP_TABLES.add(irTable)
@@ -631,6 +666,29 @@ function extractBlocksWithGrids(
     for (const u of orderByGutter(units, unitRect, gx)) for (const b of u) ordered.push(b)
     return mergeAdjacentTableBlocks(ordered)
   }
+  // A landscape sheet can contain two independent portrait pages. In that
+  // layout, a slightly higher table on the right must not precede the left
+  // page's tables and prose. Require all units to stay within one half.
+  if (pageWidth > pageHeight * 1.2 && units.length > 1) {
+    const mid = pageWidth / 2
+    const sideOf = (unit: IRBlock[]) => {
+      let left = false, right = false
+      for (const block of unit) {
+        if (!block.bbox) return 0
+        if (block.bbox.x + block.bbox.width <= mid) left = true
+        else if (block.bbox.x >= mid) right = true
+        else return 0
+      }
+      return left && !right ? -1 : right && !left ? 1 : 0
+    }
+    const left = units.filter(u => sideOf(u) === -1)
+    const right = units.filter(u => sideOf(u) === 1)
+    if (left.length >= 2 && right.length >= 2 && left.length + right.length === units.length &&
+        left.some(u => u.some(b => b.type === "table")) && right.some(u => u.some(b => b.type === "table"))) {
+      const flatten = (side: IRBlock[][]) => side.sort((a, b) => unitTopY(b) - unitTopY(a)).flat()
+      return [...mergeAdjacentTableBlocks(flatten(left)), ...mergeAdjacentTableBlocks(flatten(right))]
+    }
+  }
   units.sort((a, b) => unitTopY(b) - unitTopY(a)) // PDF는 y가 위가 큼 → 내림차순
   const ordered: IRBlock[] = []
   for (const u of units) for (const b of u) ordered.push(b)
@@ -646,13 +704,15 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
     const prev = result[result.length - 1]
     const curr = blocks[i]
     if (prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
-        prev.table.cols === curr.table.cols && !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table)) {
+        prev.table.cols === curr.table.cols && prev.table.renderAsTable === curr.table.renderAsTable &&
+        !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table)) {
       // 합치기: prev의 cells에 curr의 cells 추가
       const merged: IRTable = {
         rows: prev.table.rows + curr.table.rows,
         cols: prev.table.cols,
         cells: [...prev.table.cells, ...curr.table.cells],
         hasHeader: prev.table.hasHeader,
+        ...(prev.table.renderAsTable ? { renderAsTable: true } : {}),
       }
       result[result.length - 1] = { ...prev, table: merged }
     } else {
@@ -715,6 +775,165 @@ function splitTwoColumnProse(items: NormItem[], cutX: number): NormItem[][] {
   return groups
 }
 
+/** Keep a compact multi-column table above two-column prose in its own band. */
+function topTableBand(items: NormItem[]): { top: NormItem[]; rest: NormItem[] } | null {
+  const lines = groupByY(items)
+  if (lines.length < 12) return null
+  for (let n = 4; n < Math.min(lines.length - 5, 16); n++) {
+    const upper = lines.slice(0, n)
+    if (upper.filter(line => line.length >= 3).length < 3) continue
+    const gap = upper[n - 1][0].y - lines[n][0].y
+    const sizes = upper.flat().map(i => i.fontSize).filter(size => size > 0).sort((a, b) => a - b)
+    if (gap < Math.max(18, (sizes[Math.floor(sizes.length / 2)] ?? 10) * 1.8)) continue
+    const top = upper.flat()
+    const candidate = detectClusterTables(top.map(i => ({
+      text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
+      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore,
+    })), 1)
+    if (!candidate.some(t => t.table.cols >= 3 && t.table.rows >= 3 && t.usedItems.size >= top.length * 0.75)) continue
+    return { top, rest: lines.slice(n).flat() }
+  }
+  return null
+}
+
+/** Rebuild a three-tier header whose grouped labels sit above repeated data columns. */
+function tieredHeaderTable(items: NormItem[], pageNum: number): IRBlock | null {
+  const lines = groupByY(items).map(line => [...line].sort((a, b) => a.x - b.x))
+  if (lines.length < 5) return null
+  const cols = lines[3].length
+  if (cols < 5 || (cols - 1) % 2 !== 0 || lines[0].length !== 1 ||
+      lines[1].length !== 3 || lines[2].length !== cols - 1 ||
+      !lines.slice(3).every(line => line.length === cols) ||
+      Math.abs(lines[1][0].x - lines[3][0].x) > 30) return null
+  const splitX = (lines[1][1].x + lines[1][2].x) / 2
+  const half = (cols - 1) / 2
+  if (lines[2].slice(0, half).some(i => i.x >= splitX) ||
+      lines[2].slice(half).some(i => i.x < splitX)) return null
+  const cell = (text: string, colSpan = 1, rowSpan = 1, isHeader = false): IRCell =>
+    ({ text, colSpan, rowSpan, ...(isHeader ? { isHeader: true } : {}) })
+  const empty = () => cell("")
+  const grid: IRCell[][] = [
+    [cell(lines[1][0].text, 1, 3, true), cell(lines[0][0].text, cols - 1, 1, true), ...Array.from({ length: cols - 2 }, empty)],
+    [empty(), cell(lines[1][1].text, half, 1, true), ...Array.from({ length: half - 1 }, empty),
+      cell(lines[1][2].text, half, 1, true), ...Array.from({ length: half - 1 }, empty)],
+    [empty(), ...lines[2].map(i => cell(i.text, 1, 1, true))],
+    ...lines.slice(3).map(line => line.map(i => cell(i.text))),
+  ]
+  return {
+    type: "table", pageNumber: pageNum, bbox: computeBBox(items, pageNum),
+    table: { rows: grid.length, cols, cells: grid, hasHeader: true },
+  }
+}
+
+/** Separate stacked, captioned tables before a two-column body is examined. */
+function stackedTableBands(items: NormItem[]): { tables: NormItem[][]; between: NormItem[][]; caption: NormItem[]; body: NormItem[] } | null {
+  const lines = groupByY(items)
+  if (lines.length < 16) return null
+  const dense = lines.map(line => line.length >= 6 &&
+    Math.max(...line.map(i => i.x + i.w)) - Math.min(...line.map(i => i.x)) >= 300)
+  const runs: Array<{ start: number; end: number }> = []
+  for (let i = 0; i < dense.length;) {
+    if (!dense[i]) { i++; continue }
+    const start = i
+    while (i < dense.length && dense[i]) i++
+    if (i - start >= 2) runs.push({ start, end: i })
+  }
+  if (runs.length < 2 || runs[0].start > 2) return null
+  const caption = (start: number, end: number) =>
+    lines.slice(start, end).some(line => /^Table\s+\d+\s*[:.]/i.test(mergeLineSimple(line).trim()))
+  while (runs.length > 0 && !caption(runs[runs.length - 1].end, lines.length)) runs.pop()
+  if (runs.length < 2) return null
+  if (runs.some((run, i) => !caption(run.end, runs[i + 1]?.start ?? lines.length))) return null
+  const tables = runs.map(run => lines.slice(run.start, run.end).flat())
+  const between = runs.slice(0, -1).map((run, i) => lines.slice(run.end, runs[i + 1].start).flat())
+  const tail = lines.slice(runs[runs.length - 1].end)
+  let bodyStart = tail.length
+  for (let i = 1; i < Math.min(tail.length, 10); i++) {
+    if (tail[i - 1][0].y - tail[i][0].y >= 24) { bodyStart = i; break }
+  }
+  return { tables, between, caption: tail.slice(0, bodyStart).flat(), body: tail.slice(bodyStart).flat() }
+}
+
+/** Three sparse title cards are independent reading regions, not table columns. */
+function threeColumnCards(items: NormItem[]): NormItem[][] | null {
+  const lines = groupByY(items)
+  if (lines.length < 5) return null
+  for (let n = 1; n < lines.length - 2; n++) {
+    const labels = [...lines[n]].sort((a, b) => a.x - b.x)
+    if (labels.length !== 3 || labels.some(i => i.text.trim().length < 3 || i.text.length > 40)) continue
+    if (labels[1].x - (labels[0].x + labels[0].w) < 70 ||
+        labels[2].x - (labels[1].x + labels[1].w) < 70) continue
+    if (!labels.every(i => i.fontName === labels[0].fontName && Math.abs(i.fontSize - labels[0].fontSize) < 1)) continue
+    // A title separated from the cards, followed by three aligned value regions.
+    if (lines[n - 1][0].y - labels[0].y < labels[0].fontSize * 2) continue
+    const below = lines.slice(n + 1)
+    const firstContent = below[0]
+    if (labels[0].y - firstContent[0].y < labels[0].fontSize * 2) continue
+    const boundaries = [
+      (labels[0].x + labels[0].w + labels[1].x) / 2,
+      (labels[1].x + labels[1].w + labels[2].x) / 2,
+    ]
+    if (!boundaries.every((x, i) => x > labels[i].x + labels[i].w && x < labels[i + 1].x)) continue
+    let end = below.length
+    for (let j = 1; j < below.length; j++) {
+      if (below[j - 1][0].y - below[j][0].y > labels[0].fontSize * 5) { end = j; break }
+    }
+    const region = [labels, ...below.slice(0, end)].flat()
+    const cards = [0, 1, 2].map(c => region.filter(i => c === 0 ? i.x < boundaries[0] : c === 1 ? i.x >= boundaries[0] && i.x < boundaries[1] : i.x >= boundaries[1]))
+    if (cards.some(c => c.length < 2 || !c.some(i => i.y < labels[0].y))) continue
+    const upper = lines.slice(0, n).flat()
+    const lower = below.slice(end).flat()
+    return [upper, ...cards, lower].filter(g => g.length > 0)
+  }
+  return null
+}
+
+/** A wide infographic may place three card titles at different heights above aligned body columns. */
+function threeColumnInfographic(items: NormItem[]): NormItem[][] | null {
+  const lines = groupByY(items)
+  if (lines.length < 12) return null
+  for (let n = 4; n < lines.length - 6; n++) {
+    if (lines[n - 1][0].y - lines[n][0].y < 35) continue
+    const lower = lines.slice(n)
+    const counts = new Map<number, number>()
+    for (const item of lower.flat()) {
+      if (item.text.trim().length < 12) continue
+      const x = Math.round(item.x / 5) * 5
+      counts.set(x, (counts.get(x) ?? 0) + 1)
+    }
+    const anchors = [...counts].filter(([, count]) => count >= 2).map(([x]) => x).sort((a, b) => a - b)
+    if (anchors.length !== 3 || anchors[1] - anchors[0] < 120 || anchors[2] - anchors[1] < 120) continue
+    const cuts = [(anchors[0] + anchors[1]) / 2, (anchors[1] + anchors[2]) / 2]
+    let footerStart = lower.length
+    for (let j = 1; j < lower.length; j++) {
+      if (lower[j - 1][0].y - lower[j][0].y >= 70) { footerStart = j; break }
+    }
+    const region = lower.slice(0, footerStart).flat()
+    const cards = [
+      region.filter(i => i.x < cuts[0]),
+      region.filter(i => i.x >= cuts[0] && i.x < cuts[1]),
+      region.filter(i => i.x >= cuts[1]),
+    ]
+    if (cards.some(card => card.length < 4 || !card.some(i => i.text.length >= 50))) continue
+    return [lines.slice(0, n).flat(), ...cards, lower.slice(footerStart).flat()].filter(group => group.length > 0)
+  }
+  return null
+}
+
+/** A numbered title and its differently styled subtitle precede body prose. */
+function hasNumberedStyledTitle(lines: NormItem[][]): boolean {
+  if (lines.length < 4) return false
+  const [title, subtitle, body] = lines
+  const face = (line: NormItem[]) => line.every(i => i.fontName === line[0].fontName) ? line[0].fontName : null
+  const a = face(title), b = face(subtitle), c = face(body)
+  if (!a || !b || !c || a === b || b === c || a === c ||
+      !/^\d+(?:\.\d+)*\.\s+/.test(mergeLineSimple(title)) ||
+      mergeLineSimple(title).length + mergeLineSimple(subtitle).length > 140 ||
+      Math.abs(title[0].x - subtitle[0].x) > 30 ||
+      title[0].y - subtitle[0].y > 30 || subtitle[0].y - body[0].y > 30) return false
+  return true
+}
+
 /**
  * 어휘 증거용 줄 — 콘텐츠 스트림 순서(seq)대로 이어 가다 기준선이 바뀌거나 왼쪽으로 되돌아가거나 탭만큼 벌어지면 끊는다.
  * 쪽 전체를 y 로만 묶으면 같은 높이의 옆 칸 줄이 한 줄로 붙어("…공상공무 원 및 특별공로순직자의" — 왼 칸 끝 + 오른 칸 머리)
@@ -751,6 +970,10 @@ function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum: numbe
     return { text: l.text, left: b.x, right: b.x + b.width, y: l.items.reduce((s, i) => s + i.y, 0) / l.items.length, fontSize: dominantStyle(l.items)?.fontSize ?? 0 }
   })
   const joins = bodyLineJoins(geo, lex)
+  if (hasNumberedStyledTitle(lines.map(line => line.items))) {
+    joins[0] = "\n"
+    joins[1] = "\n"
+  }
   for (let i = 0; i < lines.length;) {
     let text = lines[i].text
     const items = [...lines[i].items]
@@ -818,6 +1041,26 @@ export function columnTextToBlocks(text: string, pageNum: number, bbox: Bounding
 export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fullPage = false, detectTables = true, lex?: WrapLexicon): IRBlock[] {
   if (items.length === 0) return []
 
+  if (fullPage && detectTables) {
+    const bands = stackedTableBands(items)
+    if (bands) {
+      const blocks: IRBlock[] = []
+      for (let i = 0; i < bands.tables.length; i++) {
+        blocks.push(...extractPageBlocksFallback(bands.tables[i], pageNum, false, true, lex))
+        if (i < bands.between.length) blocks.push(...extractPageBlocksFallback(bands.between[i], pageNum, false, false, lex))
+      }
+      blocks.push(...extractPageBlocksFallback(bands.caption, pageNum, false, false, lex))
+      blocks.push(...extractPageBlocksFallback(bands.body, pageNum, true, true, lex))
+      return blocks
+    }
+  }
+  if (fullPage) {
+    const infographic = threeColumnInfographic(items)
+    if (infographic) return infographic.flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
+    const cards = threeColumnCards(items)
+    if (cards) return cards.flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
+  }
+
   const blocks: IRBlock[] = []
 
   // 1단계: 클러스터 기반 테이블 감지 우선 (헤더 감지 시 정확도 높음)
@@ -825,6 +1068,24 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
     fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore,
   }))
+  // A page with two justified prose columns must be partitioned before
+  // cluster-table detection. Otherwise paired footnotes and body lines can
+  // become a single false table, and their source coordinates are lost.
+  const earlyProseCut = fullPage && detectTables
+    ? findTwoColumnProseCutX(clusterItems) ?? detectPersistentColumnGutter(items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize })))
+    : null
+  if (earlyProseCut !== null) {
+    const band = topTableBand(items)
+    if (band) {
+      const tiered = tieredHeaderTable(band.top, pageNum)
+      return [
+        ...(tiered ? [tiered] : extractPageBlocksFallback(band.top, pageNum, false, detectTables, lex)),
+        ...extractPageBlocksFallback(band.rest, pageNum, true, detectTables, lex),
+      ]
+    }
+    return splitTwoColumnProse(items, earlyProseCut)
+      .flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
+  }
   const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum) : []
 
   if (clusterResults.length > 0) {

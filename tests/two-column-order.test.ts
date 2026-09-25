@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { detectColumnGutter, orderByGutter, type ColRect } from "../src/pdf/two-column.js"
+import { detectColumnGutter, detectPersistentColumnGutter, orderByGutter, type ColRect } from "../src/pdf/two-column.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 
@@ -30,6 +30,18 @@ function examRects(): ColRect[] {
 }
 
 describe("detectColumnGutter", () => {
+  it("하단 전폭 요소가 가린 2단 경계를 상단 두 영역의 일치로 복구", () => {
+    const rects: ColRect[] = []
+    for (let i = 0; i < 24; i++) {
+      rects.push(rect(70, 900 - i * 18, 250, 11))
+      rects.push(rect(380, 895 - i * 18, 250, 11))
+    }
+    for (let i = 0; i < 10; i++) rects.push(rect(300, 100 + i * 15, 100, 10))
+    assert.equal(detectColumnGutter(rects), null)
+    const gx = detectPersistentColumnGutter(rects)
+    assert.ok(gx !== null && gx >= 320 && gx <= 380)
+  })
+
   it("2단 시험지 기하 → 거터 x 검출 (좌단 끝~우단 시작 사이)", () => {
     const gx = detectColumnGutter(examRects())
     assert.ok(gx !== null, "거터를 검출해야 함")
