@@ -49,4 +49,16 @@ describe("PDF typography headings", () => {
     assert.equal(blocks[0].type, "paragraph")
   })
 
+  it("keeps DOI, bullet, and chart axis labels as content", () => {
+    const blocks = [
+      paragraph("Ordinary prose from the document. ".repeat(12), "regular", 500, 110),
+      paragraph("DOI: http://dx.doi.org/10.5772/example", "display", 350),
+      paragraph("• LH: The entropy is low at both ends.", "display", 300),
+      paragraph("OVER 50", "display", 250),
+      paragraph("41-50", "display", 200),
+    ]
+    detectTypographyHeadings(blocks)
+    assert.deepEqual(blocks.slice(1).map(b => b.type), Array(4).fill("paragraph"))
+  })
+
 })

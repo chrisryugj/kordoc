@@ -95,6 +95,8 @@ export function detectTypographyHeadings(blocks: IRBlock[]): void {
       const numbered = /^\d+(?:\.\d+)*\.?\s+[A-Z가-힣]/.test(title)
       if (style.fontName === bodyFace || title.length < 3 || title.length > 120 ||
           /^\d+$/.test(title) || /^(?:table|figure|fig\.?|표|그림)\s*\d/i.test(title) ||
+          /^(?:doi:|https?:|[•●○▪▫])/i.test(title) ||
+          /^(?:over|under)\s+\d+$/i.test(title) || /^[\d\s.,:%+\-–]+$/.test(title) ||
           bbox.height > style.fontSize * (numbered ? 2.4 : 1.6) || title.includes("\n")) continue
 
       const centerX = bbox.x + bbox.width / 2
