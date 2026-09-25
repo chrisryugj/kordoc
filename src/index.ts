@@ -382,6 +382,7 @@ export type { BuiltinTemplate } from "./form/templates.js"
 export { placeSealHwpx } from "./form/seal.js"
 export type { SealOp, SealPlacement, PlaceSealResult } from "./form/seal.js"
 export { markdownToHwpx } from "./hwpx/generator.js"
+export { semanticHtmlToMarkdown, withSemanticHtmlStyles, htmlToHwpx } from "./hwpx/semantic-html.js"
 export type { HwpxTheme, MarkdownToHwpxOptions } from "./hwpx/generator.js"
 export type { PageOptions } from "./hwpx/gen-page.js"
 export type {

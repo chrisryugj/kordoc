@@ -198,7 +198,13 @@ export function seoulLegalScheme(bodyFont = "굴림체", bodyPt = 12, lineSp = 1
 
 /** 옵션(levels·fonts) 오버레이 — 지정한 단계·역할만 바꾼다 */
 export function applySchemeOverrides(s: Scheme, g: ResolvedGongmun): Scheme {
-  const out: Scheme = { ...s, levels: s.levels.map((l) => ({ ...l })), body: { ...s.body }, ref: { ...s.ref }, table: { ...s.table } }
+  const out: Scheme = { ...s, levels: s.levels.map((l) => ({ ...l })), body: { ...s.body }, ref: { ...s.ref }, chapter: { ...s.chapter }, table: { ...s.table }, frame: { ...s.frame } }
+  out.frame.titlePt = g.reportTitlePt ?? s.frame.titlePt
+  out.frame.summaryPt = g.reportSummaryPt ?? s.frame.summaryPt
+  if (g.reportSummaryFill) out.frame.summaryFill = g.reportSummaryFill
+  if (g.tableHeaderFill) out.table.headerFill = g.tableHeaderFill
+  if (g.sizes.chapter) out.chapter.pt = g.sizes.chapter
+  if (g.sizes.table) out.table.pt = g.sizes.table
   if (g.fonts.heading) { out.levels[0].font = g.fonts.heading; out.chapter = { ...out.chapter, font: g.fonts.heading } }
   if (g.fonts.body) { out.body.font = g.fonts.body; if (s.kind === "legal") for (const l of out.levels) l.font = g.fonts.body; else out.levels[1].font = g.fonts.body }
   if (g.fonts.ref) out.ref.font = g.fonts.ref

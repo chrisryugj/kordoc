@@ -2,7 +2,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve } from "path"
-import { detectFormat, markdownToHwpx, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "../index.js"
+import { detectFormat, markdownToHwpx, semanticHtmlToMarkdown, withSemanticHtmlStyles, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "../index.js"
 import { parseFormatProfileJson } from "../hwpx/profile-io.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, parseLevelsSpec, levelFontRecord } from "../hwpx/gongmun-surface.js"
 import type { FormatProfile } from "../hwpx/gen-profile.js"
@@ -13,7 +13,7 @@ export function registerGenerateCommands(program: Command): void {
   program
     .command("generate <markdown>")
     .alias("gen")
-    .description("마크다운 → 공문서 HWPX 생성 — kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 (markdown에 '-' 지정 시 stdin)")
+    .description("마크다운·의미 구조 HTML → 공문서 HWPX 생성 — kordoc generate 보고서.html -o 보고서.hwpx --preset 보고서 ('-'는 stdin)")
     .option("-o, --output <path>", "출력 HWPX 경로 (기본: <입력>.hwpx)")
     .option("--preset <name>", "공문서 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·개조식(gaejosik — 표지·목차·장헤더 자동)·업무보고(ministry — 중앙부처 업무보고: 장 띠·절 숫자칸·소제목 박스·① 항목 띠·성과 요약박스·별첨 띠)·보도자료(press)", "기안문")
     .option("--font <type>", "본문 글꼴: myeongjo(함초롬바탕) 또는 gothic(맑은 고딕)")
@@ -51,6 +51,7 @@ export function registerGenerateCommands(program: Command): void {
     .option("--press-head <spec>", "보도자료 머리: release=보도시점,distribute=배포일,dept=담당부서,manager=담당자,phone=연락처")
     .option("--press-sub <items>", "보도자료 부제 (세미콜론 구분, 제목 아래 '- … -')")
     .option("--plain", "공문서 모드 끄기 (범용 마크다운 변환)")
+    .option("--html", "stdin 또는 비 HTML 확장자 입력을 의미 구조 HTML로 해석")
     .option("--paper <size>", "용지: A4·A3·B4·B5·Letter 또는 '210x297'(mm)")
     .option("--landscape", "용지 가로 방향")
     .option("--columns <n>", "다단 개수 (1~8)")
@@ -72,8 +73,10 @@ export function registerGenerateCommands(program: Command): void {
         } else {
           const inPath = resolve(markdown)
           md = readFileSync(inPath, "utf-8")
-          baseName = basename(inPath).replace(/\.(md|markdown|txt)$/i, "")
+          baseName = basename(inPath).replace(/\.(md|markdown|txt|html|htm)$/i, "")
         }
+        const sourceHtml = opts.html || /\.html?$/i.test(markdown) ? md : null
+        if (sourceHtml) md = semanticHtmlToMarkdown(sourceHtml)
 
         // 공문서 옵션 구성 — 값 검증(열거)과 조립은 gongmun-surface SSOT, 여기는
         // commander 표면 사정(kv 파싱·--no-x 기본값)을 중립 입력으로 정돈하는 어댑터만
@@ -150,6 +153,7 @@ export function registerGenerateCommands(program: Command): void {
               }
               : undefined,
           })
+          if (sourceHtml && (preset === "report" || preset === "plan")) gongmun = withSemanticHtmlStyles(sourceHtml, gongmun)
         }
 
         // 폰트 오버라이드 오타·미설치 경고 (A2) — 생성은 진행
@@ -220,7 +224,7 @@ export function registerGenerateCommands(program: Command): void {
           }
           : undefined)
         if (!silent) for (const w of genWarnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
-        const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
+        const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt|html|htm)$/i, "") + ".hwpx"))
         mkdirSync(dirname(outPath), { recursive: true })
         writeFileSync(outPath, Buffer.from(buf))
 

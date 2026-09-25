@@ -12,7 +12,7 @@ allowed-tools: Read, Write, Edit, Bash, AskUserQuestion
 내용·주제를 받아 **한국 행정 공문서 표준 서식의 HWPX**로 생성한다.
 서식 표준은 행정안전부 「행정업무운영편람」·「행정업무의 운영 및 혁신에 관한 규정」 시행규칙 근거.
 실제 렌더링(항목부호 행갈굼·여백·폰트)은 kordoc 공문서 모드(`kordoc generate --preset`)가 담당하므로,
-이 스킬은 **(1) 종류 판별 → (2) 내용을 표준 구조의 마크다운으로 작성 → (3) 변환 → (4) 경로 안내** 만 한다.
+이 스킬은 **(1) 종류 판별 → (2) 샘플 구조 파악 → (3) 의미 구조 HTML 작성 → (4) 변환·재검사 → (5) 경로 안내**를 맡는다.
 
 ## 절차
 
@@ -29,9 +29,14 @@ allowed-tools: Read, Write, Edit, Bash, AskUserQuestion
 
 의도가 모호하면 `AskUserQuestion`으로 종류를 확인한다. (예: "보고서로 할까요, 대외 시행문(기안문)으로 할까요?")
 
-### 2. 템플릿 로드 + 내용 채우기
+### 2. 샘플 구조 파악 + 내용 채우기
 
 해당 `templates/<종류>.md`를 Read로 읽어 골격을 파악하고, 사용자 내용으로 채운다.
+- 사용자가 샘플 HWPX/PDF/HTML을 주면 먼저 **제목·요약·장/절·항목 깊이·표 행열/병합·쪽 머리말/꼬리말**을 뽑아 구조표를 만든다. 샘플의 문구를 새 보고서의 사실로 복사하지 않는다.
+- 샘플 HWPX의 표 서식을 재사용할 때 `kordoc profile <샘플.hwpx> -o <샘플.profile.json>`으로 추출한다. 프로필은 표의 행·열과 첫 셀 앵커가 일치해야 적용되므로, 새 문서의 표 구조·머리글이 달라지면 적용 여부를 확인한다.
+- 표지·목차·차트·도형이 많은 **편집형 샘플**은 표 프로필만으로 재현되지 않는다. 샘플의 페이지별 역할과 시각 요소를 별도로 설계한다. 기존 문구만 바꾸는 작업이라면 원본 HWPX를 `patchHwpx`로 수정하는 경로를 먼저 검토한다.
+- 샘플에 표나 복잡한 위계가 있으면 **의미 구조 HTML**을 먼저 작성한다. `<h1>`을 본문의 **첫 블록**으로 놓아 문서 제목을 표시하고, `<blockquote><p>`를 **바로 다음 블록**으로 놓아 보고 요약을 만든다(앞이나 사이에 안내·부제 문단이 있으면 요약박스가 되지 않음). `<h2>`=장, `<h3>`=절, `<ul><li>`=항목 깊이, `<table><tr><th|td colspan rowspan>`=실제 셀 구조로 표현한다. HTML `<style>`에서 태그 선택자 `p`·`h1`·`h2`·`blockquote`·`table`·`th`의 글자 크기와 강조색 일부는 HWPX 프리셋으로 옮긴다. 복잡한 CSS·도형·쪽 배치는 재현하지 못하므로 HWPX 렌더를 별도로 확인한다.
+- 샘플이 없으면 템플릿 골격을 따르되, 표·중첩 목록이 있으면 같은 의미 HTML 경로를 쓴다.
 - **부족한 필수 정보**(기관명, 수신처, 담당자·연락처, 시행일 등)는 사용자에게 묻거나, 모르면 `○○○`/`[기관명]` 같은 **플레이스홀더**로 두고 "채워야 할 항목"을 마지막에 안내한다. 임의로 지어내지 말 것.
 - 본문은 아래 **표기법**과 **항목부호 규칙**을 반드시 지켜 작성한다.
 
@@ -76,14 +81,18 @@ allowed-tools: Read, Write, Edit, Bash, AskUserQuestion
 
 상세 표준은 `references/reference.md`(전체), 빠른 참고는 `references/quickref.md`.
 
-### 5. 변환 → 저장
+### 5. 변환 → 저장·재검사
 
-작성한 마크다운을 임시 파일로 저장 후 kordoc로 변환:
+작성한 의미 HTML 또는 마크다운을 파일로 저장 후 kordoc로 변환:
 
 ```bash
-node /Users/chris_gomdori/workspace/kordoc/dist/cli.js generate <작성.md> -o <출력.hwpx> --preset <종류>
+node /Users/chris_gomdori/workspace/kordoc/dist/cli.js generate <작성.html> -o <출력.hwpx> --preset <종류> [--profile <샘플.profile.json>]
 ```
-(또는 라이브러리: `markdownToHwpx(md, { gongmun: { preset } })`)
+`.html`/`.htm` 입력은 의미 구조 HTML로 해석한다. stdin이면 `--html`을 지정한다. 라이브러리는 `htmlToHwpx(html, { gongmun: { preset }, profile })`; 마크다운은 기존 `markdownToHwpx`를 쓴다.
+
+생성한 HWPX를 다시 파싱해 제목·요약·항목 깊이·표 개수/행열/병합·본문 순서가 구조표와 맞는지 확인한다. 표 프로필 미적용 경고가 나면 앵커·행열 불일치를 확인한다. 표와 쪽 배치가 핵심인 보고서는 렌더 결과도 확인한 뒤 전달한다.
+
+웹 보관 파일(MHTML)은 HTML·CSS·이미지를 한 파일에 묶어 **웹 미리보기**를 보관하는 데 쓸 수 있다. HTML 화면과 MHTML 재열기 화면을 비교해 디자인 기준본으로 보관하되, MHTML을 HWPX로 여는 프로그램의 서식 변환은 별도 검증한다. Word Mac에서는 Chrome 스냅샷의 CID CSS를 읽지 못해 오류가 났고, CSS를 HTML 본문에 담은 단일 MIME MHTML은 가져왔다. Word로 내보낸 DOCX는 표 셀 문단의 위·아래 간격이 과도하게 생길 수 있으므로 쪽수와 셀 간격을 렌더로 확인한다. 검증되지 않은 가져오기 경로를 HWPX 서식 보존으로 간주하지 않는다.
 
 옵션: `--font gothic`(맑은 고딕, 전자결재 스타일) / `--pt 14` / `--line-spacing 130`.
 

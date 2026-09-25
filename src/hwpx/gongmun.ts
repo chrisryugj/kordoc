@@ -117,6 +117,11 @@ export interface GongmunOptions {
   bandColor?: string
   /** 띠 제목 번호 글자색 `#RRGGBB` — 기본 #FFFFFF */
   bandTextColor?: string
+  /** HTML 보고서의 제목·요약·표 머리글 서식 (명시한 값만 기본 프리셋 위에 적용) */
+  reportTitlePt?: number
+  reportSummaryPt?: number
+  reportSummaryFill?: string
+  tableHeaderFill?: string
   /**
    * 2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서
    * 양식 계열 실측). 기본: notice·press 'ㅇ', 그 외 '○' (v4.1.0 실결재 60건 분포).
@@ -195,6 +200,10 @@ export interface ResolvedGongmun {
   /** 띠 제목 번호칸 채움색·글자색 (#RRGGBB, 대문자 정규화) */
   bandColor: string
   bandTextColor: string
+  reportTitlePt?: number
+  reportSummaryPt?: number
+  reportSummaryFill?: string
+  tableHeaderFill?: string
   /** 2단계 항목부호 — notice·press 기본 'ㅇ', 그 외 '○' (실결재 60건 분포, v4.1.0) */
   bullet2: "ㅇ" | "○"
   /** 단일 형제 부호 생략(규정) — 기본 false (실무 관행: 하나여도 부호, v4.0.2) */
@@ -302,6 +311,8 @@ function assertFiniteRange(name: string, value: number, min: number, max: number
 function validateGongmunOptions(opts: GongmunOptions): void {
   if (opts.bodyPt !== undefined) assertFiniteRange("bodyPt", opts.bodyPt, 6, 40)
   if (opts.lineSpacing !== undefined) assertFiniteRange("lineSpacing", opts.lineSpacing, 50, 300)
+  if (opts.reportTitlePt !== undefined) assertFiniteRange("reportTitlePt", opts.reportTitlePt, 6, 60)
+  if (opts.reportSummaryPt !== undefined) assertFiniteRange("reportSummaryPt", opts.reportSummaryPt, 6, 60)
   if (typeof opts.autoFit === "object" && opts.autoFit.minRatio !== undefined) {
     assertFiniteRange("autoFit.minRatio", opts.autoFit.minRatio, 50, 99)
   }
@@ -452,6 +463,10 @@ export function resolveGongmun(opts: GongmunOptions): ResolvedGongmun {
     // 띠 제목 색 — 실측 최다 #003366/흰 글자(계획서 띠 표 14개). 교육청형 밝은 띠는 옵션으로
     bandColor: hexColorOption("bandColor", opts.bandColor) ?? "#003366",
     bandTextColor: hexColorOption("bandTextColor", opts.bandTextColor) ?? "#FFFFFF",
+    reportTitlePt: opts.reportTitlePt,
+    reportSummaryPt: opts.reportSummaryPt,
+    reportSummaryFill: hexColorOption("reportSummaryFill", opts.reportSummaryFill),
+    tableHeaderFill: hexColorOption("tableHeaderFill", opts.tableHeaderFill),
     // 2단계 부호 — 실결재 기안문·공고문 ㅇ 지배(60건 중 ㅇ134:○5), 보고서 양식 계열 ○
     // v5: 서울 실결재 ㅇ(이응) 지배 — 보고서·계획서·통지·보도자료 ㅇ, 중앙부처 개조식 양식만 ○
     bullet2: opts.bullet2 ?? (preset === "gaejosik" ? "○" : "ㅇ"),
