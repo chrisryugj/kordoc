@@ -30,11 +30,26 @@ export class KordocError extends Error {
 }
 
 /**
- * 에러 메시지 정제 — KordocError는 그대로, 나머지는 일반 메시지로 대체.
+ * ENOENT 판별 — 입력 경로가 존재하지 않음.
+ * 래핑된 KordocError 를 뚫고 올라온 경우도 있으므로 메시지까지 함께 본다.
+ */
+function isFileNotFound(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false
+  if ((err as NodeJS.ErrnoException).code === "ENOENT") return true
+  const msg = (err as Error).message
+  return typeof msg === "string" && /ENOENT|no such file or directory/i.test(msg)
+}
+
+/**
+ * 에러 메시지 정제 — KordocError는 그대로, ENOENT 만 구분 문구, 나머지는 일반 메시지로 대체.
  * 파일시스템 경로, 스택 트레이스 등 내부 정보 노출 방지.
  */
 export function sanitizeError(err: unknown): string {
   if (err instanceof KordocError) return err.message
+  // 없는 파일은 문서 문제가 아니라 고칠 수 있는 입력 문제다 — 사유를 숨기지 않는다.
+  // 경로는 노출하지 않는다(어느 파일인지는 stderr·실패 JSON 의 basename 이 알린다).
+  // 문구는 MCP describeError 의 ENOENT 힌트와 같은 표현을 쓴다.
+  if (isFileNotFound(err)) return "파일 또는 디렉토리를 찾을 수 없습니다"
   return "문서 처리 중 오류가 발생했습니다"
 }
 
@@ -198,6 +213,8 @@ import type { ErrorCode } from "./types.js"
 export function classifyError(err: unknown): ErrorCode {
   if (!(err instanceof Error)) return "PARSE_ERROR"
   const msg = err.message
+  // 입력 파일 없음 — 문서 내용 문제가 아니라 호출자의 경로 문제라 PARSE_ERROR 로 덮지 않는다.
+  if (isFileNotFound(err)) return "FILE_NOT_FOUND"
   // DRM 을 암호화보다 먼저 — "DRM 암호화된 HWPX…" 류 메시지가 ENCRYPTED 로 떨어지지 않도록
   if (msg.includes("DRM")) return "DRM_PROTECTED"
   if (msg.includes("암호화") || msg.includes("암호로 보호")) return "ENCRYPTED"

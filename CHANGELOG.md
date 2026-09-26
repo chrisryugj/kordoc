@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **없는 입력 파일을 `PARSE_ERROR` 와 구분** — 존재하지 않는 경로를 넣으면 `statSync` 의 ENOENT 가 문서 파싱 실패와 구분되지 않아 `code: "PARSE_ERROR"`, `error: "문서 처리 중 오류가 발생했습니다"` 로 뭉개졌습니다. 이제 `code: "FILE_NOT_FOUND"`(`ErrorCode` 추가 — 계약상 코드 집합은 추가만 됨)와 `error: "입력 파일을 찾을 수 없습니다"` 로 구분합니다.
+- **실패 JSON 에 `file`(basename) 추가** — 다중 입력에서 stdout 실패 JSON 에 어느 입력이 실패했는지 없었습니다. `file` 필드로 기계적으로 특정할 수 있게 했습니다(basename 만 노출, 전체 경로는 넣지 않음). 문서 파싱 실패·후처리 예외 모두 동일.
+
+
 ## [4.15.4] - 2026-09-25
 
 PDF 표의 밀집 행과 클립 경계를 복원하고, 영문 문서의 제목과 정렬된 수치표를 구조 블록으로 보존한다.

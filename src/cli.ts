@@ -98,7 +98,7 @@ program
           // — 호출자가 원인 코드(ENCRYPTED 등)로 분기할 수 있는 기계 계약. 성공 출력과 충돌하지
           // 않는다: markdown 성공은 마크다운, chunks 성공은 JSON 배열이고 실패는 객체 + exit 1.
           // stderr 의 FAIL 문구는 사람용으로 그대로 둔다.
-          process.stdout.write(JSON.stringify(result, null, 2) + "\n")
+          process.stdout.write(JSON.stringify({ ...result, file: fileName }, null, 2) + "\n")
           process.exitCode = 1
           continue
         }
@@ -189,6 +189,9 @@ program
         process.stdout.write(JSON.stringify({
           success: false,
           fileType: detectedFormat,
+          // 다중 입력에서 어느 파일이 실패했는지 호출자가 기계적으로 특정할 수 있게 한다 (#69).
+          // basename 만 노출 — 전체 경로는 내부 정보로 보아 넣지 않는다.
+          file: fileName,
           error: sanitizeError(err),
           code: classifyError(err),
         }, null, 2) + "\n")
