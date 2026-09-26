@@ -1,0 +1,160 @@
+pair,category,refIdx,irIdx,nested,refDims,irDims,f1,cellMissCount
+korea-kr-pairs/156782183_260917 세금포인트로 떠나는 게임과 바닷속 여행!,unmatched,11,-1,False,17x4,,0,24
+korea-kr-pairs/156782183_260917 세금포인트로 떠나는 게임과 바닷속 여행!,rows,12,11,False,33x4,49x4,0.68,36
+"korea-kr-pairs/156782230_260917_기후대응위, 제2차 기후위기대응 권역별(강원) 포럼 개최 보도자료",rows,1,1,False,18x4,17x4,0.7556,14
+korea-kr-pairs/156782239_(260917) 보도자료_전통시장 현장방문,unmatched,0,-1,False,3x2,,0,2
+korea-kr-pairs/156782239_(260917) 보도자료_전통시장 현장방문,cols,1,0,False,2x6,2x4,0.4444,8
+korea-kr-pairs/156782476_★260918 중장기위원회 전체회의 보도자료(최종),unmatched,0,-1,False,3x2,,0,2
+korea-kr-pairs/156782476_★260918 중장기위원회 전체회의 보도자료(최종),cols,1,0,False,5x7,5x4,0.5,17
+korea-kr-pairs/156782487_260919_보도자료_2026 제48회 중국 상하이 국제기능올림픽대회 국가대표 선수단 출국(한국산업인력공단),both_axes,0,0,False,4x8,2x4,0.1818,10
+korea-kr-pairs/156782487_260919_보도자료_2026 제48회 중국 상하이 국제기능올림픽대회 국가대표 선수단 출국(한국산업인력공단),rows,1,1,False,57x5,29x5,0.6744,140
+"korea-kr-pairs/156782522_[9.21.월 조간] ‘일하는 즐거움, 당당한 어르신, 활기찬 대한민국’ 노인일자리가 만들어 갑니다",unmatched,8,-1,False,3x2,,0,5
+"korea-kr-pairs/156782522_[9.21.월 조간] ‘일하는 즐거움, 당당한 어르신, 활기찬 대한민국’ 노인일자리가 만들어 갑니다",rows,9,8,False,3x2,6x2,0.6667,4
+korea-kr-pairs/156782525_260920_보도자료_반도체 제조업 집중 점검 결과 발표,both_axes,2,2,False,7x8,6x4,0.2105,28
+korea-kr-pairs2/156775650_260827(참고) 대규모유통업법 시행령 및 고시 입법 행정예고,rows,6,6,False,15x2,12x2,0.8889,4
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,cols,0,0,False,3x6,3x4,0.4615,11
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,cols,1,1,False,3x2,3x3,0.4,2
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,unmatched,2,-1,False,3x2,,0,2
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,unmatched,3,-1,False,2x12,,0,24
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,4,3,False,20x10,17x7,0.3739,155
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,5,5,False,15x11,13x8,0.3568,112
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,unmatched,6,-1,False,2x2,,0,2
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,7,7,False,18x10,15x9,0.3137,144
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,8,9,False,20x12,16x2,0.186,167
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,9,10,False,8x12,5x2,0,44
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,10,11,False,7x12,5x2,0,44
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,11,13,False,11x12,8x2,0.0784,78
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,12,14,False,11x12,8x2,0.0784,77
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,13,15,False,10x12,8x2,0.1176,77
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,14,17,False,10x12,7x2,0.0455,67
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,15,18,False,11x12,8x2,0.0784,78
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,16,19,False,12x12,9x2,0.1034,88
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,17,20,False,10x12,22x9,0.058,57
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,18,21,False,9x12,6x2,0,46
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,19,22,False,13x12,9x2,0.1026,91
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,20,23,False,12x9,10x8,0.3065,76
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,21,24,False,8x9,6x7,0.1667,43
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,22,25,False,22x13,20x11,0.4586,225
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,23,26,False,18x13,17x11,0.4934,187
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,unmatched,24,-1,False,3x2,,0,2
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,unmatched,25,-1,False,12x7,,0,8
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,unmatched,26,-1,False,8x7,,0,5
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,spans,27,53,False,4x3,4x3,0.5714,6
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,spans,28,54,False,5x3,5x3,0.8696,2
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,30,56,False,110x4,108x3,0.0688,147
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,32,58,False,3x2,7x5,0,3
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,33,59,False,23x11,21x7,0.3721,201
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,34,60,False,17x9,15x8,0.3763,130
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,35,61,False,8x9,6x7,0.1667,43
+korea-kr-pairs2/156775700_(보도자료)2026년 2분기 가계동향조사 결과,both_axes,37,63,False,3x2,8x7,0,3
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,cols,0,0,False,2x6,2x4,0.4444,8
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,unmatched,1,-1,False,3x2,,0,2
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,both_axes,2,1,False,3x2,6x3,0.25,3
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,rows,3,2,False,4x6,3x6,0.6486,19
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,rows,4,3,False,5x7,4x7,0.6792,24
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,rows,5,4,False,13x7,11x7,0.7059,67
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,rows,6,5,False,3x6,2x6,0.48,13
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,rows,7,6,False,12x7,11x7,0.8824,67
+korea-kr-pairs2/156775701_2026년 벼 고추 재배면적조사 결과 보도자료,cols,8,8,False,24x9,24x7,0.4369,112
+korea-kr-pairs2/156775717_260827_보도자료_2026년 7월 사업체노동력조사 및 2026년 4월 지역별사업체노동력조사 결과 발표,unmatched,16,-1,False,12x3,,0,18
+korea-kr-pairs2/156775819_260827_보도자료_성평등가족부_&#039;제3기_2030자문단&#039;_공식출범_최종배포본,rows,1,1,False,14x4,13x4,0.6757,17
+korea-kr-pairs2/156775822_[0827]정부합동 보도자료-국민성장펀드 기금운용심의회 심의 결과,rows,8,8,False,21x6,13x6,0.7647,44
+"korea-kr-pairs2/156775838_[8.28.보도참고자료] 의료방사선 검사 건수 매년 증가, 피폭선량 높은 컴퓨터단층촬영은 &#039;적정 이용&#039;이 중요",rows,6,7,False,8x2,4x2,0.6667,8
+korea-kr-pairs2/156775854_[0828]문체부보도자료-암표 근절 위한 법 시행령 개정안 시행,rows,0,0,False,10x6,6x6,0.75,22
+korea-kr-pairs2/156775878_2025년 건설업조사 결과(잠정) (공사실적 부문) 보도자료,rows,1,1,False,3x2,6x2,0.6667,0
+korea-kr-pairs2/156775878_2025년 건설업조사 결과(잠정) (공사실적 부문) 보도자료,unmatched,2,-1,False,3x2,,0,2
+korea-kr-pairs2/156775878_2025년 건설업조사 결과(잠정) (공사실적 부문) 보도자료,both_axes,5,4,False,9x11,10x12,0.7349,70
+korea-kr-pairs2/156775908_260829 (15시) 행안부 미래대응기금 설명과 지방 의견 청취(교부세과),unmatched,0,-1,False,2x2,,0,3
+korea-kr-pairs2/156775908_260829 (15시) 행안부 미래대응기금 설명과 지방 의견 청취(교부세과),cols,1,0,False,2x6,2x4,0.4444,8
+korea-kr-pairs2/156775926_(★보도자료) 청년 성장단계별 종합투자 추진전략 발표 보도자료(배포),both_axes,0,0,False,26x6,23x4,0.3756,102
+korea-kr-pairs2/156775987_260831(조간)_환승센터_구축으로_전국을_더_편리하고_가깝게(광역환승과),rows,3,3,False,27x6,36x6,0.8536,0
+korea-kr-pairs2/156775987_260831(조간)_환승센터_구축으로_전국을_더_편리하고_가깝게(광역환승과),unmatched,4,-1,False,10x6,,0,52
+korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영,cols,0,0,False,6x6,6x4,0.5116,22
+korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영,rows,1,1,False,8x4,4x4,0.4,10
+korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영,rows,2,2,False,14x4,6x4,0.5278,17
+korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영,rows,3,3,False,8x4,4x4,0.4,10
+korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영,rows,4,4,False,15x4,4x4,0.4,16
+korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영,rows,5,5,False,8x4,4x4,0.4,10
+korea-kr-pairs2/156775997_260830_보도자료_26.9월 제조업 고위험 기계기구 취급사업장 집중 점검 운영,rows,6,6,False,13x4,3x4,0.3704,13
+korea-kr-pairs2/156775998_260830_보도자료_제2기 전담운용기관 선정 및 사업 개시(근로복지공단),cols,0,0,False,2x6,2x4,0.4444,8
+korea-kr-pairs2/156776001_보도자료_260827_사전보도자료_구윤철_부총리 _8월_G20_재무장관회의_참석_위해_미국으로_출국_v4,cols,0,0,False,2x6,2x4,0.4444,8
+korea-kr-pairs2/156776002_260830_보도참고_구윤철_부총리_겸_재정경제부_장관은_G20_재무장관회의_참석을_위해_예정대로_정상_출국_하였습니다,cols,0,0,False,2x6,2x4,0.4444,8
+"korea-kr-pairs2/156776055_[26.8.31.(월) 보도참고자료] 식약처, 희소의료기기 등 시판 후 조사 면제 기준 마련",both_axes,0,0,False,2x6,3x8,0.2963,8
+korea-kr-pairs2/156776153_26-1_명절중심배시장판도바꾼다녹색배로일상소비확대(원예원),both_axes,6,6,False,3x10,4x12,0.2667,21
+korea-kr-pairs2/156776161_26-5_(즉시보도_통전지)농촌진흥청__‘국산_콩_산업_활성화_및_소비_확대_심포지엄’_개최(식량원),cols,2,2,False,40x6,40x7,0.2041,40
+korea-kr-pairs2/156776181_260831_보도자료_여성경제활동지원센터 새 이름 공모전_최종배포본,rows,1,2,False,3x6,2x6,0.1667,4
+pairs/pair05-mods-해외통계채용,spans,6,6,False,21x9,21x9,0.9848,0
+pairs/pair08-mods-가계금융채용,spans,6,6,False,21x9,21x9,0.9848,0
+rhwp/[2027] 온새미로 1 본교재,spans,1,1,False,24x4,24x4,0.7312,0
+rhwp/2025 행정업무운영 편람(최종),unmatched,19,-1,False,4x2,,0,2
+rhwp/2025 행정업무운영 편람(최종),rows,40,43,False,16x11,15x11,0.2632,8
+rhwp/2025 행정업무운영 편람(최종),rows,127,132,False,3x4,2x4,0.8571,1
+rhwp/2025 행정업무운영 편람(최종),rows,137,142,False,9x3,8x3,0.8636,9
+rhwp/2025 행정업무운영 편람(최종),rows,168,175,False,6x5,5x5,0.8889,1
+rhwp/2025 행정업무운영 편람(최종),both_axes,214,220,False,12x22,11x17,0.1887,15
+rhwp/2025 행정업무운영 편람(최종),rows,216,223,False,11x2,13x2,0.7826,22
+rhwp/2025 행정업무운영 편람(최종),rows,217,224,False,11x2,13x2,0.7826,22
+rhwp/2025 행정업무운영 편람(최종),rows,223,231,False,30x6,27x6,0.6563,58
+rhwp/3-10월_교육_통합_2022,rows,1,14,False,2x2,3x2,0.8,4
+rhwp/hwpx/[2027] 온새미로 1 본교재,spans,1,1,False,24x4,24x4,0.7312,0
+rhwp/hwpx/aift,rows,2,2,False,6x6,5x6,0.5,3
+rhwp/hwpx/aift,spans,44,45,False,30x6,30x6,0.976,0
+rhwp/hwpx/aift,spans,68,69,False,17x9,17x9,0.9681,2
+rhwp/hwpx/exam_kor,unmatched,14,-1,False,20x4,,0,20
+rhwp/hwpx/form-002,rows,0,0,False,26x21,27x21,0.8862,43
+rhwp/hwpx/form-002,rows,1,1,False,29x22,30x22,0.8973,43
+rhwp/hwpx/form-002,rows,2,2,False,27x21,28x21,0.8889,43
+rhwp/hwpx/form-002,rows,3,3,False,27x21,28x21,0.8889,43
+rhwp/hwpx/form-002,rows,4,4,False,27x21,28x21,0.8889,43
+rhwp/hwpx/issue2019_floating_form_74312,rows,0,0,False,16x3,19x3,0.9014,0
+rhwp/hwpx/issue2019_floating_form_74312,unmatched,1,-1,False,3x2,,0,4
+rhwp/hwpx/mel-001,both_axes,0,0,False,24x45,19x18,0.3801,36
+rhwp/hwpx/mel-001,both_axes,1,2,False,10x62,9x61,0.5,16
+rhwp/hwpx/pr-1674,both_axes,6,6,False,3x2,4x3,0.4,0
+rhwp/issue1853_caption_precedes_body_split,rows,10,10,False,2x2,3x2,0.8,2
+rhwp/issue1891/80168_regulatory_analysis,rows,30,30,False,24x11,25x11,0.803,25
+rhwp/issue2470/36341511_masked,rows,0,0,False,12x8,11x8,0.6316,2
+rhwp/issue3637/press_release_split_cell_nested_table,both_axes,0,1,False,8x7,3x4,0,18
+rhwp/issue3637/press_release_split_cell_nested_table,unmatched,1,-1,False,2x3,,0,3
+rhwp/issue3637/press_release_split_cell_nested_table,unmatched,2,-1,False,4x3,,0,12
+rhwp/issue3637/press_release_split_cell_nested_table,rows,3,3,False,3x2,2x2,0.2857,2
+rhwp/issue3637/press_release_split_cell_nested_table,unmatched,4,-1,False,14x14,,0,15
+rhwp/issue3637/press_release_split_cell_nested_table,rows,5,4,False,3x2,2x2,0.2857,2
+rhwp/issue3637/press_release_split_cell_nested_table,rows,6,5,False,3x2,2x2,0.2857,2
+rhwp/issue3637/press_release_split_cell_nested_table,unmatched,7,-1,False,2x2,,0,2
+rhwp/issue3637/press_release_split_cell_nested_table,unmatched,8,-1,False,2x2,,0,2
+rhwp/issue3637/press_release_split_cell_nested_table,rows,9,8,False,3x2,2x2,0.2857,2
+rhwp/issue3637/press_release_split_cell_nested_table,unmatched,10,-1,False,2x3,,0,4
+rhwp/issue3637/press_release_split_cell_nested_table,rows,11,9,False,17x2,8x2,0.4286,25
+rhwp/issue3637/press_release_topbottom_float,both_axes,0,0,False,4x6,5x4,0.4324,16
+rhwp/issue3637/regulatory_impact_nested_table_escape,rows,1,1,False,31x17,32x17,0.6596,55
+rhwp/issue3637/regulatory_impact_nested_table_escape,both_axes,5,5,False,4x4,3x5,0.5926,16
+rhwp/ta-pic-001-r-쪽영역안제한,rows,0,0,False,2x2,3x2,0.8889,0
+rhwp/ta-pic-001-r-쪽영역안제한no,rows,0,0,False,2x2,4x2,0.4,4
+rhwp/table_text_anchor_wrap,rows,0,0,False,48x6,49x6,0.9511,85
+rhwp/tac-img-02,both_axes,1,1,False,28x7,31x8,0.4679,17
+rhwp/tac-img-02,unmatched,2,-1,False,3x2,,0,1
+rhwp/tac-img-02,unmatched,31,-1,False,3x2,,0,5
+rhwp/tac-img-02,rows,32,30,False,3x2,6x2,0.6667,3
+rhwp/tac-img-02,unmatched,33,-1,False,3x2,,0,5
+rhwp/tac-img-02,rows,34,31,False,3x2,6x2,0.6667,3
+rhwp/tac-img-02,unmatched,51,-1,False,3x3,,0,7
+rhwp/tac-img-02,both_axes,52,48,False,7x3,10x5,0.2667,19
+rhwp/tac-img-02,both_axes,70,66,False,5x2,6x4,0.3704,10
+rhwp/tac-img-02,both_axes,82,78,False,3x2,4x6,0.1429,3
+rhwp/task1716/table_scattered_header_rowbreak,spans,1,1,False,260x9,260x9,0.992,3
+rhwp/task1716/table_scattered_header_rowbreak,spans,4,4,False,261x10,261x10,0.8649,162
+rhwp/task1716/table_scattered_header_rowbreak,spans,5,5,False,50x6,50x6,0.9822,2
+rhwp/task1716/table_scattered_header_rowbreak,spans,7,7,False,214x11,214x11,0.9925,2
+rhwp/task1716/table_scattered_header_rowbreak,spans,9,9,False,46x5,46x5,0.9855,1
+rhwp/task1716/table_scattered_header_rowbreak,rows,16,16,False,54x6,53x6,0.8495,26
+rhwp/task2097/75544_pii_bunseok,both_axes,0,0,False,5x7,4x6,0.7368,2
+rhwp/task2097/75544_pii_bunseok,both_axes,1,1,False,24x11,10x6,0.2391,43
+rhwp/task2097/75544_pii_bunseok,cols,6,8,False,7x4,7x3,0.1622,20
+rhwp/task2097/75544_pii_bunseok,both_axes,13,15,False,24x11,11x6,0.2766,33
+rhwp/task2097/75544_pii_bunseok,unmatched,14,-1,False,2x2,,0,4
+rhwp/task2097/75544_pii_bunseok,cols,18,22,False,7x4,7x3,0.1622,20
+rhwp/task2097/75544_pii_bunseok,both_axes,25,29,False,24x11,11x6,0.2766,34
+rhwp/task2097/75544_pii_bunseok,unmatched,26,-1,False,2x2,,0,4
+rhwp/task2097/75544_pii_bunseok,rows,28,34,False,5x3,3x3,0.8182,9
+rhwp/task2097/75544_pii_bunseok,cols,31,37,False,7x4,7x3,0.1622,20

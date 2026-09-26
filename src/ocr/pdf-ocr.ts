@@ -128,7 +128,8 @@ async function ocrOnePage(
     // 벡터 글자 쪽은 보정하지 않는다 — 글자 좌표가 돌면 그 쪽 벡터 괘선과 어긋난다
     const upright = vectorOps ? rgba : deskewPage(rgba, rw, rh).rgba
     const stats: OcrPageStats = { droppedLowConf: 0 }
-    const items = await engine!.recognizePage(upright, rw, rh, stats)
+    const ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
+    const items = await engine!.recognizePage(upright, rw, rh, stats, undefined, ruling?.cellDividers)
     if (stats.droppedLowConf > 0) {
       warnings.push({
         page: pageNo,
@@ -143,8 +144,7 @@ async function ocrOnePage(
     // 벡터 글자 쪽: 표 구조는 그 쪽의 실제 괘선으로 (rhwp cairo 13쌍 46표 exact: 래스터 괘선 14 → 실제 괘선 20)
     if (vectorOps) return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, undefined, detectTables, vectorOps)
     // 래스터에서 표 괘선 감지 — 스캔본 병합셀 서식도 선 기반 표 파이프라인을 탄다
-    const ruling = detectRulingLines(upright, rw, rh, scale)
-    const extraLines = rulingToPdfLines(ruling, scale, pdfH)
+    const extraLines = rulingToPdfLines(ruling!, scale, pdfH)
     return ocrItemsToBlocks(items, pageNo, pdfW, pdfH, scale, extraLines, detectTables)
   }
 

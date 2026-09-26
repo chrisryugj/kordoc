@@ -254,3 +254,31 @@ describe("rulingToPdfLines — 픽셀 → PDF pt 좌표 변환", () => {
     assert.ok(Math.abs(vl.y1 - (pdfH - 450 / scale)) <= 1 && Math.abs(vl.y2 - (pdfH - 60 / scale)) <= 1)
   })
 })
+
+describe("light grid inside a dark frame", () => {
+  it("recovers repeated faint rulings while ignoring a faint unframed drawing", () => {
+    const w = 800, h = 600, rgba = makeCanvas(w, h)
+    drawHLine(rgba, w, 60, 740, 60); drawHLine(rgba, w, 60, 740, 540)
+    drawVLine(rgba, w, 60, 60, 540); drawVLine(rgba, w, 740, 60, 540)
+    for (const y of [140, 220, 300, 380, 460]) for (let x=60;x<=740;x++) ink(rgba,w,x,y,230)
+    for (const x of [280, 500]) for (let y=60;y<=540;y++) ink(rgba,w,x,y,230)
+    const lines = detectRulingLines(rgba,w,h,SCALE)
+    assert.ok(lines.horizontals.some(l=>Math.abs(l.y1-220)<=2))
+    assert.ok(lines.verticals.some(l=>Math.abs(l.x1-280)<=2))
+    const blank = makeCanvas(w,h)
+    for (const y of [140,220,300,380,460]) for(let x=60;x<=740;x++) ink(blank,w,x,y,230)
+    for (const x of [280,500]) for(let y=60;y<=540;y++) ink(blank,w,x,y,230)
+    assert.equal(detectRulingLines(blank,w,h,SCALE).horizontals.length,0)
+  })
+})
+
+it("splits a line at recovered cell boundaries but preserves a merged header", async () => {
+  const { splitBoxAtCellRules } = await import("../src/ocr/crop.js")
+  const b = { x: 10, y: 20, w: 300, h: 20 }
+  const rule = { x1: 160, y1: 10, y2: 100, thicknessPx: 1 }
+  const parts = splitBoxAtCellRules(b, [rule])
+  assert.equal(parts.length, 2)
+  assert.ok(parts[0].x + parts[0].w < rule.x1)
+  assert.ok(parts[1].x > rule.x1)
+  assert.deepEqual(splitBoxAtCellRules(b, [{ ...rule, y1: 45 }]), [b])
+})

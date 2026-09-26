@@ -36,7 +36,7 @@ import {
 } from "./models.js"
 import { grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, splitRowBands } from "./line-split.js"
 import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
-import { bandBoxes, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
+import { bandBoxes, splitBoxAtCellRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
 export interface OcrItem {
@@ -201,9 +201,11 @@ export class OcrEngine {
     height: number,
     stats?: OcrPageStats,
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
+    cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }> = [],
   ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
-    const boxes = await this.detect(rgba, width, height, tuning, stats)
+    const detected = await this.detect(rgba, width, height, tuning, stats)
+    const boxes = cellRules.length ? detected.flatMap(b => splitBoxAtCellRules(b, cellRules)) : detected
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
     const jobs: LineJob[] = []

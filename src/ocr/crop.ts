@@ -75,3 +75,20 @@ export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 
   return { rgb, w: rw }
 }
 
+
+/** Split a detected line at ruled cell boundaries before recognizing its text. */
+export function splitBoxAtCellRules(b: Box, rules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>): Box[] {
+  const cuts = rules.filter(r => r.x1 > b.x + b.h && r.x1 < b.x + b.w - b.h
+    && r.y1 <= b.y + b.h * 0.25 && r.y2 >= b.y + b.h * 0.75).sort((a, c) => a.x1 - c.x1)
+  if (!cuts.length) return [b]
+  const out: Box[] = []
+  let left = b.x
+  for (const r of cuts) {
+    const edge = Math.floor(r.x1 - r.thicknessPx / 2 - 1)
+    if (edge - left < b.h) continue
+    out.push({ ...b, x: left, w: edge - left })
+    left = Math.ceil(r.x1 + r.thicknessPx / 2 + 1)
+  }
+  if (left < b.x + b.w) out.push({ ...b, x: left, w: b.x + b.w - left })
+  return out
+}

@@ -186,6 +186,12 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const left = prev.slice(s), right = next.match(/^\S+/)![0]
   if (particleContinues(left, right)) return ""
   if (endsAsWord(left)) return " "
+  // Latin line-end hyphens can be typesetting breaks. Preserve the token boundary
+  // unless an intact hyphenated compound is attested within this document.
+  // Korean prose wraps Latin terms at their real hyphens; retain that policy.
+  if (/[A-Za-z]-$/.test(left) && /^[A-Za-z]/.test(right) && !/[가-힣]/.test(prev + next)) {
+    return lex?.joinedWord(left, right.replace(/[.,;:!?)]*$/, "")) ? "" : " "
+  }
   // 가운뎃점·붙임표로 끝난 줄은 이어진 낱말 (소방·⏎가스, 생산-가공⏎-유통 — 줄 끝 "·" 105/109 붙음). 가운뎃점을 겹쳐 쓴 말줄임("주의···⏎관세청")은 뺀다
   if (/[·ㆍ‧-]/.test(a) && !/[·ㆍ‧…]{2}$/.test(prev) && /[가-힣A-Za-z0-9]/.test(b)) return ""
   // 영어 낱말은 한컴 영문 줄나눔 기본(단어)이라 줄에서 잘리지 않는다 — 한 글자 증거(data 의 "a|t")가 속이지 않게 먼저.

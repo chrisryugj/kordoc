@@ -72,6 +72,8 @@ export interface PxSegment {
 }
 
 export interface RulingLines {
+  /** Newly recovered faint column rules, used to split OCR boxes before recognition. */
+  cellDividers?: PxSegment[]
   horizontals: PxSegment[]
   verticals: PxSegment[]
 }
@@ -131,7 +133,35 @@ export function detectRulingLines(
   verticals.push(...fill.verticals.filter(a =>
     inkV.some(p => Math.abs(p.x1 - a.x1) <= tol && p.y1 <= a.y2 + tol && p.y2 >= a.y1 - tol) ||
     edgeH.some(p => (Math.abs(p.x1 - a.x1) <= tol || Math.abs(p.x2 - a.x1) <= tol) && p.y1 >= a.y1 - tol && p.y1 <= a.y2 + tol)))
-  return { horizontals, verticals }
+  // Faint internal rules are evidence only when enclosed by an existing dark
+  // frame and repeated across both axes. Do not brighten the whole page's grid.
+  const cellDividers: PxSegment[] = []
+  const frames: Array<{ x1: number; x2: number; y1: number; y2: number }> = []
+  for (let i = 0; i < horizontals.length && frames.length < 32; i++) {
+    const a = horizontals[i]
+    for (let j = i + 1; j < horizontals.length && frames.length < 32; j++) {
+      const b = horizontals[j]
+      if (Math.abs(a.x1 - b.x1) > tol || Math.abs(a.x2 - b.x2) > tol) continue
+      const y1 = Math.min(a.y1, b.y1), y2 = Math.max(a.y1, b.y1)
+      if (a.x2 - a.x1 < minLenPx * 3 || y2 - y1 < minLenPx * 2) continue
+      if (![a.x1, a.x2].every(x => verticals.some(v => Math.abs(v.x1 - x) <= tol && v.y1 <= y1 + tol && v.y2 >= y2 - tol))) continue
+      frames.push({ x1: a.x1, x2: a.x2, y1, y2 })
+    }
+  }
+  if (frames.length) {
+    const faint = new Uint8Array(ink.length)
+    for (let p = 0; p < faint.length; p++) if (luma[p] <= 240 && rgba[p * 4 + 3] >= 128) faint[p] = 1
+    const hs = detectBands(faint, width, height, maxThickPx, false, solid)
+    const vs = detectBands(faint, width, height, maxThickPx, true, solid)
+    for (const f of frames) {
+      const innerH = hs.filter(h => h.y1 > f.y1 + tol && h.y1 < f.y2 - tol && Math.abs(h.x1 - f.x1) <= tol && Math.abs(h.x2 - f.x2) <= tol)
+      const innerV = vs.filter(v => v.x1 > f.x1 + tol && v.x1 < f.x2 - tol && Math.abs(v.y1 - f.y1) <= tol && Math.abs(v.y2 - f.y2) <= tol)
+      if (innerH.length < 3 || innerV.length < 1) continue
+      for (const h of innerH) if (!horizontals.some(p => Math.abs(p.y1 - h.y1) <= tol && p.x1 <= h.x1 + tol && p.x2 >= h.x2 - tol)) horizontals.push(h)
+      for (const v of innerV) if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) { verticals.push(v); cellDividers.push(v) }
+    }
+  }
+  return { horizontals, verticals, ...(cellDividers.length ? { cellDividers } : {}) }
 }
 
 /**

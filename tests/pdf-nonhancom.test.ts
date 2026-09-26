@@ -264,6 +264,19 @@ describe("dropShadingClipGrids — 배경 칠한 칸에만 건 클립(cairo)", (
     }
     assert.equal(dropShadingClipGrids([whiteTable, otherTables], [form], fills, rules).length, 2)
   })
+  it("음영 머리행과 왼쪽 병합셀 사이의 가상 칸은 전체 클립 증거가 아니다", () => {
+    const ruled: TableGrid = { rowYs: [200, 180, 160, 140, 120, 100], colXs: [0, 40, 200], bbox: { x1: 0, y1: 100, x2: 200, y2: 200 }, vertexRadius: 1 }
+    const partial: TableGrid = { ...ruled, rowYs: [200, 180, 100], cells: [
+      cell(0, 0, 0, 180, 40, 200), cell(0, 1, 40, 180, 200, 200),
+      cell(1, 0, 0, 100, 40, 180), { ...cell(1, 1, 40, 100, 200, 180), filler: true },
+    ] }
+    const shades = partial.cells!.filter(c => !c.filler).map(c => c.bbox)
+    const dividers = [{ x1: 40, x2: 40, y1: 100, y2: 200, lineWidth: 1 }]
+    assert.equal(dropShadingClipGrids([partial], [ruled], shades, dividers).length, 0)
+    assert.equal(dropShadingClipGrids([partial], [ruled], shades, []).length, 1)
+    assert.equal(dropShadingClipGrids([partial], [{ ...ruled, bbox: { ...ruled.bbox, x1: -50 } }], shades, dividers).length, 1)
+    assert.equal(dropShadingClipGrids([partial], [{ ...ruled, rowYs: partial.rowYs }], shades, dividers).length, 1)
+  })
   it("채움 없는 칸 클립은 둔다", () => {
     assert.equal(dropShadingClipGrids([headerClip], [lineGrid], [], rules).length, 1)
   })

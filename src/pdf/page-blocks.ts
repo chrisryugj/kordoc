@@ -14,6 +14,7 @@ import { chainShortSegments } from "./line-extract.js"
 import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
 import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem } from "./cluster-detector.js"
 import { type NormItem, collapseEvenSpacing, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
+import { findRuledColumnDivider } from "./ruled-columns.js"
 import { xyCutOrder } from "./xy-cut.js"
 import { detectColumnGutter, detectPersistentColumnGutter, orderByGutter, type ColRect } from "./two-column.js"
 import { detectColumns, extractWithColumns } from "./columns.js"
@@ -600,7 +601,11 @@ function extractBlocksWithGrids(
       // 글 없는 클립 표 조각(쪽 넘김 잇기용으로만 남긴 것)은 지면 판단에 넣지 않는다
       if (b.bbox && !(b.table && EMPTY_PARTS.has(b.table))) rects.push({ x: b.bbox.x, y: b.bbox.y, w: b.bbox.width, h: b.bbox.height })
     }
-    gutterX = detectColumnGutter(rects)
+    gutterX = detectColumnGutter(rects) ?? findRuledColumnDivider(
+      blocks.filter(b => b.type === "table" && b.bbox && b.table && !EMPTY_PARTS.has(b.table))
+        .map(b => ({ x: b.bbox!.x, y: b.bbox!.y, w: b.bbox!.width, h: b.bbox!.height })),
+      horizontals, verticals, pageWidth, pageHeight,
+    )
   }
 
   if (remaining.length > 0) {

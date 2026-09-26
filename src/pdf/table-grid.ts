@@ -344,18 +344,30 @@ export function dropShadingClipGrids(clipGrids: TableGrid[], lineGrids: TableGri
   const inter = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => area({ x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1), x2: Math.min(a.x2, b.x2), y2: Math.min(a.y2, b.y2) })
   return clipGrids.filter(c => {
     if (!c.cells?.length || c.clipParent) return true
-    const shaded = c.cells.every(cell => fillRects.some(f => near(f.x1, cell.bbox.x1) && near(f.x2, cell.bbox.x2) && near(f.y1, cell.bbox.y1) && near(f.y2, cell.bbox.y2)))
+    const sourceCells = c.cells.filter(cell => !cell.filler)
+    if (sourceCells.length === 0) return true
+    const shaded = sourceCells.every(cell => fillRects.some(f => near(f.x1, cell.bbox.x1) && near(f.x2, cell.bbox.x2) && near(f.y1, cell.bbox.y1) && near(f.y2, cell.bbox.y2)))
     if (!shaded) return true
     // 칸 경계마다 괘선 — 칸의 오른변(표 오른끝 제외)이 그 칸 높이의 75% 이상 세로선에 덮여야 한다
-    const ruled = c.cells.every(cell => cell.bbox.x2 >= c.bbox.x2 - SHADE_CLIP_TOL || verticals.some(v =>
+    const ruled = sourceCells.every(cell => cell.bbox.x2 >= c.bbox.x2 - SHADE_CLIP_TOL || verticals.some(v =>
       Math.abs(v.x1 - cell.bbox.x2) <= SHADE_CLIP_TOL * 2
       && Math.min(v.y2, cell.bbox.y2) - Math.max(v.y1, cell.bbox.y1) >= (cell.bbox.y2 - cell.bbox.y1) * 0.75))
     if (!ruled) return true
     const host = lineGrids.find(l =>
+      // Inferred filler cells carry no boundary evidence. Replace their frame only
+      // with a finer ruled grid of the same extent, never a larger surrounding form.
+      (!c.cells!.some(cell => cell.filler) || (
+        near(c.bbox.x1, l.bbox.x1) && near(c.bbox.x2, l.bbox.x2)
+        && near(c.bbox.y1, l.bbox.y1) && near(c.bbox.y2, l.bbox.y2)
+        && l.rowYs.length > c.rowYs.length
+        && sourceCells.every(cell => [cell.bbox.y1, cell.bbox.y2].every(y => l.rowYs.some(ly => near(y, ly))))
+      )) &&
       c.bbox.x1 >= l.bbox.x1 - SHADE_CLIP_TOL && c.bbox.x2 <= l.bbox.x2 + SHADE_CLIP_TOL
       && c.bbox.y1 >= l.bbox.y1 - SHADE_CLIP_TOL && c.bbox.y2 <= l.bbox.y2 + SHADE_CLIP_TOL
       && c.colXs.every(x => l.colXs.some(lx => near(lx, x)))
-      && (clipGrids.reduce((s, o) => s + inter(o.bbox, l.bbox), 0) <= area(l.bbox) * SHADE_CLIP_MAX_AREA
+      && (clipGrids.reduce((s, o) => s + (o.cells?.some(cell => cell.filler)
+        ? o.cells.filter(cell => !cell.filler).reduce((a, cell) => a + inter(cell.bbox, l.bbox), 0)
+        : inter(o.bbox, l.bbox)), 0) <= area(l.bbox) * SHADE_CLIP_MAX_AREA
         // 상단 음영 두 행만 클립이고 마지막 흰 행은 선으로만 그린 표. 클립 면적이 절반을 넘어도
         // 선 격자가 같은 열·행 경계에 마지막 행 하나를 더 가지면 온전한 선 격자를 쓴다.
         || (l.rowYs.length === c.rowYs.length + 1 && c.rowYs.every((y, i) => near(y, l.rowYs[i]))

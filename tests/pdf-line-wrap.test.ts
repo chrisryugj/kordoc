@@ -231,3 +231,15 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     assert.equal(item.length, 3)
   })
 })
+
+it("keeps an uncertain Latin line-end hyphen boundary unless the intact compound occurs in the document", () => {
+  assert.equal(wrapJoiner("an inter-", "national agreement"), " ")
+  assert.equal(wrapJoiner("a well-", "known example", lexOf("one well-known example")), "")
+  assert.equal(wrapJoiner("생산-", "가공 단계"), "")
+  assert.equal(wrapJoiner("ISO-", "9001 인증"), "")
+})
+
+it("preserves hyphenated terms embedded in Korean prose", () => {
+  assert.equal(wrapJoiner("안전 규격의 fire-", "resistant 용어"), "")
+  assert.equal(wrapJoiner("해상도 (high-", "definition television)"), "")
+})
