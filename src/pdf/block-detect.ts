@@ -74,7 +74,7 @@ export function mergeStackedHeadingLines(blocks: IRBlock[], medianFontSize: numb
     if (a.type !== "heading" || b.type !== "heading" || !a.text || !b.text ||
         !ab || !bb || ab.page !== bb.page ||
         !(sameAnchor && af >= medianFontSize * 2 && bf >= medianFontSize * 2) &&
-          !(centered && af >= medianFontSize * 1.3 && bf >= medianFontSize * 1.3) ||
+          !(centered && af >= medianFontSize * 1.25 && bf >= medianFontSize * 1.25) ||
         Math.abs(af - bf) > Math.max(af, bf) * 0.15 ||
         gap < -2 || gap > Math.max(af, bf) * 0.45 ||
         a.text.length > (centered ? 120 : 50) || b.text.length > (centered ? 120 : 50)) { i++; continue }
@@ -296,9 +296,17 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
           second.type === "paragraph" && /^[A-Z]/.test(second.text?.trim() ?? "") &&
           (second.text?.length ?? 0) >= 100 && second.bbox &&
           first.bbox.y - (second.bbox.y + second.bbox.height) >= first.style.fontSize))
+    // A long prose region directly below an isolated first line is title evidence
+    // even when a superscript makes the first line's box taller than its font.
+    const firstAboveProse = first.type === "paragraph" && firstText.length >= 5 && firstText.length <= 80 &&
+      first.bbox.height <= first.style.fontSize * 2 && second.type === "paragraph" &&
+      second.bbox && second.bbox.height >= first.style.fontSize * 4 &&
+      Math.abs(first.bbox.x - second.bbox.x) <= first.style.fontSize * 2 &&
+      first.bbox.y - (second.bbox.y + second.bbox.height) >= first.style.fontSize * 2 &&
+      !captionLike.test(firstText) && !/^(?:doi:|https?:|www\.)/i.test(firstText)
     const firstIsSection = first.type === "list" && /^\d+\.\s+[A-Z][A-Z\s]{12,}$/.test(firstText) &&
       second.type === "paragraph" && (second.text?.length ?? 0) >= 100
-    if (firstIsTitle || firstIsSection) { first.type = "heading"; first.level = 1 }
+    if (firstIsTitle || firstAboveProse || firstIsSection) { first.type = "heading"; first.level = 1 }
 
     if (first.type !== "heading" || captionLike.test(firstText) || second.type !== "paragraph" || !second.text || !second.bbox ||
         !second.style?.fontName || !second.style.fontSize || !third?.text || !third.bbox ||
@@ -309,6 +317,49 @@ export function detectPageLeadHeadings(blocks: IRBlock[]): void {
     const distinctFace = third.style?.fontName !== second.style.fontName
     const namedContents = /^Table of Contents$/i.test(second.text.trim())
     if ((distinctFace && third.text.length >= 60) || namedContents) { second.type = "heading"; second.level = 1 }
+  }
+}
+
+/** Use the document's prose face and neighboring regions to recover section
+ * labels on pages that already contain another heading. */
+export function refineDocumentStyleHeadings(blocks: IRBlock[]): void {
+  const faceChars = new Map<string, number>()
+  for (const block of blocks) {
+    if (block.type !== "paragraph" || !block.text || !block.style?.fontName) continue
+    faceChars.set(block.style.fontName, (faceChars.get(block.style.fontName) ?? 0) + block.text.length)
+  }
+  const [bodyFace, bodyChars] = [...faceChars].sort((a, b) => b[1] - a[1])[0] ?? []
+  if (!bodyFace || !bodyChars || bodyChars < 300) return
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]
+    const text = block.text?.trim() ?? ""
+    // Web links and document metadata are content even if their font is large.
+    if (block.type === "heading" && /(?:https?:\/\/|www\.|^arxiv:|^doi:)/i.test(text)) {
+      block.type = "paragraph"
+      block.level = undefined
+      continue
+    }
+    const box = block.bbox, style = block.style
+    if (block.type !== "paragraph" || !box || !style?.fontName || !style.fontSize ||
+        style.fontName === bodyFace || (faceChars.get(style.fontName) ?? 0) > bodyChars * 0.25 ||
+        text.length < 3 || text.length > 70 || text.includes("\n") ||
+        box.height > style.fontSize * 1.6 ||
+        /^(?:table|figure|fig\.?|source|doi:|arxiv:|https?:|www\.|[•●○▪▫⮚*∗†])/i.test(text) ||
+        /(?:https?:\/\/|www\.|@|[=¼≪þ])/i.test(text) ||
+        /^definition\s+\d+[.:]?\s+.*\b(?:is|are|means)\b/i.test(text) ||
+        /^[\d\s.,:%+\-–]+$/.test(text)) continue
+    const previous = blocks[i - 1], next = blocks[i + 1]
+    const pb = previous?.bbox, nb = next?.bbox
+    if (!pb || !nb || previous.pageNumber !== block.pageNumber || next.pageNumber !== block.pageNumber ||
+        (previous.type !== "paragraph" && previous.type !== "heading") ||
+        next.type !== "paragraph" || next.style?.fontName !== bodyFace || !next.text || next.text.length < 40 ||
+        style.fontSize < (next.style.fontSize ?? 0) * 0.95 ||
+        pb.y - (box.y + box.height) < style.fontSize * 0.5 ||
+        box.y - (nb.y + nb.height) < 0 || box.y - (nb.y + nb.height) > style.fontSize * 2 ||
+        box.x + box.width / 2 < nb.x - 10 || box.x + box.width / 2 > nb.x + nb.width + 10) continue
+    block.type = "heading"
+    block.level = 2
   }
 }
 

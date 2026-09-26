@@ -16,6 +16,7 @@ import { parsePageRange, hasRequestedPagesAfter } from "../page-range.js"
 import { blocksToPages } from "../page-markdown.js"
 import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
 import { extractImageRegions } from "./line-detector.js"
+import { mergeOcrImageRegions, type ImageRegion } from "./ocr-region-merge.js"
 import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
@@ -26,7 +27,7 @@ import { mergeCrossPageTables } from "./table-parts.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
-import { computeMedianFontSizeFromFreq, detectHeadings, mergeStackedHeadingLines, detectTypographyHeadings, detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
+import { computeMedianFontSizeFromFreq, detectHeadings, mergeStackedHeadingLines, detectTypographyHeadings, detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, refineDocumentStyleHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables } from "./text-clean.js"
 import { applyLinkAnnotations } from "./links.js"
 import { applyFormulaOcr } from "./formula-ocr.js"
@@ -124,6 +125,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const pagesWithLargeImage = new Set<number>()
     // 텍스트 없는 큰 이미지 영역: page → count
     const skippedImagePages = new Map<number, number>()
+    const uncoveredImageRegions = new Map<number, ImageRegion[]>()
     // 이미지 XObject 바이트 추출 상태 (문서 단위 중복 억제·상한).
     // image 블록은 페이지 경계 표 병합(mergeCrossPageTables)의 인접성을 깨지 않도록
     // 페이지별로 모아뒀다가 병합 후 주입한다.
@@ -204,7 +206,15 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
               const cy = it.y + (it.h || it.fontSize) / 2
               return cx >= r.x1 && cx <= r.x2 && cy >= r.y1 && cy <= r.y2
             })
-            if (!hasText) uncovered++
+            if (!hasText) {
+              uncovered++
+              if (area >= pageArea * 0.1 && (r.x2 - r.x1) / (r.y2 - r.y1) >= 1.5 &&
+                  page.rotate % 360 === 0 && viewX1 === 0 && viewY1 === 0) {
+                const regions = uncoveredImageRegions.get(i) ?? []
+                regions.push(r)
+                uncoveredImageRegions.set(i, regions)
+              }
+            }
           }
           if (uncovered > 0) skippedImagePages.set(i, uncovered)
         }
@@ -278,6 +288,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           if (pq.ocrReason === "low_text" && !pagesWithLargeImage.has(pq.page)) continue
           targets.add(pq.page)
         }
+        if (options.ocr === true) for (const p of uncoveredImageRegions.keys()) targets.add(p)
       }
       if (targets.size > 0) {
         try {
@@ -285,13 +296,28 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           const mode = typeof options.ocr === "function" ? options.ocr : ("builtin" as const)
           const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options.onProgress, options.tables !== false, vectorPageOps)
           if (ocrPageBlocks.size > 0) {
-            // 페이지 단위 교체: OCR 성공 페이지의 기존(깨진/빈) 블록 제거 후 병합
-            for (const p of ocrPageBlocks.keys()) ocrDone.add(p)
-            const merged = blocks.filter(b => !(b.pageNumber && ocrDone.has(b.pageNumber)))
-            for (const obs of ocrPageBlocks.values()) for (const b of obs) merged.push(b)
-            merged.sort((a, b) => (a.pageNumber ?? 0) - (b.pageNumber ?? 0)) // stable — 페이지 내 순서 보존
-            blocks.length = 0
-            for (const b of merged) blocks.push(b)
+            const replacePages = new Set<number>()
+            for (const [p, obs] of ocrPageBlocks) {
+              const needsOcr = pageQuality.find(q => q.page === p)?.needsOcr
+              if (options.ocr === "force" || isImageBased || needsOcr) {
+                replacePages.add(p)
+                ocrDone.add(p)
+                continue
+              }
+              const regions = uncoveredImageRegions.get(p)
+              if (!regions || mergeOcrImageRegions(blocks, p, regions, obs) === 0) continue
+              ocrDone.add(p)
+              // The extracted image remains in result.images; its Markdown placeholder
+              // is replaced only when it was the sole image on the page.
+              if (pageImageBlocks.get(p)?.length === 1) pageImageBlocks.delete(p)
+            }
+            if (replacePages.size) {
+              const merged = blocks.filter(b => !(b.pageNumber && replacePages.has(b.pageNumber)))
+              for (const [p, obs] of ocrPageBlocks) if (replacePages.has(p)) merged.push(...obs)
+              merged.sort((a, b) => (a.pageNumber ?? 0) - (b.pageNumber ?? 0))
+              blocks.length = 0
+              blocks.push(...merged)
+            }
             for (const pq of pageQuality) if (ocrDone.has(pq.page)) pq.ocrApplied = true
             warnings.push({
               message: `${ocrDone.size}개 페이지에 OCR 적용 (${mode === "builtin" ? "내장 PP-OCRv5" : "사용자 프로바이더"})`,
@@ -339,6 +365,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // (문서 전체가 이미지 기반이면 위의 NEEDS_OCR 단일 경고로 충분)
     if (!isImageBased) {
       for (const [page, count] of [...skippedImagePages.entries()].sort((a, b) => a[0] - b[0])) {
+        if (ocrDone.has(page)) continue
         warnings.push({ page, message: `${count}개 이미지 영역에 추출 가능한 텍스트 없음 (그림/차트/도장 내용 누락 가능)`, code: "SKIPPED_IMAGE" })
       }
     }
@@ -388,6 +415,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     detectRepeatedPageLabels(blocks)
     detectPageLeadHeadings(blocks)
     mergeStackedHeadingLines(blocks, medianFontSize)
+    refineDocumentStyleHeadings(blocks)
 
     // □/■ 마커 기반 서브헤딩 감지 (ODL 패턴)
     detectMarkerHeadings(blocks)

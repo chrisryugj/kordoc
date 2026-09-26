@@ -1,7 +1,8 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
-import { detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings } from "../src/pdf/block-detect.js"
+import { detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, refineDocumentStyleHeadings } from "../src/pdf/block-detect.js"
+import { mergeOcrImageRegions } from "../src/pdf/ocr-region-merge.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 import type { IRBlock } from "../src/types.js"
 
@@ -10,6 +11,28 @@ function item(text: string, x: number, y: number, w: number, fontSize = 11, font
 }
 
 describe("PDF region and title boundaries", () => {
+  it("keeps the text layer while inserting an OCR table into an uncovered image region", () => {
+    const above: IRBlock = { type: "paragraph", text: "Original introduction above the image", pageNumber: 1,
+      bbox: { page: 1, x: 60, y: 610, width: 400, height: 30 } }
+    const below: IRBlock = { type: "paragraph", text: "Original instructions below the image", pageNumber: 1,
+      bbox: { page: 1, x: 60, y: 300, width: 400, height: 30 } }
+    const table: IRBlock = { type: "table", pageNumber: 1, bbox: { page: 1, x: 80, y: 425, width: 400, height: 130 },
+      table: { rows: 2, cols: 2, cells: [[{ text: "Field A" }, { text: "Field B" }], [{ text: "1" }, { text: "2" }]] } }
+    const blocks = [above, below]
+    assert.equal(mergeOcrImageRegions(blocks, 1, [{ x1: 70, y1: 420, x2: 500, y2: 570 }], [table]), 1)
+    assert.deepEqual(blocks, [above, table, below])
+    assert.equal(mergeOcrImageRegions(blocks, 1, [{ x1: 70, y1: 420, x2: 500, y2: 570 }], [table]), 0)
+  })
+
+  it("uses document prose style to restore a short section title amid other headings", () => {
+    const b = (text: string, face: string, y: number, height = 12): IRBlock => ({ type: "paragraph", text, pageNumber: 1,
+      bbox: { page: 1, x: 70, y, width: 230, height }, style: { fontName: face, fontSize: 12 } })
+    const blocks = [b("A complete earlier paragraph with ordinary body text. ".repeat(8), "Body", 500, 90),
+      b("Section overview", "Display", 465),
+      b("The next section contains a substantial paragraph of ordinary prose. ".repeat(8), "Body", 300, 150)]
+    refineDocumentStyleHeadings(blocks)
+    assert.equal(blocks[1].type, "heading")
+  })
   it("reads staggered infographic cards one column at a time", () => {
     const items = [item("Semantic Search Pack", 70, 500, 300, 20, "Title"),
       item("The product helps users find more information from their searches.", 70, 450, 540),
