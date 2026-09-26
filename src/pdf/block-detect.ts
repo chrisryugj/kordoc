@@ -68,11 +68,16 @@ export function mergeStackedHeadingLines(blocks: IRBlock[], medianFontSize: numb
     const ab = a.bbox, bb = b.bbox
     const af = a.style?.fontSize ?? 0, bf = b.style?.fontSize ?? 0
     const gap = ab && bb ? ab.y - (bb.y + bb.height) : Infinity
+    const centered = ab && bb && a.style?.fontName === b.style?.fontName &&
+      Math.abs((ab.x + ab.width / 2) - (bb.x + bb.width / 2)) <= Math.max(5, af * 0.5)
+    const sameAnchor = ab && bb && Math.abs(ab.x - bb.x) <= 5
     if (a.type !== "heading" || b.type !== "heading" || !a.text || !b.text ||
-        !ab || !bb || ab.page !== bb.page || af < medianFontSize * 2 || bf < medianFontSize * 2 ||
-        Math.abs(ab.x - bb.x) > 5 || Math.abs(af - bf) > Math.max(af, bf) * 0.15 ||
+        !ab || !bb || ab.page !== bb.page ||
+        !(sameAnchor && af >= medianFontSize * 2 && bf >= medianFontSize * 2) &&
+          !(centered && af >= medianFontSize * 1.3 && bf >= medianFontSize * 1.3) ||
+        Math.abs(af - bf) > Math.max(af, bf) * 0.15 ||
         gap < -2 || gap > Math.max(af, bf) * 0.45 ||
-        a.text.length > 50 || b.text.length > 50) { i++; continue }
+        a.text.length > (centered ? 120 : 50) || b.text.length > (centered ? 120 : 50)) { i++; continue }
     a.text = `${a.text.trim()} ${b.text.trim()}`
     a.bbox = {
       ...ab,

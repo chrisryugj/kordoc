@@ -83,7 +83,11 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number): Clus
   // 떨어진다. 이런 조각 행이 표 헤더/열 앵커로 오인되면 본문 문단이 통째로 표에 흡수되므로
   // 수직으로 겹치는 행은 같은 시각적 줄로 병합한다.
   const rows = mergeOverlappingRows(groupByBaseline(merged))
-  if (rows.length < MIN_ROWS) return []
+  if (rows.length < MIN_ROWS) {
+    const compact = detectCompactStatisticalTables(rows, pageNum)
+    for (const table of compact) expandUsedItems(table.usedItems, originMap)
+    return compact
+  }
 
   const results: ClusterTableResult[] = []
 
@@ -130,10 +134,51 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number): Clus
 
   if (results.length === 0) results.push(...detectAlignedTwoColumnTables(rows, pageNum))
   if (results.length === 0) results.push(...detectSparseTwoColumnTables(rows, pageNum))
+  if (results.length === 0) {
+    for (const table of detectCompactStatisticalTables(rows, pageNum)) {
+      expandUsedItems(table.usedItems, originMap)
+      results.push(table)
+    }
+  }
 
   // 4. 2단 조판 본문 오인 강등 — 걸러진 아이템은 usedItems에서 빠져
   //    XY-Cut(단 분리) 경로로 흘러가 올바른 읽기 순서로 복원된다.
   return results.filter(r => !isTwoColumnProse(r))
+}
+
+/** Two-row numeric tables have too few rows for the generic column clusters.
+ * Repeated starts across four or more short cells provide the cell graph. */
+function detectCompactStatisticalTables(rows: RowGroup[], pageNum: number): ClusterTableResult[] {
+  const found: ClusterTableResult[] = []
+  for (let r = 0; r < rows.length - 1; r++) {
+    const header = [...rows[r].items].sort((a, b) => a.x - b.x)
+    const values = [...rows[r + 1].items].sort((a, b) => a.x - b.x)
+    if (header.length < 4 || header.length > 12 || values.length !== header.length ||
+        (/^\d+[.)]$/.test(header[0].text.trim()) && /^\d+[.)]$/.test(values[0].text.trim())) ||
+        header.some(c => !c.text.trim() || c.text.length > 32) ||
+        values.some(c => !c.text.trim() || c.text.length > 16) ||
+        values.filter(c => /\d/.test(c.text) && !/\p{L}/u.test(c.text)).length < Math.ceil(values.length / 2) ||
+        rows[r].y - rows[r + 1].y > Math.max(25, header[0].fontSize * 3)) continue
+    let aligned = true
+    for (let c = 0; c < header.length; c++) {
+      const gap = c + 1 < header.length ? header[c + 1].x - header[c].x : Infinity
+      if (gap < Math.max(4, header[c].fontSize * 0.4) ||
+          Math.abs(values[c].x - header[c].x) > Math.max(14, gap * 0.3)) { aligned = false; break }
+    }
+    if (!aligned) continue
+    const all = [...header, ...values]
+    const minX = Math.min(...all.map(c => c.x)), minY = Math.min(...all.map(c => c.y))
+    const maxX = Math.max(...all.map(c => c.x + c.w))
+    const maxY = Math.max(...all.map(c => c.y + (c.h || c.fontSize)))
+    found.push({
+      table: { rows: 2, cols: header.length, hasHeader: true, cells: [header, values].map(row =>
+        row.map(c => ({ text: c.text, colSpan: 1, rowSpan: 1 }))) },
+      bbox: { page: pageNum, x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+      usedItems: new Set(all),
+    })
+    r++
+  }
+  return found
 }
 
 /** Recover compact, borderless tables from repeated cell starts, even when

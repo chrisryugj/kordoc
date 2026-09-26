@@ -41,3 +41,26 @@ describe("borderless two-column tables", () => {
     assert.deepEqual(detectClusterTables(items, 1), [])
   })
 })
+
+describe("compact statistical tables", () => {
+  it("keeps two aligned rows with several labeled numeric columns as a table", () => {
+    const xs = [77, 112, 150, 190, 230, 270]
+    const headers = ["Accuracy", "Recall", "Precision", "F1", "Loss", "Speed"]
+    const values = ["0.92", "0.88", "0.91", "0.89", "N/A", "12.4"]
+    const items = xs.flatMap((x, i) => [item(headers[i], x, 442), item(values[i], x + 1, 429)])
+    const [result] = detectClusterTables(items, 1)
+    assert.ok(result)
+    assert.equal(result.table.rows, 2)
+    assert.equal(result.table.cols, 6)
+    assert.equal(result.table.cells[0][0].text, "Accuracy")
+    assert.equal(result.table.cells[1][5].text, "12.4")
+  })
+
+  it("leaves numbered metadata lines as prose", () => {
+    const items = [
+      item("2)", 78, 210), item("Preparation period", 104, 210), item("2", 220, 210), item("022.03.21-2022.04.06", 238, 210),
+      item("3)", 78, 195), item("Event date", 104, 195), item("2", 220, 195), item("022.04.07", 238, 195),
+    ]
+    assert.deepEqual(detectClusterTables(items, 1), [])
+  })
+})

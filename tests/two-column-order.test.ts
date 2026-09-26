@@ -42,6 +42,18 @@ describe("detectColumnGutter", () => {
     assert.ok(gx !== null && gx >= 320 && gx <= 380)
   })
 
+  it("상단 전폭 제목과 저자 영역이 가린 2단 경계를 하단에서 복구", () => {
+    const rects: ColRect[] = []
+    for (let i = 0; i < 24; i++) {
+      rects.push(rect(70, 600 - i * 18, 200, 11))
+      rects.push(rect(300, 594 - i * 17, 200, 11))
+    }
+    for (let i = 0; i < 18; i++) rects.push(rect(255, 850 - i * 4, 60, 11))
+    assert.equal(detectColumnGutter(rects), null)
+    const gx = detectPersistentColumnGutter(rects)
+    assert.ok(gx !== null && gx > 270 && gx < 300)
+  })
+
   it("2단 시험지 기하 → 거터 x 검출 (좌단 끝~우단 시작 사이)", () => {
     const gx = detectColumnGutter(examRects())
     assert.ok(gx !== null, "거터를 검출해야 함")

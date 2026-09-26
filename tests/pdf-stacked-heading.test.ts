@@ -22,4 +22,15 @@ describe("stacked PDF display titles", () => {
     mergeStackedHeadingLines(blocks, 11)
     assert.equal(blocks.length, 2)
   })
+
+  it("joins centered title lines whose type is larger than the body", () => {
+    const first = heading("Scaling Large Language Models", 73, 761, 14)
+    first.bbox!.width = 449
+    const second = heading("With Depth Up-Scaling", 243, 745, 14)
+    second.bbox!.width = 109
+    const blocks = [first, second]
+    mergeStackedHeadingLines(blocks, 9)
+    assert.equal(blocks.length, 1)
+    assert.equal(blocks[0].text, "Scaling Large Language Models With Depth Up-Scaling")
+  })
 })

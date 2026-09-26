@@ -332,6 +332,7 @@ function extractBlocksWithGrids(
 ): IRBlock[] {
   const blocks: IRBlock[] = []
   const usedItems = new Set<NormItem>()
+  const proseSidebars = new Set<IRBlock>()
   // 중첩 클립 그리드(clipParent)에서 만든 표 — 틀 셀을 처리할 때 그 셀의 blocks 로 들어간다.
   // 면적 오름차순 처리라 안쪽 표가 항상 틀보다 먼저 여기 쌓인다
   const pendingNested: Array<{ parent: { x1: number; y1: number; x2: number; y2: number }; block: IRBlock }> = []
@@ -530,6 +531,22 @@ function extractBlocksWithGrids(
       width: grid.bbox.x2 - grid.bbox.x1, height: grid.bbox.y2 - grid.bbox.y1,
     }
 
+    // A tall, narrow one-cell clip beside an independent prose column is a
+    // layout panel. Keep its original lines as one region, not as a data table.
+    if (numRows === 1 && numCols === 1 && gridW < pageWidth * 0.35) {
+      const prose = finalGrid[0]?.[0]?.text ?? ""
+      const rightLines = items.filter(it => it.x >= grid.bbox.x2 + 3 &&
+        it.y >= grid.bbox.y1 && it.y <= grid.bbox.y2)
+      if (prose.length >= 200 && prose.split("\n").length >= 8 &&
+          new Set(rightLines.map(it => Math.round(it.y / 3))).size >= 8) {
+        const sidebar: IRBlock = { type: "paragraph", text: prose, pageNumber: pageNum,
+          bbox: tableBbox, style: dominantStyle(tableItems) }
+        blocks.push(sidebar)
+        proseSidebars.add(sidebar)
+        continue
+      }
+    }
+
     // 의사 테이블 필터: 텍스트성 내용 → paragraph로 복원 (구조 보존)
     if (!grid.cells && shouldDemoteTable(irTable)) {
       const demoted = demoteTableToText(irTable)
@@ -690,6 +707,20 @@ function extractBlocksWithGrids(
     }
   }
   units.sort((a, b) => unitTopY(b) - unitTopY(a)) // PDF는 y가 위가 큼 → 내림차순
+  // A panel can start below the first line of its neighboring prose column.
+  // When their vertical spans coincide, read the left panel before the right.
+  for (const sidebar of proseSidebars) {
+    const box = sidebar.bbox!
+    const sidebarIndex = units.findIndex(unit => unit.includes(sidebar))
+    const peerIndex = units.findIndex(unit => unit.some(b => b.type === "paragraph" && b.text && b.text.length >= 200 && b.bbox &&
+      b.bbox.x >= box.x + box.width + 3 &&
+      Math.max(0, Math.min(box.y + box.height, b.bbox.y + b.bbox.height) - Math.max(box.y, b.bbox.y)) >=
+        Math.min(box.height, b.bbox.height) * 0.6))
+    if (sidebarIndex > peerIndex && peerIndex >= 0) {
+      const [unit] = units.splice(sidebarIndex, 1)
+      units.splice(peerIndex, 0, unit)
+    }
+  }
   const ordered: IRBlock[] = []
   for (const u of units) for (const b of u) ordered.push(b)
   return mergeAdjacentTableBlocks(ordered)

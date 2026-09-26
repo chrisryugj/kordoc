@@ -190,9 +190,15 @@ export function detectPersistentColumnGutter(rects: ColRect[]): number | null {
   const span = maxY - minY
   if (!Number.isFinite(span) || span < 200) return null
   const upper80 = detectColumnGutter(rects.filter(r => r.y >= minY + span * 0.2))
-  if (upper80 === null) return null
-  const upper60 = detectColumnGutter(rects.filter(r => r.y >= minY + span * 0.4))
-  return upper60 !== null && Math.abs(upper80 - upper60) <= 10 ? (upper80 + upper60) / 2 : null
+  const upper60 = upper80 === null ? null : detectColumnGutter(rects.filter(r => r.y >= minY + span * 0.4))
+  if (upper80 !== null && upper60 !== null && Math.abs(upper80 - upper60) <= 10) return (upper80 + upper60) / 2
+
+  // A full-width title and author band can mask the gutter in the upper
+  // slices even when two independent prose columns persist below it.
+  const lower80 = detectColumnGutter(rects.filter(r => r.y <= maxY - span * 0.2))
+  if (lower80 === null) return null
+  const lower60 = detectColumnGutter(rects.filter(r => r.y <= maxY - span * 0.4))
+  return lower60 !== null && Math.abs(lower80 - lower60) <= 10 ? (lower80 + lower60) / 2 : null
 }
 
 /**
