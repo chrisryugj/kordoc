@@ -27,6 +27,7 @@ import { mergeCrossPageTables } from "./table-parts.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
+import { remapControlGlyphs } from "./glyph-names.js"
 import { demoteNonHeadingRoles } from "./heading-demote.js"
 import { computeMedianFontSizeFromFreq, detectHeadings, mergeStackedHeadingLines, detectTypographyHeadings, detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, refineDocumentStyleHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables } from "./text-clean.js"
@@ -70,6 +71,8 @@ async function loadPdfWithTimeout(buffer: ArrayBuffer) {
     // pdfjs transfers its input to the worker; retain the caller's buffer for reuse.
     data: new Uint8Array(buffer.slice(0)),
     useSystemFonts: true,
+    // 글꼴 /Differences 글리프 이름 — ToUnicode 없는 옛 숫자·작은 대문자 복원(glyph-names.ts)
+    fontExtraProperties: true,
     disableFontFace: true,
     isEvalSupported: false,
     verbosity: 0, // 오류만 — 경고("Warning: Indexing all PDF objects")를 console.log 로 stdout 에 찍어 MCP·CLI JSON 을 깼다
@@ -190,6 +193,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           catch { return undefined }
         }
         remapSymbolFontItems(visible, (loadedName) => fontObj(loadedName)?.name)
+        remapControlGlyphs(visible, (loadedName) => (fontObj(loadedName) as { differences?: ArrayLike<string | undefined> } | null | undefined)?.differences)
         // 글꼴 id(g_d0_fN)는 글꼴 객체마다 다르다. 크롬은 한 서체를 Type3 글꼴 객체 여러 개(256자마다 새 객체)로 쪼개
         // 같은 본문이 "다른 서체"로 보여 제목으로 승격된다(#89). Type3 는 서브셋 접두(ABCDEF+)를 뗀 서체 이름으로 맞춘다.
         // 다른 글꼴은 같은 이름의 서브셋 객체 차이가 굵게 흉내 낸 제목의 유일한 증거일 수 있어 그대로 둔다(ODL 181 Calibri).

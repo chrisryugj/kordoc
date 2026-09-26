@@ -238,3 +238,77 @@ export function orderByGutter<T>(units: T[], rectOf: (u: T) => ColRect, gutterX:
   }
   return ordered
 }
+
+/**
+ * 세 단 이상 패널 지면(슬라이드의 나란한 패널 3개 등)의 거터들. 전폭이 아닌 요소가 하나도 걸치지 않는 세로 빈 띠(8pt 이상)를
+ * 가운데 70% 범위에서 찾고, 거터로 나뉜 단마다 요소가 3개 이상·세로로 요소 범위의 30% 이상을 차지할 때만 낸다(2단은 detectColumnGutter).
+ */
+export function detectPanelGutters(rects: ColRect[]): number[] | null {
+  if (rects.length < 9) return null
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const r of rects) {
+    if (r.x < minX) minX = r.x
+    if (r.x + r.w > maxX) maxX = r.x + r.w
+  }
+  const span = maxX - minX
+  if (!Number.isFinite(span) || span < MIN_CONTENT_SPAN) return null
+  // 전폭급 줄(같은 높이에서 큰 틈 없이 이어져 폭 절반 이상을 덮는 제목 줄)은 밴드 경계라 거터 판정에서 뺀다
+  const wideLine = (r: ColRect) => {
+    const same = rects.filter(o => Math.abs(o.y - r.y) <= 3).sort((a, b) => a.x - b.x)
+    let start = same[0].x, end = same[0].x + same[0].w
+    for (const o of same.slice(1)) {
+      if (o.x - end > Math.max(o.h, r.h) * 2) {
+        if (r.x >= start && r.x + r.w <= end) break
+        start = o.x
+      }
+      end = Math.max(end, o.x + o.w)
+    }
+    return r.x >= start && r.x + r.w <= end + 1 && end - start >= span * 0.5
+  }
+  const narrow = rects.filter(r => r.w < span * WIDE_RECT_RATIO && r.w > 0 && r.h > 0 && !wideLine(r))
+  for (const r of narrow) {
+    if (r.y < minY) minY = r.y
+    if (r.y + r.h > maxY) maxY = r.y + r.h
+  }
+  const gutters: number[] = []
+  let runStart: number | null = null
+  for (let x = minX + span * 0.15; x <= maxX - span * 0.15; x += 2) {
+    const empty = !narrow.some(r => r.x < x && r.x + r.w > x)
+    if (empty && runStart === null) runStart = x
+    if (!empty && runStart !== null) {
+      if (x - runStart >= 8) gutters.push((runStart + x) / 2)
+      runStart = null
+    }
+  }
+  if (gutters.length < 2) return null
+  const bounds = [-Infinity, ...gutters, Infinity]
+  for (let c = 0; c + 1 < bounds.length; c++) {
+    const col = narrow.filter(r => r.x >= bounds[c] && r.x + r.w <= bounds[c + 1])
+    if (col.length < 3) return null
+    const top = Math.max(...col.map(r => r.y + r.h)), bottom = Math.min(...col.map(r => r.y))
+    if (top - bottom < (maxY - minY) * 0.3) return null
+  }
+  return gutters
+}
+
+/** 여러 거터로 나뉜 패널 읽기 순서 — 거터를 걸치는 유닛을 밴드 경계로, 밴드 안에서 왼쪽 단부터 단마다 위→아래 */
+export function orderByPanels<T>(units: T[], rectOf: (u: T) => ColRect, gutters: number[]): T[] {
+  const colOf = (r: ColRect) => {
+    for (let c = 0; c <= gutters.length; c++) {
+      const lo = c === 0 ? -Infinity : gutters[c - 1], hi = c === gutters.length ? Infinity : gutters[c]
+      if (r.x >= lo - 1 && r.x + r.w <= hi + 1) return c
+    }
+    return -1
+  }
+  const tagged = units.map(u => { const r = rectOf(u); return { u, top: r.y + r.h, col: colOf(r) } })
+  const cross = tagged.filter(t => t.col < 0).sort((a, b) => b.top - a.top)
+  const bandOf = (top: number) => { let k = 0; while (k < cross.length && cross[k].top > top) k++; return k }
+  const ordered: T[] = []
+  for (let k = 0; k <= cross.length; k++) {
+    for (let c = 0; c <= gutters.length; c++) {
+      for (const t of tagged.filter(t => t.col === c && bandOf(t.top) === k).sort((a, b) => b.top - a.top)) ordered.push(t.u)
+    }
+    if (k < cross.length) ordered.push(cross[k].u)
+  }
+  return ordered
+}

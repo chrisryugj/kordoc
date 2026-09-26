@@ -174,6 +174,8 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     if (/^[\d\s\-().·,☎]+$/.test(text) && /\d/.test(text) && / /.test(text)) {
       text = text.replace(/ /g, "")
     }
+    // 글자마다 띄운 영문 대문자 표시 글(큰 제목 "H O W") — 한 아이템이 한 낱말이다
+    if (fontSize >= 14 && /^[A-Z0-9?!&'’](?: [A-Z0-9?!&'’]){2,}$/.test(text)) text = text.replace(/ /g, "")
 
     // 균등배분 TextItem 분해: "홍 보 지 원 반" → 개별 글자 아이템으로
     const split = splitEvenSpacedItem(text, x, w, fontSize)

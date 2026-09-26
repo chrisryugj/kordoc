@@ -5,7 +5,7 @@
  * blocksToMarkdown 이후의 문자열 수준 후처리를 담당한다.
  */
 
-import type { IRBlock } from "../types.js"
+import type { IRBlock, IRTable } from "../types.js"
 import { stripControlChars } from "./quality.js"
 import { collapseEvenSpacing } from "./text-line.js"
 import { wrapJoiner } from "./line-wrap.js"
@@ -51,10 +51,26 @@ export function sanitizeBlockControlChars(blocks: IRBlock[]): void {
  * "선 서 나는 헌법을 …"(선서문 안쪽 상자, 제목 줄+본문 줄 결합)이 됐다. 문단 블록 사이는 빈 줄이라
  * 병합 대상이 아니다. 실측 파급: 별지서식·별표·보고서 897 PDF 중 10문서 12표.
  */
+/** 영문 캡션 표지 한 칸 — "Figure 4", "Diagram 5", "Table 2.1" */
+const CAPTION_LABEL = /^(?:figure|fig\.|diagram|table|chart|graph|exhibit|box)\s*[\dIVX][\w.\-]*$/i
+
+/** 캡션 표지 칸 + 캡션 글 칸 1×2 표(워드 캡션 상자) → 캡션 문단 한 줄 */
+function captionTableText(t: IRTable | undefined): string | null {
+  if (!t || t.rows !== 1 || t.cols !== 2) return null
+  const [label, body] = t.cells[0]
+  if (!label || !body || label.blocks?.length || body.blocks?.length || !CAPTION_LABEL.test(label.text.trim()) || !body.text.trim()) return null
+  return `${label.text.trim()} ${body.text.replace(/\s*\n\s*/g, " ").trim()}`
+}
+
 export function splitSingleCellTables(blocks: IRBlock[]): IRBlock[] {
   const out: IRBlock[] = []
   for (const b of blocks) {
     const t = b.type === "table" ? b.table : undefined
+    // 캡션 상자 — 표가 아니라 캡션 문단이다(1칸 틀 안에 든 것도)
+    const inner = t && t.rows === 1 && t.cols === 1 && t.cells[0]?.[0]?.blocks?.length === 1 && !t.cells[0][0].text.replace(/\s/g, "")
+      ? t.cells[0][0].blocks[0] : undefined
+    const caption = captionTableText(t) ?? (inner?.type === "table" ? captionTableText(inner.table) : null)
+    if (caption) { out.push({ type: "paragraph", text: caption, pageNumber: b.pageNumber, bbox: b.bbox }); continue }
     const cell = t && t.rows === 1 && t.cols === 1 ? t.cells[0]?.[0] : undefined
     if (!cell || cell.blocks?.some((x) => x.type === "table")) { out.push(b); continue }
     const lines = (cell.text ?? "").split(/\n/).map((l) => l.trim()).filter(Boolean)

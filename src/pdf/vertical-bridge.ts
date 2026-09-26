@@ -21,6 +21,7 @@
  */
 
 import type { LineSegment } from "./line-types.js"
+import { chainCollinearRules } from "./line-extract.js"
 
 /** 같은 논리 수직선으로 묶는 x 허용 오차 (pt) — table-grid CUT_VCHAIN_X_TOL과 동일 */
 const BRIDGE_X_TOL = 1.5
@@ -129,4 +130,47 @@ export function bridgeSplitColumnVerticals(
   }
 
   return synthesized.length ? [...verticals, ...synthesized] : verticals
+}
+
+/**
+ * 한 행 높이만큼 끊긴 열 수직선 잇기 — 줄무늬 표의 흰 행처럼 세로선을 한 행씩 건너뛰어 그은 표(ODL 078).
+ * 같은 높이에서 셋 이상의 열이 함께 끊기고, 그 틈 위·아래에 가로 괘선이 있으며(한 행), 틈 안 글이 끊긴 열 경계를
+ * 가로지르지 않을 때만 잇는다. 병합 칸(글이 경계를 넘는 행)은 그대로 둔다.
+ */
+export function bridgeSkippedRowVerticals(
+  horizontals: LineSegment[],
+  verticals: LineSegment[],
+  items: Array<{ x: number; y: number; w: number; h: number; fontSize: number }>,
+): LineSegment[] {
+  if (verticals.length < 6 || items.length === 0) return verticals
+  const byX = new Map<number, LineSegment[]>()
+  for (const v of verticals) {
+    const key = [...byX.keys()].find(k => Math.abs(k - v.x1) <= BRIDGE_X_TOL) ?? v.x1
+    byX.set(key, [...(byX.get(key) ?? []), v])
+  }
+  const gaps: Array<{ x: number; lo: number; hi: number; spanLo: number; spanHi: number }> = []
+  for (const [x, segs] of byX) {
+    const s = [...segs].sort((a, b) => a.y1 - b.y1)
+    for (let i = 1; i < s.length; i++) {
+      const lo = s[i - 1].y2, hi = s[i].y1
+      if (hi - lo > BRIDGE_MIN_GAP && hi - lo <= 40) gaps.push({ x, lo, hi, spanLo: s[i - 1].y1, spanHi: s[i].y2 })
+    }
+  }
+  const rules = chainCollinearRules(horizontals)
+  const added: LineSegment[] = []
+  const done = new Set<typeof gaps[number]>()
+  for (const g of gaps) {
+    if (done.has(g)) continue
+    const band = gaps.filter(o => Math.abs(o.lo - g.lo) <= BRIDGE_BAND_TOL / 3 && Math.abs(o.hi - g.hi) <= BRIDGE_BAND_TOL / 3)
+    for (const o of band) done.add(o)
+    if (band.length < BRIDGE_MIN_COLUMNS) continue
+    const xs = band.map(o => o.x)
+    const x1 = Math.min(...xs), x2 = Math.max(...xs)
+    const ruled = (y: number) => rules.some(h => Math.abs(h.y1 - y) <= BRIDGE_ENDPOINT_TOL && h.x1 <= x1 + BRIDGE_ENDPOINT_TOL && h.x2 >= x2 - BRIDGE_ENDPOINT_TOL)
+    if (!ruled(g.lo) || !ruled(g.hi)) continue
+    const rowItems = items.filter(it => { const cy = it.y + (it.h || it.fontSize) / 2; return cy > g.lo && cy < g.hi })
+    if (rowItems.length === 0 || rowItems.some(it => xs.some(x => it.x < x - 1 && it.x + it.w > x + 1))) continue
+    for (const o of band) added.push({ x1: o.x, y1: o.spanLo, x2: o.x, y2: o.spanHi, lineWidth: 0.5 })
+  }
+  return added.length ? [...verticals, ...added] : verticals
 }

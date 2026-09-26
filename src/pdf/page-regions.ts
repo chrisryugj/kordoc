@@ -6,6 +6,7 @@
 import type { IRBlock, IRCell } from "../types.js"
 import { detectClusterTables } from "./cluster-detector.js"
 import { type NormItem, computeBBox, groupByY, mergeLineSimple } from "./text-line.js"
+import { type ColRect } from "./two-column.js"
 
 /**
  * 2단 조판 본문을 읽기 순서 그룹으로 분리 — 전폭 줄(제목·목차)의 y를 경계로
@@ -98,8 +99,10 @@ function columnPair(left: NormItem[], right: NormItem[]): NormItem[][] {
   if (nL) { out.push(L.slice(0, nL).flat()); L = L.slice(nL) }
   // 각주 띠 — 아래에서부터 본문보다 작은 글자 줄
   const notes = (lines: NormItem[][]): number => {
-    // 본문 크기는 단 맨 위 줄 — 각주 줄이 본문보다 많은 쪽도 있어 중앙값은 각주 크기가 된다
-    const body = lines.length ? Math.max(...lines[0].map(i => i.fontSize)) : 0
+    // 본문 크기는 줄의 25% 이상을 차지하는 가장 큰 글자 크기 — 각주 줄이 본문보다 많은 단은 중앙값이 각주 크기가 되고,
+    // 단 맨 위가 작은 캡션인 단(ODL 008 우단)은 첫 줄이 본문이 아니다
+    const sizes = lines.map(l => Math.max(...l.map(i => i.fontSize)))
+    const body = Math.max(0, ...sizes.filter(s => sizes.filter(o => Math.abs(o - s) < 0.5).length >= lines.length * 0.25))
     let n = 0
     while (n < lines.length && Math.max(...lines[lines.length - 1 - n].map(i => i.fontSize)) <= body * 0.9) n++
     if (n === 0 || lines.length - n < 3) return 0
@@ -255,4 +258,59 @@ export function threeColumnInfographic(items: NormItem[]): NormItem[][] | null {
     return [lines.slice(0, n).flat(), ...cards, lower.slice(footerStart).flat()].filter(group => group.length > 0)
   }
   return null
+}
+
+/**
+ * 그림이 단마다 엇갈려 놓인 쪽 — 본문 단 옆에 그림·캡션 단이 나란한 띠와 전폭 본문 띠가 번갈아 온다(ODL 140). 쪽 전체로는
+ * 전폭 줄이 거터를 가려 두 단이 안 보이므로, 전폭으로 이어진 본문 줄을 경계로 띠를 나누고 띠마다 글과 그 높이의 그림이
+ * 하나도 걸치지 않는 세로 빈 띠(8pt 이상, 가운데 30~70%)를 찾는다. 두 단으로 갈린 띠가 하나라도 있으면 띠 순서대로
+ * [좌 단, 우 단] 또는 [띠] 로 낸다.
+ */
+export function figureColumnBands(items: NormItem[], figures: ColRect[]): NormItem[][] | null {
+  const lines = groupByY([...items].sort((a, b) => b.y - a.y || a.x - b.x))
+  if (lines.length < 10) return null
+  const minX = Math.min(...items.map(i => i.x)), maxX = Math.max(...items.map(i => i.x + i.w))
+  const span = maxX - minX
+  if (span < 200) return null
+  const full = (line: NormItem[]) => {
+    const s = [...line].sort((a, b) => a.x - b.x)
+    const fs = Math.max(...s.map(i => i.fontSize))
+    if (s[s.length - 1].x + s[s.length - 1].w - s[0].x < span * 0.75) return false
+    return s.slice(1).every((it, k) => it.x - (s[k].x + s[k].w) < fs * 2)
+  }
+  const segs: { full: boolean; lines: NormItem[][] }[] = []
+  for (const line of lines) {
+    const f = full(line), last = segs[segs.length - 1]
+    if (last && last.full === f) last.lines.push(line)
+    else segs.push({ full: f, lines: [line] })
+  }
+  let split = false
+  const out: NormItem[][] = []
+  for (const seg of segs) {
+    const flat = seg.lines.flat()
+    if (seg.full || seg.lines.length < 3) { out.push(flat); continue }
+    const top = Math.max(...flat.map(i => i.y + (i.h || i.fontSize))), bottom = Math.min(...flat.map(i => i.y))
+    const rects: ColRect[] = [...flat.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h || i.fontSize })),
+      ...figures.filter(f => f.y < top && f.y + f.h > bottom)]
+    let best: { x: number; w: number } | null = null, run: number | null = null
+    for (let x = minX + span * 0.3; x <= minX + span * 0.7; x += 2) {
+      const empty = !rects.some(r => r.x < x && r.x + r.w > x)
+      if (empty && run === null) run = x
+      if ((!empty || x + 2 > minX + span * 0.7) && run !== null) {
+        if (x - run >= 8 && (!best || x - run > best.w)) best = { x: (run + x) / 2, w: x - run }
+        run = null
+      }
+    }
+    if (!best) { out.push(flat); continue }
+    const left = flat.filter(i => i.x + i.w <= best!.x), right = flat.filter(i => i.x >= best!.x)
+    // 단 안 줄에 큰 틈이 있으면(표 행) 가르지 않는다 — 그림 옆 표가 반으로 갈린다(ODL 116)
+    const gapped = (side: NormItem[]) => groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x)).some(l => {
+      const s = [...l].sort((a, b) => a.x - b.x)
+      return s.slice(1).some((it, k) => it.x - (s[k].x + s[k].w) >= Math.max(it.fontSize, s[k].fontSize) * 2)
+    })
+    if (left.length === 0 || right.length === 0 || gapped(left) || gapped(right)) { out.push(flat); continue }
+    split = true
+    out.push(left, right)
+  }
+  return split ? out.filter(g => g.length > 0) : null
 }

@@ -16,7 +16,7 @@ import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem, type Clu
 import { type NormItem, collapseEvenSpacing, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
 import { findRuledColumnDivider } from "./ruled-columns.js"
 import { xyCutOrder } from "./xy-cut.js"
-import { detectColumnGutter, detectPersistentColumnGutter, orderByGutter, type ColRect } from "./two-column.js"
+import { detectColumnGutter, detectPersistentColumnGutter, orderByGutter, detectPanelGutters, orderByPanels, type ColRect } from "./two-column.js"
 import { detectColumns, extractWithColumns } from "./columns.js"
 import { shouldDemoteTable, demoteTableToText, detectListBlocks, detectSpecialKoreanTables } from "./block-detect.js"
 import { markUnderlineItems, wrapUnderlineRuns } from "./underline.js"
@@ -27,10 +27,11 @@ import { WrapLexicon } from "./line-wrap.js"
 import { closeOpenTableEnds } from "./open-table-ends.js"
 import { extendHeaderBoxRows } from "./header-box-rows.js"
 import { detectRuledBandTables, type RuledTable } from "./ruled-band-tables.js"
+import { bridgeSkippedRowVerticals } from "./vertical-bridge.js"
 import { splitSidebarTitleRegion, splitTrailingColumnRegion } from "./local-regions.js"
 import { pushLineParagraphs } from "./paragraph-lines.js"
 import { isChartTable, isTableOfContents, tocBlock } from "./table-roles.js"
-import { splitTwoColumnProse, topTableBand, tieredHeaderTable, stackedTableBands, threeColumnCards, threeColumnInfographic } from "./page-regions.js"
+import { splitTwoColumnProse, figureColumnBands, topTableBand, tieredHeaderTable, stackedTableBands, threeColumnCards, threeColumnInfographic } from "./page-regions.js"
 
 /** 쪽 사이로 넘기는 칸 이어짐 상태 — 앞 쪽 번호와 그 쪽 클립 사실 (다음 쪽 첫 클립이 앞 쪽 마지막 칸의 이어짐인지 가른다, clip-cells) */
 export interface PageCarry { page?: number; clip?: ClipPage }
@@ -96,6 +97,7 @@ export function extractPageBlocksWithLines(
   // 1.65단계: 무괘선 요약행 밴드(예산서 재원구분 시/구 행 등)로 끊긴 동일 열
   // 수직선 브리지 — 표 파편화로 헤더행·부서/정책 요약행이 그리드에서 탈락하는 것 방지
   verticals = bridgeSplitColumnVerticals(horizontals, verticals)
+  if (detectTables && clipGrids.length === 0) verticals = bridgeSkippedRowVerticals(horizontals, verticals, items)
   if (detectTables && clipGrids.length === 0) ({ horizontals, verticals } = extendHeaderBoxRows(horizontals, verticals, items))
 
   // 1.7단계: 취소선 감지 — 텍스트 중심을 가로지르는 얇은 수평선 (ODL StrikethroughProcessor)
@@ -104,7 +106,9 @@ export function extractPageBlocksWithLines(
 
   // 1.75단계: 밑줄 감지 — baseline 바로 아래에 밀착한 얇은 수평선.
   // 개정문 추가·변경 표시, 제목 강조 보존용 (pdf-inspector underline 휴리스틱 참조)
-  markUnderlineItems(items, horizontals, verticals)
+  // 글자 밑줄은 표 행 경계가 아니다 — 칸 안 링크 밑줄이 행을 가르던 것(ODL 180)
+  const underlines = new Set(markUnderlineItems(items, horizontals, verticals))
+  if (underlines.size) horizontals = horizontals.filter(l => !underlines.has(l))
   wrapUnderlineRuns(items)
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
@@ -579,8 +583,10 @@ function extractBlocksWithGrids(
         it.y >= grid.bbox.y1 && it.y <= grid.bbox.y2)
       const leftLines = items.filter(it => it.x + it.w <= grid.bbox.x1 - 3 &&
         it.y >= grid.bbox.y1 && it.y <= grid.bbox.y2)
-      if (prose.length >= 200 && prose.split("\n").length >= 8 &&
-          (besideLines(rightLines) >= 8 || besideLines(leftLines) >= 8)) {
+      // 짧은 글의 오른쪽 좁은 패널(사이드바)도 왼쪽에 본문 단이 나란하면 패널이다 — 본문 뒤에 읽는다
+      if ((prose.length >= 200 && prose.split("\n").length >= 8 &&
+          (besideLines(rightLines) >= 8 || besideLines(leftLines) >= 8)) ||
+          (gridW < pageWidth * 0.25 && besideLines(leftLines) >= 8 && besideLines(rightLines) === 0)) {
         const sidebar: IRBlock = { type: "paragraph", text: prose, pageNumber: pageNum,
           bbox: tableBbox, style: dominantStyle(tableItems) }
         blocks.push(sidebar)
@@ -610,6 +616,7 @@ function extractBlocksWithGrids(
   const groupSizes: number[] = []
   let finalTextBlocks: IRBlock[] = []
   let gutterX: number | null = null
+  let panels: number[] | null = null
   if (remaining.length > 0) {
     remaining.sort((a, b) => b.y - a.y || a.x - b.x)
 
@@ -651,6 +658,7 @@ function extractBlocksWithGrids(
         .map(b => ({ x: b.bbox!.x, y: b.bbox!.y, w: b.bbox!.width, h: b.bbox!.height })),
       horizontals, verticals, pageWidth, pageHeight,
     )
+    if (gutterX === null) panels = detectPanelGutters(rects)
   }
 
   if (remaining.length > 0) {
@@ -715,6 +723,17 @@ function extractBlocksWithGrids(
       if (b.bbox && b.bbox.y + b.bbox.height > top) top = b.bbox.y + b.bbox.height
     }
     return top
+  }
+  if (panels && units.length > 1) {
+    const unitBox = (u: IRBlock[]): ColRect => {
+      const bs = u.filter(b => b.bbox).map(b => b.bbox!)
+      if (!bs.length) return { x: -1e6, y: 0, w: 2e6, h: 0 }
+      const x = Math.min(...bs.map(b => b.x)), y = Math.min(...bs.map(b => b.y))
+      return { x, y, w: Math.max(...bs.map(b => b.x + b.width)) - x, h: Math.max(...bs.map(b => b.y + b.height)) - y }
+    }
+    const ordered: IRBlock[] = []
+    for (const u of orderByPanels(units, unitBox, panels)) for (const b of u) ordered.push(b)
+    return mergeAdjacentTableBlocks(ordered)
   }
   if (gutterX !== null && units.length > 1) {
     // 밴드 정렬 (#64): 거터를 가로지르는 유닛(전폭 표·머리글·쪽번호)을 위→아래
@@ -924,7 +943,11 @@ export function columnTextToBlocks(text: string, pageNum: number, bbox: Bounding
         continue
       }
     }
-    prose.push(lines[i])
+    // 표로 인정하지 않은 열 줄은 칸 글을 이어 원래 줄로 — "| a | b |" 모양을 그대로 두면 이스케이프된 파이프 문단이 된다
+    if (tableLine(lines[i])) {
+      const cellTexts = cells(lines[i])
+      if (!cellTexts.every(c => /^:?-{3,}:?$/.test(c))) prose.push(cellTexts.filter(Boolean).join(" "))
+    } else prose.push(lines[i])
     i++
   }
   flushProse()
@@ -990,6 +1013,10 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     }
     return splitTwoColumnProse(items, earlyProseCut)
       .flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
+  }
+  if (fullPage && detectTables && figures.length > 0) {
+    const bands = figureColumnBands(items, figures)
+    if (bands) return bands.flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
   }
   if (fullPage && detectTables) {
     const sidebar = splitSidebarTitleRegion(items)

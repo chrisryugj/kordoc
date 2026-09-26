@@ -36,6 +36,10 @@ function isRunningHead(block: IRBlock, page: IRBlock[], pageHeight: number | und
   return right > left && box.width >= (right - left) * 0.6
 }
 
+function unbalancedClose(text: string): boolean {
+  return (text.match(/\)/g)?.length ?? 0) > (text.match(/\(/g)?.length ?? 0)
+}
+
 export function demoteNonHeadingRoles(blocks: IRBlock[], pageHeights: Map<number, number>): void {
   const byPage = new Map<number, IRBlock[]>()
   for (const block of blocks) {
@@ -72,7 +76,15 @@ export function demoteNonHeadingRoles(blocks: IRBlock[], pageHeights: Map<number
       blocks.splice(i--, 1)
       continue
     }
-    if (tocEntry || proseStyle || !/\p{L}/u.test(text) || /^[a-z]/.test(text) || CAPTION.test(text) || EQUATION_NUMBER.test(block.text) || DISPLAY_MATH.test(text) ||
+    // 쪽 맨 위, 바로 아래 더 큰 제목 위에 붙은 작은 머리표(슬라이드 키커 "Recommendation Pack: Track Record")는 제목이 아니다
+    const box = block.bbox, size = block.style?.fontSize ?? 0
+    const kicker = !!box && size > 0 && next?.type === "heading" && next.pageNumber === block.pageNumber && !!next.bbox &&
+      (next.style?.fontSize ?? 0) >= size * 1.3 && box.y - (next.bbox.y + next.bbox.height) <= size * 3 &&
+      Math.min(box.x + box.width, next.bbox.x + next.bbox.width) - Math.max(box.x, next.bbox.x) >= Math.min(box.width, next.bbox.width) * 0.5 &&
+      !page.some(o => o !== block && o.bbox && o.bbox.y > box.y + box.height && o.type !== "image")
+    if (tocEntry || proseStyle || kicker || !/\p{L}/u.test(text) || /^[a-z]/.test(text) || CAPTION.test(text) || EQUATION_NUMBER.test(block.text) || DISPLAY_MATH.test(text) ||
+        // 닫는 괄호가 여는 괄호보다 많으면 앞 줄에서 이어진 문장 조각이다 ("Fact-checking) and is used …") — "1)"·"가)" 앞머리 번호는 빼고 센다
+        unbalancedClose(text.replace(/^\s*[\dA-Za-z가-힣ⅰ-ⅹ]{1,3}\)\s*/, "")) ||
         isRunningHead(block, page, pageHeights.get(block.pageNumber ?? 0))) {
       block.type = "paragraph"
       block.level = undefined

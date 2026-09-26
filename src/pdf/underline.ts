@@ -45,8 +45,9 @@ const UNDER_BOX_PAIR_OVERLAP = 0.8
 /**
  * baseline 바로 아래에 밀착한 얇은 수평선을 찾아 해당 아이템에 underline 마킹.
  */
-export function markUnderlineItems(items: NormItem[], horizontals: LineSegment[], verticals: LineSegment[]): void {
-  if (items.length === 0 || horizontals.length === 0) return
+export function markUnderlineItems(items: NormItem[], horizontals: LineSegment[], verticals: LineSegment[]): LineSegment[] {
+  const underlines: LineSegment[] = []
+  if (items.length === 0 || horizontals.length === 0) return underlines
 
   for (const line of horizontals) {
     if (line.lineWidth > UNDER_MAX_THICKNESS) continue
@@ -93,7 +94,9 @@ export function markUnderlineItems(items: NormItem[], horizontals: LineSegment[]
     if (hole) continue
 
     for (const m of matches) m.underline = true
+    underlines.push(line)
   }
+  return underlines
 }
 
 /** 선의 x-스팬 내에서 선 y 를 지나는(접촉 포함) 수직선 존재 여부 — 표 그리드/폼 박스 판정 */

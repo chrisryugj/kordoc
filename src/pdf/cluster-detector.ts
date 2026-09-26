@@ -838,10 +838,26 @@ function countMatchedColumnsRange(
  * 이 방식은 열 폭이 행마다 달라도 정확하게 분리.
  */
 function assignRowItems(
-  items: ClusterItem[], columns: ColCluster[], numCols: number,
+  items: ClusterItem[], columns: ColCluster[], numCols: number, headerFace?: string,
 ): { col: number; items: ClusterItem[] }[] {
   if (items.length === 0) return []
   const sorted = [...items].sort((a, b) => a.x - b.x)
+
+  // 머리행: 붙은 조각(한 낱말이 갈린 "Glucos|e Solution")을 묶은 무리의 왼끝이 모두 서로 다른 열 앵커와 맞으면 앵커대로 —
+  // 머리 글이 좁은 틈(4pt)으로 붙어 있어도 열 시작점이 칸을 가른다
+  const runs: ClusterItem[][] = []
+  for (const it of sorted) {
+    const last = runs[runs.length - 1]
+    const prev = last?.[last.length - 1]
+    if (prev && it.x - (prev.x + prev.w) <= Math.max(0.5, it.fontSize * 0.05) && !it.hasSpaceBefore) last.push(it)
+    else runs.push([it])
+  }
+  const tight = runs.slice(1).some((run, k) => run[0].x - Math.max(...runs[k].map(i => i.x + i.w)) < 12)
+  const shortRuns = runs.every(run => run.reduce((n, i) => n + i.text.length, 0) <= 30)
+  if (headerFace && sorted.every(i => i.fontName === headerFace) && runs.length >= 2 && tight && shortRuns) {
+    const anchor = runs.map(run => columns.findIndex(c => Math.abs(c.x - run[0].x) <= 2))
+    if (anchor.every(ci => ci >= 0) && new Set(anchor).size === runs.length) return runs.map((run, k) => ({ col: anchor[k], items: run }))
+  }
 
   // 헤더 열 중심 좌표
   const colCenters = columns.map(c => c.x)
@@ -933,6 +949,10 @@ function buildClusterTable(
 
   const usedItems = new Set<ClusterItem>()
 
+  // 머리행이 몸통과 다른 한 서체(굵은 머리)면 그 서체 — 머리 글 사이 틈이 좁아도 열 앵커로 칸을 가른다
+  const headFaces = new Set(rows[0]?.items.map(i => i.fontName))
+  const headerFace = headFaces.size === 1 && rows.slice(1).every(row => row.items.every(i => !headFaces.has(i.fontName)))
+    ? [...headFaces][0] : undefined
   for (let r = 0; r < numRows; r++) {
     const row = rows[r]
     // 단일 아이템 행 → 전체 행 병합 (colSpan)
@@ -943,7 +963,7 @@ function buildClusterTable(
     }
 
     // 행별 갭 분석 기반 열 배정
-    const assignments = assignRowItems(row.items, columns, numCols)
+    const assignments = assignRowItems(row.items, columns, numCols, r === 0 ? headerFace : undefined)
     for (const { col, items } of assignments) {
       const text = joinCellItems(items)
       const existing = cells[r][col].text
