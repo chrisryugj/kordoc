@@ -5,6 +5,7 @@
 //   git clone https://github.com/opendataloader-project/opendataloader-bench <클론경로>
 //   npm run build
 //   node bench/odl-bench.mjs <클론경로>          # prediction/kordoc/markdown/*.md 생성
+//   node bench/odl-bench.mjs <클론경로> --ocr    # 명시적 OCR 별도 측정
 //   cd <클론경로> && uv sync && uv run python src/evaluator.py --engine kordoc
 //
 // 조건: 기본 옵션(OCR off) — pdf-inspector README 측정 조건과 동일.
@@ -20,6 +21,7 @@ import { join, basename } from "node:path"
 import { parse } from "../dist/index.js"
 
 const root = process.argv[2]
+const ocr = process.argv.includes("--ocr")
 if (!root) {
   console.error("사용법: node bench/odl-bench.mjs <opendataloader-bench 클론경로>")
   process.exit(1)
@@ -31,7 +33,7 @@ let ok = 0, fail = 0
 const t0 = performance.now()
 for (const f of files) {
   try {
-    const r = await parse(await readFile(join(root, "pdfs", f)))
+    const r = await parse(await readFile(join(root, "pdfs", f)), ocr ? { ocr: true } : undefined)
     await writeFile(join(outDir, basename(f, ".pdf") + ".md"), r.markdown ?? "")
     ok++
   } catch (e) {
@@ -40,4 +42,4 @@ for (const f of files) {
     console.error("FAIL", f, String(e).slice(0, 120))
   }
 }
-console.log(`ok=${ok} fail=${fail} elapsed=${((performance.now() - t0) / 1000).toFixed(1)}s → ${outDir}`)
+console.log(`ok=${ok} fail=${fail} ocr=${ocr} elapsed=${((performance.now() - t0) / 1000).toFixed(1)}s → ${outDir}`)

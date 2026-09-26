@@ -23,7 +23,9 @@ import { markUnderlineItems, wrapUnderlineRuns } from "./underline.js"
 import { extractImageRegions, type ImageRegion } from "./image-regions.js"
 import { markImageCell } from "./table-trim.js"
 import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, recordCellLines } from "./table-meta.js"
-import { WrapLexicon, bodyLineJoins, PARA_LAST_LINE } from "./line-wrap.js"
+import { WrapLexicon } from "./line-wrap.js"
+import { splitSidebarTitleRegion, splitTrailingColumnRegion } from "./local-regions.js"
+import { pushLineParagraphs } from "./paragraph-lines.js"
 
 /** 쪽 사이로 넘기는 칸 이어짐 상태 — 앞 쪽 번호와 그 쪽 클립 사실 (다음 쪽 첫 클립이 앞 쪽 마지막 칸의 이어짐인지 가른다, clip-cells) */
 export interface PageCarry { page?: number; clip?: ClipPage }
@@ -116,6 +118,15 @@ export function extractPageBlocksWithLines(
   // A broad decorative line grid can otherwise swallow the whole page.
   if (detectTables && stackedTableBands(items)) {
     return extractPageBlocksFallback(items, pageNum, true, detectTables, lex)
+  }
+
+  // A small decorative box in the page margin is not a content grid. It must
+  // not force a sidebar title and its prose through the table-first path.
+  const sidebar = splitSidebarTitleRegion(items)
+  if (sidebar && grids.every(grid => grid.rowYs.length === 2 && grid.colXs.length === 2 &&
+      !items.some(item => item.x + item.w / 2 >= grid.bbox.x1 && item.x + item.w / 2 <= grid.bbox.x2 &&
+        item.y + item.h / 2 >= grid.bbox.y1 && item.y + item.h / 2 <= grid.bbox.y2))) {
+    return sidebar.flatMap((region, index) => extractPageBlocksFallback(region, pageNum, false, index === 2 ? false : detectTables, lex))
   }
 
   if (grids.length > 0) {
@@ -641,7 +652,11 @@ function extractBlocksWithGrids(
       const textBlocks: IRBlock[] = []
       for (const group of groups) {
         if (group.length === 0) continue
-        const groupBlocks = extractPageBlocksFallback(group, pageNum, false, true, lex)
+        const besideProsePanel = [...proseSidebars].some(sidebar => sidebar.bbox &&
+          group.every(item => item.x >= sidebar.bbox!.x + sidebar.bbox!.width + 3) &&
+          new Set(group.filter(item => item.y >= sidebar.bbox!.y &&
+            item.y <= sidebar.bbox!.y + sidebar.bbox!.height).map(item => Math.round(item.y / 3))).size >= 8)
+        const groupBlocks = extractPageBlocksFallback(group, pageNum, false, !besideProsePanel, lex)
         for (const b of groupBlocks) textBlocks.push(b)
         groupSizes.push(groupBlocks.length)
       }
@@ -956,20 +971,6 @@ function threeColumnInfographic(items: NormItem[]): NormItem[][] | null {
   return null
 }
 
-/** A numbered title and its differently styled subtitle precede body prose. */
-function hasNumberedStyledTitle(lines: NormItem[][]): boolean {
-  if (lines.length < 4) return false
-  const [title, subtitle, body] = lines
-  const face = (line: NormItem[]) => line.every(i => i.fontName === line[0].fontName) ? line[0].fontName : null
-  const a = face(title), b = face(subtitle), c = face(body)
-  if (!a || !b || !c || a === b || b === c || a === c ||
-      !/^\d+(?:\.\d+)*\.\s+/.test(mergeLineSimple(title)) ||
-      mergeLineSimple(title).length + mergeLineSimple(subtitle).length > 140 ||
-      Math.abs(title[0].x - subtitle[0].x) > 30 ||
-      title[0].y - subtitle[0].y > 30 || subtitle[0].y - body[0].y > 30) return false
-  return true
-}
-
 /**
  * 어휘 증거용 줄 — 콘텐츠 스트림 순서(seq)대로 이어 가다 기준선이 바뀌거나 왼쪽으로 되돌아가거나 탭만큼 벌어지면 끊는다.
  * 쪽 전체를 y 로만 묶으면 같은 높이의 옆 칸 줄이 한 줄로 붙어("…공상공무 원 및 특별공로순직자의" — 왼 칸 끝 + 오른 칸 머리)
@@ -993,37 +994,6 @@ function streamLines(items: NormItem[]): NormItem[][] {
 
 /** 칸 글 조립에 넘기는 줄 꺾임 판정 재료 — 칸 상자와 문서 어휘 증거 */
 type CellWrap = { box: { x1: number; x2: number }; lex?: WrapLexicon }
-
-/**
- * 한 묶음(XY-Cut 그룹)의 줄을 문단 블록으로 — 오른끝까지 찬 줄이 다음 줄로 꺾여 넘어간 자리는 한 문단으로 잇는다
- * (어절 중간이면 붙이고 경계면 띄움, 판정은 line-wrap.ts). 종전엔 줄마다 문단이라 어절 중간 꺾임("재⏎일학도의용군인")이
- * 두 낱말로 갈렸다 — hwpx↔pdf 417쌍 본문 블록 사이 어절 중간 꺾임 5,292곳(어절 F1 0.0144 몫)
- */
-function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum: number, lex?: WrapLexicon): void {
-  const lines = yLines.map(items => ({ items, text: mergeLineSimple(items) })).filter(l => l.text.trim())
-  const geo = lines.map(l => {
-    const b = computeBBox(l.items, pageNum)
-    return { text: l.text, left: b.x, right: b.x + b.width, y: l.items.reduce((s, i) => s + i.y, 0) / l.items.length, fontSize: dominantStyle(l.items)?.fontSize ?? 0 }
-  })
-  const joins = bodyLineJoins(geo, lex)
-  if (hasNumberedStyledTitle(lines.map(line => line.items))) {
-    joins[0] = "\n"
-    joins[1] = "\n"
-  }
-  for (let i = 0; i < lines.length;) {
-    let text = lines[i].text
-    const items = [...lines[i].items]
-    for (; i + 1 < lines.length && joins[i] !== "\n"; i++) {
-      text += joins[i] + lines[i + 1].text
-      items.push(...lines[i + 1].items)
-    }
-    const block: IRBlock = { type: "paragraph", text, pageNumber: pageNum, bbox: computeBBox(items, pageNum), style: dominantStyle(items) }
-    // 끝줄 기하 — 쪽 넘김 꺾임 잇기(joinPageBreakWraps) 재료
-    PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize })
-    out.push(block)
-    i++
-  }
-}
 
 /** Keep aligned-column tables structural instead of escaping their generated Markdown as prose. */
 export function columnTextToBlocks(text: string, pageNum: number, bbox: BoundingBox, style?: InlineStyle): IRBlock[] {
@@ -1121,6 +1091,12 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     }
     return splitTwoColumnProse(items, earlyProseCut)
       .flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
+  }
+  if (fullPage && detectTables) {
+    const sidebar = splitSidebarTitleRegion(items)
+    if (sidebar) return sidebar.flatMap((region, index) => extractPageBlocksFallback(region, pageNum, false, index === 2 ? false : detectTables, lex))
+    const regions = splitTrailingColumnRegion(items)
+    if (regions) return regions.flatMap(region => extractPageBlocksFallback(region, pageNum, false, detectTables, lex))
   }
   const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum) : []
 
