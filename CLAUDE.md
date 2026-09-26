@@ -167,6 +167,14 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/quality.ts` | PDF 페이지별 텍스트 품질 신호 계산 (한글/제어문자/PUA 비율, needsOcr 판정). 사유 `vector_text`: 글자를 곡선으로 그린 쪽(vector-glyphs) |
 | `src/pdf/vector-glyphs.ts` | 벡터 글자 감지: 글자를 채운 곡선 경로로 그린 쪽(rhwp cairo·윤곽 인쇄): 음절 모양 채움 경로의 글줄 → quality `vector_text`(코퍼스 16,775쪽 한컴 PDF 오탐 0), OCR 쪽 그래픽 추림(글자 경로·클립 제외, cairo 는 음영 칸에만 클립) |
 | `src/pdf/line-wrap.ts` | PDF 줄 꺾임 이음: 본문 줄을 문단으로 복원(찬 줄·새 항목 아님), 칸 안 어절 중간 꺾임, 쪽 넘김 꺾임(`joinPageBreakWraps`). 한컴 텍스트층은 줄 끝 공백을 싣지 않아 어절 중간/경계는 기하로 못 가르고 글로 판정: 조사·어미, 문서 어휘 증거(`WrapLexicon`), 한 음절 조각, 날짜 줄(HWPX 정답 22,911곳 92.9%) |
+| `src/pdf/open-table-ends.ts` | 열린 위·아래 변 닫기 `closeOpenTableEnds`: 머리행 위·합계행 아래 가로선을 긋지 않고 세로선만 내려 그은 표 — 몸통 괘선 묶음 밖 같은 끝점까지 뻗은 내부 세로선 2개 이상이면 그 끝점에 가상 가로선(v4.15.5, ODL 045~047) |
+| `src/pdf/header-box-rows.ts` | 1행 머리 상자 아래 무괘선 행 `extendHeaderBoxRows`: 머리만 칸 괘선(음영 상자)이고 데이터는 괘선 없는 표 — 상자 칸 안에만 놓인 고른 간격 글줄을 행으로 보고 가상 괘선. 클립 격자 쪽은 안 부름(v4.15.5) |
+| `src/pdf/ruled-band-tables.ts` | 가로 괘선만 있는 표(booktabs) `detectRuledBandTables`: 끝점 정렬 가로선 3개 이상 사이 띠마다 열 틈이 있으면 표 — 열은 몸통 x 투영 틈, 머리 띠는 한 행(걸친 글은 병합 칸). 행 간격 8pt 표도 있어 가상 괘선 대신 IR 표를 바로 만들어 격자 경로(두 단 밴드 순서)에 넘긴다. 안·양끝 세로선(선 격자·테두리 상자)·목차는 제외(v4.15.5) |
+| `src/pdf/page-regions.ts` | 쪽 지면 영역(page-blocks 에서 분리): 두 단 밴드 `splitTwoColumnProse`(쪽 머리 줄·다른 단 위로 떨어진 짧은 캡션 띠 먼저, 작은 글자 각주 띠는 두 단 본문 뒤), 두 단 위 표 밴드, 3단 머리 표, 쌓인 캡션 표, 카드·인포그래픽 3열 |
+| `src/pdf/local-regions.ts` | 지역 읽기 영역: 전폭 영역 아래 짧은 좌·우 단, 여백의 큰 표시 제목과 독립 본문, drop cap 줄 소속 |
+| `src/pdf/table-roles.ts` | 무괘선 표 후보의 역할: 목차(증가하는 쪽번호 열)·산문 표(긴 문장 칸 과반, 짧은 라벨 열 없음)·차트(값 축·빈 칸 과반 수량) |
+| `src/pdf/heading-demote.ts` | 승격 뒤 제목 강등: 쪽 가장자리 머리말·꼬리말, 캡션, 수식 번호·관계 기호 줄(#89), 소문자 시작 이어진 문장, 본문 스타일 긴 문장 |
+| `src/pdf/paragraph-lines.ts` | 줄 → 문단 결합(page-blocks 에서 분리), drop cap 소속을 결합 전에 적용 |
 | `src/xlsx/parser.ts` | XLSX(ZIP+XML) 파싱, 공유 문자열/병합 셀 처리 |
 | `src/xlsx/sheet-blocks.ts` | XLSX·XLS 공용 시트 → 표: 열 수에 따른 칸 예산·절단 경고 |
 | `src/docx/parser.ts` | DOCX(ZIP+XML) 파싱, 스타일/번호매기기/각주 처리 |

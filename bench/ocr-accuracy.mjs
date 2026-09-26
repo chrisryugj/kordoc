@@ -48,9 +48,13 @@ const MIN_GLYPH_COVERAGE = 0.8  // 래스터 글자 검사 하한 (코퍼스 82�
 //         종전 1차 라운드: 0.19225 · 표 37/59 · cellF1 0.3898). 표 모수 58 → 51 은 정답지 예산서 표가 괘선 표로 제대로 모인 결과
 // v4.15.0: PDF 14건 보강 → 54문서/104쪽. 보강 후 기준선과 모든 문서별 품질 수치 동일(기존 모수 무후퇴).
 // 실측 CER .09995·R .98117·P .97495·한글 R .99322·표 56/72(.7778)·cellF1 .5456.
+// 표 플로어 재산정(2026-09-27, v4.15.5, 사용자 승인): 정답이 같은 파서의 텍스트층 출력이라, 무괘선 목차를 표가 아닌 "항목 쪽번호"
+// 문단으로 내는 역할 판정(v4.15.5 이전 커밋 3b93f1b)이 원래 OCR 과 잘 맞던 목차 표 4개(ice-arc-2026 3·korean-press-guide 1)를
+// 정답 모수에서 뺐다(72→68표). 종전 0.77/0.545 는 그 표들을 포함한 값이다. 문서별 대조에서 OCR 쪽 실제 차이는 seoul-archives-guide
+// 목차(텍스트층은 한컴 클립 표, OCR 은 목차 문단) 1건이며, 재산정 시점 값은 matched 0.7647·cellF1 0.5409 다
 const GATES = {
   cerMicroMax: 0.100, charRecallMin: 0.981, charPrecisionMin: 0.974, hangulRecallMin: 0.993,
-  tableMatchedMin: 0.77, tableCellF1Min: 0.545, minDocs: 54, minPages: 104,
+  tableMatchedMin: 0.76, tableCellF1Min: 0.535, minDocs: 54, minPages: 104,
 }
 
 const toAB = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)

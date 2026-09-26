@@ -3,7 +3,7 @@
  *
  * 승격 패스는 글꼴 크기·서체 차이만 보므로 쪽 머리말·꼬리말, 캡션, 번호 붙은 수식 줄,
  * 문장 중간에서 끊긴 줄도 올린다. 여기서는 문자열 정답이 아니라 역할 증거(쪽 가장자리 띠와
- * 쪽번호, 캡션 표지, 수식 번호, 소문자로 시작하는 이어진 문장)로만 판단한다.
+ * 쪽번호, 캡션 표지, 수식 번호·관계 기호, 소문자로 시작하는 이어진 문장)로만 판단한다.
  */
 
 import type { IRBlock } from "../types.js"
@@ -12,6 +12,8 @@ import { TOC_BLOCKS } from "./table-roles.js"
 const PAGE_NUMBER = /^(?:\d{1,4}|[ivxlc]{1,7})$/i
 const CAPTION = /^(?:Table|Figure|Fig\.?)\s*\d+(?:\.\d+)*\s*[.:]/i
 const EQUATION_NUMBER = /\t\(\d{1,3}[a-z]?\)\s*$/
+/** 별행 수식 — 관계 기호·근호·큰 연산자가 든 줄은 절 제목이 아니다 (#89 "MultiHead(Q, K, V) = Concat(…)") */
+const DISPLAY_MATH = /=|[√∑∏∫∂∇≤≥≈≠∈∀∃]/
 
 /** A running head sits in the outer band of the page with nothing beyond it and
  * spreads its parts to the page edges (tab-separated), usually with a page number. */
@@ -70,7 +72,7 @@ export function demoteNonHeadingRoles(blocks: IRBlock[], pageHeights: Map<number
       blocks.splice(i--, 1)
       continue
     }
-    if (tocEntry || proseStyle || !/\p{L}/u.test(text) || /^[a-z]/.test(text) || CAPTION.test(text) || EQUATION_NUMBER.test(block.text) ||
+    if (tocEntry || proseStyle || !/\p{L}/u.test(text) || /^[a-z]/.test(text) || CAPTION.test(text) || EQUATION_NUMBER.test(block.text) || DISPLAY_MATH.test(text) ||
         isRunningHead(block, page, pageHeights.get(block.pageNumber ?? 0))) {
       block.type = "paragraph"
       block.level = undefined

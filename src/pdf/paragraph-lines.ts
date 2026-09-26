@@ -3,6 +3,9 @@ import { attachDropCaps } from "./local-regions.js"
 import { WrapLexicon, bodyLineJoins, PARA_LAST_LINE } from "./line-wrap.js"
 import { computeBBox, dominantStyle, mergeLineSimple, type NormItem } from "./text-line.js"
 
+/** 문단 블록의 서체별 글자 수 — 앞머리만 굵은 문장("Definition 1. A universe…")은 서체 차이로 제목이 아니다 */
+export const FACE_CHARS = new WeakMap<IRBlock, Map<string, number>>()
+
 /** A numbered title and its differently styled subtitle precede body prose. */
 function hasNumberedStyledTitle(lines: NormItem[][]): boolean {
   if (lines.length < 4) return false
@@ -37,6 +40,9 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
       items.push(...lines[i + 1].items)
     }
     const block: IRBlock = { type: "paragraph", text, pageNumber: pageNum, bbox: computeBBox(items, pageNum), style: dominantStyle(items) }
+    const faces = new Map<string, number>()
+    for (const it of items) faces.set(it.fontName, (faces.get(it.fontName) ?? 0) + it.text.length)
+    FACE_CHARS.set(block, faces)
     // 끝줄 기하 — 쪽 넘김 꺾임 잇기(joinPageBreakWraps) 재료
     PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize })
     out.push(block)

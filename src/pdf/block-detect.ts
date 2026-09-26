@@ -9,6 +9,7 @@
 import type { IRBlock, IRTable, ParseWarning } from "../types.js"
 import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
 import { collapseEvenSpacing } from "./text-line.js"
+import { FACE_CHARS } from "./paragraph-lines.js"
 
 // ═══════════════════════════════════════════════════════
 // 헤딩 감지 (폰트 크기 기반)
@@ -136,7 +137,11 @@ export function detectTypographyHeadings(blocks: IRBlock[]): void {
       if (block.type !== "paragraph" || !text || !bbox || !style?.fontName || !style.fontSize) continue
       const title = text.trim()
       const numbered = /^\d+(?:\.\d+)*\.?\s+[A-Z가-힣]/.test(title)
-      if (style.fontName === bodyFace || style.fontSize < bodySize * 0.95 || title.length < 3 || title.length > 120 ||
+      // 본문 서체가 아닌 글자가 대부분이어야 한다 — 앞머리 굵은 표지 + 본문 서체 문장은 제목이 아니다
+      const faces = FACE_CHARS.get(block)
+      const total = faces ? [...faces.values()].reduce((a, b) => a + b, 0) : 0
+      const bodyShare = faces && total ? (faces.get(bodyFace) ?? 0) / total : 0
+      if (style.fontName === bodyFace || bodyShare > 0.4 || style.fontSize < bodySize * 0.95 || title.length < 3 || title.length > 120 ||
           /^\d+$/.test(title) || /^(?:table|figure|fig\.?|표|그림)\s*\d/i.test(title) ||
           /^(?:doi:|https?:|[•●○▪▫])/i.test(title) ||
           /^(?:over|under)\s+\d+$/i.test(title) || /^[\d\s.,:%+\-–]+$/.test(title) ||

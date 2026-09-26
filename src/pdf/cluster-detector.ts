@@ -122,8 +122,15 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
       if (columns.length >= MIN_COLS) {
         const tableRegions = findTableRegions(rows, columns)
         for (const region of tableRegions) {
-          const mergedRows = mergeMultiLineRows(region.rows, columns)
-          const table = buildClusterTable(mergedRows, columns, pageNum)
+          // 열은 영역 안 행으로 다시 세운다 — 같은 쪽 다른 표의 열 x 가 섞이면 가짜 사이 열이 생긴다.
+          // 영역 열이 더 적을 때만(섞인 열을 걷어낼 때만), 그 표의 몸통 칸 글이 모두 짧고 글꼴 사용자 영역(수식 기호) 문자가 없을 때만 쓴다 — 행이 적은 영역은 기준 수가
+          // 낮아 기호 줄·문장 줄에서 가짜 표가 살아난다(수학 시험지·보도자료 본문)
+          const own = extractColumnClusters(region.rows.filter(row => hasSuspiciousGaps(row)))
+          const ownTable = own.length >= MIN_COLS && own.length < columns.length
+            ? buildClusterTable(mergeMultiLineRows(region.rows, own), own, pageNum) : null
+          const table = ownTable && ownTable.table.cells.every((row, r) => row.every(cell => (r === 0 || cell.colSpan >= ownTable.table.cols || cell.text.trim().length <= 30) &&
+            !/\p{Co}/u.test(cell.text)))
+            ? ownTable : buildClusterTable(mergeMultiLineRows(region.rows, columns), columns, pageNum)
           if (table) {
             expandUsedItems(table.usedItems, originMap)
             results.push(table)
@@ -135,8 +142,11 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
 
   if (results.length === 0) results.push(...detectAlignedTwoColumnTables(rows, pageNum))
   if (results.length === 0) results.push(...detectSparseTwoColumnTables(rows, pageNum))
-  if (results.length === 0) {
-    for (const table of detectCompactStatisticalTables(rows, pageNum)) {
+  {
+    // 다른 표가 찾아진 쪽도 남은 행에서 2행 표를 찾는다 (표 사이 문장 뒤 작은 표)
+    const taken = new Set(results.flatMap(r => [...r.usedItems]))
+    const rest = results.length === 0 ? rows : rows.filter(row => !row.items.some(i => taken.has(i)))
+    for (const table of detectCompactStatisticalTables(rest, pageNum)) {
       expandUsedItems(table.usedItems, originMap)
       results.push(table)
     }
@@ -156,15 +166,34 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
  * Repeated starts across four or more short cells provide the cell graph. */
 function detectCompactStatisticalTables(rows: RowGroup[], pageNum: number): ClusterTableResult[] {
   const found: ClusterTableResult[] = []
+  // 붙어 있는 조각(한 낱말이 두 아이템으로 갈린 "Glucos|e Solution")은 한 칸 — 원본은 parts 에
+  const parts = new Map<ClusterItem, ClusterItem[]>()
+  const cellsOf = (row: RowGroup): ClusterItem[] => {
+    const out: ClusterItem[] = []
+    for (const it of [...row.items].sort((a, b) => a.x - b.x)) {
+      const last = out[out.length - 1]
+      if (last && it.x - (last.x + last.w) <= Math.max(0.5, it.fontSize * 0.05) && !it.hasSpaceBefore) {
+        const joined = { ...last, text: last.text + it.text, w: it.x + it.w - last.x }
+        parts.set(joined, [...(parts.get(last) ?? [last]), it])
+        out[out.length - 1] = joined
+      } else out.push(it)
+    }
+    return out
+  }
   for (let r = 0; r < rows.length - 1; r++) {
-    const header = [...rows[r].items].sort((a, b) => a.x - b.x)
-    const values = [...rows[r + 1].items].sort((a, b) => a.x - b.x)
+    const header = cellsOf(rows[r])
+    const values = cellsOf(rows[r + 1])
     if (header.length < 4 || header.length > 12 || values.length !== header.length ||
         (/^\d+[.)]$/.test(header[0].text.trim()) && /^\d+[.)]$/.test(values[0].text.trim())) ||
         header.some(c => !c.text.trim() || c.text.length > 32) ||
         values.some(c => !c.text.trim() || c.text.length > 16) ||
-        values.filter(c => /\d/.test(c.text) && !/\p{L}/u.test(c.text)).length < Math.ceil(values.length / 2) ||
         rows[r].y - rows[r + 1].y > Math.max(25, header[0].fontSize * 3)) continue
+    // 값 절반 이상이 수치이거나, 머리행이 값과 다른 한 글꼴이고 칸 왼끝이 모두 맞는 표 (머리 굵게 · 값 보통)
+    const numeric = values.filter(c => /\d/.test(c.text) && !/\p{L}/u.test(c.text)).length >= Math.ceil(values.length / 2)
+    const styledHeader = header.every(c => c.fontName === header[0].fontName) &&
+      values.every(c => c.fontName === values[0].fontName) && header[0].fontName !== values[0].fontName &&
+      values.every((c, i) => Math.abs(c.x - header[i].x) <= 2)
+    if (!numeric && !styledHeader) continue
     let aligned = true
     for (let c = 0; c < header.length; c++) {
       const gap = c + 1 < header.length ? header[c + 1].x - header[c].x : Infinity
@@ -180,7 +209,7 @@ function detectCompactStatisticalTables(rows: RowGroup[], pageNum: number): Clus
       table: { rows: 2, cols: header.length, hasHeader: true, cells: [header, values].map(row =>
         row.map(c => ({ text: c.text, colSpan: 1, rowSpan: 1 }))) },
       bbox: { page: pageNum, x: minX, y: minY, width: maxX - minX, height: maxY - minY },
-      usedItems: new Set(all),
+      usedItems: new Set(all.flatMap(c => parts.get(c) ?? [c])),
     })
     r++
   }

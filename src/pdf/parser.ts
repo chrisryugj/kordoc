@@ -185,10 +185,26 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         } : rawOps
 
         // 심볼 폰트(Wingdings) 글리프 복원 — 폰트 실명은 operatorList 로드 뒤에야 commonObjs 에 있다
-        remapSymbolFontItems(visible, (loadedName) => {
-          try { return page.commonObjs.has(loadedName) ? (page.commonObjs.get(loadedName) as { name?: string } | null)?.name : undefined }
+        const fontObj = (loadedName: string) => {
+          try { return page.commonObjs.has(loadedName) ? page.commonObjs.get(loadedName) as { name?: string; isType3Font?: boolean } | null : undefined }
           catch { return undefined }
-        })
+        }
+        remapSymbolFontItems(visible, (loadedName) => fontObj(loadedName)?.name)
+        // 글꼴 id(g_d0_fN)는 글꼴 객체마다 다르다. 크롬은 한 서체를 Type3 글꼴 객체 여러 개(256자마다 새 객체)로 쪼개
+        // 같은 본문이 "다른 서체"로 보여 제목으로 승격된다(#89). Type3 는 서브셋 접두(ABCDEF+)를 뗀 서체 이름으로 맞춘다.
+        // 다른 글꼴은 같은 이름의 서브셋 객체 차이가 굵게 흉내 낸 제목의 유일한 증거일 수 있어 그대로 둔다(ODL 181 Calibri).
+        // 서브셋 접두가 없는 Type3 이름(cairo "T2"·"T3")은 쪽마다 다른 글꼴에 되쓰여 합치지 않는다
+        const faces = new Map<string, string>()
+        for (const it of visible) {
+          if (!it.fontName) continue
+          let face = faces.get(it.fontName)
+          if (face === undefined) {
+            const obj = fontObj(it.fontName)
+            face = (obj?.isType3Font && /^[A-Z]{6}\+./.test(obj.name ?? "") && obj.name!.slice(7)) || it.fontName
+            faces.set(it.fontName, face)
+          }
+          it.fontName = face
+        }
         // 리터럴 $ 는 \$ — $…$ 는 수식 스팬 전용(IR 규약, HWPX·HWP5 와 같음). 종전엔 "단가(US $) … 금액(US $)" 사이가
         // 마크다운에서 수식으로 읽혀 사라졌다(야생생물 신고서·어셈블리 "lda $30,-16($30)"). 심볼 글꼴 복원 뒤라야 글자 표가 안 어긋난다
         for (const it of visible) if (it.text.includes("$")) it.text = escapeLiteralDollar(it.text)

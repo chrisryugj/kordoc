@@ -512,7 +512,7 @@ const CHAIN_GAP = 3
  * 수평선은 수정하지 않는다 (물리 병합은 셀 배치 변질 실측으로 폐기, 9차).
  * 근접 평행 겹줄(장식 이중선)도 한 논리 괘선으로 흡수된다.
  */
-function chainCollinearRules(horizontals: LineSegment[]): LineSegment[] {
+export function chainCollinearRules(horizontals: LineSegment[]): LineSegment[] {
   if (horizontals.length <= 1) return horizontals
   const sorted = [...horizontals].sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1)
   const rules: LineSegment[] = []
