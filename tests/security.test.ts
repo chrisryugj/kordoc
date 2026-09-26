@@ -117,15 +117,28 @@ describe("sanitizeError — 실제 함수 테스트", () => {
     }
   })
 
-  it("일반 Error는 일반 메시지로 대체", () => {
+  it("일반 Error는 일반 메시지로 대체 — 경로·트레이스 노출 없음", () => {
     const unsafeErrors = [
-      new Error("ENOENT: no such file, open 'C:\\Users\\admin\\secret.hwp'"),
       new Error("Cannot read properties at /opt/app/node_modules/pdfjs-dist/build/pdf.js:1234"),
       new Error("EACCES: permission denied, open '/home/user/.ssh/id_rsa'"),
       "string error with C:\\path\\leak",
     ]
     for (const err of unsafeErrors) {
       assert.equal(sanitizeError(err), "문서 처리 중 오류가 발생했습니다")
+    }
+  })
+
+  it("ENOENT 는 구분 문구로 바꾸되 파일 경로는 노출하지 않는다", () => {
+    // 파일시스템 오류는 code 로, 래핑된 오류는 메시지로 온다 — 둘 다 같은 취급
+    const byMessage = new Error("ENOENT: no such file, open 'C:\\Users\\admin\\secret.hwp'")
+    const byCode = Object.assign(new Error("ENOENT: no such file or directory, stat 'C:\\Users\\admin\\secret.hwp'"), {
+      code: "ENOENT",
+    })
+    for (const err of [byMessage, byCode]) {
+      const msg = sanitizeError(err)
+      assert.equal(msg, "파일 또는 디렉토리를 찾을 수 없습니다")
+      assert.ok(!msg.includes("secret.hwp"), "파일명이 새지 않는다")
+      assert.ok(!msg.includes("C:\\Users"), "경로가 새지 않는다")
     }
   })
 })

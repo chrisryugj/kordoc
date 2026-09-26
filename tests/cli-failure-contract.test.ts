@@ -109,3 +109,40 @@ test("#70 이미지 저장 시 images/manifest.json — name/mimeType/bytes/sour
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+/** 존재하지 않는 입력 경로 — ENOENT 재현 */
+function missingFile(dir: string): string {
+  return join(dir, "없는-문서.hwpx")
+}
+
+test("없는 입력 경로 — FILE_NOT_FOUND 로 분류 + 실패 JSON 이 파일을 지목", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kordoc-fail-"))
+  try {
+    const r = runCli([missingFile(dir)])
+    assert.equal(r.status, 1)
+    const j = JSON.parse(r.stdout)
+    assert.equal(j.success, false)
+    // 없는 파일은 문서 파싱 실패가 아니라 입력 경로 문제다 — PARSE_ERROR 로 덮으면
+    // 호출자가 "파일이 깨졌다"와 "경로가 틀렸다"를 구분할 수 없다.
+    assert.equal(j.code, "FILE_NOT_FOUND")
+    assert.equal(j.file, "없는-문서.hwpx", "실패 JSON 이 어느 입력에서 났는지 지목해야 한다")
+    assert.ok(typeof j.error === "string" && j.error.length > 0)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("다중 입력 중 하나만 없음 — 정상 파일은 변환되고 file 필드로 대상 특정", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kordoc-fail-"))
+  try {
+    const outDir = join(dir, "out")
+    const r = runCli([DUMMY, missingFile(dir), "-d", outDir])
+    assert.equal(r.status, 1, "한 건이라도 실패하면 exit 1")
+    assert.ok(existsSync(join(outDir, "dummy.md")), "정상 파일은 실패와 무관하게 변환돼야 함")
+    const j = JSON.parse(r.stdout)
+    assert.equal(j.code, "FILE_NOT_FOUND")
+    assert.equal(j.file, "없는-문서.hwpx")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

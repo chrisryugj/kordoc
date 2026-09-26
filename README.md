@@ -1079,7 +1079,7 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 변환 실패는 **모든 `--format`(markdown·json·chunks)에서** stdout 에 동일한 실패 JSON 을 내고 exit 1 로 끝납니다. 호출자는 stderr 문구가 아니라 `code` 로 분기하면 됩니다.
 
 ```json
-{ "success": false, "fileType": "hwpx", "error": "암호화된 문서입니다 …", "code": "ENCRYPTED" }
+{ "success": false, "fileType": "hwpx", "file": "보고서.hwpx", "error": "암호화된 문서입니다 …", "code": "ENCRYPTED" }
 ```
 
 성공 출력과 충돌하지 않습니다 — `markdown` 성공은 마크다운 텍스트, `chunks` 성공은 JSON **배열**, 실패는 언제나 `success:false` **객체**입니다. `-o`/`-d` 지정 시 실패한 파일의 출력물은 생성되지 않습니다. 여러 파일 입력 시 실패한 파일마다 실패 JSON 이 한 개씩 나옵니다.
@@ -1096,9 +1096,10 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 | `OUTPUT_TOO_LARGE` | 출력 직렬화가 런타임 문자열 한계 초과 (#65) |
 | `MISSING_DEPENDENCY` | 선택 의존성 미설치 (pdfjs-dist 등) |
 | `EMPTY_INPUT` | 빈 입력 |
+| `FILE_NOT_FOUND` | 입력 경로가 존재하지 않음 (ENOENT) — 문서 파싱 이전 단계 |
 | `PARSE_ERROR` | 그 외 파싱 실패 |
 
-**안정성 보증**: 종료 코드 규칙(성공 0 / 실패 1)과 실패 JSON 의 필드(`success`·`fileType`·`error`·`code`)는 유지되고, `code` 값 집합은 **추가만** 됩니다(기존 값 변경·제거 없음). `error` 문구는 사람용이라 계약이 아닙니다.
+**안정성 보증**: 종료 코드 규칙(성공 0 / 실패 1)과 실패 JSON 의 필드(`success`·`fileType`·`error`·`code`)는 유지되고, `code` 값 집합은 **추가만** 됩니다(기존 값 변경·제거 없음). 어느 입력에서 났는지 알 수 있는 `file`(basename) 필드도 **추가만** 됩니다. `error` 문구는 사람용이라 계약이 아닙니다.
 
 ### 이미지 번들 — `images/manifest.json` (v4.10.0+, #70)
 

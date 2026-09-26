@@ -355,6 +355,8 @@ export type ErrorCode =
   | "MISSING_DEPENDENCY"
   /** 결과 직렬화가 런타임 문자열 한계를 넘음 — 이미지 다량 문서의 JSON 출력 (#65) */
   | "OUTPUT_TOO_LARGE"
+  /** 입력 경로가 존재하지 않음(ENOENT) — 문서 파싱 이전 단계의 실패 */
+  | "FILE_NOT_FOUND"
 
 // ─── 파싱 결과 (discriminated union) ────────────────
 

@@ -49,6 +49,17 @@ describe("classifyError", () => {
   it("non-Error → PARSE_ERROR", () => {
     assert.equal(classifyError("문자열 에러"), "PARSE_ERROR")
   })
+
+  it("입력 파일 없음(ENOENT) → FILE_NOT_FOUND — 문서 파싱 실패로 덮지 않는다", () => {
+    // 파일시스템 오류는 code 로, 래핑된 오류는 메시지로 온다 — 둘 다 같은 코드
+    const byCode = Object.assign(new Error("ENOENT: no such file or directory, stat 'x.hwpx'"), { code: "ENOENT" })
+    const byMessage = new Error("ENOENT: no such file, open 'x.hwpx'")
+    for (const err of [byCode, byMessage]) {
+      assert.equal(classifyError(err), "FILE_NOT_FOUND")
+    }
+    // EACCES 같은 다른 fs 오류는 경로 문제지만 ENOENT 와 구분해 기존 분류를 유지한다
+    assert.equal(classifyError(Object.assign(new Error("EACCES"), { code: "EACCES" })), "PARSE_ERROR")
+  })
 })
 
 describe("통합 에러코드", () => {
