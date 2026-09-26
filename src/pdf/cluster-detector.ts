@@ -17,6 +17,7 @@
 
 import type { IRTable, IRCell, BoundingBox } from "../types.js"
 import { spaceGapThreshold } from "./cell-text.js"
+import { isProseTable } from "./table-roles.js"
 
 /** parser.ts의 NormItem과 동일한 인터페이스 */
 export interface ClusterItem {
@@ -72,7 +73,7 @@ export interface ClusterTableResult {
 /**
  * 클러스터 기반 테이블 감지. 선이 없는 PDF의 fallback 경로에서 호출.
  */
-export function detectClusterTables(items: ClusterItem[], pageNum: number): ClusterTableResult[] {
+export function detectClusterTables(items: ClusterItem[], pageNum: number, rejected?: { prose: number }): ClusterTableResult[] {
   if (items.length < MIN_ROWS * MIN_COLS) return []
 
   // 0. 균등배분 아이템 사전 병합 (개별 글자 → 단어)
@@ -143,7 +144,12 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number): Clus
 
   // 4. 2단 조판 본문 오인 강등 — 걸러진 아이템은 usedItems에서 빠져
   //    XY-Cut(단 분리) 경로로 흘러가 올바른 읽기 순서로 복원된다.
-  return results.filter(r => !isTwoColumnProse(r))
+  // 산문 역할의 후보도 표가 아니다 (table-roles.ts). 목차·차트는 호출 측이 그 영역의 글로 바꾼다
+  return results.filter(r => {
+    const prose = isTwoColumnProse(r) || isProseTable(r.table)
+    if (prose && rejected) rejected.prose++
+    return !prose
+  })
 }
 
 /** Two-row numeric tables have too few rows for the generic column clusters.
@@ -675,7 +681,7 @@ function findTableRegionsByHeader(
     if (matchedCols >= MIN_COLS) {
       currentRegion.push(row)
       missStreak = 0
-    } else if (currentRegion.length > 0 && (row.items.length <= 2 || missStreak === 0)) {
+    } else if (currentRegion.length > 0 && (row.items.length <= 2 || missStreak === 0) && !isProseLine(row, columns)) {
       // 단일 비매칭은 허용 (multi-line 셀 or 단일 아이템)
       currentRegion.push(row)
       missStreak++
@@ -708,6 +714,19 @@ function findTableRegionsByHeader(
   return regions
 }
 
+/** 표 사이 문단 줄 — 한 줄 글이 열 시작점을 둘 이상 가로지른다(여러 줄 칸의 이어진 줄은 제 열 안에 머문다) */
+function isProseLine(row: RowGroup, columns: ColCluster[]): boolean {
+  const text = row.items.map(item => item.text).join(" ").trim()
+  if (text.length < 40) return false
+  // 문장 증거 — 머리행 이름 나열(H6 ARC HellaSwag …)은 한 아이템이라도 문단이 아니다
+  const words = text.split(/\s+/)
+  const sentence = /[.!?:]$|다\.?$/.test(text) || words.filter(word => /^[a-z]/.test(word)).length >= words.length * 0.5
+  if (!sentence) return false
+  const left = Math.min(...row.items.map(item => item.x))
+  const right = Math.max(...row.items.map(item => item.x + item.w))
+  return columns.filter(col => col.x > left + COL_CLUSTER_TOL && col.x < right - COL_CLUSTER_TOL).length >= 2
+}
+
 /** 연속된 테이블 행 영역 찾기 */
 function findTableRegions(allRows: RowGroup[], columns: ColCluster[]): { rows: RowGroup[] }[] {
   const regions: { rows: RowGroup[] }[] = []
@@ -717,7 +736,7 @@ function findTableRegions(allRows: RowGroup[], columns: ColCluster[]): { rows: R
     const matchedCols = countMatchedColumns(row, columns)
     if (matchedCols >= MIN_COLS) {
       currentRegion.push(row)
-    } else if (row.items.length === 1) {
+    } else if (row.items.length === 1 && !isProseLine(row, columns)) {
       if (currentRegion.length > 0) {
         currentRegion.push(row)
       }

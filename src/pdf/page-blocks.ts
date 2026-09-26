@@ -12,7 +12,7 @@ import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells
 import { dropShadingClipGrids } from "./table-grid.js"
 import { chainShortSegments } from "./line-extract.js"
 import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
-import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem } from "./cluster-detector.js"
+import { detectClusterTables, findTwoColumnProseCutX, type ClusterItem, type ClusterTableResult } from "./cluster-detector.js"
 import { type NormItem, collapseEvenSpacing, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
 import { findRuledColumnDivider } from "./ruled-columns.js"
 import { xyCutOrder } from "./xy-cut.js"
@@ -26,6 +26,7 @@ import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, record
 import { WrapLexicon } from "./line-wrap.js"
 import { splitSidebarTitleRegion, splitTrailingColumnRegion } from "./local-regions.js"
 import { pushLineParagraphs } from "./paragraph-lines.js"
+import { isChartTable, isTableOfContents, tocBlock } from "./table-roles.js"
 
 /** 쪽 사이로 넘기는 칸 이어짐 상태 — 앞 쪽 번호와 그 쪽 클립 사실 (다음 쪽 첫 클립이 앞 쪽 마지막 칸의 이어짐인지 가른다, clip-cells) */
 export interface PageCarry { page?: number; clip?: ClipPage }
@@ -536,6 +537,12 @@ function extractBlocksWithGrids(
       for (const it of tableItems) usedItems.delete(it)
       continue
     }
+    // 벡터로 그린 막대 차트의 눈금선·막대 격자는 표가 아니다 — 값 글자는 차트 영역 안에서
+    // 위→아래 줄 순서의 글로 둔다(쪽 본문과 섞으면 열 감지가 본문을 찢는다, table-roles.ts)
+    if (!grid.cells && isChartTable(irTable)) {
+      blocks.push(chartBlock(tableItems, pageNum, { page: pageNum, x: grid.bbox.x1, y: grid.bbox.y1, width: gridW, height: grid.bbox.y2 - grid.bbox.y1 }))
+      continue
+    }
 
     const tableBbox: BoundingBox = {
       page: pageNum,
@@ -547,10 +554,13 @@ function extractBlocksWithGrids(
     // layout panel. Keep its original lines as one region, not as a data table.
     if (numRows === 1 && numCols === 1 && gridW < pageWidth * 0.35) {
       const prose = finalGrid[0]?.[0]?.text ?? ""
+      const besideLines = (side: NormItem[]) => new Set(side.map(it => Math.round(it.y / 3))).size
       const rightLines = items.filter(it => it.x >= grid.bbox.x2 + 3 &&
         it.y >= grid.bbox.y1 && it.y <= grid.bbox.y2)
+      const leftLines = items.filter(it => it.x + it.w <= grid.bbox.x1 - 3 &&
+        it.y >= grid.bbox.y1 && it.y <= grid.bbox.y2)
       if (prose.length >= 200 && prose.split("\n").length >= 8 &&
-          new Set(rightLines.map(it => Math.round(it.y / 3))).size >= 8) {
+          (besideLines(rightLines) >= 8 || besideLines(leftLines) >= 8)) {
         const sidebar: IRBlock = { type: "paragraph", text: prose, pageNumber: pageNum,
           bbox: tableBbox, style: dominantStyle(tableItems) }
         blocks.push(sidebar)
@@ -588,7 +598,11 @@ function extractBlocksWithGrids(
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
       fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore,
     }))
-    const clusterResults = detectClusterTables(clusterItems, pageNum)
+    // 두 단 본문은 쪽 전체 클러스터 표 감지 전에 가른다 — 아래 거터 경로가 단마다 표를 따로 찾는다
+    // (fallback 경로의 earlyProseCut 과 같은 순서. 먼저 표로 묶이면 두 단 줄이 한 표 행으로 섞인다)
+    const proseColumns = findTwoColumnProseCutX(clusterItems) !== null ||
+      detectPersistentColumnGutter(remaining.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))) !== null
+    const clusterResults = proseColumns ? [] : detectClusterTables(clusterItems, pageNum)
     if (clusterResults.length > 0) {
       const ciToIdx = new Map<ClusterItem, number>()
       for (let ci = 0; ci < clusterItems.length; ci++) ciToIdx.set(clusterItems[ci], ci)
@@ -598,7 +612,7 @@ function extractBlocksWithGrids(
           const idx = ciToIdx.get(ci)
           if (idx !== undefined) usedClusterIndices.add(idx)
         }
-        blocks.push({ type: "table", table: cr.table, pageNumber: pageNum, bbox: cr.bbox })
+        blocks.push(clusterTableBlock(cr, remaining.filter((_, idx) => cr.usedItems.has(clusterItems[idx])), pageNum))
       }
       remaining = remaining.filter((_, idx) => !usedClusterIndices.has(idx))
     }
@@ -728,7 +742,7 @@ function extractBlocksWithGrids(
   }
   units.sort((a, b) => unitTopY(b) - unitTopY(a)) // PDF는 y가 위가 큼 → 내림차순
   // A panel can start below the first line of its neighboring prose column.
-  // When their vertical spans coincide, read the left panel before the right.
+  // When their vertical spans coincide, read the left column before the right one.
   for (const sidebar of proseSidebars) {
     const box = sidebar.bbox!
     const sidebarIndex = units.findIndex(unit => unit.includes(sidebar))
@@ -739,6 +753,20 @@ function extractBlocksWithGrids(
     if (sidebarIndex > peerIndex && peerIndex >= 0) {
       const [unit] = units.splice(sidebarIndex, 1)
       units.splice(peerIndex, 0, unit)
+      continue
+    }
+    // A panel on the right is read after the prose column beside it.
+    let lastLeft = -1
+    const beside = (b: IRBlock) => !!b.bbox && b.bbox.x + b.bbox.width <= box.x - 3 &&
+      b.bbox.y + b.bbox.height >= box.y && b.bbox.y <= box.y + box.height
+    units.forEach((unit, index) => {
+      // 옆 본문 단 — 패널 왼쪽 줄들, 패널 아래로 이어진 줄은 폭이 넓어도 같은 단이다
+      if (unit.some(beside) && unit.every(b => beside(b) || (!!b.bbox && b.bbox.y + b.bbox.height < box.y))) lastLeft = index
+    })
+    const current = units.findIndex(unit => unit.includes(sidebar))
+    if (lastLeft > current) {
+      const [unit] = units.splice(current, 1)
+      units.splice(lastLeft, 0, unit)
     }
   }
   const ordered: IRBlock[] = []
@@ -746,15 +774,56 @@ function extractBlocksWithGrids(
   return mergeAdjacentTableBlocks(ordered)
 }
 
+/** 무괘선 표 후보를 역할대로 낸다 — 목차는 "항목 쪽번호" 줄, 차트는 영역 안 위→아래 줄 글, 나머지는 표 */
+function clusterTableBlock(cr: ClusterTableResult, source: NormItem[], pageNum: number): IRBlock {
+  if (isTableOfContents(cr.table)) return tocBlock(cr.table, pageNum, cr.bbox, dominantStyle(source))
+  if (isChartTable(cr.table)) return chartBlock(source, pageNum, cr.bbox)
+  return { type: "table", table: cr.table, pageNumber: pageNum, bbox: cr.bbox }
+}
+
+function chartBlock(source: NormItem[], pageNum: number, bbox: BoundingBox): IRBlock {
+  // 값만 있는 줄이 쪽번호 줄 제거(cleanPdfText)에 지워지지 않게 한 문단 글로 잇는다 — 위→아래 줄 순서는 그대로
+  const text = groupByY(source).map(line => mergeLineSimple(line).replace(/\s+/g, " ").trim()).filter(Boolean).join(" ")
+  return { type: "paragraph", text, pageNumber: pageNum, bbox, style: dominantStyle(source) }
+}
+
 /** 같은 열 수의 연속 테이블 블록을 하나로 합침 — 선 기반 그리드 파편 재조립용. 클립 표는 변을 공유하지 않는
  *  별개 표라 합치지 않는다(행정업무운영 편람 Q&A 상자 두 개가 4×1 로 뭉개지고 안쪽 6×5 표가 사라지던 것) */
+/** 행마다 클립 격자를 따로 깐 표를 이어 만든 표 */
+const STACKED_ROWS = new WeakSet<IRTable>()
+
+/** 같은 쪽에서 1행 클립 표들이 셀 간격 수준의 틈으로 열 경계가 모두 같게 이어지면 한 표의 행이다.
+ *  여러 행을 가진 클립 표끼리는 잇지 않는다 — 한컴 PDF 는 열 경계가 같은 별개 표를 좁은 틈으로 쌓는다(행정업무운영 편람 −40표 실측) */
+function isStackedClipRow(upper: IRTable, ub: BoundingBox, lower: IRTable, lb: BoundingBox): boolean {
+  if (!CLIP_TABLES.has(upper) || !CLIP_TABLES.has(lower) || upper.cols < 2 || upper.cols !== lower.cols ||
+      lower.rows !== 1 || !STACKED_ROWS.has(upper) && upper.rows !== 1 ||
+      CONT_PARTS.has(upper) || CONT_PARTS.has(lower) || EMPTY_PARTS.has(upper) || EMPTY_PARTS.has(lower) ||
+      ub.page !== lb.page) return false
+  const ux = TABLE_COLXS.get(upper), lx = TABLE_COLXS.get(lower)
+  if (!ux || !lx || ux.length !== lx.length || ux.some((x, i) => Math.abs(x - lx[i]) > 1)) return false
+  const gap = ub.y - (lb.y + lb.height)
+  return gap >= -1 && gap <= Math.min(12, Math.min(ub.height, lb.height) * 0.5)
+}
+
 function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
   if (blocks.length <= 1) return blocks
   const result: IRBlock[] = [blocks[0]]
   for (let i = 1; i < blocks.length; i++) {
     const prev = result[result.length - 1]
     const curr = blocks[i]
-    if (prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
+    const clipRows = prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
+      prev.bbox && curr.bbox && isStackedClipRow(prev.table, prev.bbox, curr.table, curr.bbox)
+    if (clipRows) {
+      // 행마다 클립 격자를 따로 깐 표(셀 간격만 둔 틈·열 경계 동일)는 한 표의 행들이다
+      const merged: IRTable = { rows: prev.table!.rows + curr.table!.rows, cols: prev.table!.cols,
+        cells: [...prev.table!.cells, ...curr.table!.cells], hasHeader: prev.table!.hasHeader }
+      CLIP_TABLES.add(merged)
+      STACKED_ROWS.add(merged)
+      TABLE_COLXS.set(merged, TABLE_COLXS.get(prev.table!)!)
+      const pb = prev.bbox!, cb = curr.bbox!
+      result[result.length - 1] = { ...prev, table: merged,
+        bbox: { ...pb, y: cb.y, height: pb.y + pb.height - cb.y } }
+    } else if (prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
         prev.table.cols === curr.table.cols && prev.table.renderAsTable === curr.table.renderAsTable &&
         !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table)) {
       // 합치기: prev의 cells에 curr의 cells 추가
@@ -1098,7 +1167,8 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     const regions = splitTrailingColumnRegion(items)
     if (regions) return regions.flatMap(region => extractPageBlocksFallback(region, pageNum, false, detectTables, lex))
   }
-  const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum) : []
+  const rejected = { prose: 0 }
+  const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum, rejected) : []
 
   if (clusterResults.length > 0) {
     const ciToIdx = new Map<ClusterItem, number>()
@@ -1109,7 +1179,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
         const idx = ciToIdx.get(ci)
         if (idx !== undefined) usedIndices.add(idx)
       }
-      blocks.push({ type: "table", table: cr.table, pageNumber: pageNum, bbox: cr.bbox })
+      blocks.push(clusterTableBlock(cr, items.filter((_, idx) => cr.usedItems.has(clusterItems[idx])), pageNum))
     }
 
     // 테이블에 속하지 않은 나머지 텍스트 → 일반 블록
@@ -1132,7 +1202,8 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
       proseCutX = detectColumnGutter(items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize })))
     }
     const allYLines = mergeSuperscriptLines(groupByY(items))
-    const columns = proseCutX !== null || !detectTables ? null : detectColumns(allYLines)
+    // 정렬이 산문으로 판정된 쪽(rejected.prose)은 그 열이 표 열의 증거가 아니다 — 열 표로 묶지 않고 XY-Cut 으로 읽는다
+    const columns = proseCutX !== null || !detectTables || rejected.prose > 0 ? null : detectColumns(allYLines)
 
     if (columns && columns.length >= 3) {
       const tableText = extractWithColumns(allYLines, columns)

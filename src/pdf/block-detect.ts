@@ -71,11 +71,17 @@ export function mergeStackedHeadingLines(blocks: IRBlock[], medianFontSize: numb
     const centered = ab && bb && a.style?.fontName === b.style?.fontName &&
       Math.abs((ab.x + ab.width / 2) - (bb.x + bb.width / 2)) <= Math.max(5, af * 0.5)
     const sameAnchor = ab && bb && Math.abs(ab.x - bb.x) <= 5
+    // 같은 서체·크기로 왼쪽을 맞춰 줄간격만큼 붙은 두 제목 줄은 한 제목이 꺾인 것이다 — 꺾인 첫 줄은 여러 낱말로
+    // 다음 줄보다 넓다(짧은 제목 둘이 붙은 "Scope"/"Methods" 는 별개)
+    const wrapped = sameAnchor && a.style?.fontName === b.style?.fontName && af === bf &&
+      ab.width >= bb.width * 0.95 && (a.text?.trim().split(/\s+/).length ?? 0) >= 3
+    // 가운데 맞춘 표시 제목은 줄마다 크기를 달리해도(33pt·24pt) 거의 붙어 있으면 한 제목이다
+    const displayStack = centered && gap <= Math.min(af, bf) * 0.3 && Math.max(af, bf) <= Math.min(af, bf) * 1.45
     if (a.type !== "heading" || b.type !== "heading" || !a.text || !b.text ||
         !ab || !bb || ab.page !== bb.page ||
-        !(sameAnchor && af >= medianFontSize * 2 && bf >= medianFontSize * 2) &&
+        !(sameAnchor && af >= medianFontSize * 2 && bf >= medianFontSize * 2) && !wrapped &&
           !(centered && af >= medianFontSize * 1.25 && bf >= medianFontSize * 1.25) ||
-        Math.abs(af - bf) > Math.max(af, bf) * 0.15 ||
+        Math.abs(af - bf) > Math.max(af, bf) * 0.15 && !displayStack ||
         gap < -2 || gap > Math.max(af, bf) * 0.45 ||
         a.text.length > (centered ? 120 : 50) || b.text.length > (centered ? 120 : 50)) { i++; continue }
     a.text = `${a.text.trim()} ${b.text.trim()}`
@@ -115,6 +121,14 @@ export function detectTypographyHeadings(blocks: IRBlock[]): void {
     }
     const bodyFace = [...faceWeight].sort((a, b) => b[1] - a[1])[0]?.[0]
     if (!bodyFace || (faceWeight.get(bodyFace) ?? 0) < 250) continue
+    // A title set only in another face is never smaller than the prose around it;
+    // smaller distinct faces are running heads, bylines, captions and notes.
+    const sizeWeight = new Map<number, number>()
+    for (const block of page) {
+      if (block.type !== "paragraph" || block.style?.fontName !== bodyFace || !block.style.fontSize) continue
+      sizeWeight.set(block.style.fontSize, (sizeWeight.get(block.style.fontSize) ?? 0) + block.text!.length)
+    }
+    const bodySize = [...sizeWeight].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0
 
     for (let i = 0; i < page.length; i++) {
       const block = page[i]
@@ -122,7 +136,7 @@ export function detectTypographyHeadings(blocks: IRBlock[]): void {
       if (block.type !== "paragraph" || !text || !bbox || !style?.fontName || !style.fontSize) continue
       const title = text.trim()
       const numbered = /^\d+(?:\.\d+)*\.?\s+[A-Z가-힣]/.test(title)
-      if (style.fontName === bodyFace || title.length < 3 || title.length > 120 ||
+      if (style.fontName === bodyFace || style.fontSize < bodySize * 0.95 || title.length < 3 || title.length > 120 ||
           /^\d+$/.test(title) || /^(?:table|figure|fig\.?|표|그림)\s*\d/i.test(title) ||
           /^(?:doi:|https?:|[•●○▪▫])/i.test(title) ||
           /^(?:over|under)\s+\d+$/i.test(title) || /^[\d\s.,:%+\-–]+$/.test(title) ||
@@ -500,7 +514,8 @@ export function detectTableCaptions(blocks: IRBlock[]): void {
       block.table.caption = blocks[i - 1].text!.trim()
       blocks.splice(i - 1, 1)
       i--
-    } else if (isCaptionCandidate(blocks[i + 1], block)) {
+    } else if (isCaptionCandidate(blocks[i + 1], block) && blocks[i + 2]?.type !== "table") {
+      // 두 표 사이의 캡션은 아래 표의 머리 캡션이다
       block.table.caption = blocks[i + 1].text!.trim()
       blocks.splice(i + 1, 1)
     }

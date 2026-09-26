@@ -58,7 +58,8 @@ export function splitSingleCellTables(blocks: IRBlock[]): IRBlock[] {
     const cell = t && t.rows === 1 && t.cols === 1 ? t.cells[0]?.[0] : undefined
     if (!cell || cell.blocks?.some((x) => x.type === "table")) { out.push(b); continue }
     const lines = (cell.text ?? "").split(/\n/).map((l) => l.trim()).filter(Boolean)
-    if (lines.length === 0) continue
+    // 표에 붙은 캡션은 푼 줄 앞 문단으로 남긴다 (표를 풀면서 캡션까지 사라지던 것)
+    if (t?.caption?.trim()) out.push({ type: "paragraph", text: t.caption.trim(), pageNumber: b.pageNumber, bbox: b.bbox })
     for (const text of lines) out.push({ type: "paragraph", text, pageNumber: b.pageNumber, bbox: b.bbox })
   }
   return out

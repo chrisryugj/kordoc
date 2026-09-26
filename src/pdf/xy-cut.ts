@@ -28,6 +28,9 @@ const CROSS_MAX_MASK_RATIO = 0.2
 /** 좁은 요소 아웃라이어 필터: 영역 폭 대비 비율 (쪽번호·각주 마커) */
 const NARROW_ELEMENT_WIDTH_RATIO = 0.1
 
+/** 산문 두 단 사이 거터 최소 폭 (pt) — 양쪽 정렬 두 단은 줄 끝 공백 폭을 빼면 8pt 안팎까지 좁다(낱말 사이는 3pt 안팎) */
+const PROSE_GUTTER_MIN_GAP = 6
+
 interface CutInfo {
   position: number
   gap: number
@@ -55,7 +58,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0): 
   const vCut = findVerticalCutWithOutlierFilter(items, minGap)
 
   const hValid = hCut.gap >= minGap
-  const vValid = vCut.gap >= minGap
+  const vValid = vCut.gap >= minGap || (vCut.gap >= PROSE_GUTTER_MIN_GAP && isProseGutter(items, vCut.position))
 
   // 축 선택: 기본 Y 우선 (한국 공문서는 단일 컬럼 위주 — 코퍼스 검증 결과 Y 우선이 안정적).
   // 단, 수직 갭이 수평 갭보다 명백히 크면(1.5×) 컬럼 분리로 보고 X 우선
@@ -65,7 +68,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0): 
   if (hValid && vValid) useHorizontal = vCut.gap <= hCut.gap * 1.5
   else if (hValid) useHorizontal = true
   else if (vValid) useHorizontal = false
-  else return [items] // 분할 불가 → 리프 노드
+  else return splitEdgeSpannedColumns(items, gapThreshold, depth) ?? [items] // 분할 불가 → 리프 노드
 
   if (useHorizontal) {
     const upper = items.filter(i => i.y > hCut.position)
@@ -211,4 +214,54 @@ function findVerticalCut(items: NormItem[]): CutInfo {
     prevRight = prevRight === null ? right : Math.max(prevRight, right)
   }
   return { position, gap: largestGap }
+}
+
+/** A narrow vertical gap is a column gutter when both sides hold several full
+ * prose lines side by side (not a label column or stacked blocks). */
+function isProseGutter(items: NormItem[], x: number): boolean {
+  const sideLines = (side: NormItem[]) => {
+    const lines: { y: number; chars: number; left: number; right: number }[] = []
+    for (const item of [...side].sort((a, b) => b.y - a.y)) {
+      const line = lines.find(l => Math.abs(l.y - item.y) <= 2)
+      if (line) { line.chars += item.text.length; line.left = Math.min(line.left, item.x); line.right = Math.max(line.right, item.x + item.w) }
+      else lines.push({ y: item.y, chars: item.text.length, left: item.x, right: item.x + item.w })
+    }
+    return lines
+  }
+  const left = sideLines(items.filter(i => i.x + i.w / 2 < x))
+  const right = sideLines(items.filter(i => i.x + i.w / 2 >= x))
+  if (left.length < 4 || right.length < 4) return false
+  const prose = (lines: typeof left) => {
+    const width = Math.max(...lines.map(l => l.right)) - Math.min(...lines.map(l => l.left))
+    const full = lines.filter(l => l.chars >= 25 && l.right - l.left >= width * 0.6).length
+    return full >= lines.length * 0.6
+  }
+  if (!prose(left) || !prose(right)) return false
+  const span = (lines: typeof left) => [Math.min(...lines.map(l => l.y)), Math.max(...lines.map(l => l.y))]
+  const [l0, l1] = span(left), [r0, r1] = span(right)
+  return Math.min(l1, r1) - Math.max(l0, r0) >= Math.min(l1 - l0, r1 - r0) * 0.5
+}
+
+/** Two prose columns whose band starts or ends with a line crossing the gutter
+ * (a caption or title under/over both columns): set that line apart at its edge
+ * and read the columns left then right. Lines crossing in the middle keep the leaf. */
+function splitEdgeSpannedColumns(items: NormItem[], gapThreshold: number, depth: number): NormItem[][] | null {
+  let minX = Infinity, maxX = -Infinity
+  for (const i of items) { minX = Math.min(minX, i.x); maxX = Math.max(maxX, i.x + i.w) }
+  const narrow = items.filter(i => i.w < (maxX - minX) * 0.5)
+  if (narrow.length === items.length || narrow.length < 8) return null
+  const cut = findVerticalCut(narrow)
+  if (cut.gap < PROSE_GUTTER_MIN_GAP || !isProseGutter(narrow, cut.position)) return null
+  const crossing = items.filter(i => i.x < cut.position && i.x + i.w > cut.position)
+  const rest = items.filter(i => !crossing.includes(i))
+  const restTop = Math.max(...rest.map(i => i.y)), restBottom = Math.min(...rest.map(i => i.y))
+  const above = crossing.filter(i => i.y > restTop), below = crossing.filter(i => i.y < restBottom)
+  if (above.length + below.length !== crossing.length) return null
+  const left = rest.filter(i => i.x + i.w / 2 < cut.position), right = rest.filter(i => i.x + i.w / 2 >= cut.position)
+  return [
+    ...(above.length ? [above] : []),
+    ...xyCutOrder(left, gapThreshold, depth + 1),
+    ...xyCutOrder(right, gapThreshold, depth + 1),
+    ...(below.length ? [below] : []),
+  ]
 }
