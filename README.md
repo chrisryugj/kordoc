@@ -1,13 +1,24 @@
 # kordoc
 
+**모두 파싱해버리겠다.**
+
 [![npm version](https://img.shields.io/npm/v/kordoc.svg)](https://www.npmjs.com/package/kordoc)
 [![license](https://img.shields.io/npm/l/kordoc.svg)](LICENSE)
 
-**한국 공문서를 읽고, 비교하고, 만듭니다.**
+> *대한민국에서 둘째가라면 서러울 문서지옥. 거기서 7년 버틴 공무원이 만들었습니다.*
 
 HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, PNG·JPG·WebP를 Markdown과 구조화 데이터로 변환합니다. 라이브러리·CLI·MCP 서버로 사용할 수 있습니다.
 
-[English](README-EN.md) · [상세 사용법](docs/usage.md) · [벤치마크](docs/benchmarks.md) · [변경 이력](CHANGELOG.md) · [소개 영상](https://youtu.be/Q13GmgDcIw0)
+[English](README-EN.md) · [상세 사용법](docs/usage.md) · [벤치마크](docs/benchmarks.md) · [변경 이력](CHANGELOG.md)
+
+- 📊 **PDF 공개 벤치 종합 0.960** — opendataloader-bench 200문서. 공개 12개 파서 비교 1위(2026-09-29 기록). [측정 조건](docs/benchmarks.md)
+- 🇰🇷 **한국 공문서 표 구조 100%** — 원본 HWPX 2,286문서의 보이는 표 **9,865개 전부 구조 일치**. [4.18.8 검증](docs/release-4.18.8.json)
+
+[![Kordoc 활용하기 — 영상 보기](./docs/video-demo.jpg)](https://youtu.be/Q13GmgDcIw0)
+
+<sub>▶ 클릭하면 유튜브에서 재생됩니다.</sub>
+
+**새 영상:** [kordoc 공개벤치 1위 마크](https://youtu.be/9kRbwiTRQLs) · 2026-09-27 · 1분 31초
 
 ## 설치
 
@@ -119,4 +130,6 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 - [폐쇄망 설치](docs/offline-deployment.md): `KORDOC_OFFLINE=1`, MCP 접근 범위 `KORDOC_ROOT`
 - [보안 정책](SECURITY.md) · [라이선스 MIT](LICENSE) · [오픈소스 고지](NOTICE)
 
-지방공무원이 실제 관공서 문서를 처리하며 만든 프로젝트입니다.
+## 만든 사람
+
+대한민국 지방공무원. 광진구청에서 7년간 HWP 파일과 싸우다가 이걸 만들었습니다. 5개 공공 프로젝트에서 수천 건의 실제 관공서 문서를 파싱하며 검증했습니다.

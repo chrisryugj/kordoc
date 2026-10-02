@@ -1,13 +1,24 @@
 # kordoc
 
+**모두 파싱해버리겠다** — Parse them all.
+
 [![npm version](https://img.shields.io/npm/v/kordoc.svg)](https://www.npmjs.com/package/kordoc)
 [![license](https://img.shields.io/npm/l/kordoc.svg)](LICENSE)
 
-**Read, compare and create Korean documents.**
+> *Korea's document hell is second to none. Built by a civil servant who survived seven years in it.*
 
 Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to Markdown and structured data. Use it as a library, CLI or MCP server.
 
-[한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md) · [Demo video](https://youtu.be/Q13GmgDcIw0)
+[한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
+
+- 📊 **0.960 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
+- 🇰🇷 **100% Korean document table structure match** — all **9,865 visible tables** from 2,286 original HWPX documents. [4.18.8 verification](docs/release-4.18.8.json)
+
+[![kordoc — watch the demo](./docs/video-demo.jpg)](https://youtu.be/Q13GmgDcIw0)
+
+<sub>▶ Click to play on YouTube. Narration is in Korean.</sub>
+
+**New video:** [kordoc 공개벤치 1위 마크 — public benchmark](https://youtu.be/9kRbwiTRQLs) · 2026-09-27 · 1 min 31 sec · Korean
 
 ## Install
 
@@ -119,4 +130,6 @@ The 4.18.8 cell-edit path requires the same number of nonempty lines. Blank line
 - [Offline deployment](docs/offline-deployment.md): `KORDOC_OFFLINE=1`; MCP file scope with `KORDOC_ROOT`
 - [Security policy](SECURITY.md) · [MIT license](LICENSE) · [Third-party notices](NOTICE)
 
-Built by a Korean local-government officer working with real public documents.
+## About the Author
+
+A local civil servant in Korea. Built this after seven years of wrestling HWP files at the Gwangjin-gu District Office in Seoul. Validated on thousands of real government documents across five public-sector projects.
