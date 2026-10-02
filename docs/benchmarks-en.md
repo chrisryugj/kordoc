@@ -1,12 +1,39 @@
 # Benchmark details
 
-Scoring rules, reproduction steps and per-option numbers behind the README [Performance](../README-EN.md#-performance) section. Every number is reproduced by `npm run bench:gate`, which every `npm publish` must pass.
+Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
+
+## Latest release results: 4.18.8 · 2026-10-02
+
+Based on `publication.benchmarkComparison` and `additionalTrackComparison` in the [publication record](release-4.18.8.json).
+
+| Target | Population | Result |
+| --- | --- | --- |
+| HWPX | 2,286 documents · 9,865 tables | Structure match 9,865/9,865 · 100%; exact cell text 99.9982%; content NED similarity 99.9953% |
+| HWP 5.x ↔ HWPX | 1,120 pairs · 4,258 tables | Paired-document structure match 4,258/4,258 · 100% |
+| PDF text | 744 pairs | Recall 99.83%, precision 99.58%, order 99.15%, word-boundary F1 98.81% |
+| PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.94%, cell F1 0.990863 |
+| Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 335/346 · 96.82% |
+| All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.78% |
+| OCR | 53 documents · 102 pages | Quality metrics and exclusions unchanged from 4.18.7; 3 skipped documents and 4 excluded pages |
+| Other formats / roundtrip / fuzz | 88 documents / 75 roundtrips / 23,700 fuzz cases | Release gates passed |
+
+Structure scores do not imply perfect visual fidelity or exact text in every cell. The 75 roundtrip cases and 8 generation fixtures are counted separately. The new gain in 4.18.8 is editing text with embedded cell newlines; the quality scores, populations and exclusions above match 4.18.7.
 
 ## PDF → Markdown — opendataloader-bench
 
 [opendataloader-bench](https://github.com/opendataloader-project/opendataloader-bench) scores 200 PDFs (papers, reports, slides, posters, scans) against human-made ground truth for **reading order (NID), table structure (TEDS) and heading hierarchy (MHS)** (1.0 = identical to the ground truth).
 
-### kordoc by option
+### Latest separate verification: 4.18.6 · 2026-10-02
+
+| Setting | Overall | Reading order | Tables | Headings |
+| --- | ---: | ---: | ---: | ---: |
+| Default | 0.960 | 0.961 | 0.979 | 0.947 |
+| Default + `plain: true, htmlTables: true` | 0.972 | 0.977 | 0.983 | 0.957 |
+| `ocr: false, formulaOcr: false` | 0.937 | 0.938 | 0.936 | 0.933 |
+
+Each mode covers 200 documents, with zero failures or missing outputs. Raw scores are in `externalOdl` in the [verification record](release-4.18.6.json). This external benchmark was not rerun for 4.18.8.
+
+### Full option sweep: historical results, 2026-09-29
 
 | Setting | Overall | Reading order | Tables | Headings | Time / page |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -36,7 +63,29 @@ Time per page: 200 documents parsed sequentially in one process on an Apple M4 2
 - Re-scoring the repository's opendataloader-hybrid predictions with the same evaluator gives 0.9066, matching its published score.
 - Run: `node bench/odl-bench.mjs <bench clone>`, then the benchmark's `src/evaluator.py`.
 
-### LM-Kit One (unmerged PR #34)
+### Published engine comparison: historical results, 2026-09-29
+
+Preserved from the earlier README. These are historical results, not current rankings or a same-hardware performance comparison. See the 4.18.6 table above for the latest verified kordoc scores.
+
+| Rank | Engine | Overall | Reading order | Tables | Headings | Time / page |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| **1** | **kordoc default** | **0.960** | **0.961** | **0.979** | **0.945** | **0.52 s** |
+| ref. | kordoc `ocr: false` (fastest) | 0.937 | 0.938 | 0.936 | 0.933 | 0.04 s |
+| ref. | kordoc `ocr: true, plain: true, htmlTables: true` | 0.973 | 0.977 | 0.983 | 0.959 | 0.58 s |
+| 2 | opendataloader-hybrid | 0.907 | 0.934 | 0.928 | 0.821 | 0.46 s |
+| 3 | nutrient (commercial) | 0.885 | 0.925 | 0.708 | 0.819 | 0.01 s |
+| 4 | docling | 0.882 | 0.898 | 0.887 | 0.824 | 0.76 s |
+| 5 | marker | 0.861 | 0.890 | 0.808 | 0.796 | 53.9 s |
+| 6 | unstructured-hires | 0.841 | 0.904 | 0.588 | 0.749 | 3.01 s |
+| 7 | edgeparse | 0.837 | 0.894 | 0.717 | 0.706 | 0.04 s |
+| 8 | mineru | 0.831 | 0.857 | 0.873 | 0.743 | 5.96 s |
+| 9 | opendataloader | 0.831 | 0.902 | 0.489 | 0.739 | 0.02 s |
+| 10 | pymupdf4llm | 0.732 | 0.885 | 0.401 | 0.412 | 0.09 s |
+| 11 | unstructured | 0.686 | 0.882 | 0.000 | 0.388 | 0.08 s |
+| 12 | markitdown | 0.589 | 0.844 | 0.273 | 0.000 | 0.11 s |
+| 13 | liteparse | 0.576 | 0.866 | 0.000 | 0.000 | 1.06 s |
+
+### LM-Kit One historical comparison (2026-09-29, then-unmerged PR #34)
 
 LM-Kit One (commercial; results-only PR) reports 0.948 without OCR and 0.963 with OCR. Most of the gap is table markup — it writes cells in the ground truth's HTML shape (`<td> text </td>`, header rows as `<td>`). Normalised to the same markup, kordoc `plain` scores 0.951 vs LM-Kit 0.948; with `htmlTables` kordoc leads both rows: 0.949 without OCR, 0.973 with OCR.
 
@@ -44,7 +93,9 @@ LM-Kit One (commercial; results-only PR) reports 0.948 without OCR and 0.963 wit
 
 Real government documents (press releases, approval documents, statutory forms, budgets) for which both the HWPX original and its PDF export exist; text and tables extracted from the PDF are scored with the original as ground truth.
 
-### Scoring rules (revised 2026-09-29, visible tables 2026-09-30, history in the [CHANGELOG](../CHANGELOG.md))
+### Scoring rules
+
+Revised 2026-09-29; visible-table criteria introduced 2026-09-30; reference extractor corrected in 4.18.1. See the [CHANGELOG](../CHANGELOG.md). Reference corrections and actual input-field preservation fixes are distinguished in the [original audit](release-4.18.1.json).
 
 **Table ground truth = the tables you see in the original** (v4.17.0)
 - Tables are split the way their cell borders draw them (header.xml borderFill; line type NONE and white lines are invisible). `bench/ref/visible-tables.mjs`, no code shared with the parser.
@@ -82,3 +133,16 @@ The same corpus converted by [HwpForge](https://github.com/ai-screams/HwpForge) 
 - **Why single-column tables are excluded** — the 1,288 single-column tables are decorative frames (43% title/body boxes, 28% blank spacer frames, 3% lists), so table vs. lines is a presentation choice and their text is scored by text recall. Including them: HWPX 10,392 tables, kordoc 90.6% vs HwpForge 36.0%; HWP 3,500 tables, 92.8% vs 32.1%.
 - **HWP document count** — excludes one pair whose HWPX is distribution-encrypted (no ground truth).
 - **Reproduce** — `bench/hwpforge-bench.py`, then `node bench/compare-md-parsers.mjs <output dir>` (`--include-single-col` to include single-column tables).
+
+### v4.16 comparison record (earlier HWPX XML structure criteria, separate from current visible-table scoring)
+
+| | kordoc | HwpForge 0.16.6 |
+| --- | ---: | ---: |
+| HWPX, 2,305 docs — conversion failures | **0** | 123 |
+| HWPX — text recall (converted docs only) | **100.00%** (100.00%) | 59.23% (98.64%) |
+| HWPX — exact tables (9,123) | **100.0%** (9,122) | 32.2% |
+| HWPX — cell F1 | **1.000** | 0.428 |
+| HWP 5.x, 1,108 docs — conversion failures | **0** | 19 |
+| HWP — text recall | **100.00%** | 86.41% |
+| HWP — exact tables (3,111) | **100%** | 27.0% |
+| HWP — cell F1 | **1.000** | 0.349 |
