@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.11] - 2026-10-04
+
+### Fixed
+
+- PDF: 글꼴 사전 수천 개가 글꼴 파일 몇 개를 나눠 쓰는 PDF(Bullzip PDF Printer 공시 첨부 등)에서 힙이 7GB 넘게 차 프로세스가 죽던 문제를 고친다(#137, 4.12.0 이전부터). pdf.js 가 글꼴 사전마다 글리프 윤곽 경로용 렌더러를 만들어 글꼴 프로그램의 글리프 6만여 개를 사전 수만큼 따로 쥐었다. kordoc 은 pdf.js 로 그리지 않으므로 글꼴을 받기만 하는 문서를 넘겨 경로를 만들지 않고, 마지막 정리 뒤 불러온 글꼴 사전이 256개를 넘으면 문서 글꼴 캐시를 비운다(코퍼스 PDF 1,911개는 문서당 최대 155개라 비우지 않는다). 이슈의 두 문서는 힙 1GB 안에서 변환된다.
+
 ## [4.18.10] - 2026-10-04
 
 ### Fixed

@@ -82,6 +82,11 @@ GlobalWorkerOptions.workerSrc = ""
 // ─── 안전 한계값 (구조적 파싱과 무관) ────────────────
 const MAX_PAGES = 5000
 const MAX_TOTAL_TEXT = 100 * 1024 * 1024 // 100MB
+/** 문서 글꼴 캐시를 비우는 기준 — 마지막으로 비운 뒤 쪽들이 불러온 글꼴 사전 수. pdf.js 는 글꼴을 사전 단위로 문서 끝까지 쥔다
+ *  (사전당 약 1.5MB, #137 제안요청서 30쪽 글꼴 사전 2,965개 = 힙 4.2GB). 코퍼스 PDF 1,911개의 문서당 글꼴 사전은 최대 155개라
+ *  보통 문서는 비우지 않는다(비우면 다음 쪽 글꼴을 다시 변환한다) */
+const FONT_CACHE_LIMIT = 256
+
 /** PDF 로딩 타임아웃 (30초) — 악성/대용량 PDF 무한 대기 방지 */
 const PDF_LOAD_TIMEOUT_MS = 30_000
 
@@ -97,18 +102,36 @@ try {
   pdfjsAssets.standardFontDataUrl = join(pkgDir, "standard_fonts") + "/"
 } catch { /* optional dep — 경로 해석 실패 시 cMap 없이 진행 */ }
 
+/**
+ * 글꼴을 받기만 하는 문서 (#137) — pdf.js 는 FontFace 를 못 쓰면(disableFontFace, Node 의 FontFace 부재) 글자마다 글리프 윤곽 경로를
+ * 만들고, 그 렌더러가 글꼴 프로그램의 글리프를 전부 쪼개 글꼴 사전마다 따로 쥔다. kordoc 은 pdf.js 로 그리지 않아(OCR·수식 래스터는
+ * pdfium) 경로가 필요 없다. 이 문서를 ownerDocument 로 주면 FontLoader 가 @font-face 규칙을 넣고(버림) Node 의 동기 글꼴 적재로
+ * 끝나 경로를 만들지 않는다. Bullzip PDF Printer 공시 첨부(글꼴 파일 2개를 글꼴 사전 400여 개가 나눠 씀, 글리프 6.5만 개): 1쪽
+ * getOperatorList 힙 3.6GB → 0.6GB. 쓰는 멤버는 FontLoader.insertRule·clear 뿐이다(pdfjs 4.10)
+ */
+const HEADLESS_FONT_DOCUMENT = {
+  createElement: () => ({ sheet: { cssRules: [], insertRule() {} }, remove() {} }),
+  documentElement: { getElementsByTagName: () => [{ append() {} }] },
+} as unknown as HTMLDocument
+
+/** getDocument 옵션 (data 제외) */
+export const PDFJS_DOCUMENT_OPTIONS = {
+  useSystemFonts: true,
+  // 글꼴 /Differences 글리프 이름 — ToUnicode 없는 옛 숫자·작은 대문자 복원(glyph-names.ts)
+  fontExtraProperties: true,
+  disableFontFace: false,
+  ownerDocument: HEADLESS_FONT_DOCUMENT,
+  isEvalSupported: false,
+  verbosity: 0, // 오류만 — 경고("Warning: Indexing all PDF objects")를 console.log 로 stdout 에 찍어 MCP·CLI JSON 을 깼다
+  ...pdfjsAssets,
+}
+
 /** getDocument + 타임아웃 래퍼 */
 async function loadPdfWithTimeout(buffer: ArrayBuffer) {
   const loadingTask = getDocument({
     // pdfjs transfers its input to the worker; retain the caller's buffer for reuse.
     data: new Uint8Array(buffer.slice(0)),
-    useSystemFonts: true,
-    // 글꼴 /Differences 글리프 이름 — ToUnicode 없는 옛 숫자·작은 대문자 복원(glyph-names.ts)
-    fontExtraProperties: true,
-    disableFontFace: true,
-    isEvalSupported: false,
-    verbosity: 0, // 오류만 — 경고("Warning: Indexing all PDF objects")를 console.log 로 stdout 에 찍어 MCP·CLI JSON 을 깼다
-    ...pdfjsAssets,
+    ...PDFJS_DOCUMENT_OPTIONS,
   })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -203,6 +226,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     }
 
     let parsedPages = 0
+    const loadedFonts = new Set<string>()
     for (let i = 1; i <= effectivePageCount; i++) {
       if (pageFilter && !pageFilter.has(i)) continue
       let loadedPage: Awaited<ReturnType<typeof doc.getPage>> | undefined
@@ -218,6 +242,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         const rawItems = tc.items as PdfTextItem[]
         // 선 기반 테이블 감지를 위한 operatorList — 글리프 이름 복원(restoreNamedGlyphs)이 공백 정리 전에 써서 먼저 받는다
         const rawOps = await page.getOperatorList()
+        for (let k = 0; k < rawOps.fnArray.length; k++) if (rawOps.fnArray[k] === OPS.setFont) loadedFonts.add(rawOps.argsArray[k][0])
         // 폰트 실명·/Differences 는 operatorList 로드 뒤에야 commonObjs 에 있다
         const fontObj = (loadedName: string) => {
           try { return page.commonObjs.has(loadedName) ? page.commonObjs.get(loadedName) as { name?: string; isType3Font?: boolean } | null : undefined }
@@ -379,6 +404,10 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // Release page-local decoded images/operators on success and failure.
         // commonObjs (shared fonts/images) remains available to later pages.
         loadedPage?.cleanup()
+      }
+      if (loadedFonts.size > FONT_CACHE_LIMIT) {
+        await doc.cleanup()
+        loadedFonts.clear()
       }
     }
 

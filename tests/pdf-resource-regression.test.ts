@@ -1,8 +1,12 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { readFileSync } from "node:fs"
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
+import { OPS, ImageKind, getDocument } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { parse } from "../src/index.js"
+import { PDFJS_DOCUMENT_OPTIONS } from "../src/pdf/parser.js"
 import { buildTableGrids } from "../src/pdf/table-grid.js"
 import { normalizeItems, filterHiddenText, type NormItem, type PdfTextItem } from "../src/pdf/text-line.js"
 import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "../src/pdf/image-extract.js"
@@ -279,5 +283,53 @@ describe("PDF 견고성 — 암호·쪽 범위·쪽 마크다운", () => {
     const r = await ok(simplePdf([pg("Body one", "1 / 2"), pg("Body two", "2 / 2")]))
     assert.equal(r.markdown, "Body one\n\nBody two")
     assert.deepEqual(r.pages, [{ pageNumber: 1, markdown: "Body one" }, { pageNumber: 2, markdown: "Body two" }])
+  })
+})
+
+// ─── 20 글꼴 사전 수천 개가 글꼴 파일 하나를 나눠 쓰는 PDF (#137) ────────────
+
+/** 내장 TrueType 하나(pdfjs 표준 글꼴 LiberationSans)를 글꼴 사전 perPage×pages 개가 나눠 쓰는 PDF.
+ *  사전마다 /Widths 가 달라 pdf.js 별칭 캐시가 안 먹는다 — Bullzip PDF Printer 공시 첨부(쪽마다 글꼴 사전 400여 개, 서술자 2개)의 축소판 */
+function sharedFontPdf(perPage: number, pages: number): Buffer {
+  const pkg = dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"))
+  const ttf = readFileSync(join(pkg, "standard_fonts", "LiberationSans-Regular.ttf")).toString("latin1")
+  const objs = ["<< /Type /Catalog /Pages 2 0 R >>", "", stream(`<< /Length1 ${ttf.length} >>`, ttf),
+    "<< /Type /FontDescriptor /FontName /LiberationSans /Flags 32 /FontBBox [-203 -303 1050 910] /ItalicAngle 0 /Ascent 905 /Descent -212 /CapHeight 716 /StemV 80 /FontFile2 3 0 R >>"]
+  const kids: number[] = []
+  for (let p = 0, f = 0; p < pages; p++) {
+    const fonts: string[] = [], ops: string[] = []
+    for (let k = 0; k < perPage; k++, f++) {
+      objs.push(`<< /Type /Font /Subtype /TrueType /BaseFont /LiberationSans /FirstChar 32 /LastChar 126 /Widths [${Array.from({ length: 95 }, (_, i) => 500 + ((f + i) % 7)).join(" ")}] /Encoding /WinAnsiEncoding /FontDescriptor 4 0 R >>`)
+      fonts.push(`/F${k} ${objs.length} 0 R`)
+      ops.push(`BT /F${k} 9 Tf 1 0 0 1 ${40 + (k % 5) * 105} ${800 - Math.floor(k / 5) * 11} Tm (W${f}x) Tj ET`)
+    }
+    objs.push(stream("<< >>", ops.join("\n")))
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << ${fonts.join(" ")} >> >> /Contents ${objs.length} 0 R >>`)
+    kids.push(objs.length)
+  }
+  objs[1] = `<< /Type /Pages /Kids [${kids.map(k => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`
+  return pdfFrom(objs)
+}
+
+describe("PDF 견고성 — 글꼴 사전 수천 개가 글꼴 파일을 나눠 쓰는 문서 (#137)", () => {
+  it("pdf.js 가 글리프 윤곽 경로를 만들지 않는다 — 글꼴 사전마다 글리프 전부를 쪼개 쌓아 힙 7GB 로 죽던 원인", async () => {
+    const doc = await getDocument({ data: new Uint8Array(sharedFontPdf(3, 1)), ...PDFJS_DOCUMENT_OPTIONS }).promise
+    try {
+      const page = await doc.getPage(1)
+      const ops = await page.getOperatorList()
+      assert.ok(ops.fnArray.includes(OPS.setFont))
+      const ids = [...page.commonObjs].map(([id]) => id as string)
+      assert.ok(ids.some(id => !id.includes("_path_")), "글꼴 객체는 있다")
+      assert.deepEqual(ids.filter(id => id.includes("_path_")), [])
+    } finally {
+      await doc.destroy()
+    }
+  })
+
+  it("글꼴 캐시를 비우는 문서도 모든 쪽 글을 그대로 읽는다 (글꼴 600개 = 비움 기준 256 초과)", async () => {
+    const r = await ok(sharedFontPdf(300, 2))
+    for (const w of ["W0x", "W299x", "W300x", "W599x"]) assert.ok(r.markdown.includes(w), w)
+    assert.equal(r.markdown.match(/W\d+x/g)?.length, 600)
+    assert.deepEqual(r.pages?.map(p => p.pageNumber), [1, 2])
   })
 })
