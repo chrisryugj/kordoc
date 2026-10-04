@@ -25,7 +25,7 @@ import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
 import { type PdfTextItem, type NormItem, normalizeItems, filterHiddenText } from "./text-line.js"
 import { extractPageBlocksWithLines, type PageCarry } from "./page-blocks.js"
-import { WrapLexicon, joinPageBreakWraps } from "./line-wrap.js"
+import { WrapLexicon, joinPageBreakWraps, splitPageBreakWraps } from "./line-wrap.js"
 import { mergeCrossPageTables } from "./table-parts.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
@@ -623,7 +623,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     return {
       markdown,
-      pages: blocksToPages(outBlocks, finishMarkdown),
+      pages: blocksToPages(splitPageBreakWraps(outBlocks), finishMarkdown),
       blocks,
       metadata,
       outline: outline.length > 0 ? outline : undefined,

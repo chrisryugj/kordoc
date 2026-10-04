@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.9] - 2026-10-04
+
+### Fixed
+
+- PDF: 쪽 넘김으로 꺾인 문단을 이은 뒤 쪽별 마크다운(`pages`, CLI `--format json`)에서 뒤 쪽 글이 앞 쪽 항목에 실리고 뒤 쪽 항목이 비거나 빠지던 문제를 고친다(#136, 4.14.4부터). 쪽 본문이 통째로 한 문단 블록이면 뒤 쪽 글 전체가 앞 쪽으로 넘어갔다(OCR 스캔 문서에서 두드러짐). `pages` 는 이음 자리에서 다시 갈라 쪽마다 제 글을 담는다. 문서 전체 마크다운과 블록 IR 의 문단 잇기는 그대로다.
+
 ## [4.18.8] - 2026-10-02
 
 ### Fixed

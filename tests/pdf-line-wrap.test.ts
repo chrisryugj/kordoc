@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { WrapLexicon, wrapJoiner, startsNewItem, bodyLineJoins, joinPageBreakWraps, PARA_LAST_LINE, type WrapLine } from "../src/pdf/line-wrap.js"
+import { WrapLexicon, wrapJoiner, startsNewItem, bodyLineJoins, joinPageBreakWraps, splitPageBreakWraps, PARA_LAST_LINE, type WrapLine } from "../src/pdf/line-wrap.js"
 import type { IRBlock } from "../src/types.js"
 import { cellTextToString, type TextItem } from "../src/pdf/line-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
@@ -286,6 +286,35 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     const item = pages(530, "○ 다음 항목")
     joinPageBreakWraps(item)
     assert.equal(item.length, 3)
+  })
+  it("쪽별 사영은 이은 문단을 쪽 경계에서 다시 가른다 — 뒤 쪽 글이 앞 쪽에 실리지 않게 (#136)", () => {
+    const blocks = pages(530, "들은 인공지능을 미래의 동반자로 그려냈다.\n다음 문단도 같은 쪽이다.")
+    joinPageBreakWraps(blocks)
+    const split = splitPageBreakWraps(blocks)
+    assert.deepEqual(split.map(b => [b.pageNumber, b.text]), [
+      [1, "앞 문단"], [1, "모습을 보여준다. 아이"], [2, "들은 인공지능을 미래의 동반자로 그려냈다.\n다음 문단도 같은 쪽이다."],
+    ])
+    // 문서 블록은 이은 그대로
+    assert.equal(blocks.length, 2)
+  })
+  it("세 쪽에 걸친 문단도 쪽마다 가른다", () => {
+    const fs = { fontSize: 10 }
+    const mk = (page: number, text: string, y: number): IRBlock => ({ type: "paragraph", text, pageNumber: page, bbox: { page, x: 72, y, width: 458, height: 10 }, style: fs })
+    const a = mk(1, "첫 쪽 끝 문장이 이어", 80), b = mk(2, "지고 둘째 쪽을 다 채운 뒤 또", 80), c = mk(3, "셋째 쪽으로 넘어간다.", 700)
+    PARA_LAST_LINE.set(a.bbox!, { right: 530, width: 458, fontSize: 10 })
+    PARA_LAST_LINE.set(b.bbox!, { right: 530, width: 458, fontSize: 10 })
+    const blocks = [a, b, c]
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 1)
+    assert.deepEqual(splitPageBreakWraps(blocks).map(x => [x.pageNumber, x.text]), [
+      [1, "첫 쪽 끝 문장이 이어"], [2, "지고 둘째 쪽을 다 채운 뒤 또"], [3, "셋째 쪽으로 넘어간다."],
+    ])
+  })
+  it("이음 뒤 글이 앞부분에서 바뀌었으면 가르지 않는다 (잘못 가르느니 종전대로)", () => {
+    const blocks = pages(530, "들은 인공지능을")
+    joinPageBreakWraps(blocks)
+    blocks[1] = { ...blocks[1], text: "(주) " + blocks[1].text }
+    assert.deepEqual(splitPageBreakWraps(blocks).map(x => x.pageNumber), [1, 1])
   })
 })
 

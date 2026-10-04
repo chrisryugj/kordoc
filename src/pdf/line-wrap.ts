@@ -233,10 +233,15 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
  *  키는 블록의 bbox 객체 — 목록 감지(detectListBlocks)가 블록을 {...block} 으로 새로 만들어도 bbox 는 그대로 넘어간다 */
 export const PARA_LAST_LINE = new WeakMap<BoundingBox, { right: number; width: number; fontSize: number }>()
 
+/** 쪽 넘김 잇기로 이은 문단의 쪽 경계 (#136) — 키는 이은 블록의 bbox(PARA_LAST_LINE 과 같은 이유). head 는 뒤 쪽 몫 앞까지의 글,
+ *  gap 은 그 사이 이음자 길이, tail 은 뒤 쪽 블록(쪽 번호·기하·모양만 쓴다). 세 쪽 넘게 이으면 앞에서부터 차례로 쌓인다 */
+const PAGE_BREAK_JOINS = new WeakMap<BoundingBox, { head: string; gap: number; tail: IRBlock }[]>()
+
 /**
  * 쪽 넘김 꺾임 잇기 — 쪽 끝 문단의 끝줄이 그 쪽 본문 오른끝까지 차 있고 다음 쪽 첫 블록이 같은 글자 크기의 이어지는 문단이면
  * 한 문단으로 (…보여준다. 아이 ⏎ [다음 쪽] 들은 인공지능…). 머리말·꼬리말을 지운 뒤라 두 블록이 배열에서 이웃하면 쪽 끝과 쪽 머리다.
- * 쪽 본문 오른끝은 그 쪽 문단 블록 오른끝의 최댓값. 이은 문단은 앞 쪽 소속으로 남는다 (제자리 수정)
+ * 쪽 본문 오른끝은 그 쪽 문단 블록 오른끝의 최댓값. 이은 문단은 앞 쪽 소속으로 남는다 (제자리 수정) —
+ * 쪽별 마크다운은 splitPageBreakWraps 로 다시 갈라 뒤 쪽 몫을 뒤 쪽에 둔다
  */
 export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
   const pageRight = new Map<number, number>()
@@ -252,12 +257,40 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs) continue
     if (last.width < BODY_MIN_WIDTH_EM * fs || Math.abs((b.style?.fontSize ?? 0) - fs) > 0.15 * fs) continue
     if (startsNewItem(a.text, b.text)) continue
-    a.text += wrapJoiner(a.text, b.text, lex) + b.text
+    const head = a.text, joiner = wrapJoiner(a.text, b.text, lex)
+    a.text += joiner + b.text
+    // b 가 이미 다음 쪽과 이어졌으면 그 경계는 a 글 안에서 head + 이음자만큼 뒤로 밀린다
+    const later = (b.bbox && PAGE_BREAK_JOINS.get(b.bbox)) || []
+    PAGE_BREAK_JOINS.set(a.bbox!, [{ head, gap: joiner.length, tail: b }, ...later.map(c => ({ ...c, head: head + joiner + c.head }))])
     const bl = b.bbox && PARA_LAST_LINE.get(b.bbox)
     if (bl) PARA_LAST_LINE.set(a.bbox!, bl)
     else PARA_LAST_LINE.delete(a.bbox!)
     blocks.splice(i, 1)
   }
+}
+
+/**
+ * 쪽별 사영용 블록 — 쪽 넘김 잇기로 이은 문단을 이음 자리에서 다시 쪽마다 가른다 (#136). 쪽 본문이 통째로 한 문단 블록이면 잇기가 뒤 쪽
+ * 글 전체를 앞 쪽으로 가져가 그 쪽 항목이 비거나 빠졌다. 문서 블록·마크다운은 이은 그대로 두고 새 배열만 낸다. 이음 뒤 단계(각주 넣기 등)가
+ * 앞 글을 바꿔 경계를 못 찾으면 거기서부터는 가르지 않는다
+ */
+export function splitPageBreakWraps(blocks: IRBlock[]): IRBlock[] {
+  return blocks.flatMap(b => {
+    const cuts = b.bbox && PAGE_BREAK_JOINS.get(b.bbox)
+    const text = b.text
+    if (!cuts || !text) return [b]
+    const out: IRBlock[] = []
+    let from = 0, cur = b
+    for (const c of cuts) {
+      if (c.head.length < from || !text.startsWith(c.head)) break
+      out.push({ ...cur, text: text.slice(from, c.head.length) })
+      from = c.head.length + c.gap
+      cur = c.tail
+    }
+    if (!out.length) return [b]
+    out.push({ ...cur, text: text.slice(from) })
+    return out
+  })
 }
 
 /** 본문 줄 기하 — 꺾임 판정 입력 (y 는 기준선, PDF 좌표라 아래 줄이 작다) */
