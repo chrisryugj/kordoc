@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.12] - 2026-10-04
+
+### Fixed
+
+- PDF: 쪽 넘김 문단 잇기 판정을 HWPX 원문 대조로 다시 맞춘다. 앞 쪽 문단이 문장(`.`·`?`·`!`, 닫는 따옴표 포함)으로 끝나면 잇지 않는다. 글자 크기가 다른 블록은 짧은 제목꼴(한 줄 40자 이하, 문장 끝 아님)일 때만 막는다(4.18.10 은 크기가 1pt 만 달라도 막아 쪽마다 반올림 크기가 흔들리는 문서의 본문을 끊었다). 한컴 PDF↔HWPX 쌍의 잇기 후보 325곳(판정 불가 23 제외)에서 틀린 판정이 50곳 → 11곳(잘못 이음 24 → 5, 잘못 막음 26 → 6).
+
 ## [4.18.11] - 2026-10-04
 
 ### Fixed

@@ -239,6 +239,13 @@ const PAGE_REF_TAIL = /(?:\t|…|·{2}|\.{3})\s*\d{1,4}(?:\s*\/\s*\d{1,4})?\s*$/
  *  "< … >"·"[1]"·"[그림 Ⅱ-78]"·"〔서식 4-1〕", 사각·딩뱃 기호 "▮"·"▣"·"❐", 제어 문자. 쪽 넘김 잇기에만 쓴다 — 같은 쪽 줄 잇기는
  *  줄 간격 근거가 따로 있다. PDF 코퍼스(98문서) 쪽 넘김 잇기 138곳 가운데 이 기호로 여는 30곳이 모두 새 항목·제목이었다 */
 const PAGE_HEAD_MARK = /^(?:[\u0000-\u001f\ue000-\uf8ff\u25a0-\u25ff\u2750-\u275f<〈《〔\[]|ㅇ\s)/
+/** 문장 끝 — 마침표·물음표·느낌표 뒤 닫는 따옴표·괄호까지 ("격려했다." "전했다.”") */
+const SENTENCE_END = /[.?!。][”"’」』)]?$/
+/** 짧은 제목꼴 — 한 줄 40자 이하, 문장 끝이 아님 ("세부 행사 일정"·"위치도"·"행정정보 데이터세트 폐기") */
+const titleLike = (text: string): boolean => {
+  const t = text.replace(MARKUP, "").trim()
+  return !t.includes("\n") && [...t].length <= 40 && !SENTENCE_END.test(t)
+}
 /** 쪽 넘김 잇기로 이은 문단의 쪽 경계 (#136) — 키는 이은 블록의 bbox(PARA_LAST_LINE 과 같은 이유). head 는 뒤 쪽 몫 앞까지의 글,
  *  gap 은 그 사이 이음자 길이, tail 은 뒤 쪽 블록(쪽 번호·기하·모양만 쓴다). 세 쪽 넘게 이으면 앞에서부터 차례로 쌓인다 */
 const PAGE_BREAK_JOINS = new WeakMap<BoundingBox, { head: string; gap: number; tail: IRBlock }[]>()
@@ -261,10 +268,14 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     if ((a.type !== "paragraph" && a.type !== "list") || b.type !== "paragraph") continue
     const last = a.bbox && PARA_LAST_LINE.get(a.bbox), fs = last ? last.fontSize : 0
     if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs) continue
-    // 쪽 사이에는 줄 간격 근거가 없다 — 글자 크기(정수 반올림)가 1pt 라도 다르면 제목·캡션이고, 목차 줄·항목 기호로 여는 블록도 새 줄이다.
-    // PDF 코퍼스 98문서 쪽 넘김 잇기 138곳 중 이 셋에 걸린 54곳(목차 19·기호 24·글자 크기만 다름 11)이 모두 오결합, 남은 84곳은 그대로
-    if (last.width < BODY_MIN_WIDTH_EM * fs || Math.round(b.style?.fontSize ?? 0) !== Math.round(fs)) continue
+    if (last.width < BODY_MIN_WIDTH_EM * fs || Math.abs((b.style?.fontSize ?? 0) - fs) > 0.15 * fs) continue
+    // 쪽 사이에는 줄 간격 근거가 없다 — 목차 줄·항목 기호로 여는 블록은 새 줄, 앞 쪽 문단이 문장으로 끝나면 쪽 끝이 문단 끝, 글자 크기
+    // (정수 반올림)가 다른 짧은 제목꼴 블록은 제목·캡션이다. HWPX 쌍 대조(한컴 PDF 쌍의 잇기 후보 325곳): 문장 끝 이음 26곳 중 원문 문단
+    // 경계 20·같은 문단 4. 크기만 다른 블록 34곳 중 같은 문단 24(긴 본문 — 쪽마다 반올림 크기가 13·12 로 흔들리는 문서)라 크기만으로는
+    // 가르지 않는다
     if (startsNewItem(a.text, b.text) || PAGE_REF_TAIL.test(a.text) || PAGE_HEAD_MARK.test(b.text.replace(MARKUP, ""))) continue
+    if (SENTENCE_END.test(a.text.replace(MARKUP, "").trimEnd())) continue
+    if (Math.round(b.style?.fontSize ?? 0) !== Math.round(fs) && titleLike(b.text)) continue
     const head = a.text, joiner = wrapJoiner(a.text, b.text, lex)
     a.text += joiner + b.text
     // b 가 이미 다음 쪽과 이어졌으면 그 경계는 a 글 안에서 head + 이음자만큼 뒤로 밀린다

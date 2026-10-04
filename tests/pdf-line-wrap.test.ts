@@ -297,7 +297,7 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     slide[1].text = "PART 02·공무원업무의벽\t13/39"
     joinPageBreakWraps(slide)
     assert.equal(slide.length, 3)
-    // 다음 쪽 첫 블록 글자 크기가 1pt 라도 다르면 제목·캡션 (15 → 16)
+    // 다음 쪽 첫 블록 글자 크기가 1pt 라도 다르고 짧은 제목꼴이면 제목·캡션 (15 → 16)
     const bigger = pages(530, "세부 행사 일정")
     bigger[2].style = { fontSize: 11 }
     joinPageBreakWraps(bigger)
@@ -307,6 +307,24 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
       const bs = pages(530, head)
       joinPageBreakWraps(bs)
       assert.equal(bs.length, 3, head)
+    }
+  })
+  it("크기가 1pt 달라도 긴 본문·문장으로 끝나는 블록은 잇는다 — 쪽마다 반올림 크기가 흔들리는 문서 (HWPX 원문 같은 문단)", () => {
+    const long = pages(530, "들은 인공지능을 미래의 동반자로 그려냈으며 다음 세대의 일상을 바꾸어 나갈 것으로 기대를 모으고 있다는 평가가 이어졌다")
+    long[2].style = { fontSize: 11 }
+    joinPageBreakWraps(long)
+    assert.equal(long.length, 2)
+    const sentence = pages(530, "들은 발송되지 않습니다.")
+    sentence[2].style = { fontSize: 11 }
+    joinPageBreakWraps(sentence)
+    assert.equal(sentence.length, 2)
+  })
+  it("앞 쪽 문단이 문장으로 끝나면 잇지 않는다 — HWPX 쌍 대조에서 이 이음 26곳 중 20곳이 원문 문단 경계", () => {
+    for (const tail of ["상담사들을 격려했다.", "전했다.”", "요청할 예정입니까?"]) {
+      const bs = pages(530, "현수엽 제1차관은 이어서 말했다")
+      bs[1].text = "모습을 보여준다. " + tail
+      joinPageBreakWraps(bs)
+      assert.equal(bs.length, 3, tail)
     }
   })
   it("쪽별 사영은 이은 문단을 쪽 경계에서 다시 가른다 — 뒤 쪽 글이 앞 쪽에 실리지 않게 (#136)", () => {

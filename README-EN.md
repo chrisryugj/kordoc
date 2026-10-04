@@ -111,10 +111,11 @@ The external **opendataloader-bench, 200 documents** was measured separately for
 
 ## Recent updates
 
-Latest release: **[4.18.11](https://github.com/chrisryugj/kordoc/releases/tag/v4.18.11)** · 2026-10-04
+Latest release: **[4.18.12](https://github.com/chrisryugj/kordoc/releases/tag/v4.18.12)** · 2026-10-04
 
 | Version | Highlights |
 | --- | --- |
+| 4.18.12 | Retune PDF cross-page paragraph joins against HWPX originals: stop joining finished sentences, relax the font-size guard (errors 50 → 11) |
 | 4.18.11 | Fix runaway memory (7GB+ heap crash) on PDFs where thousands of font dictionaries share a few font programs (#137) |
 | 4.18.9–10 | PDF cross-page paragraph joins: restore page boundaries in per-page Markdown (`pages`, #136) and stop joining headings, TOC lines and new items |
 | 4.18.8 | Edit text with the same line count inside an HWPX cell paragraph while preserving CRLF/CR/LF |
