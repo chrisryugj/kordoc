@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.13] - 2026-10-05
+
+### Fixed
+
+- PDF: 쪽 넘김 문단 잇기에 기하·서식 근거를 더한다. 문장 끝 가드는 다음 쪽 첫 줄을 들여 시작할 때만 끊는다(왼끝에서 시작하면 같은 문단이 이어진 것). 앞 문단 안에 같은 사각 기호가 있으면 문장 속 나열(`… ▲ 가계조사 … ⏎ ▲빈곤선 …`)로 잇는다. 짧은 머리 + 탭인 용어·설명 행과 `.13 ` 같은 점 조항 번호는 새 항목, 탭으로 칸을 나눈 행 다음의 짧은 제목꼴 블록은 새 제목으로 본다. 한컴 PDF↔HWPX 쌍(판정 304곳) 틀린 판정 11 → 5, LibreOffice PDF↔DOCX 쌍(18곳) 5 → 1.
+
 ## [4.18.12] - 2026-10-04
 
 ### Fixed

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { WrapLexicon, wrapJoiner, startsNewItem, bodyLineJoins, joinPageBreakWraps, splitPageBreakWraps, PARA_LAST_LINE, type WrapLine } from "../src/pdf/line-wrap.js"
+import { WrapLexicon, wrapJoiner, startsNewItem, bodyLineJoins, joinPageBreakWraps, splitPageBreakWraps, PARA_LAST_LINE, PARA_FIRST_LEFT, type WrapLine } from "../src/pdf/line-wrap.js"
 import type { IRBlock } from "../src/types.js"
 import { cellTextToString, type TextItem } from "../src/pdf/line-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
@@ -326,6 +326,43 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
       joinPageBreakWraps(bs)
       assert.equal(bs.length, 3, tail)
     }
+  })
+  it("문장 끝이어도 다음 쪽 첫 줄이 왼끝에서 시작하면 잇고, 들여 시작하면 끊는다 (HWPX 쌍: 왼끝 4곳 중 같은 문단 3, 들여씀 20곳 중 경계 19)", () => {
+    const flush = pages(530, "따라서 mkswap을 부주의하게 사용하면 중요한 파일을 잃는다")
+    flush[1].text = "모습을 보여준다. 판별해 주지 않기 때문이다."
+    PARA_FIRST_LEFT.set(flush[2].bbox!, 72)
+    joinPageBreakWraps(flush)
+    assert.equal(flush.length, 2)
+    const indent = pages(530, "현수엽 제1차관은 이어서 말했다")
+    indent[1].text = "모습을 보여준다. 상담사들을 격려했다."
+    PARA_FIRST_LEFT.set(indent[2].bbox!, 82)
+    joinPageBreakWraps(indent)
+    assert.equal(indent.length, 3)
+  })
+  it("용어·설명 행(짧은 머리 + 탭)과 점 조항 번호(.13)는 새 항목, 앞 문단에 같은 사각 기호가 있으면 문장 속 나열로 잇는다", () => {
+    for (const head of ["N\t- 앞쪽에서 입력했었던 문자의 다음 앞 단어를 검색", ".13 사용되는 무선주파수 및 유지되는 당직을 포함하여"]) {
+      const bs = pages(530, head)
+      joinPageBreakWraps(bs)
+      assert.equal(bs.length, 3, head)
+    }
+    const inline = pages(530, "▲빈곤선 설정 및 연관 빈곤율 추정 ▲국가별 빈곤선 비교")
+    inline[1].text = "금번 연수의 주요 내용은 ▲ 가계조사 자료를 활용한 복지지표 구축"
+    joinPageBreakWraps(inline)
+    assert.equal(inline.length, 2)
+  })
+  it("탭으로 칸을 나눈 행 다음 쪽 첫 줄이 짧은 제목꼴이면 끊고, 탭 뒤 문장이 이어지면 잇는다", () => {
+    const row = pages(530, "반수체 수명 주기")
+    row[1].text = "‘상록수’의 별도 정의\t일 년 내내 푸른 잎을 가짐"
+    joinPageBreakWraps(row)
+    assert.equal(row.length, 3)
+    const prose = pages(530, "무엇인가?")
+    prose[1].text = "Server 의 crash로 인해서\tclinet에 hang이 걸리지 않도록 지정하는 option은"
+    joinPageBreakWraps(prose)
+    assert.equal(prose.length, 2)
+    const clause = pages(530, "가정한다;")
+    clause[1].text = ".2.3\t손상을 입은 후 선박이 경사된 현측의 구명뗏목은 하강 준비로 스윙 아웃되었다 고"
+    joinPageBreakWraps(clause)
+    assert.equal(clause.length, 2)
   })
   it("쪽별 사영은 이은 문단을 쪽 경계에서 다시 가른다 — 뒤 쪽 글이 앞 쪽에 실리지 않게 (#136)", () => {
     const blocks = pages(530, "들은 인공지능을 미래의 동반자로 그려냈다.\n다음 문단도 같은 쪽이다.")

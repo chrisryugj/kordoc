@@ -1,6 +1,6 @@
 import type { IRBlock } from "../types.js"
 import { attachDropCaps } from "./local-regions.js"
-import { WrapLexicon, bodyLineJoins, wrapJoiner, startsNewItem, PARA_LAST_LINE } from "./line-wrap.js"
+import { WrapLexicon, bodyLineJoins, wrapJoiner, startsNewItem, PARA_LAST_LINE, PARA_FIRST_LEFT } from "./line-wrap.js"
 import { computeBBox, dominantStyle, mergeLineSimple, sortLineByX, type NormItem } from "./text-line.js"
 import { tagScripts } from "./script-items.js"
 import { XY_WRAP_BANDS, tocRecordBoundaries } from "./xy-cut.js"
@@ -64,6 +64,7 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
     joins[1] = "\n"
   }
   for (let i = 0; i < lines.length;) {
+    const first = i
     let text = lines[i].text
     const items = [...lines[i].items]
     const srcLines = [lines[i].items]
@@ -80,6 +81,7 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
     FACE_CHARS.set(block, faces)
     // 끝줄 기하 — 쪽 넘김 꺾임 잇기(joinPageBreakWraps) 재료
     PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize })
+    PARA_FIRST_LEFT.set(block.bbox!, geo[first].left)
     out.push(block)
     i++
   }

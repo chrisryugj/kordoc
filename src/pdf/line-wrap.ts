@@ -232,6 +232,8 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
 /** 문단 블록의 끝줄 기하 — 쪽 넘김 꺾임 판정용 (page-blocks 가 본문 줄을 문단으로 묶을 때 남긴다, 공개 IR 에 안 나감).
  *  키는 블록의 bbox 객체 — 목록 감지(detectListBlocks)가 블록을 {...block} 으로 새로 만들어도 bbox 는 그대로 넘어간다 */
 export const PARA_LAST_LINE = new WeakMap<BoundingBox, { right: number; width: number; fontSize: number }>()
+/** 문단 블록의 첫 줄 왼끝 — 쪽 넘김 잇기가 다음 쪽 첫 줄 들여쓰기를 볼 때 (키는 PARA_LAST_LINE 과 같다) */
+export const PARA_FIRST_LEFT = new WeakMap<BoundingBox, number>()
 
 /** 쪽 번호로 끝나는 목차·슬라이드 바닥 줄 — "2.3. 회의록의 구성 \t 7"·"…………… 53"·"·· 167"·"\t13/39" */
 const PAGE_REF_TAIL = /(?:\t|…|·{2}|\.{3})\s*\d{1,4}(?:\s*\/\s*\d{1,4})?\s*$/
@@ -239,6 +241,8 @@ const PAGE_REF_TAIL = /(?:\t|…|·{2}|\.{3})\s*\d{1,4}(?:\s*\/\s*\d{1,4})?\s*$/
  *  "< … >"·"[1]"·"[그림 Ⅱ-78]"·"〔서식 4-1〕", 사각·딩뱃 기호 "▮"·"▣"·"❐", 제어 문자. 쪽 넘김 잇기에만 쓴다 — 같은 쪽 줄 잇기는
  *  줄 간격 근거가 따로 있다. PDF 코퍼스(98문서) 쪽 넘김 잇기 138곳 가운데 이 기호로 여는 30곳이 모두 새 항목·제목이었다 */
 const PAGE_HEAD_MARK = /^(?:[\u0000-\u001f\ue000-\uf8ff\u25a0-\u25ff\u2750-\u275f<〈《〔\[]|ㅇ\s)/
+/** 쪽 머리의 새 항목 — ITEM_HEAD 밖: 짧은 머리 + 탭인 용어·설명 행("N\t- 앞쪽에서 …"), 점으로 여는 조항 번호(".13 사용되는 …") */
+const PAGE_ITEM_HEAD = /^(?:\S{1,4}\t|\.\d{1,3}\s)/
 /** 문장 끝 — 마침표·물음표·느낌표 뒤 닫는 따옴표·괄호까지 ("격려했다." "전했다.”") */
 const SENTENCE_END = /[.?!。][”"’」』)]?$/
 /** 짧은 제목꼴 — 한 줄 40자 이하, 문장 끝이 아님 ("세부 행사 일정"·"위치도"·"행정정보 데이터세트 폐기") */
@@ -262,6 +266,11 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     if (b.type !== "paragraph" || !b.bbox || !b.pageNumber) continue
     pageRight.set(b.pageNumber, Math.max(pageRight.get(b.pageNumber) ?? -Infinity, b.bbox.x + b.bbox.width))
   }
+  const pageLeft = new Map<number, number>()
+  for (const b of blocks) {
+    if (b.type !== "paragraph" || !b.bbox || !b.pageNumber) continue
+    pageLeft.set(b.pageNumber, Math.min(pageLeft.get(b.pageNumber) ?? Infinity, b.bbox.x))
+  }
   for (let i = blocks.length - 1; i > 0; i--) {
     const a = blocks[i - 1], b = blocks[i]
     if (!a.pageNumber || b.pageNumber !== a.pageNumber + 1 || !a.text || !b.text) continue
@@ -269,13 +278,24 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     const last = a.bbox && PARA_LAST_LINE.get(a.bbox), fs = last ? last.fontSize : 0
     if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs) continue
     if (last.width < BODY_MIN_WIDTH_EM * fs || Math.abs((b.style?.fontSize ?? 0) - fs) > 0.15 * fs) continue
-    // 쪽 사이에는 줄 간격 근거가 없다 — 목차 줄·항목 기호로 여는 블록은 새 줄, 앞 쪽 문단이 문장으로 끝나면 쪽 끝이 문단 끝, 글자 크기
-    // (정수 반올림)가 다른 짧은 제목꼴 블록은 제목·캡션이다. HWPX 쌍 대조(한컴 PDF 쌍의 잇기 후보 325곳): 문장 끝 이음 26곳 중 원문 문단
-    // 경계 20·같은 문단 4. 크기만 다른 블록 34곳 중 같은 문단 24(긴 본문 — 쪽마다 반올림 크기가 13·12 로 흔들리는 문서)라 크기만으로는
-    // 가르지 않는다
-    if (startsNewItem(a.text, b.text) || PAGE_REF_TAIL.test(a.text) || PAGE_HEAD_MARK.test(b.text.replace(MARKUP, ""))) continue
-    if (SENTENCE_END.test(a.text.replace(MARKUP, "").trimEnd())) continue
+    // 쪽 사이에는 줄 간격 근거가 없다 — HWPX 쌍 대조(한컴 PDF 쌍의 잇기 후보 325곳, 원문 문단 경계와 비교)로 정한 가드:
+    // · 목차 줄·항목 기호·용어 행·조항 번호로 여는 블록은 새 줄. 단 앞 문단 안에 같은 사각 기호가 이미 있으면 문장 속 나열이 이어진 것
+    //   ("…주요 내용은 ▲ 가계조사 … 구축 ⏎ ▲빈곤선 설정 …")
+    // · 앞 쪽 문단이 문장으로 끝나고 다음 쪽 첫 줄이 들여 시작하면 새 문단: 문장 끝 26곳 중 들여쓴 20곳은 원문 경계 19, 왼끝에서
+    //   시작한 4곳은 같은 문단 3
+    // · 글자 크기(정수 반올림)가 다른 짧은 제목꼴 블록은 제목·캡션. 크기만 다른 블록 34곳 중 같은 문단 24(긴 본문 — 쪽마다 반올림
+    //   크기가 13·12 로 흔들리는 문서)라 크기만으로는 가르지 않는다
+    const bt = b.text.replace(MARKUP, "")
+    if (startsNewItem(a.text, b.text) || PAGE_REF_TAIL.test(a.text) || PAGE_ITEM_HEAD.test(bt)) continue
+    if (PAGE_HEAD_MARK.test(bt) && !(/^[\u25a0-\u25ff]/.test(bt) && a.text.includes(bt[0]))) continue
+    const firstLeft = b.bbox && PARA_FIRST_LEFT.get(b.bbox)
+    const indented = firstLeft === undefined || firstLeft - (pageLeft.get(b.pageNumber!) ?? firstLeft) >= 0.3 * fs
+    if (indented && SENTENCE_END.test(a.text.replace(MARKUP, "").trimEnd())) continue
     if (Math.round(b.style?.fontSize ?? 0) !== Math.round(fs) && titleLike(b.text)) continue
+    // 탭으로 칸을 나눈 행("‘상록수’의 별도 정의\t일 년 내내 …") 다음 쪽 첫 줄이 짧은 제목꼴이면 표 같은 목록이 끝나고 새 제목이 선 것이다
+    // (lo-pairs DOCX 쌍 3곳). 문장 속 탭 뒤로 문장이 이어지는 옛 문서("…crash로 인해서\tclinet에 … option은 ⏎ 무엇인가?")와 줄 앞 조항
+    // 번호 뒤 탭(".2.3\t손상을 입은 후 … 고 ⏎ 가정한다;")은 칸 구분이 아니다
+    if (/\t/.test(a.text.slice(a.text.lastIndexOf("\n") + 1).replace(/^\S{1,8}\t/, "")) && titleLike(bt.trim().split("\n")[0])) continue
     const head = a.text, joiner = wrapJoiner(a.text, b.text, lex)
     a.text += joiner + b.text
     // b 가 이미 다음 쪽과 이어졌으면 그 경계는 a 글 안에서 head + 이음자만큼 뒤로 밀린다
