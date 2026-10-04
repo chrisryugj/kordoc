@@ -111,11 +111,11 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 최근 업데이트
 
-최신 배포: **[4.18.9](https://github.com/chrisryugj/kordoc/releases/tag/v4.18.9)** · 2026-10-04
+최신 배포: **[4.18.10](https://github.com/chrisryugj/kordoc/releases/tag/v4.18.10)** · 2026-10-04
 
 | 버전 | 주요 변경 |
 | --- | --- |
-| 4.18.9 | PDF 쪽 넘김 문단 잇기 뒤 쪽별 마크다운(`pages`)의 쪽 경계 복구 (#136) |
+| 4.18.9–10 | PDF 쪽 넘김 문단 잇기: 쪽별 마크다운(`pages`) 쪽 경계 복구(#136), 쪽 첫머리 제목·목차·항목 오결합 방지 |
 | 4.18.8 | HWPX 셀 문단의 CRLF·CR·LF 줄바꿈을 보존하며 같은 줄 수의 텍스트 편집 지원 |
 | 4.18.7 | 셀의 CRLF·CR이 GFM 표의 새 행으로 분리되던 문제와 왕복 패치 좌표 수정 |
 | 4.18.5–6 | CLI 입력 보호·`generate --plain` 전달, PDF 문단·목록·괄호 문장·측면 탭 처리 개선 |

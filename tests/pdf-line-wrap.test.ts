@@ -287,6 +287,28 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     joinPageBreakWraps(item)
     assert.equal(item.length, 3)
   })
+  it("목차 줄·글자 크기가 다른 블록·항목 기호로 여는 블록은 잇지 않는다 (코퍼스 쪽 넘김 오결합)", () => {
+    // 목차: 앞 쪽 끝줄이 쪽 번호로 끝남
+    const toc = pages(530, "2.3.1. 회의록 작성대상 \t 8")
+    toc[1].text = "2.3. 회의록의 구성 \t 7"
+    joinPageBreakWraps(toc)
+    assert.equal(toc.length, 3)
+    const slide = pages(530, "벽#2·문서 장벽")
+    slide[1].text = "PART 02·공무원업무의벽\t13/39"
+    joinPageBreakWraps(slide)
+    assert.equal(slide.length, 3)
+    // 다음 쪽 첫 블록 글자 크기가 1pt 라도 다르면 제목·캡션 (15 → 16)
+    const bigger = pages(530, "세부 행사 일정")
+    bigger[2].style = { fontSize: 11 }
+    joinPageBreakWraps(bigger)
+    assert.equal(bigger.length, 3)
+    // 항목 기호: 사용자 정의 영역 글머리(U+F000)·ㅇ·꺾쇠 제목·사각 기호 (eval-perf-2025 9쪽 "415건 최종 회신 ⏎  민생 안정과…")
+    for (const head of ["\uF000 민생 안정과 경제 성장을 지원하는 법제 구축", "ㅇ 진출기업 세무안정", "< 2022년도 과제추진 계획 >", "[1] 공문서 작성 일반원칙", "〔서식 4-1〕가격입찰서", "▮ 2029년", "❐ 약 ․ 특용작물"]) {
+      const bs = pages(530, head)
+      joinPageBreakWraps(bs)
+      assert.equal(bs.length, 3, head)
+    }
+  })
   it("쪽별 사영은 이은 문단을 쪽 경계에서 다시 가른다 — 뒤 쪽 글이 앞 쪽에 실리지 않게 (#136)", () => {
     const blocks = pages(530, "들은 인공지능을 미래의 동반자로 그려냈다.\n다음 문단도 같은 쪽이다.")
     joinPageBreakWraps(blocks)

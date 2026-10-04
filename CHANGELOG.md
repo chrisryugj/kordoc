@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.18.10] - 2026-10-04
+
+### Fixed
+
+- PDF: 쪽 넘김 문단 잇기가 다음 쪽 첫머리의 제목·캡션·새 항목·목차 줄을 앞 쪽 문단 끝에 붙이던 오결합을 막는다("…415건 최종 회신 민생 안정과 경제 성장을 지원하는 법제 구축" → 제목으로 분리). 앞 줄이 쪽 번호로 끝나는 목차·슬라이드 바닥 줄, 글자 크기가 다른 블록, 글꼴 기호 글머리(사용자 정의 영역)·`ㅇ`·`< … >`·`[…]`·`〔…〕`·사각 기호로 여는 블록은 잇지 않는다. PDF 코퍼스 98문서의 쪽 넘김 잇기 138곳 중 오결합 54곳이 빠지고 나머지 84곳은 그대로다. 같은 쪽 안의 줄 잇기는 바뀌지 않는다.
+
 ## [4.18.9] - 2026-10-04
 
 ### Fixed

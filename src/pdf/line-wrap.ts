@@ -233,6 +233,12 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
  *  키는 블록의 bbox 객체 — 목록 감지(detectListBlocks)가 블록을 {...block} 으로 새로 만들어도 bbox 는 그대로 넘어간다 */
 export const PARA_LAST_LINE = new WeakMap<BoundingBox, { right: number; width: number; fontSize: number }>()
 
+/** 쪽 번호로 끝나는 목차·슬라이드 바닥 줄 — "2.3. 회의록의 구성 \t 7"·"…………… 53"·"·· 167"·"\t13/39" */
+const PAGE_REF_TAIL = /(?:\t|…|·{2}|\.{3})\s*\d{1,4}(?:\s*\/\s*\d{1,4})?\s*$/
+/** 쪽 머리에서 새 항목·제목을 여는 기호 — ITEM_HEAD 밖: 사용자 정의 영역 글머리(U+F000 등, 글꼴 기호), 자모 "ㅇ ", 꺾쇠·대괄호 제목
+ *  "< … >"·"[1]"·"[그림 Ⅱ-78]"·"〔서식 4-1〕", 사각·딩뱃 기호 "▮"·"▣"·"❐", 제어 문자. 쪽 넘김 잇기에만 쓴다 — 같은 쪽 줄 잇기는
+ *  줄 간격 근거가 따로 있다. PDF 코퍼스(98문서) 쪽 넘김 잇기 138곳 가운데 이 기호로 여는 30곳이 모두 새 항목·제목이었다 */
+const PAGE_HEAD_MARK = /^(?:[\u0000-\u001f\ue000-\uf8ff\u25a0-\u25ff\u2750-\u275f<〈《〔\[]|ㅇ\s)/
 /** 쪽 넘김 잇기로 이은 문단의 쪽 경계 (#136) — 키는 이은 블록의 bbox(PARA_LAST_LINE 과 같은 이유). head 는 뒤 쪽 몫 앞까지의 글,
  *  gap 은 그 사이 이음자 길이, tail 은 뒤 쪽 블록(쪽 번호·기하·모양만 쓴다). 세 쪽 넘게 이으면 앞에서부터 차례로 쌓인다 */
 const PAGE_BREAK_JOINS = new WeakMap<BoundingBox, { head: string; gap: number; tail: IRBlock }[]>()
@@ -255,8 +261,10 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     if ((a.type !== "paragraph" && a.type !== "list") || b.type !== "paragraph") continue
     const last = a.bbox && PARA_LAST_LINE.get(a.bbox), fs = last ? last.fontSize : 0
     if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs) continue
-    if (last.width < BODY_MIN_WIDTH_EM * fs || Math.abs((b.style?.fontSize ?? 0) - fs) > 0.15 * fs) continue
-    if (startsNewItem(a.text, b.text)) continue
+    // 쪽 사이에는 줄 간격 근거가 없다 — 글자 크기(정수 반올림)가 1pt 라도 다르면 제목·캡션이고, 목차 줄·항목 기호로 여는 블록도 새 줄이다.
+    // PDF 코퍼스 98문서 쪽 넘김 잇기 138곳 중 이 셋에 걸린 54곳(목차 19·기호 24·글자 크기만 다름 11)이 모두 오결합, 남은 84곳은 그대로
+    if (last.width < BODY_MIN_WIDTH_EM * fs || Math.round(b.style?.fontSize ?? 0) !== Math.round(fs)) continue
+    if (startsNewItem(a.text, b.text) || PAGE_REF_TAIL.test(a.text) || PAGE_HEAD_MARK.test(b.text.replace(MARKUP, ""))) continue
     const head = a.text, joiner = wrapJoiner(a.text, b.text, lex)
     a.text += joiner + b.text
     // b 가 이미 다음 쪽과 이어졌으면 그 경계는 a 글 안에서 head + 이음자만큼 뒤로 밀린다
