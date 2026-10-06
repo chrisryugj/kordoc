@@ -84,7 +84,7 @@ if (result.success) {
 | `images` | `--no-images` | `false` 면 이미지 바이트를 싣지 않음(그림 자리 표시는 남김, PDF 는 PNG 인코딩 생략) |
 | `plain` | `--plain` | 그림 자리 표시·링크 URL·밑줄·굵게 없이 글 위주 Markdown(제목·목록·표 구조 유지, `blocks` 는 그대로). 첨자 `<sup>`·`<sub>` 는 `10^4`·`H_2O` 로 |
 | `htmlTables` | `--html-tables` | 모든 표를 HTML 로, 태그마다 한 줄씩 들여써서(첫 행 `<th>`) |
-| `tableFormat` | `--table-format gfm` | `"gfm"`: 모든 표를 HTML 없이 GFM 파이프 표로(병합 칸은 시작 칸에만 값). 셀 안 표는 부모 표 뒤 독립 표로 꺼내고 관계를 `<!-- <table id="t2" parent_id="t1" /> -->` 표지로 남김(RAG 색인용, `htmlTables` 와 함께 못 씀) |
+| `tableFormat` | `--table-format gfm` | `"gfm"`: 모든 표를 HTML 없이 GFM 파이프 표로(세로 병합 칸은 덮인 행마다 같은 값, 가로 병합 칸은 시작 칸에만 값). 셀 안 표는 부모 표 뒤 독립 표로 꺼내고 관계를 `<!-- <table id="t2" parent_id="t1" /> -->` 표지로 남김(RAG 색인용, `htmlTables` 와 함께 못 씀) |
 | `password` | `--password` | 열기 암호 문서(HWPX·HWP3·HWP5, 한컴 DRM 은 해당 없음) |
 | `tables` | `--no-tables` | `false` 면 PDF 표 감지 끔(테두리 상자가 표로 잡혀 순서가 뒤집히는 2단 시험지 등) |
 | `removeHeaderFooter` | `--no-header-footer` | PDF 머리글/바닥글 제거(기본 켬, 3쪽 이상) |

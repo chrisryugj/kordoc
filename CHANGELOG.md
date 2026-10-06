@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.19.0] - 2026-10-06
+
+### Added
+
+- 표 출력 옵션 `tableFormat: "gfm"`(CLI `--table-format gfm`, MCP `parse_document` 의 `table_format`, `blocksToChunks(blocks, { tableFormat })`)을 더한다(#138, @VerifiedIdiot). RAG 색인용으로 종전에 HTML 로 가던 병합·중첩 표까지 GFM 파이프 표로 내 출력에 HTML 표가 남지 않는다(병합 없는 1×1·1열 표는 종전처럼 글 줄로 편다). 세로 병합 칸은 덮인 행마다 같은 값을 채우고 가로 병합 칸은 시작 칸에만 값을 둔다. 셀 안 표는 부모 표 뒤 독립 표로 꺼내 전위 깊이 우선으로 두고 관계를 `<!-- <table id="t2" parent_id="t1" /> -->` 주석 표지로 남긴다. 표 id 는 `IRTable.markdownId` 에 저장해 전체 Markdown·`pages[]`·청크에서 같다. `htmlTables` 와 함께 쓰면 실패를 반환한다. 옵션을 지정하지 않은 출력은 바뀌지 않는다(코퍼스 표본 509문서 `markdown`·`pages`·청크 바이트 동일).
+
+### Security
+
+- 의존성 취약점 3건을 lockfile 에서 걷어낸다(정부 GitLab 미러 OSV 스캔 거부 해소). `proxy-addr` 2.0.7 → 2.0.8(GHSA-jqcg-44mw-7w3h), demo 의 `source-map-js` 1.2.1 → 1.2.2(GHSA-68fv-2mgg-jv7q). 패치가 없는 `sprintf-js` 1.1.3(GHSA-hp3w-g68c-fv3c)은 `@huggingface/transformers` 가 고정한 `onnxruntime-node` 1.24.3 의 설치 스크립트용 `global-agent` 3 → `roarr` 경로라 `global-agent` 를 ^4.1.3 으로 override 해 경로째 뺀다(같은 `bootstrap` API, `onnxruntime-node` 1.29+ 가 쓰는 버전).
+
 ## [4.18.13] - 2026-10-05
 
 ### Fixed
