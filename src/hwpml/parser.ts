@@ -85,7 +85,7 @@ export function parseHwpmlDocument(buffer: ArrayBuffer, options?: ParseOptions):
     .filter(b => b.type === "heading" && b.text)
     .map(b => ({ level: b.level ?? 1, text: b.text!, pageNumber: b.pageNumber }))
 
-  const markdown = blocksToMarkdown(blocks)
+  const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
   return {
     markdown,
     blocks,

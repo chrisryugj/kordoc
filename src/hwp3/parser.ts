@@ -204,7 +204,7 @@ export function parseHwp3Document(
   }
 
   return {
-    markdown: blocksToMarkdown(blocks),
+    markdown: blocksToMarkdown(blocks, { tableFormat: options?.tableFormat }),
     blocks,
     metadata,
     warnings: warnings.length ? warnings : undefined,

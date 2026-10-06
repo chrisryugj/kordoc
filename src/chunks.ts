@@ -15,7 +15,7 @@
  */
 
 import type { IRBlock } from "./types.js"
-import { blocksToMarkdown } from "./table/builder.js"
+import { assignTableIds, blocksToMarkdown } from "./table/builder.js"
 
 export interface DocChunk {
   /** "c0001" 순번 id — 같은 입력이면 같은 출력 (결정적) */
@@ -41,6 +41,8 @@ export interface ChunkOptions {
    * "block": IRBlock 1개 = 청크 1개
    */
   granularity?: "block" | "section"
+  /** 표 출력 형식 — `ParseOptions.tableFormat` 과 같다. "gfm" 이면 표 id 를 문서 전체 순번으로 붙인 뒤 청크마다 렌더한다 */
+  tableFormat?: "gfm"
 }
 
 /**
@@ -67,6 +69,9 @@ function sameBreadcrumb(a: string[], b: string[]): boolean {
 export function blocksToChunks(blocks: IRBlock[], options?: ChunkOptions): DocChunk[] {
   const granularity = options?.granularity ?? "section"
   const includeCells = options?.includeTableCells ?? false
+  const mdOptions = { tableFormat: options?.tableFormat }
+  // 청크 단위 렌더가 t1 부터 다시 매기지 않게 문서 전체에서 먼저 (parse 가 이미 붙였으면 그대로)
+  if (options?.tableFormat === "gfm") assignTableIds(blocks)
 
   const chunks: DocChunk[] = []
   const headingStack: { level: number; text: string }[] = []
@@ -91,13 +96,13 @@ export function blocksToChunks(blocks: IRBlock[], options?: ChunkOptions): DocCh
   let run: { breadcrumb: string[]; blocks: IRBlock[]; start: number; end: number; page?: number } | null = null
   const flushRun = () => {
     if (!run) return
-    push("text", run.breadcrumb, blocksToMarkdown(run.blocks), [run.start, run.end], run.page)
+    push("text", run.breadcrumb, blocksToMarkdown(run.blocks, mdOptions), [run.start, run.end], run.page)
     run = null
   }
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
-    const md = blocksToMarkdown([block])
+    const md = blocksToMarkdown([block], mdOptions)
     if (!md) continue // 빈 블록 스킵 — 스택에도 불참
 
     if (block.type === "heading") {

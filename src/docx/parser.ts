@@ -1050,7 +1050,7 @@ export async function parseDocxDocument(
     .filter(b => b.type === "heading")
     .map(b => ({ level: b.level ?? 2, text: b.text ?? "" }))
 
-  const markdown = blocksToMarkdown(blocks)
+  const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 
   return {
     markdown,

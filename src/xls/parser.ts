@@ -360,7 +360,7 @@ export async function parseXlsDocument(
   }
 
   return {
-    markdown: blocksToMarkdown(allBlocks),
+    markdown: blocksToMarkdown(allBlocks, { tableFormat: options?.tableFormat }),
     blocks: allBlocks,
     metadata,
     warnings: warnings.length > 0 ? warnings : undefined,

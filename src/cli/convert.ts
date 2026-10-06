@@ -53,6 +53,7 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
       if (opts.plain) parseOptions.plain = true
       if (opts.scriptTags !== undefined) parseOptions.scriptTags = opts.scriptTags as boolean
       if (opts.htmlTables) parseOptions.htmlTables = true
+      if (opts.tableFormat === "gfm") parseOptions.tableFormat = "gfm"
       if (opts.keepLayoutTables) parseOptions.layoutTables = "keep"
       if (!opts.silent) {
         parseOptions.onProgress = (current: number, total: number) => {
@@ -119,7 +120,7 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
       } else if (opts.format === "chunks") {
         // 청크 글에도 본문 마크다운과 같은 후처리(평문·HTML 표·그림 경로) — 종전엔 IR 에서 바로 만들어 --plain·--html-tables 를 무시했다
         const { blocksToChunks } = await import("../chunks.js")
-        const chunks = blocksToChunks(result.blocks).map(c => {
+        const chunks = blocksToChunks(result.blocks, { tableFormat: parseOptions.tableFormat }).map(c => {
           let text = c.text
           if (opts.plain) text = toPlainMarkdown(text)
           if (opts.htmlTables) text = toHtmlTables(text)

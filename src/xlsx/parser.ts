@@ -494,7 +494,7 @@ export async function parseXlsxDocument(
     } catch { /* 메타데이터 실패는 무시 */ }
   }
 
-  const markdown = blocksToMarkdown(blocks)
+  const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 
   return { markdown, blocks, metadata, warnings: warnings.length > 0 ? warnings : undefined }
 }

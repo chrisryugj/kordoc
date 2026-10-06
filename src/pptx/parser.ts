@@ -405,7 +405,7 @@ export async function parsePptxDocument(
     .map(b => ({ level: b.level ?? 2, text: b.text ?? "", pageNumber: b.pageNumber }))
 
   return {
-    markdown: blocksToMarkdown(blocks),
+    markdown: blocksToMarkdown(blocks, { tableFormat: options?.tableFormat }),
     blocks,
     metadata,
     outline: outline.length > 0 ? outline : undefined,

@@ -3,7 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import MarkdownIt from "markdown-it"
-import { blocksToPages } from "../src/index.js"
+import { parse, markdownToHwpx, blocksToChunks, blocksToPages } from "../src/index.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 import type { IRBlock, IRCell, IRTable } from "../src/types.js"
 
@@ -194,9 +194,24 @@ describe("tableFormat gfm — 표 id 일관성", () => {
     assert.deepEqual(markerIds(pages[1].markdown), [["t4", "t3"]])
   })
 
+  it("blocksToChunks 결과의 id 가 전체 Markdown 과 일치", () => {
+    const blocks = twoPages()
+    const chunks = blocksToChunks(blocks, GFM)
+    const tableChunks = chunks.filter(ch => ch.type === "table")
+    assert.equal(tableChunks.length, 2)
+    assert.deepEqual(markerIds(tableChunks[1].text), [["t4", "t3"]])
+    assert.equal(tableChunks.map(ch => ch.text).join("\n\n"), blocksToMarkdown(blocks.filter(b => b.type === "table"), GFM))
+  })
 })
 
 describe("tableFormat gfm — 옵션", () => {
+  it("htmlTables 와 함께 지정하면 실패", async () => {
+    const hwpx = await markdownToHwpx("# 제목\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n")
+    const res = await parse(hwpx, { htmlTables: true, tableFormat: "gfm" })
+    assert.equal(res.success, false)
+    assert.ok(!res.success && /htmlTables/.test(res.error))
+  })
+
   it("옵션 미지정 → 종전 HTML 출력 그대로", () => {
     assert.equal(blocksToMarkdown(oneLevel()), [
       "<table>",
@@ -211,5 +226,30 @@ describe("tableFormat gfm — 옵션", () => {
     const blocks = oneLevel()
     blocksToMarkdown(blocks)
     assert.equal(blocks[0].table!.markdownId, undefined) // 기본 렌더는 IR 도 건드리지 않는다
+  })
+})
+
+describe("tableFormat gfm — 종단 (parse)", () => {
+  /** deep-nested-table.test.ts 와 같은 입력 — 2×2 표의 오른쪽 위 칸에 다음 단 */
+  const nestHtml = (n: number): string => n === 0 ? "" :
+    `<table><tr><td>L${n} 항목</td><td>L${n} 내용${n > 1 ? "<br>" + nestHtml(n - 1) : ""}</td></tr>` +
+    `<tr><td>L${n} 비고</td><td>L${n} 값</td></tr></table>`
+
+  it("HWPX 3단 중첩표 → 표지 연쇄, 전위 순서, 쪽·청크 id 일치", async () => {
+    const hwpx = await markdownToHwpx(`# 제목\n\n${nestHtml(3)}\n`)
+    const res = await parse(hwpx, GFM)
+    assert.ok(res.success)
+    assert.ok(!res.markdown.replace(/<!--[\s\S]*?-->/g, "").includes("<table")) // 표지 주석 밖에 HTML 표가 없다
+    assert.deepEqual(markerIds(res.markdown), [["t2", "t1"], ["t3", "t2"]])
+    assert.deepEqual(cellMarkers(res.markdown), [["t1", "t2"], ["t2", "t3"]])
+    const order = ["| L3 항목 |", "| L2 항목 |", "| L1 항목 |"].map(s => res.markdown.indexOf(s))
+    assert.ok(order[0] >= 0 && order[0] < order[1] && order[1] < order[2])
+    for (const p of res.pages ?? []) {
+      for (const ids of markerIds(p.markdown)) assert.ok(markerIds(res.markdown).some(m => m[0] === ids[0] && m[1] === ids[1]))
+    }
+    const chunk = blocksToChunks(res.blocks, GFM).find(ch => ch.type === "table")!
+    assert.deepEqual(markerIds(chunk.text), [["t2", "t1"], ["t3", "t2"]])
+    const html = new MarkdownIt({ html: true }).render(res.markdown)
+    assert.equal((html.match(/<table>/g) ?? []).length, 3)
   })
 })

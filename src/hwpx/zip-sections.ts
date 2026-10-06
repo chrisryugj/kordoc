@@ -7,13 +7,13 @@ import JSZip from "jszip"
 import { inflateRawSync } from "zlib"
 import { KordocError, isPathTraversal, stripDtd, normalizeSectionHref, compareSectionPaths } from "../utils.js"
 import { blocksToMarkdown } from "../table/builder.js"
-import type { InternalParseResult, IRBlock, ParseWarning } from "../types.js"
+import type { InternalParseResult, IRBlock, ParseOptions, ParseWarning } from "../types.js"
 import { applyPageText, createSectionShared, createXmlParser, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES } from "./parser-shared.js"
 import { parseSectionXml } from "./section-walker.js"
 
 // ─── 손상 ZIP 복구 (edu-facility-ai에서 포팅) ──────────
 
-export function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
+export function extractFromBrokenZip(buffer: ArrayBuffer, options?: ParseOptions): InternalParseResult {
   const data = new Uint8Array(buffer)
   const view = new DataView(buffer)
   let pos = 0
@@ -86,7 +86,7 @@ export function extractFromBrokenZip(buffer: ArrayBuffer): InternalParseResult {
 
   if (blocks.length === 0) throw new KordocError("손상된 HWPX에서 섹션 데이터를 복구할 수 없습니다")
   applyPageText(blocks, shared)
-  const markdown = blocksToMarkdown(blocks)
+  const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
   return { markdown, blocks, warnings: warnings.length > 0 ? warnings : undefined }
 }
 

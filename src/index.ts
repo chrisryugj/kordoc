@@ -54,6 +54,10 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
   const opts = typeof input === "string" && !options?.filePath
     ? { ...options, filePath: input }
     : options
+  // htmlTables 는 GFM 표까지 HTML 로 옮기는 후처리라 tableFormat "gfm" 과 정반대 — 한쪽을 조용히 무시하지 않는다
+  if (opts?.htmlTables && opts.tableFormat) {
+    return { success: false, fileType: "unknown", error: "htmlTables 와 tableFormat 은 함께 쓸 수 없습니다" }
+  }
   if (typeof input === "string") {
     try {
       const buf = await readFile(input)
@@ -92,7 +96,7 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
     out = { ...result, warnings: [...(result.warnings ?? []), { code: "PARTIAL_PARSE", message: `요청한 쪽 범위(${opts.pages})가 문서 쪽(1~${result.pageCount})과 겹치지 않습니다` }] }
   }
   if (out.success && !out.pages) {
-    const pages = blocksToPages(out.blocks)
+    const pages = blocksToPages(out.blocks, bs => blocksToMarkdown(bs, { tableFormat: opts?.tableFormat }))
     if (pages) out = { ...out, pages }
   }
   // plain: 그림 자리 표시·링크 URL·밑줄/굵게 표기를 걷은 글 위주 Markdown (블록 IR 은 그대로)
@@ -168,7 +172,7 @@ export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): P
     return {
       success: true,
       fileType: "image",
-      markdown: blocksToMarkdown(blocks),
+      markdown: blocksToMarkdown(blocks, { tableFormat: options?.tableFormat }),
       blocks,
       warnings: warnings.length ? warnings : undefined,
       pageCount: 1,
@@ -494,5 +498,6 @@ export type {
   OcrProvider, WatchOptions,
 } from "./types.js"
 export { blocksToMarkdown } from "./table/builder.js"
+export type { MarkdownOptions } from "./table/builder.js"
 export { blocksToPages } from "./page-markdown.js"
 export { VERSION } from "./utils.js"

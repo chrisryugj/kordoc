@@ -34,6 +34,8 @@ export function registerParseTools(server: McpServer): void {
         .describe("테두리가 안 보이는 틀 표도 원본 표 구조 그대로 (기본 off = 보이는 대로: 틀은 글, 칸으로 조립한 분수는 수식). patch_document 로 되돌릴 편집본은 켜서 뽑는다 (CLI --keep-layout-tables)"),
       html_tables: z.boolean().optional()
         .describe("모든 표를 HTML 로 — 파이프 표도 HTML 표로, 태그마다 한 줄씩 들여써 냄 (기본 off, CLI --html-tables 대응)"),
+      table_format: z.enum(["gfm"]).optional()
+        .describe("\"gfm\": 모든 표를 HTML 없이 GFM 파이프 표로 — 셀 안 표는 부모 뒤 독립 표로 꺼내고 관계를 <!-- <table id parent_id /> --> 표지로 남김 (RAG 색인용, html_tables 와 함께 못 씀, CLI --table-format 대응)"),
       script_tags: z.boolean().optional()
         .describe("위·아래첨자를 <sup>·<sub> 로 표기(\"10⁴ m²\" 가 \"104 m2\" 로 펴지지 않게) — 기본: HWPX·HWP·DOCX 켬, PDF 끔(논문·수식 PDF 는 true 권장), false 면 모두 평문. CLI --script-tags / --no-script-tags 대응"),
       plain: z.boolean().optional()
@@ -43,7 +45,7 @@ export function registerParseTools(server: McpServer): void {
       tables: z.boolean().optional()
         .describe("PDF 표 감지 (기본 true — false로 끄기, CLI --no-tables 대응). 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑습니다 (#64)"),
     },
-    async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, keep_layout_tables, html_tables, script_tags, plain, password, tables }) => {
+    async ({ file_path, ocr, remove_header_footer, formula_ocr, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, keep_layout_tables, html_tables, table_format, script_tags, plain, password, tables }) => {
       try {
         const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
         const format = detectFormat(buffer)
@@ -72,6 +74,7 @@ export function registerParseTools(server: McpServer): void {
           ...(plain ? { plain: true } : {}),
           ...(script_tags !== undefined ? { scriptTags: script_tags } : {}),
           ...(html_tables ? { htmlTables: true } : {}),
+          ...(table_format ? { tableFormat: table_format } : {}),
           ...(keep_layout_tables ? { layoutTables: "keep" as const } : {}),
           ...(password ? { password } : {}),
           ...(tables === false ? { tables: false } : {}),

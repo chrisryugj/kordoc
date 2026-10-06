@@ -60,7 +60,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   try {
     zip = await JSZip.loadAsync(buffer)
   } catch {
-    return extractFromBrokenZip(buffer)
+    return extractFromBrokenZip(buffer, options)
   }
 
   // loadAsync 후 실제 엔트리 수 검증 — CD 위조와 무관한 진짜 방어선
@@ -186,7 +186,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     .filter(b => b.type === "heading" && b.level && b.text)
     .map(b => ({ level: b.level!, text: b.text!, pageNumber: b.pageNumber }))
 
-  const markdown = blocksToMarkdown(shown)
+  const markdown = blocksToMarkdown(shown, { tableFormat: options?.tableFormat })
   return { markdown, blocks: shown, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined }
 }
 

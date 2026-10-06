@@ -15,7 +15,7 @@ import type { InternalParseResult, IRBlock, DocumentMetadata, ExtractedImage, Pa
 import { KordocError } from "../utils.js"
 import { parsePageRange, hasRequestedPagesAfter } from "../page-range.js"
 import { blocksToPages } from "../page-markdown.js"
-import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
+import { assignTableIds, blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
 import { unframeLayoutTables, CONTENT_CELLS } from "../table/layout-frames.js"
 import { CLIP_TABLES, IMAGE_CELLS } from "./table-meta.js"
 import { extractImageRegions, extractLines } from "./line-detector.js"
@@ -647,7 +647,9 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     }
 
     // blocksToMarkdown로 통일 — 헤딩 마크다운 반영 (HWP5/HWPX와 일관성)
-    const finishMarkdown = (bs: IRBlock[]): string => mergeLinkRuns(cleanPdfText(blocksToMarkdown(bs), { keepLoneNumbers: true }))
+    const finishMarkdown = (bs: IRBlock[]): string => mergeLinkRuns(cleanPdfText(blocksToMarkdown(bs, { tableFormat: options?.tableFormat }), { keepLoneNumbers: true }))
+    // gfm 표 id 는 반환 blocks(IR) 순서로 먼저 — 마크다운용 outBlocks 는 같은 표 객체를 공유하므로 청크·쪽 렌더와 id 가 맞는다
+    if (options?.tableFormat === "gfm") assignTableIds(blocks)
     let markdown = finishMarkdown(outBlocks)
 
     return {
