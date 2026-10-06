@@ -460,7 +460,39 @@ function spansToMarkdown(spans: IRSpan[]): string {
   return out
 }
 
-export function blocksToMarkdown(blocks: IRBlock[]): string {
+/** blocksToMarkdown 렌더 옵션 */
+export interface MarkdownOptions {
+  /** 표 출력 형식 (`ParseOptions.tableFormat`). "gfm": 모든 표를 HTML 없이 GFM 파이프 표로 — 셀 안 표는 부모 뒤 독립 표로 꺼내고
+   *  부모·자식 관계를 HTML 주석 표지로 남긴다. 기본(미지정)은 병합·중첩 표를 HTML 로 */
+  tableFormat?: "gfm"
+}
+
+/**
+ * tableFormat "gfm" 관계 표지용 표 id(`t1`…, `IRTable.markdownId`) — 블록 트리 전위 순회 순번(캡션 안 표 → 표 → 셀 안 표).
+ * id 가 없는 표에만 이미 붙은 최댓값 다음 번호를 붙인다 — 쪽·청크 재렌더가 문서 전체 렌더에서 붙인 번호를 그대로 쓴다
+ */
+export function assignTableIds(blocks: IRBlock[]): void {
+  const tables: IRTable[] = []
+  const walk = (bs: IRBlock[] | undefined): void => {
+    for (const b of bs ?? []) {
+      if (b.type !== "table" || !b.table) continue
+      walk(b.table.captionBlocks)
+      tables.push(b.table)
+      for (const row of b.table.cells) for (const cell of row) walk(cell.blocks)
+    }
+  }
+  walk(blocks)
+  let next = 1
+  for (const t of tables) {
+    const n = t.markdownId ? Number(t.markdownId.slice(1)) : 0
+    if (n >= next) next = n + 1
+  }
+  for (const t of tables) if (!t.markdownId) t.markdownId = `t${next++}`
+}
+
+export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): string {
+  const gfm = options?.tableFormat === "gfm"
+  if (gfm) assignTableIds(blocks)
   const lines: string[] = []
 
   for (let i = 0; i < blocks.length; i++) {
@@ -567,8 +599,8 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
         lines.push("")
       }
       // 표 캡션 — 표 위에 강조 문단으로 출력 (v3.0)
-      lines.push(...captionToMarkdown(block.table))
-      const tableMd = tableToMarkdown(block.table)
+      lines.push(...captionToMarkdown(block.table, gfm))
+      const tableMd = tableToMarkdown(block.table, gfm)
       if (tableMd) {
         lines.push(tableMd)
         lines.push("")
@@ -581,12 +613,12 @@ export function blocksToMarkdown(blocks: IRBlock[]): string {
 
 /** 표 캡션 → 마크다운 줄. 캡션 안 표(#55 captionBlocks)는 " / " 평탄화 글 대신 표로 낸다 — 종전엔 IR 에만 있고
  *  마크다운에서 표 구조가 사라졌다(issue1891 공사비 6×5). 글 문단은 종전처럼 강조 문단 */
-function captionToMarkdown(table: IRTable): string[] {
+function captionToMarkdown(table: IRTable, gfm = false): string[] {
   if (table.captionBlocks?.length) {
     return table.captionBlocks.flatMap(b => {
       if (b.type === "table" && b.table) {
-        const md = tableToMarkdown(b.table)
-        return [...captionToMarkdown(b.table), ...(md ? [md, ""] : [])]
+        const md = tableToMarkdown(b.table, gfm)
+        return [...captionToMarkdown(b.table, gfm), ...(md ? [md, ""] : [])]
       }
       if (b.type === "image" && b.text) return [blocksToMarkdown([b]), ""]
       const t = (sanitizeText(visibleText(b)) + noteSuffix(b)).trim()
@@ -737,10 +769,58 @@ function cellToMarkdown(cell: IRCell, separator: string): string {
     .join(separator)
 }
 
-function tableToMarkdown(table: IRTable): string {
+/**
+ * tableFormat "gfm" 표 — 파이프 표 뒤에 셀 안 표를 전위 깊이 우선으로 꺼내 둔다. 셀에는 자식 표 자리에
+ * `<!-- <table parent_id child_id /> -->`, 자식 표 바로 윗줄에 `<!-- <table id parent_id /> -->`.
+ * 맨 줄의 HTML 태그는 CommonMark HTML 블록을 열어 뒤 표를 원문으로 남기고, 셀 안 태그는 HTML 파서가 진짜 표로 열어 — 주석으로 감싼다
+ */
+function tableToGfm(table: IRTable): string {
+  if (table.rows === 0 || table.cols === 0) return ""
+  const nested: { table: IRTable; md: string }[] = []
+  const md = pipeTable(table, cell => gfmCellText(cell, table.markdownId!, nested))
+  if (!md) return ""
+  const out = [md]
+  for (const child of nested) {
+    out.push("", ...captionToMarkdown(child.table, true), `<!-- <table id="${child.table.markdownId}" parent_id="${table.markdownId}" /> -->`, child.md)
+  }
+  return out.join("\n")
+}
+
+/** gfm 셀 글 — 셀 안 표는 표지로 바꾸고 nested 에 모은다(셀 안 순서). 구분선은 뺀다. 표지와 글 사이는 공백, 문단 사이는 <br> */
+function gfmCellText(cell: IRCell, parentId: string, nested: { table: IRTable; md: string }[]): string {
+  if (!cell.blocks?.some(b => (b.type === "table" && b.table) || b.type === "separator")) return cellToMarkdown(cell, "<br>")
+  let out = ""
+  let prevMarker = false
+  for (const b of cell.blocks) {
+    if (b.type === "separator") continue
+    let part: string
+    const marker = b.type === "table" && !!b.table
+    if (marker) {
+      const md = tableToGfm(b.table!)
+      if (!md) continue
+      nested.push({ table: b.table!, md })
+      part = `<!-- <table parent_id="${parentId}" child_id="${b.table!.markdownId}" /> -->`
+    } else {
+      part = cellBlockToMarkdown(b)
+      if (!part) continue
+    }
+    out += out ? (marker || prevMarker ? " " : "<br>") + part : part
+    prevMarker = marker
+  }
+  return out
+}
+
+function tableToMarkdown(table: IRTable, gfm = false): string {
   if (table.rows === 0 || table.cols === 0) return ""
 
   const { cells, rows: numRows, cols: numCols } = table
+
+  // tableFormat "gfm": 아래에서 HTML 로 가는 표(구조 콘텐츠·renderAsTable·병합)도 파이프 표로.
+  // 자식 표가 있는 루트 표는 바로 윗줄에 부모 없는 id 표지 — 셀 표지의 parent_id 가 가리키는 표가 어느 것인지 드러낸다
+  if (gfm && (hasStructuredCellContent(table) || table.renderAsTable || hasMergedCells(table))) {
+    const md = tableToGfm(table)
+    return md && hasNestedTables(table) ? `<!-- <table id="${table.markdownId}" /> -->\n${md}` : md
+  }
 
   // 구조 콘텐츠(중첩표·구분선)는 항상 HTML (#76 — hasNestedTables 일반화). GFM 은 셀 안 표를 담을 수
   // 없어 1×1·1열 경로가 중첩표를 " / " 평탄화 줄로 뭉갠다 — 수식이 섞였다고 GFM 으로 보내면 표 구조가
