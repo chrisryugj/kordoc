@@ -777,7 +777,9 @@ function cellToMarkdown(cell: IRCell, separator: string): string {
 function tableToGfm(table: IRTable): string {
   if (table.rows === 0 || table.cols === 0) return ""
   const nested: { table: IRTable; md: string }[] = []
-  const md = pipeTable(table, cell => gfmCellText(cell, table.markdownId!, nested))
+  const markerless = new Map<IRCell, string>()
+  // 세로 병합 칸은 덮인 행마다 같은 값을 채운다 — 행 단위로 잘린 청크도 각 행이 자기 값을 갖게. 표지는 시작 칸에만
+  const md = pipeTable(table, cell => gfmCellText(cell, table.markdownId!, nested, markerless), (cell, text) => markerless.get(cell) ?? text)
   if (!md) return ""
   const out = [md]
   for (const child of nested) {
@@ -786,10 +788,13 @@ function tableToGfm(table: IRTable): string {
   return out.join("\n")
 }
 
-/** gfm 셀 글 — 셀 안 표는 표지로 바꾸고 nested 에 모은다(셀 안 순서). 구분선은 뺀다. 표지와 글 사이는 공백, 문단 사이는 <br> */
-function gfmCellText(cell: IRCell, parentId: string, nested: { table: IRTable; md: string }[]): string {
+/** gfm 셀 글 — 셀 안 표는 표지로 바꾸고 nested 에 모은다(셀 안 순서). 구분선은 뺀다. 표지와 글 사이는 공백, 문단 사이는 <br>.
+ *  표지를 넣은 칸은 표지를 뺀 글을 markerless 에 남긴다(세로 병합 덮인 행 채움용) */
+function gfmCellText(cell: IRCell, parentId: string, nested: { table: IRTable; md: string }[], markerless: Map<IRCell, string>): string {
   if (!cell.blocks?.some(b => (b.type === "table" && b.table) || b.type === "separator")) return cellToMarkdown(cell, "<br>")
   let out = ""
+  let text = ""
+  let hasMarker = false
   let prevMarker = false
   for (const b of cell.blocks) {
     if (b.type === "separator") continue
@@ -803,10 +808,13 @@ function gfmCellText(cell: IRCell, parentId: string, nested: { table: IRTable; m
     } else {
       part = cellBlockToMarkdown(b)
       if (!part) continue
+      text += text ? "<br>" + part : part
     }
     out += out ? (marker || prevMarker ? " " : "<br>") + part : part
     prevMarker = marker
+    hasMarker ||= marker
   }
+  if (hasMarker) markerless.set(cell, text)
   return out
 }
 
@@ -866,8 +874,9 @@ function tableToMarkdown(table: IRTable, gfm = false): string {
   return pipeTable(table, cell => cellToMarkdown(cell, "<br>"))
 }
 
-/** 파이프 표 — 병합 칸은 시작 칸에만 값, 덮인 칸은 빈 칸 */
-function pipeTable(table: IRTable, cellText: (cell: IRCell) => string): string {
+/** 파이프 표 — 병합 칸은 시작 칸에만 값, 덮인 칸은 빈 칸. rowSpanFill 을 주면 세로 병합의 덮인 행(시작 열)에
+ *  그 값을 넣는다(시작 칸 글을 받아 채울 글을 낸다). 가로로 덮인 칸은 그대로 빈 칸 */
+function pipeTable(table: IRTable, cellText: (cell: IRCell) => string, rowSpanFill?: (cell: IRCell, text: string) => string): string {
   const { cells, rows: numRows, cols: numCols } = table
 
   // 병합 셀: 행/열 병합된 셀은 빈 칸으로
@@ -882,7 +891,10 @@ function pipeTable(table: IRTable, cellText: (cell: IRCell) => string): string {
       // 왕복 채널 셀 spans (v4.0.4) — 강조 마커 재방출 (문단별, 개행은 <br> 규약).
       // 이미지 블록이 있는 셀도 blocks 순서대로 직렬화 — text 평탄화에 참조가 없어도 `![image](src)` 가 남는다 (#76)
       // 문단 안 줄바꿈(span 글의 \n)도 <br> — 종전엔 blocks 경로만 빠져 GFM 행이 칸 중간에서 끊겼다(issue6143 5×2 → 3×2)
-      display[r][c] = cellText(cell).replace(/\r\n|\r|\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
+      const cellMd = (text: string) => text.replace(/\r\n|\r|\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
+      const text = cellText(cell)
+      display[r][c] = cellMd(text)
+      const fill = rowSpanFill ? cellMd(rowSpanFill(cell, text)) : ""
 
       // colSpan/rowSpan: 병합된 열은 빈 칸으로 유지 (텍스트 중복 방지)
       for (let dr = 0; dr < cell.rowSpan; dr++) {
@@ -890,6 +902,7 @@ function pipeTable(table: IRTable, cellText: (cell: IRCell) => string): string {
           if (dr === 0 && dc === 0) continue
           if (r + dr < numRows && c + dc < numCols) {
             skip.add(`${r + dr},${c + dc}`)
+            if (dc === 0) display[r + dr][c] = fill
           }
         }
       }

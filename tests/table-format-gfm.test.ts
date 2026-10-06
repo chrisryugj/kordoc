@@ -28,7 +28,7 @@ const markerIds = (md: string) => [...md.matchAll(/<!-- <table id="(t\d+)" paren
 const cellMarkers = (md: string) => [...md.matchAll(/<!-- <table parent_id="(t\d+)" child_id="(t\d+)" \/> -->/g)].map(m => [m[1], m[2]])
 
 describe("tableFormat gfm — 표 렌더", () => {
-  it("병합 칸 표 → 파이프 표, <table 없음, 열 수 유지 (시작 칸에만 값)", () => {
+  it("병합 칸 표 → 파이프 표, <table 없음, 열 수 유지 (가로 병합은 시작 칸에만, 세로 병합은 덮인 행에 채움)", () => {
     const md = blocksToMarkdown([tableBlock(tbl([
       [c("구분", { colSpan: 2 }), c(""), c("값")],
       [c("가", { rowSpan: 2 }), c("나"), c("1")],
@@ -39,7 +39,7 @@ describe("tableFormat gfm — 표 렌더", () => {
       "| 구분 |  | 값 |",
       "| --- | --- | --- |",
       "| 가 | 나 | 1 |",
-      "|  | 다 | 2 |",
+      "| 가 | 다 | 2 |",
     ].join("\n"))
   })
 
@@ -109,6 +109,61 @@ describe("tableFormat gfm — 표 렌더", () => {
     assert.ok(!/<p>[^<]*\|/.test(html))
     assert.ok(html.includes("<td>y</td>"))
     assert.ok(html.includes("<p>뒤 문단</p>"))
+  })
+})
+
+describe("tableFormat gfm — 세로 병합 채우기", () => {
+  /** 인건비 rowSpan 3, 운영비 rowSpan 2, 임차·위탁 rowSpan 2 · colSpan 2 */
+  const mixed = (): IRBlock[] => [tableBlock(tbl([
+    [c("구분"), c("항목"), c("금액"), c("비고")],
+    [c("인건비", { rowSpan: 3 }), c("책임"), c("100"), c("")],
+    [c(""), c("선임"), c("80"), c("")],
+    [c(""), c("연구원"), c("60"), c("")],
+    [c("운영비", { rowSpan: 2 }), c("임차·위탁", { rowSpan: 2, colSpan: 2 }), c(""), c("2건")],
+    [c(""), c(""), c(""), c("")],
+  ]))]
+
+  it("rowSpan 은 덮인 행마다 같은 값, colSpan 은 시작 칸에만", () => {
+    assert.equal(blocksToMarkdown(mixed(), GFM), [
+      "| 구분 | 항목 | 금액 | 비고 |",
+      "| --- | --- | --- | --- |",
+      "| 인건비 | 책임 | 100 |  |",
+      "| 인건비 | 선임 | 80 |  |",
+      "| 인건비 | 연구원 | 60 |  |",
+      "| 운영비 | 임차·위탁 |  | 2건 |",
+      "| 운영비 | 임차·위탁 |  |  |",
+    ].join("\n"))
+  })
+
+  it("rowSpan 이 표 끝을 넘으면 표 끝에서 자른다", () => {
+    const md = blocksToMarkdown([tableBlock(tbl([[c("머리"), c("값")], [c("넘침", { rowSpan: 5 }), c("1")], [c(""), c("2")]]))], GFM)
+    assert.equal(md, "| 머리 | 값 |\n| --- | --- |\n| 넘침 | 1 |\n| 넘침 | 2 |")
+  })
+
+  it("세로 병합 칸 안 중첩 표 → 표지는 시작 행에만, 자식 표 1회, 덮인 행은 표지 없는 글", () => {
+    const child = tbl([[c("자식"), c("v")]])
+    const md = blocksToMarkdown([tableBlock(tbl([
+      [c("구분"), c("값")],
+      [nestCell("병합 글", child), c("1")],
+      [c(""), c("2")],
+    ].map((row, r) => r === 1 ? [{ ...row[0], rowSpan: 2 }, row[1]] : row)))], GFM)
+    assert.match(md, /\| 병합 글 <!-- <table parent_id="t1" child_id="t2" \/> --> \| 1 \|\n\| 병합 글 \| 2 \|/)
+    assert.equal(cellMarkers(md).length, 1)
+    assert.equal((md.match(/\| 자식 \|/g) ?? []).length, 1)
+    assert.deepEqual(markerIds(md), [["t2", "t1"]])
+  })
+
+  it("같은 IR 을 기본 경로로 렌더하면 종전 HTML 그대로", () => {
+    assert.equal(blocksToMarkdown(mixed()), [
+      "<table>",
+      "<tr><th>구분</th><th>항목</th><th>금액</th><th>비고</th></tr>",
+      "<tr><td rowspan=\"3\">인건비</td><td>책임</td><td>100</td><td></td></tr>",
+      "<tr><td>선임</td><td>80</td><td></td></tr>",
+      "<tr><td>연구원</td><td>60</td><td></td></tr>",
+      "<tr><td rowspan=\"2\">운영비</td><td colspan=\"2\" rowspan=\"2\">임차·위탁</td><td>2건</td></tr>",
+      "<tr><td></td></tr>",
+      "</table>",
+    ].join("\n"))
   })
 })
 
