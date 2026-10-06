@@ -723,12 +723,16 @@ function hasInlineCellBlocks(cell: IRCell): boolean {
   return !!cell.blocks?.some(b => b.spans?.length || b.footnoteText || (b.type === "image" && b.text))
 }
 
+function cellBlockToMarkdown(b: IRBlock): string {
+  return b.type === "image" && b.text
+    ? `![image](${b.text})`
+    : b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b))
+}
+
 function cellToMarkdown(cell: IRCell, separator: string): string {
   if (!hasInlineCellBlocks(cell)) return escapeGfm(sanitizeText(cell.text))
   return cell.blocks!
-    .map(b => b.type === "image" && b.text
-      ? `![image](${b.text})`
-      : b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b)))
+    .map(cellBlockToMarkdown)
     .filter(Boolean)
     .join(separator)
 }
@@ -779,6 +783,13 @@ function tableToMarkdown(table: IRTable): string {
       .join("\n")
   }
 
+  return pipeTable(table, cell => cellToMarkdown(cell, "<br>"))
+}
+
+/** 파이프 표 — 병합 칸은 시작 칸에만 값, 덮인 칸은 빈 칸 */
+function pipeTable(table: IRTable, cellText: (cell: IRCell) => string): string {
+  const { cells, rows: numRows, cols: numCols } = table
+
   // 병합 셀: 행/열 병합된 셀은 빈 칸으로
   const display: string[][] = Array.from({ length: numRows }, () => Array(numCols).fill(""))
   const skip = new Set<string>()
@@ -791,7 +802,7 @@ function tableToMarkdown(table: IRTable): string {
       // 왕복 채널 셀 spans (v4.0.4) — 강조 마커 재방출 (문단별, 개행은 <br> 규약).
       // 이미지 블록이 있는 셀도 blocks 순서대로 직렬화 — text 평탄화에 참조가 없어도 `![image](src)` 가 남는다 (#76)
       // 문단 안 줄바꿈(span 글의 \n)도 <br> — 종전엔 blocks 경로만 빠져 GFM 행이 칸 중간에서 끊겼다(issue6143 5×2 → 3×2)
-      display[r][c] = cellToMarkdown(cell, "<br>").replace(/\r\n|\r|\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
+      display[r][c] = cellText(cell).replace(/\r\n|\r|\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
 
       // colSpan/rowSpan: 병합된 열은 빈 칸으로 유지 (텍스트 중복 방지)
       for (let dr = 0; dr < cell.rowSpan; dr++) {
