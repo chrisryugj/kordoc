@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.19.1] - 2026-10-07
+
+### Fixed
+
+- PDF: 쪽별 마크다운(`pages`)에서 쪽을 넘어 이은 표를 쪽마다 다시 가른다(#136 후속). 이은 표는 첫 쪽 블록 하나라 뒤 쪽 행·쪽 맨 위 상자가 앞 쪽 항목에 실리고, 쪽 내용이 표뿐이면 그 쪽 항목이 비거나 빠졌다(예: 11쪽에 걸친 별표 표 → `pages` 1개). 표를 이을 때 뒤 쪽 행 칸에 쪽을 남기고, 한 칸 안에서 쪽을 넘은 글(쪼개진 행·칸 이어짐)은 글 안 자리를 남겨 `pages` 를 만들 때만 그 자리에서 가른다. 보이지 않는 틀을 풀어 낸 문단도 그 행이 놓인 쪽을 갖는다(표 뒤 "비고" 문단이 첫 쪽으로 가던 것). 문서 `markdown` 은 바뀌지 않는다(코퍼스 PDF 1,911건 바이트 동일). 범위 변환과 쪽 단독 변환의 `pages` 대조에서 어긋난 문서가 87건 중 19건 → 3건(남은 셋은 표 밖: 그림 속 상자, 쪽을 넘는 목록), OCR 강제 변환(`--ocr-force`)의 뒤 쪽 항목 누락도 해소. 코퍼스 전체에서 쪽 항목이 늘어난 문서 175건, 잃은 항목·새 빈 쪽 0.
+
+### Security
+
+- 정부 GitLab 미러 OSV 스캔에 새로 걸린 의존성을 lockfile 에서 올린다: `@modelcontextprotocol/sdk` 1.30.0 → 1.32.1(GHSA-6qxp-vccf-f47h), `sharp` 0.35.4 → 0.35.5(GHSA-wq5f-xc86-pv6w).
+
 ## [4.19.0] - 2026-10-06
 
 ### Added
