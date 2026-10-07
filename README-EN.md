@@ -111,10 +111,11 @@ The external **opendataloader-bench, 200 documents** was measured separately for
 
 ## Recent updates
 
-Latest release: **[4.19.1](https://github.com/chrisryugj/kordoc/releases/tag/v4.19.1)** · 2026-10-07
+Latest release: **[4.19.2](https://github.com/chrisryugj/kordoc/releases/tag/v4.19.2)** · 2026-10-07
 
 | Version | Highlights |
 | --- | --- |
+| 4.19.2 | Ports rhwp v0.8.7 parser fixes — HWP3 checkbox □, HWP5 unpaired surrogates as □, lenient CFB recovery reading the right body stream, HWPX decompression cap enforced while inflating each entry |
 | 4.19.1 | PDF per-page Markdown (`pages`) splits cross-page tables back into their pages, so later-page rows and boxes no longer land on the previous page or drop a page entry (#136) |
 | 4.19.0 | `tableFormat: "gfm"` for RAG indexing — merged and nested tables as GFM pipe tables, no HTML; nested tables move out with parent/child markers (#138) |
 | 4.18.12–13 | Retune PDF cross-page paragraph joins against HWPX/DOCX originals — sentence ends, first-line indent, inline bullets, tab rows (HWPX-pair errors 50 → 5) |

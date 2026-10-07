@@ -111,10 +111,11 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 최근 업데이트
 
-최신 배포: **[4.19.1](https://github.com/chrisryugj/kordoc/releases/tag/v4.19.1)** · 2026-10-07
+최신 배포: **[4.19.2](https://github.com/chrisryugj/kordoc/releases/tag/v4.19.2)** · 2026-10-07
 
 | 버전 | 주요 변경 |
 | --- | --- |
+| 4.19.2 | rhwp v0.8.7 파서 수정 반영 — HWP3 체크박스 □, HWP5 짝 없는 서로게이트 □, 손상 CFB 복구의 본문 경로 오인 수정, HWPX 압축 해제 상한을 엔트리 읽는 도중에 적용 |
 | 4.19.1 | PDF 쪽별 마크다운(`pages`)에서 쪽 넘김 표를 쪽마다 다시 갈라 뒤 쪽 행·상자가 앞 쪽에 붙거나 쪽 항목이 빠지지 않게 (#136) |
 | 4.19.0 | RAG 색인용 `tableFormat: "gfm"` — 병합·중첩 표도 HTML 없이 GFM 파이프 표로, 셀 안 표는 부모·자식 관계 표지와 함께 독립 표로 (#138) |
 | 4.18.12–13 | PDF 쪽 넘김 문단 잇기 판정을 HWPX·DOCX 원문 대조로 재조정 — 문장 끝·들여쓰기·나열 기호·탭 행 근거 (HWPX 쌍 오판 50 → 5) |

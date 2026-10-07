@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.19.2] - 2026-10-07
+
+rhwp v0.8.7 파서 수정 가운데 글·표 추출에 닿는 것을 대조해 옮긴다(조판·저장·편집 전용 변경은 해당 없음).
+
+### Fixed
+
+- HWP3: 사적 코드 `0x2F00` 을 빈 체크박스 □ 로 읽는다(rhwp 291eabcf5). 매핑이 없어 글자가 조용히 빠졌다 — 납세담보 확인서 추천기관 체크박스 세 곳, [별표 1] 입장권 글머리. 한컴 2020 PDF 추출값과 같다.
+- HWP5: 문단 글의 짝 없는 UTF-16 서로게이트 반쪽을 □ 로 낸다(rhwp cff474c8d, #6873). 반쪽을 그대로 내 JSON 에 `\udfda` 로 남고 UTF-8 로는 U+FFFD 가 됐다. 한글은 같은 자리를 □ 로 보이고 HWPX 로 저장할 때도 □ 를 쓴다(표본 두 문서 □ 4·1개, 한글 HWPX 정본과 같음). 문단 글이 여러 PARA_TEXT 레코드로 나뉘어 짝이 갈린 자리는 한 글자로 잇는다.
+- HWP5: 손상 CFB 복구 경로가 스트림을 디렉터리 경로로 찾는다(rhwp ce6bca037·4b1f1179b). 이름만 비교해 `BodyText/Section0` 대신 디렉터리에 먼저 나오는 `ViewText/Section0` 을 읽어, 비배포 문서는 암호화된 보기용 본문을 풀다 실패해 글이 통째로 빠졌다(강제 복구 1,943 → 153자). 트리가 깨진 입력은 이름이 하나뿐일 때만 이름으로 찾는다.
+
+### Security
+
+- HWPX: ZIP 엔트리를 압축 해제 상한까지만 스트림으로 푼다. 중앙 디렉터리 크기 필드를 속인 엔트리는 사전 검사를 지나 다 풀린 뒤에야 누적 검사에 걸려, 800KB HWPX(엔트리 800MB, 크기 필드 100B)로 최대 RSS 가 1,113MB 까지 찼다 → 상한에서 `ZipBombError`(384MB). `parse()` 경로의 manifest·content.hpf·섹션·스타일·메타·그림·암호 복호 읽기가 모두 거친다. 글 디코딩은 종전 JSZip 과 같고, 그림 바이트(`ExtractedImage.data`)는 단독 버퍼로 낸다.
+
+HWP·HWPX 코퍼스 3,869건 중 출력이 바뀐 문서는 HWP3 □ 2건뿐이다.
+
 ## [4.19.1] - 2026-10-07
 
 ### Fixed
