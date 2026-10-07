@@ -21,6 +21,9 @@ export interface Edges { t: boolean; b: boolean; l: boolean; r: boolean }
 
 /** IR 칸 → 보이는 변. 공개 IR 에는 나가지 않는 곁정보 (파서가 채움) */
 export const CELL_EDGES = new WeakMap<IRCell, Edges>()
+/** 쪽 넘김으로 이은 표에서 첫 쪽 뒤에 놓인 칸 → 그 쪽 번호 (PDF 쪽 넘김 잇기가 채움, #136). 표를 풀어 낸 문단과 쪽별 마크다운이
+ *  칸이 놓인 쪽을 따른다. 표시가 없는 칸은 표 블록의 쪽이다 */
+export const CELL_PAGES = new WeakMap<IRCell, number>()
 /** 글·블록 없이도 내용이 있는 칸 — PDF 는 칸 그림을 칸 글과 따로 뽑아 그림 칸의 text·blocks 가 빈다. 빈 여백 행 접기가 그림 행을
  *  접지 않게 파서가 표시한다 (경찰복제 [별표] 특수복식 도면 행) */
 export const CONTENT_CELLS = new WeakSet<IRCell>()
@@ -226,16 +229,21 @@ function unframeTable(t: IRTable, pageNumber: number | undefined, keepEmptyCols:
   const out: IRBlock[] = []
   if (t.captionBlocks?.length) out.push(...t.captionBlocks)
   else if (t.caption) out.push({ type: "paragraph", text: t.caption, pageNumber })
+  // 쪽 넘김으로 이은 표는 행이 놓인 쪽을 칸 표시로 안다 (CELL_PAGES) — 풀어 낸 띠·문단도 그 쪽에
+  const rowPage = (r: number): number | undefined => {
+    const marks = anchors.filter(a => a.r === r).map(a => CELL_PAGES.get(a.cell)).filter((p): p is number => p !== undefined)
+    return marks.length ? Math.max(...marks) : pageNumber
+  }
   for (let r = 0; r < t.rows;) {
     if (ruled[r]) {
       let r1 = r
       while (r1 + 1 < t.rows && ruled[r1 + 1]) r1++
       const sub = bandTable(t, anchors, V, H, r, r1, keepEmptyCols)
-      if (sub) out.push({ type: "table", table: sub, pageNumber })
+      if (sub) out.push({ type: "table", table: sub, pageNumber: rowPage(r) })
       r = r1 + 1
       continue
     }
-    textRow(anchors.filter(a => a.r === r).sort((x, y) => x.c - y.c), out, pageNumber, keepEmptyCols)
+    textRow(anchors.filter(a => a.r === r).sort((x, y) => x.c - y.c), out, rowPage(r), keepEmptyCols)
     r++
   }
   return out

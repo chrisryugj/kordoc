@@ -11,6 +11,7 @@ import type { IRBlock, IRCell, IRTable } from "../types.js"
 import { CELL_LINES, CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, TABLE_COLXS, TABLE_TAIL } from "./table-meta.js"
 import { mergeCrossPageTables } from "./table-parts.js"
 import { joinCellEdges } from "./cell-edges.js"
+import { markContinuedText } from "./table-pages.js"
 
 /** 조각의 좌우 변과 앞 표 열 경계를 같은 것으로 보는 거리 (pt) — 격자 열 경계는 클립 좌표 묶음(0.3pt)의 평균 */
 const COL_MATCH_TOL = 0.5
@@ -53,6 +54,7 @@ export function mergeContinuedCells(blocks: IRBlock[], pageHeights?: Map<number,
     if (!cell || !add) continue
     const at = cell.blocks || add.blocks ? cellBlocks(cell, prev.pageNumber).length : -1
     if (cell.blocks || add.blocks) cell.blocks = [...cellBlocks(cell, prev.pageNumber), ...cellBlocks(add, part.pageNumber)]
+    else if (part.pageNumber) markContinuedText(cell, add, part.pageNumber)
     cell.text = [cell.text, add.text].filter(s => s.trim()).join("\n")
     joinCellEdges(cell, add)
     // 표는 이 조각이 놓인 쪽에서 끝난다 — 다음 쪽 표 조각이 이 칸의 나머지로 시작하면(세 쪽에 걸친 칸) 쪽 넘김 잇기가 여기서 잇는다.

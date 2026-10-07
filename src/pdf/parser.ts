@@ -27,6 +27,7 @@ import { type PdfTextItem, type NormItem, normalizeItems, filterHiddenText } fro
 import { extractPageBlocksWithLines, type PageCarry } from "./page-blocks.js"
 import { WrapLexicon, joinPageBreakWraps, splitPageBreakWraps } from "./line-wrap.js"
 import { mergeCrossPageTables } from "./table-parts.js"
+import { splitPageTables } from "./table-pages.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { selectionContextPages, marginContextBlocks } from "./selection-context.js"
@@ -654,7 +655,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
     return {
       markdown,
-      pages: blocksToPages(splitPageBreakWraps(outBlocks), finishMarkdown),
+      pages: blocksToPages(splitPageTables(splitPageBreakWraps(outBlocks)), finishMarkdown),
       blocks,
       metadata,
       outline: outline.length > 0 ? outline : undefined,

@@ -13,6 +13,7 @@
 import type { IRBlock, IRCell, IRTable } from "../types.js"
 import { CELL_LINES, CLIP_TABLES, EMPTY_PARTS, FILLER_CELLS, IMAGE_CELLS, PART_COLXS, ROW_RULES, TABLE_COLXS, TABLE_ROWYS, TABLE_TAIL, type LineBox } from "./table-meta.js"
 import { CONTACT_HEAD, CONTACT_ROLE } from "./contact-table.js"
+import { markJoinedPages } from "./table-pages.js"
 import { startsNewItem, type WrapLexicon } from "./line-wrap.js"
 import { NO_EDGES, joinCellEdges } from "./cell-edges.js"
 import { CELL_EDGES } from "../table/layout-frames.js"
@@ -670,6 +671,7 @@ function leftColumnOf(b: IRBlock, t: IRBlock): boolean {
  */
 function placeJoined(blocks: IRBlock[], i: number, j: number, table: IRTable): void {
   const prev = blocks[i]
+  markJoinedPages(table, prev, blocks[j])
   blocks[i] = { ...prev, table }
   blocks.splice(j, 1)
   let k = j - 1
