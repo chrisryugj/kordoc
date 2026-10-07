@@ -4,6 +4,7 @@
  */
 
 import { DOMParser } from "@xmldom/xmldom"
+import type JSZip from "jszip"
 import { KordocError, unzipLimitBytes } from "../utils.js"
 import type { CellContext, IRBlock, ParseWarning } from "../types.js"
 // WalkCtx.styleMap 타입 참조 — 타입 전용이라 styles.ts와의 순환은 컴파일 시 소거됨
@@ -24,6 +25,40 @@ export class ZipBombError extends KordocError {
     super(message)
     this.name = "ZipBombError"
   }
+}
+
+/**
+ * ZIP 엔트리를 압축 해제 상한까지만 푼다 — 중앙 디렉터리의 크기 필드는 위조할 수 있어 사전 검사(precheckZipSize)를 지나고,
+ * 다 푼 뒤 재는 누적 검사로는 엔트리 하나가 상한의 몇 배를 메모리에 올리는 것을 못 막았다(크기 필드 100B·실제 800MB manifest →
+ * RSS +1GB, rhwp #7602 의 엔트리별 읽기 상한과 같은 방어). used 는 이미 푼 누적량 — 누적 집계는 호출부가 종전대로 한다.
+ * 글은 JSZip async("text") 와 같은 Buffer UTF-8 디코딩(BOM 보존)
+ */
+export function readZipEntry(file: JSZip.JSZipObject, type: "text", used?: number): Promise<string>
+export function readZipEntry(file: JSZip.JSZipObject, type: "uint8array", used?: number): Promise<Uint8Array>
+export function readZipEntry(file: JSZip.JSZipObject, type: "text" | "uint8array", used = 0): Promise<string | Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    const stream = file.nodeStream("nodebuffer")
+    stream.on("data", (chunk: Buffer) => {
+      size += chunk.length
+      if (used + size > MAX_DECOMPRESS_SIZE) {
+        stream.pause()
+        reject(new ZipBombError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)"))
+        return
+      }
+      chunks.push(chunk)
+    })
+    stream.on("error", reject)
+    stream.on("end", () => {
+      if (type === "text") return resolve(Buffer.concat(chunks, size).toString("utf-8"))
+      // 바이트는 단독 버퍼로 — Buffer.concat 은 작은 크기를 공유 풀에서 잘라 줘 data.buffer 가 남의 64KB 가 된다
+      const out = new Uint8Array(size)
+      let at = 0
+      for (const c of chunks) { out.set(c, at); at += c.length }
+      resolve(out)
+    })
+  })
 }
 
 /** colSpan/rowSpan을 안전한 범위로 클램핑 */

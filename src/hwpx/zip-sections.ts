@@ -8,7 +8,7 @@ import { inflateRawSync } from "zlib"
 import { KordocError, isPathTraversal, stripDtd, normalizeSectionHref, compareSectionPaths } from "../utils.js"
 import { blocksToMarkdown } from "../table/builder.js"
 import type { InternalParseResult, IRBlock, ParseOptions, ParseWarning } from "../types.js"
-import { applyPageText, createSectionShared, createXmlParser, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES } from "./parser-shared.js"
+import { applyPageText, createSectionShared, createXmlParser, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, readZipEntry } from "./parser-shared.js"
 import { parseSectionXml } from "./section-walker.js"
 
 // ─── 손상 ZIP 복구 (edu-facility-ai에서 포팅) ──────────
@@ -100,7 +100,7 @@ export async function readKordocLayout(zip: JSZip): Promise<string | null> {
   const file = zip.file("Contents/content.hpf") ?? zip.file("content.hpf")
   if (!file) return null
   try {
-    const xml = await file.async("text")
+    const xml = await readZipEntry(file, "text")
     if (!/<opf:meta\b[^>]*name="generator"[^>]*content="kordoc"/.test(xml)) return null
     return xml.match(/<opf:meta\b[^>]*name="kordoc-layout"[^>]*content="([^"]*)"/)?.[1] ?? null
   } catch {
@@ -114,7 +114,7 @@ export async function resolveSectionPaths(zip: JSZip): Promise<string[]> {
     const mpLower = mp.toLowerCase()
     const file = zip.file(mp) || Object.values(zip.files).find(f => f.name.toLowerCase() === mpLower) || null
     if (!file) continue
-    const xml = await file.async("text")
+    const xml = await readZipEntry(file, "text")
     const paths = parseSectionPathsFromManifest(xml)
     if (paths.length > 0) return paths
   }

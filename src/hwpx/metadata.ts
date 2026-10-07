@@ -5,7 +5,7 @@
 import JSZip from "jszip"
 import { KordocError, stripDtd } from "../utils.js"
 import type { DocumentMetadata } from "../types.js"
-import { createXmlParser, MAX_DECOMPRESS_SIZE } from "./parser-shared.js"
+import { createXmlParser, MAX_DECOMPRESS_SIZE, readZipEntry } from "./parser-shared.js"
 import { resolveSectionPaths } from "./zip-sections.js"
 import { elementChildren, findChildByLocalName, localName } from "../shared/xml.js"
 
@@ -21,7 +21,7 @@ export async function extractHwpxMetadata(zip: JSZip, metadata: DocumentMetadata
     const read = async (path: string): Promise<string | null> => {
       const file = zip.file(path) || Object.values(zip.files).find(f => f.name.toLowerCase() === path.toLowerCase()) || null
       if (!file) return null
-      const xml = await file.async("text")
+      const xml = await readZipEntry(file, "text", decompressed?.total)
       if (decompressed) {
         decompressed.total += xml.length * 2
         if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")

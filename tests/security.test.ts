@@ -154,3 +154,24 @@ describe("KordocError", () => {
     assert.equal(err.message, "test")
   })
 })
+
+describe("readZipEntry — 엔트리를 압축 해제 상한까지만 푼다 (rhwp #7602)", () => {
+  // 중앙 디렉터리 크기 필드를 속인 엔트리는 사전 검사를 지나 다 풀린 뒤에야 걸렸다 — 읽는 도중에 끊는다
+  const entry = async (text: string) => {
+    const JSZip = (await import("jszip")).default
+    const zip = new JSZip()
+    zip.file("a.xml", text)
+    return (await JSZip.loadAsync(await zip.generateAsync({ type: "uint8array" }))).file("a.xml")!
+  }
+  it("상한 안이면 JSZip async 와 같은 글", async () => {
+    const { readZipEntry } = await import("../src/hwpx/parser-shared.js")
+    const file = await entry("﻿<가>본문</가>")
+    assert.equal(await readZipEntry(file, "text"), await file.async("text"))
+    assert.deepEqual(await readZipEntry(file, "uint8array"), await file.async("uint8array"))
+  })
+  it("이미 푼 누적량과 합쳐 상한을 넘으면 ZipBombError", async () => {
+    const { readZipEntry, MAX_DECOMPRESS_SIZE, ZipBombError } = await import("../src/hwpx/parser-shared.js")
+    const file = await entry("x".repeat(4096))
+    await assert.rejects(readZipEntry(file, "text", MAX_DECOMPRESS_SIZE - 100), ZipBombError)
+  })
+})

@@ -17,7 +17,7 @@ import { createDecipheriv, createHash, pbkdf2Sync, timingSafeEqual } from "crypt
 import { inflateRawSync } from "zlib"
 import type JSZip from "jszip"
 import { KordocError } from "../utils.js"
-import { MAX_DECOMPRESS_SIZE } from "./parser-shared.js"
+import { MAX_DECOMPRESS_SIZE, readZipEntry } from "./parser-shared.js"
 
 /** PBKDF2 반복 횟수 상한 — 악성 manifest 가 CPU 를 무한히 태우는 것을 막는다.
  *  한컴 저장본의 실제 값은 1024. */
@@ -153,7 +153,8 @@ export async function decryptHwpxInPlace(
     if (!file) {
       throw new KordocError(`암호 목록에 있는 파일이 문서에 없습니다: ${entry.path}`)
     }
-    const plain = decryptEntry(await file.async("nodebuffer"), entry, startKey)
+    const raw = await readZipEntry(file, "uint8array")
+    const plain = decryptEntry(Buffer.from(raw.buffer, raw.byteOffset, raw.length), entry, startKey)
     if (!plain) {
       // 오답과 손상을 구분해 알리지 않는다 — 구분해 주면 비밀번호 추측의 신호가 된다
       throw new KordocError("비밀번호가 일치하지 않거나 암호화 데이터가 손상되었습니다.")

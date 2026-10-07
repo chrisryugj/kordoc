@@ -24,7 +24,7 @@ export { precheckZipSize } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { isComFallbackAvailable, isEncryptedHwpx, extractTextViaCom, comResultToParseResult } from "./com-fallback.js"
 import { decryptHwpxInPlace } from "./crypto.js"
-import { applyPageText, createSectionShared, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, ZipBombError } from "./parser-shared.js"
+import { applyPageText, createSectionShared, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, readZipEntry, ZipBombError } from "./parser-shared.js"
 import { extractHwpxStyles, detectHwpxHeadings } from "./styles.js"
 import { parseSectionXml } from "./section-walker.js"
 import { extractImagesFromZip } from "./images.js"
@@ -72,7 +72,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   // ── 암호 감지: manifest.xml에 encryption-data가 있으면 비밀번호 복호 → COM fallback ──
   const manifestFile = zip.file("META-INF/manifest.xml")
   if (manifestFile) {
-    const manifestXml = await manifestFile.async("text")
+    const manifestXml = await readZipEntry(manifestFile, "text")
     if (isEncryptedHwpx(manifestXml)) {
       // 비밀번호가 주어졌으면 제자리 복호 — 이후 경로는 평문 문서와 완전히 같다
       if (options?.password) {
@@ -92,7 +92,8 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
         // 문서보안)로 분류해, 정작 암호만 주면 열리는 문서를 호출자가 포기하게 만든다.
         // 배포용 문서(content.hpf hpf:distribution="1")는 열기 암호 없이 보는 문서라 "열기 암호" 안내가 틀린다 —
         // 정책브리핑 보도자료(156776047 산업활동동향)가 섹션까지 AES-256 으로 암호화된 배포용 HWPX 로 올라온다
-        const hpf = await zip.file("Contents/content.hpf")?.async("text").catch(() => "")
+        const hpfFile = zip.file("Contents/content.hpf")
+        const hpf = hpfFile ? await readZipEntry(hpfFile, "text").catch(() => "") : ""
         throw new KordocError(
           /\bdistribution="1"/.test(hpf ?? "")
             ? "배포용으로 암호화된 HWPX 파일입니다 (배포용 복호는 지원하지 않음). 한컴오피스에서 일반 문서로 저장한 뒤 여세요."
@@ -132,7 +133,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     const file = zip.file(sectionPaths[si])
     if (!file) continue
     try {
-      const xml = await file.async("text")
+      const xml = await readZipEntry(file, "text", decompressed.total)
       decompressed.total += xml.length * 2
       if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new ZipBombError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
       const start = allBlocks.length

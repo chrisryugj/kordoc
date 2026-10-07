@@ -6,7 +6,7 @@
 import type JSZip from "jszip"
 import { KordocError, isPathTraversal } from "../utils.js"
 import type { ExtractedImage, IRBlock, IRCell, ParseWarning } from "../types.js"
-import { MAX_DECOMPRESS_SIZE, MAX_XML_DEPTH } from "./parser-shared.js"
+import { MAX_DECOMPRESS_SIZE, MAX_XML_DEPTH, readZipEntry } from "./parser-shared.js"
 import { detectImageMime } from "../hwp5/images.js"
 
 // ─── 이미지 추출 ───────────────────────────────────
@@ -117,7 +117,7 @@ export async function extractImagesFromZip(
         if (!file) continue
 
         try {
-          const data = await file.async("uint8array")
+          const data = await readZipEntry(file, "uint8array", decompressed.total)
           decompressed.total += data.length
           if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
 
@@ -168,7 +168,7 @@ export async function extractImagesFromZip(
       if (deletedRefs?.has(file.name) || deletedRefs?.has(basename)
         || deletedRefs?.has(file.name.replace(/\.[^/.]+$/, "")) || deletedRefs?.has(basename.replace(/\.[^.]+$/, ""))) continue
       try {
-        const data = await file.async("uint8array")
+        const data = await readZipEntry(file, "uint8array", decompressed.total)
         decompressed.total += data.length
         if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
 

@@ -7,7 +7,7 @@ import type JSZip from "jszip"
 import { KordocError, stripDtd } from "../utils.js"
 import type { IRBlock, ParseWarning } from "../types.js"
 import { HEADING_RATIO_H1, HEADING_RATIO_H2, HEADING_RATIO_H3 } from "../types.js"
-import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE } from "./parser-shared.js"
+import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE, readZipEntry } from "./parser-shared.js"
 import type { ScriptKind } from "../script-tags.js"
 import type { Edges } from "../table/layout-frames.js"
 import { TOC_ENTRY_BLOCKS } from "../toc-entry.js"
@@ -90,7 +90,7 @@ export async function extractHwpxStyles(zip: JSZip, decompressed?: { total: numb
     if (!file) continue
 
     try {
-      const xml = await file.async("text")
+      const xml = await readZipEntry(file, "text", decompressed?.total)
       if (decompressed) {
         decompressed.total += xml.length * 2
         if (decompressed.total > MAX_DECOMPRESS_SIZE) throw new KordocError("ZIP 압축 해제 크기 초과 (ZIP bomb 의심)")
