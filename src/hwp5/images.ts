@@ -213,7 +213,8 @@ export function collectHwp5BinDataLenient(lcfb: LenientCfbContainer, readStream 
     const match = e.name.match(binRe)
     if (!match) continue
     const idx = parseInt(match[1], 16)
-    const raw = readStream(e.name)
+    // 경로로 찾는다 — 맨 이름은 같은 이름이 둘이면 고르지 않는다 (cfb-lenient findEntryByPath)
+    const raw = readStream(`/BinData/${e.name}`) ?? readStream(e.name)
     if (!raw) continue
     binDataMap.set(idx, { data: normalizeBinPayload(raw), name: e.name })
   }

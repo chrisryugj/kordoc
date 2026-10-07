@@ -159,3 +159,28 @@ describe("parseLenientCfb", () => {
     assert.ok(entries.some(e => e.name === "DocInfo"))
   })
 })
+
+describe("경로 탐색 — 이름이 같은 스트림 (rhwp ce6bca037)", () => {
+  // 비배포 문서처럼 ViewText/Section0 과 BodyText/Section0 이 함께 있으면 이름만으로는 디렉터리에 먼저 나오는 쪽이 잡혔다
+  const build = async (): Promise<Buffer> => {
+    const CFB = (await import("cfb")).default
+    const doc = CFB.utils.cfb_new()
+    CFB.utils.cfb_add(doc, "/ViewText/Section0", Buffer.from("view-text-encrypted"))
+    CFB.utils.cfb_add(doc, "/BodyText/Section0", Buffer.from("body"))
+    CFB.utils.cfb_add(doc, "/DocInfo", Buffer.from("docinfo"))
+    return Buffer.from(CFB.write(doc, { type: "buffer" }) as Uint8Array)
+  }
+
+  it("스토리지를 따라가 경로 그대로의 스트림을 읽는다", async () => {
+    const cfb = parseLenientCfb(await build())
+    assert.equal(cfb.findStream("/BodyText/Section0")?.toString(), "body")
+    assert.equal(cfb.findStream("/ViewText/Section0")?.toString(), "view-text-encrypted")
+    assert.equal(cfb.findStream("/DocInfo")?.toString(), "docinfo")
+  })
+
+  it("경로 없는 이름이 둘 이상이면 고르지 않는다 (잘못된 스트림을 조용히 읽지 않게)", async () => {
+    const cfb = parseLenientCfb(await build())
+    assert.equal(cfb.findStream("Section0"), null)
+    assert.equal(cfb.findStream("DocInfo")?.toString(), "docinfo")
+  })
+})

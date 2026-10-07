@@ -30,6 +30,10 @@ interface DirEntry {
   type: number  // 0=unknown, 1=storage, 2=stream, 5=root
   startSector: number
   size: number
+  /** 형제 트리 왼쪽·오른쪽, 스토리지의 첫 자식 (디렉터리 엔트리 번호) */
+  left: number
+  right: number
+  child: number
 }
 
 // ── CFB 컨테이너 ──
@@ -181,7 +185,7 @@ export function parseLenientCfb(data: Buffer): LenientCfbContainer {
   for (let offset = 0; offset + 128 <= dirData.length && dirEntries.length < MAX_DIR_ENTRIES; offset += 128) {
     const nameLen = dirData.readUInt16LE(offset + 64)  // 바이트 수 (null 포함)
     if (nameLen <= 0 || nameLen > 64) {
-      dirEntries.push({ name: "", type: 0, startSector: 0, size: 0 })
+      dirEntries.push({ name: "", type: 0, startSector: 0, size: 0, left: FREE_SECT, right: FREE_SECT, child: FREE_SECT })
       continue
     }
 
@@ -195,7 +199,7 @@ export function parseLenientCfb(data: Buffer): LenientCfbContainer {
     // CFBv3에서는 size가 u32 (offset 120), v4에서는 u64
     const size = dirData.readUInt32LE(offset + 120)
 
-    dirEntries.push({ name, type, startSector, size })
+    dirEntries.push({ name, type, startSector, size, left: dirData.readUInt32LE(offset + 68), right: dirData.readUInt32LE(offset + 72), child: dirData.readUInt32LE(offset + 76) })
   }
 
   // ── Root 엔트리에서 미니 스트림 추출 ──
@@ -258,34 +262,40 @@ export function parseLenientCfb(data: Buffer): LenientCfbContainer {
 
   // ── 경로 기반 탐색 ──
 
-  // 전체 경로 맵 구축 (간이: 이름 기반 flat lookup)
-  // HWP 파일의 디렉토리 구조는 보통 1~2 depth이므로 이름 매칭으로 충분
+  /** 스토리지의 자식 가운데 이름이 같은 엔트리 — 형제 트리를 따라간다 (순환·범위 밖 번호는 건너뛴다) */
+  function findChild(parent: DirEntry, name: string): DirEntry | null {
+    const pending = [parent.child]
+    const visited = new Set<number>()
+    while (pending.length) {
+      const id = pending.pop()!
+      if (id === END_OF_CHAIN || id === FREE_SECT || id >= dirEntries.length || visited.has(id)) continue
+      visited.add(id)
+      const e = dirEntries[id]
+      if (e.name === name) return e
+      pending.push(e.left, e.right)
+    }
+    return null
+  }
+
+  // 루트에서 경로 조각마다 스토리지를 따라 내려간다. 이름만 비교하면 BodyText/Section0 과 ViewText/Section0 처럼 이름이 같은
+  // 스트림 가운데 디렉터리에 먼저 나오는 쪽이 잡혀, 비배포 문서에서 암호화된 ViewText 를 본문으로 읽다 글이 통째로 빠졌다
+  // (rhwp ce6bca037·4b1f1179b). 트리가 깨진 입력은 이름으로 찾되, 같은 이름이 둘 이상이면 어느 쪽인지 모르니 고르지 않는다
   function findEntryByPath(path: string): DirEntry | null {
-    // "/FileHeader" → "FileHeader"
-    // "/BodyText/Section0" → path component matching
-    const parts = path.replace(/^\//, "").split("/")
-
-    if (parts.length === 1) {
-      // 단일 이름 매칭
-      return dirEntries.find(e => e.name === parts[0] && e.type === 2) ?? null
-    }
-
-    // 2-depth: storage/stream
-    // HWP 구조: Root/BodyText/Section0, Root/DocInfo, Root/BinData/BIN0001 등
-    const storageName = parts[0]
-    const streamName = parts.slice(1).join("/")
-
-    // 디렉토리 구조 대신 이름 패턴으로 찾기 (lenient)
-    for (const e of dirEntries) {
-      if (e.type === 2 && e.name === streamName) {
-        // 부모 확인은 생략 (lenient) — 중복 이름 시 첫 번째 반환
-        return e
+    const parts = path.replace(/^\//, "").split("/").filter(Boolean)
+    const last = parts.pop()
+    if (last === undefined) return null
+    const root = dirEntries.find(e => e.type === 5)
+    if (root) {
+      let current: DirEntry | null = root
+      for (const part of parts) {
+        const next: DirEntry | null = current ? findChild(current, part) : null
+        current = next && next.type === 1 ? next : null
       }
+      const hit = current ? findChild(current, last) : null
+      if (hit && (hit.type === 1 || hit.type === 2 || hit.type === 5)) return hit
     }
-
-    // 정확한 이름이 아닌 경우 (ViewText/Section0 등)
-    const lastPart = parts[parts.length - 1]
-    return dirEntries.find(e => e.type === 2 && e.name === lastPart) ?? null
+    const named = dirEntries.filter(e => e.name === last && (e.type === 1 || e.type === 2 || e.type === 5))
+    return named.length === 1 ? named[0] : null
   }
 
   // ── 공개 API ──
