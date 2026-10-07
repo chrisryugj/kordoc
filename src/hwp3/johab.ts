@@ -241,6 +241,7 @@ function decodeHwp3Extra(ch: number): number {
     case 0x3479: return 0x25b7 // ▷
     case 0x347a: return 0x25b6 // ▶
     case 0x2f67: return 0x25b8 // ▸ 표 셀 글머리표 (rhwp 16db8260 — HWP5 변환본·한컴 PDF 대조)
+    case 0x2f00: return 0x25a1 // □ 빈 체크박스 (rhwp 291eabcf5 — 납세담보 확인서 추천기관 세 곳, 한컴 2020 PDF 추출값)
     // 아래 항등 코드들은 rhwp #5860 실측표(한글 2022 오라클 위치 정렬) 이식.
     // 같은 0x20xx 대에 항등과 비항등이 섞여 있어 구간 통과는 하지 않는다.
     case 0x2010: return 0x2010 // ‐

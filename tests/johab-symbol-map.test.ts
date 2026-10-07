@@ -25,6 +25,10 @@ describe("hwp3/johab — 사적 graphic char", () => {
     assert.equal(s, "한글과컴퓨터")
   })
 
+  it("0x2F00 은 빈 체크박스 □ — 매핑이 없어 납세담보 확인서 추천기관 체크박스가 사라졌다 (rhwp 291eabcf5)", () => {
+    assert.equal(decoded(0x2f00), "□")
+  })
+
   it("기존 매핑 회귀 없음", () => {
     assert.equal(decoded(0x3479), "▷")
     assert.equal(decoded(0x347a), "▶")
