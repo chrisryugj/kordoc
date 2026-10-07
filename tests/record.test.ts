@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { deflateSync, deflateRawSync } from "zlib"
-import { extractText, extractTextWithControls, extractEquationText, readRecords, decompressStream, parseFileHeader } from "../src/hwp5/record.js"
+import { appendParaText, createParaTextState, extractText, extractTextWithControls, extractEquationText, readRecords, decompressStream, parseFileHeader } from "../src/hwp5/record.js"
 
 describe("extractText", () => {
   function toUtf16Buffer(text: string): Buffer {
@@ -98,6 +98,24 @@ describe("extractText", () => {
 
   it("빈 버퍼는 빈 문자열 반환", () => {
     assert.equal(extractText(Buffer.alloc(0)), "")
+  })
+
+  it("짝 맞는 서로게이트는 한 글자, 짝 없는 반쪽은 □ — 한글 HWPX 정본과 같은 자리 (rhwp #6873)", () => {
+    assert.equal(extractText(toUtf16Buffer("A😀B")), "A😀B")
+    assert.equal(extractText(toUtf16Buffer("\udfda 사업명")), "□ 사업명") // 하위 반쪽만
+    assert.equal(extractText(toUtf16Buffer("시장 \udb80\r")), "시장 □") // 문단 끝 문자(0x0D) 앞의 상위 반쪽
+    assert.equal(extractText(toUtf16Buffer("\ud83dX")), "□X") // 상위 반쪽 뒤 일반 글자
+  })
+
+  it("문단 글이 레코드 경계에서 서로게이트 짝을 가르면 한 글자로 잇는다", () => {
+    const state = createParaTextState()
+    appendParaText(state, toUtf16Buffer("A\ud83d"))
+    appendParaText(state, toUtf16Buffer("\ude00B"))
+    assert.equal(state.text, "A😀B")
+    const lone = createParaTextState()
+    appendParaText(lone, toUtf16Buffer("A\ud83d"))
+    appendParaText(lone, toUtf16Buffer("C"))
+    assert.equal(lone.text, "A□C")
   })
 
   it("홀수 바이트는 마지막 바이트 무시", () => {

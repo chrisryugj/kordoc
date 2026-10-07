@@ -392,6 +392,9 @@ export interface ParaTextState {
   ctrlIdx: number
   fieldStack: Array<{ start: number; ctrlIdx: number }>
   fieldRanges: HwpFieldRange[]
+  /** 레코드 끝 상위 서로게이트 반쪽과 □ 로 낸 자리 — 다음 레코드 첫 하위 반쪽과 한 글자로 되돌린다 */
+  loneHigh?: number
+  loneHighAt?: number
   /** 리터럴 "$"·"<" 를 LITERAL_DOLLAR_MARK·LITERAL_LT_MARK 한 글자로 — 본문 파서만 켠다. 필드 범위가 글자 위치라
    *  두 글자 "\$" 를 바로 넣지 않고, 필드 처리 뒤 본문 파서가 "\$" 로 바꾼다(escapeLiteralDollar 규약) */
   dollarMark?: boolean
@@ -464,6 +467,15 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
     if (cur) result += `</${cur}>`
     if (want) result += `<${want}>`
     state.script = want
+  }
+  // 앞 레코드 끝의 상위 반쪽(□ 로 냈다)과 이 레코드 첫 하위 반쪽은 한 글자 — 문단 글이 여러 레코드로 나뉜 자리
+  if (state.loneHighAt !== undefined) {
+    const lo = data.length >= 2 ? data.readUInt16LE(0) : 0
+    if (lo >= 0xdc00 && lo <= 0xdfff && state.loneHighAt === state.text.length - 1) {
+      state.text = state.text.slice(0, -1) + String.fromCharCode(state.loneHigh!, lo)
+      i = 2
+    }
+    state.loneHighAt = undefined
   }
   // 필드 범위는 state.text 기준 인덱스로 기록
   const base = state.text.length
@@ -551,6 +563,14 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
               result += String.fromCodePoint(codePoint)
               break
             }
+          }
+          // 짝 없는 서로게이트 반쪽 — 한글은 같은 자리를 □ 로 보여 주고 HWPX 로 저장할 때도 □ 를 쓴다. 반쪽을 그대로 내면
+          // JSON 에 \udfda 로 남고 UTF-8 로 쓰면 U+FFFD 가 된다 (rhwp cff474c8d #6873, 한글 HWPX 정본 대조). 레코드 끝의 상위 반쪽은
+          // 자리를 남겨 다음 PARA_TEXT 레코드가 하위 반쪽으로 시작하면 한 글자로 되돌린다
+          if (ch >= 0xd800 && ch <= 0xdfff) {
+            result += "\u25a1"
+            if (ch <= 0xdbff && i >= data.length) { state.loneHigh = ch; state.loneHighAt = base + result.length - 1 }
+            break
           }
           result += !state.dollarMark ? String.fromCharCode(ch) : ch === 0x24 ? LITERAL_DOLLAR_MARK : ch === 0x3c ? LITERAL_LT_MARK : String.fromCharCode(ch)
         }
