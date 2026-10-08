@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+UpstageAI/korean-report-hwpx(MIT)를 검토해 중앙행정기관별 서식 실측값을 옮겼다(THIRD_PARTY/korean-report-hwpx.LICENSE). 정책브리핑 보도자료 2,670건(52개 기관)을 전수 집계한 값이라, 국토부 실물 한 건에 기대던 보도자료와 서울 실측 위주였던 보고서에 중앙부처 기준이 생긴다. 생성 엔진(내어쓰기·줄 끝 자간·표 열폭)은 kordoc 이 이미 하는 일이라 옮기지 않았다.
+
+### Added
+
+- 기관 서식 `agency`(`generate --agency 국세청`, MCP `agency`, 라이브러리 `gongmun.agency`) — 그 기관의 □·ㅇ·- 글꼴·크기, ※·표 머리 글꼴·크기·음영, 2단계 부호, 기관 색(참고·붙임 머리 표 라벨 칸 실측 → 장 띠 번호칸)을 기본값으로 깐다. 보고서·계획서·업무보고·개조식은 보도자료 참고·붙임 구간(보고서형 1,326건) 값, 보도자료는 본문 값. `공통` 은 기관 간 최빈값(□·ㅇ·- 휴먼명조 15·※ 맑은 고딕 12·표 머리 #DFE6F7). 명시 옵션(`levels` 의 그 단계·`bullet2`·`fonts`·띠 색)이 늘 이긴다. 보고서형 표본이 모자란 10곳은 공통값을 쓰고 경고, 문단식 기관 보도자료의 □ 원고는 경고만, 기안문·통지·회의록·방침서는 무시하고 경고. `agencyNames()`·`agencyStyle()` 공개.
+- `bullet2` 에 `◦`·`❍` (중앙부처 6곳·2곳 실측).
+- 보도자료 담당 표 사람별 행 `press.contact.people`(`--press-people '책임자/과장/이○○/044-000-0000;담당자/…'`) — 담당 부서(행 병합) | 부서명 | 구분 | 직급 | 이름 | 전화, 실물 보도자료 꼴. 종전 `manager`·`phone` 한 행은 그대로.
+
+### Changed
+
+- 생성(v5 — 보고서·계획서·업무보고·기안문·통지·회의록·방침서)의 폭 계산이 폭표 없는 글꼴(바탕·한양신명조 등, 함초롬 계열 제외)을 함초롬 폭(한글 0.97em) 대신 한글 1em 으로 잰다. 실측한 다른 한글 글꼴 7종이 모두 1em 이라 함초롬 폭으로는 □ 한 줄 맞춤이 실렌더에서 넘쳤다(조판 예측기와 같은 가정). 기본 글꼴만 쓰는 문서는 그대로, 그런 글꼴을 `fonts`·`levels` 로 고른 문서는 장평·자간·줄바꿈이 달라질 수 있다.
+
 ## [4.20.0] - 2026-10-08
 
 마포구청 공혁준 님의 hwp-auto-docfit(MIT)을 검토해 kordoc 에 맞는 규칙·검증 착안을 옮겼다(THIRD_PARTY/hwp-auto-docfit.LICENSE). 문서 생성 쪽(자간·표 열폭·따옴표·계층)은 kordoc 이 이미 더 정교해 해당 없음.

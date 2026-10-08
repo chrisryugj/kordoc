@@ -134,6 +134,10 @@ export async function markdownToHwpx(
   // 공문서(개조식·보도자료)는 날짜·금액 묶음 빈칸과 ‘’“” 로 다듬는다 — v5 는 gen-gongmun 이 아웃라인에서 같은 처리
   const blocks = gongmun ? parseMarkdownToBlocks(md).map(polishGongmunBlock) : parseMarkdownToBlocks(md)
   const gongmunList = gongmun ? precomputeGongmunList(blocks, gongmun) : null
+  // 문단식(기호 없는 기사체)이 주된 기관의 보도자료에 □ 항목 원고 — 서식은 그대로 그리고 관행만 알린다
+  if (gongmun?.agency?.pressStyle === "para" && gongmunList && [...gongmunList.items.values()].some(it => it.depth === 0)) {
+    options?.warnings?.push(`agency: ${gongmun.agency.name} 보도자료 본문은 문단식(기호 없는 기사체 문단)이 주된 방식 — □ 항목 대신 문단으로 쓰는 것을 검토하세요`)
+  }
   const fit = gongmun && gongmunList ? computeGongmunFitPlan(blocks, gongmun, gongmunList) : null
   // id 배치: 정적 borderFill(기본 2 + 개조식 7 + 공문서 헤더음영 1) → 프로필 → 표 레지스트리.
   // charPr는 기본(+실측 프리셋 전용) + 장평 variant 다음부터 프로필 할당.

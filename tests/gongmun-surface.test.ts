@@ -48,7 +48,7 @@ describe("값 집합 상수 — 드리프트 잠금", () => {
     assert.equal(DOC_FOOT_KEYS.length, 15)
     assert.deepEqual([...BODY_FONTS], ["myeongjo", "gothic"])
     assert.deepEqual([...H2_MARKERS], ["band", "roman", "box", "number", "none"])
-    assert.deepEqual([...BULLET2_CHARS], ["ㅇ", "○"])
+    assert.deepEqual([...BULLET2_CHARS], ["ㅇ", "○", "◦", "❍"])
   })
   it("PRESET_ALIAS 전 별칭이 내부 9프리셋으로 해석된다 (MCP preset enum 파생원)", () => {
     const presets = new Set(Object.values(PRESET_ALIAS))

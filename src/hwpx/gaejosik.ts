@@ -13,7 +13,7 @@
  * 이 모듈은 순수 값/로직만 담는다. XML 조립은 gen-gaejosik.ts.
  */
 
-import { markerWidth } from "./gongmun.js"
+import { markerWidth, type Bullet2 } from "./gongmun.js"
 import { BODY_WIDTH_20MM, COVER_MEASURED_W } from "./geometry.js"
 
 // ─── 부호 ───────────────────────────────────────────
@@ -26,7 +26,7 @@ import { BODY_WIDTH_20MM, COVER_MEASURED_W } from "./geometry.js"
  */
 const GAEJOSIK_BULLETS = ["□", "○", "-", "ㆍ"]
 
-export function gaejosikMarker(depth: number, bullet2: "ㅇ" | "○" = "○"): string {
+export function gaejosikMarker(depth: number, bullet2: Bullet2 = "○"): string {
   if (depth === 1) return bullet2
   return GAEJOSIK_BULLETS[Math.min(depth, GAEJOSIK_BULLETS.length - 1)]
 }
@@ -92,7 +92,7 @@ export function gaejosikSpaceBefore(depth: number, bodyHeight: number): number {
  * 단계별 들여쓰기 — 실측: 선행 공백 □=1 ○=2 -=3 (0.5em씩) ≈
  * □ left 0 / ○ 1자 / - 1.5자 / ㆍ 2자(+0.5자씩 누적). 내어쓰기는 부호 실폭.
  */
-export function gaejosikLevelIndent(depth: number, bodyHeight: number, sizes: GaejosikSizeOverrides = {}, bullet2: "ㅇ" | "○" = "○"): { left: number; indent: number } {
+export function gaejosikLevelIndent(depth: number, bodyHeight: number, sizes: GaejosikSizeOverrides = {}, bullet2: Bullet2 = "○"): { left: number; indent: number } {
   const lefts = [0, 1.0, 1.5, 2.0]
   const left = depth <= 3
     ? Math.round(lefts[depth] * bodyHeight)

@@ -294,6 +294,7 @@ npx kordoc lint 보고서.hwpx --numbers --styles                      # + 본�
 npx kordoc profile 기관서식.hwpx                                   # 표 서식 프로필 JSON → generate --profile
 npx kordoc levels 기관견본.hwpx                                     # 항목부호 단계별 글꼴·크기·굵기 → generate --levels
 npx kordoc generate 보고서.md -o 보고서.hwpx --levels-from 기관견본.hwpx  # 견본 단계별 서식 바로 적용
+npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --agency 국세청  # 중앙부처 기관 서식 (보도자료 2,670건 실측, 52곳·공통)
 
 # 개인정보 마스킹
 npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx                      # 서식 보존 마스킹 + 잔존 재검사 (남으면 exit 2)

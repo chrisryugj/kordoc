@@ -113,11 +113,45 @@ export function buildPressHead(g: ResolvedGongmun, ids: DocframeIds, bodyWidth: 
   return [`<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}">${table}</hp:run></hp:p>`, blank()]
 }
 
-/** 담당 표 — 담당 부서 | 담당자 | 연락처 1행 (실물 표3의 단순화) */
+/**
+ * 담당 표 6칸 — 담당 부서 | 부서명(행 병합) | 책임자·담당자 | 직급 | 이름 | 전화, 사람마다 한 행.
+ * 칸 폭 비율: 보도자료 담당 표 실측 기본 폭(UpstageAI/korean-report-hwpx compose.py contact — 6236·15167·6081·5605·5605·9003)
+ */
+const PRESS_PEOPLE_RATIO = [6236, 15167, 6081, 5605, 5605, 9003]
+const PRESS_PEOPLE_ROW_H = 1800 // 원천 담당 표 행 높이(10pt 한 줄 + 여백, compose.py contact)
+
+function buildPressPeople(dept: string, people: PressPerson[], ids: DocframeIds, w: number, reg: TableBfRegistry): string {
+  const total = PRESS_PEOPLE_RATIO.reduce((a, b) => a + b, 0)
+  const ws = PRESS_PEOPLE_RATIO.map((r) => Math.floor((w * r) / total))
+  ws[ws.length - 1] += w - ws.reduce((a, b) => a + b, 0)
+  const n = people.length, last = n - 1
+  const bf = (label: boolean, col: number, row: number, rows = 1) => reg.get({
+    t: row === 0 ? "thick" : "thin", b: row + rows - 1 === last ? "thick" : "thin",
+    l: col === 0 ? "thick" : "thin", r: col === ws.length - 1 ? "thick" : "thin",
+    fill: label ? "#E6E6E6" : undefined,
+  })
+  const cell = (label: boolean, col: number, row: number, text: string, rowSpan = 1) => tc({
+    bf: bf(label, col, row, rowSpan), row, col, w: ws[col], h: PRESS_PEOPLE_ROW_H * rowSpan, rowSpan,
+    paras: para(text, GONGMUN_TBL_CENTER, label ? ids.pressHead : ids.pressContact),
+  })
+  const rows = people.map((p, i) => [
+    ...(i === 0 ? [cell(true, 0, 0, "담당 부서", n), cell(false, 1, 0, dept, n)] : []),
+    cell(true, 2, i, p.role ?? "담당자"), cell(false, 3, i, p.title ?? ""), cell(false, 4, i, p.name ?? ""), cell(false, 5, i, p.phone ?? ""),
+  ].join(""))
+  return tbl(rows, w, PRESS_PEOPLE_ROW_H * n, ws.length)
+}
+
+type PressPerson = NonNullable<NonNullable<NonNullable<ResolvedGongmun["press"]>["contact"]>["people"]>[number]
+
+/** 담당 표 — people 가 있으면 6칸(사람마다 한 행), 없으면 담당 부서 | 담당자 | 연락처 1행 (실물 표3의 단순화) */
 export function buildPressContact(g: ResolvedGongmun, ids: DocframeIds, bodyWidth: number, reg: TableBfRegistry): string[] {
   const c = g.press?.contact
-  if (!c || (!c.dept && !c.manager && !c.phone)) return []
+  const people = (c?.people ?? []).filter((p) => p.role || p.title || p.name || p.phone)
+  if (!c || (!c.dept && !c.manager && !c.phone && people.length === 0)) return []
   const w = bodyWidth - 280
+  if (people.length > 0) {
+    return [blank(), `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}">${buildPressPeople(c.dept ?? "", people, ids, w, reg)}</hp:run></hp:p>`]
+  }
   const cells = [["담당 부서", c.dept ?? ""], ["담당자", c.manager ?? ""], ["연락처", c.phone ?? ""]]
   const labelW = Math.round(w * 0.14)
   const valueW = Math.round(w / 3) - labelW

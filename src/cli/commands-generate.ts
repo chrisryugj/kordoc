@@ -49,7 +49,8 @@ export function registerGenerateCommands(program: Command): void {
     .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
     .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
     .option("--levels-from <hwpx>", "견본 HWPX 에서 항목부호 단계별 글꼴·크기·굵기를 배워 적용 (kordoc levels 와 같은 추출, --levels 로 준 단계가 우선)")
-    .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배) 또는 ○(원 — 보고서 양식)")
+    .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배)·○(원 — 보고서 양식)·◦·❍")
+    .option("--agency <name>", "기관 서식 — 중앙행정기관 이름(국세청·교육부 …) 또는 공통. 보도자료 2,670건 실측 단계 글꼴·크기·2단계 부호·표 머리·기관 색 (보고서·계획서·업무보고·개조식·보도자료)")
     .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
     .option("--doc-head <spec>", "기안문 두문표: org=기관명,slogan=원훈,to=수신처,title=제목 (별지 제1호서식·서울 실결재 6행 표)")
     .option("--doc-foot <spec>", "기안문 결문표: sender=발신명의,drafter=주무관 홍길동,reviewer=과장 김철수,approver=국장 박영희,cooperator=협조자,docNum=시행(과-번호 (날짜)),receive=접수,zip=우편번호,address=주소,site=홈페이지,phone=전화,fax=전송,email=메일,disclosure=공개구분")
@@ -57,6 +58,7 @@ export function registerGenerateCommands(program: Command): void {
     .option("--notice-head <spec>", "공고문 두문·결문: no=공고 제2026-1호,date=2026년 7월 11일,sender=행정안전부장관")
     .option("--press-head <spec>", "보도자료 머리: release=보도시점,distribute=배포일,dept=담당부서,manager=담당자,phone=연락처")
     .option("--press-sub <items>", "보도자료 부제 (세미콜론 구분, 제목 아래 '- … -')")
+    .option("--press-people <items>", "보도자료 담당 표 사람별 행 — 구분/직급/이름/전화 를 세미콜론으로: '책임자/과장/이○○/044-000-0000;담당자/사무관/김○○/044-000-0001' (부서는 --press-head dept=)")
     .option("--plain", "공문서 모드 끄기 (범용 마크다운 변환)")
     .option("--paper <size>", "용지: A4·A3·B4·B5·Letter 또는 '210x297'(mm)")
     .option("--landscape", "용지 가로 방향")
@@ -162,12 +164,21 @@ export function registerGenerateCommands(program: Command): void {
             checklist: opts.checklist === undefined ? undefined : opts.checklist === true ? true : { na: String(opts.checklist).split(",").map((x) => Number(x.trim())).filter((x) => x !== 0) },
             dept: opts.dept ? String(opts.dept) : undefined,
             coverLabel: opts.coverLabel ? String(opts.coverLabel) : undefined,
+            agency: opts.agency ? String(opts.agency) : undefined,
             noticeHead: opts.noticeHead ? parseKv(String(opts.noticeHead), "--notice-head") : undefined,
-            press: opts.pressHead || opts.pressSub
+            press: opts.pressHead || opts.pressSub || opts.pressPeople
               ? {
                 release: pressKv.release, distribute: pressKv.distribute,
                 sub: opts.pressSub ? String(opts.pressSub).split(";").map((s: string) => s.trim()).filter(Boolean) : undefined,
-                contact: pressKv.dept || pressKv.manager || pressKv.phone ? { dept: pressKv.dept, manager: pressKv.manager, phone: pressKv.phone } : undefined,
+                contact: pressKv.dept || pressKv.manager || pressKv.phone || opts.pressPeople
+                  ? {
+                    dept: pressKv.dept, manager: pressKv.manager, phone: pressKv.phone,
+                    ...(opts.pressPeople ? {
+                      people: String(opts.pressPeople).split(";").map((s: string) => s.trim()).filter(Boolean)
+                        .map((s: string) => { const [role, title, name, phone] = s.split("/").map((x) => x.trim()); return { role, title, name, phone } }),
+                    } : {}),
+                  }
+                  : undefined,
               }
               : undefined,
           })

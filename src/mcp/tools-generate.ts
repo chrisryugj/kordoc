@@ -7,6 +7,7 @@ import { markdownToHwpx, unknownFontWarnings, usesGaejosikMunche, PRESET_ALIAS, 
 import type { GongmunOptions } from "../index.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, FONT_ROLE_KEYS, SIZE_KEYS, DOC_HEAD_KEYS, DOC_FOOT_KEYS, DOC_INFO_KEYS, NOTICE_HEAD_KEYS, PRESS_CONTACT_KEYS, BODY_PT_RANGE, LINE_SPACING_RANGE, SIZE_PT_RANGE, APPROVAL_MAX, LEVEL_STYLE_KEYS } from "../hwpx/gongmun-surface.js"
 import { assertWithinRoot } from "../shared/offline.js"
+import { agencyNames, AGENCY_COMMON_NAME } from "../hwpx/agency.js"
 import { loadGenerationImages } from "../shared/generate-images.js"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { PROFILE_EXTENSIONS, safePath, safeOutputPath, writeOutputFile, describeError, readValidatedFile } from "./shared.js"
@@ -78,7 +79,8 @@ export function registerGenerateTools(server: McpServer): void {
         .optional().describe("개조식 요소별 글자 크기(pt) 오버라이드 — dae=□/cham=※/chapter=장헤더/coverTitle·coverSub=표지/tocLabel·tocRoman·tocItem=목차/table=표 셀/bodyTitle=본문 첫 페이지 제목 반복 박스. 미지정 요소는 body_pt 비례 기본값"),
       levels: z.record(z.string().regex(/^[0-7]$/), z.object(Object.fromEntries(LEVEL_STYLE_KEYS.map(k => [k, k === "pt" ? z.number().min(SIZE_PT_RANGE.min).max(SIZE_PT_RANGE.max).optional() : k === "bold" ? z.boolean().optional() : z.string().optional()]))))
         .optional().describe("항목부호 단계별 위계 타이포(공문서 모드, v4.12.3) — {\"0\":{font:\"HY견고딕\",pt:17,bold:true},\"1\":{font:\"한컴돋움\",bold:true}} 꼴(depth 0~7). 실측: 전자결재 기안문 □/ㅇ/- 계열은 □=HY견고딕 +2~3pt 굵게·ㅇ=한컴돋움 굵게·-=휴먼명조 본문. 법정 8단계(1. 가.)는 본문 동일이 관행이라 기본 미적용"),
-      bullet2: z.enum(BULLET2_CHARS).optional().describe("2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서 양식). 미지정 시 통지·보도자료 ㅇ, 그 외 ○"),
+      bullet2: z.enum(BULLET2_CHARS).optional().describe("2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서 양식) / '◦'·'❍'(일부 중앙부처). 미지정 시 통지·보도자료 ㅇ, 그 외 ○"),
+      agency: z.enum([AGENCY_COMMON_NAME, ...agencyNames()] as [string, ...string[]]).optional().describe("기관 서식 — 중앙행정기관 이름 또는 '공통'(기관 간 최빈값). 정책브리핑 보도자료 2,670건 실측으로 그 기관의 □·ㅇ·- 글꼴·크기, 2단계 부호, 표 머리, 기관 색을 기본값으로 깐다(명시 옵션이 우선). 보고서·계획서·업무보고·개조식·보도자료 전용"),
       suppress_single: z.boolean().optional().describe("단일 형제 항목 부호 생략(편람 규정, 법정 번호 standard 전용 — 불릿 체계인 보고서·계획서·개조식·보도자료엔 무효). 기본 false — 하나뿐인 항목에도 부호(1. 가.)를 부여 (부호 없는 계단 들여쓰기가 실무 눈에 어색)"),
       doc_head: z.object(Object.fromEntries(DOC_HEAD_KEYS.map(k => [k, z.string().optional()])))
         .optional().describe("기안문 두문표(별지 제1호서식·서울 실결재 6행 표) — org=행정기관명(굴림 20pt bold 자간띄움)/slogan=원훈(상단 10pt)/to=수신('내부결재'면 발신명의 생략)/via=경유/title=제목(미지정 시 첫 h1). 기안문 프리셋 전용"),
@@ -90,8 +92,11 @@ export function registerGenerateTools(server: McpServer): void {
       press: z.object({
         release: z.string().optional(), distribute: z.string().optional(),
         sub: z.array(z.string()).optional(),
-        contact: z.object(Object.fromEntries(PRESS_CONTACT_KEYS.map(k => [k, z.string().optional()]))).optional(),
-      }).optional().describe("보도자료 옵션 — release=보도시점/distribute=배포일(머리박스)/sub=부제 배열('- … -')/contact=담당 부서·담당자·연락처 표"),
+        contact: z.object({
+          ...Object.fromEntries(PRESS_CONTACT_KEYS.map(k => [k, z.string().optional()])),
+          people: z.array(z.object({ role: z.string().optional(), title: z.string().optional(), name: z.string().optional(), phone: z.string().optional() })).optional(),
+        }).optional(),
+      }).optional().describe("보도자료 옵션 — release=보도시점/distribute=배포일(머리박스)/sub=부제 배열('- … -')/contact=담당 표: dept=담당 부서, people=[{role:'책임자',title:'과장',name:'이○○',phone:'044-000-0000'},{role:'담당자',…}] 사람마다 한 행(실물 보도자료 꼴). people 없으면 manager·phone 한 행"),
       paper: z.enum(["A4", "A3", "B4", "B5", "Letter"]).optional().describe("용지 크기 (v4.5.0). 기본 A4"),
       landscape: z.boolean().optional().describe("용지 가로 방향 (v4.5.0). 기본 세로"),
       columns: z.number().int().min(1).max(8).optional().describe("다단 개수 (v4.5.0). 기본 1단"),
@@ -99,7 +104,7 @@ export function registerGenerateTools(server: McpServer): void {
       footer: z.string().optional().describe("꼬리말 텍스트 — 모든 쪽 하단 (v4.5.0)"),
       image_dir: z.string().optional().describe("마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드 (v4.5.0, PNG/JPEG/GIF/BMP). 미지정 시 참조만 placeholder로 보존"),
     },
-    async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
+    async ({ markdown, output_path, profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir }) => {
       try {
         // 조립은 gongmun-surface SSOT(buildGongmunOptions) — CLI와 의미론 공유 (v4.0.4)
         let gongmun: GongmunOptions | undefined
@@ -110,7 +115,7 @@ export function registerGenerateTools(server: McpServer): void {
             pageNumbers: page_numbers, endMark: end_mark, bodyTitleBox: body_title_box, chapterFit: chapter_fit,
             h2Marker: h2_marker, bandColor: band_color, bandTextColor: band_text_color, fonts, sizes, levels, bullet2, suppressSingle: suppress_single,
             docHead: doc_head, docFoot: doc_foot, reportInfo: report_info,
-            noticeHead: notice_head, press, summary, docInfo: doc_info, dept, coverLabel: cover_label,
+            noticeHead: notice_head, press, summary, docInfo: doc_info, dept, coverLabel: cover_label, agency,
             checklist: checklist && typeof checklist === "object" ? { na: checklist.na, notes: checklist.notes && Object.fromEntries(Object.entries(checklist.notes).map(([k, v]) => [Number(k), v])) } : checklist,
           })
         }

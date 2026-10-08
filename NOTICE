@@ -199,3 +199,25 @@ Modifications:
 
 You may obtain a copy of the MIT License at:
 https://opensource.org/licenses/MIT
+
+================================================================================
+
+korean-report-hwpx
+https://github.com/UpstageAI/korean-report-hwpx
+
+Copyright (c) 2026 Upstage (작성 Mia, 윤승미)
+Licensed under the MIT License
+
+Used in:
+- src/hwpx/agency-styles.ts — 중앙행정기관별 서식 실측값(정책브리핑 보도자료 2,670건 집계: rules/·rules_report/·
+  rules_report/_참고머리.json)을 scripts/build-agency-styles.mjs 로 옮긴 데이터. 계층값 보정 규칙(engine/compose.py·report.py)도 같다
+- src/hwpx/gen-docframe.ts — 보도자료 담당 표 6칸 꼴과 칸 폭 비율 (engine/compose.py contact)
+
+Modifications:
+- 원천 JSON 을 그대로 싣지 않고 kordoc 이 쓰는 값(단계 글꼴·크기·2단계 부호·표 머리·라벨 칸 색·본문 방식)만 뽑았다.
+  연한 라벨 칸 바탕의 글자색은 검정으로 정했다(원천 기본은 흰색). 생성 엔진은 kordoc 자체 구현
+
+라이선스 전문: THIRD_PARTY/korean-report-hwpx.LICENSE
+
+You may obtain a copy of the MIT License at:
+https://opensource.org/licenses/MIT

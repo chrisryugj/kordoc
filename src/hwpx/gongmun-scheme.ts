@@ -15,7 +15,7 @@
  * 이 모듈은 순수 값/함수만 담는다. XML 조립은 gen-gongmun.ts.
  */
 
-import type { GongmunOptions, ResolvedGongmun } from "./gongmun.js"
+import type { Bullet2, GongmunOptions, ResolvedGongmun } from "./gongmun.js"
 import { markerWidth, standardMarker } from "./gongmun.js"
 
 export type SchemeKind = "legal" | "gaejosik"
@@ -112,14 +112,14 @@ export const SEOUL_FRAME: FrameSpec = {
 export const SEOUL_TABLE: TableStyleSpec = { font: "한컴돋움", pt: 12, headerFill: "#DFE6F7", labelFill: "#F2F2F2" }
 
 /** 개조식 부호 — bullet2로 2단계 ㅇ/○ 전환 */
-export function gaejosikMarkerOf(bullet2: "ㅇ" | "○"): Scheme["marker"] {
+export function gaejosikMarkerOf(bullet2: Bullet2): Scheme["marker"] {
   return (depth) => (depth === 0 ? "□" : depth === 1 ? bullet2 : depth === 2 ? "-" : "ㆍ")
 }
 
 /**
  * 서울 실측 개조식 스킴. bodyPt는 ㅇ(중항목) 크기 기준(실측 15) — 다른 단계는 실측 차이만큼 이동.
  */
-export function seoulGaejosikScheme(bodyPt = 15, lineSp = 180, bullet2: "ㅇ" | "○" = "ㅇ"): Scheme {
+export function seoulGaejosikScheme(bodyPt = 15, lineSp = 180, bullet2: Bullet2 = "ㅇ"): Scheme {
   const d = bodyPt - 15
   const lv = (font: string, pt: number, bold: boolean, leadTa: number, extra: Partial<LevelStyle> = {}): LevelStyle =>
     ({ font, pt: pt + d, bold, leadTa, ...extra })
@@ -286,6 +286,9 @@ export function seoulLegalScheme(bodyFont = "굴림체", bodyPt = 12, lineSp = 1
 /** 옵션(levels·fonts) 오버레이 — 지정한 단계·역할만 바꾼다 */
 export function applySchemeOverrides(s: Scheme, g: ResolvedGongmun): Scheme {
   const out: Scheme = { ...s, levels: s.levels.map((l) => ({ ...l })), body: { ...s.body }, ref: { ...s.ref }, table: { ...s.table } }
+  // 기관 서식의 ※·표 크기와 표 머리 음영 (글꼴·단계는 옵션으로 이미 깔렸다 — agency.ts)
+  if (g.agency?.refPt) out.ref.pt = g.agency.refPt
+  if (g.agency?.table) { if (g.agency.table.pt) out.table.pt = g.agency.table.pt; out.table.headerFill = g.agency.table.headerFill }
   if (g.fonts.heading) { out.levels[0].font = g.fonts.heading; out.chapter = { ...out.chapter, font: g.fonts.heading } }
   if (g.fonts.body) { out.body.font = g.fonts.body; if (s.kind === "legal") for (const l of out.levels) l.font = g.fonts.body; else out.levels[1].font = g.fonts.body }
   if (g.fonts.ref) out.ref.font = g.fonts.ref

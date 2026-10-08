@@ -18,7 +18,7 @@ import type { GongmunOptions, GongmunPreset } from "./gongmun.js"
 
 export const BODY_FONTS = ["myeongjo", "gothic"] as const
 export const H2_MARKERS = ["band", "roman", "box", "number", "none"] as const
-export const BULLET2_CHARS = ["ㅇ", "○"] as const
+export const BULLET2_CHARS = ["ㅇ", "○", "◦", "❍"] as const
 
 /** 요소별 글꼴 오버라이드 역할 키 (GongmunOptions.fonts) */
 export const FONT_ROLE_KEYS = ["body", "heading", "ref", "table"] as const
@@ -103,6 +103,8 @@ export interface GongmunSurfaceInput {
   dept?: string
   /** 표지 우상단 취급 표시 — "대외주의" 등 (업무보고 프리셋, cover와 함께) */
   coverLabel?: string
+  /** 기관 서식 — 중앙행정기관 이름 또는 "공통" (agency.ts) */
+  agency?: string
 }
 
 /**
@@ -151,6 +153,7 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.summary) g.summary = input.summary
   if (input.docInfo) g.docInfo = input.docInfo
   if (input.checklist !== undefined) g.checklist = input.checklist
+  if (input.agency?.trim()) g.agency = input.agency.trim()
   return g
 }
 

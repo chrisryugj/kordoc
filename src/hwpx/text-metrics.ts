@@ -36,6 +36,7 @@ const SYM_W: Record<number, number> = {
   0x2013: 625, 0x2014: 875, 0x2015: 875, 0x2018: 320, 0x2019: 320, 0x201c: 480, 0x201d: 480,
   0x2020: 558, 0x2021: 438, 0x2025: 640, 0x2026: 960, 0x2030: 988, 0x2032: 335, 0x2033: 474,
   0x203b: 770, 0x20ac: 656, 0x261c: 1012, 0x261e: 1012,
+  0x274d: 970, // ❍ 2단계 부호(일부 중앙부처) — 미실측, ○ 와 같은 전각으로 둔다
 }
 
 /** 코드포인트의 advance(em×1000). 미상 문자는 CJK권 970 / 라틴권 550 폴백 */
@@ -85,14 +86,16 @@ export function faceClassOf(face: string | null | undefined): FaceClass {
  * 생성(v5) 전용 폭 클래스 — 렌더(reflow)는 faceClassOf 그대로(게이트 baseline 불변).
  * 실측 폭표(font-metrics.ts)가 있는 글꼴은 그 표(`font:이름`), 없으면 근사 클래스 — 굵은 고딕 계열은
  * 'gothic'으로 넉넉히 재어 표 열폭·□ 한 줄 맞춤이 실렌더에서 꺾이지 않게 한다.
+ * 폭표 없는 그 밖의 글꼴(바탕·한양신명조 …)도 'gothic'(한글 1em) — 함초롬 계열만 한글 0.97em 이고 실측한 다른 한글 글꼴 7종은
+ * 전부 1em 이라, 함초롬 폭으로 재면 □ 한 줄 맞춤이 실렌더에서 넘친다(기관 서식 국세청 □ 바탕 14pt, 조판 예측기와 같은 가정).
  */
 export function faceClassForGen(face: string | null | undefined): FaceClass {
   if (!face) return "hcr"
   const f = face.trim()
   if (hasFontMetrics(f)) return `font:${f}`
   if (/^(굴림체|돋움체|바탕체|궁서체)$/.test(f)) return "fixedPitch"
-  if (/^(한컴돋움|맑은 고딕|HY견고딕|HY헤드라인M|HY중고딕|한양중고딕|나눔고딕|나눔스퀘어|돋움|굴림)$/.test(f)) return "gothic"
-  return "hcr"
+  if (/^함초롬/.test(f)) return "hcr"
+  return "gothic"
 }
 
 /**

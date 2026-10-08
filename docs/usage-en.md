@@ -294,6 +294,7 @@ npx kordoc lint report.hwpx --numbers --styles                      # + body↔t
 npx kordoc profile agency-form.hwpx                                 # table format profile JSON → generate --profile
 npx kordoc levels agency-sample.hwpx                                # per-marker-level font/size/bold → generate --levels
 npx kordoc generate report.md -o report.hwpx --levels-from agency-sample.hwpx  # apply a sample's level styles
+npx kordoc generate report.md -o report.hwpx --preset report --agency 국세청  # central-ministry house style (measured on 2,670 press releases, 52 agencies + 공통)
 
 # PII masking
 npx kordoc redact complaint.hwpx -o redacted.hwpx                   # format-preserving masking + re-scan (exit 2 if anything remains)
