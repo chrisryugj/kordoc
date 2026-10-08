@@ -84,7 +84,8 @@ class FaultTest {
 
     @Test
     void poolSizeAndQueueFull() throws Exception {
-        KordocConfig cfg = Support.fault("slow", Map.of("KORDOC_FAULT_DELAY_MS", "400")).maxWorkers(2).maxQueue(2).build();
+        // 지연은 넉넉히 — 400ms 이면 CI 러너가 멈춘 사이 첫 작업이 끝나 큐가 줄어 포화 검사가 플레이크였다(afc2963 java-sdk)
+        KordocConfig cfg = Support.fault("slow", Map.of("KORDOC_FAULT_DELAY_MS", "2000")).maxWorkers(2).maxQueue(2).build();
         try (KordocClient client = KordocClient.start(cfg)) {
             List<CompletableFuture<ParseResult>> futures = new ArrayList<>();
             for (int i = 0; i < 4; i++) futures.add(client.parseAsync(tmp.resolve("d" + i + ".docx")));
