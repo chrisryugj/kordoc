@@ -132,6 +132,7 @@ The 4.18.8 cell-edit path requires the same number of nonempty lines. Blank line
 ## Documentation and security
 
 - [Usage guide](docs/usage-en.md): complete CLI, MCP tools, APIs and format support
+- [Java SDK](sdk/java/README.md) · [Python SDK](sdk/python/README.md): parse from Java and Python systems through a resident engine worker ([worker protocol](docs/parse-worker-protocol.md), Korean)
 - [Government-document generation](docs/gongmunseo-engine-spec.md) · [Architecture](docs/architecture.md)
 - [Offline deployment](docs/offline-deployment.md): `KORDOC_OFFLINE=1`; MCP file scope with `KORDOC_ROOT`
 - [Security policy](SECURITY.md) · [MIT license](LICENSE) · [Third-party notices](NOTICE)
