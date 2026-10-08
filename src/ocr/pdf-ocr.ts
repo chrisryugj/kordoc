@@ -242,6 +242,32 @@ async function closerReads(
  * 넘겨 실제 괘선을 쓴다.
  * (이미지 직접 입력 경로 image-ocr.ts 와 공유)
  */
+/**
+ * OCR 박스를 줄로 묶는다(박스 번호 묶음). 같은 줄 조각도 글자 크기(큰 대표 줄)·숫자 하강부·기울어진 감열지 때문에 박스 아래 끝이
+ * 몇 pt 씩 어긋나, 박스마다 아래 끝을 기준선으로 넘기면 블록 파이프라인의 줄 묶음(3pt)이 한 줄을 여럿으로 쪼개고 위쪽 y 순으로
+ * 뒤집는다(#141 영수증: "탄현점 / 이마트", 품목 바코드·단가·금액이 다른 행). 중심 y 차이 ≤ 작은 박스 높이의 절반이면 한 줄,
+ * 가로로 크게 겹치는 박스는 같은 줄에 넣지 않는다(큰 로고 박스가 위아래 두 줄을 잇지 않게).
+ */
+export function groupOcrLines(items: OcrItem[]): number[][] {
+  const order = items.map((_, i) => i).sort((a, b) => (items[a].y + items[a].h / 2) - (items[b].y + items[b].h / 2))
+  const lines: number[][] = []
+  for (const i of order) {
+    const it = items[i], c = it.y + it.h / 2
+    const line = lines.find(l => {
+      const lc = l.reduce((s, j) => s + items[j].y + items[j].h / 2, 0) / l.length
+      const minH = Math.min(it.h, ...l.map(j => items[j].h))
+      // 박스는 잉크 외곽에 여백이 붙어 이웃 낱말과 조금 겹친다(이마트·탄현점 32px) — 좁은 쪽 폭의 절반 넘게 겹칠 때만 다른 줄
+      return Math.abs(c - lc) <= minH / 2 && l.every(j => {
+        const ov = Math.min(it.x + it.w, items[j].x + items[j].w) - Math.max(it.x, items[j].x)
+        return ov < Math.min(it.w, items[j].w) / 2
+      })
+    })
+    if (line) line.push(i)
+    else lines.push([i])
+  }
+  return lines
+}
+
 export function ocrItemsToBlocks(
   items: OcrItem[],
   pageNumber: number,
@@ -252,19 +278,37 @@ export function ocrItemsToBlocks(
   detectTables = true,
   opList: PageOps = { fnArray: [], argsArray: [] },
 ): IRBlock[] {
-  const norm: NormItem[] = items.map(it => {
+  // 줄마다 아래 끝을 중앙값으로 맞추고, 겹친 이웃 박스는 겹친 구간 가운데서 갈라 낱말 경계(따로 검출된 상자)를 공백으로 남긴다
+  const bottoms = items.map(it => it.y + it.h)
+  const xs = items.map(it => ({ x: it.x, r: it.x + it.w, space: false }))
+  for (const line of groupOcrLines(items)) {
+    if (line.length < 2) continue
+    const sorted = line.map(j => items[j].y + items[j].h).sort((a, b) => a - b)
+    for (const j of line) bottoms[j] = sorted[Math.floor(sorted.length / 2)]
+    const byX = [...line].sort((a, b) => items[a].x - items[b].x)
+    for (let k = 1; k < byX.length; k++) {
+      const L = xs[byX[k - 1]], R = xs[byX[k]]
+      if (R.x >= L.r) continue
+      const mid = (R.x + L.r) / 2, half = Math.min(items[byX[k - 1]].h, items[byX[k]].h) * 0.15
+      L.r = Math.max(L.x + 1, mid - half)
+      R.x = Math.min(R.r - 1, mid + half)
+      R.space = true
+    }
+  }
+  const norm: NormItem[] = items.map((it, i) => {
     const h = it.h / scale
     return {
       text: it.text,
-      x: Math.round(it.x / scale),
+      x: Math.round(xs[i].x / scale),
       // NormItem.y 는 pdfjs transform[5] = 베이스라인 (bottom-up) — 잉크 하단으로 근사
-      y: Math.round(pdfH - (it.y + it.h) / scale),
-      w: Math.round(it.w / scale),
+      y: Math.round(pdfH - bottoms[i] / scale),
+      w: Math.round((xs[i].r - xs[i].x) / scale),
       h: Math.round(h),
       // 박스는 잉크 외곽(engine tightBoxes) — 한글 줄 잉크 높이 ≈ 0.9em
       fontSize: Math.max(1, Math.round(h / 0.9)),
       fontName: "ocr",
       isHidden: false,
+      ...(xs[i].space ? { hasSpaceBefore: true } : {}),
     }
   })
   return extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)

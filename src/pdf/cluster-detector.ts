@@ -712,7 +712,8 @@ function mergeMultiLineRows(rows: RowGroup[], columns: ColCluster[]): RowGroup[]
 
     // 병합 조건: Y갭이 작고 + 아이템 수가 적음 (연속 행 = 1~2개 아이템)
     // 아이템이 많은 행(3+)은 독립적인 데이터 행 → 병합하지 않음
-    if (yGap < avgFontSize * 1.8 && curr.items.length <= 2 && (matchedCols < MIN_COLS || curr.items.length === 1)) {
+    if (yGap < avgFontSize * 1.8 && curr.items.length <= 2 && (matchedCols < MIN_COLS || curr.items.length === 1) &&
+      !startsNewRecord(prev, curr, columns)) {
       result[result.length - 1] = {
         y: prev.y,
         items: [...prev.items, ...curr.items],
@@ -722,6 +723,24 @@ function mergeMultiLineRows(rows: RowGroup[], columns: ColCluster[]): RowGroup[]
     }
   }
   return result
+}
+
+/**
+ * 칸 안에서 꺾인 연속 줄이 아니라 새 레코드의 첫 줄인지 — 아이템이 자기 열을 넘어 다음 열까지 뻗고, 위 행의 같은 열 칸이 이미
+ * 차 있으면 연속 줄일 수 없다(꺾인 줄은 자기 칸 안에 머문다). 영수증의 품목 두 줄 묶음(품명 줄 + 바코드·단가·금액 줄)에서
+ * 다음 품명 줄이 앞 품목 바코드 행에 붙던 것(#141).
+ */
+function startsNewRecord(prev: RowGroup, curr: RowGroup, columns: ColCluster[]): boolean {
+  const colOf = (x: number) => {
+    let ci = -1
+    for (let c = 0; c < columns.length; c++) if (columns[c].x <= x + COL_CLUSTER_TOL) ci = c
+    return ci
+  }
+  return curr.items.some(it => {
+    const ci = colOf(it.x)
+    if (ci < 0 || ci + 1 >= columns.length || it.x + it.w <= columns[ci + 1].x + COL_CLUSTER_TOL) return false
+    return prev.items.some(p => colOf(p.x) === ci)
+  })
 }
 
 // ─── 기본 유틸 ──────────────────────────────────────────
