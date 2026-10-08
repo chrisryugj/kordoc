@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- kordoc Java SDK 소비 예제: 로컬 저장소에 설치한 app.gomdori.kordoc:kordoc JAR 을 의존성으로 쓴다.
      사용법은 sdk/java/README.md 의 "소비 예제" 참고 -->
+<!--
+  pom.xml 이 아닌 이름 — 이 예제는 아직 Maven Central 에 없는 app.gomdori.kordoc:kordoc:0.1.0(로컬 mvn install)을 참조한다.
+  pom.xml 이면 OSV-Scanner 가 전이 의존성을 풀다 "not found" 로 실패(exit 127)해 정부 GitLab 미러 push 가 거부됐다.
+  실행: mvn -f sdk/java/examples/consumer/consumer-pom.xml compile exec:java
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

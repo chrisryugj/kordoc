@@ -114,5 +114,5 @@ jobs:
         run: mvn -B -f sdk/java/pom.xml install
       - name: 별도 Maven 예제가 설치한 JAR 로 실제 파싱
         run: |
-          mvn -B -q -f sdk/java/examples/consumer/pom.xml compile exec:java -Dexec.args="'$KORDOC_SDK_FIXTURES/중첩 표.hwpx' --gfm" > "$RUNNER_TEMP/java-example.md"
+          mvn -B -q -f sdk/java/examples/consumer/consumer-pom.xml compile exec:java -Dexec.args="'$KORDOC_SDK_FIXTURES/중첩 표.hwpx' --gfm" > "$RUNNER_TEMP/java-example.md"
           grep -q '<!-- <table id="t1" /> -->' "$RUNNER_TEMP/java-example.md"

@@ -119,5 +119,5 @@ mvn -f sdk/java/pom.xml verify             # 실제 엔진 + 합성 문서(tests
 
 ```bash
 mvn -f sdk/java/pom.xml install
-mvn -f sdk/java/examples/consumer/pom.xml compile exec:java -Dexec.args="'문서.hwpx' --gfm"
+mvn -f sdk/java/examples/consumer/consumer-pom.xml compile exec:java -Dexec.args="'문서.hwpx' --gfm"
 ```
