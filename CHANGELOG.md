@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.21.0] - 2026-10-08
 
 UpstageAI/korean-report-hwpx(MIT)를 검토해 중앙행정기관별 서식 실측값을 옮겼다(THIRD_PARTY/korean-report-hwpx.LICENSE). 정책브리핑 보도자료 2,670건(52개 기관)을 전수 집계한 값이라, 국토부 실물 한 건에 기대던 보도자료와 서울 실측 위주였던 보고서에 중앙부처 기준이 생긴다. 생성 엔진(내어쓰기·줄 끝 자간·표 열폭)은 kordoc 이 이미 하는 일이라 옮기지 않았다.
 
