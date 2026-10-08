@@ -1,17 +1,13 @@
 /** kordoc CLI 명령: 상주 파싱 워커 (parse-worker) */
 
-import { readFileSync, statSync } from "fs"
 import { resolve } from "path"
-import { parse } from "../index.js"
 import type { ParseOptions, ParseResult } from "../types.js"
-import { VERSION, toArrayBuffer, sanitizeError, classifyError, routeConsoleToStderr } from "../utils.js"
+import { VERSION, sanitizeError, classifyError, routeConsoleToStderr } from "../utils.js"
 import type { Command } from "commander"
+import { parseWorkerFile } from "./worker-parse.js"
 
 /** 요청·응답 필드가 바뀌면 올린다. 호스트가 ready 줄로 호환을 판단한다 */
 export const PARSE_WORKER_PROTOCOL = 1
-
-/** CLI 와 같은 입력 상한 */
-const MAX_FILE_BYTES = 500 * 1024 * 1024
 
 interface ParseWorkerRequest {
   id?: number
@@ -31,28 +27,45 @@ const bytesToBase64 = (_key: string, value: unknown): unknown =>
 
 async function parseOne(req: ParseWorkerRequest & { file: string }): Promise<ParseResult> {
   const absPath = resolve(req.file)
-  try {
-    const size = statSync(absPath).size
-    if (size > MAX_FILE_BYTES) {
-      return { success: false, fileType: "unknown", error: `파일이 너무 큽니다 (${(size / 1024 / 1024).toFixed(1)}MB)`, code: "PARSE_ERROR" }
-    }
-    const options: ParseOptions = { filePath: absPath }
-    if (req.images === false) options.images = false
-    if (req.ocr === "force") options.ocr = "force"
-    else if (req.ocr === "auto") options.ocr = true
-    if (req.formulaOcr) options.formulaOcr = true
-    if (req.password) options.password = req.password
-    return await parse(toArrayBuffer(readFileSync(absPath)), options)
-  } catch (err) {
-    return { success: false, fileType: "unknown", error: sanitizeError(err), code: classifyError(err) }
-  }
+  const options: ParseOptions = { filePath: absPath }
+  if (req.images === false) options.images = false
+  if (req.ocr === "force") options.ocr = "force"
+  else if (req.ocr === "auto") options.ocr = true
+  if (req.formulaOcr) options.formulaOcr = true
+  if (req.password) options.password = req.password
+  return parseWorkerFile(absPath, options)
 }
 
 export function registerWorkerCommands(program: Command): void {
   program
     .command("parse-worker")
     .description("상주 파싱 워커: stdin NDJSON 요청 → 한 줄 JSON 응답 (프로세스 유지, 파일마다 node 를 새로 띄우는 비용 제거)")
-    .action(async () => {
+    .option("--protocol <version>", "프로토콜 버전: 1(기본) | 2(Java·Python SDK — ParseOptions·이미지 파일 전송, docs/parse-worker-protocol.md)", "1")
+    .option("--max-request-bytes <n>", "protocol 2: 요청 한 줄 상한 바이트")
+    .option("--max-response-bytes <n>", "protocol 2: 응답 한 줄 상한 바이트")
+    .action(async (opts: { protocol: string; maxRequestBytes?: string; maxResponseBytes?: string }) => {
+      if (opts.protocol === "2") {
+        const limit = (v: string | undefined, name: string): number | undefined => {
+          if (v === undefined) return undefined
+          const n = Number(v)
+          if (!/^\d+$/.test(v) || !Number.isSafeInteger(n) || n < 1) {
+            process.stderr.write(`[kordoc] ${name} 는 양의 정수여야 합니다: ${v}\n`)
+            process.exit(2)
+          }
+          return n
+        }
+        const maxRequestBytes = limit(opts.maxRequestBytes, "--max-request-bytes")
+        const maxResponseBytes = limit(opts.maxResponseBytes, "--max-response-bytes")
+        routeConsoleToStderr()
+        const { runParseWorkerV2 } = await import("./parse-worker-v2.js")
+        await runParseWorkerV2({ maxRequestBytes, maxResponseBytes })
+        process.exit(0)
+      }
+      if (opts.protocol !== "1") {
+        // CLI 단건 실행 등으로 조용히 대체하지 않는다 — 호스트가 엔진 버전 불일치를 바로 알게
+        process.stderr.write(`[kordoc] 지원하지 않는 parse-worker protocol: ${opts.protocol} (1, 2)\n`)
+        process.exit(2)
+      }
       // 프로토콜(NDJSON, 한 줄 = 한 메시지):
       //  시작 {"ready":true,"version":"4.14.3","protocol":1}
       //  요청 {"id":1,"file":"a.hwpx","images":false,"ocr":"off","formulaOcr":false,"password":null}

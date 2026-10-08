@@ -211,6 +211,7 @@ quit      {"cmd":"quit"}  (or close stdin)
 ```
 
 Requests accept `ocr` (`"off"` · `"auto"` · `"force"`), `formulaOcr` and `password`; use the response's `rss` (memory) to decide when to recycle the worker.
+`--protocol 2` accepts `ParseOptions` (e.g. `tableFormat`) and file-based image transport; the Java and Python SDKs use it — see [parse-worker protocol](parse-worker-protocol.md) (Korean).
 
 ### OCR (scanned / image-based PDFs)
 

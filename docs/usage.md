@@ -211,6 +211,7 @@ await parse(buffer, { plain: true, htmlTables: true })   // 글 위주 + 모든 
 ```
 
 요청은 `ocr`(`"off"`·`"auto"`·`"force"`)·`formulaOcr`·`password` 를 받고, 응답의 `rss`(메모리)로 워커 교체 시점을 정하면 됩니다.
+`--protocol 2` 는 `ParseOptions`(예: `tableFormat`)와 이미지 파일 전송을 받습니다. Java·Python SDK 가 이 경로를 씁니다 — [parse-worker 프로토콜](parse-worker-protocol.md).
 
 ### OCR (스캔·이미지 PDF)
 

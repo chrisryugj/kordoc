@@ -1,0 +1,42 @@
+{
+  "description": "parse-worker --protocol 2 공유 계약 fixture. Node(tests/parse-worker-v2.test.ts)·Python·Java SDK 계약 테스트가 같이 쓴다",
+  "ready": {
+    "ready": true,
+    "version": "0.0.0",
+    "protocol": 2,
+    "capabilities": ["parse", "options", "transport.images.inline", "transport.images.files"]
+  },
+  "requests": [
+    { "id": 1, "cmd": "parse", "file": "/abs/문서.hwpx" },
+    { "id": 2, "cmd": "parse", "file": "/abs/문서.hwpx", "options": { "tableFormat": "gfm", "ocr": false } },
+    { "id": 3, "cmd": "parse", "file": "/abs/doc.docx", "transport": { "images": "files", "assetsDir": "/abs/assets" } },
+    { "cmd": "quit" }
+  ],
+  "responses": [
+    { "id": 1, "rss": 123456, "result": { "success": true, "fileType": "hwpx", "markdown": "# 제목", "blocks": [], "futureField": { "kept": true } } },
+    { "id": 2, "rss": 123456, "result": { "success": false, "fileType": "unknown", "error": "파일을 찾을 수 없습니다", "code": "FILE_NOT_FOUND" } },
+    { "id": 3, "rss": 123456, "assetsDir": "/abs/assets/kordoc-3-AbC123",
+      "result": { "success": true, "fileType": "docx", "markdown": "![image](image_001.png)",
+        "blocks": [{ "type": "image", "text": "image_001.png", "imageData": { "mimeType": "image/png", "filename": "image_001.png", "dataRef": { "path": "image_001.png", "byteLength": 14 } } }],
+        "images": [{ "filename": "image_001.png", "mimeType": "image/png", "source": "word/media/image1.png", "dataRef": { "path": "image_001.png", "byteLength": 14 } }] } },
+    { "id": 4, "error": { "code": "INVALID_OPTIONS", "message": "options: Unrecognized key(s) in object: 'filePath'" } },
+    { "error": { "code": "INVALID_JSON", "message": "잘못된 JSON 라인" } }
+  ],
+  "invalid": [
+    { "name": "JSON 아님", "request": "not json", "error": "INVALID_JSON" },
+    { "name": "객체 아님", "request": "[1,2]", "error": "INVALID_REQUEST" },
+    { "name": "id 없음", "request": { "cmd": "parse", "file": "/abs/a.docx" }, "error": "INVALID_REQUEST" },
+    { "name": "id 0", "request": { "id": 0, "cmd": "parse", "file": "/abs/a.docx" }, "error": "INVALID_REQUEST" },
+    { "name": "id 정수 아님", "request": { "id": 1.5, "cmd": "parse", "file": "/abs/a.docx" }, "error": "INVALID_REQUEST" },
+    { "name": "모르는 명령", "request": { "id": 10, "cmd": "render", "file": "/abs/a.docx" }, "error": "UNSUPPORTED_COMMAND", "id": 10 },
+    { "name": "cmd 없음", "request": { "id": 11, "file": "/abs/a.docx" }, "error": "INVALID_REQUEST", "id": 11 },
+    { "name": "상대 경로", "request": { "id": 12, "cmd": "parse", "file": "rel/a.docx" }, "error": "INVALID_REQUEST", "id": 12 },
+    { "name": "file 없음", "request": { "id": 13, "cmd": "parse" }, "error": "INVALID_REQUEST", "id": 13 },
+    { "name": "filePath 덮어쓰기", "request": { "id": 14, "cmd": "parse", "file": "/abs/a.docx", "options": { "filePath": "/etc/passwd" } }, "error": "INVALID_OPTIONS", "id": 14 },
+    { "name": "함수형 옵션", "request": { "id": 15, "cmd": "parse", "file": "/abs/a.docx", "options": { "onProgress": true } }, "error": "INVALID_OPTIONS", "id": 15 },
+    { "name": "htmlTables·tableFormat 충돌", "request": { "id": 16, "cmd": "parse", "file": "/abs/a.docx", "options": { "htmlTables": true, "tableFormat": "gfm" } }, "error": "INVALID_OPTIONS", "id": 16 },
+    { "name": "v1 ocr 값", "request": { "id": 17, "cmd": "parse", "file": "/abs/a.docx", "options": { "ocr": "auto" } }, "error": "INVALID_OPTIONS", "id": 17 },
+    { "name": "모르는 전송 모드", "request": { "id": 18, "cmd": "parse", "file": "/abs/a.docx", "transport": { "images": "base64" } }, "error": "INVALID_REQUEST", "id": 18 },
+    { "name": "모르는 최상위 필드", "request": { "id": 19, "cmd": "parse", "file": "/abs/a.docx", "images": false }, "error": "INVALID_REQUEST", "id": 19 }
+  ]
+}
