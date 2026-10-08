@@ -160,7 +160,24 @@ describe("중첩 강조 회귀 — **a *b* c** 가 별 리터럴로 오염되던
 
   it("미닫힘 굵게는 종전 폴백 그대로 (파싱 폭주 없음)", () => {
     const spans = parseInlineMarkdown("**미닫힘 *기울임*")
-    assert.equal(spans.map(s => s.text).join(""), "*미닫힘 기울임*")
+    // 여는 "*" 뒤가 공백이면 강조가 아니다(CommonMark) — "**미닫힘 " 은 글자, "*기울임*" 만 기울임
+    assert.equal(spans.map(s => s.text).join(""), "**미닫힘 기울임")
     assert.ok(spans.every(s => !s.bold))
+  })
+})
+
+describe("별 강조 — 여는 별 뒤·닫는 별 앞이 비공백일 때만 (CommonMark)", () => {
+  const plain = (s: string) => parseInlineMarkdown(s).map(x => (x.bold ? "B:" : "") + (x.italic ? "I:" : "") + x.text).join("|")
+  it("한 줄의 각주 표시 *·** 는 강조 짝이 아니라 글자", () => {
+    assert.equal(plain("전기버스 4대* 도입, 단가** 적용"), "전기버스 4대* 도입, 단가** 적용")
+    assert.equal(plain("대상* 및 기간** 확정"), "대상* 및 기간** 확정")
+  })
+  it("붙여 쓴 강조는 종전대로", () => {
+    assert.equal(plain("**굵게** 와 *기울임*"), "B:굵게| 와 |I:기울임")
+    assert.equal(plain("단어*안*쪽"), "단어|I:안|쪽")
+    assert.equal(plain("**a *b* c**"), "B:a |B:I:b|B: c")
+  })
+  it("앞뒤가 공백인 별(곱셈)은 글자", () => {
+    assert.equal(plain("2 * 3 * 4"), "2 * 3 * 4")
   })
 })
