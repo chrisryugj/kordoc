@@ -1,17 +1,13 @@
 /** kordoc CLI 명령: 상주 파싱 워커 (parse-worker) */
 
-import { readFileSync, statSync } from "fs"
 import { resolve } from "path"
-import { parse } from "../index.js"
 import type { ParseOptions, ParseResult } from "../types.js"
-import { VERSION, toArrayBuffer, sanitizeError, classifyError, routeConsoleToStderr } from "../utils.js"
+import { VERSION, sanitizeError, classifyError, routeConsoleToStderr } from "../utils.js"
 import type { Command } from "commander"
+import { parseWorkerFile } from "./worker-parse.js"
 
 /** 요청·응답 필드가 바뀌면 올린다. 호스트가 ready 줄로 호환을 판단한다 */
 export const PARSE_WORKER_PROTOCOL = 1
-
-/** CLI 와 같은 입력 상한 */
-const MAX_FILE_BYTES = 500 * 1024 * 1024
 
 interface ParseWorkerRequest {
   id?: number
@@ -31,21 +27,13 @@ const bytesToBase64 = (_key: string, value: unknown): unknown =>
 
 async function parseOne(req: ParseWorkerRequest & { file: string }): Promise<ParseResult> {
   const absPath = resolve(req.file)
-  try {
-    const size = statSync(absPath).size
-    if (size > MAX_FILE_BYTES) {
-      return { success: false, fileType: "unknown", error: `파일이 너무 큽니다 (${(size / 1024 / 1024).toFixed(1)}MB)`, code: "PARSE_ERROR" }
-    }
-    const options: ParseOptions = { filePath: absPath }
-    if (req.images === false) options.images = false
-    if (req.ocr === "force") options.ocr = "force"
-    else if (req.ocr === "auto") options.ocr = true
-    if (req.formulaOcr) options.formulaOcr = true
-    if (req.password) options.password = req.password
-    return await parse(toArrayBuffer(readFileSync(absPath)), options)
-  } catch (err) {
-    return { success: false, fileType: "unknown", error: sanitizeError(err), code: classifyError(err) }
-  }
+  const options: ParseOptions = { filePath: absPath }
+  if (req.images === false) options.images = false
+  if (req.ocr === "force") options.ocr = "force"
+  else if (req.ocr === "auto") options.ocr = true
+  if (req.formulaOcr) options.formulaOcr = true
+  if (req.password) options.password = req.password
+  return parseWorkerFile(absPath, options)
 }
 
 export function registerWorkerCommands(program: Command): void {
