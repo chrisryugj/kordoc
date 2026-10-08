@@ -43,7 +43,9 @@ bench/visual/out/
 # 생성 엔진 학습용 수집분 (파서 게이트 모수 아님)
 bench/corpus-gen/
 
-# Python SDK 빌드 산출물
+# Java·Python SDK 빌드 산출물
+sdk/java/target/
+sdk/java/examples/consumer/target/
 sdk/python/build/
 sdk/python/dist/
 sdk/python/src/*.egg-info/
