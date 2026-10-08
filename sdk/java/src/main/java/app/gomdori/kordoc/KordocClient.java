@@ -43,7 +43,8 @@ public final class KordocClient implements AutoCloseable {
     private final ScheduledThreadPoolExecutor timer;
     private final List<Thread> dispatchers = new ArrayList<>();
     private final List<WorkerProcess> retiring = new ArrayList<>();
-    private int idle;
+    /** 작업을 꺼내 실행 중인 디스패처 수 — 빈 자리 = 워커 수 - busy (대기 루프 진입 여부와 무관해 start 직후에도 맞다) */
+    private int busy;
     private boolean closed;
     private volatile Warmup warmupSpec;
     private Path tempRoot;
@@ -106,7 +107,7 @@ public final class KordocClient implements AutoCloseable {
         }
         synchronized (lock) {
             if (closed) return CompletableFuture.failedFuture(new KordocClosedException("닫힌 클라이언트입니다"));
-            if (queue.size() >= idle + config.maxQueue) {
+            if (queue.size() >= slots.length - busy + config.maxQueue) {
                 return CompletableFuture.failedFuture(new KordocQueueFullException("대기 큐가 가득 찼습니다 (maxQueue=" + config.maxQueue + ")"));
             }
             queue.addLast(job);
@@ -264,23 +265,24 @@ public final class KordocClient implements AutoCloseable {
         while (true) {
             Job job;
             synchronized (lock) {
-                idle++;
                 try {
                     while (queue.isEmpty() && !closed) lock.wait();
                 } catch (InterruptedException e) {
-                    idle--;
                     return;
                 }
-                idle--;
                 if (closed) return;
                 job = queue.pollFirst();
+                if (job == null || job.future.isDone()) continue;
+                busy++;
             }
-            if (job == null || job.future.isDone()) continue;
             slot.lock.lock();
             try {
                 run(slot, job);
             } finally {
                 slot.lock.unlock();
+                synchronized (lock) {
+                    busy--;
+                }
             }
         }
     }
