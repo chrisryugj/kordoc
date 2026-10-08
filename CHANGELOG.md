@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.1] - 2026-10-08
+
+### Fixed
+
+- 이미지·스캔 OCR 에서 같은 줄 조각이 문단 여럿으로 갈려 순서가 뒤집히던 것(#141) — 글자 크기·숫자 하강부로 상자 아래 끝이 어긋나도 중심 y 로 한 줄을 묶어 기준선을 맞춘다(`이마트 탄현점 128-85-48537 대표: 최병렬`). 여백으로 겹친 이웃 상자 사이 공백도 남긴다.
+- 테두리 없는 표에서 다음 열까지 뻗는 한 칸짜리 행을 위 행의 칸 안 연속 줄로 붙이던 것(#141) — 영수증의 품목 두 줄 묶음(품명 줄 + 바코드·단가·금액 줄)이 앞 품목과 섞였다. 위 행의 같은 열이 이미 차 있으면 새 행으로 둔다.
+
 ## [4.21.0] - 2026-10-08
 
 UpstageAI/korean-report-hwpx(MIT)를 검토해 중앙행정기관별 서식 실측값을 옮겼다(THIRD_PARTY/korean-report-hwpx.LICENSE). 정책브리핑 보도자료 2,670건(52개 기관)을 전수 집계한 값이라, 국토부 실물 한 건에 기대던 보도자료와 서울 실측 위주였던 보고서에 중앙부처 기준이 생긴다. 생성 엔진(내어쓰기·줄 끝 자간·표 열폭)은 kordoc 이 이미 하는 일이라 옮기지 않았다.

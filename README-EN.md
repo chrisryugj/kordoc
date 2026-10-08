@@ -111,10 +111,11 @@ The external **opendataloader-bench, 200 documents** was measured separately for
 
 ## Recent updates
 
-Latest release: **[4.21.0](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.0)** · 2026-10-08
+Latest release: **[4.21.1](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.1)** · 2026-10-08
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.1 | Image OCR: fragments of one visual line no longer split and reorder, and item rows in borderless receipt tables no longer merge (#141) |
 | 4.21.0 | Central-ministry house styles `--agency` (level fonts and sizes, ◦/❍ level-2 bullets, table header and agency colour measured on 2,670 press releases from 52 agencies), per-person rows in the press contact table (`--press-people`), wider generation metrics for fonts without width tables |
 | 4.20.0 | 7 new notation lint rules plus linting documents directly, body↔table number checks and per-level style deviations; learn level styles from a sample HWPX (`levels`, `--levels-from`); `compare` and `patch --json`; patch integrity checks; chat-paste cleanup |
 | 4.19.2 | Ports rhwp v0.8.7 parser fixes — HWP3 checkbox □, HWP5 unpaired surrogates as □, lenient CFB recovery reading the right body stream, HWPX decompression cap enforced while inflating each entry |
