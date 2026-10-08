@@ -24,6 +24,7 @@ import {
 } from "./source-map.js"
 import { noteFormatFrom, noteRefMark, type NoteNumberFormat } from "../hwpx/notes.js"
 import { patchZipEntries } from "./zip-patch.js"
+import { checkPatchIntegrity } from "./integrity.js"
 import { AUTONUM_PREFIX_RE,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable,
   alignUnits, editedFromVisual, LAYOUT_MODE_MISMATCH,
@@ -137,10 +138,12 @@ export async function patchHwpx(
 
   // 6) ZIP 재조립 — 수정된 섹션만 교체, 나머지는 원본 바이트 그대로
   const replacements = new Map<string, Uint8Array>()
+  const edited: Array<{ name: string; xml: string; splices: SpliceEdit[] }> = []
   const encoder = new TextEncoder()
   try {
     for (let i = 0; i < scans.length; i++) {
       if (sectionSplices[i].length === 0) continue
+      edited.push({ name: sectionPaths[i], xml: scans[i].xml, splices: [...sectionSplices[i]] })
       // 텍스트가 바뀐 섹션은 줄 레이아웃 캐시(linesegarray)를 전부 비워 한컴 변조
       // 경고를 막는다 (텍스트 변경으로 캐시가 어긋남 — 뷰어가 열 때 재계산).
       // 삭제된 행(<hp:tr>) 범위 안의 linesegarray는 삭제 splice에 포함되므로 제외
@@ -170,9 +173,12 @@ export async function patchHwpx(
     }
   }
 
-  // 7) 자동 검증 — 패치본 재파싱 vs 편집 마크다운
+  // 7) 자동 검증 — 바이트·구조 무결성(교체 안 한 엔트리 그대로·XML 엄격 파싱·글만 고친 섹션 태그 보존) 뒤 패치본 재파싱 vs
+  //    편집 마크다운. 무결성이 깨졌으면 패처 결함이라 깨진 파일을 내보내지 않는다
   let verification: DiffResult | undefined
   if (options?.verify !== false) {
+    const issues = replacements.size > 0 ? checkPatchIntegrity(original, data, replacements, edited) : []
+    if (issues.length) return { success: false, applied, skipped, error: `패치본 무결성 검사 실패 — 패치 중단: ${issues.join("; ")}` }
     try {
       const reparsed = await parseHwpxDocument(u8ToArrayBuffer(data), { layoutTables: "keep" })
       verification = diffUnitLists(splitMarkdownUnits(reparsed.markdown), editedUnits)
