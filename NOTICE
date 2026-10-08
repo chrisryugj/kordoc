@@ -174,3 +174,28 @@ Used in:
 
 You may obtain a copy of the MIT License at:
 https://opensource.org/licenses/MIT
+
+================================================================================
+
+hwp-auto-docfit
+https://github.com/haijun93/hwp-auto-docfit
+
+Copyright (c) 2026 haijun93 (마포구청 공혁준)
+Licensed under the MIT License
+
+Used in:
+- src/hwpx/gongmun-lint.ts — 기간 대시·요일·"끝."/붙임 2타 규칙 착안, 공공언어 쉬운 말·맞춤법
+  낱말표와 조사 경계식 (document_rules.py·writing_aids.py·korean_proofread.py)
+- src/hwpx/paste-clean.ts — 생성형 AI 붙여넣기 흔적(보이지 않는 글자·† 인용 표시·이스케이프된 굵게) 정리 규칙 착안 (pasted_text.py)
+- src/hwpx/gongmun-typo.ts — 열거 뒤 '등'·'낱말 숫자,' 열거 묶음 빈칸 규칙 착안
+- src/hwpx/number-lint.ts — 본문 수치 ↔ 표 수치 대조 범위·임계값 (number_check.py)
+- src/hwpx/level-styles.ts — 단계별 대표 서식 투표 임계값과 편차 검수 (style_unify.py·document_review.py)
+- src/roundtrip/integrity.ts — 패치 결과 다층 무결성 검사 착안 (fidelity/verify.py)
+
+Modifications:
+- TypeScript 재구현(규칙·임계값은 kordoc 코퍼스로 다시 확인), 한/글 COM 의존 없음
+
+라이선스 전문: THIRD_PARTY/hwp-auto-docfit.LICENSE
+
+You may obtain a copy of the MIT License at:
+https://opensource.org/licenses/MIT

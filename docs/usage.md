@@ -284,10 +284,15 @@ npx kordoc fill --template gian -j 값.json -o 기안문.hwpx           # 내장
 # 생성 · 편집 · 검증
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서        # Markdown → 공문서 HWPX
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx                    # 서식 보존 패치 (.hwp 도 자동)
+npx kordoc patch 원본.hwpx 편집.md --json --silent                  # 적용 수·건너뛴 편집·검증 잔차 JSON
+npx kordoc compare 구버전.hwp 신버전.hwpx                           # 문서 비교 (차이 있으면 exit 1, --json)
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx
 npx kordoc validate 산출물.hwpx                                    # HWPX 구조 검증 (ZIP·필수 파트·XML)
-npx kordoc lint 보고서.md                                          # 공문서 표기법 19룰 (md/txt, '-'=stdin, error 면 exit 1)
+npx kordoc lint 보고서.md                                          # 공문서 표기법 27룰 (md/txt·문서, '-'=stdin, error 면 exit 1)
+npx kordoc lint 보고서.hwpx --numbers --styles                      # + 본문↔표 수치 대조·단계별 서식 편차 (확인 목록)
 npx kordoc profile 기관서식.hwpx                                   # 표 서식 프로필 JSON → generate --profile
+npx kordoc levels 기관견본.hwpx                                     # 항목부호 단계별 글꼴·크기·굵기 → generate --levels
+npx kordoc generate 보고서.md -o 보고서.hwpx --levels-from 기관견본.hwpx  # 견본 단계별 서식 바로 적용
 
 # 개인정보 마스킹
 npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx                      # 서식 보존 마스킹 + 잔존 재검사 (남으면 exit 2)
@@ -312,7 +317,10 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 - 개인정보 마스킹 결과는 공개 전에 사람이 최종 확인해야 합니다. 이미지 속 글자는 자동 탐지 범위에 포함되지 않습니다.
 - `watch -d` 는 하위 폴더 구조를 그대로 둡니다.
 - `check-ocr-models`·`check-formula-models` 는 없는 모델을 내려받습니다 — 상태만 보려면 `--status-only`.
-- `lint` 는 Markdown·텍스트용입니다. HWPX 는 `kordoc 문서.hwpx | kordoc lint -`.
+- `lint` 에 HWPX·HWP·PDF 등 문서를 주면 본문을 파싱해 검사합니다. 파싱한 글은 연속 공백이 접히고 원문 굵게가 `**` 로
+  옮겨지므로 "끝."·붙임 2타와 강조 남발 규칙은 원고(md/txt)에서만 봅니다. `--numbers`·`--styles` 결과는 확인 목록이라 exit 코드에 영향이 없습니다.
+- `generate` 는 생성형 AI 채팅창에서 붙여 넣은 흔적(보이지 않는 글자·`【…†…】` 인용 표시·이스케이프된 `\*\*굵게\*\*`)을 정리하고 경고로 알립니다.
+- HWPX `patch` 는 결과를 바이트·구조로도 검사합니다(교체하지 않은 엔트리 그대로·교체한 XML 엄격 파싱·글만 고친 섹션의 태그 보존). 깨지면 파일을 내지 않고 실패합니다. `--no-verify` 면 재파싱 검증과 함께 건너뜁니다(HWP 5.x 패치는 해당 없음).
 
 ### 실패 계약 — 기계 판독 가능한 실패 JSON
 
@@ -442,7 +450,7 @@ ZIP 종류를 가르려면 `detectFormat()` 이 `hwpx` 일 때 `await detectZipF
 
 | 함수 | 설명 |
 |------|------|
-| `lintGongmunText(text, { document? })` | 공문서 표기법 19룰 + AI 슬롭 2룰 (`document: true` 면 붙임·"끝." 문서 단위 검사 포함) |
+| `lintGongmunText(text, { document?, parsed? })` | 공문서 표기법 27룰 + AI 슬롭 2룰 (`document: true` 면 붙임·"끝." 문서 단위 검사 포함, `parsed: true` 는 문서를 파싱한 글 — 원고 전용 규칙 제외) |
 | `redactMarkdown(text, options?)` / `redactText(...)` | 개인정보 탐지 + 마스킹 — 텍스트 단위 (파일 단위는 CLI `redact`·MCP `redact_document`) |
 | `blocksToChunks(blocks, options?)` | RAG 구조 청크 — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown |

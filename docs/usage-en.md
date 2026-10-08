@@ -284,10 +284,15 @@ npx kordoc fill --template gian -j values.json -o draft.hwpx        # built-in d
 # generate · edit · verify
 npx kordoc generate report.md -o report.hwpx --preset 보고서         # Markdown → official HWPX
 npx kordoc patch original.hwpx edited.md -o patched.hwpx            # format-preserving patch (.hwp auto)
+npx kordoc patch original.hwpx edited.md --json --silent            # applied count, skipped edits, verification residual as JSON
+npx kordoc compare old.hwp new.hwpx                                 # document diff (exit 1 when they differ, --json)
 npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx
 npx kordoc validate output.hwpx                                     # HWPX structure validation (ZIP, required parts, XML)
-npx kordoc lint report.md                                           # 19-rule notation linter (md/txt, '-' = stdin, exit 1 on errors)
+npx kordoc lint report.md                                           # 27-rule notation linter (md/txt or documents, '-' = stdin, exit 1 on errors)
+npx kordoc lint report.hwpx --numbers --styles                      # + body↔table number check, per-level style deviations (review lists)
 npx kordoc profile agency-form.hwpx                                 # table format profile JSON → generate --profile
+npx kordoc levels agency-sample.hwpx                                # per-marker-level font/size/bold → generate --levels
+npx kordoc generate report.md -o report.hwpx --levels-from agency-sample.hwpx  # apply a sample's level styles
 
 # PII masking
 npx kordoc redact complaint.hwpx -o redacted.hwpx                   # format-preserving masking + re-scan (exit 2 if anything remains)
@@ -312,7 +317,10 @@ npx kordoc watch ./docs --webhook https://api/hook  # webhook notification
 - A human must check PII-masking results before publication. Text inside images is outside automatic detection.
 - `watch -d` keeps the subfolder structure.
 - `check-ocr-models` and `check-formula-models` download missing models — pass `--status-only` to inspect only.
-- `lint` checks Markdown/text. For HWPX: `kordoc doc.hwpx | kordoc lint -`.
+- `lint` parses documents (HWPX, HWP, PDF, …) and checks the body. Parsed text collapses repeated spaces and turns bold into `**`,
+  so the 2-space "끝."/attachment rules and the bold-overuse rule only run on manuscripts (md/txt). `--numbers`/`--styles` are review lists and do not change the exit code.
+- `generate` strips chat-paste artefacts (invisible characters, `【…†…】` citation tags, escaped `\*\*bold\*\*`) and reports them as a warning.
+- HWPX `patch` also checks the result at the byte/structure level (untouched entries byte-identical, replaced XML strictly well-formed, tags preserved in text-only sections) and fails instead of writing a broken file. `--no-verify` skips it together with the re-parse check (HWP 5.x patches are not covered).
 
 ### Failure contract — machine-readable failure JSON
 
@@ -442,7 +450,7 @@ To tell ZIP formats apart, call `await detectZipFormat(buffer)` when `detectForm
 
 | Function | Description |
 |----------|-------------|
-| `lintGongmunText(text, { document? })` | 19 official-notation rules + 2 AI-slop rules (`document: true` adds document-level attachment / "끝." checks) |
+| `lintGongmunText(text, { document?, parsed? })` | 27 official-notation rules + 2 AI-slop rules (`document: true` adds document-level attachment / "끝." checks; `parsed: true` for text parsed from a document skips manuscript-only rules) |
 | `redactMarkdown(text, options?)` / `redactText(...)` | PII detection + masking — text level (file level: CLI `redact`, MCP `redact_document`) |
 | `blocksToChunks(blocks, options?)` | RAG structure chunks — heading/outline breadcrumbs + standalone table chunks |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown |
