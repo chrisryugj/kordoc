@@ -18,6 +18,16 @@
       <url>https://github.com/chrisryugj/kordoc/blob/main/LICENSE</url>
     </license>
   </licenses>
+  <developers>
+    <developer>
+      <name>chrisryugj</name>
+      <url>https://github.com/chrisryugj</url>
+    </developer>
+    <developer>
+      <name>Byeory Jeong</name>
+      <url>https://github.com/VerifiedIdiot</url>
+    </developer>
+  </developers>
   <scm>
     <url>https://github.com/chrisryugj/kordoc/tree/main/sdk/java</url>
   </scm>
@@ -44,6 +54,16 @@
   </dependencies>
 
   <build>
+    <resources>
+      <!-- MIT 고지를 jar 에 싣는다 (META-INF/LICENSE) -->
+      <resource>
+        <directory>${project.basedir}</directory>
+        <includes>
+          <include>LICENSE</include>
+        </includes>
+        <targetPath>META-INF</targetPath>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

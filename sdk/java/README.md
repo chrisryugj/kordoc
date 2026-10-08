@@ -24,7 +24,8 @@ Java 17 이상. 의존성은 Jackson(`jackson-databind`) 하나입니다.
 JVM 은 UTF-8 locale(`LANG=C.UTF-8` 등)에서 실행하세요. POSIX/ASCII locale 의 JVM 은 한국어 파일 경로로 `Path` 를 만들지 못합니다.
 
 엔진 위치는 `KordocConfig.builder().node(...).cli(...)`, 환경변수 `KORDOC_NODE`·`KORDOC_CLI`, PATH 의 `node`·`kordoc` 순으로 찾습니다.
-`cli` 에는 엔진의 `dist/cli.js`(또는 npm 이 만든 `kordoc` 링크)를 줍니다. Windows 에서는 `kordoc.cmd` 가 아니라 `dist/cli.js` 를 가리키세요.
+`cli` 에는 엔진의 `dist/cli.js`(또는 npm 이 만든 `kordoc` 링크)를 줍니다. Windows 의 `kordoc.cmd`·pnpm 셸 shim 처럼 node 로 실행할 수 없는 래퍼를 찾으면
+옆의 `node_modules/kordoc/dist/cli.js` 로 바꿔 쓰고, 그것도 없으면 `dist/cli.js` 를 지정하라는 오류를 냅니다.
 실행 인자는 배열로 넘기며 shell·`npx` 를 쓰지 않습니다.
 
 폐쇄망에서는 [오프라인 번들](../../docs/offline-deployment.md)을 풀고 그 안의 엔진을 가리키면 됩니다.
@@ -74,6 +75,7 @@ try (KordocClient client = KordocClient.start(KordocConfig.defaults())) {
 
 `result.images().get(i).read()` 를 부를 때만 바이트를 해독하거나 파일을 읽습니다. `filename()` 은 Markdown 이 가리키는 이름, `path()` 는 files 방식의 실제 파일입니다.
 files 방식의 파일은 호출자 소유이며 클라이언트를 닫아도 남습니다. 이미지가 많은 문서는 files 방식이 응답을 작게 유지합니다.
+제한 시간·취소로 실행 중인 워커를 종료하면 그 요청이 쓰던 `assetsDir/kordoc-<id>-*` 디렉터리가 남을 수 있습니다 — 정리는 호출자가 합니다.
 `images(false)` 는 이미지 바이트 추출 자체를 생략하는 엔진 옵션으로, 전송 방식과 별개입니다.
 
 ## 워커 수명

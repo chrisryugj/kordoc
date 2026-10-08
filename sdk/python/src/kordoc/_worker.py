@@ -92,15 +92,15 @@ class Worker:
             if len(self._stderr_tail) > limit:
                 del self._stderr_tail[: len(self._stderr_tail) - limit]
 
-    async def request(self, msg: dict[str, Any]) -> dict[str, Any]:
-        """요청 하나를 보내고 같은 id 의 응답을 돌려준다. 워커가 거부하면 KordocProtocolError(워커는 멀쩡하다).
-        워커가 끝났거나 응답이 깨졌으면 KordocWorkerCrashed — 이 워커는 더 쓰지 않는다."""
+    async def request(self, msg: dict[str, Any], line: bytes) -> dict[str, Any]:
+        """요청 하나(line — protocol.encode_request 로 미리 만든 줄)를 보내고 같은 id 의 응답을 돌려준다.
+        워커가 거부하면 KordocProtocolError(워커는 멀쩡하다). 워커가 끝났거나 응답이 깨졌으면 KordocWorkerCrashed — 이 워커는 더 쓰지 않는다."""
         proc = self._proc
         if proc is None or proc.returncode is not None:
             raise KordocWorkerCrashed("워커가 실행 중이 아닙니다", self.stderr_tail())
         assert proc.stdin and proc.stdout
         try:
-            proc.stdin.write((json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8"))
+            proc.stdin.write(line)
             await proc.stdin.drain()
         except (BrokenPipeError, ConnectionResetError) as e:
             raise KordocWorkerCrashed(f"워커에 요청을 쓰지 못했습니다: {e}", self.stderr_tail()) from e

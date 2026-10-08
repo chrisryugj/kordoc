@@ -60,8 +60,7 @@ class KordocConfig:
             raise KordocStartError("Node 실행 파일을 찾지 못했습니다 — KordocConfig(node=...) 또는 KORDOC_NODE 를 지정하세요")
         if not cli:
             raise KordocStartError("kordoc 엔진을 찾지 못했습니다 — `npm i -g kordoc` 후 KordocConfig(cli=...) 또는 KORDOC_CLI 를 지정하세요")
-        # npm 전역 설치의 kordoc 은 dist/cli.js 를 가리키는 링크다. node 로 직접 실행해 shell 래퍼를 피한다
-        cli_path = Path(cli).resolve()
+        cli_path = _engine_entry(Path(cli))
         return [
             node, str(cli_path), "parse-worker", "--protocol", "2",
             "--max-request-bytes", str(self.max_request_bytes),
@@ -72,3 +71,23 @@ class KordocConfig:
         env = dict(os.environ)
         env.update(self.env)
         return env
+
+
+def _engine_entry(cli: Path) -> Path:
+    """kordoc 엔진의 JS 진입점. npm 전역 설치의 ``kordoc`` 은 macOS·Linux 에서 ``dist/cli.js`` 링크라 그대로 쓴다.
+    Windows ``kordoc.cmd``·pnpm 셸 shim 은 node 로 실행할 수 없어(ready 전에 끝난다) 옆의 ``node_modules/kordoc/dist/cli.js`` 로
+    바꾸고, 그것도 없으면 분명한 오류를 낸다."""
+    path = cli.resolve()
+    if path.suffix.lower() in (".js", ".mjs", ".cjs"):
+        return path
+    beside = path.parent / "node_modules" / "kordoc" / "dist" / "cli.js"
+    if beside.exists():
+        return beside.resolve()
+    try:
+        head = path.read_bytes()[:128]
+    except OSError:
+        head = b""
+    if head.startswith(b"#!") and b"node" in head.split(b"\n", 1)[0]:
+        return path  # 확장자 없는 node 스크립트
+    raise KordocStartError(
+        f"kordoc 엔진 경로가 셸 래퍼입니다: {path} — KordocConfig(cli=...) 또는 KORDOC_CLI 에 kordoc 패키지의 dist/cli.js 를 지정하세요")

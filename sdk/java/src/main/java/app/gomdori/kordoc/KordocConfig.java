@@ -69,17 +69,43 @@ public final class KordocConfig {
         if (cliPath == null) {
             throw new KordocStartException("kordoc 엔진을 찾지 못했습니다 — `npm i -g kordoc` 후 KordocConfig.builder().cli(...) 또는 KORDOC_CLI 를 지정하세요");
         }
-        // npm 전역 설치의 kordoc 은 dist/cli.js 를 가리키는 링크다. node 로 직접 실행해 shell 래퍼를 피한다
-        Path resolved = Path.of(cliPath);
-        try {
-            resolved = resolved.toRealPath();
-        } catch (java.io.IOException ignored) {
-            // 없는 경로는 프로세스 시작에서 실패로 드러난다
-        }
+        Path resolved = engineEntry(Path.of(cliPath));
         List<String> cmd = new ArrayList<>(List.of(nodePath, resolved.toString(), "parse-worker", "--protocol", "2",
                 "--max-request-bytes", Integer.toString(maxRequestBytes),
                 "--max-response-bytes", Integer.toString(maxResponseBytes)));
         return cmd;
+    }
+
+    /**
+     * kordoc 엔진의 JS 진입점. npm 전역 설치의 kordoc 은 macOS·Linux 에서 dist/cli.js 링크라 그대로 쓴다. Windows kordoc.cmd·pnpm 셸 shim 은
+     * node 로 실행할 수 없어(ready 전에 끝난다) 옆의 node_modules/kordoc/dist/cli.js 로 바꾸고, 그것도 없으면 분명한 오류를 낸다
+     */
+    static Path engineEntry(Path cli) {
+        Path path = cli;
+        try {
+            path = cli.toRealPath();
+        } catch (java.io.IOException ignored) {
+            return cli; // 없는 경로는 프로세스 시작에서 실패로 드러난다
+        }
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".js") || name.endsWith(".mjs") || name.endsWith(".cjs")) return path;
+        Path beside = path.getParent().resolve("node_modules/kordoc/dist/cli.js");
+        if (Files.isRegularFile(beside)) {
+            try {
+                return beside.toRealPath();
+            } catch (java.io.IOException e) {
+                return beside;
+            }
+        }
+        String first = "";
+        try (var r = Files.newBufferedReader(path, java.nio.charset.StandardCharsets.UTF_8)) {
+            first = java.util.Objects.requireNonNullElse(r.readLine(), "");
+        } catch (java.io.IOException | java.io.UncheckedIOException ignored) {
+            // 바이너리 등 — 아래 오류로
+        }
+        if (first.startsWith("#!") && first.contains("node")) return path; // 확장자 없는 node 스크립트
+        throw new KordocStartException("kordoc 엔진 경로가 셸 래퍼입니다: " + path
+                + " — KordocConfig.builder().cli(...) 또는 KORDOC_CLI 에 kordoc 패키지의 dist/cli.js 를 지정하세요");
     }
 
     private static String firstNonEmpty(String a, String b) {

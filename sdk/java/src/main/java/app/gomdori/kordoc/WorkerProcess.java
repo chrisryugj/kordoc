@@ -100,9 +100,39 @@ final class WorkerProcess {
      * 워커가 끝났거나 응답이 깨졌으면 KordocWorkerCrashedException — 이 워커는 더 쓰지 않는다.
      * 다른 스레드가 {@link #kill()} 하면 EOF 로 깨어나 KordocWorkerCrashedException 을 던진다.
      */
-    ObjectNode request(ObjectNode msg) {
+    /** 지금 이 워커가 처리 중인 작업 (killIfRunning 이 다른 작업을 받은 워커를 죽이지 않게). stderr 꼬리와 다른 잠금 —
+     *  kill 이 stderr 스레드를 기다리는 동안 그 스레드가 this 잠금(appendTail)에서 막히지 않게 */
+    private final Object currentLock = new Object();
+    private Object current;
+
+    /**
+     * 요청 하나(requestLine — 미리 직렬화한 msg)를 보내고 같은 id 의 응답을 돌려준다. job 은 이 요청을 맡긴 작업(취소·제한 시간이
+     * {@link #killIfRunning} 으로 이 워커를 죽일지 가르는 표시, 워밍업은 null)
+     */
+    ObjectNode request(ObjectNode msg, byte[] requestLine, Object job) {
+        synchronized (currentLock) {
+            current = job;
+        }
         try {
-            stdin.write(Json.MAPPER.writeValueAsBytes(msg));
+            return exchange(msg, requestLine);
+        } finally {
+            synchronized (currentLock) {
+                current = null;
+            }
+        }
+    }
+
+    /** 이 워커가 아직 job 을 처리 중일 때만 죽인다 — 늦은 응답과 겹쳐 이미 다음 작업을 받은 워커를 죽이지 않는다 */
+    void killIfRunning(Object job) {
+        synchronized (currentLock) {
+            if (current != job) return;
+            kill();
+        }
+    }
+
+    private ObjectNode exchange(ObjectNode msg, byte[] requestLine) {
+        try {
+            stdin.write(requestLine);
             stdin.write('\n');
             stdin.flush();
         } catch (IOException e) {

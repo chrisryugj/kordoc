@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
@@ -40,7 +40,7 @@ public final class KordocClient implements AutoCloseable {
     private final Deque<Job> queue = new ArrayDeque<>();
     private final Object lock = new Object();
     private final AtomicLong ids = new AtomicLong();
-    private final ScheduledExecutorService timer;
+    private final ScheduledThreadPoolExecutor timer;
     private final List<Thread> dispatchers = new ArrayList<>();
     private final List<WorkerProcess> retiring = new ArrayList<>();
     private int idle;
@@ -52,11 +52,13 @@ public final class KordocClient implements AutoCloseable {
         this.config = config;
         this.slots = new Slot[config.maxWorkers];
         for (int i = 0; i < slots.length; i++) slots[i] = new Slot();
-        this.timer = Executors.newSingleThreadScheduledExecutor(r -> {
+        this.timer = new ScheduledThreadPoolExecutor(1, r -> {
             Thread t = new Thread(r, "kordoc-sdk-timer");
             t.setDaemon(true);
             return t;
         });
+        // 끝난 요청의 제한 시간 타이머를 바로 큐에서 뺀다 — 남으면 결과(이미지 base64 포함)를 제한 시간까지 붙잡는다
+        this.timer.setRemoveOnCancelPolicy(true);
     }
 
     /** 워커를 띄우고 protocol handshake 까지 마친 클라이언트. 하나라도 실패하면 띄운 워커를 정리하고 던진다 */
@@ -98,6 +100,10 @@ public final class KordocClient implements AutoCloseable {
     /** 비동기 파싱. 돌려준 Future 를 취소하면 대기 요청은 빠지고 실행 중 요청은 담당 워커를 종료한다 */
     public CompletableFuture<ParseResult> parseAsync(Path file, ParseOptions options) {
         Job job = new Job(request(file, options));
+        // 크기는 큐에 넣기 전에 — 워커는 상한을 넘은 줄을 해석하기 전에 거부해 응답에 id 를 붙일 수 없어, 보내고 나면 워커 장애와 구분되지 않는다
+        if (job.line.length > config.maxRequestBytes) {
+            return CompletableFuture.failedFuture(new KordocProtocolException("REQUEST_TOO_LARGE", "요청이 상한(" + config.maxRequestBytes + "바이트)을 넘습니다"));
+        }
         synchronized (lock) {
             if (closed) return CompletableFuture.failedFuture(new KordocClosedException("닫힌 클라이언트입니다"));
             if (queue.size() >= idle + config.maxQueue) {
@@ -107,18 +113,19 @@ public final class KordocClient implements AutoCloseable {
             lock.notifyAll();
         }
         Duration limit = options.timeoutSet ? options.timeout : config.requestTimeout;
-        if (limit != null) {
-            timer.schedule(() -> job.future.completeExceptionally(new KordocTimeoutException("요청 제한 시간(" + limit + ")을 넘었습니다")),
-                    limit.toMillis(), TimeUnit.MILLISECONDS);
-        }
+        ScheduledFuture<?> timeout = limit == null ? null
+                : timer.schedule(() -> job.future.completeExceptionally(new KordocTimeoutException("요청 제한 시간(" + limit + ")을 넘었습니다")),
+                        limit.toMillis(), TimeUnit.MILLISECONDS);
         job.future.whenComplete((r, e) -> {
+            if (timeout != null) timeout.cancel(false);
             if (e == null) return;
             WorkerProcess running;
             synchronized (job) {
                 job.abandoned = true;
                 running = job.runningOn;
             }
-            if (running != null) running.kill(); // 늦게 올 응답이 다음 요청에 섞이지 않게
+            // 늦게 올 응답이 다음 요청에 섞이지 않게 — 그 워커가 아직 이 작업을 할 때만, 타이머 스레드를 막지 않게 따로
+            if (running != null) daemon("kordoc-sdk-kill", () -> running.killIfRunning(job));
             synchronized (lock) {
                 queue.remove(job);
             }
@@ -133,6 +140,7 @@ public final class KordocClient implements AutoCloseable {
      * 원본 경로가 필요한 DRM 대체 경로는 파일 입력과 같게 동작하지 않을 수 있다.
      */
     public ParseResult parseBytes(byte[] data, ParseOptions options) {
+        checkOpen(); // 닫힌 뒤 지운 임시 루트에 쓰려다 UncheckedIOException 이 나던 것
         Path dir;
         Path file;
         try {
@@ -154,7 +162,9 @@ public final class KordocClient implements AutoCloseable {
      */
     public WarmupReport warmup(Path file, ParseOptions options) {
         checkOpen();
-        request(file, options); // 검증만
+        if (request(file, options).size() > config.maxRequestBytes) {  // 검증만
+            throw new KordocProtocolException("REQUEST_TOO_LARGE", "요청이 상한(" + config.maxRequestBytes + "바이트)을 넘습니다");
+        }
         warmupSpec = new Warmup(file.toAbsolutePath(), options);
         List<WarmupReport.Worker> out = new ArrayList<>();
         for (Slot s : slots) {
@@ -236,7 +246,7 @@ public final class KordocClient implements AutoCloseable {
 
     // ─── 내부 ───────────────────────────────────────────
 
-    private ObjectNode request(Path file, ParseOptions options) {
+    private Request request(Path file, ParseOptions options) {
         ObjectNode msg = Json.MAPPER.createObjectNode();
         msg.put("id", ids.incrementAndGet());
         msg.put("cmd", "parse");
@@ -247,7 +257,7 @@ public final class KordocClient implements AutoCloseable {
             t.put("images", "files");
             t.put("assetsDir", options.assetsDir.toString());
         }
-        return msg;
+        return new Request(msg);
     }
 
     private void dispatch(Slot slot) {
@@ -289,7 +299,7 @@ public final class KordocClient implements AutoCloseable {
             job.runningOn = w;
         }
         try {
-            ObjectNode resp = w.request(job.msg);
+            ObjectNode resp = w.request(job.msg, job.line, job);
             Path assets = resp.hasNonNull("assetsDir") ? Path.of(resp.get("assetsDir").asText()) : null;
             job.future.complete(new ParseResult((ObjectNode) resp.get("result"), assets));
             Long limit = config.maxWorkerRssBytes;
@@ -337,10 +347,10 @@ public final class KordocClient implements AutoCloseable {
 
     private void warm(WorkerProcess w) {
         Warmup spec = warmupSpec;
-        ObjectNode msg = request(spec.file, spec.options);
+        Request req = request(spec.file, spec.options);
         var killer = timer.schedule(w::kill, config.warmupTimeout.toMillis(), TimeUnit.MILLISECONDS);
         try {
-            ObjectNode r = (ObjectNode) w.request(msg).get("result");
+            ObjectNode r = (ObjectNode) w.request(req.msg, req.line, null).get("result");
             w.warmup = new WarmupReport.Worker(w.pid(), r.path("success").asBoolean(false), r.path("warnings"),
                     r.hasNonNull("error") ? r.get("error").asText() : null);
         } catch (KordocProtocolException e) {
@@ -415,13 +425,31 @@ public final class KordocClient implements AutoCloseable {
         volatile WorkerProcess worker;
     }
 
+    /** 요청 한 줄 — 크기를 보내기 전에 잰다 */
+    private static final class Request {
+        final ObjectNode msg;
+        final byte[] line;
+
+        Request(ObjectNode msg) {
+            this.msg = msg;
+            try {
+                this.line = Json.MAPPER.writeValueAsBytes(msg);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new KordocException("요청을 직렬화하지 못했습니다: " + e.getMessage(), e);
+            }
+        }
+
+        int size() { return line.length + 1; }
+    }
+
     private static final class Job {
         final ObjectNode msg;
+        final byte[] line;
         final CompletableFuture<ParseResult> future = new CompletableFuture<>();
         WorkerProcess runningOn;
         boolean abandoned;
 
-        Job(ObjectNode msg) { this.msg = msg; }
+        Job(Request r) { this.msg = r.msg; this.line = r.line; }
     }
 
     private record Warmup(Path file, ParseOptions options) {}

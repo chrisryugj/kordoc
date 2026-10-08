@@ -13,7 +13,7 @@ from typing import Any, Coroutine, TypeVar
 
 from ._config import KordocConfig
 from ._errors import KordocClosed, KordocError, KordocProtocolError, KordocQueueFull, KordocTimeout
-from ._protocol import parse_request
+from ._protocol import encode_request, parse_request
 from ._result import ParseResult, WarmupReport, WorkerWarmup
 from ._worker import Worker
 
@@ -50,6 +50,7 @@ class AsyncKordocClient:
         self._started = False
         self._warmup: tuple[str, dict[str, Any]] | None = None
         self._temp_root: str | None = None
+        self._temp_lock = threading.Lock()
 
     # ─── 수명 ───────────────────────────────────────────
 
@@ -100,12 +101,12 @@ class AsyncKordocClient:
 
     def worker_pids(self) -> list[int]:
         """살아 있는 소유 워커의 PID."""
-        return sorted(w.pid for w in self._workers if w.alive and w.pid is not None)
+        return sorted(w.pid for w in list(self._workers) if w.alive and w.pid is not None)
 
     def worker_info(self) -> list[dict[str, Any]]:
         """워커별 pid·엔진 버전·마지막 rss·워밍업 결과. 풀 메모리는 rss 합으로 본다."""
         return [{"pid": w.pid, "version": w.version, "rss": w.last_rss, "warmup": w.warmup}
-                for w in self._workers if w.alive]
+                for w in list(self._workers) if w.alive]
 
     # ─── 파싱 ───────────────────────────────────────────
 
@@ -121,10 +122,11 @@ class AsyncKordocClient:
         Task 를 취소해도 같다 — 대기 중이면 그 요청만 빠지고, 실행 중이면 워커를 종료하고 다음 요청은 새 워커가 받는다.
         """
         msg = parse_request(next(self._ids), file, options, image_transport, assets_dir)
+        line = encode_request(msg, self.config.max_request_bytes)
         limit = self.config.request_timeout if timeout is _DEFAULT else timeout
         try:
             async with asyncio.timeout(limit):
-                resp = await self._run(msg)
+                resp = await self._run(msg, line)
         except TimeoutError:
             raise KordocTimeout(f"요청 제한 시간({limit}초)을 넘었습니다") from None
         assets = resp.get("assetsDir")
@@ -135,6 +137,8 @@ class AsyncKordocClient:
         원본 경로가 필요한 DRM 대체 경로는 파일 입력과 같게 동작하지 않을 수 있다."""
         if not isinstance(data, (bytes, bytearray, memoryview)):
             raise TypeError("data 는 bytes 여야 합니다")
+        if self._closed:
+            raise KordocClosed("닫힌 클라이언트입니다")  # 닫힌 뒤 새 임시 루트를 만들어 남기지 않게
         tmp = await asyncio.to_thread(self._write_temp, bytes(data), suffix)
         try:
             return await self.parse(tmp, **kwargs)
@@ -142,9 +146,12 @@ class AsyncKordocClient:
             await asyncio.to_thread(shutil.rmtree, os.path.dirname(tmp), True)
 
     def _write_temp(self, data: bytes, suffix: str) -> str:
-        if self._temp_root is None:
-            self._temp_root = tempfile.mkdtemp(prefix="kordoc-sdk-", dir=self.config.temp_dir)
-        d = tempfile.mkdtemp(dir=self._temp_root)
+        # 처음 parse_bytes 둘이 동시에 루트를 만들면 하나가 샌다 — 스레드에서 돌므로 잠금으로 한 번만
+        with self._temp_lock:
+            if self._temp_root is None:
+                self._temp_root = tempfile.mkdtemp(prefix="kordoc-sdk-", dir=self.config.temp_dir)
+            root = self._temp_root
+        d = tempfile.mkdtemp(dir=root)
         path = os.path.join(d, "input" + suffix)
         with open(path, "xb") as f:
             f.write(data)
@@ -154,10 +161,13 @@ class AsyncKordocClient:
         """대표 문서를 모든 워커에서 실제로 파싱한다. 교체 워커도 요청을 받기 전에 같은 문서로 워밍업한다.
         워밍업은 처리 경로를 한 번 지나게 할 뿐 JIT 최적화 완료를 보장하지 않는다. 실패도 예외 대신 결과로 돌려준다."""
         path = os.path.abspath(os.fspath(file))
-        parse_request(0, path, options)  # 옵션 검증만
+        encode_request(parse_request(0, path, options), self.config.max_request_bytes)  # 옵션·크기 검증만
         self._warmup = (path, dict(options))
-        slots = [await self._acquire() for _ in range(self.config.max_workers)]
+        # 자리를 하나씩 받으며 try 안에서 — 두 번째 자리를 기다리다 취소·QueueFull 이 나도 받은 자리를 돌려준다
+        slots: list[_Slot] = []
         try:
+            for _ in range(self.config.max_workers):
+                slots.append(await self._acquire())
             for s in slots:
                 await self._warm(s.worker)  # type: ignore[arg-type]
         finally:
@@ -169,8 +179,9 @@ class AsyncKordocClient:
         assert self._warmup is not None
         path, options = self._warmup
         msg = parse_request(next(self._ids), path, options)
+        line = encode_request(msg, self.config.max_request_bytes)
         try:
-            resp = await asyncio.wait_for(worker.request(msg), self.config.warmup_timeout)
+            resp = await asyncio.wait_for(worker.request(msg, line), self.config.warmup_timeout)
             r = resp["result"]
             worker.warmup = WorkerWarmup(worker.pid or 0, bool(r.get("success")), list(r.get("warnings") or []), r.get("error"))
         except KordocProtocolError as e:
@@ -178,6 +189,14 @@ class AsyncKordocClient:
         except TimeoutError:
             worker.warmup = WorkerWarmup(worker.pid or 0, False, [], f"워밍업 제한 시간({self.config.warmup_timeout}초) 초과")
             await worker.kill()
+        except KordocError as e:
+            # 워커 장애도 결과로 (문서·Java 와 같은 계약) — 이 워커는 더 쓰지 않는다
+            worker.warmup = WorkerWarmup(worker.pid or 0, False, [], str(e))
+            await asyncio.shield(worker.kill())
+        except BaseException:
+            # 취소 — 워밍업 요청이 걸린 워커를 반납하면 늦게 온 응답을 다음 요청이 읽는다
+            await asyncio.shield(worker.kill())
+            raise
 
     # ─── 풀 ─────────────────────────────────────────────
 
@@ -199,6 +218,8 @@ class AsyncKordocClient:
                 self._slots.put_nowait(slot)
             raise KordocClosed("클라이언트가 닫혔습니다")
         if slot.worker is None or not slot.worker.alive:
+            if slot.worker is not None:
+                self._workers.discard(slot.worker)  # 죽은 워커 객체를 쌓아 두지 않는다
             try:
                 slot.worker = await self._spawn()
             except BaseException:
@@ -212,11 +233,16 @@ class AsyncKordocClient:
         w = Worker(self.config)
         await w.start()
         self._workers.add(w)
-        if self._warmup is not None:
-            await self._warm(w)
-            if not w.alive:
-                self._workers.discard(w)
-                raise KordocError(f"교체 워커 워밍업 실패: {w.warmup.error if w.warmup else ''}")
+        try:
+            if self._warmup is not None:
+                await self._warm(w)
+                if not w.alive:
+                    raise KordocError(f"교체 워커 워밍업 실패: {w.warmup.error if w.warmup else ''}")
+        except BaseException:
+            # 워밍업 중 취소·실패 — 어느 자리에도 붙지 않은 워커를 남기지 않는다 (종전: max_workers=1 에서 0→1→2→3→4)
+            self._workers.discard(w)
+            await asyncio.shield(w.kill())
+            raise
         return w
 
     def _release(self, slot: _Slot) -> None:
@@ -242,10 +268,10 @@ class AsyncKordocClient:
             self._busy.discard(w)
             await asyncio.shield(w.kill())
 
-    async def _run(self, msg: dict[str, Any]) -> dict[str, Any]:
+    async def _run(self, msg: dict[str, Any], line: bytes) -> dict[str, Any]:
         slot = await self._acquire()
         try:
-            resp = await slot.worker.request(msg)  # type: ignore[union-attr]
+            resp = await slot.worker.request(msg, line)  # type: ignore[union-attr]
         except KordocProtocolError:
             self._release(slot)  # 요청 거부 — 워커는 멀쩡하다
             raise
@@ -258,6 +284,10 @@ class AsyncKordocClient:
             raise
         self._release(slot)
         return resp
+
+
+async def _on_loop(fn: Any) -> Any:
+    return fn()
 
 
 class KordocClient:
@@ -310,11 +340,12 @@ class KordocClient:
     def warmup(self, file: str | os.PathLike[str], **options: Any) -> WarmupReport:
         return self._call(self._client.warmup(file, **options))
 
+    # 워커 집합은 루프 스레드가 바꾼다 — 그 스레드에서 읽는다
     def worker_pids(self) -> list[int]:
-        return self._client.worker_pids()
+        return self._call(_on_loop(self._client.worker_pids)) if self._loop else []
 
     def worker_info(self) -> list[dict[str, Any]]:
-        return self._client.worker_info()
+        return self._call(_on_loop(self._client.worker_info)) if self._loop else []
 
     def close(self) -> None:
         if self._loop is None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -55,3 +56,18 @@ def parse_request(request_id: int, file: str | os.PathLike[str], options: dict[s
             raise ValueError('image_transport="files" 는 assets_dir 가 필요합니다')
         msg["transport"] = {"images": "files", "assetsDir": os.path.abspath(os.fspath(assets_dir))}
     return msg
+
+
+def encode_request(msg: dict[str, Any], max_bytes: int) -> bytes:
+    """요청 한 줄(UTF-8, 끝 줄바꿈 포함). 워커 자리를 받기 전에 만든다 — 직렬화할 수 없는 값·인코딩할 수 없는 경로(TypeError·
+    ValueError)와 상한 초과(KordocProtocolError REQUEST_TOO_LARGE)를 멀쩡한 워커를 버리지 않고 여기서 돌려준다.
+    워커는 상한을 넘은 줄을 해석하기 전에 거부해 응답에 id 를 붙일 수 없어, 보내고 나면 워커 장애와 구분되지 않는다."""
+    from ._errors import KordocProtocolError
+
+    try:
+        line = (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
+    except UnicodeEncodeError as e:
+        raise ValueError(f"요청을 UTF-8 로 인코딩할 수 없습니다(짝 없는 서로게이트 등): {e}") from None
+    if len(line) > max_bytes:
+        raise KordocProtocolError("REQUEST_TOO_LARGE", f"요청이 상한({max_bytes}바이트)을 넘습니다")
+    return line
