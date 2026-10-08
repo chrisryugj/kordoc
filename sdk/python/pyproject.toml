@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kordoc"
+version = "0.1.0"
+description = "Python SDK for kordoc — parse Korean documents (HWP, HWPX, PDF, DOCX, XLSX …) through a resident kordoc engine worker"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "chrisryugj" }]
+keywords = ["hwp", "hwpx", "korean", "document", "parser", "markdown", "rag"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Operating System :: OS Independent",
+  "Topic :: Text Processing :: Markup",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/chrisryugj/kordoc"
+Source = "https://github.com/chrisryugj/kordoc/tree/main/sdk/python"
+
+[project.optional-dependencies]
+test = ["pytest>=8", "build>=1.2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+kordoc = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
