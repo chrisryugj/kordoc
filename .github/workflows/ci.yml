@@ -26,3 +26,93 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Java·Python SDK — Node 24 로 한 번 빌드한 dist/ 를 두 SDK 잡이 artifact 로 받아 쓴다(기존 Node 매트릭스와 분리)
+  engine-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: engine-dist
+          path: dist/
+          retention-days: 1
+
+  python-sdk:
+    needs: engine-dist
+    runs-on: ubuntu-latest
+    env:
+      KORDOC_CLI: ${{ github.workspace }}/dist/cli.js
+      KORDOC_SDK_FIXTURES: ${{ github.workspace }}/.sdk-fixtures
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      # 엔진 실행 의존성 + 합성 문서 생성(tsx)
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-dist
+          path: dist/
+      - run: node --import tsx tests/fixtures/sdk-docs.ts "$KORDOC_SDK_FIXTURES"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: 테스트 (실제 엔진·Node parse() 결과 동등성·장애 주입)
+        working-directory: sdk/python
+        run: |
+          python -m pip install -e '.[test]'
+          python -m pytest -W error::pytest.PytestUnraisableExceptionWarning
+      - name: wheel·sdist 를 빈 가상환경에서 설치해 실제 파싱
+        working-directory: sdk/python
+        run: |
+          python -m build -o "$RUNNER_TEMP/pydist"
+          python -m venv "$RUNNER_TEMP/consume"
+          "$RUNNER_TEMP/consume/bin/pip" install "$RUNNER_TEMP"/pydist/kordoc-*.whl
+          "$RUNNER_TEMP/consume/bin/python" examples/parse_document.py "$KORDOC_SDK_FIXTURES/중첩 표.hwpx" --gfm | grep -q '<!-- <table id="t1" /> -->'
+
+  java-sdk:
+    needs: engine-dist
+    runs-on: ubuntu-latest
+    env:
+      KORDOC_CLI: ${{ github.workspace }}/dist/cli.js
+      KORDOC_SDK_FIXTURES: ${{ github.workspace }}/.sdk-fixtures
+      # JVM 이 한국어 파일 경로를 다루려면 UTF-8 locale 이 필요하다
+      LANG: C.UTF-8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-dist
+          path: dist/
+      - run: node --import tsx tests/fixtures/sdk-docs.ts "$KORDOC_SDK_FIXTURES"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: 테스트·JAR·sources JAR (실제 엔진·Node parse() 결과 동등성·장애 주입)
+        run: mvn -B -f sdk/java/pom.xml install
+      - name: 별도 Maven 예제가 설치한 JAR 로 실제 파싱
+        run: |
+          mvn -B -q -f sdk/java/examples/consumer/pom.xml compile exec:java -Dexec.args="'$KORDOC_SDK_FIXTURES/중첩 표.hwpx' --gfm" > "$RUNNER_TEMP/java-example.md"
+          grep -q '<!-- <table id="t1" /> -->' "$RUNNER_TEMP/java-example.md"
