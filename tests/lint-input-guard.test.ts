@@ -1,8 +1,8 @@
-/** `kordoc lint` 입력 가드 회귀
+/** `kordoc lint` 입력 회귀
  *
- * lint 는 파일을 UTF-8 텍스트로 읽는다. hwpx(ZIP)를 그대로 넘기면 압축 바이트가 본문으로
- * 둔갑해 위반이 수백~수천 건 나온다(README 예제가 실제로 그랬고 실측 1,193건). 검수
- * 결과처럼 보이는 쓰레기가 "검사 못 함"보다 나쁘므로, 문서 포맷은 받기 전에 거절한다.
+ * lint 는 텍스트를 UTF-8 로 읽는다. hwpx(ZIP)를 그대로 읽으면 압축 바이트가 본문으로 둔갑해 위반이
+ * 수백~수천 건 나왔다(README 예제 실측 1,193건). 문서 포맷은 파싱한 본문 마크다운을 검사한다(v4.20.0 —
+ * 종전에는 거절했다. 외부 도구가 parse → lint 로 두 번 띄우던 것).
  */
 
 import { test } from "node:test"
@@ -23,12 +23,12 @@ const runLint = (args: string[], input?: string) =>
     timeout: 30000,
   })
 
-test("hwpx 를 넘기면 검수 결과 대신 안내를 내고 실패한다", () => {
-  const r = runLint([DUMMY])
-  assert.equal(r.status, 1, "exit 1 이어야 함")
-  assert.match(r.stderr, /텍스트\(마크다운\/txt\)를 검사합니다/)
-  assert.match(r.stderr, /hwpx 문서는 받지 않습니다/)
-  assert.doesNotMatch(r.stderr, /표기법 검수: 위반/, "위반 건수를 세지 않아야 함")
+test("hwpx 는 파싱한 본문을 검수한다 — 압축 바이트를 글로 읽지 않는다", () => {
+  const r = runLint([DUMMY, "--json"])
+  assert.ok(r.status === 0 || r.status === 1, r.stderr)
+  const out = JSON.parse(r.stdout)
+  assert.ok(Array.isArray(out.findings))
+  assert.ok(out.findings.length < 50, `위반 ${out.findings.length}건 — 압축 바이트를 글로 읽은 것`)
 })
 
 test("마크다운은 종전대로 검수한다", () => {

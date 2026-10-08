@@ -7,6 +7,8 @@
  * 외래어·차별 표현·"끝." 누락 6룰 보강 (pyhwpxlib Gongmun 검사 항목 대조). 검사는 조언용이다 — 생성은 막지 않고
  * 경고만 낸다 (A2 폰트경고와 같은 원칙). 별도 CLI `kordoc lint`는 error 시 exit 1.
  * v4.13.0: 하이픈 날짜(2026-07-18) 룰, 금액 한글 병기·하이픈 날짜는 실제 변환값을 제안.
+ * v4.20.0: 기간 대시·요일·금액 한글 불일치·"끝."/붙임 2타·공공언어·맞춤법 룰 — 규칙 착안과 공공언어·맞춤법 낱말표·
+ * 조사 경계식은 hwp-auto-docfit(MIT, haijun93 마포구청 공혁준, THIRD_PARTY/hwp-auto-docfit.LICENSE)에서 옮겼다.
  */
 
 import { hangulAmount } from "../shared/numbering.js"
@@ -31,6 +33,13 @@ interface LintRule {
   suggest?: string
   /** 표 줄(GFM `|` 행·HTML td/th)은 건너뜀 — 서식 라벨 셀 오탐 방지 */
   skipTable?: boolean
+  /** 완성 원고 검사(`kordoc lint`, opts.document)에서만 — 생성 경로는 엔진이 같은 자리를 스스로 맞춘다 */
+  documentOnly?: boolean
+  /** 작성자가 쓴 원고에서만 판정하는 규칙 — 문서를 파싱한 글(opts.parsed)은 연속 공백을 하나로 접고 원문 굵게를 `**` 로
+   *  옮겨 내므로 공백 개수·강조 표기를 원문 그대로 볼 수 없다 */
+  rawSource?: boolean
+  /** 걸린 조각을 계산으로 다시 판정 — 문제면 제안 문자열, 아니면 null (요일·금액 대조) */
+  check?: (m: RegExpMatchArray) => string | null
 }
 
 /** 외래어 오기 → 표준 표기 (국립국어원 외래어 표기법 용례) — 순서 무관, 긴 형태 우선 매칭 */
@@ -58,13 +67,63 @@ export const DISCRIM_FIXES: ReadonlyArray<readonly [string, string]> = [
 ]
 const DISCRIM_RE = new RegExp(DISCRIM_FIXES.map(([w]) => w).sort((a, b) => b.length - a.length).join("|"), "g")
 
+/** 공공언어 쉬운 말 (국립국어원 공공언어 감수 용례) — 틀린 말이 아니라 바꿔 쓰기 제안 */
+export const PLAIN_FIXES: ReadonlyArray<readonly [string, string]> = [
+  ["금번", "이번"], ["금일", "오늘"], ["명일", "내일"], ["작일", "어제"], ["익일", "다음 날"],
+  ["고수부지", "둔치"], ["불철주야", "밤낮없이"],
+]
+/** 맞춤법 오기 (표준국어대사전) */
+export const SPELLING_FIXES: ReadonlyArray<readonly [string, string]> = [
+  ["몇일", "며칠"], ["갯수", "개수"], ["됬습니다", "됐습니다"], ["됬다", "됐다"], ["왠만하면", "웬만하면"],
+  ["어의없다", "어이없다"], ["되요", "돼요"],
+]
+/** 낱말 경계 — 앞은 글자가 아니고, 뒤는 조사가 붙어도 되지만 그다음은 글자가 아니다("금일" 은 잡고 "지금일" 은 안 잡는다) */
+const wordRe = (fixes: ReadonlyArray<readonly [string, string]>): RegExp => new RegExp(
+  "(?<![가-힣A-Za-z0-9])(?:" + fixes.map(([w]) => w).sort((a, b) => b.length - a.length).join("|")
+  + ")(?=(?:으로|부터|까지|동안|이나|은|는|이|가|을|를|에|의|도|만|로|과|와|간)?(?![가-힣A-Za-z0-9]))", "g")
+const PLAIN_RE = wordRe(PLAIN_FIXES)
+const SPELLING_RE = wordRe(SPELLING_FIXES)
+
+const WEEKDAYS = "일월화수목금토"
+/** 점 날짜의 요일 대조 — 틀리면 바른 요일을 단 표기 */
+function weekdayCheck(m: RegExpMatchArray): string | null {
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const date = new Date(y, mo - 1, d)
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null
+  const right = WEEKDAYS[date.getDay()]
+  return right === m[4] ? null : `${m[0].trim()} → ${y}. ${mo}. ${d}.(${right})`
+}
+
+const HANGUL_DIGIT: Record<string, number> = { 일: 1, 이: 2, 삼: 3, 사: 4, 오: 5, 육: 6, 칠: 7, 팔: 8, 구: 9, 영: 0 }
+const HANGUL_SMALL: Record<string, number> = { 십: 10, 백: 100, 천: 1000 }
+const HANGUL_BIG: Record<string, number> = { 만: 1e4, 억: 1e8, 조: 1e12 }
+/** 한글 금액 → 수 ("일십일만삼천", "십일만삼천" 모두 110000+3000). 모르는 글자면 null */
+function hangulToNumber(s: string): number | null {
+  let total = 0, section = 0, digit = 0
+  for (const ch of s) {
+    if (ch in HANGUL_DIGIT) digit = HANGUL_DIGIT[ch]
+    else if (ch in HANGUL_SMALL) { section += (digit || 1) * HANGUL_SMALL[ch]; digit = 0 }
+    else if (ch in HANGUL_BIG) { total += (section + digit || 1) * HANGUL_BIG[ch]; section = 0; digit = 0 }
+    else return null
+  }
+  return total + section + digit
+}
+/** 숫자 금액과 병기한 한글 금액 대조 — 다르면 바른 병기 */
+function moneyHangulCheck(m: RegExpMatchArray): string | null {
+  const n = Number(m[1].replace(/,/g, ""))
+  const h = hangulToNumber(m[2].replace(/\s/g, ""))
+  if (!Number.isFinite(n) || h === null || h === n) return null
+  return `금${m[1]}원(금${hangulAmount(n)}원)`
+}
+
 // 규칙 순서·코드·문구는 편람 기준 원전(gonmun_lint.py) 유지 — 대조 검증 용이성
 const RULES: LintRule[] = [
   // 날짜 ─ 온점 뒤 한 칸, 0 패딩 금지, 연도 4자리, 끝 마침표
   // 법령 연혁 표기 `<개정 2012.2.14>`·`삭제 <2016.2.29.>`·`[시행일:2017.9.8.]` 는 법제처 정본 형식(별지서식 표제) —
   // 편람 날짜 규칙 대상이 아니다 (v4.12.3: 서식 595건 DATE 156건 전부 이 꼴, 기안문 0건)
+  // 날짜 모양이 시작되는 자리에서만 뒤쪽 검사 — 뒤쪽 검사(\s*)를 모든 자리에서 먼저 하면 긴 공백 줄에서 이차 폭주(2만 칸 0.7초)
   { code: "DATE_NO_SPACE", severity: "error",
-    pattern: /(?<!<(?:개정|신설|전문개정|전부개정|일부개정|제정)\s*)(?<!삭제\s*<)(?<!시행일\s*:\s*)\b\d{4}\.\d{1,2}\.\d{1,2}\.?/g,
+    pattern: /\b(?=\d{4}\.\d{1,2}\.\d)(?<!<(?:개정|신설|전문개정|전부개정|일부개정|제정)\s*)(?<!삭제\s*<)(?<!시행일\s*:\s*)\d{4}\.\d{1,2}\.\d{1,2}\.?/g,
     message: "날짜 온점 뒤에 한 칸씩 띄워야 함", suggest: "예) 2025. 1. 6." },
   { code: "DATE_ZERO_PAD", severity: "error", pattern: /\b\d{4}\.\s*0\d\.|\b\d{4}\.\s*\d{1,2}\.\s*0\d/g,
     message: "월·일 앞의 '0'은 표기하지 않음", suggest: "예) 2025. 1. 6. (2025. 01. 06. ✕)" },
@@ -81,11 +140,12 @@ const RULES: LintRule[] = [
   { code: "TIME_AMPM", severity: "error", pattern: /(오전|오후|아침|밤|낮)\s*\d{1,2}\s*시/g,
     message: "24시각제 숫자로 표기(오전/오후 사용 안 함)", suggest: "예) 09:00, 15:30" },
   { code: "TIME_24H", severity: "warning", pattern: /(?<!\d)24\s*시(?!각)/g,
-    message: "'24시'보다 익일 00:00 또는 '18:00까지' 권장", suggest: "예) 18:00" },
+    message: "'24시'보다 다음 날 00:00 또는 '18:00까지' 권장", suggest: "예) 18:00" },
   { code: "TIME_COLON_SP", severity: "error", pattern: /\b\d{1,2}\s+:\s*\d{2}\b|\b\d{1,2}:\s+\d{2}\b/g,
     message: "시와 분 사이 쌍점은 양쪽을 붙여 씀", suggest: "예) 13:20" },
   // 금액 ─ '천원' 금지, 금+숫자 붙여쓰기
-  { code: "MONEY_CHEONWON", severity: "error", pattern: /\d+\s*천\s*원/g,
+  // 숫자 런 첫머리에서만 시작 — 아니면 긴 숫자 줄에서 시작 자리마다 런을 다시 훑어 이차 폭주(숫자 5만 자 2.9초)
+  { code: "MONEY_CHEONWON", severity: "error", pattern: /(?<!\d)\d+\s*천\s*원/g,
     message: "금액은 '천원'으로 줄이지 않고 아라비아 숫자로", suggest: "예) 345,000원" },
   { code: "MONEY_GEUM_SP", severity: "warning", pattern: /금\s+\d/g,
     message: "'금'과 숫자 사이는 붙여 쓰는 것이 원칙", suggest: "예) 금113,560원" },
@@ -107,11 +167,21 @@ const RULES: LintRule[] = [
     message: "쌍점은 앞말에 붙이고 뒤는 한 칸 띄움", suggest: "예) 원장: 김갑동" },
   // ── 편람 보강 (v4.12.1) — pyhwpxlib Gongmun 검사·hwpx-skill gonmun_lint 대조로 빈 축 보충 ──
   // 금액 한글 병기 — 규정 시행규칙 제2조: 아라비아 숫자 다음 괄호 안에 한글로 적는다
+  // 한글 금액은 글자 묶음 사이에만 공백 — 공백 수량자가 겹치면 닫는 괄호 없는 긴 공백 줄에서 폭주했다(160칸 9.8초)
+  { code: "MONEY_HANGUL_MISMATCH", severity: "error", pattern: /금\s?(\d[\d,]*)원\s*[(（]\s*(?:금\s*)?([일이삼사오육칠팔구십백천만억조영]+(?:\s+[일이삼사오육칠팔구십백천만억조영]+)*)\s*원?\s*[)）]/g,
+    check: moneyHangulCheck, message: "병기한 한글 금액이 숫자와 다름" },
   { code: "MONEY_NO_HANGUL", severity: "warning", pattern: /금\d[\d,]*원(?![\s]*[(（])/g,
     message: "금액은 숫자 다음 괄호 안에 한글 병기", suggest: "예) 금113,560원(금일십일만삼천오백육십원)" },
   // 물결표 앞뒤 붙여쓰기 — 기간·범위는 "2. 20.∼2. 24." 처럼 붙여 씀. 숫자·날짜·시각 범위(앞은 숫자·
   // 온점·괄호·년월일시분, 뒤는 숫자·연도 생략부호)에만 건다 — "기간( 부터 ~ 까지)" 기입란·"~ ※ 비고"·
   // "~ 수리완료시까지" 처럼 낱말이 붙는 물결표는 범위 표기가 아니다 (v4.12.2, 별지서식 47→30·기안문 32→27 실측)
+  // 기간·시각 범위의 대시 — 점 날짜(연·월·일)나 시:분 사이만 잡아 전화번호(02-123-4567)·조항(제4조-2)·코드(IT-2026-01)는
+  // 걸리지 않는다. 자동 치환은 하지 않는다(명세 (d) 물결표 자동 치환 위험 — 검수만)
+  { code: "RANGE_DASH", severity: "warning",
+    pattern: /\d{2,4}\.\s*\d{1,2}\.\s*\d{1,2}\.?\s*[-–—]\s*(?:\d{2,4}\.\s*)?\d{1,2}\.\s*\d{1,2}\.?|(?<![\d:])\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}(?![\d:])/g,
+    message: "기간·시각 범위는 물결표(∼)로", suggest: "예) 2026. 3. 1.∼6. 30., 14:00∼16:00" },
+  { code: "WEEKDAY_MISMATCH", severity: "error", pattern: /(?<![\d.])(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?\s*\(([월화수목금토일])\)/g,
+    check: weekdayCheck, message: "날짜와 요일이 맞지 않음" },
   { code: "TILDE_SPACE", severity: "warning", pattern: /(?<=[\d.)일월년시분’'])[ \t]+[∼~～]|[∼~～][ \t]+(?=[\d'’])/g,
     message: "물결표(∼) 앞뒤는 붙여 씀", suggest: "예) 2. 20.∼2. 24., 09:00∼18:00" },
   // 두음법칙 — 어두의 "년도·년간·년말…" 은 "연도·연간·연말" (숫자 뒤 '2026년도' 는 정상). 서식의
@@ -124,21 +194,35 @@ const RULES: LintRule[] = [
   { code: "LOANWORD_ERROR", severity: "warning", pattern: LOANWORD_RE,
     message: "외래어 표기법에 맞지 않는 표기", suggest: "예) 콘텐츠·애플리케이션·메시지·워크숍·스케줄·콘셉트" },
   // 차별·비하 표현 — 행안부 공문서 작성 지침·국립국어원 순화어
+  // 표 줄은 건너뜀 — 법정 서식 라벨 칸("전일 지침 | 금일 지침")은 바꿀 대상이 아니다 (gate-fill·licbyl 801건 실측 7건 전부 표 라벨)
+  { code: "PLAIN_LANGUAGE", severity: "warning", skipTable: true, pattern: PLAIN_RE,
+    message: "공공언어 쉬운 말로 바꿔 쓰기 권장 (틀린 말은 아님)" },
+  { code: "SPELLING_ERROR", severity: "warning", pattern: SPELLING_RE,
+    message: "맞춤법 오기" },
+  // 끝 표시·붙임 표시 2타 (규칙 제2조제2항·편람) — 생성 경로는 official 프리셋이 스스로 맞춘다
+  { code: "END_MARK_SPACE", severity: "warning", documentOnly: true, rawSource: true,
+    pattern: /(?<=\.)(?:[ \t\u3000]?|[ \t\u3000]{3,})끝\.[ \t\u3000]*$/g,
+    message: "'끝.'은 앞 글 마침표에서 2타 띄움", suggest: "예) …바랍니다.  끝." },
+  { code: "BUNIM_SPACE", severity: "warning", documentOnly: true, rawSource: true,
+    pattern: /^[ \t\u3000]*붙임(?:[ \t\u3000]|[ \t\u3000]{3,})(?=[^ \t\u3000:：])(?=.*(?<!\d)\d+\s*부\.(?:[ \t\u3000]*끝\.)?[ \t\u3000]*$)/g,
+    message: "'붙임' 뒤는 2타 띄움", suggest: "예) 붙임  계획서 1부.  끝." },
   { code: "DISCRIMINATORY_TERM", severity: "warning", pattern: DISCRIM_RE,
     message: "차별·비하 표현은 순화어로", suggest: "예) 장애자→장애인, 편부모→한부모, 학부형→학부모, 미망인→고인의 배우자" },
   // ── AI 문체 흔적(슬롭) — 편람 원전 외 kordoc 자체 룰 (v4.9.0) ──────────────
   // 생성형 AI 초안이 공문서로 흘러들 때 남는 기계 문체를 걸러낸다. 조언용 warning.
   { code: "AI_EM_DASH", severity: "warning", pattern: /[—–―]/g,
     message: "줄표(— – ―)는 공문서 표기 관행에 맞지 않음(생성형 AI 문체 흔적)", suggest: "쉼표·괄호·가운뎃점(·)으로 풀어쓰기" },
-  { code: "AI_BOLD_OVERUSE", severity: "warning", pattern: /(?:\*\*[^*\n]+\*\*[^*\n]*){3}/g,
+  { code: "AI_BOLD_OVERUSE", severity: "warning", rawSource: true, pattern: /(?:\*\*[^*\n]+\*\*[^*\n]*){3}/g,
     message: "한 줄에 강조(**) 3회 이상 — 강조 남발은 생성형 AI 문체 흔적", suggest: "리드어·핵심 수치 한 곳만 강조" },
 ]
 
 /**
  * 텍스트(마크다운 포함) 표기법 검수. 마크다운 펜스 코드블록(``` ~ ```) 안은
  * 건너뛴다 — 코드·URL이 날짜/쌍점 규칙에 오탐되는 것 방지.
+ * opts.document: 완성 원고 검사(문서 단위 규칙 포함). opts.parsed: HWPX·HWP 등을 파싱한 글 — 연속 공백이 접히고
+ * 원문 굵게가 `**` 로 옮겨져 원고 전용 규칙("끝."·붙임 2타, 강조 남발)은 판정할 수 없다(원문 "붙임  … 1부.  끝." 이 한 칸)
  */
-export function lintGongmunText(text: string, opts?: { document?: boolean }): GongmunLintFinding[] {
+export function lintGongmunText(text: string, opts?: { document?: boolean; parsed?: boolean }): GongmunLintFinding[] {
   const findings: GongmunLintFinding[] = []
   // 펜스는 같은 마커 종류(``` 또는 ~~~)로만 닫힌다 — 다른 마커 줄이 안쪽에 있어도
   // 조기에 열리거나 닫히지 않게 여는 마커 종류를 기억한다.
@@ -157,11 +241,15 @@ export function lintGongmunText(text: string, opts?: { document?: boolean }): Go
     const tableLine = /^\s*\|/.test(line) || /<t[dhr][\s>]/i.test(line)
     for (const r of RULES) {
       if (r.skipTable && tableLine) continue
+      if (r.documentOnly && !opts?.document) continue
+      if (r.rawSource && opts?.parsed) continue
       r.pattern.lastIndex = 0
       for (const m of line.matchAll(r.pattern)) {
+        const checked = r.check ? r.check(m) : undefined
+        if (checked === null) continue
         findings.push({
-          line: i + 1, match: m[0].trim(), rule: r.code,
-          severity: r.severity, message: r.message, suggest: dictSuggest(r.code, m[0]) ?? r.suggest,
+          line: i + 1, match: m[0].trim() || m[0], rule: r.code,
+          severity: r.severity, message: r.message, suggest: checked ?? dictSuggest(r.code, m[0]) ?? r.suggest,
         })
       }
     }
@@ -184,7 +272,8 @@ function dictSuggest(code: string, match: string): string | undefined {
     const d = m.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
     if (d) return `${m} → ${d[1]}. ${Number(d[2])}. ${Number(d[3])}.`
   }
-  const table = code === "LOANWORD_ERROR" ? LOANWORD_FIXES : code === "DISCRIMINATORY_TERM" ? DISCRIM_FIXES : null
+  const table = code === "LOANWORD_ERROR" ? LOANWORD_FIXES : code === "DISCRIMINATORY_TERM" ? DISCRIM_FIXES
+    : code === "PLAIN_LANGUAGE" ? PLAIN_FIXES : code === "SPELLING_ERROR" ? SPELLING_FIXES : null
   if (!table) return undefined
   const hit = table.find(([w]) => w === match.trim())
   return hit ? `${hit[0]} → ${hit[1]}` : undefined

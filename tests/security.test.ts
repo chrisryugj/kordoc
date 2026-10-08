@@ -165,7 +165,7 @@ describe("readZipEntry — 엔트리를 압축 해제 상한까지만 푼다 (rh
   }
   it("상한 안이면 JSZip async 와 같은 글", async () => {
     const { readZipEntry } = await import("../src/hwpx/parser-shared.js")
-    const file = await entry("﻿<가>본문</가>")
+    const file = await entry("\ufeff<가>본문</가>")
     assert.equal(await readZipEntry(file, "text"), await file.async("text"))
     assert.deepEqual(await readZipEntry(file, "uint8array"), await file.async("uint8array"))
   })

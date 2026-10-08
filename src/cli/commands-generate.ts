@@ -2,6 +2,9 @@
 
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve } from "path"
+import { checkTableNumbers, numberBlocksFromIR, numberBlocksFromMarkdown } from "../hwpx/number-lint.js"
+import { extractLevelStyles } from "../hwpx/level-styles.js"
+import { parseMarkdownToBlocks } from "../hwpx/md-runs.js"
 import { detectFormat, markdownToHwpx, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, lintGongmunText, gongmunLintWarnings, lintMuncheText, muncheLintWarnings, usesGaejosikMunche } from "../index.js"
 import { parseFormatProfileJson } from "../hwpx/profile-io.js"
 import { loadGenerationImages } from "../shared/generate-images.js"
@@ -45,6 +48,7 @@ export function registerGenerateCommands(program: Command): void {
     .option("--fonts <spec>", "요소별 글꼴 오버라이드: body=나눔명조,heading=나눔고딕,ref=한양중고딕,table=맑은 고딕")
     .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
     .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
+    .option("--levels-from <hwpx>", "견본 HWPX 에서 항목부호 단계별 글꼴·크기·굵기를 배워 적용 (kordoc levels 와 같은 추출, --levels 로 준 단계가 우선)")
     .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배) 또는 ○(원 — 보고서 양식)")
     .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
     .option("--doc-head <spec>", "기안문 두문표: org=기관명,slogan=원훈,to=수신처,title=제목 (별지 제1호서식·서울 실결재 6행 표)")
@@ -96,6 +100,15 @@ export function registerGenerateCommands(program: Command): void {
             }
             return value as (typeof allowed)[number]
           }
+          // 견본 HWPX 단계별 서식 — 대표값이 정해진 단계·속성만 (--levels 가 우선)
+          let learnedLevels: Record<string, { font?: string; pt?: number; bold?: boolean }> | undefined
+          if (opts.levelsFrom) {
+            const learned = await extractLevelStyles(toArrayBuffer(readFileSync(resolve(String(opts.levelsFrom)))))
+            learnedLevels = learned.levels
+            if (!silent) process.stderr.write(learned.spec
+              ? `[kordoc] 견본 단계별 서식: ${learned.spec}\n`
+              : `[kordoc] ⚠️ 견본에서 단계별 대표 서식을 정하지 못함 (단계마다 표본 3개 이상·한 값 60% 이상 필요) — 엔진 기본값 사용\n`)
+          }
           // "key=value,key=value" 스펙 파싱 — 값의 '='는 보존(첫 '='만 분리). 쉼표는
           // 구분자라 값에 못 들어감 — '=' 없는 조각(잘린 값의 꼬리 등)은 무증상 드랍
           // 대신 경고로 노출 (v4.0.6: 두문 title 값 유실이 조용히 지나가던 것 봉합)
@@ -136,7 +149,9 @@ export function registerGenerateCommands(program: Command): void {
                 Object.entries(parseKv(String(opts.sizes), "--sizes")).map(([k, v]) => [k, Number(v)]).filter(([, v]) => Number.isFinite(v as number)),
               )
               : undefined,
-            levels: opts.levels ? parseLevelsSpec(String(opts.levels)) : undefined,
+            levels: opts.levels || learnedLevels
+              ? { ...learnedLevels, ...(opts.levels ? parseLevelsSpec(String(opts.levels)) : {}) }
+              : undefined,
             bullet2: enumCheck("--bullet2", opts.bullet2, BULLET2_CHARS),
             suppressSingle: opts.suppressSingle ? true : undefined,
             docHead: opts.docHead ? parseKv(String(opts.docHead), "--doc-head") : undefined,
@@ -238,6 +253,33 @@ export function registerGenerateCommands(program: Command): void {
     })
 
   program
+    .command("levels <file>")
+    .description("견본 HWPX 의 항목부호 단계별 글꼴·크기·굵기 추출 — generate --levels 값과 단계별 분포·서식 편차 (kordoc levels 견본.hwpx, generate --levels-from 으로 바로 적용)")
+    .option("--json", "추출 결과(levels·spec·stats·deviations)를 JSON 으로 stdout 출력")
+    .action(async (file: string, opts) => {
+      try {
+        const r = await extractLevelStyles(toArrayBuffer(readFileSync(resolve(file))))
+        if (opts.json) {
+          process.stdout.write(JSON.stringify(r, null, 2) + "\n")
+          return
+        }
+        if (!r.scheme) {
+          process.stderr.write(`[kordoc] ${r.note ?? "항목부호(□·ㅇ·- 또는 1.·가.)로 시작하는 문단이 없음"}\n`)
+          return
+        }
+        process.stdout.write(`${r.spec || "(대표값 없음 — 단계마다 표본 3개 이상·한 값 60% 이상 필요)"}\n`)
+        for (const st of r.stats.filter(x => x.scheme === r.scheme)) {
+          const top = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}×${n}`).join(" ")
+          process.stderr.write(`  ${st.depth}단계 ${st.markers.join("")} 표본 ${st.samples} — 글꼴 ${top(st.font)} · 크기 ${top(st.pt)} · 굵게 ${top(st.bold)}\n`)
+        }
+        if (r.deviations.length) process.stderr.write(`[kordoc] 서식 편차 ${r.deviations.length}건 — kordoc lint ${file} --styles 로 확인\n`)
+      } catch (err) {
+        process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+        process.exit(1)
+      }
+    })
+
+  program
     .command("profile <file>")
     .description("HWPX 표 서식 프로필 추출 — 참조 문서의 표 테두리·음영·열폭·셀 글꼴을 JSON으로 (generate --profile로 재현) — kordoc profile 참조.hwpx -o 서식.json")
     .option("-o, --output <path>", "출력 JSON 경로 (기본: <입력>.profile.json)")
@@ -261,40 +303,60 @@ export function registerGenerateCommands(program: Command): void {
 
   program
     .command("lint <file>")
-    .description("공문서 표기법 검수 — 날짜·시간·금액·붙임 등 행정업무운영 편람 표기법 (md/txt, '-'=stdin). error 있으면 exit 1")
+    .description("공문서 표기법 검수 — 날짜·시간·금액·붙임 등 행정업무운영 편람 표기법 (md/txt 또는 HWPX·HWP·PDF 등 문서, '-'=stdin). error 있으면 exit 1")
     .option("--json", "JSON 출력")
     .option("--munche", "개조식 문체 검수 병행 — 서술형 종결·당위·수사·항목 길이 (보고서·계획서 원고용)")
-    .action((file: string, opts) => {
+    .option("--numbers", "본문 수치 ↔ 표 수치 대조 병행 — 표 가까이 본문의 수치가 그 표에 있는지 (확인 목록, exit 코드에는 영향 없음)")
+    .option("--styles", "단계별 서식 편차 병행 (HWPX) — 같은 항목부호 단계인데 글꼴·크기·굵기가 대표값과 다른 문단 (exit 코드에는 영향 없음)")
+    .action(async (file: string, opts) => {
       try {
         const raw = file === "-" ? readFileSync(0) : readFileSync(resolve(file))
-        // 문서 파일을 UTF-8 텍스트로 읽으면 압축 바이트가 본문으로 둔갑해 위반 수백~수천 건이
-        // 쏟아진다("보고서.hwpx" 실측 1,193건) — 검수 결과처럼 보이는 쓰레기가 최악이라 먼저 막는다.
-        const kind = detectFormat(
-          raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer
-        )
-        if (kind !== "unknown") {
-          process.stderr.write(
-            `[kordoc] lint 는 텍스트(마크다운/txt)를 검사합니다 — ${kind} 문서는 받지 않습니다.\n` +
-            `  원고 마크다운을 넘기거나, 문서 본문을 파이프하세요: kordoc ${file} | kordoc lint -\n`
-          )
-          process.exit(1)
+        // 문서 파일은 파싱한 본문 마크다운을 검사한다 — UTF-8 텍스트로 읽으면 압축 바이트가 본문으로 둔갑해
+        // 위반 수백~수천 건이 쏟아졌다("보고서.hwpx" 실측 1,193건)
+        const ab = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer
+        const kind = detectFormat(ab)
+        let text: string
+        let irBlocks: Parameters<typeof numberBlocksFromIR>[0] | undefined
+        if (kind === "unknown") text = raw.toString("utf-8")
+        else {
+          const { parse } = await import("../index.js")
+          const parsed = await parse(ab, file === "-" ? undefined : { filePath: resolve(file) })
+          if (!parsed.success) {
+            process.stderr.write(`[kordoc] 오류: ${kind} 문서를 읽지 못했습니다 — ${parsed.error}\n`)
+            process.exit(1)
+          }
+          text = parsed.markdown
+          irBlocks = parsed.blocks
         }
-        const text = raw.toString("utf-8")
-        const findings = lintGongmunText(text, { document: true })
+        const findings = lintGongmunText(text, { document: true, parsed: kind !== "unknown" })
         // 문체 검수는 옵트인 — 축이 다르고(표기법 vs 종결·수사), 개조식이 아닌 원고에는
         // 적용하면 안 되기 때문에 기본 동작은 종전 그대로 둔다
         const munche = opts.munche ? lintMuncheText(text) : []
+        const styles = opts.styles && kind === "hwpx" ? (await extractLevelStyles(ab)).deviations : undefined
+        if (opts.styles && kind !== "hwpx") process.stderr.write(`[kordoc] --styles 는 HWPX 문서만 — 건너뜀\n`)
+        const numbers = opts.numbers
+          ? checkTableNumbers(irBlocks ? numberBlocksFromIR(irBlocks) : numberBlocksFromMarkdown(parseMarkdownToBlocks(text)))
+          : undefined
         const errors = findings.filter((f) => f.severity === "error").length
           + munche.filter((f) => f.severity === "error").length
         if (opts.json) {
           const total = findings.length + munche.length
           process.stdout.write(JSON.stringify(
-            { findings, ...(opts.munche ? { munche } : {}), summary: { total, errors, ok: errors === 0 } }, null, 2) + "\n")
+            { findings, ...(opts.munche ? { munche } : {}), ...(numbers ? { numbers } : {}), ...(styles ? { styles } : {}), summary: { total, errors, ok: errors === 0 } }, null, 2) + "\n")
         } else {
           // 사람용 리포트는 stderr — 기계용(--json)만 stdout (validate와 채널 일관)
           process.stderr.write(`[kordoc] 표기법 검수: 위반 ${findings.length}건 (error ${findings.filter((f) => f.severity === "error").length}, warning ${findings.filter((f) => f.severity !== "error").length})\n`)
           for (const f of findings) {
             process.stderr.write(`  L${f.line} [${f.severity}] ${f.rule}: "${f.match}" — ${f.message}${f.suggest ? ` → ${f.suggest}` : ""}\n`)
+          }
+          if (styles) {
+            process.stderr.write(`[kordoc] 단계별 서식 편차: ${styles.length}건\n`)
+            const show = (st: { font?: string; pt?: number; bold?: boolean }) => [st.font, st.pt === undefined ? undefined : `${st.pt}pt`, st.bold === undefined ? undefined : st.bold ? "굵게" : "보통"].filter(Boolean).join("/")
+            for (const d of styles) process.stderr.write(`  ${d.depth}단계 "${d.text}" — ${show(d.got)} (대표 ${show(d.expected)})\n`)
+          }
+          if (numbers) {
+            process.stderr.write(`[kordoc] 수치 대조: 표 가까이 본문 수치 ${numbers.checked}개 중 표에서 못 찾은 ${numbers.review.length}개 (확인 필요)\n`)
+            for (const r of numbers.review) process.stderr.write(`  "${r.match}" — ${r.context}\n`)
           }
           if (opts.munche) {
             const me = munche.filter((f) => f.severity === "error").length

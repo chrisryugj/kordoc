@@ -364,6 +364,7 @@ export function registerDocCommands(program: Command): void {
     .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx). 미적용(skip) 편집이 있으면 exit 2")
     .option("-o, --output <path>", "출력 경로 (기본: <원본>.patched.hwpx|.hwp)")
     .option("--no-verify", "패치 후 재파싱 자동 검증 생략")
+    .option("--json", "결과(적용 수·건너뛴 편집·검증 잔차)를 JSON 으로 stdout 출력 — --silent 와 함께 써도 나온다")
     .option("--silent", "진행 메시지 숨기기")
     .action(async (original: string, edited: string, opts) => {
       try {
@@ -380,6 +381,7 @@ export function registerDocCommands(program: Command): void {
           ? await patchHwp(originalBuf, editedMarkdown, { verify: opts.verify !== false })
           : await patchHwpx(originalBuf, editedMarkdown, { verify: opts.verify !== false })
         if (!result.success || !result.data) {
+          if (opts.json) process.stdout.write(JSON.stringify({ success: false, error: result.error ?? "알 수 없는 오류", applied: result.applied, skipped: result.skipped }, null, 2) + "\n")
           process.stderr.write(`[kordoc] 패치 실패: ${result.error ?? "알 수 없는 오류"}\n`)
           process.exit(1)
         }
@@ -389,7 +391,14 @@ export function registerDocCommands(program: Command): void {
         mkdirSync(dirname(outPath), { recursive: true })
         writeFileSync(outPath, result.data)
 
-        if (!silent) {
+        if (opts.json) {
+          // 외부 도구가 부분 적용(skip)·검증 잔차를 사용자에게 알릴 수 있게 — --silent 로는 사유가 통째로 사라졌다
+          process.stdout.write(JSON.stringify({
+            success: true, output: outPath, applied: result.applied, skipped: result.skipped,
+            ...(result.verification ? { verification: result.verification.stats } : {}),
+          }, null, 2) + "\n")
+        }
+        if (!silent && !opts.json) {
           process.stderr.write(`[kordoc] ${result.applied}개 변경 적용 (원본 서식 보존) → ${outPath}\n`)
           for (const s of result.skipped) {
             process.stderr.write(`[kordoc] ⚠️ SKIP: ${s.reason}${s.before ? ` | ${s.before}` : ""}\n`)
@@ -406,6 +415,34 @@ export function registerDocCommands(program: Command): void {
       } catch (err) {
         process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
         process.exit(1)
+      }
+    })
+
+  program
+    .command("compare <a> <b>")
+    .description("두 문서 비교 — 추가·삭제·변경 블록 (HWP↔HWPX 등 형식이 달라도 됨, 신구대조표용). 차이가 있으면 exit 1")
+    .option("--json", "비교 결과(stats·diffs)를 JSON 으로 stdout 출력")
+    .action(async (a: string, b: string, opts) => {
+      try {
+        const { compare } = await import("../index.js")
+        const read = (p: string): ArrayBuffer => { const buf = readFileSync(resolve(p)); return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer }
+        const result = await compare(read(a), read(b))
+        const { stats, diffs } = result
+        if (opts.json) process.stdout.write(JSON.stringify(result, null, 2) + "\n")
+        else {
+          process.stdout.write(`추가 ${stats.added} · 삭제 ${stats.removed} · 변경 ${stats.modified} · 동일 ${stats.unchanged}\n`)
+          for (const d of diffs) {
+            if (d.type === "unchanged") continue
+            const mark = d.type === "added" ? "+" : d.type === "removed" ? "-" : "~"
+            const text = (blk?: { text?: string; table?: unknown }) => (blk?.text ?? (blk?.table ? "[표]" : "")).replace(/\s+/g, " ").slice(0, 160)
+            if (d.type === "modified") process.stdout.write(`~ ${text(d.before)}\n  → ${text(d.after)}\n`)
+            else process.stdout.write(`${mark} ${text(d.after ?? d.before)}\n`)
+          }
+        }
+        process.exit(stats.added + stats.removed + stats.modified > 0 ? 1 : 0)
+      } catch (err) {
+        process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+        process.exit(2)
       }
     })
 
