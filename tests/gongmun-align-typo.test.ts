@@ -290,3 +290,17 @@ describe("한 줄 맞춤·긴 어절 (한컴 실렌더 지적 4건)", () => {
     assert.ok(paraPrOf(head, paraOf(sec, "짧은 항목")).includes('breakNonLatinWord="BREAK_WORD"'))
   })
 })
+
+describe("묶음 빈칸 — 열거 뒤 '등'·'낱말 숫자,' 열거 (hwp-auto-docfit 단어 단위 규칙)", () => {
+  const show = (s: string) => polishGongmunText(s).replace(/\u00a0/g, "⍽")
+  it("의존명사 '등'(+조사)은 앞말과 묶고 '등록'·'등급'은 그대로", () => {
+    assert.equal(show("사과, 바나나 등으로 구성"), "사과, 바나나⍽등으로 구성")
+    assert.equal(show("버스 등, 택시"), "버스⍽등, 택시")
+    assert.equal(show("등록 절차와 등급"), "등록 절차와 등급")
+  })
+  it("'낱말 숫자,' 열거는 항목마다 묶고 마지막 항목은 앞 항목이 열거일 때만", () => {
+    assert.equal(show("수원 2, 서울 4, 용인 1등으로 구성"), "수원⍽2, 서울⍽4, 용인⍽1등으로 구성")
+    assert.equal(show("대회에서 1등으로 입상"), "대회에서 1등으로 입상")
+    assert.equal(show("2, 3, 4 순서"), "2, 3, 4 순서")
+  })
+})

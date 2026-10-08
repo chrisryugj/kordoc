@@ -32,6 +32,7 @@ import { ImageRegistry } from "./gen-image.js"
 import { StyleRegistry } from "./style-registry.js"
 import { buildGongmunSectionV5, usesV5Engine } from "./gen-gongmun.js"
 import { polishGongmunBlock } from "./gongmun-typo.js"
+import { cleanPastedMarkdown } from "./paste-clean.js"
 
 export { type HwpxTheme } from "./gen-ids.js"
 export {
@@ -86,7 +87,10 @@ export async function markdownToHwpx(
   const page = resolvePage(options?.page)
   // 인라인 채널(하이퍼링크·각주, v4.5.0) — 각주 정의 걷어내고 문서 컨텍스트 오픈.
   // 섹션 조립이 끝나면 finally에서 닫는다 (모듈 상태 잔류 방지)
-  const { md, defs } = extractFootnoteDefs(markdown)
+  // 생성형 AI 채팅창 붙여넣기 흔적(보이지 않는 글자·인용 표시·이스케이프된 굵게) — 본문에 그대로 남던 것
+  const pasted = cleanPastedMarkdown(markdown)
+  if (pasted.removed > 0) options?.warnings?.push(`붙여넣기 흔적 ${pasted.removed}개 정리 (보이지 않는 글자·인용 표시·이스케이프된 굵게)`)
+  const { md, defs } = extractFootnoteDefs(pasted.md)
   beginInlineDoc(defs)
   try {
   // ─── v5 엔진 (기안문·보고서·계획서·통지·회의록) — outline + scheme + StyleRegistry ───
