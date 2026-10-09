@@ -185,8 +185,8 @@ export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): P
 /** HWP 3.x (구버전 한컴 워드프로세서) 파일을 Markdown 으로 변환. */
 export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
-    const { markdown, blocks, metadata, outline, warnings } = parseHwp3Document(buffer, options)
-    return { success: true, fileType: "hwp3", markdown, blocks, metadata, outline, warnings, pageCount: metadata?.pageCount }
+    const { markdown, blocks, metadata, outline, warnings, images } = parseHwp3Document(buffer, options)
+    return { success: true, fileType: "hwp3", markdown, blocks, metadata, outline, warnings, images, pageCount: metadata?.pageCount }
   } catch (err) {
     // 에러 메시지 정제 — KordocError만 그대로, 내부 에러는 일반화 (MCP 노출 일관성)
     return { success: false, fileType: "hwp3", error: sanitizeError(err), code: classifyError(err) }

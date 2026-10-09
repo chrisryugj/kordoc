@@ -109,8 +109,8 @@ function resolveImageSentinels(blocks: IRBlock[], renamed: Map<number, string>, 
   }
 }
 
-/** binDataMap 기반 이미지 블록 해결 — strict/lenient 공용 */
-function resolveImageBlocks(
+/** binDataMap 기반 이미지 블록 해결 — strict/lenient·HWP3 공용 */
+export function resolveImageBlocks(
   binDataMap: Map<number, { data: Buffer; name: string }>,
   blocks: IRBlock[],
   warnings: ParseWarning[],

@@ -32,7 +32,9 @@ import {
   type AddressedCell, type ParaObject,
 } from "../hwp5/ir-assemble.js"
 import { collectDrawingTextBoxLists } from "./drawing.js"
-import { decodeJohabText } from "./johab.js"
+import { decodeHwp3String, decodeJohabText } from "./johab.js"
+import { resolveImageBlocks } from "../hwp5/images.js"
+import { inlineImagesIntoMarkdown } from "../image/transcode.js"
 import { Reader } from "./reader.js"
 import { readHeader } from "./records.js"
 import { decryptHwp3Document, isEncryptedHwp3 } from "./crypto.js"
@@ -120,6 +122,8 @@ interface ParaContext {
   noteSeq: [number, number]
   /** 지금 열린 문단 리스트 수 */
   depth: number
+  /** 그림 내부 이름("E$$00000.jpg") → 그림 블록 id — 추가 정보 블록 #1 의 그림 바이트와 이름으로 짝짓는다 */
+  picIds: Map<string, number>
 }
 
 /** 문단 1개의 파싱 누적 — 파싱이 중간에 깨져도 모은 만큼 방출한다 */
@@ -183,11 +187,13 @@ export function parseHwp3Document(
   }
 
   const bodyReader = new Reader(body)
-  const ctx: ParaContext = { warnings, headerBlocks: [], footerBlocks: [], headerTexts: new Set(), pageNumbers: 0, noteSeq: [0, 0], depth: 0 }
+  const ctx: ParaContext = { warnings, headerBlocks: [], footerBlocks: [], headerTexts: new Set(), pageNumbers: 0, noteSeq: [0, 0], depth: 0, picIds: new Map() }
   const bodyBlocks: IRBlock[] = []
+  let binData = new Map<number, { data: Buffer; name: string }>()
   try {
     skipFontFacesAndStyles(bodyReader)
     parseParagraphList(bodyReader, ctx, bodyBlocks)
+    binData = readEmbeddedImages(bodyReader, ctx.picIds)
   } catch (err) {
     // 부분 파싱 실패 — 모은 만큼이라도 반환. truncated 경고 추가.
     warnings.push({
@@ -196,9 +202,15 @@ export function parseHwp3Document(
     })
   }
 
+  // 그림 — 이름으로 짝지은 포함 그림 바이트를 HWP5 BinData 와 같은 경로로(image_NNN.ext). 바이트가 없는 그림은 경고만
+  const allBlocks = [...ctx.headerBlocks, ...bodyBlocks, ...ctx.footerBlocks]
+  const names = new Map([...ctx.picIds].map(([name, id]) => [id, name]))
+  dropMissingPictures(allBlocks, binData, names, warnings)
+  const images = resolveImageBlocks(binData, allBlocks, warnings, true)
+
   // 레이아웃 표 해체 — HWP5 와 같은 바이너리 계열 정책(표로 페이지를 짠 구형 문서). HWP5 쌍 벤치는 HWPX 쪽에도
   // 같은 함수를 적용해 대칭으로 비교한다
-  const blocks = flattenLayoutTables([...ctx.headerBlocks, ...bodyBlocks, ...ctx.footerBlocks])
+  const blocks = flattenLayoutTables(allBlocks)
 
   const metadata: DocumentMetadata = {
     title: header.title || undefined,
@@ -208,11 +220,59 @@ export function parseHwp3Document(
     version: "3.0",
   }
 
+  let markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
+  // 이미지 인라인 옵션 — HWP5 와 같다 (BMP→PNG 압축 후 base64 data URI)
+  if (options?.inlineImages && options.images !== false && images.length > 0) {
+    try {
+      markdown = inlineImagesIntoMarkdown(markdown, images, { compress: true })
+    } catch (inlineErr) {
+      warnings.push({ message: `이미지 인라인 실패 — 원본 파일 참조로 폴백: ${inlineErr instanceof Error ? inlineErr.message : "알 수 없는 오류"}`, code: "SKIPPED_IMAGE" })
+    }
+  }
   return {
-    markdown: blocksToMarkdown(blocks, { tableFormat: options?.tableFormat }),
+    markdown,
     blocks,
     metadata,
     warnings: warnings.length ? warnings : undefined,
+    images: images.length ? images : undefined,
+  }
+}
+
+/**
+ * 본문 문단 리스트 뒤 추가 정보 블록 — u32 id·u32 길이·데이터, id 0 이 끝. #1 이 포함 그림: 이름 16 byte 뒤 32 byte 부터 그림 바이트
+ * (rhwp Hwp3AdditionalInfoBlock). 종전엔 읽지 않아 그림이 경고 없이 사라졌다 — 그림만 붙인 스캔 보고서는 블록 0개(복지부 2000 보고 36쪽).
+ * 블록이 깨져도 본문은 이미 읽었으니 모은 데까지 쓴다.
+ */
+function readEmbeddedImages(reader: Reader, ids: Map<string, number>): Map<number, { data: Buffer; name: string }> {
+  const out = new Map<number, { data: Buffer; name: string }>()
+  while (reader.remaining() >= 8) {
+    const id = reader.readU32()
+    if (id === 0) break
+    const len = reader.readU32()
+    if (len > reader.remaining()) break
+    const data = reader.readBytes(len)
+    if (id !== 1 || data.length <= 32) continue
+    const name = decodeHwp3String(data.subarray(0, 16))
+    let n = ids.get(name)
+    if (n === undefined) ids.set(name, (n = ids.size + 1))
+    out.set(n, { data: Buffer.from(data.subarray(32)), name })
+  }
+  return out
+}
+
+/** 바이트를 못 찾은 그림(외부 연결·OLE 개체)은 블록을 빼고 이름으로 경고한다 — 종전처럼 글은 내지 않되 조용히 사라지지 않게 */
+function dropMissingPictures(blocks: IRBlock[], binData: Map<number, unknown>, names: Map<number, string>, warnings: ParseWarning[], depth = 0): void {
+  if (depth > MAX_PARAGRAPH_DEPTH * 4) return
+  for (let k = blocks.length - 1; k >= 0; k--) {
+    const b = blocks[k]
+    if (b.type === "image" && b.text && !binData.has(Number(b.text))) {
+      const name = names.get(Number(b.text)) ?? ""
+      warnings.push({ page: b.pageNumber, message: `HWP3 그림 데이터 없음(외부 연결 그림·OLE 개체)${name ? `: ${name}` : ""}`, code: "SKIPPED_IMAGE" })
+      blocks.splice(k, 1)
+      continue
+    }
+    if (b.table) for (const row of b.table.cells) for (const cell of row) if (cell.blocks) dropMissingPictures(cell.blocks, binData, names, warnings, depth + 1)
+    if (b.children) dropMissingPictures(b.children, binData, names, warnings, depth + 1)
   }
 }
 
@@ -605,6 +665,13 @@ function parsePicture(reader: Reader, ctx: ParaContext): IRBlock[] {
   if (nExt > 0 && nExt < 100 * 1024 * 1024) ext = reader.readBytes(nExt)
   const blocks: IRBlock[] = []
   if (ext && info[74] === PIC_TYPE_DRAWING) parseDrawingObject(ext, ctx, blocks)
+  else {
+    // 그림(0 외부 파일·1 OLE·2 포함) — 내부 이름(info[83..339])으로 추가 정보 블록 #1 의 바이트와 짝짓는다
+    const name = decodeHwp3String(info.subarray(83, 83 + 256))
+    let id = ctx.picIds.get(name)
+    if (id === undefined) ctx.picIds.set(name, (id = ctx.picIds.size + 1))
+    blocks.push({ type: "image", text: String(id) })
+  }
   parseParagraphList(reader, ctx, blocks)
   return blocks
 }
