@@ -23,6 +23,32 @@ describe("splitContactTables", () => {
     assert.ok(b.table!.cells.flat().every(c => c.rowSpan === 1 && c.colSpan === 1))
   })
 
+  it("부서마다 따로 병합된 앞 두 열·담당자 여럿인 끝 칸도 가른다 (반도체 제조업 점검 보도자료 156782525 — HWPX 는 담당자 칸 안 줄마다 한 사람)", () => {
+    const b = block([
+      [cell("담당 부서", 2), cell("안전보건감독국\n안전보건감독기획과", 2), cell("책임자"), cell("과 장 박상원 (044-202-8901)")],
+      [cell(""), cell(""), cell("담당자"), cell("사무관 강숭훈 (044-202-8914)\n주무관 성은창 (044-202-8915)")],
+      [cell("담당 부서", 2), cell("충북권 중대산업사고예방센터", 2), cell("책임자"), cell("센터장 배영진 (043-870-5950)")],
+      [cell(""), cell(""), cell("담당자"), cell("감독관 장용우 (043-870-5951)")],
+    ])
+    splitContactTables([b])
+    assert.equal(b.table!.cols, 6)
+    assert.deepEqual(b.table!.cells.map(r => r.map(c => c.text)), [
+      ["담당 부서", "안전보건감독국", "책임자", "과 장", "박상원", "(044-202-8901)"],
+      ["", "안전보건감독기획과", "담당자", "사무관\n주무관", "강숭훈\n성은창", "(044-202-8914)\n(044-202-8915)"],
+      ["담당 부서", "충북권 중대산업사고예방센터", "책임자", "센터장", "배영진", "(043-870-5950)"],
+      ["", "", "담당자", "감독관", "장용우", "(043-870-5951)"],
+    ])
+  })
+
+  it("한 사람 칸이 줄 꺾여도 종전처럼 한 사람으로 (줄마다 가르지 않는다)", () => {
+    const b = block([
+      [cell("담당 부서", 2), cell("예산실", 2), cell("책임자"), cell("과 장 정희철\n(044-214-2730)")],
+      [cell(""), cell(""), cell("담당자"), cell("사무관 이대권 (daekwon@korea.kr)")],
+    ])
+    splitContactTables([b])
+    assert.deepEqual(b.table!.cells[0].map(c => c.text), ["담당 부서", "예산실", "책임자", "과 장", "정희철", "(044-214-2730)"])
+  })
+
   it("연락처 모양이 아닌 4열 표는 그대로", () => {
     const b = block([[cell("구분"), cell("내용"), cell("책임자"), cell("홍길동")], [cell("가"), cell("나"), cell("담당자"), cell("비고 없음")]])
     splitContactTables([b])
