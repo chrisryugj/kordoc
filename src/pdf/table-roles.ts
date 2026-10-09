@@ -87,14 +87,55 @@ export function tocBlock(table: IRTable, pageNum: number, bbox: BoundingBox, sty
 
 const NUMERIC_CELL = /^[\s\d.,%()+\-–−$€£¥]*\d[\s\d.,%()+\-–−$€£¥]*$/
 
-/** A value axis: four or more ticks read top to bottom with one constant step down. */
-function hasValueAxis(values: number[]): boolean {
+/** The longest run of four or more values falling by one constant step, as [start, length, step]. */
+function fallingRun(values: number[]): [number, number, number] | null {
+  let best: [number, number, number] | null = null
   for (let start = 0; start + 3 < values.length; start++) {
     const step = values[start] - values[start + 1]
     if (step <= 0) continue
     let run = 2
     while (start + run < values.length && Math.abs(values[start + run - 1] - values[start + run] - step) <= step * 1e-6) run++
-    if (run >= 4) return true
+    if (run >= 4 && (!best || run > best[1])) best = [start, run, step]
+  }
+  return best
+}
+
+/** A value axis: four or more ticks read top to bottom with one constant step down. */
+function hasValueAxis(values: number[]): boolean {
+  return fallingRun(values) !== null
+}
+
+const TICK = /^-?[\d,]+(?:\.\d+)?%?$/
+const QUANTITY = /^[-−–]?[\d,]*\.?\d+%?$/
+const quantity = (token: string) => Number(token.replace(/^[−–]/, "-").replace(/[,%]/g, ""))
+
+/** A value axis inside a chart grid read from the text layer — the column's numbers, or the first number of each of its lines (a
+ * tick sharing its line with a bar value, "80 45"), fall by one step over at least 80% of them, and the grid's other numbers sit on
+ * that scale (a step past either end at most; years are category labels, not plotted values — "2014 2015 2016"). A statistics
+ * table's data column holds such a run by chance ("23 21 19 17" among 46 values, 가계동향조사), and a column of years or scores
+ * ("10.0 9.0 8.0 7.0") stands beside values far off its scale (예산서 계속비 연도 열, 평가 배점표). */
+function isValueAxisColumn(table: IRTable, c: number): boolean {
+  const lines = table.cells.flatMap(row => (row[c]?.text ?? "").split("\n").map(line => line.trim().split(/\s+/)))
+  const others = table.cells.flatMap(row => row.filter((_, k) => k !== c).map(cell => cell.text.trim().split(/\s+/)))
+    .filter(tokens => tokens.every(token => QUANTITY.test(token))).flat().map(quantity)
+    .filter(v => !(Number.isInteger(v) && v >= 1900 && v <= 2100))
+  for (const ticks of [lines.flat().filter(t => TICK.test(t)).map(quantity), lines.map(tokens => tokens[0]).filter(t => TICK.test(t)).map(quantity)]) {
+    const run = fallingRun(ticks)
+    if (!run || run[1] < ticks.length * 0.8) continue
+    const [start, length, step] = run
+    const hi = ticks[start] + step, lo = ticks[start + length - 1] - step
+    if (others.filter(v => v >= lo && v <= hi).length >= others.length * 0.8) return true
+  }
+  return false
+}
+
+/** Three rows running each with three or more filled cells — values aligned in rows are a table even in a mostly empty grid
+ * (호봉표 whose Korean labels have no text layer). A chart scatters its value labels. */
+function hasAlignedRows(table: IRTable): boolean {
+  let run = 0
+  for (const row of table.cells) {
+    run = row.filter(cell => cell.text.trim()).length >= 3 ? run + 1 : 0
+    if (run >= 3) return true
   }
   return false
 }
@@ -112,21 +153,23 @@ export function valueAxisBeside(free: NormItem[], box: { x1: number; y1: number;
 }
 
 /** Bars and gridlines of a chart drawn as vectors look like a sparse numeric grid.
- * Evidence: a value-axis column, or mostly empty cells whose text is mostly numbers. */
-export function isChartTable(table: IRTable): boolean {
+ * Evidence: a value-axis column, or mostly empty cells whose text is mostly numbers scattered rather than aligned in rows.
+ * A grid read by OCR from a chart image keeps the looser test — any four numbers falling by one step in a column: OCR puts two ticks
+ * on a line ("100% 90%"), bar values among the ticks and a second axis beside the first (보도자료 산업활동동향·주택통계 그래프 그림),
+ * while every data table taken for a chart was built from a text layer */
+export function isChartTable(table: IRTable, ocr = false): boolean {
   const texts = table.cells.flat().map(cell => cell.text.trim()).filter(Boolean)
   if (table.rows < 3 || texts.length === 0) return false
   const numeric = texts.filter(text => NUMERIC_CELL.test(text)).length
   if (numeric < texts.length * 0.5) return false
   for (let c = 0; c < table.cols; c++) {
-    const ticks = table.cells.flatMap(row => (row[c]?.text ?? "").split(/\s+/))
-      .filter(token => /^-?[\d,]+(?:\.\d+)?%?$/.test(token)).map(token => Number(token.replace(/[,%]/g, "")))
-    if (hasValueAxis(ticks)) return true
+    if (!ocr ? isValueAxisColumn(table, c)
+      : hasValueAxis(table.cells.flatMap(row => (row[c]?.text ?? "").split(/\s+/)).filter(t => TICK.test(t)).map(t => Number(t.replace(/[,%]/g, ""))))) return true
   }
   // Chart values read as quantities (3,230 · 2.5% · -6.4); hyphenated identifiers such as phone numbers do not.
-  const values = texts.filter(text => text.split(/\s+/).every(token => /^[-−–]?[\d,]*\.?\d+%?$/.test(token))).length
+  const values = texts.filter(text => text.split(/\s+/).every(token => QUANTITY.test(token))).length
   const cells = table.rows * table.cols
-  return cells - texts.length >= cells * 0.55 && values >= texts.length * 0.8
+  return cells - texts.length >= cells * 0.55 && values >= texts.length * 0.8 && (ocr || !hasAlignedRows(table))
 }
 
 /** Display math laid out on several baselines (fraction bars, limits, "d/dx") looks like a sparse grid of short cells.

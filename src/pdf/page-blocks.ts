@@ -623,7 +623,7 @@ function extractBlocksWithGrids(
     // 벡터로 그린 막대 차트의 눈금선·막대 격자는 표가 아니다 — 값 글자는 차트 영역 안에서
     // 위→아래 줄 순서의 글로 둔다(쪽 본문과 섞으면 열 감지가 본문을 찢는다, table-roles.ts). 칸에 못 붙어 글 흐름으로 돌려보낸
     // 막대 끝 값(격자 위 끝에 걸친 "374")과 격자 옆 값 축 눈금도 차트 글이다(ODL 077 — 값이 두 번 나오고 차트가 범례·출처 뒤로 갔다)
-    if (!grid.cells && !nestedAttached && isChartTable(irTable)) {
+    if (!grid.cells && !nestedAttached && isChartTable(irTable, ocrPage)) {
       for (const it of tableItems) usedItems.add(it)
       const axis = valueAxisBeside(items.filter(it => !usedItems.has(it)), grid.bbox)
       for (const it of axis) usedItems.add(it)
@@ -912,7 +912,7 @@ function clusterTableBlock(cr: ClusterTableResult, source: NormItem[], pageNum: 
   const ruled = horizontals.filter(h => h.y1 > b.y && h.y1 < b.y + b.height &&
     Math.min(h.x2, b.x + b.width) - Math.max(h.x1, b.x) >= b.width * 0.6).length >= 3
   if (!ruled && isTableOfContents(cr.table)) return tocBlock(cr.table, pageNum, cr.bbox, dominantStyle(source))
-  if (isChartTable(cr.table)) return chartBlock(source, pageNum, cr.bbox)
+  if (isChartTable(cr.table, source.length > 0 && source.every(it => it.fontName === "ocr"))) return chartBlock(source, pageNum, cr.bbox)
   if (isFormulaTable(cr.table)) return chartBlock(source, pageNum, cr.bbox)
   // 시험지 선택지·수식 배치는 줄 글 — 줄 경계는 남긴다("① $1$ ② $2$ ③ $3$" / "④ $4$ ⑤ $5$")
   if (isExamLayoutTable(cr.table)) return { ...chartBlock(source, pageNum, cr.bbox), text: groupByY(source).map(line => mergeLineSimple(line).trim()).filter(Boolean).join("\n") }
