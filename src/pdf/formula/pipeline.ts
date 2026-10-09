@@ -62,6 +62,16 @@ export interface PageFormulaResult {
  * 모든 의존성(onnxruntime-node, @huggingface/transformers, @hyzyla/pdfium, sharp)은
  * optional 이므로 dynamic import. 미설치 시 초기화에서 명확한 에러 메시지 반환.
  */
+/**
+ * 쪽당 수식 영역 상한 — 넘으면 별행(display) 수식부터 남긴다. 위에서부터 자르면 인라인 수식 많은 쪽 아래의 별행 수식이 버려졌다
+ * (arXiv 수식 정답 대조: 영역 68개 쪽에서 아래 별행 3개). 남긴 영역은 원래 순서 그대로
+ */
+export function capFormulaRegions<T extends { kind: string }>(regions: T[], max: number): T[] {
+  if (regions.length <= max) return regions
+  const kept = new Set([...regions.filter(r => r.kind === "display"), ...regions.filter(r => r.kind !== "display")].slice(0, max))
+  return regions.filter(r => kept.has(r))
+}
+
 export class FormulaPipeline {
   private mfd: InferenceSession
   private encoder: InferenceSession
@@ -258,7 +268,7 @@ export class FormulaPipeline {
       return { pageNumber, renderedWidth: rw, renderedHeight: rh, pdfWidth, pdfHeight, regions: [] }
     }
 
-    const capped = regions0.slice(0, this.opts.maxRegionsPerPage)
+    const capped = capFormulaRegions(regions0, this.opts.maxRegionsPerPage)
     const regions: FormulaRegion[] = []
 
     // 2) 각 영역 crop → 인식

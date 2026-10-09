@@ -177,6 +177,8 @@ const KNOWN_LATEX_CMDS: ReadonlySet<string> = new Set([
   "top", "bot", "angle", "vdash", "dashv",
   // 기타
   "left", "right", "big", "Big", "bigg", "Bigg",
+  // 크기 붙은 괄호·나머지 — 아는 접두(\Big·\pm) 뒤 한두 글자라 아래 분리 규칙에 걸린다
+  "bigl", "bigr", "Bigl", "Bigr", "biggl", "biggr", "Biggl", "Biggr", "pmod", "bmod",
 ])
 
 /**
@@ -218,6 +220,9 @@ export function fixLatexSpacing(s: string): string {
         }
       }
 
+      // 붙은 꼬리가 두 글자 넘으면 목록에 없는 정식 명령이다(\lesssim → \le sssim, \leqslant → \leq slant 가 되던 것 — arXiv 수식 정답 대조).
+      // MFR 이 공백을 빠뜨리는 자리는 변수 한두 글자다(\cdotd·\timesdx)
+      if (full.length - splitAt > 2) splitAt = full.length
       out += "\\" + full.slice(0, splitAt)
       if (splitAt < full.length) {
         out += " " + full.slice(splitAt)
