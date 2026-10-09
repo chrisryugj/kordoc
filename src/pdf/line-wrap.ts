@@ -266,9 +266,16 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   if (lex && heads) {
     const tail = left.match(/[가-힣]+$/)?.[0], run = right.match(/^[가-힣]+/)?.[0]
     if (tail && run && !STANDALONE_SYLLABLE.test(tail) && lex.startsWord(tail + run.slice(0, 2)) && !lex.spacedHead(tail, run[0])) return ""
+    // 다음 줄이 그 어절 안에서 닫히는 짧은 괄호로 열면 앞 낱말의 풀이다("누리집⏎(safetyreport.go.kr)이나", "전자공시시스템⏎(DART)에") —
+    // 두 음절 넘는 한글 낱말 뒤에 붙여 쓴다. 한 음절("등⏎(국회의원)")·조사·서술 끝(-함·-다 …) 뒤, 단위만 든 괄호("이삭비율⏎(%)"),
+    // 어절 밖으로 이어지는 긴 덧말("건축공사⏎(추정가격 …")은 원문도 띄운 곳이 섞인다
+    if (/[가-힣]{2}$/.test(left) && /^\([^()\s]*\)/.test(right) && !endsAsWord(left) && !/(?:함|음|됨|임|다)$/.test(left) &&
+      !BARE_UNIT_PAREN.test(right) && !/^\(\d/.test(right)) return ""
   }
   return " "
 }
+/** 단위·약어만 든 괄호 ("(%)", "(천원)", "(GMP)") */
+const BARE_UNIT_PAREN = /^\((?:%|‰|[가-힣]{1,3}|[A-Za-z]{1,5}|[A-Za-z]+\/[A-Za-z]+)\)[.,]?$/
 
 /** 문단 블록의 끝줄 기하 — 쪽 넘김 꺾임 판정용 (page-blocks 가 본문 줄을 문단으로 묶을 때 남긴다, 공개 IR 에 안 나감).
  *  키는 블록의 bbox 객체 — 목록 감지(detectListBlocks)가 블록을 {...block} 으로 새로 만들어도 bbox 는 그대로 넘어간다 */
