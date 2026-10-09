@@ -156,6 +156,18 @@ describe("PDF links", () => {
     // Different targets and images stay apart.
     assert.equal(mergeLinkRuns(`[a](https://a.org) [b](https://b.org) ![image](image_001.png)`), `[a](https://a.org) [b](https://b.org) ![image](image_001.png)`)
   })
+
+  it("keeps only the text when the link text is the address itself", () => {
+    // ODL bench 158·192: the printed address is the link, so [address](address) only repeats it
+    assert.equal(mergeLinkRuns("Video: [//www.youtube.com/embed/UBVV8pch1dM](http://www.youtube.com/embed/UBVV8pch1dM)"), "Video: //www.youtube.com/embed/UBVV8pch1dM")
+    assert.equal(mergeLinkRuns("2023. [https://huggingface.co/spaces/ HuggingFaceH4/open\\_llm\\_leaderboard.](https://huggingface.co/spaces/HuggingFaceH4/open_llm_leaderboard)"),
+      "2023. https://huggingface.co/spaces/ HuggingFaceH4/open\\_llm\\_leaderboard.")
+    assert.equal(mergeLinkRuns("<u>[www.law.gov](http://www.law.gov/)</u> · [law@loc.gov](mailto:law@loc.gov)"), "www.law.gov · law@loc.gov")
+    assert.equal(mergeLinkRuns("[https://a.org/(x)](https://a.org/%28x%29)"), "https://a.org/(x)")
+    // A different target or ordinary link text keeps the link.
+    assert.equal(mergeLinkRuns("[https://a.org](https://b.org) [this](https://a.org) [a.org guide](https://a.org)"),
+      "[https://a.org](https://b.org) [this](https://a.org) [a.org guide](https://a.org)")
+  })
 })
 
 describe("PDF gutter scans on corrupted coordinates", () => {

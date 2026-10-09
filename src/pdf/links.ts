@@ -67,13 +67,20 @@ export function applyLinkAnnotations(items: NormItem[], annots: PdfAnnotation[])
   }
 }
 
+/** 주소 비교 키 — 마크다운 이스케이프·공백(줄 꺾임)·퍼센트 인코딩·스킴·www.·끝 문장부호를 걷는다 */
+function addressKey(s: string): string {
+  let t = s.replace(/\\(.)/g, "$1").replace(/\s+/g, "")
+  try { t = decodeURI(t) } catch { /* 깨진 퍼센트 인코딩은 그대로 견준다 */ }
+  return t.toLowerCase().replace(/^(?:[a-z][a-z0-9+.-]*:)?(?:\/\/)?(?:www\.)?/, "").replace(/[/.,;:)\]]+$/, "")
+}
+
 /** 마크다운 링크 한 개 — 그림 참조(`![…](…)`)는 뺀다 */
 const MD_LINK = String.raw`(?<!!)\[([^\]\n]*)\]\(([^)\s]+)\)`
 
 /**
  * 줄마다 감싼 링크를 문서 마크다운에서 다시 한 링크로 — 여러 줄에 걸친 링크 하나가 "[You can read](u) [more about](u)"처럼
  * 같은 url 을 줄 수만큼 되풀이하던 것을 사이 공백째 잇는다. 링크 글에 그어진 밑줄은 링크 표시일 뿐이라 링크 하나를 통째로
- * 감싼 `<u>` 는 뗀다
+ * 감싼 `<u>` 는 뗀다. 링크 글이 주소 자체인 링크는 글만 남긴다
  */
 export function mergeLinkRuns(markdown: string): string {
   // 줄마다 밑줄을 감싸면 두 줄 링크가 <u>[Our</u> <u>Mental Shortcuts](u)</u> 로 엇갈린다 — 링크 글 안의 줄 경계 밑줄 표지도 뗀다
@@ -84,5 +91,6 @@ export function mergeLinkRuns(markdown: string): string {
     prev = out
     out = out.replace(run, (_m, a: string, url: string, _gap: string, b: string) => `[${a} ${b}](${url})`)
   }
-  return out
+  // 링크 글이 주소 자체면 [주소](주소) 는 같은 글을 되풀이할 뿐이다 — 찍힌 글만 남긴다 (ODL 158 유튜브 주소·192 참고문헌 주소)
+  return out.replace(new RegExp(MD_LINK, "g"), (m, text: string, url: string) => text.trim() && addressKey(text) === addressKey(url) ? text : m)
 }

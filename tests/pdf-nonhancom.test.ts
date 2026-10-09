@@ -20,6 +20,15 @@ import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 const ti = (str: string, x: number, y: number, width: number, size: number): PdfTextItem =>
   ({ str, transform: [size, 0, 0, size, x, y], width, height: size })
 
+describe("normalizeItems — 자간 숫자 공백 접기", () => {
+  it("쉼표·마침표 뒤 숫자 조각은 자간 숫자가 아니다 — \"Systems\" + \", 5.\" (ODL 192 참고문헌)", () => {
+    const items = normalizeItems([ti("Learning and Systems", 81.5, 214.99, 88, 9.96), ti(", 5.", 169.5, 214.99, 12.45, 9.96)])
+    assert.equal(mergeLineSimple(items), "Learning and Systems, 5.")
+    // 자간을 벌린 숫자열은 그대로 접는다
+    assert.equal(mergeLineSimple(normalizeItems([ti("45 0 -7 3 40 )", 10, 100, 80, 10)])), "450-7340)")
+  })
+})
+
 describe("normalizeItems — 겹친 런 분해 (MS Print To PDF·cairo)", () => {
   it("한글 런 빈칸에 나중에 얹힌 숫자를 제자리에 넣는다 (중장기위원회 보도자료 실측)", () => {
     const items = normalizeItems([
