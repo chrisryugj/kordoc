@@ -75,13 +75,16 @@ jobs:
         run: |
           python -m pip install -e '.[test]'
           python -m pytest -W error::pytest.PytestUnraisableExceptionWarning
-      - name: wheel·sdist 를 빈 가상환경에서 설치해 실제 파싱
+      # wheel 이 돌아도 sdist 가 깨질 수 있어 둘 다 설치해 본다
+      - name: wheel·sdist 를 각각 빈 가상환경에서 설치해 실제 파싱
         working-directory: sdk/python
         run: |
           python -m build -o "$RUNNER_TEMP/pydist"
-          python -m venv "$RUNNER_TEMP/consume"
-          "$RUNNER_TEMP/consume/bin/pip" install "$RUNNER_TEMP"/pydist/kordoc-*.whl
-          "$RUNNER_TEMP/consume/bin/python" examples/parse_document.py "$KORDOC_SDK_FIXTURES/중첩 표.hwpx" --gfm | grep -q '<!-- <table id="t1" /> -->'
+          for dist in whl tar.gz; do
+            python -m venv "$RUNNER_TEMP/consume-$dist"
+            "$RUNNER_TEMP/consume-$dist/bin/pip" install "$RUNNER_TEMP"/pydist/kordoc-*."$dist"
+            "$RUNNER_TEMP/consume-$dist/bin/python" examples/parse_document.py "$KORDOC_SDK_FIXTURES/중첩 표.hwpx" --gfm | grep -q '<!-- <table id="t1" /> -->'
+          done
 
   java-sdk:
     needs: engine-dist
