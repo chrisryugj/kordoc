@@ -334,6 +334,12 @@ export function figureColumnBands(items: NormItem[], figures: ColRect[]): NormIt
     })
     if (left.length === 0 || right.length === 0 || gapped(left) || gapped(right)) { out.push(flat); continue }
     split = true
+    // 한쪽 "단" 이 반대쪽과 같은 높이의 줄 하나뿐이면 전폭 줄의 반 토막이고 그 틈은 낱말 간격이다(KS X ISO 704 21쪽: 첫 낱말 크기 차로 전폭
+    // 줄이 두 단 줄로 잘못 잡힌 문단 끝 석 줄에서 8pt 낱말 틈을 단 틈으로 가르자 줄 반쪽이 다음 줄 뒤로 갔다) — 그 무리는 가르지 않는다. 쪽은 그대로
+    // 띠마다 읽는다: 띠를 놓으면 쪽 전체 클러스터 표 감지가 그림 라벨과 본문을 6열 가짜 표로 묶었다. 반대쪽에 없는 높이의 한 줄(쪽 꼬리말)은 단이다
+    const halfLine = (side: NormItem[], other: NormItem[]) =>
+      groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x)).length === 1 && other.some(o => Math.abs(o.y - side[0].y) <= 3)
+    if (halfLine(left, right) || halfLine(right, left)) { out.push(flat); continue }
     // 한 단의 끝줄이 다른 단 맨 아래보다도 아래에 있으면(쪽 꼬리말 "312 | Grouper …") 두 단 뒤에 온다. 같은 단 줄 간격으로 이어진 줄은
     // 그 단의 글이다 — 큰 틈(글자 크기 3배 넘게) 뒤의 줄부터 꼬리(옆 단 캡션보다 아래로 내려온 문단 끝 두 줄이 캡션 뒤로 갔다, ODL 133)
     const low = (side: NormItem[], other: NormItem[]) => {

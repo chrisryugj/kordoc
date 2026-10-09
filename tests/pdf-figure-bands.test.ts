@@ -45,4 +45,20 @@ describe("figureColumnBands — 단 끝줄과 쪽 꼬리말", () => {
     assert.deepEqual(texts.at(-1), ["312 | Grouper and Spawning Aggregations"])
     assert.ok(texts[0].includes("left 21") && texts[1].includes("right 23"), JSON.stringify(texts.map(g => g.slice(-1))))
   })
+
+  it("전폭 줄의 반 토막 하나는 단이 아니다 — 낱말 틈에서 가르지 않는다 (KS X ISO 704 21쪽)", () => {
+    // 위 전폭 본문 아홉 줄, 첫 낱말만 11pt 로 잡혀 전폭으로 안 잡힌 문단 끝 줄(양쪽 정렬 낱말 틈 6.8pt), 왼쪽만 있는 마지막 줄, 쪽 번호
+    const words: Array<[string, number, number]> = [["확장", 63.9, 19], ["에는", 82.9, 19], ["‘광마우스’의", 108.7, 53.2], ["확장이", 168.6, 28.5],
+      ["포함되는데,", 203.9, 50.3], ["이는", 260.9, 19], ["‘컴퓨터", 286.7, 31.3], ["마우스’로", 324.9, 40.8], ["분류된", 372.4, 28.6], ["일부", 407.7, 19],
+      ["객체가", 433.6, 28.5], ["‘광마우스’로도", 468.8, 62.7]]
+    const items = [
+      ...Array.from({ length: 9 }, (_, k) => item(`full line ${k}`, 63.9, 400 - k * 16, 467.6, 10)),
+      ...words.map(([t, x, w], k) => item(t, x, 155.3, w, k === 0 ? 11 : 10)),
+      item("분류될 수 있기 때문이다(아래 보기 1 참조).", 63.9, 139.2, 196.8, 10),
+      item("12", 63.9, 56.3, 12.2, 11),
+    ]
+    const bands = figureColumnBands(items, [])
+    const band = (t: string) => bands?.findIndex(g => g.some(i => i.text === t)) ?? -1
+    assert.equal(band("이는"), band("‘컴퓨터"), JSON.stringify(bands?.map(g => g.map(i => i.text))))
+  })
 })
