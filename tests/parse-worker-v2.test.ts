@@ -3,13 +3,14 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, readdirSync, mkdirSync, symlinkSync, realpathSync } from "node:fs"
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, readdirSync, mkdirSync, symlinkSync, realpathSync, statSync, utimesSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, isAbsolute } from "node:path"
+import { Readable, Writable } from "node:stream"
 import { fileURLToPath } from "node:url"
 import { parse } from "../src/index.js"
 import { VERSION } from "../src/utils.js"
-import { toParseOptions, externalizeImages, WorkerProtocolError } from "../src/cli/parse-worker-v2.js"
+import { toParseOptions, externalizeImages, runParseWorkerV2, WorkerProtocolError } from "../src/cli/parse-worker-v2.js"
 import type { IRBlock, ParseResult } from "../src/types.js"
 import { IMAGE_BYTES, imageDocx, gfmTablesHwpx, badXrefPdf } from "./fixtures/sdk-docs.js"
 
@@ -263,6 +264,118 @@ describe("parse-worker protocol 2 — 이미지 전송", () => {
     const bad: ParseResult = { success: true, fileType: "docx", markdown: "", blocks: [], images: [{ filename: "a.png", data: "not bytes" as unknown as Uint8Array, mimeType: "image/png" }] }
     await assert.rejects(() => externalizeImages(bad, real, 2), WorkerProtocolError)
     assert.deepEqual(readdirSync(real).filter((n) => n.includes("-2-")), [])
+  }))
+})
+
+describe("parse-worker protocol 2 — 호스트가 stdout 을 닫으면", () => {
+  /**
+   * stdout 읽기 끝을 닫고(EPIPE 유도) 종료를 기다린다. stdin 은 열어 둔다.
+   * request 가 있으면 ready 를 받은 뒤 닫고 그 요청을 보내고, 없으면 ready 전에 닫는다
+   */
+  function runClosingStdout(request?: unknown, timeoutMs = 60000): Promise<{ err: string; code: number | null; signal: NodeJS.Signals | null }> {
+    return new Promise((resolve) => {
+      const child = spawn(process.execPath, ["--import", "tsx", CLI, "parse-worker", "--protocol", "2"], { stdio: ["pipe", "pipe", "pipe"] })
+      let err = ""
+      child.stderr.on("data", (d) => { err += String(d) })
+      if (request === undefined) child.stdout.destroy()
+      else child.stdout.once("data", () => {
+        child.stdout.destroy()
+        child.stdin.write(line(request))
+      })
+      const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs)
+      child.on("exit", (code, signal) => { clearTimeout(timer); resolve({ err, code, signal }) })
+    })
+  }
+
+  /** 앞의 ok 번 쓰기는 받고 그 뒤로는 code 오류 — EPIPE 면 파이프 반대편이 사라진 것과 같다 */
+  function brokenAfter(ok: number, written: string[], code = "EPIPE"): Writable {
+    return new Writable({
+      write(chunk, _enc, cb) {
+        if (written.length >= ok) return cb(Object.assign(new Error(`write ${code}`), { code }))
+        written.push(String(chunk))
+        cb()
+      },
+    })
+  }
+
+  /** stdin 을 열어 둔 채 돌려, 제한 시간 안에 스스로 돌아오는지 본다 */
+  async function returnsWithInputOpen(output: Writable, lines: string[] = []): Promise<string> {
+    const input = new Readable({ read() {} })
+    for (const l of lines) input.push(l)
+    const run = runParseWorkerV2({ input, output }).then(() => "returned", (e: Error) => `threw ${e.message}`)
+    let timer: NodeJS.Timeout | undefined
+    const settled = await Promise.race([run, new Promise<string>((r) => { timer = setTimeout(() => r("still waiting on stdin"), 5000) })])
+    clearTimeout(timer)
+    input.destroy()
+    return settled
+  }
+
+  test("stdout 이 닫히면 종료 코드 0 으로 끝나고, 보내지 못한 응답의 files 디렉터리는 지운다", () => withDir(async (dir) => {
+    const file = join(dir, "a.docx")
+    writeFileSync(file, await imageDocx())
+    const assets = join(dir, "assets")
+    mkdirSync(assets)
+    const { err, code, signal } = await runClosingStdout({ id: 1, cmd: "parse", file, transport: { images: "files", assetsDir: assets } })
+    assert.equal(signal, null, "제한 시간 안에 스스로 끝난다")
+    assert.doesNotMatch(err, /EPIPE|Uncaught|triggerUncaughtException/)
+    assert.equal(code, 0)
+    assert.deepEqual(readdirSync(assets), [], "아무도 가리키지 않는 kordoc-<id>-* 는 남기지 않는다")
+  }))
+
+  test("ready 를 쓰지 못하면 stdin 이 열려 있어도 기다리지 않고 종료 코드 0 으로 끝난다", async () => {
+    const { err, code, signal } = await runClosingStdout(undefined, 20000)
+    assert.equal(signal, null, "다음 요청이나 stdin EOF 를 기다리지 않는다")
+    assert.doesNotMatch(err, /EPIPE|Uncaught|triggerUncaughtException/)
+    assert.equal(code, 0)
+  })
+
+  test("ready 나 프로토콜 오류 응답을 쓰지 못해도 stdin 을 기다리지 않고 돌아온다", async () => {
+    assert.equal(await returnsWithInputOpen(brokenAfter(0, [])), "returned", "ready")
+    const written: string[] = []
+    assert.equal(await returnsWithInputOpen(brokenAfter(1, written), ["not json\n"]), "returned", "INVALID_JSON")
+    assert.equal(JSON.parse(written[0]).ready, true)
+  })
+
+  test("stdout 닫힘(EPIPE·ERR_STREAM_DESTROYED)이 아닌 쓰기 오류는 삼키지 않고 던진다", async () => {
+    assert.equal(await returnsWithInputOpen(brokenAfter(0, [], "ERR_STREAM_DESTROYED")), "returned")
+    assert.equal(await returnsWithInputOpen(brokenAfter(0, [], "ENOSPC")), "threw write ENOSPC", "ready")
+    assert.equal(await returnsWithInputOpen(brokenAfter(1, [], "ENOSPC"), ["not json\n"]), "threw write ENOSPC", "INVALID_JSON")
+  })
+
+  test("응답을 쓰지 못하면 남은 요청을 처리하지 않고 돌아온다", () => withDir(async (dir) => {
+    const file = join(dir, "a.docx")
+    writeFileSync(file, await imageDocx())
+    const first = join(dir, "first")
+    const later = join(dir, "later")
+    mkdirSync(first)
+    mkdirSync(later)
+    // 요청 2·3 을 파싱하면 later 아래 kordoc-<id>-* 를 만들었다 지우므로, 지운 뒤에도 later 의 mtime 이 바뀐다
+    const stamp = new Date("2000-01-01T00:00:00Z")
+    utimesSync(later, stamp, stamp)
+    const req = (id: number, assetsDir: string) => line({ id, cmd: "parse", file, transport: { images: "files", assetsDir } })
+    const written: string[] = []
+    // 세 요청이 한 덩어리로 와서 이미 읽힌 상태 — 입력을 끊는 것만으로는 2·3 을 막지 못한다
+    await runParseWorkerV2({ input: Readable.from([req(1, first) + req(2, later) + req(3, later)]), output: brokenAfter(1, written) })
+    assert.equal(written.length, 1)
+    assert.equal(JSON.parse(written[0]).ready, true)
+    assert.deepEqual(readdirSync(first), [], "요청 1 의 디렉터리는 지운다")
+    assert.equal(statSync(later).mtimeMs, stamp.getTime(), "요청 2·3 은 파싱하지 않아 later 에 손대지 않는다")
+  }))
+
+  test("프로토콜 오류 응답을 쓰지 못해도 같은 덩어리로 온 남은 요청은 처리하지 않는다", () => withDir(async (dir) => {
+    const file = join(dir, "a.docx")
+    writeFileSync(file, await imageDocx())
+    const later = join(dir, "later")
+    mkdirSync(later)
+    // 요청 2 를 파싱하면 later 아래 kordoc-2-* 를 만들었다 지우므로, 지운 뒤에도 later 의 mtime 이 바뀐다
+    const stamp = new Date("2000-01-01T00:00:00Z")
+    utimesSync(later, stamp, stamp)
+    const written: string[] = []
+    // INVALID_JSON 응답 쓰기가 EPIPE 로 실패하고 continue 로 넘어가도, 이미 읽힌 요청 2 는 파싱하지 않는다
+    await runParseWorkerV2({ input: Readable.from(["not json\n" + line({ id: 2, cmd: "parse", file, transport: { images: "files", assetsDir: later } })]), output: brokenAfter(1, written) })
+    assert.equal(written.length, 1)
+    assert.equal(JSON.parse(written[0]).ready, true)
+    assert.equal(statSync(later).mtimeMs, stamp.getTime(), "요청 2 는 파싱하지 않아 later 에 손대지 않는다")
   }))
 })
 
