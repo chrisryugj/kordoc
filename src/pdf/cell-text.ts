@@ -242,18 +242,21 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
   let contentLeft = Infinity
   for (const it of items) if (it.x < contentLeft) contentLeft = it.x
   const lineEnds = merged.map(s => {
-    let right = -Infinity
-    for (const it of s) if (it.x + it.w > right) right = it.x + it.w
+    let right = -Infinity, left = Infinity
+    for (const it of s) { if (it.x + it.w > right) right = it.x + it.w; if (it.x < left) left = it.x }
     const first = s[0]
     // 아이템에 붙인 표시 태그는 글리프가 아니다 — 다음 줄 첫 글자 폭은 실제 글자 수로 나눈다.
     const visible = first.text.replace(/<\/?u>|~~/g, "")
-    return { right, fontSize: first.fontSize, firstCharW: first.w / Math.max(1, [...visible].length) }
+    return { left, right, fontSize: first.fontSize, firstCharW: first.w / Math.max(1, [...visible].length) }
   })
   let cellRight = -Infinity
   for (const e of lineEnds) if (e.right > cellRight) cellRight = e.right
   const wraps = lineEnds.slice(0, -1).map((a, i) => cellLineWraps(wrap.box, contentLeft, a.right, a.fontSize, lineEnds[i + 1].firstCharW)
     || (lineEnds.length >= 3 && !textLines[i + 1].startsWith("(") && cellLineFills(wrap.box, contentLeft, cellRight, a.right, a.fontSize)))
-  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex }))
+  // 줄이 칸 안쪽 폭의 60% 이상을 채웠나 — 오른쪽 정렬 금액("500")은 칸 오른끝에 닿아 꺾임으로 보여도 칸을 채운 줄이 아니다
+  const pad = Math.min(6, Math.max(0, contentLeft - wrap.box.x1)), inner = wrap.box.x2 - wrap.box.x1 - 2 * pad
+  const wide = lineEnds.slice(0, -1).map(a => a.right - a.left >= 0.6 * inner)
+  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide }))
 }
 
 /** 첨자 행 병합 — cellTextToString 행 그룹핑 결과에 적용 (규칙은 text-line.ts와 동일) */
@@ -390,9 +393,10 @@ export { detectEvenSpacedItems }
  * 경계를 공백으로 잇는 건 삼간다). 종전 조각 규칙 — 8자 이하 한글 조각 붙임·쉼표/여는 괄호 뒤 15자 붙임 — 은 hwpx↔pdf 417쌍
  * 칸 줄 이음 실측에서 정밀도 10%(맞음 101·틀림 874)·2%(맞음 5·틀림 316)라 칸 상자가 있는 호출에서는 쓰지 않는다
  */
-function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon }): string {
+function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon; wide?: boolean[] }): string {
   // 셀 내 줄바꿈 병합 — 잘린 단어/숫자 조각 복구
   if (textLines.length <= 1) return textLines[0] || ""
+  const numberWrapped = (k: number) => !!wrap?.wraps[k] && (wrap.wide?.[k] ?? true)
   const merged: string[] = [textLines[0]]
   for (let i = 1; i < textLines.length; i++) {
     const prev = merged[merged.length - 1]
@@ -413,11 +417,12 @@ function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?
     // "2,2400", 괴산·부천 예산서 텍스트층·OCR 공통). 쉼표 뒤 세 자리로 끝난 줄에 숫자 줄을 이으면 ",dddd" 꼴이 되므로 늘 끊고,
     // 쉼표 없는 세 자리 이하 숫자는 다음 줄도 온전한 숫자일 때 끊는다. 줄에 홀로 선 정수(첫머리·공백 뒤) 다음 정수 줄도 끊는다 —
     // 칸에 줄마다 적은 "600" / "1000"·"1500" / "2500"(table_giant_cell_overfill). 칸 폭을 채우고 꺾인 줄(wraps)은 잘린 한 숫자라
-    // 잇고, 글 뒤에 붙은 번호 조각("02-123" / "4567")은 홀로 선 수가 아니라 종전대로 잇는다
+    // 잇고, 글 뒤에 붙은 번호 조각("02-123" / "4567")은 홀로 선 수가 아니라 종전대로 잇는다. 꺾임은 칸을 채운 줄만 — 오른쪽 정렬 금액은
+    // 칸 오른끝에 닿아도 잘린 숫자가 아니다(속초 세출예산서 OCR 칸 "500" / "500" → "500500")
     else if (/[\d,]$/.test(prev) && /^[\d,]+[)\]]?$/.test(curr.trim()) && curr.trim().length <= 10
       && !(/\d,\d{3}$/.test(prev) && /^\d/.test(curr.trim()))
-      && !(/(?:^|[^\d,])\d{1,3}$/.test(prev) && /^(\d{1,3}(,\d{3})+|\d{1,3})$/.test(curr.trim()) && !wrap?.wraps[i - 1])
-      && !(/(?:^|\s)\d{1,7}$/.test(prev) && /^\d{1,7}$/.test(curr.trim()) && !wrap?.wraps[i - 1])) {
+      && !(/(?:^|[^\d,])\d{1,3}$/.test(prev) && /^(\d{1,3}(,\d{3})+|\d{1,3})$/.test(curr.trim()) && !numberWrapped(i - 1))
+      && !(/(?:^|\s)\d{1,7}$/.test(prev) && /^\d{1,7}$/.test(curr.trim()) && !numberWrapped(i - 1))) {
       merged[merged.length - 1] = prev + curr.trim()
     }
     else {

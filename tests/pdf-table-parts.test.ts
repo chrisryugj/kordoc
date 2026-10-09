@@ -326,6 +326,13 @@ describe("칸 글 줄 병합 — 숫자", () => {
     assert.equal(cellTextToString([item("810", 100), item("810", 85), item("810", 70)]), "810\n810\n810")
     assert.equal(cellTextToString([item("2,240", 100), item("0", 85)]), "2,240\n0")
   })
+  it("칸 오른끝에 붙은 오른쪽 정렬 금액은 꺾인 숫자가 아니다 — 쌓인 \"500\" 둘을 잇지 않는다 (속초 세출예산서 OCR \"500500\")", () => {
+    const right = (text: string, y: number) => ({ text, x: 414 - text.length * 5, y, w: text.length * 5, h: 10, fontSize: 10, fontName: "f" })
+    assert.equal(cellTextToString([right("500", 100), right("500", 85)], { box: { x1: 336, x2: 418 } }), "500\n500")
+    // 칸을 채운 줄에서 잘린 숫자는 칸 상자가 있어도 잇는다
+    const full = (text: string, y: number, x: number) => ({ text, x, y, w: text.length * 5, h: 10, fontSize: 10, fontName: "f" })
+    assert.equal(cellTextToString([full("1,234,567,8", 100, 338), full("90", 85, 338)], { box: { x1: 336, x2: 394 } }), "1,234,567,890")
+  })
   it("글 뒤에 붙은 번호 조각(\"02-123\" / \"4567\")은 종전처럼 잇는다", () => {
     assert.equal(cellTextToString([item("02-123", 100), item("4567", 85)]), "02-1234567")
   })
