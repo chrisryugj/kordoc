@@ -247,7 +247,8 @@ async function closerReads(
  * 몇 pt 씩 어긋나, 박스마다 아래 끝을 기준선으로 넘기면 블록 파이프라인의 줄 묶음(3pt)이 한 줄을 여럿으로 쪼개고 위쪽 y 순으로
  * 뒤집는다(#141 영수증: "탄현점 / 이마트", 품목 바코드·단가·금액이 다른 행). 중심 y 차이 ≤ 작은 박스 높이의 절반이면 한 줄,
  * 가로로 크게 겹치는 박스는 같은 줄에 넣지 않는다(큰 로고 박스가 위아래 두 줄을 잇지 않게).
- * 한 줄 조각은 높이가 엇비슷하다 — 높이가 두 배 넘게 다른 박스(아이콘·로고·QR 잡음)와는 묶지 않고, 긴 글줄은 줄 안 가장 가까운 긴
+ * 한 줄 조각은 높이가 엇비슷하다 — 줄 높이 중앙값과 두 배 넘게 다른 박스(아이콘·로고·QR 잡음)와는 묶지 않고(줄의 작은 숫자 박스
+ * 하나와 재면 두 행에 걸친 칸 박스가 제 행을 놓친다, changwon-plan2026 "3/8"), 긴 글줄은 줄 안 가장 가까운 긴
  * 글줄과 높이의 5배 넘게 떨어지면 묶지 않는다(범례 라벨 사이 3~4배는 한 줄). 짧은 조각(숫자·라벨 칸)은 멀어도 묶는다(영수증 금액 칸).
  * 두 단 글의 좌우 줄은 높이가 엇비슷해도 다른 줄이다(ODL 141 두 단 카드 인포그래픽: 좌우 카드 줄 틈 7~60배 — 4.21.3 에서 한 줄로
  * 묶여 단 분리가 깨지고 가짜 표가 됐다, NID 0.96 → 0.44).
@@ -259,10 +260,11 @@ export function groupOcrLines(items: OcrItem[]): number[][] {
     const lc = l.reduce((s, j) => s + items[j].y + items[j].h / 2, 0) / l.length
     const minH = Math.min(it.h, ...l.map(j => items[j].h))
     if (Math.abs(c - lc) > minH / 2) return false
+    const hs = l.map(j => items[j].h).sort((a, b) => a - b), med = hs[hs.length >> 1]
+    if (Math.max(it.h, med) > Math.min(it.h, med) * 2) return false
     let nearLong = 0
     for (const j of l) {
       const o = items[j]
-      if (Math.max(it.h, o.h) > Math.min(it.h, o.h) * 2) return false
       // 박스는 잉크 외곽에 여백이 붙어 이웃 낱말과 조금 겹친다(이마트·탄현점 32px) — 좁은 쪽 폭의 절반 넘게 겹칠 때만 다른 줄
       const ov = Math.min(it.x + it.w, o.x + o.w) - Math.max(it.x, o.x)
       if (ov >= Math.min(it.w, o.w) / 2) return false

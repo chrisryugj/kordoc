@@ -93,6 +93,16 @@ describe("OCR 줄 맞춤 — 두 단 글은 좌우 줄을 묶지 않는다 (ODL 
     ]
     assert.deepEqual(groupOcrLines(junk).map(l => l.length), [1, 1, 1, 1])
   })
+  it("두 행에 걸친 키 큰 칸 상자는 줄 높이 중앙값으로 잰다 — 작은 숫자 상자 하나 때문에 제 행을 놓치지 않는다 (changwon-plan2026 \"3/8\")", () => {
+    const rows = [
+      { text: "21/19", x: 378, y: 2251, w: 128, h: 76, confidence: 0.9 }, { text: "1/1", x: 879, y: 2255, w: 74, h: 56, confidence: 0.9 },
+      { text: "3/6", x: 1031, y: 2252, w: 89, h: 79, confidence: 0.9 }, { text: "7/4", x: 1186, y: 2253, w: 93, h: 72, confidence: 0.9 },
+      { text: "7/2", x: 1350, y: 2254, w: 82, h: 73, confidence: 0.9 }, { text: "3/8", x: 1497, y: 2243, w: 100, h: 137, confidence: 0.9 },
+      { text: "29/28", x: 377, y: 2295, w: 130, h: 81, confidence: 0.9 }, { text: "11/8", x: 1184, y: 2302, w: 101, h: 74, confidence: 0.9 },
+    ]
+    const lines = groupOcrLines(rows).map(l => l.map(i => rows[i].text))
+    assert.ok(lines.some(l => l.includes("21/19") && l.includes("3/8")), JSON.stringify(lines))
+  })
   it("범례 한 줄의 긴 라벨은 먼저 만난 줄 순서와 무관하게 한 줄 (ODL 059 원그래프 범례)", () => {
     const legend = [
       { text: "Waste materials", x: 1146, y: 652.5, w: 161.5, h: 17.5, confidence: 0.95 },
