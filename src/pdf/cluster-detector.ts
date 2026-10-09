@@ -678,7 +678,7 @@ function mergeOverlappingRows(rows: RowGroup[]): RowGroup[] {
   return result
 }
 
-/** 첨자 후보 행: 모두 짧은 텍스트(≤8자)이고 아이템 ≤3개 — 넘으면 숫자·따옴표·괄호만 든 첨자가 아이템마다 옆 행 글자 앞뒤에 붙어야
+/** 첨자 후보 행: 모두 짧은 텍스트(≤8자)이고 아이템 ≤3개 — 넘으면 라틴 글자·수식 기호 없는 첨자가 아이템마다 옆 행 글자 앞뒤에 붙어야
  *  한다(연도 위첨자 "(’10)10.2만건 → (’25)17.1만건" 이 한 줄에 넷 — 넓은 간격의 넷 칸 행이 되어 본문 쪽이 통째로 4열 표가 됐다) */
 function isFragmentRow(row: RowGroup, host: RowGroup): boolean {
   if (!row.items.every(i => i.text.length <= 8)) return false

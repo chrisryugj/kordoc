@@ -443,8 +443,8 @@ export function groupByY(items: NormItem[]): NormItem[][] {
  * 수직으로 겹치면 같은 시각적 줄이다. mergeLineSimple이 x순 정렬하므로
  * 병합 후 원래 인라인 위치("①근로자...")가 복원된다.
  */
-/** 글자 앞에 붙는 첨자 꼴 — 숫자·따옴표·괄호뿐 ("(’10)", "’19") */
-export const PREFIX_SCRIPT = /^[\d’‘'′"“”()（）.,~\-–%]+$/
+/** 글자 앞에 붙는 첨자 꼴 — 라틴 글자·수식 기호가 없다 ("(’10)", "행안부", "①"; 적분 위끝 "3a+x" 는 아님) */
+export const PREFIX_SCRIPT = /^[^A-Za-z+=×÷<>≤≥∫∑∏√∞^_{}\\/]+$/
 export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   if (lines.length <= 1) return lines
   const band = (line: NormItem[]) => {
@@ -466,8 +466,8 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   }
   // 짧은 기호 조각 여럿(각 3자 이하 — 저자 줄 소속 표시 ∗·†·a·1)은 합이 10자를 넘어도, 조각마다 옆 줄 글자 오른끝에
   // 붙어(0.35em 안) 있으면 조각이다. 글자 위에 얹힌 수식 조각(∑ 위아래 극한)은 붙어 있지 않다.
-  // 숫자·따옴표·괄호만 든 8자 이하 첨자는 글자 앞(빈칸 하나 0.6em 안)에 붙어도 같다 — 연도 위첨자 "(’10)10.2만건 → (’25)17.1만건" 이
-  // 한 줄에 넷. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 이 꼴에서 뺀다
+  // 라틴 글자·수식 기호 없는 8자 이하 첨자는 글자 앞(빈칸 하나 0.6em 안)에 붙어도 같다 — 연도 위첨자 "(’10)10.2만건 → (’25)17.1만건"·
+  // 부처 첨자 "행안부급경사지, 국토부도로비탈면"·원문자 "①디스플레이, ②항공" 이 한 줄에 여럿. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 뺀다
   const isMarkers = (line: NormItem[], host: NormItem[]) => line.length > 1 && line.length <= 16 && line.every(i => {
     const t = i.text.trim(), n = t.length
     if (n > 8 || !n) return false

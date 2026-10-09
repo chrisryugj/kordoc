@@ -135,14 +135,21 @@ const unspacedCjkBoundary = (prev: string, next: string): boolean =>
   CJK.test(prev.trimEnd().slice(-1)) && CJK.test(next.trimStart().charAt(0)) && !/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(prev + next)
 const CLOSE_TAIL = /[’”」』)\]〉》>]+$/
 const TAIL = "[.,)」』’”]*"
-/** 어절 첫머리에 오지 않는 조사·어미 — 다음 줄 첫 어절이 이것뿐이면 앞 어절의 꼬리다 ("다." 는 줄을 넘어온 문장 끝) */
-const PARTICLE = new RegExp(`^(?:다\\.|의|에|에서|에는|에게|에도|에서는|까지|부터|처럼|마다|만|도|들|들이|들의|들은|들을|들에게|서는|서도|라고|라며|은|는|을|를|으로|로|으로서|로서|으로써|로써)${TAIL}$`)
+/** 어절 첫머리에 오지 않는 조사·어미 — 다음 줄 첫 어절이 이것뿐이면 앞 어절의 꼬리다 ("다." 는 줄을 넘어온 문장 끝).
+ *  겹조사("수준⏎에서도", "신고자⏎에게는", "자문단원들⏎께서", "가입⏎보다도")와 계사 "이다·이며·이나…"(모음 뒤 "구조⏎이나", "자료⏎이다.")도
+ *  홀로 서는 낱말이 없다 — 보도자료 100쌍 출력 판정에서 기본 띄움이 틀린 135곳 중 15곳, 원문 띄움 0곳 */
+const PARTICLE = new RegExp(`^(?:다\\.|의|에|에서|에는|에게|에도|에서는|까지|부터|처럼|마다|만|도|들|들이|들의|들은|들을|들에게|서는|서도|라고|라며|은|는|을|를|으로|로|으로서|로서|으로써|로써` +
+  `|에서도|에서의|에서만|에서부터|에만|에의|에게는|에게도|께서|께서는|께서도|으로는|로는|으로도|로도|으로부터|로부터|부터는|까지는|까지도|보다도|라도|이라도` +
+  `|들과|들과의|들로|들도|들에|들에서|들만|이다|이며|이나|이라는|이라고|이라며|인데|이므로|이지만|이면서)${TAIL}$`)
 /** 받침 뒤에서만 조사 — "이"(관형사)·"과"(부서명)는 홀로 설 수 있어 앞 음절 받침으로 가린다 */
-const PARTICLE_AFTER_CONS = new RegExp(`^(?:이|과|이다|이며|이고|이나|이라는|이라고|이라며|인|인데|인지|임|이어야|이므로|이지만|이면서)${TAIL}$`)
-const PARTICLE_AFTER_VOWEL = new RegExp(`^(?:가|와|라는)${TAIL}$`)
-const ENDING = new RegExp(`^(?:어야|아야|여야|므로|으므로|지만|면서|으면서|으며|거나|더라도|든지|었다|았다|였다|었으며|았으며|였으며|었고|았고|였고|겠다|겠고|겠으며|습니다|니다|니까)${TAIL}$`)
+const PARTICLE_AFTER_CONS = new RegExp(`^(?:이|과|과의|이고|인|인지|임|임을|임에도|이어야)${TAIL}$`)
+const PARTICLE_AFTER_VOWEL = new RegExp(`^(?:가|와|와의|라는)${TAIL}$`)
+const ENDING = new RegExp(`^(?:어야|아야|여야|므로|으므로|지만|면서|으면서|으며|거나|더라도|든지|었다|았다|였다|었으며|았으며|였으며|었고|았고|였고|였던|겠다|겠고|겠으며|습니다|니다|니까)${TAIL}$`)
 const ADNOMINAL_HAN = new RegExp(`^한${TAIL}$`)
 const SUFFIX_JEOK = new RegExp(`^적(?:인|으로|이다|이며|이고|임|인데|이라|이지만|으로서)${TAIL}$`)
+/** 줄 머리로 넘어온 접미사 — -화 하다·되다 활용("구체⏎화할"), 홀로 서지 않는 -량·-률(율)·-성 + 조사("수확⏎량을", "정확⏎성을";
+ *  "성과"는 낱말이라 -성 뒤 "과"는 뺀다) */
+const SUFFIX_NOUN = new RegExp(`^(?:화(?:하|한|할|함|했|해|된|되|됨|돼|됐)[가-힣]*|[량률율](?:을|이|은|의|에|도|과|으로|이다)|성(?:을|이|은|의|에|도|으로|이다))${TAIL}$`)
 /** 줄 끝 한 음절 + 다음 줄 머리로 갈린 조사 (에|서, 이|나) */
 const SPLIT_PARTICLE: [string, RegExp][] = [["에", new RegExp(`^서(?:는|도|의|부터|만)?${TAIL}$`)], ["이", new RegExp(`^나${TAIL}$`)]]
 /** 하다·되다 활용 — 명사 뒤면 접미사(달성⏎하였으며). -야·-도록·-으로·-게 따위 뒤는 보조 용언이라 띄어 쓴다
@@ -150,8 +157,11 @@ const SPLIT_PARTICLE: [string, RegExp][] = [["에", new RegExp(`^서(?:는|도|�
  *  하/한/해로 시작하는 낱말이 있어 활용 꼴을 낱낱이 든다 */
 const VERB_FORM = new RegExp(`^(?:하는|하여|하고|하며|하였다|하였으며|하였고|하였다고|했다|했으며|했고|했다고|했다며|한다|한다고|한다며|한다는|할|함|하겠다|하겠다고|하겠습니다|하기로|하면|하면서|하도록|해야|되는|되어|된|된다|된다고|된다는|되었다|되었으며|되었고|됐다|됐으며|되며|되고|되면|됨|돼|하기|하게|하지|하거나|해서|하는데|함으로써|함에|함을|함이|하기에|하기도|되지|되기|되도록|되거나|되면서)${TAIL}$`)
 /** 인용 "(이하 …)이라⏎한다" 의 -라 뒤 하다도 보조 용언 (잘못 붙임 3곳↓). -려("하려⏎하거나")·까지("’28.6월까지⏎할") 뒤도 보조 용언.
- *  "지" 는 뺐다 — 명사 끝(유지·방지·금지⏎하기)이 대부분이라 붙여야 맞다(hwpx↔pdf 꺾임 모의 순이득 +3) */
-const AUX_BEFORE = /(?:야|록|로|게|도|히|자|를|을|면|서|고|며|라|려|까지)$/
+ *  "지" 는 뺐다 — 명사 끝(유지·방지·금지⏎하기)이 대부분이라 붙여야 맞다(hwpx↔pdf 꺾임 모의 순이득 +3).
+ *  록·자·고 는 어미 꼴(-도록·-토록, -고자, 인용 -다고·-라고…)로만 — 명사 끝 "기록⏎하고", "투자⏎하며" 는 붙는다. 인용 따옴표는
+ *  걷고 본다("도출하겠다”고⏎하였다"). "도" 는 그대로 — 조사 "나도⏎할" 과 명사 끝 "주도⏎하였다" 를 글로 못 가른다 */
+const AUX_BEFORE = /(?:야|도록|토록|로|게|도|히|고자|를|을|면|서|라고|다고|려고|자고|냐고|며|라|려|까지)$/
+const auxBefore = (h: string): boolean => AUX_BEFORE.test(h.replace(/[”’"」』“‘]/g, ""))
 /** 되다 활용 앞 "…이" 는 주격 조사 — "승인이⏎되며", "3개월이⏎되어" (잘못 붙임 8곳↓·맞는 붙임 손실 0). "…가" 는 "평가⏎되어"(피동
  *  한 낱말)와 겹치고, 하다 활용 앞 "이" 는 "용이⏎하도록" 이 한 낱말이라 넣지 않는다 */
 const BECOME = /^[되된됐됨돼]/
@@ -187,7 +197,7 @@ function particleContinues(left: string, rightWord: string): boolean {
   if (PARTICLE.test(right)) return true
   if (!/[가-힣]/.test(last)) return false
   // 접미사 -적 이 줄 머리로 넘어온 것 — "자체⏎적으로", "근본⏎적인" ("적은·적게"(적다)는 제외)
-  if (SUFFIX_JEOK.test(right)) return true
+  if (SUFFIX_JEOK.test(right) || (h.length >= 2 && SUFFIX_NOUN.test(right))) return true
   // 어절 머리에 못 오는 어미 — "갖추⏎어야", "가지⏎므로"
   if (ENDING.test(right)) return true
   // 줄을 넘어온 문장 끝 — "…만족해야 한⏎다;<개정 2008. 9. 8>" (문장 부호 뒤에 붙은 개정 표기까지 한 어절)
@@ -197,8 +207,8 @@ function particleContinues(left: string, rightWord: string): boolean {
   if (PARTICLE_AFTER_CONS.test(right)) return hasBatchim(last)
   if (PARTICLE_AFTER_VOWEL.test(right)) return !hasBatchim(last)
   // "필요⏎한", "다양⏎한" — 하다 관형형은 두 음절+ 명사 뒤만 ("그 중⏎한 명"의 수 관형사와 겹친다)
-  if (ADNOMINAL_HAN.test(right)) return h.length >= 2 && !AUX_BEFORE.test(h) && !/(?:는|은|한|다|어|년)$/.test(h)
-  return VERB_FORM.test(right) && !AUX_BEFORE.test(h) && !((last === "이" || (last === "가" && h.length >= 3)) && BECOME.test(right))
+  if (ADNOMINAL_HAN.test(right)) return h.length >= 2 && !auxBefore(h) && !/(?:는|은|한|다|어|년)$/.test(h)
+  return VERB_FORM.test(right) && !auxBefore(h) && !((last === "이" || (last === "가" && h.length >= 3)) && BECOME.test(right))
 }
 
 /** 줄 머리가 새 항목(글머리표·번호·조항)인가 — 번호 뒤 숫자(9.8%)·"-" 뒤 글자(생산-가공)는 이어진 글.
