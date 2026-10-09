@@ -16,6 +16,7 @@ pip install kordoc     # SDK (Python 3.11 이상, 외부 의존성 없음)
 엔진 위치는 `KordocConfig(node=..., cli=...)`, 환경변수 `KORDOC_NODE`·`KORDOC_CLI`, PATH 의 `node`·`kordoc` 순으로 찾습니다.
 `cli` 에는 엔진의 `dist/cli.js`(또는 npm 이 만든 `kordoc` 링크)를 줍니다. 실행 인자는 배열로 넘기며 shell·`npx` 를 쓰지 않습니다.
 Windows 의 `kordoc.cmd`·pnpm 셸 shim 처럼 node 로 실행할 수 없는 래퍼를 찾으면 옆의 `node_modules/kordoc/dist/cli.js` 로 바꿔 쓰고, 그것도 없으면 `dist/cli.js` 를 지정하라는 오류를 냅니다.
+지정한 경로에 파일이 없으면 워커를 띄우기 전에 `KordocStartError` 를 냅니다.
 
 폐쇄망에서는 [오프라인 번들](../../docs/offline-deployment.md)을 풀고 그 안의 엔진을 가리키면 됩니다.
 
@@ -67,6 +68,7 @@ asyncio.run(main())
 `pages`(`"1-3"` 또는 `[1, 3]`) · `images` · `inline_images` · `ocr`(`True`·`False`·`"force"`) · `formula_ocr` · `password`
 
 함수 값(OCR 프로바이더, 진행 콜백)과 입력 경로를 바꾸는 옵션은 받지 않습니다. 잘못된 옵션은 `KordocProtocolError`(`code="INVALID_OPTIONS"`)입니다.
+JSON 으로 나타낼 수 없는 값(`float("nan")`·`float("inf")`, 순환 참조 등)은 워커에 보내기 전에 `ValueError` 로 돌려주며, 워커를 바꾸지 않습니다.
 
 ### 이미지
 

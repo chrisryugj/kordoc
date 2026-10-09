@@ -78,6 +78,9 @@ def _engine_entry(cli: Path) -> Path:
     Windows ``kordoc.cmd``·pnpm 셸 shim 은 node 로 실행할 수 없어(ready 전에 끝난다) 옆의 ``node_modules/kordoc/dist/cli.js`` 로
     바꾸고, 그것도 없으면 분명한 오류를 낸다."""
     path = cli.resolve()
+    if not path.is_file():
+        raise KordocStartError(
+            f"kordoc 엔진 경로에 파일이 없습니다: {path} — KordocConfig(cli=...) 또는 KORDOC_CLI 에 kordoc 패키지의 dist/cli.js 를 지정하세요")
     if path.suffix.lower() in (".js", ".mjs", ".cjs"):
         return path
     beside = path.parent / "node_modules" / "kordoc" / "dist" / "cli.js"

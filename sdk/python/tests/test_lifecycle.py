@@ -135,3 +135,37 @@ def test_shell_shim_cli_resolves_to_dist_cli_js(tmp_path: Path) -> None:
     bare.write_text('#!/bin/sh\nexec node "$basedir/../kordoc/dist/cli.js" "$@"\n')
     with pytest.raises(KordocStartError, match="dist/cli.js"):
         KordocConfig(node="node", cli=str(bare)).command()
+
+
+def test_nan_and_infinity_options_are_rejected_before_reaching_a_worker(tmp_path: Path) -> None:
+    """JSON 이 아닌 NaN·Infinity 토큰을 보내 멀쩡한 워커를 버리지 않는다."""
+    with KordocClient(**fault("ok")) as client:
+        pid = client.worker_pids()
+        for options in ({"pages": [float("nan")]}, {"pages": [float("inf")]}, {"ocr": float("nan")}):
+            with pytest.raises(ValueError):
+                client.parse(tmp_path / "a.docx", **options)
+            with pytest.raises(ValueError):
+                client.warmup(tmp_path / "a.docx", **options)
+        assert client.worker_pids() == pid
+        assert client.parse(tmp_path / "a.docx").success
+
+
+def test_missing_cli_path_is_reported_as_missing(tmp_path: Path) -> None:
+    """없는 cli 경로는 셸 래퍼가 아니라 파일이 없다고 알린다."""
+    with pytest.raises(KordocStartError, match="없습니다") as e:
+        KordocConfig(node="node", cli=str(tmp_path / "nope" / "kordoc")).command()
+    assert "셸 래퍼" not in str(e.value)
+
+
+def test_circular_option_error_is_not_reported_as_nan(tmp_path: Path) -> None:
+    """순환 참조 같은 다른 직렬화 오류를 NaN·Infinity 로 안내하지 않는다 (워커를 버리지 않는 것은 그대로)."""
+    pages: list = []
+    pages.append(pages)
+    with KordocClient(**fault("ok")) as client:
+        pid = client.worker_pids()
+        with pytest.raises(ValueError, match="Circular reference") as e:
+            client.parse(tmp_path / "a.docx", pages=pages)
+        assert "NaN" not in str(e.value)
+        with pytest.raises(ValueError, match="NaN"):
+            client.parse(tmp_path / "a.docx", pages=[float("nan")])
+        assert client.worker_pids() == pid
