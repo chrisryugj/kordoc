@@ -9,7 +9,7 @@
 
 import { type ResolvedGongmun, levelIndent, mmToHwpunit, needsGaejosikAssets, usesReportFonts } from "./gongmun.js"
 import { stripChapterNumber, gaejosikSizes, gaejosikBodyWidth, GAEJOSIK_BASE_WIDTH } from "./gaejosik.js"
-import { type GaejosikSummaryPlan, buildGaejosikSummary, buildGaejosikCover, buildGaejosikToc, buildGaejosikChapter, buildGaejosikBodyTitle, resetGjTableIds } from "./gen-gaejosik.js"
+import { type GaejosikSummaryPlan, buildGaejosikSummary, buildGaejosikCover, coverMetaBlocks, buildGaejosikToc, buildGaejosikChapter, buildGaejosikBodyTitle, resetGjTableIds } from "./gen-gaejosik.js"
 import {
   NS_SECTION, NS_PARA,
   CHAR_NORMAL, CHAR_BOLD, CHAR_QUOTE, CHAR_H1, PARA_NORMAL, PARA_QUOTE, PARA_CODE, PARA_LIST,
@@ -160,6 +160,8 @@ interface SectionCtx {
   chapterNo: number
   h2Seq: number
   coverH1Idx: number
+  /** 표지가 받은 날짜·기관명 문단 blockIdx (coverMetaBlocks) — 본문에서 뺀다 */
+  coverMetaIdxs: Set<number>
   titleBoxH1Idx: number
   pressH1Idx: number
   /** 개조식 장 목록 SSOT — 목차·본문 로마 장헤더가 공유하는 heading blockIdx 배열 (P1-3) */
@@ -208,7 +210,14 @@ function buildPreamble(blocks: MdBlock[], ctx: SectionCtx): void {
       gongmun!.pageNumbers ? xml.replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${pageHidingCtrl(hideHeader)}`) : xml
     if (gongmun.cover && h1Idx >= 0) {
       coverTitle = (blocks[h1Idx].text || "").trim()
-      const coverPart = buildGaejosikCover(coverTitle, gongmun, gjBodyW)
+      const meta = coverMetaBlocks(blocks, h1Idx, gongmun)
+      const cover = {
+        ...gongmun.cover,
+        date: meta.dateText ?? gongmun.cover.date,
+        org: meta.org !== undefined ? (blocks[meta.org].text || "").trim() : gongmun.cover.org,
+      }
+      for (const i of [meta.date, meta.org]) if (i !== undefined) ctx.coverMetaIdxs.add(i)
+      const coverPart = buildGaejosikCover(coverTitle, { ...gongmun, cover }, gjBodyW)
       coverPart[0] = hide(coverPart[0], true)
       preamble.push(...coverPart)
       ctx.coverH1Idx = h1Idx
@@ -601,6 +610,7 @@ export function blocksToSectionXml(
     chapterNo: 0,
     h2Seq: 0, // h2 말머리 'number' 모드 아라비아 순번 (QA-2)
     coverH1Idx: -1,
+    coverMetaIdxs: new Set(),
     titleBoxH1Idx: -1,
     pressH1Idx: -1,
     gjChapterIdxs: [],
@@ -615,6 +625,7 @@ export function blocksToSectionXml(
 
   for (let blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
     const block = blocks[blockIdx]
+    if (ctx.coverMetaIdxs.has(blockIdx)) continue // 표지가 받은 날짜·기관명 — 목록 번호도 세지 않는다
 
     // 순서 있는 list_item이 아니면 카운터 전부 리셋 (연속되지 않은 목록은 다시 1부터)
     if (block.type !== "list_item" || !block.ordered) {

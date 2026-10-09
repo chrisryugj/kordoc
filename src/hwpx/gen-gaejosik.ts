@@ -214,14 +214,40 @@ const stripInline = (s: string): string => s.replace(/(?<!!)\[([^\]\n]*)\]\([^)\
  * 표지 제목(h1) 바로 뒤 — 첫 장 헤더 전 — 인용문, 또는 summary 옵션을 요약 상자로 (서울 실결재 제목 아래 요약 상자 53개 전부 1×1).
  * 표지가 없으면 첫 h1 이 장 헤더(Ⅰ)라 인용문은 종전대로 ※ 참고. summary 옵션이 있으면 그것이 상자, 인용문은 ※ 참고(v5 보고서와 같음)
  */
+/** 표지 날짜 문단 — formatGaejosikDate 모양("2026. 10. 9.") */
+const COVER_DATE = /^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?$/
+
+/**
+ * 표지가 그린 날짜·기관명 문단 — kordoc 이 만든 개조식을 다시 읽은 마크다운은 "# 제목" 뒤에 표지 날짜(와 기관명) 문단이 온다.
+ * 표지가 그 값을 받고 본문에서 뺀다. 종전엔 다시 만들면 날짜가 본문에 한 번 더 찍히고, 그 뒤 `>` 요약이 "제목 바로 뒤"가 아니라
+ * 요약 상자가 되지 않았다. 옵션으로 준 표지 날짜·기관명이 있으면 손대지 않는다. 기관명은 날짜 바로 뒤 짧은 한 줄이 인용문·제목 앞일 때만.
+ */
+export function coverMetaBlocks(blocks: MdBlock[], h1: number, g: ResolvedGongmun): { date?: number; org?: number; dateText?: string } {
+  const out: { date?: number; org?: number; dateText?: string } = {}
+  if (h1 < 0 || !g.cover || g.cover.date !== null) return out
+  // "2026. 9. 30." 은 마크다운에서 2026번 번호 목록 항목("9. 30.")으로도 읽힌다
+  const d = blocks[h1 + 1]
+  const dateText = d?.type === "list_item" && d.ordered && !d.indent ? `${d.marker} ${d.text}` : d?.type === "paragraph" ? d.text : ""
+  if (!COVER_DATE.test((dateText ?? "").trim())) return out
+  out.date = h1 + 1
+  out.dateText = dateText!.trim()
+  const o = blocks[h1 + 2], after = blocks[h1 + 3]
+  const t = (o?.text ?? "").trim()
+  if (!g.cover.org && o?.type === "paragraph" && t && !t.includes("\n") && [...t].length <= 40 && !/[.!?]$/.test(t) &&
+    (after?.type === "blockquote" || after?.type === "heading")) out.org = h1 + 2
+  return out
+}
+
 export function planGaejosikSummary(blocks: MdBlock[], g: ResolvedGongmun, bodyWidth: number): GaejosikSummaryPlan | null {
   if (g.preset !== "gaejosik") return null
   let text = g.summary ? polishGongmunText(g.summary) : ""
   let quoteIdx = -1
   if (!text && g.cover) {
     const h1 = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
-    const next = h1 >= 0 ? blocks[h1 + 1] : undefined
-    if (next?.type === "blockquote" && next.text?.trim()) { text = next.text; quoteIdx = h1 + 1 }
+    const meta = coverMetaBlocks(blocks, h1, g)
+    const at = h1 + 1 + (meta.date !== undefined ? 1 : 0) + (meta.org !== undefined ? 1 : 0)
+    const next = h1 >= 0 ? blocks[at] : undefined
+    if (next?.type === "blockquote" && next.text?.trim()) { text = next.text; quoteIdx = at }
   }
   const paras = text.split("\n").map((l) => l.trim().replace(/^[□■○ㅇ◦●\-–ㆍ·•]\s*/u, "")).filter(Boolean)
   if (!paras.length) return null

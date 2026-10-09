@@ -105,4 +105,35 @@ describe("개조식 요약 상자", () => {
     const r = await parse(await markdownToHwpx(doc(SUMMARY), { gongmun: { preset: "개조식" } }))
     assert.ok(r.success && r.markdown.includes(SUMMARY), r.success ? r.markdown : "")
   })
+
+  it("왕복 md→hwpx→md→hwpx — 요약 상자는 `>` 인용문으로 다시 읽혀 다시 상자가 된다 (개조식·보고서, 문단 여럿)", async () => {
+    for (const [preset, quote] of [["개조식", SUMMARY], ["보고서", SUMMARY], ["개조식", `${SUMMARY}\n> 관계 부처 협업 과제를 함께 보고함`]] as const) {
+      const first = await parse(await markdownToHwpx(doc(quote), { gongmun: { preset } }))
+      assert.ok(first.success)
+      if (!first.success) continue
+      for (const line of quote.split("\n> ")) assert.match(first.markdown, new RegExp(`^> ${line}$`, "m"), `${preset}: ${first.markdown.slice(0, 400)}`)
+      const t = summaryTable((await parts(await markdownToHwpx(first.markdown, { gongmun: { preset } }))).sec)
+      assert.ok(t, `${preset}: 두 번째 생성에도 요약 상자`)
+      for (const line of quote.split("\n> ")) assert.ok(t.includes(`<hp:t>${line}</hp:t>`), `${preset}: ${line}`)
+    }
+  })
+
+  it("왕복 — 다시 읽은 표지 날짜·기관명 문단은 표지가 받아 본문에 두 번 찍히지 않는다", async () => {
+    const org = "광진구 기획예산과"
+    const first = await parse(await markdownToHwpx(doc(SUMMARY), { gongmun: { preset: "개조식", cover: { date: "2026. 9. 30.", org } } }))
+    assert.ok(first.success)
+    if (!first.success) return
+    assert.match(first.markdown, /^2026\. 9\. 30\.$/m)
+    // 날짜 사이 빈칸은 묶음 빈칸(<hp:nbSpace/>)으로 나간다
+    const flat = (xml: string) => xml.replace(/<hp:nbSpace\/>/g, " ")
+    const sec = flat((await parts(await markdownToHwpx(first.markdown, { gongmun: { preset: "개조식" } }))).sec)
+    assert.equal(sec.split("<hp:t>2026. 9. 30.</hp:t>").length - 1, 1, "날짜 한 번 — 표지")
+    assert.equal(sec.split(`<hp:t>${org}</hp:t>`).length - 1, 1, "기관명 한 번 — 표지")
+    assert.ok(summaryTable(sec)?.includes(`<hp:t>${SUMMARY}</hp:t>`), "요약 상자")
+    // 옵션으로 준 날짜가 있으면 본문 날짜 문단은 그대로 본문이다
+    const kept = flat((await parts(await markdownToHwpx(first.markdown, { gongmun: { preset: "개조식", cover: { date: "2026. 10. 1." } } }))).sec)
+    assert.equal(kept.split("<hp:t>2026. 10. 1.</hp:t>").length - 1, 1, "옵션 날짜가 표지")
+    // 마크다운 날짜 줄은 본문에 남는다("2026. " 은 번호 목록 표지로 읽힌다 — 종전 동작)
+    assert.match(kept, /<hp:t>(?:2026\. )?9\. 30\.<\/hp:t>/, "마크다운 날짜 줄은 본문에 남는다")
+  })
 })

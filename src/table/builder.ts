@@ -592,7 +592,8 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
         text += ` (주: ${block.footnoteText})`
       }
 
-      lines.push(block.quote ? "> " + escapeGfm(text) : listIndent + escapeGfm(text), "")
+      // 여러 줄 인용문(요약 상자 문단 여럿)은 줄마다 "> " — 접두 없는 줄은 md 파서가 인용문에서 떼어 낸다
+      lines.push(block.quote ? escapeGfm(text).split("\n").map(l => "> " + l).join("\n") : listIndent + escapeGfm(text), "")
     } else if (block.type === "table" && block.table) {
       // 테이블 앞에 빈 줄 보장 (마크다운 렌더링 필수)
       if (lines.length > 0 && lines[lines.length - 1] !== "") {

@@ -98,6 +98,8 @@ function walkSection(
           if (chan) {
             if (chan.kind === "heading" && chan.text) {
               blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.page })
+            } else if (chan.kind === "quote" && chan.text) {
+              blocks.push({ type: "paragraph", text: chan.text, quote: true, pageNumber: ctx.page })
             }
             break
           }
@@ -419,25 +421,27 @@ function mergeBlocksIntoCell(cell: CellCtxEx, sink: IRBlock[]): void {
   }
 }
 
-/** kordoc 왕복 채널 판독 결과 — heading 복원 또는 파생물 스킵 */
+/** kordoc 왕복 채널 판독 결과 — heading·요약 인용문 복원 또는 파생물 스킵 */
 interface KordocTableChannel {
-  kind: "heading" | "skip"
+  kind: "heading" | "quote" | "skip"
   level?: number
   text?: string
 }
 
 /**
  * kordoc 생성기의 장식표 왕복 마커 판독 (v4.0.5 P2).
- * 제목 셀 `name="__kordoc_h1~6"` → heading 복원, `__kordoc_toc`/`__kordoc_skip` →
+ * 제목 셀 `name="__kordoc_h1~6"` → heading 복원, `__kordoc_summary` → 제목 뒤 `>` 요약 인용문 복원(개조식·보고서 요약 상자 —
+ * 종전엔 일반 문단으로 풀려 md→hwpx→md→hwpx 에서 상자가 사라졌다), `__kordoc_toc`/`__kordoc_skip` →
  * 파생물(목차·표지 제목 반복)이므로 통째 스킵. 마커 없으면 null(일반 표).
  */
 function kordocTableChannel(tblEl: Element, ctx: WalkCtx): KordocTableChannel | null {
   const found = findKordocMarkedCell(tblEl, 0)
   if (!found) return null
-  const m = found.name.match(/^__kordoc_(?:h([1-6])|(toc|skip))$/)
+  const m = found.name.match(/^__kordoc_(?:h([1-6])|(toc|skip)|(summary))$/)
   if (!m) return null
   if (m[2]) return { kind: "skip" }
   const text = collectSubListText(found.cell, ctx).trim()
+  if (m[3]) return { kind: "quote", text }
   return { kind: "heading", level: Number(m[1]), text }
 }
 
@@ -635,6 +639,8 @@ function walkParagraphChildren(
           if (chan) {
             if (chan.kind === "heading" && chan.text) {
               blocks.push({ type: "heading", level: chan.level, text: chan.text, pageNumber: ctx.page })
+            } else if (chan.kind === "quote" && chan.text) {
+              blocks.push({ type: "paragraph", text: chan.text, quote: true, pageNumber: ctx.page })
             }
             continue
           }
