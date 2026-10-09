@@ -247,25 +247,44 @@ async function closerReads(
  * 몇 pt 씩 어긋나, 박스마다 아래 끝을 기준선으로 넘기면 블록 파이프라인의 줄 묶음(3pt)이 한 줄을 여럿으로 쪼개고 위쪽 y 순으로
  * 뒤집는다(#141 영수증: "탄현점 / 이마트", 품목 바코드·단가·금액이 다른 행). 중심 y 차이 ≤ 작은 박스 높이의 절반이면 한 줄,
  * 가로로 크게 겹치는 박스는 같은 줄에 넣지 않는다(큰 로고 박스가 위아래 두 줄을 잇지 않게).
+ * 한 줄 조각은 높이가 엇비슷하다 — 높이가 두 배 넘게 다른 박스(아이콘·로고·QR 잡음)와는 묶지 않고, 긴 글줄은 줄 안 가장 가까운 긴
+ * 글줄과 높이의 5배 넘게 떨어지면 묶지 않는다(범례 라벨 사이 3~4배는 한 줄). 짧은 조각(숫자·라벨 칸)은 멀어도 묶는다(영수증 금액 칸).
+ * 두 단 글의 좌우 줄은 높이가 엇비슷해도 다른 줄이다(ODL 141 두 단 카드 인포그래픽: 좌우 카드 줄 틈 7~60배 — 4.21.3 에서 한 줄로
+ * 묶여 단 분리가 깨지고 가짜 표가 됐다, NID 0.96 → 0.44).
  */
 export function groupOcrLines(items: OcrItem[]): number[][] {
   const order = items.map((_, i) => i).sort((a, b) => (items[a].y + items[a].h / 2) - (items[b].y + items[b].h / 2))
+  const accepts = (l: number[], i: number): boolean => {
+    const it = items[i], c = it.y + it.h / 2
+    const lc = l.reduce((s, j) => s + items[j].y + items[j].h / 2, 0) / l.length
+    const minH = Math.min(it.h, ...l.map(j => items[j].h))
+    if (Math.abs(c - lc) > minH / 2) return false
+    let nearLong = 0
+    for (const j of l) {
+      const o = items[j]
+      if (Math.max(it.h, o.h) > Math.min(it.h, o.h) * 2) return false
+      // 박스는 잉크 외곽에 여백이 붙어 이웃 낱말과 조금 겹친다(이마트·탄현점 32px) — 좁은 쪽 폭의 절반 넘게 겹칠 때만 다른 줄
+      const ov = Math.min(it.x + it.w, o.x + o.w) - Math.max(it.x, o.x)
+      if (ov >= Math.min(it.w, o.w) / 2) return false
+      if (it.w >= it.h * 6 && o.w >= o.h * 6) nearLong = Math.min(nearLong || Infinity, Math.max(0, -ov) / Math.min(it.h, o.h))
+    }
+    // 긴 글줄은 줄 안 가장 가까운 긴 글줄과 높이의 5배 안이어야 한다 — 사이에 짧은 상자(카드 번호)가 끼어도 다리가 되지 않는다
+    return nearLong <= 5
+  }
   const lines: number[][] = []
   for (const i of order) {
-    const it = items[i], c = it.y + it.h / 2
-    const line = lines.find(l => {
-      const lc = l.reduce((s, j) => s + items[j].y + items[j].h / 2, 0) / l.length
-      const minH = Math.min(it.h, ...l.map(j => items[j].h))
-      // 박스는 잉크 외곽에 여백이 붙어 이웃 낱말과 조금 겹친다(이마트·탄현점 32px) — 좁은 쪽 폭의 절반 넘게 겹칠 때만 다른 줄
-      return Math.abs(c - lc) <= minH / 2 && l.every(j => {
-        const ov = Math.min(it.x + it.w, items[j].x + items[j].w) - Math.max(it.x, items[j].x)
-        return ov < Math.min(it.w, items[j].w) / 2
-      })
-    })
+    const line = lines.find(l => accepts(l, i))
     if (line) line.push(i)
     else lines.push([i])
   }
-  return lines
+  // 홀로 남은 박스는 줄이 다 선 뒤 한 번 더 넣어 본다 — 먼저 만난 줄에 먼 긴 글줄만 있어 갈린 범례 라벨(ODL 059 "Construction | Waste")
+  for (let k = 0; k < lines.length; k++) {
+    if (lines[k].length !== 1) continue
+    const i = lines[k][0]
+    const target = lines.find((l, m) => m !== k && l.length > 0 && accepts(l, i))
+    if (target) { target.push(i); lines[k] = [] }
+  }
+  return lines.filter(l => l.length > 0)
 }
 
 export function ocrItemsToBlocks(

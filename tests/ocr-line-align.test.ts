@@ -5,7 +5,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { ocrItemsToBlocks } from "../src/ocr/pdf-ocr.js"
+import { ocrItemsToBlocks, groupOcrLines } from "../src/ocr/pdf-ocr.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 
 const RECEIPT: Array<[string, number, number, number, number]> = [
@@ -66,5 +66,45 @@ describe("OCR 줄 맞춤 (#141)", () => {
     assert.ok(item2 && !item2.includes("880907439"), rows.join("\n"))
     const total = rows.find(r => r.includes("27,600"))
     assert.ok(total && /합/.test(total), rows.join("\n"))
+  })
+})
+
+describe("OCR 줄 맞춤 — 두 단 글은 좌우 줄을 묶지 않는다 (ODL 141)", () => {
+  // 두 단 카드 인포그래픽: 왼쪽·오른쪽 카드의 글줄이 높이 차 0.3줄 안으로 엇비슷하게 놓였다(틈 7.1배·20배)
+  const card = [
+    { text: "each of us decide what happens to our own creations", x: 612, y: 3720, w: 1190, h: 46, confidence: 0.95 },
+    { text: "a presentation in class—that's a fair use situation.", x: 2129, y: 3712, w: 1150, h: 44, confidence: 0.95 },
+    { text: "We're all both consumers and creators of creative", x: 640, y: 2230, w: 1120, h: 45, confidence: 0.95 },
+    { text: "Copyright gives a lot of protection, but it also has", x: 2460, y: 2221, w: 1180, h: 44, confidence: 0.95 },
+    // 오른쪽 카드 번호 — 짧은 상자가 두 단 사이에 놓여도 다리가 되지 않는다
+    { text: "6", x: 2200, y: 2215, w: 40, h: 60, confidence: 0.95 },
+  ]
+  it("긴 글줄끼리 멀리 떨어지면 다른 줄", () => {
+    const lines = groupOcrLines(card).map(l => l.map(j => card[j].text))
+    assert.ok(!lines.some(l => l.some(t => t.startsWith("We’re") || t.startsWith("We're")) && l.some(t => t.startsWith("Copyright"))), JSON.stringify(lines))
+    assert.ok(!lines.some(l => l.some(t => t.startsWith("each")) && l.some(t => t.startsWith("a presentation"))), JSON.stringify(lines))
+  })
+  it("높이가 두 배 넘게 다른 상자(아이콘·QR 잡음)와는 묶지 않는다", () => {
+    const junk = [
+      { text: "다", x: 3518, y: 5760, w: 41, h: 36, confidence: 0.5 },
+      { text: "i", x: 3546, y: 5765, w: 27, h: 14, confidence: 0.5 },
+      { text: "!’", x: 317, y: 5198, w: 135, h: 172, confidence: 0.5 },
+      { text: "permission.", x: 711, y: 5266, w: 250, h: 62, confidence: 0.95 },
+    ]
+    assert.deepEqual(groupOcrLines(junk).map(l => l.length), [1, 1, 1, 1])
+  })
+  it("범례 한 줄의 긴 라벨은 먼저 만난 줄 순서와 무관하게 한 줄 (ODL 059 원그래프 범례)", () => {
+    const legend = [
+      { text: "Waste materials", x: 1146, y: 652.5, w: 161.5, h: 17.5, confidence: 0.95 },
+      { text: "Unutilised wood General wood", x: 630, y: 652.5, w: 321.5, h: 17.5, confidence: 0.95 },
+      { text: "Construction", x: 991, y: 653.5, w: 158, h: 16.5, confidence: 0.95 },
+      { text: "Biogas", x: 508, y: 653.5, w: 63, h: 21, confidence: 0.95 },
+    ]
+    assert.deepEqual(groupOcrLines(legend).map(l => l.length), [4])
+  })
+  it("영수증 품목 행(짧은 숫자 칸과 6.9배 틈)은 그대로 한 줄", () => {
+    const lines = groupOcrLines(items).map(l => l.map(j => items[j].text))
+    assert.ok(lines.some(l => l.includes("부가세과세 물품가액") && l.includes("25,091")), JSON.stringify(lines))
+    assert.ok(lines.some(l => l.includes("합") && l.includes("계") && l.includes("27,600")), JSON.stringify(lines))
   })
 })

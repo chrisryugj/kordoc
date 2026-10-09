@@ -728,7 +728,8 @@ function mergeMultiLineRows(rows: RowGroup[], columns: ColCluster[]): RowGroup[]
 /**
  * 칸 안에서 꺾인 연속 줄이 아니라 새 레코드의 첫 줄인지 — 아이템이 자기 열을 넘어 다음 열까지 뻗고, 위 행의 같은 열 칸이 이미
  * 차 있으면 연속 줄일 수 없다(꺾인 줄은 자기 칸 안에 머문다). 영수증의 품목 두 줄 묶음(품명 줄 + 바코드·단가·금액 줄)에서
- * 다음 품명 줄이 앞 품목 바코드 행에 붙던 것(#141).
+ * 다음 품명 줄이 앞 품목 바코드 행에 붙던 것(#141). 위 행이 두 열 이상 찬 데이터 행일 때만 — 위 행이 한 칸뿐인 글줄이면 산문이 꺾여 이어진
+ * 것이다(ODL 039 두 단 본문·141 카드 글이 줄마다 행으로 남아 산문 표 판정을 비껴갔다)
  */
 function startsNewRecord(prev: RowGroup, curr: RowGroup, columns: ColCluster[]): boolean {
   const colOf = (x: number) => {
@@ -736,6 +737,7 @@ function startsNewRecord(prev: RowGroup, curr: RowGroup, columns: ColCluster[]):
     for (let c = 0; c < columns.length; c++) if (columns[c].x <= x + COL_CLUSTER_TOL) ci = c
     return ci
   }
+  if (new Set(prev.items.map(p => colOf(p.x))).size < 2) return false
   return curr.items.some(it => {
     const ci = colOf(it.x)
     if (ci < 0 || ci + 1 >= columns.length || it.x + it.w <= columns[ci + 1].x + COL_CLUSTER_TOL) return false
