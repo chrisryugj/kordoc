@@ -83,6 +83,19 @@ function medianOf(values: number[]): number {
  * - 한 단에만 있고 다른 단 첫 줄보다 위에 큰 틈으로 떨어진 짧은 줄(그림 옆 캡션)은 두 단보다 먼저,
  * - 단 아래쪽 본문보다 작은 글자로 이어지는 각주(번호 줄 포함)는 두 단 본문 뒤에 좌 → 우로 낸다.
  */
+/** 단 아래 각주 띠의 줄 수 — 아래에서부터 본문보다 작은 글자 줄이고 그중 하나가 각주 번호로 시작할 때 */
+export function noteLines(lines: NormItem[][]): number {
+  // 본문 크기는 줄의 25% 이상을 차지하는 가장 큰 글자 크기 — 각주 줄이 본문보다 많은 단은 중앙값이 각주 크기가 되고,
+  // 단 맨 위가 작은 캡션인 단(ODL 008 우단)은 첫 줄이 본문이 아니다
+  const sizes = lines.map(l => Math.max(...l.map(i => i.fontSize)))
+  const body = Math.max(0, ...sizes.filter(s => sizes.filter(o => Math.abs(o - s) < 0.5).length >= lines.length * 0.25))
+  let n = 0
+  while (n < lines.length && Math.max(...lines[lines.length - 1 - n].map(i => i.fontSize)) <= body * 0.9) n++
+  if (n === 0 || lines.length - n < 3) return 0
+  const tail = lines.slice(lines.length - n)
+  return tail.some(l => NOTE_START.test(mergeLineSimple(l))) ? n : 0
+}
+
 function columnPair(left: NormItem[], right: NormItem[]): NormItem[][] {
   if (left.length === 0 || right.length === 0) return [left, right].filter(g => g.length > 0)
   const byLine = (side: NormItem[]) => groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x))
@@ -110,19 +123,7 @@ function columnPair(left: NormItem[], right: NormItem[]): NormItem[][] {
   const nR = lift(R, L), nL = nR ? 0 : lift(L, R)
   if (nR) { out.push(R.slice(0, nR).flat()); R = R.slice(nR) }
   if (nL) { out.push(L.slice(0, nL).flat()); L = L.slice(nL) }
-  // 각주 띠 — 아래에서부터 본문보다 작은 글자 줄
-  const notes = (lines: NormItem[][]): number => {
-    // 본문 크기는 줄의 25% 이상을 차지하는 가장 큰 글자 크기 — 각주 줄이 본문보다 많은 단은 중앙값이 각주 크기가 되고,
-    // 단 맨 위가 작은 캡션인 단(ODL 008 우단)은 첫 줄이 본문이 아니다
-    const sizes = lines.map(l => Math.max(...l.map(i => i.fontSize)))
-    const body = Math.max(0, ...sizes.filter(s => sizes.filter(o => Math.abs(o - s) < 0.5).length >= lines.length * 0.25))
-    let n = 0
-    while (n < lines.length && Math.max(...lines[lines.length - 1 - n].map(i => i.fontSize)) <= body * 0.9) n++
-    if (n === 0 || lines.length - n < 3) return 0
-    const tail = lines.slice(lines.length - n)
-    return tail.some(l => NOTE_START.test(mergeLineSimple(l))) ? n : 0
-  }
-  const kL = notes(L), kR = notes(R)
+  const kL = noteLines(L), kR = noteLines(R)
   if (kL === 0 && kR === 0) return [...out, L.flat(), R.flat()].filter(g => g.length > 0)
   return [...out, L.slice(0, L.length - kL).flat(), R.slice(0, R.length - kR).flat(),
     L.slice(L.length - kL).flat(), R.slice(R.length - kR).flat()].filter(g => g.length > 0)

@@ -1,5 +1,6 @@
 import type { IRBlock } from "../types.js"
 import { computeBBox, dominantStyle, groupByY, mergeLineSimple, type NormItem } from "./text-line.js"
+import { noteLines } from "./page-regions.js"
 
 /** Attach an oversized initial to the first body line it visually starts. */
 export function attachDropCaps(lines: NormItem[][]): NormItem[][] {
@@ -116,7 +117,12 @@ export function splitTrailingColumnRegion(items: NormItem[]): NormItem[][] | nul
   const left = lower.filter(item => item.x + item.w <= best.x)
   const right = lower.filter(item => item.x >= best.x)
   if (upper.length + left.length + right.length !== items.length) return null
-  return [upper, left, right]
+  // 단 아래 작은 글자 각주 띠는 두 단 본문 뒤에 — 왼 단 각주가 오른 단보다 먼저 읽혔다(ODL 015 "72 Gubash and Lootah, …", 두 단 산문 columnPair 와 같은 규칙)
+  const [L, R] = [left, right].map(side => groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x)))
+  const kL = noteLines(L), kR = noteLines(R)
+  if (kL === 0 && kR === 0) return [upper, left, right]
+  return [upper, L.slice(0, L.length - kL).flat(), R.slice(0, R.length - kR).flat(), L.slice(L.length - kL).flat(), R.slice(R.length - kR).flat()]
+    .filter(region => region.length > 0)
 }
 
 /**

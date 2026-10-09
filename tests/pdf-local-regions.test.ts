@@ -24,6 +24,23 @@ describe("PDF source-preserving local regions", () => {
     assert.ok(items.every(source => regions.flat().includes(source)))
   })
 
+  it("reads a column-bottom footnote after both columns (ODL 015 \"72 Gubash and Lootah, …\")", () => {
+    const items = [item("running title", 55, 690, 400),
+      item("A full-width caption describing the image", 55, 240, 420)]
+    for (let row = 0; row < 7; row++) {
+      items.push(item(`Left prose continues on visual row ${row} with enough words`, 55, 170 - row * 14, 210))
+      items.push(item(`Right prose continues on visual row ${row} with enough words`, 281, 170 - row * 14, 210))
+    }
+    // 오른 단 마지막 줄과 같은 높이의 작은 글자 각주 — 왼 단 본문은 그 위에서 끝난다
+    items.push(item("72 Gubash and Lootah, Traditional Emirati Jewels, 62.", 55, 70, 194, 9))
+    items.push(item("Right prose closes the column on the footnote line too", 281, 70, 210))
+    const regions = splitTrailingColumnRegion(items)
+    assert.ok(regions)
+    const at = (needle: string) => regions.findIndex(region => region.some(source => source.text.startsWith(needle)))
+    assert.ok(at("72 Gubash") > at("Right prose closes"), JSON.stringify(regions.map(region => region.map(source => source.text.slice(0, 12)))))
+    assert.equal(new Set(regions.flat()).size, items.length)
+  })
+
   it("keeps a display sidebar before its separate long prose region", () => {
     const items = [item("running header", 99, 798, 124, 10),
       item("Section", 99, 718, 150, 34), item("Overview", 99, 676, 155, 34),
