@@ -162,7 +162,7 @@ async function ocrOnePage(
         // 그림 속 글은 작다(차트 눈금·범례 6~8pt) — 영역만 두 배로 다시 읽어 글자 수로 가중한 평균 신뢰도가 높은 쪽을 쓴다
         const near = reads[k]
         if (near?.length && meanConfidence(near) > meanConfidence(own)) own = near
-        return own.length ? ocrItemsToBlocks(own, pageNo, pdfW, pdfH, scale, ruling && rulingToPdfLines(ruling, scale, pdfH), detectTables) : []
+        return own.length ? ocrItemsToBlocks(own, pageNo, pdfW, pdfH, scale, ruling && rulingToPdfLines(ruling, scale, pdfH), detectTables, undefined, true) : []
       })
     }
     // 벡터 글자 쪽: 표 구조는 그 쪽의 실제 괘선으로 (rhwp cairo 13쌍 46표 exact: 래스터 괘선 14 → 실제 괘선 20)
@@ -248,7 +248,8 @@ async function closerReads(
  * 뒤집는다(#141 영수증: "탄현점 / 이마트", 품목 바코드·단가·금액이 다른 행). 중심 y 차이 ≤ 작은 박스 높이의 절반이면 한 줄,
  * 가로로 크게 겹치는 박스는 같은 줄에 넣지 않는다(큰 로고 박스가 위아래 두 줄을 잇지 않게).
  * 한 줄 조각은 높이가 엇비슷하다 — 줄 높이 중앙값과 두 배 넘게 다른 박스(아이콘·로고·QR 잡음)와는 묶지 않고(줄의 작은 숫자 박스
- * 하나와 재면 두 행에 걸친 칸 박스가 제 행을 놓친다, changwon-plan2026 "3/8"), 긴 글줄은 줄 안 가장 가까운 긴
+ * 하나와 재면 두 행에 걸친 칸 박스가 제 행을 놓친다, changwon-plan2026 "3/8"), 높이의 8배 넘게 떨어진 조각은 세로 중심이 작은 박스
+ * 높이의 0.35 안일 때만 같은 줄(차트 범례와 먼 축 눈금), 긴 글줄은 줄 안 가장 가까운 긴
  * 글줄과 높이의 5배 넘게 떨어지면 묶지 않는다(범례 라벨 사이 3~4배는 한 줄). 짧은 조각(숫자·라벨 칸)은 멀어도 묶는다(영수증 금액 칸).
  * 두 단 글의 좌우 줄은 높이가 엇비슷해도 다른 줄이다(ODL 141 두 단 카드 인포그래픽: 좌우 카드 줄 틈 7~60배 — 4.21.3 에서 한 줄로
  * 묶여 단 분리가 깨지고 가짜 표가 됐다, NID 0.96 → 0.44).
@@ -262,14 +263,19 @@ export function groupOcrLines(items: OcrItem[]): number[][] {
     if (Math.abs(c - lc) > minH / 2) return false
     const hs = l.map(j => items[j].h).sort((a, b) => a - b), med = hs[hs.length >> 1]
     if (Math.max(it.h, med) > Math.min(it.h, med) * 2) return false
-    let nearLong = 0
+    let nearLong = 0, gap = Infinity
     for (const j of l) {
       const o = items[j]
       // 박스는 잉크 외곽에 여백이 붙어 이웃 낱말과 조금 겹친다(이마트·탄현점 32px) — 좁은 쪽 폭의 절반 넘게 겹칠 때만 다른 줄
       const ov = Math.min(it.x + it.w, o.x + o.w) - Math.max(it.x, o.x)
       if (ov >= Math.min(it.w, o.w) / 2) return false
+      gap = Math.min(gap, Math.max(0, -ov))
       if (it.w >= it.h * 6 && o.w >= o.h * 6) nearLong = Math.min(nearLong || Infinity, Math.max(0, -ov) / Math.min(it.h, o.h))
     }
+    // 높이의 8배 넘게 떨어진 조각은 세로로 거의 같은 줄이어야 한다 — 영수증 먼 칸은 중심 어긋남이 작은 박스 높이의 0.22 안, 원그래프
+    // 값과 범례(ODL 148 "18.9%"·"Project Manager")는 0.31, 차트 범례 라벨과 멀리 왼쪽 축 눈금은 0.37~0.47 이라 반쯤 어긋난 채 묶여
+    // 기준선이 옮겨지고 읽기 순서가 바뀌었다(ODL 128·140·057)
+    if (gap > 8 * minH && Math.abs(c - lc) > minH * 0.35) return false
     // 긴 글줄은 줄 안 가장 가까운 긴 글줄과 높이의 5배 안이어야 한다 — 사이에 짧은 상자(카드 번호)가 끼어도 다리가 되지 않는다
     return nearLong <= 5
   }
@@ -298,6 +304,7 @@ export function ocrItemsToBlocks(
   extraLines?: { horizontals: LineSegment[]; verticals: LineSegment[] },
   detectTables = true,
   opList: PageOps = { fnArray: [], argsArray: [] },
+  figureRegion = false,
 ): IRBlock[] {
   // 줄마다 아래 끝을 중앙값으로 맞추고, 겹친 이웃 박스는 겹친 구간 가운데서 갈라 낱말 경계(따로 검출된 상자)를 공백으로 남긴다
   const bottoms = items.map(it => it.y + it.h)
@@ -317,7 +324,10 @@ export function ocrItemsToBlocks(
     }
   }
   const norm: NormItem[] = items.map((it, i) => {
-    const h = it.h / scale
+    // 그림 영역은 기준선을 줄 중앙값으로 옮겨도 박스 위 끝은 그대로 — 높이째 옮기면 키 큰 칸 박스가 윗행 칸과 더 겹쳐 그 칸에 붙었다(ODL 110
+    // 그림 속 표 "14"·"15" → "1415"). 쪽 전체 OCR 은 높이째 옮긴다 — 위 끝을 지키자 스캔 쪽 셋의 CER 이 올랐다(topik 1.50 → 1.88%).
+    // 글자 크기는 원래 박스 높이로 잰다
+    const h = (figureRegion ? Math.max(1, bottoms[i] - it.y) : it.h) / scale
     return {
       text: it.text,
       x: Math.round(xs[i].x / scale),
@@ -326,7 +336,7 @@ export function ocrItemsToBlocks(
       w: Math.round((xs[i].r - xs[i].x) / scale),
       h: Math.round(h),
       // 박스는 잉크 외곽(engine tightBoxes) — 한글 줄 잉크 높이 ≈ 0.9em
-      fontSize: Math.max(1, Math.round(h / 0.9)),
+      fontSize: Math.max(1, Math.round(it.h / scale / 0.9)),
       fontName: "ocr",
       isHidden: false,
       ...(xs[i].space ? { hasSpaceBefore: true } : {}),

@@ -36,7 +36,10 @@ export function mergeOcrImageRegions(
     // 표 모양이 아닌 OCR 표(머리 행 없는 화면 캡처 글줄 — ODL 072 유튜브 채널)는 버리지 않고 행마다 문단으로 — 그림 속 문단과 같은 대우
     const selected = candidates.flatMap(b => accepted.includes(b) ? [b] : b.type === "table" && b.table ? rowParagraphs(b)
       .filter(p => /[\p{L}\p{N}]{2}/u.test(p.text ?? "")) : [])
-    const hasOriginal = (block: IRBlock) => blocks.some(existing => {
+    // 원문 겹침은 이 영역을 넣기 전 블록(텍스트층 + 앞 영역)과만 잰다 — 같은 영역에서 방금 넣은 이웃 OCR 줄과 상자가 겹친다고
+    // 다음 줄을 버리면 글이 사라졌다(ODL 102 "342 334"). 겹치는 두 그림 영역이 같은 글을 두 번 넣는 것은 그대로 막는다
+    const before = blocks.slice()
+    const hasOriginal = (block: IRBlock) => before.some(existing => {
       const b = block.bbox!
       if (existing.pageNumber !== page || !existing.bbox || existing.type === "image") return false
       const e = existing.bbox

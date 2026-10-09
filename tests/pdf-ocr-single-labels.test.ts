@@ -84,3 +84,19 @@ describe("single-character OCR labels inside a supported diagram", () => {
     }
   })
 })
+
+describe("그림 영역 OCR 문단끼리 겹쳐도 버리지 않는다 (ODL 102 \"342 334\" 유실)", () => {
+  it("같은 영역에서 넣은 OCR 줄은 다음 줄의 원문 겹침 검사 대상이 아니다", () => {
+    const blocks: IRBlock[] = []
+    const upper = paragraph("396 392 400- 369", 120, 300, 240, 14), lower = paragraph("342 334", 300, 290, 60, 14)
+    mergeOcrImageRegions(blocks, 1, [region], [upper, lower])
+    assert.deepEqual(blocks.map(b => b.text), ["396 392 400- 369", "342 334"])
+  })
+
+  it("텍스트층에 이미 있는 글과 겹치는 OCR 문단은 종전대로 건너뛴다", () => {
+    const native = paragraph("342 334", 300, 290, 60, 14)
+    const blocks: IRBlock[] = [native]
+    mergeOcrImageRegions(blocks, 1, [region], [paragraph("342 334", 301, 290, 60, 14)])
+    assert.equal(blocks.length, 1)
+  })
+})

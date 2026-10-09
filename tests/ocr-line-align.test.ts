@@ -103,6 +103,28 @@ describe("OCR 줄 맞춤 — 두 단 글은 좌우 줄을 묶지 않는다 (ODL 
     const lines = groupOcrLines(rows).map(l => l.map(i => rows[i].text))
     assert.ok(lines.some(l => l.includes("21/19") && l.includes("3/8")), JSON.stringify(lines))
   })
+  it("차트 범례 라벨과 멀리 떨어진 축 눈금은 중심이 반쯤 어긋나면 다른 줄 (ODL 128·140·057)", () => {
+    const chart = [
+      { text: "observed", x: 686, y: 1761, w: 107, h: 19, confidence: 0.9 }, { text: "5", x: 187, y: 1770, w: 11, h: 17, confidence: 0.9 },
+      { text: "Vulnerable", x: 570, y: 1193, w: 97, h: 16, confidence: 0.9 }, { text: "1%", x: 387, y: 1197, w: 24, h: 22, confidence: 0.9 },
+      { text: "Biogas", x: 1116, y: 419, w: 78, h: 25, confidence: 0.9 }, { text: "300", x: 278, y: 429, w: 44, h: 19, confidence: 0.9 },
+    ]
+    assert.deepEqual(groupOcrLines(chart).map(l => l.length), [1, 1, 1, 1, 1, 1])
+    // 원그래프 값과 범례는 0.31 어긋나 — 같은 줄 (ODL 148, 정답 순서)
+    const pie = [{ text: "Project Manager", x: 1107, y: 1911, w: 157, h: 20, confidence: 0.9 }, { text: "18.9%", x: 745, y: 1918, w: 58, h: 16, confidence: 0.9 }]
+    assert.deepEqual(groupOcrLines(pie).map(l => l.length), [2])
+  })
+  it("그림 영역은 줄 기준선을 맞춰도 키 큰 칸 상자의 위 끝을 지켜 윗행 칸으로 번지지 않는다 (ODL 110 \"14\"·\"15\" 가 한 칸 \"1415\")", () => {
+    const cells = [
+      { text: "1.138E-06", x: 661, y: 1556, w: 122, h: 34, confidence: 0.9 }, { text: "6.580E-07", x: 1407, y: 1556, w: 121, h: 34, confidence: 0.9 },
+      { text: "15", x: 336, y: 1554, w: 26, h: 53, confidence: 0.9 }, { text: "40", x: 1081, y: 1571, w: 27, h: 19, confidence: 0.9 },
+    ]
+    const blocks = ocrItemsToBlocks(cells, 1, 1600 / 2, 2000 / 2, 2, undefined, false, undefined, true)
+    const box = blocks.find(b => b.text?.includes("15"))?.bbox
+    assert.ok(box, JSON.stringify(blocks))
+    // 위 끝 1554px → PDF y = (2000 - 1554) / 2 = 223pt — 상자가 그 위로 올라가지 않는다
+    assert.ok(box.y + box.height <= 223.5, JSON.stringify(box))
+  })
   it("범례 한 줄의 긴 라벨은 먼저 만난 줄 순서와 무관하게 한 줄 (ODL 059 원그래프 범례)", () => {
     const legend = [
       { text: "Waste materials", x: 1146, y: 652.5, w: 161.5, h: 17.5, confidence: 0.95 },
