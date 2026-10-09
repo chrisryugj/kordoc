@@ -113,10 +113,11 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 최근 업데이트
 
-최신 배포: **[4.21.6](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.6)** · 2026-10-09
+최신 배포: **[4.21.7](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.7)** · 2026-10-10
 
 | 버전 | 주요 변경 |
 | --- | --- |
+| 4.21.7 | PDF 토막 괘선 칸·글 조각 클립·연락처 표 — 예산서 상세 칸(OCR CER 0.0512 → 0.0445), ezPDF·MS Print 글 조각 클립이 만든 가짜 표, 연락처 6열 (문서별 하락 0) |
 | 4.21.6 | 연락처 표 부서별 병합·여러 사람 칸 분할(PDF 표 구조 일치 97.94→97.98%), XLSX·XLS 200열 밖 칸 유실 수리, HWP3 포함 그림 추출, 수식 OCR LaTeX 명령 쪼개기·영역 상한 수리, PPTX 서식 트랙·코퍼스 보강(HWP3 75·서식 58·rhwp 230) |
 | 4.21.5 | PDF 품질 묶음 — OCR 두 단 가짜 표(#141 부작용)·그림 OCR 라벨 묶음·한 자리 눈금, 주소 링크·벡터 차트 값 축·단 끝줄·각주 순서 (ODL 기본 0.958 → 0.963, 문서별 하락 0) · 개조식·보고서 요약 상자가 md→hwpx→md→hwpx 왕복에서 유지 |
 | 4.21.4 | MCP `fill_form` 값 파일 입력 `fields_file`(값이 대화에 안 남고 응답은 글자 수만), 전 벤치 묶음 러너·문서별 비교기 `bench/suite.mjs` |
