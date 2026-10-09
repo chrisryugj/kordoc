@@ -742,11 +742,14 @@ function extractBlocksWithGrids(
       detectPersistentColumnGutter(remaining.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))) !== null
     // 표 폭을 거의 다 덮는 글 문단 블록(선 상자 칸, 차트 숫자 라벨 말고)을 행 사이에 품은 후보는 한 표가 아니다 — 상자 위아래 본문 줄의 빈칸 간격이 열로
     // 묶였다(계약서 "著作权人 …" 상자를 사이에 두고 위 제목·아래 "翻译成 ____ （语言）" 본문이 6열 표로, 상자보다 앞에 나왔다)
+    // 같은 열 수의 선 격자 표를 세로로 통째 품은 후보도 한 표가 아니다 — 격자가 본문 줄을 가져간 자리를 건너 위 머리띠와 아래 날짜 줄이 4열 표로
+    // 묶이고, 같은 열 수라 격자 표와 이어 붙으며 날짜가 본문 앞에 섰다(사이버브릿지 선발 절차 흐름도). 열 수가 다르면 이어 붙지 않는다
     const clusterResults = (proseColumns ? [] : detectClusterTables(clusterItems, pageNum)).filter(cr => {
       const b = cr.bbox
-      return !blocks.some(x => x.type === "paragraph" && x.bbox && (x.text?.match(/\p{L}/gu)?.length ?? 0) >= 10 &&
-        Math.min(x.bbox.x + x.bbox.width, b.x + b.width) - Math.max(x.bbox.x, b.x) >= 0.8 * b.width &&
-        x.bbox.y >= b.y - 2 && x.bbox.y + x.bbox.height <= b.y + b.height + 2)
+      const overlapX = (x: BoundingBox) => Math.min(x.x + x.width, b.x + b.width) - Math.max(x.x, b.x)
+      return !blocks.some(x => x.bbox && x.bbox.y >= b.y - 2 && x.bbox.y + x.bbox.height <= b.y + b.height + 2 &&
+        (x.type === "paragraph" ? (x.text?.match(/\p{L}/gu)?.length ?? 0) >= 10 && overlapX(x.bbox) >= 0.8 * b.width
+          : x.type === "table" && x.table?.cols === cr.table.cols && overlapX(x.bbox) >= 0.5 * Math.min(x.bbox.width, b.width)))
     })
     if (clusterResults.length > 0) {
       const ciToIdx = new Map<ClusterItem, number>()
