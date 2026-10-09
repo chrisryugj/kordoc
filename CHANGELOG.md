@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.5] - 2026-10-09
+
+### Fixed
+
+- 개조식·보고서 요약 상자가 md → hwpx → md → hwpx 왕복에서 사라지던 것 — 생성기가 심은 `__kordoc_summary` 칸을 다시 읽으면 일반 문단이 아니라 `>` 인용문(문단 여럿이면 줄마다 `> `)으로 복원한다. 다시 읽은 개조식은 제목과 요약 사이에 표지 날짜(·기관명) 줄이 오는데, 옵션으로 표지 날짜·기관명을 주지 않았으면 생성기가 그 줄을 표지 값으로 받아 본문에 날짜가 두 번 찍히지 않고 요약도 상자가 된다. 전 벤치 문서별 변화 0.
+
 ## [4.21.4] - 2026-10-09
 
 ### Added

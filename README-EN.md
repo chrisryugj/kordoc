@@ -113,10 +113,11 @@ The external **opendataloader-bench, 200 documents** was measured separately for
 
 ## Recent updates
 
-Latest release: **[4.21.4](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.4)** · 2026-10-09
+Latest release: **[4.21.5](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.5)** · 2026-10-09
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.5 | Gaejosik/report summary boxes survive md→hwpx→md→hwpx (read back as a `>` quote; the cover date line goes back to the cover) |
 | 4.21.4 | MCP `fill_form` takes values from a JSON `fields_file` (values stay out of the conversation; the reply shows only their lengths); `bench/suite.mjs` runs every bench and compares two runs per document |
 | 4.21.3 | PDF formula OCR drops unpaired `\left`/`\right` |
 | 4.21.2 | Gaejosik: the summary quote after the title becomes a 1×1 summary box (was a ※ note), with three-line and one-sentence checks; HWP3 nesting limit and a cumulative decompression cap for encrypted HWPX |

@@ -113,10 +113,11 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 최근 업데이트
 
-최신 배포: **[4.21.4](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.4)** · 2026-10-09
+최신 배포: **[4.21.5](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.5)** · 2026-10-09
 
 | 버전 | 주요 변경 |
 | --- | --- |
+| 4.21.5 | 개조식·보고서 요약 상자가 md→hwpx→md→hwpx 왕복에서 유지(다시 읽으면 `>` 인용문, 표지 날짜 줄은 표지로) |
 | 4.21.4 | MCP `fill_form` 값 파일 입력 `fields_file`(값이 대화에 안 남고 응답은 글자 수만), 전 벤치 묶음 러너·문서별 비교기 `bench/suite.mjs` |
 | 4.21.3 | PDF 수식 OCR 의 짝 없는 `\left`·`\right` 정리 |
 | 4.21.2 | 개조식 제목 뒤 요약이 1×1 요약 상자로(종전 ※ 참고)·요약 3줄·한 문장 검사, HWP3 중첩 한도·암호 HWPX 누적 압축 해제 상한 |
