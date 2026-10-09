@@ -148,7 +148,7 @@ export interface GongmunOptions {
     approvers?: string[]; cooperator?: string; recipients?: string; docNum?: string; receive?: string
     zip?: string; address?: string; site?: string; phone?: string; fax?: string; email?: string; disclosure?: string
   }
-  /** 보고서 요약 박스(제목표 아래 #DFE6F7 상자, 서울 실결재) — 마크다운 제목 직후 인용문(>)으로도 지정 가능 */
+  /** 요약 박스(제목표·개조식 본문 첫 쪽 제목 상자 아래 #DFE6F7 상자, 서울 실결재) — 마크다운 제목 직후 인용문(>)으로도 지정 가능 */
   summary?: string
   /** 보고서 표지 문서정보표 — 문서번호·결재일자·공개여부·방침번호 (cover와 함께) */
   docInfo?: { docNum?: string; date?: string; disclosure?: string; policyNo?: string }

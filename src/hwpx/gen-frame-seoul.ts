@@ -384,6 +384,25 @@ export function buildBangchimSubhead(n: number, title: string, ctx: FrameCtx, be
 
 // ─── 요약 박스 ─────────────────────────────────────
 
+/** 요약 문장 경계 — 한글·닫는 괄호 뒤 마침표·물음표·느낌표 다음에 글이 더 오면 (날짜 "9. 23." 은 숫자 뒤라 아님) */
+const SENTENCE_END = /[가-힣)\]'’"”」』][.?!](?=\s+\S)/g
+/** 목록 부호 "가. 나." — 문두·공백·쉼표 뒤 가나다 한 글자 + 마침표는 문장 끝이 아니다 */
+const LIST_MARK = /(?:^|[\s,])[가나다라마바사아자차카타파하]$/
+
+/**
+ * 요약 상자 검사 — 보고 목적 한 문장(쉼표 허용) 3줄 이내. 실측(서울 실결재 제목 아래 요약 상자 53개): 3줄 이하 98%·
+ * 2줄 75%, 한 문단 84%. 줄 수는 실글꼴 폭표 조판(호출부), 문장 수는 줄을 이은 글의 문장 경계 + 1
+ */
+export function summaryWarnings(text: string, lines: number): string[] {
+  const out: string[] = []
+  if (lines > 3) out.push(`요약박스가 ${lines}줄입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 줄이세요`)
+  // 줄을 이어 센다 — 한 문장을 인용문 두 줄로 나눠 쓴 요약은 한 문장이다
+  const flat = text.split("\n").map((l) => l.trim()).filter(Boolean).join(" ")
+  const sentences = 1 + [...flat.matchAll(SENTENCE_END)].filter((m) => !LIST_MARK.test(flat.slice(0, m.index + 1))).length
+  if (sentences > 1) out.push(`요약박스가 ${sentences}문장입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 묶으세요`)
+  return out
+}
+
 /** 요약박스 문단 좌우 여백(HWPUNIT) — 실측 1000/1000 55% */
 const SUMMARY_PAD = 1000
 

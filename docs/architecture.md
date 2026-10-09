@@ -65,7 +65,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/munche-lint.ts` | 개조식 **문체** 검수 12룰(서술형 종결·당위·수사·대구·항목/결론 길이·리드문) — 보고서·계획서·개조식 프리셋 generate 경고 + `kordoc lint --munche`. 표기법(gongmun-lint)과 축이 다름, 실측 근거는 docs/gaejosik-munche.md (v4.9.1) |
 | `src/hwpx/gen-docframe.ts` | 공문서 골격(v4.0.2) — 기안문 두문·결문(별지 제1호서식), 보고정보 행, 공고문 공고번호·발신명의, 보도자료 머리박스·담당 표. charPr는 variant·프로필 뒤 동적 id, 미사용 시 미방출 (spec (h)장) |
 | `src/hwpx/gen-levels.ts` | 항목부호 단계별 위계 타이포 `levels`(v4.12.3) — 지정 depth 마다 charPr 쌍(보통·굵게)을 docframe 뒤 id 에, 글꼴은 정적 fontface 뒤 append(한글·라틴만 참조). 실측 근거 docs/gongmunseo-reference.md 2.7(법정 8단계는 본문 동일 90% → 기본값 무변경, □/ㅇ/- 계열은 □ HY견고딕 +2~3pt bold·ㅇ 한컴돋움 bold). 내어쓰기는 `levelIndent` `markerHeight` |
-| `src/hwpx/gen-gaejosik.ts` | 개조식 XML 조립 — 표지(파랑 바)·목차(1×7 스트라이프 배너+테두리 박스)·로마숫자 장 헤더 표·본문 첫 페이지 제목 반복 박스 (기하는 sizes 비례 스케일) |
+| `src/hwpx/gen-gaejosik.ts` | 개조식 XML 조립 — 표지(파랑 바)·목차(1×7 스트라이프 배너+테두리 박스)·로마숫자 장 헤더 표·본문 첫 페이지 제목 반복 박스·그 아래 요약 상자(`planGaejosikSummary` — 생성기가 charPr 발급 전에 줄 수·장평을 정한다) (기하는 sizes 비례 스케일) |
 | `src/hwp5/parser.ts` | HWP 5.x(OLE2) 컨테이너·문서 조립·메타데이터, 배포용·암호 복호화 |
 | `src/hwp5/body.ts` | HWP 5.x 본문: 문단 리스트·컨트롤 디스패치(표·그리기 개체·수식·각주·머리말·필드), 컨트롤 ID 정규화 |
 | `src/hwp5/record.ts` | 레코드 리더, UTF-16LE, zlib 압축해제. 하이픈 제어문자(0x18)는 한컴이 그리지 않아 미방출(v4.12.3, "60g/㎡"). 한컴 PUA-A 접힘 해제(v4.12.2; F00E1 네모 안 "인" 도 "(인)" — 한컴 PDF 실렌더 확인, v4.12.3) — WCHAR U+A000~A48C 는 U+F0000대 기호(결재란 "(인)"=F012B↔A12B), 펴서 `pua.ts` 표로 |

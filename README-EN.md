@@ -62,6 +62,8 @@ npx kordoc fill --template gian -j values.json -o draft.hwpx
 
 `--jobs` converts files in parallel and increases memory use. [Batch conversion details](docs/parallel-batch.md)
 
+For the report, plan, gaejosik and bangchim presets, a blockquote right after the `#` title (`> …하고자 함`) becomes the summary box (gaejosik puts it under the title box on the first body page when the cover is on, the default; with `cover: false` the first `#` is a chapter header and the quote stays a ※ note). Keep it to one sentence (commas allowed) within three lines; longer or multi-sentence summaries produce a warning. For ministry, `> ▪ …` blockquotes become performance summary boxes wherever they appear.
+
 ### JavaScript / TypeScript
 
 ```typescript

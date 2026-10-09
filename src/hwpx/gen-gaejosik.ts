@@ -7,6 +7,11 @@ import { type ResolvedGongmun } from "./gongmun.js"
 import { TOC_GEOM, formatGaejosikDate, gaejosikSizes, coverGeom, chapterGeom, tocBannerGeom, bodyTitleGeom, GAEJOSIK_BASE_WIDTH } from "./gaejosik.js"
 import { simulateWrap, measureTextWidth, faceClassForGen } from "./text-metrics.js"
 import { GJ_TABLE_ID_BASE } from "./geometry.js"
+import { type MdBlock, generateRuns } from "./md-runs.js"
+import { fitParagraph } from "./fit-line.js"
+import { polishGongmunText } from "./gongmun-typo.js"
+import { summaryWarnings } from "./gen-frame-seoul.js"
+import type { TableBfRegistry } from "./gen-table-bf.js"
 import {
   GONGMUN_CENTER, PARA_NORMAL, CHAR_NORMAL,
   GJ_CHAR_CHAPTER_NUM, GJ_CHAR_CHAPTER_TITLE, GJ_CHAR_COVER_TITLE, GJ_CHAR_COVER_SUB,
@@ -177,6 +182,74 @@ export function buildGaejosikBodyTitle(title: string, gongmun: ResolvedGongmun, 
     + cell({ bf: GJ_BF_BAR_LIGHT, col: 1, colSpan: 2, row: 2, w: g.botLightW, h: bt.barH, paras: barEmpty })
   const box = table([topRow, titleRow, botRow], g.totalW, bt.barH * 2 + bt.titleH, 3, 1, bodyWidth)
   return `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}">${box}</hp:run></hp:p>`
+}
+
+// ─── 요약 상자 ─────────────────────────────────────
+
+/** 요약 상자 글꼴 — 보고서 요약박스(gen-frame-seoul buildSummaryBox)와 같은 한컴돋움 굵게 */
+export const GJ_SUMMARY_FONT = "한컴돋움"
+/** 문단 좌우 여백(HWPUNIT) — 보고서 요약박스 실측 1000/1000. 개조식 정적 paraPr 를 늘리지 않게 칸 여백으로 띄운다 */
+const SUMMARY_PAD = 1000
+const SUMMARY_CELL_MARGIN = 141
+
+/** 개조식 요약 상자 계획 — 생성기가 charPr 를 발급하기 전에 줄 수·장평을 정한다 */
+export interface GaejosikSummaryPlan {
+  /** 상자 문단들 (선두 □·ㅇ·- 부호 뗌) */
+  paras: string[]
+  /** 인용문에서 왔으면 그 blockIdx (본문에선 건너뛴다), summary 옵션이면 -1 */
+  quoteIdx: number
+  /** 글자 높이(HWPUNIT) — 본문 크기(기본 15pt, 실측 요약 상자 15pt 79%) */
+  height: number
+  ratio: number
+  spacing: number
+  lines: number
+  width: number
+  warnings: string[]
+}
+
+/** 폭 계산용 맨 글 — 강조 표지를 걷고 링크는 글만 (URL 길이가 줄 수에 들어가지 않게) */
+const stripInline = (s: string): string => s.replace(/(?<!!)\[([^\]\n]*)\]\([^)\s]*\)/g, "$1").replace(/\*\*|~~|`/g, "")
+
+/**
+ * 표지 제목(h1) 바로 뒤 — 첫 장 헤더 전 — 인용문, 또는 summary 옵션을 요약 상자로 (서울 실결재 제목 아래 요약 상자 53개 전부 1×1).
+ * 표지가 없으면 첫 h1 이 장 헤더(Ⅰ)라 인용문은 종전대로 ※ 참고. summary 옵션이 있으면 그것이 상자, 인용문은 ※ 참고(v5 보고서와 같음)
+ */
+export function planGaejosikSummary(blocks: MdBlock[], g: ResolvedGongmun, bodyWidth: number): GaejosikSummaryPlan | null {
+  if (g.preset !== "gaejosik") return null
+  let text = g.summary ? polishGongmunText(g.summary) : ""
+  let quoteIdx = -1
+  if (!text && g.cover) {
+    const h1 = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
+    const next = h1 >= 0 ? blocks[h1 + 1] : undefined
+    if (next?.type === "blockquote" && next.text?.trim()) { text = next.text; quoteIdx = h1 + 1 }
+  }
+  const paras = text.split("\n").map((l) => l.trim().replace(/^[□■○ㅇ◦●\-–ㆍ·•]\s*/u, "")).filter(Boolean)
+  if (!paras.length) return null
+  const width = bodyWidth - 566
+  const avail = width - 2 * SUMMARY_CELL_MARGIN - 2 * SUMMARY_PAD
+  const height = g.bodyHeight
+  const pt = height / 100
+  // 한 문단이면 꼬리 고아 줄을 장평·자간으로 끌어올린다(보고서 요약박스와 같음). 여러 문단은 charPr 하나라 100%
+  const f = paras.length === 1 ? fitParagraph(stripInline(paras[0]), GJ_SUMMARY_FONT, pt, avail, avail) : null
+  const ratio = f?.ratio ?? 100, spacing = f?.spacing ?? 0
+  const faceClass = faceClassForGen(GJ_SUMMARY_FONT)
+  const lines = paras.reduce((n, p) => n + simulateWrap(stripInline(p), avail * 0.995, avail * 0.995, height, ratio, "keep", { faceClass, spacingPct: spacing }).lines, 0)
+  return { paras, quoteIdx, height, ratio, spacing, lines, width, warnings: summaryWarnings(paras.join("\n"), lines) }
+}
+
+/** 요약 상자 1×1 — #DFE6F7 음영·0.4mm 검정 테두리, 한컴돋움 굵게 양쪽 160% (보고서 요약박스 실측) */
+export function buildGaejosikSummary(plan: GaejosikSummaryPlan, charPrId: number, bfReg: TableBfRegistry, bodyWidth: number): string {
+  const bf = bfReg.get({ t: "thick", b: "thick", l: "thick", r: "thick", fill: "#DFE6F7" })
+  const pad = SUMMARY_CELL_MARGIN + SUMMARY_PAD
+  const paras = plan.paras.map((p) => `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0">${generateRuns(p, charPrId, () => charPrId)}</hp:p>`).join("")
+  const h = plan.lines * Math.round(plan.height * 1.6) + 280 + 600
+  const tcXml = `<hp:tc name="__kordoc_summary" header="0" hasMargin="1" protect="0" editable="1" dirty="0" borderFillIDRef="${bf}">`
+    + `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${paras}</hp:subList>`
+    + `<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>`
+    + `<hp:cellSz width="${plan.width}" height="${h}"/>`
+    + `<hp:cellMargin left="${pad}" right="${pad}" top="${SUMMARY_CELL_MARGIN}" bottom="${SUMMARY_CELL_MARGIN}"/>`
+    + `</hp:tc>`
+  return `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}">${table([tcXml], plan.width, h, 1, 1, bodyWidth)}</hp:run></hp:p>`
 }
 
 // ─── 장 헤더 표 ─────────────────────────────────────

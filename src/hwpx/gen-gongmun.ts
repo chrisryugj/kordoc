@@ -35,7 +35,7 @@ import { PARA_CODE, CHAR_CODE, NS_SECTION, NS_PARA, escapeXml, newPageNumCtrl, p
 import { hasEndMark } from "./gen-gongmun-extra.js"
 import { buildNoticeHead, buildNoticeFoot, isInternalApproval } from "./gen-docframe.js"
 import {
-  type FrameCtx, buildDocHeadTable, buildDocFootTable, buildReportTitleTable, buildSummaryBox,
+  type FrameCtx, buildDocHeadTable, buildDocFootTable, buildReportTitleTable, buildSummaryBox, summaryWarnings,
   buildApprovalSeoul, buildReportCover, splitTitleName, resetFrameTableIds, buildChapterBand, CHAPTER_BAND_DEFAULT,
   buildBangchimTitleTable, buildBangchimSummary, buildSquareChapter, buildBangchimSectionBand, buildBangchimSubhead,
 } from "./gen-frame-seoul.js"
@@ -140,7 +140,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   const pushSummary = (t: string) => {
     frontKind = "summary"
     const box = (isBangchim ? buildBangchimSummary : buildSummaryBox)(polishGongmunText(t), frame)
-    if (box.lines > 3) warnings.push(`요약박스가 ${box.lines}줄입니다 — 보고 목적을 한 문장(쉼표 허용) 3줄 이내 "…하고자 함"으로 줄이세요`)
+    warnings.push(...summaryWarnings(t, box.lines))
     paras.push(box.xml)
   }
   // ─── 전면부 ───────────────────────────────────────

@@ -14,7 +14,7 @@
  */
 
 import { markerWidth, type Bullet2 } from "./gongmun.js"
-import { BODY_WIDTH_20MM, COVER_MEASURED_W } from "./geometry.js"
+import { BODY_WIDTH_20MM, COVER_MEASURED_W, mmToHwpunit } from "./geometry.js"
 
 // ─── 부호 ───────────────────────────────────────────
 
@@ -165,6 +165,11 @@ export const GAEJOSIK_COLORS = {
  *  margins 오버라이드로 본문폭이 달라지면 이 값 대비 비율로 표 폭을 스케일해 페이지 밖 넘침 방지.
  *  정의는 geometry.ts SSOT (v4.0.5 P0-3) */
 export const GAEJOSIK_BASE_WIDTH = BODY_WIDTH_20MM
+
+/** 개조식 장식표(표지·목차·장헤더·제목·요약 상자) 폭 스케일용 본문폭 — margins 오버라이드 대응 (A4 폭 기준) */
+export function gaejosikBodyWidth(margins: { left: number; right: number }): number {
+  return mmToHwpunit(210 - margins.left - margins.right)
+}
 
 /** 장헤더 표 기하(HWPUNIT, 여백 20mm A4 본문폭 48189 기준 실측) */
 export const CHAPTER_GEOM = { numW: 3327, gapW: 848, titleW: 43513, rowH: 2832 } as const

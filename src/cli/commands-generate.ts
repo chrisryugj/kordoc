@@ -40,7 +40,7 @@ export function registerGenerateCommands(program: Command): void {
     .option("--h2-marker <type>", "h2 장 제목 표기: band(로마자 채움 칸 + 제목 띠 표 — 보고서·계획서 기본)·roman(Ⅰ. 텍스트)·number(1. — 통지 기본)·box(장 없이 □ 대항목)·none")
     .option("--band-color <hex>", "띠 제목 번호칸 채움색 #RRGGBB (기본 #003366 — 실측 최다. 교육청형 밝은 띠: #DFE6F7)")
     .option("--band-text-color <hex>", "띠 제목 번호 글자색 #RRGGBB (기본 #FFFFFF — 밝은 띠면 #000000)")
-    .option("--summary <text>", "보고서 요약 박스 (제목표 아래 음영 상자 — 마크다운 제목 직후 인용문(>)으로도 지정)")
+    .option("--summary <text>", "요약 박스 — 보고서·계획서·개조식·서울방침 (제목표·개조식 본문 첫 쪽 제목 상자 아래 음영 상자 — 마크다운 제목 직후 인용문(>)으로도 지정)")
     .option("--doc-info <spec>", "보고서 표지 문서정보표: docNum=스마트도시과-123,date=2026. 9. 6.,disclosure=공개,policyNo= (--cover와 함께)")
     .option("--dept <name>", "표지 부서명 (기관명 아래 괄호)")
     .option("--checklist [na]", "서울 사전 검토항목 점검표(보고서·계획서·서울방침) — 값 없으면 빈 서식, 해당없음 문항 번호를 주면(6,7,8) 나머지는 검토완료")
