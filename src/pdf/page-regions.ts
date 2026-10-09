@@ -333,10 +333,13 @@ export function figureColumnBands(items: NormItem[], figures: ColRect[]): NormIt
     })
     if (left.length === 0 || right.length === 0 || gapped(left) || gapped(right)) { out.push(flat); continue }
     split = true
-    // 한 단의 끝줄이 다른 단 맨 아래보다도 아래에 있으면(쪽 꼬리말 "312 | Grouper …") 두 단 뒤에 온다
+    // 한 단의 끝줄이 다른 단 맨 아래보다도 아래에 있으면(쪽 꼬리말 "312 | Grouper …") 두 단 뒤에 온다. 같은 단 줄 간격으로 이어진 줄은
+    // 그 단의 글이다 — 큰 틈(글자 크기 3배 넘게) 뒤의 줄부터 꼬리(옆 단 캡션보다 아래로 내려온 문단 끝 두 줄이 캡션 뒤로 갔다, ODL 133)
     const low = (side: NormItem[], other: NormItem[]) => {
       const floor = Math.min(...other.map(i => i.y)) - Math.max(...other.map(i => i.fontSize))
-      return side.filter(i => i.y < floor)
+      const ls = groupByY([...side].sort((a, b) => b.y - a.y || a.x - b.x))
+      const k = ls.findIndex((l, n) => l[0].y < floor && (n === 0 || ls[n - 1][0].y - l[0].y > 3 * Math.max(...ls[n - 1].map(i => i.fontSize))))
+      return k < 0 ? [] : ls.slice(k).flat()
     }
     const tail = [...low(left, right), ...low(right, left)]
     out.push(left.filter(i => !tail.includes(i)), right.filter(i => !tail.includes(i)), tail)
