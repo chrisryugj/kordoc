@@ -22,10 +22,13 @@ export interface BuildTableOptions {
    *  ParseOptions.keepEmptyParagraphs 연동 — 파서가 문단별로 이미 정돈한 텍스트를
    *  `\n` 결합해 넘기는 경로 전용. 기본 false: 종전대로 trim. */
   keepEmptyParagraphs?: boolean
+  /** 열 수 상한 (기본 MAX_COLS) — 시트는 칸 예산 안에서 늘린다 (xlsx/sheet-blocks) */
+  maxCols?: number
 }
 
 export function buildTable(rows: CellContext[][], options?: BuildTableOptions): IRTable {
   const maxRows = options?.maxRows ?? MAX_ROWS
+  const colCap = options?.maxCols ?? MAX_COLS
   if (rows.length > maxRows) rows = rows.slice(0, maxRows)
   const numRows = rows.length
 
@@ -40,11 +43,11 @@ export function buildTable(rows: CellContext[][], options?: BuildTableOptions): 
   for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
     let colIdx = 0
     for (const cell of rows[rowIdx]) {
-      while (colIdx < MAX_COLS && tempOccupied[rowIdx][colIdx]) colIdx++
-      if (colIdx >= MAX_COLS) break
+      while (colIdx < colCap && tempOccupied[rowIdx][colIdx]) colIdx++
+      if (colIdx >= colCap) break
 
       for (let r = rowIdx; r < Math.min(rowIdx + cell.rowSpan, numRows); r++) {
-        for (let c = colIdx; c < Math.min(colIdx + cell.colSpan, MAX_COLS); c++) {
+        for (let c = colIdx; c < Math.min(colIdx + cell.colSpan, colCap); c++) {
           tempOccupied[r][c] = true
         }
       }

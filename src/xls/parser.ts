@@ -19,7 +19,7 @@ import type {
   ParseWarning,
 } from "../types.js"
 import { KordocError } from "../utils.js"
-import { blocksToMarkdown, MAX_COLS } from "../table/builder.js"
+import { blocksToMarkdown } from "../table/builder.js"
 import { parseLenientCfb } from "../hwp5/cfb-lenient.js"
 import {
   readRecords,
@@ -220,8 +220,10 @@ function cellValueToText(v: CellValue): string {
   return v
 }
 
-/** RawSheet → 행별 칸 글(희소) + 병합 → 공용 시트 표 (xlsx/sheet-blocks). 열은 표 열 상한(MAX_COLS) 안만 —
- *  그 밖 칸은 builder 가 어차피 버린다 */
+/** BIFF8 열 끝(IV) — 그 밖 좌표는 손상 레코드다. 시트 칸은 표 열 상한(200)이 아니라 칸 예산으로 막는다(xlsx/sheet-blocks) */
+const BIFF8_COLS = 256
+
+/** RawSheet → 행별 칸 글(희소) + 병합 → 공용 시트 표 (xlsx/sheet-blocks). 열은 BIFF8 열 끝 안만 */
 function rawSheetToBlocks(
   sheetName: string,
   sheet: RawSheet,
@@ -232,7 +234,7 @@ function rawSheetToBlocks(
   const rows = new Map<number, string[]>()
   let maxCol = -1
   for (const c of sheet.cells) {
-    if (c.col >= MAX_COLS) continue
+    if (c.col >= BIFF8_COLS) continue
     let row = rows.get(c.row)
     if (!row) rows.set(c.row, (row = []))
     while (row.length <= c.col) row.push("")
@@ -240,8 +242,8 @@ function rawSheetToBlocks(
     if (c.col > maxCol) maxCol = c.col
   }
   const merges = sheet.merges
-    .filter(m => m.c1 < MAX_COLS)
-    .map(m => ({ r1: m.r1, c1: m.c1, r2: m.r2, c2: Math.min(m.c2, MAX_COLS - 1) }))
+    .filter(m => m.c1 < BIFF8_COLS)
+    .map(m => ({ r1: m.r1, c1: m.c1, r2: m.r2, c2: Math.min(m.c2, BIFF8_COLS - 1) }))
   // 종전과 같이 병합 끝 열까지 표 폭에 넣는다 (셀 없는 병합 머리 행도 열이 산다)
   for (const m of merges) if (m.c2 > maxCol) maxCol = m.c2
   return sheetToBlocks(sheetName, rows, maxCol, merges, sheetIndex, warnings, keepAnchoredEmptyCols)

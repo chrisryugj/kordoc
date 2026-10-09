@@ -12,9 +12,9 @@ import type {
   ParseOptions, ParseWarning, ExtractedImage,
 } from "../types.js"
 import { KordocError, precheckZipSize, unzipLimitBytes, stripDtd } from "../utils.js"
-import { blocksToMarkdown, escapeLiteralDollar, MAX_COLS } from "../table/builder.js"
+import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
 import { escapeLiteralTags } from "../script-tags.js"
-import { sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
+import { MAX_SHEET_COLS, sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
 
 // ─── 상수 ────────────────────────────────────────────
 
@@ -289,7 +289,7 @@ function parseWorksheet(
         const ref = cellEl.getAttribute("r")
         const pos = ref !== null ? parseCellRef(ref) : { col: prevCol + 1, row: rowNum }
         // row도 col처럼 상한 검증 — "A5000000000" 하나로 그리드 폭주 방지
-        if (!pos || !Number.isFinite(pos.row) || pos.row < 0 || pos.row >= MAX_SHEET_ROWS || pos.col >= MAX_COLS) continue
+        if (!pos || !Number.isFinite(pos.row) || pos.row < 0 || pos.row >= MAX_SHEET_ROWS || pos.col >= MAX_SHEET_COLS) continue
         prevCol = pos.col
 
         // 값 추출
@@ -332,10 +332,9 @@ function parseWorksheet(
           value = `=${getTextContent(fElements[0])}`
         }
 
-        // 행 확장 — 행은 희소(Map), 행 안은 그 행 끝 칸까지
+        // 행은 희소(Map), 행 안도 희소 — 열 끝(XFD)까지 받으니 앞 빈 칸을 채우면 먼 칸 하나가 1만 6천 칸을 깐다
         let row = rows.get(pos.row)
         if (!row) rows.set(pos.row, (row = []))
-        while (row.length <= pos.col) row.push("")
         row[pos.col] = value
 
         if (pos.col > maxCol) maxCol = pos.col
@@ -354,9 +353,9 @@ function parseWorksheet(
     if (m) {
       merges.push({
         r1: Math.min(m.startRow, MAX_SHEET_ROWS - 1),
-        c1: Math.min(m.startCol, MAX_COLS - 1),
+        c1: Math.min(m.startCol, MAX_SHEET_COLS - 1),
         r2: Math.min(m.endRow, MAX_SHEET_ROWS - 1),
-        c2: Math.min(m.endCol, MAX_COLS - 1),
+        c2: Math.min(m.endCol, MAX_SHEET_COLS - 1),
       })
     }
   }

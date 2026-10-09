@@ -120,6 +120,41 @@ describe("긴 시트는 칸 예산 안에서 1만 행을 넘는다", () => {
   })
 })
 
+describe("넓은 시트 — 200열 넘는 칸도 칸 예산 안에서 낸다 (KOSIS 통계표 426열·365열에서 칸 12,488개가 경고 없이 빠지던 것)", () => {
+  const colName = (c: number) => { let s = ""; for (c++; c > 0; c = Math.floor((c - 1) / 26)) s = String.fromCharCode(65 + (c - 1) % 26) + s; return s }
+
+  it("XLSX: 426열 시트의 모든 칸이 표에 있다", async () => {
+    const row = (r: number) => `<row r="${r}">${Array.from({ length: 426 }, (_, c) => `<c r="${colName(c)}${r}" t="inlineStr"><is><t>${r}-${c}</t></is></c>`).join("")}</row>`
+    const res = await parseXlsx(await buildXlsx(`<sheetData>${row(1)}${row(2)}${row(3)}</sheetData>`))
+    assert.equal(res.success, true)
+    if (!res.success) return
+    const t = res.blocks.find(b => b.type === "table")?.table
+    assert.ok(t)
+    assert.equal(t.cols, 426)
+    assert.equal(t.cells[2][425].text, "3-425")
+    assert.equal(res.warnings, undefined)
+  })
+
+  it("XLSX: 200열 밖 칸만 있는 행도 빠지지 않는다", async () => {
+    const res = await parseXlsx(await buildXlsx(`<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>머리</t></is></c></row><row r="2"><c r="PJ2" t="inlineStr"><is><t>먼열</t></is></c></row></sheetData>`))
+    assert.equal(res.success, true)
+    if (res.success) assert.ok(res.markdown.includes("먼열"), res.markdown)
+  })
+
+  it("XLS: BIFF8 열 끝(256열)까지 — 그 밖 좌표는 손상이라 버린다", async () => {
+    const r = await parseXls(buildXls([label(0, 0, "머리"), label(0, 255, "끝칸"), label(1, 256, "밖")]))
+    assert.equal(r.success, true)
+    if (!r.success) return
+    assert.ok(r.markdown.includes("끝칸"), r.markdown)
+    assert.ok(!r.markdown.includes("밖"))
+  })
+
+  it("행 상한도 칸 예산 — 넓은 시트는 1만 행보다 줄어든다", () => {
+    assert.equal(sheetRowCap(426), 4_694)
+    assert.equal(sheetRowCap(16_384), 122)
+  })
+})
+
 describe("XLSX 시트 XML 을 행 묶음으로 나눠 DOM 을 만든다 (134만 칸 시트 RSS 4.4GB → 0.7~0.9GB)", () => {
   // 묶음 경계(약 26만 자)를 여러 번 넘는 크기 + r 없는 행이 경계를 넘어도 순번이 이어지고, sheetData 뒤 병합 목록도 읽는다
   const rows = (prefix: string, n: number) => Array.from({ length: n }, (_, i) =>

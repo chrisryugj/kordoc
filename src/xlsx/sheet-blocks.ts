@@ -11,7 +11,7 @@
  */
 
 import type { CellContext, IRBlock, ParseWarning } from "../types.js"
-import { buildTable, MAX_ROWS, MAX_TABLE_CELLS } from "../table/builder.js"
+import { buildTable, MAX_TABLE_CELLS } from "../table/builder.js"
 
 /** 병합 범위 (0부터, 양끝 포함) */
 export interface SheetMerge {
@@ -21,9 +21,13 @@ export interface SheetMerge {
   c2: number
 }
 
-/** 열 수 cols 인 표가 칸 예산(MAX_TABLE_CELLS) 안에서 가질 수 있는 행 수 — 열이 200개면 종전 1만 행 그대로 */
+/** XLSX 열 끝(XFD) — 시트 칸은 표 열 상한(MAX_COLS 200)이 아니라 칸 예산(sheetRowCap)으로 막는다. 종전엔 200열 밖 칸을 경고 없이
+ *  버려 KOSIS 통계표(426열·365열)에서 칸 12,488개와 그 칸만 있던 행이 빠졌다 */
+export const MAX_SHEET_COLS = 16_384
+
+/** 열 수 cols 인 표가 칸 예산(MAX_TABLE_CELLS) 안에서 가질 수 있는 행 수 — 열이 200개면 종전 1만 행 그대로, 더 넓으면 그만큼 줄어든다 */
 export function sheetRowCap(cols: number): number {
-  return Math.max(MAX_ROWS, Math.floor(MAX_TABLE_CELLS / Math.max(1, cols)))
+  return Math.floor(MAX_TABLE_CELLS / Math.max(1, cols))
 }
 
 export function sheetToBlocks(
@@ -105,7 +109,7 @@ export function sheetToBlocks(
     cellRows.push(row)
   }
 
-  const table = buildTable(cellRows, { keepAnchoredEmptyCols, maxRows: rowCap })
+  const table = buildTable(cellRows, { keepAnchoredEmptyCols, maxRows: rowCap, maxCols: keepCols.length })
   if (table.rows > 0) blocks.push({ type: "table", table, pageNumber: sheetIndex + 1 })
   return blocks
 }
