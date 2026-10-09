@@ -2,20 +2,20 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.5 · 2026-10-09
+## Latest release results: 4.21.6 · 2026-10-09
 
-All benches measured on the 4.21.5 dist on 2026-10-09 (`node bench/suite.mjs run`). Compared document by document with the previous baseline (4.21.3, `bench/out/suite/base-4.21.3/`), no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR or the four ODL modes.
+All benches measured on the 4.21.6 dist on 2026-10-09 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.5, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes. The corpus grew, so the HWPX, HWP pair and formats populations are larger.
 
 | Target | Population | Result |
 | --- | --- | --- |
-| HWPX | 2,286 documents · 9,865 tables | Structure match 9,865/9,865 · 100%; exact cell text 99.9982%; content NED similarity 99.9953% |
-| HWP 5.x ↔ HWPX | 1,120 pairs · 4,258 tables | Paired-document structure match 4,258/4,258 · 100% |
+| HWPX | 2,424 documents · 10,342 tables | Structure match 10,342/10,342 · 100%; exact cell text 99.9983%; content NED similarity 99.9955% |
+| HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document structure match 4,315/4,315 · 100% |
 | PDF text | 744 pairs | Recall 99.83%, precision 99.58%, order 99.15%, word-boundary F1 98.81% |
-| PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.94%, cell F1 0.990863 |
+| PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.98%, cell F1 0.991102 |
 | Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 335/346 · 96.82% |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.78% |
 | OCR | 53 documents · 102 pages | CER 0.0512, character recall 99.03%, precision 99.33%, Hangul recall 99.40% |
-| Other formats / roundtrip / fuzz | 88 documents / 75 roundtrips / 23,700 fuzz cases | Release gates passed |
+| Other formats / roundtrip / fuzz | 146 documents (27 PPTX) / 75 roundtrips / 25,152 fuzz cases | Release gates passed |
 
 Structure scores do not imply perfect visual fidelity or exact text in every cell. The 75 roundtrip cases and 8 generation fixtures are counted separately.
 

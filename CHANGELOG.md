@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.6] - 2026-10-09
+
+### Fixed
+
+- 보도자료 끝 "담당 부서" 연락처 표가 4열로 남던 것 — 앞 두 열이 표 전체로 병합되고 사람 칸이 한 명일 때만 HWPX 6열로 갈랐다. 부서마다 따로 병합된 블록과, 줄마다 "직급 이름 (연락처)" 한 사람씩 든 담당자 칸도 가른다(두 줄로 꺾인 한 사람은 그대로 한 사람).
+- XLSX·XLS 에서 200열 밖 칸이 경고 없이 사라지던 것 — HWP 표용 열 상한(200)을 시트에도 써서 KOSIS 통계표(426·365열)의 칸 12,488개와 그 칸만 있던 행이 빠졌다. 형식의 열 끝(XLSX 16,384·BIFF8 256)까지 받고, 시트 크기는 기존 칸 예산(200만 칸)으로 막는다 — 행 상한이 열 수에 맞춰 줄고(200열까지는 종전과 같음) 넘으면 종전처럼 `TRUNCATED_TABLE` 경고. XLSX 행 안 빈 칸을 미리 깔지 않아 먼 칸 하나가 수천 칸을 잡지 않는다.
+- HWP 3.x 그림이 경고 없이 사라지던 것 — 본문 뒤 추가 정보 블록 #1(포함 그림)을 읽지 않았다(그림만 붙인 스캔 보고서 36쪽이 빈 출력). 그림 제어(ch=11)의 내부 그림 이름과 블록의 이름을 짝지어 image 블록·`result.images` 로 낸다(같은 그림을 여러 번 쓰면 한 파일). 바이트가 없는 그림(외부 연결·OLE)은 글 없이 `SKIPPED_IMAGE` 경고만.
+- 수식 OCR 후처리가 목록에 없는 정식 LaTeX 명령을 아는 접두에서 쪼개던 것 — `\lesssim` → `\le sssim`, `\leqslant` → `\leq slant`, `\subsetneq` → `\subset neq`, `\Bigl` → `\Big l`, `\pmod` → `\pm od`(렌더가 "± od"). MFR 이 공백을 빠뜨리는 자리는 변수 한두 글자(`\cdotd`·`\timesdx`)라 붙은 꼬리가 두 글자 이하일 때만 가른다. 쪽당 수식 영역 상한(50)을 넘으면 위에서부터 잘라 쪽 아래 별행 수식을 버리던 것은 별행 수식부터 남기고 원래 순서를 지킨다. arXiv 수식 정답 대조(2편 앞 3쪽, 별행 30개): recall 0.867 → 0.967, 정확 일치 0.50 → 0.83, nedAll 0.182 → 0.055, BLEU-4 0.949 → 0.969.
+- 측정 — 4.21.5 대비 전 벤치 문서별 하락 0. PDF 표 구조 완전 일치 97.941% → 97.984%(2쌍 상승)·칸 F1 0.99086 → 0.99110, 서식 큰 시트(새 KOSIS 표 포함) 문자 0.997·숫자 0.934 → 1·1, HWP3 그림 0 → 90장. ODL·OCR·열화 OCR·법령 별표·왕복·생성은 같다.
+
+### Added
+
+- 벤치: formats 에 PPTX 트랙(슬라이드 XML 독립 정답 — 노트 포함, 쪽 번호·날짜·바닥글 개체 틀과 병합이 덮은 숨은 칸 제외, 차트·SmartArt 글은 모수 밖 분량만 보고)과 `pptxRecall` 1 게이트, fuzz 에 PPTX. 수식 OCR 정답 트랙 `bench/formula-gt.mjs`(arXiv LaTeX 원본, 보고 전용).
+- 코퍼스: HWP 3.x 원본 75건(`hwp3/`), 서식 pptx 27·docx 16·xlsx 15(`formats/`, 출처는 manifest), rhwp 2차 hwpx 139·hwp 91. 게이트 모수 hwpx 2,424·pdf 1,911·hwp쌍 1,130 (`score.mjs` `MIN_POP`). 제외 2건 사유는 docs/corpus.md.
+
 ## [4.21.5] - 2026-10-09
 
 ### Fixed

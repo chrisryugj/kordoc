@@ -113,10 +113,11 @@ The external **opendataloader-bench, 200 documents** was measured separately for
 
 ## Recent updates
 
-Latest release: **[4.21.5](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.5)** · 2026-10-09
+Latest release: **[4.21.6](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.6)** · 2026-10-09
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.6 | Press-release contact tables split per department and per person (PDF table structure match 97.94→97.98%), XLSX/XLS cells past column 200 kept, HWP3 embedded pictures extracted, formula OCR keeps LaTeX commands whole, PPTX formats track and a larger corpus (HWP3 75, formats 58, rhwp 230) |
 | 4.21.5 | PDF quality batch — the #141 OCR side effect that boxed two-column text into tables, figure OCR label grouping and single-digit ticks, bare links, vector chart value axes, column tails and footnotes (ODL default 0.958 → 0.963, no document down); gaejosik/report summary boxes survive md→hwpx→md→hwpx |
 | 4.21.4 | MCP `fill_form` takes values from a JSON `fields_file` (values stay out of the conversation; the reply shows only their lengths); `bench/suite.mjs` runs every bench and compares two runs per document |
 | 4.21.3 | PDF formula OCR drops unpaired `\left`/`\right` |
