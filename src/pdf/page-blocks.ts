@@ -100,7 +100,8 @@ export function extractPageBlocksWithLines(
     ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects, prevPage)
     : { grids: [], containers: [], page: undefined }
   if (carry) { carry.page = pageNum; carry.clip = clipResult.page }
-  const clipGrids = clipResult.grids
+  // 글 조각마다 깐 클립(ezPDF Builder·MS Print To PDF)이 맞대어 선 한 줄은 표가 아니다 (isTextRunClipStrip)
+  const clipGrids = clipResult.grids.filter(g => !isTextRunClipStrip(g, items))
   // 클립 격자 칸의 보이는 변 — 합성 테두리를 더하기 전의 추출 선(짧은 조각 포함)으로 (보이지 않는 틀 표 풀기, cell-edges)
   recordClipCellEdges(clipGrids, horizontals.concat(extracted.shortH), verticals.concat(extracted.shortV), extracted.nonRules)
   // 짧은 괘선 조각 잇기는 칸 클립 격자가 없는 쪽에서만 (line-extract chainShortSegments) — 칸마다 클립이 있는 쪽은 잇기가
@@ -300,6 +301,20 @@ function verticalCoverageAt(verticals: LineSegment[], x: number, yMin: number, y
     else { total += e - s; s = spans[i][0]; e = spans[i][1] }
   }
   return total + (e - s)
+}
+
+/** 글 조각마다 깐 클립은 칸이 아니다 — ezPDF Builder·MS Print To PDF 는 글 조각을 그 시작에서 다음 조각 시작까지 한 글줄 높이로 클립해,
+ *  맞댄 클립들이 한 행 표가 됐다(고흥 2026 계획서 라벨 "배경 및 필요성" 이 "필요성" 문단 + "| 배경 | 및 |" 표로 찢긴 곳 749, hwpspec
+ *  "DocHistory : | 스토리지" 187, 평가 보고서 표 머리 "’22 | 년"). 한 행 클립 격자의 칸마다 글이 칸 왼변에서 곧바로 시작하고(한컴 칸 클립은
+ *  안 여백만큼 떨어진다) 행 높이가 글자 크기의 1.6배 이하일 때 */
+function isTextRunClipStrip(grid: TableGrid, items: NormItem[]): boolean {
+  if (!grid.cells || grid.rowYs.length !== 2 || grid.cells.length < 2) return false
+  const h = grid.rowYs[0] - grid.rowYs[1]
+  return grid.cells.every(cell => {
+    const b = cell.bbox
+    const inside = items.filter(it => it.x + it.w / 2 > b.x1 && it.x + it.w / 2 < b.x2 && it.y + it.h / 2 > b.y1 && it.y + it.h / 2 < b.y2)
+    return inside.length > 0 && Math.abs(Math.min(...inside.map(it => it.x)) - b.x1) <= 0.5 && h <= 1.6 * Math.max(...inside.map(it => it.fontSize))
+  })
 }
 
 /**
