@@ -11,7 +11,7 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to 
 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
-- 📊 **0.960 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
+- 📊 **0.963 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
 - 🇰🇷 **100% Korean document table structure match** — all **9,865 visible tables** from 2,286 original HWPX documents. [4.18.8 verification](docs/release-4.18.8.json)
 
 [![kordoc — watch the demo](./docs/video-demo.jpg)](https://youtu.be/Q13GmgDcIw0)
@@ -109,7 +109,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 Table structure, cell content and visual fidelity are separate metrics. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions and OCR results, and the [4.18.8 publication record](docs/release-4.18.8.json) for verification of the published package.
 
-The external **opendataloader-bench, 200 documents** was measured separately for 4.18.6: overall **0.960** with defaults, **0.937** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
+The external **opendataloader-bench, 200 documents** was measured separately for 4.21.5: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 
 ## Recent updates
 
@@ -117,7 +117,7 @@ Latest release: **[4.21.5](https://github.com/chrisryugj/kordoc/releases/tag/v4.
 
 | Version | Highlights |
 | --- | --- |
-| 4.21.5 | Gaejosik/report summary boxes survive md→hwpx→md→hwpx (read back as a `>` quote; the cover date line goes back to the cover) |
+| 4.21.5 | PDF quality batch — the #141 OCR side effect that boxed two-column text into tables, figure OCR label grouping and single-digit ticks, bare links, vector chart value axes, column tails and footnotes (ODL default 0.958 → 0.963, no document down); gaejosik/report summary boxes survive md→hwpx→md→hwpx |
 | 4.21.4 | MCP `fill_form` takes values from a JSON `fields_file` (values stay out of the conversation; the reply shows only their lengths); `bench/suite.mjs` runs every bench and compares two runs per document |
 | 4.21.3 | PDF formula OCR drops unpaired `\left`/`\right` |
 | 4.21.2 | Gaejosik: the summary quote after the title becomes a 1×1 summary box (was a ※ note), with three-line and one-sentence checks; HWP3 nesting limit and a cumulative decompression cap for encrypted HWPX |

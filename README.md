@@ -11,7 +11,7 @@ HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, PNG·JPG·WebP를 Markdow
 
 [English](README-EN.md) · [상세 사용법](docs/usage.md) · [벤치마크](docs/benchmarks.md) · [변경 이력](CHANGELOG.md)
 
-- 📊 **PDF 공개 벤치 종합 0.960** — opendataloader-bench 200문서. 공개 12개 파서 비교 1위(2026-09-29 기록). [측정 조건](docs/benchmarks.md)
+- 📊 **PDF 공개 벤치 종합 0.963** — opendataloader-bench 200문서. 공개 12개 파서 비교 1위(2026-09-29 기록). [측정 조건](docs/benchmarks.md)
 - 🇰🇷 **한국 공문서 표 구조 100%** — 원본 HWPX 2,286문서의 보이는 표 **9,865개 전부 구조 일치**. [4.18.8 검증](docs/release-4.18.8.json)
 
 [![Kordoc 활용하기 — 영상 보기](./docs/video-demo.jpg)](https://youtu.be/Q13GmgDcIw0)
@@ -109,7 +109,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 표 구조 점수와 셀 내용·화면 재현은 별도 지표입니다. 채점 범위·제외 기준·OCR 결과는 [벤치마크 상세](docs/benchmarks.md), 실제 게시 검증은 [4.18.8 기록](docs/release-4.18.8.json)에 있습니다.
 
-외부 PDF 벤치 **opendataloader-bench 200문서**는 4.18.6 별도 측정에서 기본값 종합 **0.960**, OCR 끔 **0.937**입니다. [옵션별 결과와 재현 방법](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
+외부 PDF 벤치 **opendataloader-bench 200문서**는 4.21.5 별도 측정에서 기본값 종합 **0.963**, OCR 끔 **0.939**입니다. [옵션별 결과와 재현 방법](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
 
 ## 최근 업데이트
 
@@ -117,7 +117,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 | 버전 | 주요 변경 |
 | --- | --- |
-| 4.21.5 | 개조식·보고서 요약 상자가 md→hwpx→md→hwpx 왕복에서 유지(다시 읽으면 `>` 인용문, 표지 날짜 줄은 표지로) |
+| 4.21.5 | PDF 품질 묶음 — OCR 두 단 가짜 표(#141 부작용)·그림 OCR 라벨 묶음·한 자리 눈금, 주소 링크·벡터 차트 값 축·단 끝줄·각주 순서 (ODL 기본 0.958 → 0.963, 문서별 하락 0) · 개조식·보고서 요약 상자가 md→hwpx→md→hwpx 왕복에서 유지 |
 | 4.21.4 | MCP `fill_form` 값 파일 입력 `fields_file`(값이 대화에 안 남고 응답은 글자 수만), 전 벤치 묶음 러너·문서별 비교기 `bench/suite.mjs` |
 | 4.21.3 | PDF 수식 OCR 의 짝 없는 `\left`·`\right` 정리 |
 | 4.21.2 | 개조식 제목 뒤 요약이 1×1 요약 상자로(종전 ※ 참고)·요약 3줄·한 문장 검사, HWP3 중첩 한도·암호 HWPX 누적 압축 해제 상한 |

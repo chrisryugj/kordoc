@@ -2,9 +2,9 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.18.8 · 2026-10-02
+## Latest release results: 4.21.5 · 2026-10-09
 
-Based on `publication.benchmarkComparison` and `additionalTrackComparison` in the [publication record](release-4.18.8.json).
+All benches measured on the 4.21.5 dist on 2026-10-09 (`node bench/suite.mjs run`). Compared document by document with the previous baseline (4.21.3, `bench/out/suite/base-4.21.3/`), no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR or the four ODL modes.
 
 | Target | Population | Result |
 | --- | --- | --- |
@@ -14,24 +14,25 @@ Based on `publication.benchmarkComparison` and `additionalTrackComparison` in th
 | PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.94%, cell F1 0.990863 |
 | Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 335/346 · 96.82% |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.78% |
-| OCR | 53 documents · 102 pages | Quality metrics and exclusions unchanged from 4.18.7; 3 skipped documents and 4 excluded pages |
+| OCR | 53 documents · 102 pages | CER 0.0512, character recall 99.03%, precision 99.33%, Hangul recall 99.40% |
 | Other formats / roundtrip / fuzz | 88 documents / 75 roundtrips / 23,700 fuzz cases | Release gates passed |
 
-Structure scores do not imply perfect visual fidelity or exact text in every cell. The 75 roundtrip cases and 8 generation fixtures are counted separately. The new gain in 4.18.8 is editing text with embedded cell newlines; the quality scores, populations and exclusions above match 4.18.7.
+Structure scores do not imply perfect visual fidelity or exact text in every cell. The 75 roundtrip cases and 8 generation fixtures are counted separately.
 
 ## PDF → Markdown — opendataloader-bench
 
 [opendataloader-bench](https://github.com/opendataloader-project/opendataloader-bench) scores 200 PDFs (papers, reports, slides, posters, scans) against human-made ground truth for **reading order (NID), table structure (TEDS) and heading hierarchy (MHS)** (1.0 = identical to the ground truth).
 
-### Latest separate verification: 4.18.6 · 2026-10-02
+### Latest separate verification: 4.21.5 · 2026-10-09
 
 | Setting | Overall | Reading order | Tables | Headings |
 | --- | ---: | ---: | ---: | ---: |
-| Default | 0.960 | 0.961 | 0.979 | 0.947 |
-| Default + `plain: true, htmlTables: true` | 0.972 | 0.977 | 0.983 | 0.957 |
-| `ocr: false, formulaOcr: false` | 0.937 | 0.938 | 0.936 | 0.933 |
+| Default | 0.963 | 0.963 | 0.980 | 0.948 |
+| Default + `plain: true, htmlTables: true` | 0.974 | 0.979 | 0.983 | 0.958 |
+| `ocr: true` | 0.964 | 0.964 | 0.980 | 0.954 |
+| `ocr: false` | 0.939 | 0.939 | 0.937 | 0.934 |
 
-Each mode covers 200 documents, with zero failures or missing outputs. Raw scores are in `externalOdl` in the [verification record](release-4.18.6.json). This external benchmark was not rerun for 4.18.8.
+Each mode covers 200 documents, with zero failures or missing outputs (`node bench/suite.mjs run <tag> --only=odl,odlbest,odlocr,odlfast`). No document is lower than 4.21.3 (default 0.958) in any mode. Against 4.18.6 (2026-10-02: default 0.960, `plain+htmlTables` 0.972, `ocr: false` 0.937) the default is +0.002 and `ocr: false` +0.001; three documents (100, 134, 115, −0.004 combined) stay slightly below 4.18.6 because OCR'd figure labels group into lines a little differently ([session record](quality-campaign-session-2026-10-09.md)).
 
 ### Full option sweep: historical results, 2026-09-29
 
