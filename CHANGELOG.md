@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.3] - 2026-10-09
+
+### Fixed
+
+- PDF 수식 OCR 결과의 짝 없는 `\left`·`\right` 를 떼고 구분자만 남긴다(Pix2Text fix_latex) — `\left( a + b` 처럼 하나만 남으면 KaTeX 등이 수식 전체를 그리지 못했다.
+
 ## [4.21.2] - 2026-10-09
 
 ### Fixed
