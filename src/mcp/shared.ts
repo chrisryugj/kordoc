@@ -16,6 +16,8 @@ export const PARSE_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, ".png", ".jpg", 
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp"])
 /** 서식 프로필 허용 확장자 (generate_document profile_path) */
 export const PROFILE_EXTENSIONS = new Set([".json"])
+/** 채울 값 파일 허용 확장자 (fill_form fields_file) */
+export const FIELDS_FILE_EXTENSIONS = new Set([".json"])
 /** 최대 파일 크기 (500MB) */
 export const MAX_FILE_SIZE = 500 * 1024 * 1024
 

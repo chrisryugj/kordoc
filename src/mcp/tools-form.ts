@@ -4,18 +4,38 @@ import { z } from "zod"
 import { readFile, mkdir, stat, realpath } from "fs/promises"
 import { extname, dirname } from "path"
 import { parse, detectFormat, detectZipFormat, detectOle2Format, blocksToMarkdown, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "../index.js"
-import { fillWithUniqueGuard, type FillInput } from "../form/match.js"
+import { fillWithUniqueGuard, type FillInput, type FillValue } from "../form/match.js"
+import { KordocError } from "../utils.js"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import { IMAGE_EXTENSIONS, safePath, safeOutputPath, writeOutputFile, describeError, capResponseText, readValidatedFile } from "./shared.js"
+import { IMAGE_EXTENSIONS, FIELDS_FILE_EXTENSIONS, safePath, safeOutputPath, writeOutputFile, describeError, capResponseText, readValidatedFile } from "./shared.js"
 
 /** fields + formats 를 FillInput 맵으로 결합 (formats의 라벨은 fields와 동일 표기 기준) */
-export function buildFillInputs(fields: Record<string, string>, formats?: Record<string, string>): Record<string, FillInput> {
+export function buildFillInputs(fields: Record<string, FillValue>, formats?: Record<string, string>): Record<string, FillInput> {
   const out: Record<string, FillInput> = {}
   for (const [k, v] of Object.entries(fields)) {
     const format = formats?.[k]
     out[k] = format ? { value: v, format } : v
   }
   return out
+}
+
+/** fill_form fields_file — {라벨: 값 | 값[]} JSON. 개인정보가 담기므로 값은 오류 문구에도 싣지 않는다 */
+async function readFieldsFile(path: string): Promise<Record<string, FillValue>> {
+  const { buffer } = await readValidatedFile(path, 10 * 1024 * 1024, FIELDS_FILE_EXTENSIONS)
+  let data: unknown
+  try {
+    // Windows 메모장·PowerShell 이 붙이는 UTF-8 BOM 은 JSON.parse 가 거부한다 (CLI -j 와 같음)
+    data = JSON.parse(new TextDecoder().decode(buffer).replace(/^\uFEFF/, ""))
+  } catch {
+    throw new KordocError("fields_file 이 올바른 JSON 이 아닙니다")
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new KordocError("fields_file 은 {라벨: 값} JSON 객체여야 합니다")
+  for (const [label, value] of Object.entries(data)) {
+    if (typeof value !== "string" && !(Array.isArray(value) && value.every(v => typeof v === "string"))) {
+      throw new KordocError(`fields_file 의 "${label}" 값은 문자열 또는 문자열 배열이어야 합니다`)
+    }
+  }
+  return data as Record<string, FillValue>
 }
 
 /** 같은 파일인가 — 경로가 같거나(정규화 후) 대소문자 무시 파일시스템·하드링크로 같은 inode */
@@ -70,15 +90,24 @@ export function registerFormTools(server: McpServer): void {
     {
       file_path: z.string().min(1).optional().describe("서식 템플릿 문서의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX). template 사용 시 생략"),
       template: z.enum(["gian", "gian-simple", "일반기안문", "간이기안문"]).optional().describe("내장 정부 표준 서식 이름 — file_path 대신 사용. gian=일반기안문(별지 제1호서식), gian-simple=간이기안문(별지 제2호서식)"),
-      fields: z.record(z.string(), z.string()).describe("채울 필드 맵 (라벨 → 값). 예: {\"성명\": \"홍길동\", \"전화번호\": \"010-1234-5678\"}"),
+      fields: z.record(z.string(), z.string()).optional().describe("채울 필드 맵 (라벨 → 값). 예: {\"성명\": \"홍길동\", \"전화번호\": \"010-1234-5678\"}. 개인정보는 fields_file 로"),
+      fields_file: z.string().min(1).optional().describe("채울 필드 JSON 파일의 절대 경로 — fields 대신. {\"성명\": \"홍길동\"} 모양(반복 양식은 값 배열). 값이 도구 인자로 대화에 남지 않고, 응답도 값 대신 글자 수만 낸다(mask_values: false 로 끔)"),
       formats: z.record(z.string(), z.string()).optional().describe("필드별 값 서식 (라벨 → 포맷). 정준값 하나로 서식마다 다른 모양을 채울 때: date:yy.mm.dd / phone:hyphen·dot·digits / rrn:hyphen·masked / mask:###-## / 자유 패턴(yyyy년 m월 d일, ###-####-####)"),
       require_unique: z.boolean().optional().describe("한 키가 서식의 2곳 이상에 매칭되면 채우지 않고 거부 — 반복 라벨 양식에서 남의 블록 오염 방지 (배열 값은 예외)"),
-      mask_values: z.boolean().optional().describe("응답에 값 대신 글자수만 표시 — 개인정보 채움 시 값이 대화 로그에 남지 않게"),
+      mask_values: z.boolean().optional().describe("응답에 값 대신 글자수만 표시 — 개인정보 채움 시 값이 대화 로그에 남지 않게 (fields_file 이면 기본 켬)"),
       output_format: z.enum(["markdown", "hwpx", "hwpx-preserve"]).default("hwpx-preserve").describe("출력 포맷: hwpx-preserve (원본 스타일 보존, HWPX 전용), hwpx (새 HWPX 생성), markdown"),
       output_path: z.string().optional().describe("출력 파일 저장 경로 (선택). 지정 시 파일로 저장, 미지정 시 텍스트로 반환"),
     },
-    async ({ file_path, template, fields, formats, require_unique, mask_values, output_format, output_path }) => {
+    async ({ file_path, template, fields: fieldArgs, fields_file, formats, require_unique, mask_values: maskArg, output_format, output_path }) => {
       try {
+        if (!fieldArgs === !fields_file) {
+          return {
+            content: [{ type: "text", text: "fields 또는 fields_file 중 하나만 지정해주세요" }],
+            isError: true,
+          }
+        }
+        const fields = fieldArgs ?? await readFieldsFile(fields_file!)
+        const mask_values = maskArg ?? !!fields_file
         // 출력 경로 사전 검증 (포맷별 확장자 allowlist) — 채우기 전에 실패시킨다
         const outExts = output_format === "markdown" ? new Set([".md", ".markdown", ".txt"]) : new Set([".hwpx"])
         const outPath = output_path ? safeOutputPath(output_path, outExts) : undefined

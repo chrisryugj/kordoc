@@ -389,7 +389,7 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `parse_chunks` | RAG 구조 청크 JSON — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 |
 | `compare_documents` | 두 문서 비교 (교차 포맷) |
 | `parse_form` | 양식 필드를 JSON 으로 |
-| `fill_form` | 양식에 값 채우기 (HWPX 서식 보존, 서식·유일성 가드, 내장 `template`) |
+| `fill_form` | 양식에 값 채우기 (HWPX 서식 보존, 서식·유일성 가드, 내장 `template`, 값 JSON 파일 `fields_file` — 값이 대화에 안 남고 응답은 글자 수만) |
 | `patch_document` | 편집한 Markdown 을 원본 HWPX/HWP 에 서식 보존 반영 |
 | `extract_profile` | 참조 HWPX 의 표 서식 프로필 JSON — `generate_document` 의 `profile_path` 로 재현 |
 | `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 |

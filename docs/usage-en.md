@@ -389,7 +389,7 @@ On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": 
 | `parse_chunks` | RAG structure chunks — heading/outline breadcrumbs + standalone table chunks |
 | `compare_documents` | compare two documents (cross-format) |
 | `parse_form` | form fields as JSON |
-| `fill_form` | fill a form (HWPX format-preserving, format/uniqueness guards, built-in `template`) |
+| `fill_form` | fill a form (HWPX format-preserving, format/uniqueness guards, built-in `template`, values from a JSON `fields_file` — values stay out of the conversation and the reply shows only their lengths) |
 | `patch_document` | apply edited Markdown back into the original HWPX/HWP, format preserved |
 | `extract_profile` | table format profile JSON from a reference HWPX — reuse via `generate_document`'s `profile_path` |
 | `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets |
