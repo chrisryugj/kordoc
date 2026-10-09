@@ -25,7 +25,7 @@ export function mergeOcrImageRegions(
     const accepted = candidates.filter(b => {
       // 그림 속 글(차트 축·범례·로고 글) — 텍스트층이 없는 그림 영역의 OCR 문단
       if (b.type === "paragraph") return (b.text?.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 2 ||
-        (!axisFragments.has(b) && supportedDiagramLabel(b, labels, region))
+        (!axisFragments.has(b) && (supportedDiagramLabel(b, labels, region) || axisTick(b, candidates)))
       const t = b.table
       // 원그래프 범례가 머리 있는 표로 받아들여졌다(ODL 124·140) — 그림 속 진짜 표(110 점도 표·122 실험 표)는 영역 안 세로 괘선 5·8개, 범례는 0개
       if (b.type !== "table" || !t || UNRULED_REGION_TABLES.has(b)) return false
@@ -51,7 +51,7 @@ export function mergeOcrImageRegions(
       const y = Math.max(0, Math.min(e.y + e.height, b.y + b.height) - Math.max(e.y, b.y))
       return x * y > b.width * b.height * 0.2
     })
-    const selectedSet = new Set(selected), seen = new Set<IRBlock>()
+    const selectedSet = new Set(selected), seen = new Set<IRBlock>(), placedHere = new Set<IRBlock>()
     for (const block of selected) {
       if (seen.has(block)) continue
       const frame = FRAME_READING_UNITS.get(block)
@@ -70,17 +70,35 @@ export function mergeOcrImageRegions(
           const e = FRAME_READING_UNITS.get(existing)?.bbox ?? existing.bbox
           if (existing.pageNumber !== page || !e) return false
           const beside = e.y < region.y2 && e.y + e.height > region.y1 && e.x >= region.x2 - 1
+          // 이 영역에서 방금 넣은 같은 줄 조각(세로 중심이 낮은 쪽 높이의 0.25 안)과는 왼→오 — 아래 끝만 보면 XY-Cut 이 가른 눈금 행 조각이
+          // 처리 순서대로 이어져 "5 6 7 8 9 / 0 / 1 …" 이 됐다(ODL 128, 어긋남 0). 범례 라벨과 먼 축 눈금(0.33~0.42, 057)은 위→아래 그대로
+          if (placedHere.has(existing) && Math.abs(e.y + e.height / 2 - b.y - b.height / 2) <= Math.min(e.height, b.height) * 0.25) return e.x > b.x
           return e.y < b.y || beside
         })
         // OCR image text is not typographic heading evidence.
         const placed = unit.blocks.map(member => member.type === "paragraph" ? { ...member, style: undefined } : member)
         if (unit.atomic) recordFrameReadingUnit(placed, unit.bbox)
         blocks.splice(index < 0 ? blocks.length : index, 0, ...placed)
+        for (const member of placed) placedHere.add(member)
         added += placed.length
       }
     }
   }
   return added
+}
+
+/** 숫자 한 글자 라벨이 차트 눈금인지 — 같은 행(가로 축: 세로 중심이 작은 쪽 높이의 0.35 안)이나 오른끝을 맞춘 열(세로 축)에 숫자 라벨이
+ *  둘 이상 더 있으면 눈금이다. 한 글자라 잡음으로 버리면 1~6·0~8 처럼 한 자리 눈금이 통째로 빠졌다(ODL 027). 눈금 열 옆 회전 축 이름 조각은
+ *  숫자가 아니거나(a·t·S) 숫자 열과 오른끝이 어긋나 받지 않는다 */
+function axisTick(block: IRBlock, candidates: IRBlock[]): boolean {
+  const b = block.bbox!
+  if (!/^\d$/u.test(block.text?.trim() ?? "")) return false
+  const numeric = candidates.filter(o => o !== block && o.type === "paragraph" && o.bbox && /^[\d\s.,%+−-]+$/u.test(o.text?.trim() ?? "") &&
+    /\d/u.test(o.text ?? "") && Math.max(o.bbox.height, b.height) <= Math.min(o.bbox.height, b.height) * 2)
+  const cy = b.y + b.height / 2, right = b.x + b.width
+  const row = numeric.filter(o => Math.abs(o.bbox!.y + o.bbox!.height / 2 - cy) <= Math.min(o.bbox!.height, b.height) * 0.35)
+  const column = numeric.filter(o => Math.abs(o.bbox!.x + o.bbox!.width - right) <= Math.max(o.bbox!.height, b.height) * 0.5)
+  return row.length >= 2 || column.length >= 2
 }
 
 /** A small one-character node label can be meaningful inside a numeric diagram.
