@@ -8,6 +8,7 @@ import { headerLineAbove } from "../src/pdf/grid-header-line.js"
 import { mergeSliverColumns } from "../src/pdf/table-trim.js"
 import { dominantStyle, type NormItem } from "../src/pdf/text-line.js"
 import { mergeLinkRuns } from "../src/pdf/links.js"
+import { bodyLineJoins } from "../src/pdf/line-wrap.js"
 import type { IRBlock, IRCell, IRTable } from "../src/types.js"
 
 const table = (rows: string[][]): IRTable => ({
@@ -157,6 +158,30 @@ describe("PDF links", () => {
     assert.equal(mergeLinkRuns(`[a](https://a.org) [b](https://b.org) ![image](image_001.png)`), `[a](https://a.org) [b](https://b.org) ![image](image_001.png)`)
   })
 
+  it("a left-aligned line that ends in a link still wraps into the next line (ODL 094)", () => {
+    // 실측 줄 상자(11pt, pdftotext -bbox): 링크 주소 글자가 다음 줄 글자 폭 어림을 줄여 "account" 가 들어갈 자리가 있다고 봤다
+    const rows: Array<[string, number, number]> = [
+      ["6. Warning: This question concerns a politically charged event that occurred on January", 105.92, 546.63],
+      ["18, 2019, at the Indigenous People's March in Washington, D.C. After reading [this](https://www.nytimes.com/2019/01/20/us/nathan-phillips-covington.html)", 122.69, 526.15],
+      ["account of what happened at the march, and viewing [this](https://www.youtube.com/watch?v=sIG5ZB0fw1k) video of the event, which of", 122.69, 543.62],
+      ["the effects presented in this chapter do you think best describes this episode in our", 122.69, 529.94],
+      ["nation's history?", 122.69, 203.81],
+      ["7. Think of a situation in your own life when you framed information (either wittingly or", 105.92, 550.78],
+      ["unwittingly) in such a way that helped pre-determine an outcome. Describe the", 122.69, 513.23],
+      ["situation and how you framed the information. Was the outcome improved or", 122.69, 507.43],
+      ["worsened as a result of how you framed the information?", 122.69, 404.87],
+      ["8. After having learned about the Anchoring Effect in this chapter, do you think you will", 105.92, 545.93],
+      ["ever fall for something like [this](https://www.youtube.com/watch?v=f0uBANguiQs) again?", 122.69, 309.78],
+      ["9. When someone admonishes you “not to judge a book by its cover,” or as British", 105.92, 512.36],
+      ["management journalist Robert Heller once noted, “Never ignore a gut feeling, but never", 122.69, 554.82],
+      ["believe that it's enough,” what heuristic(s) is he unwittingly advising you to avoid using?", 122.69, 553.07],
+    ]
+    const ys = [464.7, 449.3, 433.9, 418.5, 403.1, 370.2, 354.8, 339.4, 324.0, 291.1, 275.7, 242.8, 227.4, 212.0]
+    const joins = bodyLineJoins(rows.map(([text, left, right], k) => ({ text, left, right, y: ys[k], fontSize: 11 })))
+    assert.equal(joins[1], " ", "링크로 끝난 줄은 다음 줄로 꺾여 이어진다")
+    assert.deepEqual([joins[4], joins[8], joins[10]], ["\n", "\n", "\n"], "번호 항목 경계는 그대로")
+  })
+
   it("keeps only the text when the link text is the address itself", () => {
     // ODL bench 158·192: the printed address is the link, so [address](address) only repeats it
     assert.equal(mergeLinkRuns("Video: [//www.youtube.com/embed/UBVV8pch1dM](http://www.youtube.com/embed/UBVV8pch1dM)"), "Video: //www.youtube.com/embed/UBVV8pch1dM")
@@ -165,8 +190,8 @@ describe("PDF links", () => {
     assert.equal(mergeLinkRuns("<u>[www.law.gov](http://www.law.gov/)</u> · [law@loc.gov](mailto:law@loc.gov)"), "www.law.gov · law@loc.gov")
     assert.equal(mergeLinkRuns("[https://a.org/(x)](https://a.org/%28x%29)"), "https://a.org/(x)")
     // A different target or ordinary link text keeps the link.
-    assert.equal(mergeLinkRuns("[https://a.org](https://b.org) [this](https://a.org) [a.org guide](https://a.org)"),
-      "[https://a.org](https://b.org) [this](https://a.org) [a.org guide](https://a.org)")
+    assert.equal(mergeLinkRuns("[https://a.org](https://b.org) and [this](https://a.org) or [a.org guide](https://c.org)"),
+      "[https://a.org](https://b.org) and [this](https://a.org) or [a.org guide](https://c.org)")
   })
 })
 

@@ -21,6 +21,8 @@ import type { BoundingBox, IRBlock } from "../types.js"
 
 /** 줄 글에서 판정에 방해되는 마크업 — 밑줄·취소선 표시 (page-blocks 가 아이템 글에 감싼 것) */
 const MARKUP = /<\/?u>|~~/g
+/** 줄마다 감싼 링크 표기 `[글](주소)` (links.ts applyLinkAnnotations) — 판정용 글에선 글만 남긴다 */
+const LINK_MARKUP = /(?<!!)\[([^\]\n]*)\]\([^)\s]+\)/g
 const bump = <K>(m: Map<K, number>, k: K): void => { m.set(k, (m.get(k) ?? 0) + 1) }
 /** 두 글자(UTF-16 단위) → 수 키 — 문자열 키를 만들지 않아 쪽마다 모든 글을 훑는 비용을 줄인다 */
 const pairKey = (a: number, b: number): number => a * 0x10000 + b
@@ -359,8 +361,9 @@ const BODY_MAX_PITCH_ABS_EM = 3.5
  */
 export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
   // 표시 태그는 글자 폭·줄 끝 구두점·번호 판정의 글자가 아니다. 원래 줄은 보존하고 판정용 글만 한 번 정리한다.
+  // 링크 표기 `[글](주소)` 도 — 주소 글자가 다음 줄 글자 폭 어림을 줄여 왼쪽 정렬 줄의 꺾임을 문단 끝으로 봤다(ODL 094 번호 목록)
   lines = lines.map(l => {
-    const text = l.text.replace(MARKUP, "")
+    const text = l.text.replace(MARKUP, "").replace(LINK_MARKUP, "$1")
     return text === l.text ? l : { ...l, text }
   })
   let right = -Infinity
