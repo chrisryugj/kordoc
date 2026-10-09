@@ -8,6 +8,7 @@ import { strict as assert } from "node:assert"
 
 import {
   postProcessLatex,
+  stripUnpairedLeftRight,
   stripTrailingWhitespace,
   collapseSpaces,
   stripEmptyGroups,
@@ -58,6 +59,19 @@ describe("formula postprocess", () => {
     // trailing quad + 빈 sup + 연속 공백 — normalizer 로 `\sum_{i=1}` 뒤 공백 제거
     const raw = "\\sum_{i=1}^{} x_i   \\quad"
     assert.equal(postProcessLatex(raw), "\\sum_{i=1}x_i")
+  })
+})
+
+describe("stripUnpairedLeftRight (Pix2Text fix_latex)", () => {
+  it("짝 없는 \\left·\\right 는 떼고 구분자만 남긴다", () => {
+    assert.equal(stripUnpairedLeftRight("\\left( a + b"), "( a + b")
+    assert.equal(stripUnpairedLeftRight("a + b \\right)"), "a + b )")
+    assert.equal(stripUnpairedLeftRight("\\left[ \\left( x \\right) y"), "[ \\left( x \\right) y")
+  })
+  it("짝이 맞으면 그대로, \\leftarrow·\\rightarrow 는 다른 명령", () => {
+    const ok = "\\left( \\frac{a}{b} \\right) \\leftarrow \\rightarrow"
+    assert.equal(stripUnpairedLeftRight(ok), ok)
+    assert.equal(postProcessLatex("\\left( x+y"), "(x+y")
   })
 })
 

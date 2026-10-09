@@ -6,6 +6,7 @@
  * 3) 빈 그룹 반복 제거 (^{} _{} \hat{} \bar{} \vec{} 등)
  * 4) \cmd 뒤 영문자 공백 분리 (\cdotd → \cdot d, \timesd → \times d)
  * 5) isTrivialFormula — 다이어그램 단일 글자/반복/장식 오탐 제거
+ * 6) 짝 없는 \left·\right 제거 (Pix2Text fix_latex) — 남으면 KaTeX 등이 수식 전체를 못 그린다
  */
 
 const TRAILING_WHITESPACE_CMDS = [
@@ -28,12 +29,36 @@ export function postProcessLatex(latex: string): string {
     if (next === s) break
     s = next
   }
+  s = stripUnpairedLeftRight(s)
   s = fixLatexSpacing(s)
   s = normalizeFormulaSpacing(s)
   s = s.trim()
   // trivial 이면 빈 문자열 반환 — 상위(pipeline/parser) 에서 latex.trim() 비었을 때 skip.
   if (isTrivialFormula(s)) return ""
   return s
+}
+
+/**
+ * 짝 없는 `\left`·`\right` 를 떼고 구분자만 남긴다 — `\left( a + b` → `( a + b`. 짝은 중첩 순서(스택)로 찾는다.
+ * `\leftarrow`·`\rightarrow` 는 명령이 다르므로 건드리지 않는다
+ */
+export function stripUnpairedLeftRight(s: string): string {
+  const open: number[] = []
+  const drop = new Set<number>()
+  for (const m of s.matchAll(/\\(left|right)(?![A-Za-z])/g)) {
+    if (m[1] === "left") open.push(m.index)
+    else if (open.length) open.pop()
+    else drop.add(m.index)
+  }
+  for (const i of open) drop.add(i)
+  if (drop.size === 0) return s
+  let out = ""
+  let at = 0
+  for (const i of [...drop].sort((a, b) => a - b)) {
+    out += s.slice(at, i)
+    at = i + (s.startsWith("\\left", i) ? 5 : 6)
+  }
+  return out + s.slice(at)
 }
 
 export function stripTrailingWhitespace(s: string): string {
