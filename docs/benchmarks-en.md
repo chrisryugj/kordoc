@@ -2,9 +2,9 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.7 · 2026-10-10
+## Latest release results: 4.21.8 · 2026-10-10
 
-All benches measured on the 4.21.7 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.6, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
+All benches measured on the 4.21.8 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.7, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
 
 | Target | Population | Result |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ All benches measured on the 4.21.7 dist on 2026-10-10 (`node bench/suite.mjs run
 | PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.98%, cell F1 0.991228 |
 | Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 335/346 · 96.82% |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.79% |
-| OCR | 53 documents · 102 pages | CER 0.0445, character recall 99.03%, precision 99.33%, Hangul recall 99.40% |
+| OCR | 53 documents · 102 pages | CER 0.0443, character recall 99.03%, precision 99.33%, Hangul recall 99.40% |
 | Other formats / roundtrip / fuzz | 146 documents (27 PPTX) / 75 roundtrips / 25,152 fuzz cases | Release gates passed |
 
 Structure scores do not imply perfect visual fidelity or exact text in every cell. The 75 roundtrip cases and 8 generation fixtures are counted separately.
