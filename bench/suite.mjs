@@ -80,6 +80,8 @@ async function run() {
   const jobs = Number(flag("jobs", 3))
   const dir = join(suiteDir, tag)
   mkdirSync(dir, { recursive: true })
+  // 새 worktree 엔 bench/out 이 없다(gitignore) — 스스로 만들지 않는 벤치(gen-repro)가 있다
+  mkdirSync(join(root, "bench", "out"), { recursive: true })
   const git = a => { try { return execFileSync("git", a, { cwd: root, encoding: "utf8" }).trim() } catch { return null } }
   const metaPath = join(dir, "meta.json")
   const meta = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, "utf8")) : { tag, benches: {} }
