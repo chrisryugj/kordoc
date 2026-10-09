@@ -109,10 +109,27 @@ describe("OCR 줄 맞춤 — 두 단 글은 좌우 줄을 묶지 않는다 (ODL 
       { text: "Vulnerable", x: 570, y: 1193, w: 97, h: 16, confidence: 0.9 }, { text: "1%", x: 387, y: 1197, w: 24, h: 22, confidence: 0.9 },
       { text: "Biogas", x: 1116, y: 419, w: 78, h: 25, confidence: 0.9 }, { text: "300", x: 278, y: 429, w: 44, h: 19, confidence: 0.9 },
     ]
-    assert.deepEqual(groupOcrLines(chart).map(l => l.length), [1, 1, 1, 1, 1, 1])
+    assert.deepEqual(groupOcrLines(chart, true).map(l => l.length), [1, 1, 1, 1, 1, 1])
     // 원그래프 값과 범례는 0.31 어긋나 — 같은 줄 (ODL 148, 정답 순서)
     const pie = [{ text: "Project Manager", x: 1107, y: 1911, w: 157, h: 20, confidence: 0.9 }, { text: "18.9%", x: 745, y: 1918, w: 58, h: 16, confidence: 0.9 }]
-    assert.deepEqual(groupOcrLines(pie).map(l => l.length), [2])
+    assert.deepEqual(groupOcrLines(pie, true).map(l => l.length), [2])
+    // 쪽 전체 OCR 은 이 규칙을 걸지 않는다 — 기울어진 서식의 먼 칸은 쪽이 기운 만큼 중심이 어긋난다(열화 OCR web051 skew-2)
+    assert.deepEqual(groupOcrLines(chart).map(l => l.length), [2, 2, 2])
+  })
+  it("신뢰도 높은 박스는 높이가 두 배 넘게 달라도 같은 줄 — 체크 표 옆 라벨, 기울어 키가 커진 글줄 (열화 OCR web068 skew+1)", () => {
+    const check = [{ text: "√", x: 1032, y: 869, w: 28, h: 28, confidence: 1 }, { text: "단기 육아휴직", x: 1073, y: 854, w: 272, h: 58, confidence: 0.96 }]
+    assert.deepEqual(groupOcrLines(check).map(l => l.length), [2])
+  })
+  it("숫자가 30% 넘는 금액 칸은 긴 글줄로 보지 않는다 — 예산 표 행의 항목명과 먼 금액이 한 줄 (열화 OCR goesan-budget-2013 skew+3)", () => {
+    const row = [{ text: "○폐 계량기 매각 수입", x: 306, y: 1558, w: 269, h: 21, confidence: 0.95 }, { text: "경정4,200,000원", x: 856, y: 1558, w: 199, h: 21, confidence: 0.95 },
+      { text: "4,200", x: 1216, y: 1558, w: 63, h: 20, confidence: 0.95 }, { text: "300", x: 1463, y: 1559, w: 37, h: 19, confidence: 0.95 },
+      { text: "3,900", x: 1650, y: 1558, w: 62, h: 20, confidence: 0.95 }]
+    assert.deepEqual(groupOcrLines(row).map(l => l.length), [5])
+  })
+  it("폭이 높이의 7배가 안 되는 서식 라벨은 긴 글줄로 보지 않는다 — 같은 행의 먼 라벨과 한 줄 (열화 OCR web048 dpi150)", () => {
+    const row = [{ text: "3.대리인이될자의", x: 158, y: 392, w: 245, h: 31, confidence: 0.95 }, { text: "성명", x: 402, y: 391.5, w: 63, h: 32, confidence: 0.95 },
+      { text: "주민등록번호", x: 750, y: 395.5, w: 147, h: 24, confidence: 0.95 }]
+    assert.deepEqual(groupOcrLines(row).map(l => l.length), [3])
   })
   it("그림 영역은 줄 기준선을 맞춰도 키 큰 칸 상자의 위 끝을 지켜 윗행 칸으로 번지지 않는다 (ODL 110 \"14\"·\"15\" 가 한 칸 \"1415\")", () => {
     const cells = [

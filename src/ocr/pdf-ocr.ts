@@ -254,14 +254,24 @@ async function closerReads(
  * 몇 pt 씩 어긋나, 박스마다 아래 끝을 기준선으로 넘기면 블록 파이프라인의 줄 묶음(3pt)이 한 줄을 여럿으로 쪼개고 위쪽 y 순으로
  * 뒤집는다(#141 영수증: "탄현점 / 이마트", 품목 바코드·단가·금액이 다른 행). 중심 y 차이 ≤ 작은 박스 높이의 절반이면 한 줄,
  * 가로로 크게 겹치는 박스는 같은 줄에 넣지 않는다(큰 로고 박스가 위아래 두 줄을 잇지 않게).
- * 한 줄 조각은 높이가 엇비슷하다 — 줄 높이 중앙값과 두 배 넘게 다른 박스(아이콘·로고·QR 잡음)와는 묶지 않고(줄의 작은 숫자 박스
- * 하나와 재면 두 행에 걸친 칸 박스가 제 행을 놓친다, changwon-plan2026 "3/8"), 높이의 8배 넘게 떨어진 조각은 세로 중심이 작은 박스
- * 높이의 0.35 안일 때만 같은 줄(차트 범례와 먼 축 눈금), 긴 글줄은 줄 안 가장 가까운 긴
- * 글줄과 높이의 5배 넘게 떨어지면 묶지 않는다(범례 라벨 사이 3~4배는 한 줄). 짧은 조각(숫자·라벨 칸)은 멀어도 묶는다(영수증 금액 칸).
+ * 한 줄 조각은 높이가 엇비슷하다 — 줄 높이 중앙값과 두 배 넘게 다른 박스는 인식 신뢰도 0.8 미만 박스(아이콘·로고·QR 잡음)가 낄 때
+ * 묶지 않는다. 높이는 줄 높이 중앙값과 잰다(줄의 작은 숫자 박스 하나와 재면 두 행에 걸친 칸 박스가 제 행을 놓친다, changwon-plan2026
+ * "3/8"). 신뢰도가 높으면 높이 차가 커도 같은 줄 — 기울어진 스캔의 긴 글줄 박스는 기울기만큼 키가 크고 체크 표 "√" 옆 라벨·두 줄이 한
+ * 박스로 붙은 칸도 2~2.7배다(열화 서식 OCR 다섯 쪽 CER 상승). 그림 영역에서는 높이의 8배 넘게 떨어진 조각은 세로 중심이 작은 박스
+ * 높이의 0.35 안일 때만 같은 줄(차트 범례와 먼 축 눈금 — 쪽 전체 OCR 의 서식 먼 칸은 쪽이 기운 만큼 어긋난다). 긴 글줄(폭이 높이의
+ * 7배 이상 — 서식 라벨 "주민등록번호" 6배는 아니다, 숫자가 30% 넘는 금액 칸도 아니다 — 예산 표 행의 항목명과 "경정4,200,000원")은 줄 안
+ * 가장 가까운 긴 글줄과 높이의 5배 넘게 떨어지면 묶지 않는다(범례 라벨 사이 3~4배는 한 줄). 짧은 조각(숫자·라벨 칸)은 멀어도 묶는다
+ * (영수증 금액 칸).
  * 두 단 글의 좌우 줄은 높이가 엇비슷해도 다른 줄이다(ODL 141 두 단 카드 인포그래픽: 좌우 카드 줄 틈 7~60배 — 4.21.3 에서 한 줄로
  * 묶여 단 분리가 깨지고 가짜 표가 됐다, NID 0.96 → 0.44).
  */
-export function groupOcrLines(items: OcrItem[]): number[][] {
+/** 긴 글줄 상자 — 폭이 높이의 7배 이상이고 숫자가 글자의 30% 미만(금액 칸 "경정4,200,000원"·"210mm×297mm" 은 표 칸이다) */
+const proseBox = (b: OcrItem) => {
+  const t = b.text.replace(/\s/g, "")
+  return b.w >= b.h * 7 && (t.match(/\d/g)?.length ?? 0) < t.length * 0.3
+}
+
+export function groupOcrLines(items: OcrItem[], figureRegion = false): number[][] {
   const order = items.map((_, i) => i).sort((a, b) => (items[a].y + items[a].h / 2) - (items[b].y + items[b].h / 2))
   const accepts = (l: number[], i: number): boolean => {
     const it = items[i], c = it.y + it.h / 2
@@ -269,7 +279,8 @@ export function groupOcrLines(items: OcrItem[]): number[][] {
     const minH = Math.min(it.h, ...l.map(j => items[j].h))
     if (Math.abs(c - lc) > minH / 2) return false
     const hs = l.map(j => items[j].h).sort((a, b) => a - b), med = hs[hs.length >> 1]
-    if (Math.max(it.h, med) > Math.min(it.h, med) * 2) return false
+    const weak = it.confidence < 0.8 || l.some(j => items[j].confidence < 0.8)
+    if (weak && Math.max(it.h, med) > Math.min(it.h, med) * 2) return false
     let nearLong = 0, gap = Infinity
     for (const j of l) {
       const o = items[j]
@@ -277,12 +288,12 @@ export function groupOcrLines(items: OcrItem[]): number[][] {
       const ov = Math.min(it.x + it.w, o.x + o.w) - Math.max(it.x, o.x)
       if (ov >= Math.min(it.w, o.w) / 2) return false
       gap = Math.min(gap, Math.max(0, -ov))
-      if (it.w >= it.h * 6 && o.w >= o.h * 6) nearLong = Math.min(nearLong || Infinity, Math.max(0, -ov) / Math.min(it.h, o.h))
+      if (proseBox(it) && proseBox(o)) nearLong = Math.min(nearLong || Infinity, Math.max(0, -ov) / Math.min(it.h, o.h))
     }
-    // 높이의 8배 넘게 떨어진 조각은 세로로 거의 같은 줄이어야 한다 — 영수증 먼 칸은 중심 어긋남이 작은 박스 높이의 0.22 안, 원그래프
+    // 그림 영역에서 높이의 8배 넘게 떨어진 조각은 세로로 거의 같은 줄이어야 한다 — 영수증 먼 칸은 중심 어긋남이 작은 박스 높이의 0.22 안, 원그래프
     // 값과 범례(ODL 148 "18.9%"·"Project Manager")는 0.31, 차트 범례 라벨과 멀리 왼쪽 축 눈금은 0.37~0.47 이라 반쯤 어긋난 채 묶여
     // 기준선이 옮겨지고 읽기 순서가 바뀌었다(ODL 128·140·057)
-    if (gap > 8 * minH && Math.abs(c - lc) > minH * 0.35) return false
+    if (figureRegion && gap > 8 * minH && Math.abs(c - lc) > minH * 0.35) return false
     // 긴 글줄은 줄 안 가장 가까운 긴 글줄과 높이의 5배 안이어야 한다 — 사이에 짧은 상자(카드 번호)가 끼어도 다리가 되지 않는다
     return nearLong <= 5
   }
@@ -316,7 +327,7 @@ export function ocrItemsToBlocks(
   // 줄마다 아래 끝을 중앙값으로 맞추고, 겹친 이웃 박스는 겹친 구간 가운데서 갈라 낱말 경계(따로 검출된 상자)를 공백으로 남긴다
   const bottoms = items.map(it => it.y + it.h)
   const xs = items.map(it => ({ x: it.x, r: it.x + it.w, space: false }))
-  for (const line of groupOcrLines(items)) {
+  for (const line of groupOcrLines(items, figureRegion)) {
     if (line.length < 2) continue
     const sorted = line.map(j => items[j].y + items[j].h).sort((a, b) => a - b)
     for (const j of line) bottoms[j] = sorted[Math.floor(sorted.length / 2)]
