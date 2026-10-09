@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.2] - 2026-10-09
+
+### Fixed
+
+- 개조식(`--preset 개조식`) 제목 바로 뒤 요약(`> …`)이 ※ 참고 문단(한양중고딕 13pt)으로 나오던 것 — 본문 첫 쪽 제목 상자 아래·첫 장(Ⅰ) 앞 1×1 요약 상자(#DFE6F7·0.4mm·한컴돋움 굵게 본문 크기)로 낸다. `summary` 옵션도 개조식에서 같은 상자. 서울 실결재 553건 제목 아래 요약 상자 53개 실측(전부 1×1, 3줄 이하 98%·2줄 75%, #DFE6F7 67%, 한컴돋움 15 굵게 72%). 표지를 끈 개조식은 첫 `#` 이 장 머리라 인용문은 종전대로 ※ 참고. 그 밖의 프리셋과 요약 없는 개조식 산출물은 바이트 그대로.
+- 요약 상자 검사에 문장 수 — 3줄을 넘거나 두 문장 이상이면 경고(CLI stderr·MCP 응답). 보고서·계획서·서울방침도 같은 검사(종전은 줄 수만). 안내 문구(SKILL·MCP·CLI·README)의 "제목 직후 `>` 요약" 규칙을 프리셋별로 정정 — 보고서·계획서·개조식·서울방침 = 요약 상자, 업무보고 = `> ▪` 성과 요약 상자.
+- HWP3 표·각주·글상자 안 문단 리스트 중첩을 16단계에서 끊는다(rhwp hwp3-depth) — 악성 중첩이 스택을 다 쓰기 전에 PARTIAL_PARSE 로.
+- 암호 HWPX 복호가 엔트리별 상한만 봐 평문을 엔트리 수 × 256MB 까지 모을 수 있던 것 — 본 파싱과 같은 누적 상한(rhwp 보안 통합).
+- PDF 두 줄에 걸친 밑줄 링크가 `[Our</u> <u>Mental Shortcuts](…)` 로 엇갈리던 것(ODL 벤치 157).
+
+### Changed
+
+- 공문서 생성(개조식·보도자료)이 띄어 쓴 날짜 기간 `10. 19. ~ 11. 18.` 의 물결 양옆도 묶음 빈칸으로 — 줄 끝에서 기간이 갈리지 않는다(hwp-auto-docfit 기간 패턴).
+
 ## [4.21.1] - 2026-10-08
 
 ### Fixed
