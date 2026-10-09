@@ -199,3 +199,32 @@ describe("HWP3 사적 문장부호 — 한컴 변환본 대조 (SO-SUEOP)", () =
     assert.deepEqual([0x3062, 0x3063, 0x3066, 0x30bb, 0x30bd, 0x2014, 0x2223, 0x21b3].map(decodeJohab).map(c => String.fromCodePoint(c)).join(""), "“”‧《》—∣↳")
   })
 })
+
+describe("HWP3 문단 리스트 중첩 한도 (rhwp hwp3-depth)", () => {
+  /** 칸 하나짜리 표를 n 겹 — 맨 안 칸에 "core" */
+  function nested(n: number): Buffer {
+    let inner = list(para(text("core")))
+    for (let k = 0; k < n; k++) {
+      const info = Buffer.alloc(84)
+      info.writeUInt16LE(1, 80)
+      const cellInfo = Buffer.alloc(27)
+      cellInfo.writeUInt16LE(100, 8)
+      cellInfo.writeUInt16LE(50, 10)
+      inner = list(para(ctrl(10, Buffer.concat([info, cellInfo, inner, END]))))
+    }
+    return inner
+  }
+  const nestDoc = (n: number) => buildHwp3(Buffer.concat([PREAMBLE, nested(n)]))
+
+  it("15겹 표(문단 리스트 16단계)까지는 맨 안 글을 읽는다", () => {
+    const r = parseHwp3Document(nestDoc(15))
+    assert.ok(r.markdown.includes("core"), r.markdown)
+    assert.ok(!r.warnings?.some(w => w.message.includes("중첩")))
+  })
+  it("그보다 깊으면 PARTIAL_PARSE 로 끊고, 수천 겹도 스택을 다 쓰지 않는다", () => {
+    for (const n of [16, 5000]) {
+      const r = parseHwp3Document(nestDoc(n))
+      assert.ok(r.warnings?.some(w => w.code === "PARTIAL_PARSE" && w.message.includes("중첩이 16단계")), `${n}`)
+    }
+  })
+})

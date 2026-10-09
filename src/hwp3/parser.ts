@@ -41,6 +41,9 @@ import { hwp3CellGrid } from "./table.js"
 /** 압축 해제 최대 크기 (100MB) — decompression bomb 방지 (hwp5/record.ts와 동일 캡) */
 const MAX_DECOMPRESS_SIZE = 100 * 1024 * 1024
 
+/** 문단 리스트 중첩 한도 — 표 셀·각주·글상자 안 문단 리스트의 상호재귀. 악성 중첩이 스택을 다 쓰기 전에 끊는다 (rhwp hwp3-depth 와 같은 16) */
+const MAX_PARAGRAPH_DEPTH = 16
+
 /** ch=11 그림 정보 offset 74 — 3 이면 확장 블록이 그리기 개체 트리다 (0/1/2 는 그림). */
 const PIC_TYPE_DRAWING = 3
 
@@ -115,6 +118,8 @@ interface ParaContext {
   pageNumbers: number
   /** 각주·미주 번호가 비었을 때의 순번 */
   noteSeq: [number, number]
+  /** 지금 열린 문단 리스트 수 */
+  depth: number
 }
 
 /** 문단 1개의 파싱 누적 — 파싱이 중간에 깨져도 모은 만큼 방출한다 */
@@ -178,7 +183,7 @@ export function parseHwp3Document(
   }
 
   const bodyReader = new Reader(body)
-  const ctx: ParaContext = { warnings, headerBlocks: [], footerBlocks: [], headerTexts: new Set(), pageNumbers: 0, noteSeq: [0, 0] }
+  const ctx: ParaContext = { warnings, headerBlocks: [], footerBlocks: [], headerTexts: new Set(), pageNumbers: 0, noteSeq: [0, 0], depth: 0 }
   const bodyBlocks: IRBlock[] = []
   try {
     skipFontFacesAndStyles(bodyReader)
@@ -232,6 +237,17 @@ function skipFontFacesAndStyles(reader: Reader): void {
  * 모은 만큼은 호출자에게 남는다.
  */
 function parseParagraphList(reader: Reader, ctx: ParaContext, sink: IRBlock[]): void {
+  // 던지면 감싼 문단의 char stream catch 가 PARTIAL_PARSE 로 받는다 — 깨진 문단과 같은 길
+  if (ctx.depth >= MAX_PARAGRAPH_DEPTH) throw new Error(`문단 리스트 중첩이 ${MAX_PARAGRAPH_DEPTH}단계를 넘음`)
+  ctx.depth++
+  try {
+    parseParagraphs(reader, ctx, sink)
+  } finally {
+    ctx.depth--
+  }
+}
+
+function parseParagraphs(reader: Reader, ctx: ParaContext, sink: IRBlock[]): void {
   for (;;) {
     if (reader.eof()) return
 
