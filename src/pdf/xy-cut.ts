@@ -54,7 +54,18 @@ const leaf = (items: NormItem[], wrapped: WrapBand[]): NormItem[][] => {
   return [items]
 }
 
-export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, wrapped?: WrapBand[]): NormItem[][] {
+/** 하위 무리를 다시 자를 때 물려줄 단(세로) 절단 최소 틈 — 벡터 차트 바로 밑의 짧은 띠(네 줄 이하: 축 이름·범례·출처)만 쪽 문턱을 받는다.
+ *  띠 높이로 다시 잰 문턱(최소 15pt)은 범례 항목 사이 18pt 틈을 단 경계로 갈랐다(ODL 077). 차트 밑이 아닌 무리는 종전대로 제 높이로 잰다 —
+ *  서명란·숫자 행·한 줄 제목은 15~22pt 틈에서 갈라야 글 벤치가 맞고, 줄 많은 무리는 그 문턱으로 좁은 단을 가른다. 가로 절단은 늘 무리 문턱
+ *  (쌓인 짧은 줄이 한 줄로 붙었다, 중문 계약서) */
+export function chartBandGap(group: NormItem[], gap: number, charts: { x1: number; x2: number; y1: number }[]): number {
+  if (charts.length === 0 || groupByY([...group].sort((a, b) => b.y - a.y || a.x - b.x)).length > 4) return 0
+  const x1 = Math.min(...group.map(i => i.x)), x2 = Math.max(...group.map(i => i.x + i.w))
+  const top = Math.max(...group.map(i => i.y + i.fontSize)), em = Math.max(...group.map(i => i.fontSize))
+  return charts.some(c => x1 >= c.x1 - 2 && x2 <= c.x2 + 2 && top <= c.y1 + 2 && c.y1 - top <= 2 * em) ? gap : 0
+}
+
+export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, wrapped?: WrapBand[], columnGap = 0): NormItem[][] {
   if (items.length === 0) return []
   const newRegion = wrapped === undefined
   wrapped ??= inheritedWrapBands(items)
@@ -66,7 +77,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
     if (cross.size > 0 && cross.size <= items.length * CROSS_MAX_MASK_RATIO) {
       const rest = items.filter(i => !cross.has(i))
       if (rest.length > 0) {
-        const groups = xyCutOrder(rest, gapThreshold, 1)
+        const groups = xyCutOrder(rest, gapThreshold, 1, undefined, columnGap)
         return mergeCrossLayoutGroups(groups, [...cross])
       }
     }
@@ -82,10 +93,12 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
     wrapped = wrappedLineBands(items, wrapped)
     hCut = findHorizontalCut(sortedY, wrapped)
   }
-  const vCut = findVerticalCutWithOutlierFilter(items, minGap)
+  // 단(세로) 절단만 물려받은 최소 틈을 쓴다 — 가로 절단(쌓인 줄 사이)은 이 무리 문턱 그대로 (shortBandGap)
+  const vMinGap = Math.max(minGap, columnGap)
+  const vCut = findVerticalCutWithOutlierFilter(items, vMinGap)
 
   const hValid = hCut.gap >= minGap
-  const vValid = (vCut.gap >= minGap || (vCut.gap >= PROSE_GUTTER_MIN_GAP && isProseGutter(items, vCut.position))) &&
+  const vValid = (vCut.gap >= vMinGap || (vCut.gap >= PROSE_GUTTER_MIN_GAP && isProseGutter(items, vCut.position))) &&
     !splitsSpacedLabel(items, vCut.position)
 
   // 축 선택: 기본 Y 우선 (한국 공문서는 단일 컬럼 위주 — 코퍼스 검증 결과 Y 우선이 안정적).
@@ -102,13 +115,13 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
     const upper = items.filter(i => i.y > hCut.position)
     const lower = items.filter(i => i.y <= hCut.position)
     if (upper.length > 0 && lower.length > 0 && upper.length < items.length) {
-      return [...xyCutOrder(upper, gapThreshold, depth + 1, wrapped), ...xyCutOrder(lower, gapThreshold, depth + 1, wrapped)]
+      return [...xyCutOrder(upper, gapThreshold, depth + 1, wrapped, columnGap), ...xyCutOrder(lower, gapThreshold, depth + 1, wrapped, columnGap)]
     }
   } else {
     const left = items.filter(i => i.x + i.w / 2 < vCut.position)
     const right = items.filter(i => i.x + i.w / 2 >= vCut.position)
     if (left.length > 0 && right.length > 0 && left.length < items.length) {
-      return [...xyCutOrder(left, gapThreshold, depth + 1), ...xyCutOrder(right, gapThreshold, depth + 1)]
+      return [...xyCutOrder(left, gapThreshold, depth + 1, undefined, columnGap), ...xyCutOrder(right, gapThreshold, depth + 1, undefined, columnGap)]
     }
   }
 

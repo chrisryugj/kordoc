@@ -15,7 +15,7 @@ import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdg
 import { detectClusterTables, findTwoColumnProseCutX, sideTabGlyphs, type ClusterItem, type ClusterTableResult } from "./cluster-detector.js"
 import { type NormItem, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
 import { findRuledColumnDivider } from "./ruled-columns.js"
-import { xyCutOrder } from "./xy-cut.js"
+import { chartBandGap, xyCutOrder } from "./xy-cut.js"
 import { splitImagePanels } from "./image-panels.js"
 import { fillBlanks } from "./blank-fills.js"
 import { detectColumnGutter, detectPersistentColumnGutter, orderByGutter, detectPanelGutters, orderByPanels, type ColRect } from "./two-column.js"
@@ -376,6 +376,8 @@ function extractBlocksWithGrids(
   const blocks: IRBlock[] = []
   const frameParagraphUnits: IRBlock[][] = []
   const usedItems = new Set<NormItem>()
+  /** 벡터 막대 차트 영역(값 축 포함) — 그 밑 짧은 띠의 단 절단 문턱(chartBandGap) */
+  const charts: { x1: number; x2: number; y1: number }[] = []
   for (const r of ruled) {
     for (const it of r.items) usedItems.add(it)
     blocks.push(r.block)
@@ -611,6 +613,7 @@ function extractBlocksWithGrids(
       const axis = valueAxisBeside(items.filter(it => !usedItems.has(it)), grid.bbox)
       for (const it of axis) usedItems.add(it)
       const x1 = Math.min(grid.bbox.x1, ...axis.map(it => it.x)), x2 = Math.max(grid.bbox.x2, ...axis.map(it => it.x + it.w))
+      charts.push({ x1, x2, y1: grid.bbox.y1 })
       blocks.push(chartBlock([...tableItems, ...axis].sort((a, b) => b.y - a.y || a.x - b.x), pageNum, { page: pageNum, x: x1, y: grid.bbox.y1, width: x2 - x1, height: grid.bbox.y2 - grid.bbox.y1 }))
       continue
     }
@@ -740,7 +743,7 @@ function extractBlocksWithGrids(
         if (side.length === 0) continue
         for (const group of xyCutOrder(side, gapThreshold)) {
           if (group.length === 0) continue
-          const groupBlocks = extractPageBlocksFallback(group, pageNum, false, true, lex)
+          const groupBlocks = extractPageBlocksFallback(group, pageNum, false, true, lex, [], chartBandGap(group, gapThreshold, charts))
           for (const b of groupBlocks) textBlocks.push(b)
           groupSizes.push(groupBlocks.length)
         }
@@ -750,7 +753,8 @@ function extractBlocksWithGrids(
       // XY-Cut으로 왼쪽 본문과 오른쪽 부서명 등을 분리 후 개별 처리
       const allY = remaining.map(i => i.y)
       const pageH = safeMax(allY) - safeMin(allY)
-      const groups = xyCutOrder(remaining, Math.max(15, pageH * 0.03))
+      const gapThreshold = Math.max(15, pageH * 0.03)
+      const groups = xyCutOrder(remaining, gapThreshold)
       const textBlocks: IRBlock[] = []
       for (const group of groups) {
         if (group.length === 0) continue
@@ -758,7 +762,7 @@ function extractBlocksWithGrids(
           group.every(item => item.x >= sidebar.bbox!.x + sidebar.bbox!.width + 3) &&
           new Set(group.filter(item => item.y >= sidebar.bbox!.y &&
             item.y <= sidebar.bbox!.y + sidebar.bbox!.height).map(item => Math.round(item.y / 3))).size >= 8)
-        const groupBlocks = extractPageBlocksFallback(group, pageNum, false, !besideProsePanel, lex)
+        const groupBlocks = extractPageBlocksFallback(group, pageNum, false, !besideProsePanel, lex, [], chartBandGap(group, gapThreshold, charts))
         for (const b of groupBlocks) textBlocks.push(b)
         groupSizes.push(groupBlocks.length)
       }
@@ -1057,7 +1061,7 @@ function persistentGutter(textRects: ColRect[]): number | null {
  * detectTables: false 면 표 감지(클러스터·다열 정렬·한국어 특수표)를 모두 끄고
  * 자연 읽기순 텍스트만 낸다 (#64 opt-out).
  */
-export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fullPage = false, detectTables = true, lex?: WrapLexicon, figures: ColRect[] = []): IRBlock[] {
+export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fullPage = false, detectTables = true, lex?: WrapLexicon, figures: ColRect[] = [], minGap = 0): IRBlock[] {
   if (items.length === 0) return []
 
   if (fullPage && detectTables) {
@@ -1172,7 +1176,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
 
       const orderedGroups = proseCutX !== null
         ? splitTwoColumnProse(items, proseCutX)
-        : xyCutOrder(items, gapThreshold)
+        : xyCutOrder(items, gapThreshold, 0, undefined, minGap)
 
       for (const group of orderedGroups) {
         if (group.length === 0) continue
