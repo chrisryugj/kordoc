@@ -76,7 +76,9 @@ const MD_LINK = String.raw`(?<!!)\[([^\]\n]*)\]\(([^)\s]+)\)`
  * 감싼 `<u>` 는 뗀다
  */
 export function mergeLinkRuns(markdown: string): string {
-  let out = markdown.replace(new RegExp(String.raw`<u>(${MD_LINK})</u>`, "g"), "$1")
+  // 줄마다 밑줄을 감싸면 두 줄 링크가 <u>[Our</u> <u>Mental Shortcuts](u)</u> 로 엇갈린다 — 링크 글 안의 줄 경계 밑줄 표지도 뗀다
+  let out = markdown.replace(new RegExp(String.raw`<u>${MD_LINK}</u>`, "g"),
+    (_m, text: string, url: string) => `[${text.replace(/<\/u>(\s*)<u>/g, "$1")}](${url})`)
   const run = new RegExp(MD_LINK + String.raw`(\s+)` + String.raw`(?<!!)\[([^\]\n]*)\]\(\2\)`, "g")
   for (let prev = ""; prev !== out;) {
     prev = out

@@ -151,6 +151,8 @@ describe("PDF links", () => {
     const u = "https://example.org/ksu"
     assert.equal(mergeLinkRuns(`Figure 7.3. [You can read](${u})\n\n[more about KSU](${u}) <u>[Marking Open](${u})</u> (Hare 2020).`),
       `Figure 7.3. [You can read more about KSU Marking Open](${u}) (Hare 2020).`)
+    // A two-line underlined link: the per-line underline tags interleave with the link brackets (ODL bench 157).
+    assert.equal(mergeLinkRuns(`the chapter, <u>[Our</u> <u>Mental Shortcuts](${u})</u>, that`), `the chapter, [Our Mental Shortcuts](${u}), that`)
     // Different targets and images stay apart.
     assert.equal(mergeLinkRuns(`[a](https://a.org) [b](https://b.org) ![image](image_001.png)`), `[a](https://a.org) [b](https://b.org) ![image](image_001.png)`)
   })
