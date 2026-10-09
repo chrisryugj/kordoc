@@ -196,10 +196,12 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     const isHidden = fontSize === 0 || (i.width === 0 && i.str.trim().length > 0)
 
     // letterSpacing이 적용된 숫자/기호 문자열 정규화
-    // "45 0 -7 3 40 )" → "450-7340)" (전화번호, 금액 등). 쉼표·마침표로 시작해 띄운 조각(앞 낱말 뒤 ", 5.")은 낱말 사이 공백이다 (ODL 192)
+    // "45 0 -7 3 40 )" → "450-7340)" (전화번호, 금액 등). 쉼표·마침표로 시작해 띄운 조각(앞 낱말 뒤 ", 5.")은 낱말 사이 공백이다 (ODL 192).
+    // 소수 덩어리가 둘 이상("1.0 2.0")이면 따로 선 수들이다 — 붙이면 한 조각에 든 표 한 행 값이 "21001.02.03.0…" 이 됐다(평가 기준 별표2)
     // 강희 부수(U+2F00~2FD5)로 매긴 한자 글리프는 통합 한자로 — "자성(⾃性)" → "자성(自性)" (NFKC, 부수 블록만)
     let text = i.str.trim().replace(/[\u2F00-\u2FD5]/g, c => c.normalize("NFKC"))
-    if (/^[\d\s\-().·,☎]+$/.test(text) && /\d/.test(text) && / /.test(text) && !/^[,.] /.test(text)) {
+    if (/^[\d\s\-().·,☎]+$/.test(text) && /\d/.test(text) && / /.test(text) && !/^[,.] /.test(text) &&
+        text.split(/\s+/).filter(t => /^\d+\.\d+$/.test(t)).length < 2) {
       text = text.replace(/ /g, "")
     }
     // 글자마다 띄운 영문 대문자 표시 글(큰 제목 "H O W") — 한 아이템이 한 낱말이다

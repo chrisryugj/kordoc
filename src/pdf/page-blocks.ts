@@ -28,7 +28,7 @@ import { mergeSliverColumns } from "./table-trim.js"
 import { headerLineAbove } from "./grid-header-line.js"
 import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, TABLE_ROWYS, recordCellLines, recordRowRules } from "./table-meta.js"
 import { recordClipCellEdges, takeClipCellEdges } from "./cell-edges.js"
-import { cleanCellText } from "./cell-text.js"
+import { cleanCellText, splitAcrossCells } from "./cell-text.js"
 import { rebuildUnitLine, prependUnitRow, attachUnitRow } from "./table-unit-row.js"
 import { WrapLexicon } from "./line-wrap.js"
 import { isPageFrameGrid } from "./page-frame.js"
@@ -453,10 +453,12 @@ function extractBlocksWithGrids(
     if (cells.length === 0) continue
 
     // 텍스트→셀 매핑 (hasSpaceBefore 전파 — 셀 텍스트 단어 공백 복원)
-    const textItems: TextItem[] = tableItems.map(i => ({
+    // 칸 여럿에 걸친 한 조각은 칸마다 한 낱말로 가른다 (splitAcrossCells) — 조각마다 원래 아이템(owners)을 기억해 미배정 환원에 쓴다
+    const owners: NormItem[] = []
+    const textItems: TextItem[] = tableItems.flatMap(i => splitAcrossCells({
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
       fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, seq: i.seq,
-    }))
+    }, cells).map(t => { owners.push(i); return t }))
     const cellTextMap = mapTextToCells(textItems, cells)
 
     // 셀 미배정 아이템 수집 — mapTextToCells는 교차비율 > 0.3만 배정하므로,
@@ -529,7 +531,7 @@ function extractBlocksWithGrids(
     // textItems 전체(미배정 포함)를 셀에 재배치하므로 그때는 환원하지 않는다(중복 방지)
     if (!rebuiltUsed) {
       for (let ti = 0; ti < textItems.length; ti++) {
-        if (!assignedItems.has(textItems[ti])) usedItems.delete(tableItems[ti])
+        if (!assignedItems.has(textItems[ti])) usedItems.delete(owners[ti])
       }
     }
     if (unitLine.length > 0 && rebuiltUsed && !/^\s*\(\s*단위\s*[:：]/.test(finalGrid[0]?.[0]?.text ?? "")) {

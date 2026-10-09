@@ -88,6 +88,28 @@ export function mapTextToCells(
   return result
 }
 
+/**
+ * 칸 여럿에 걸친 한 조각 — 제작기가 표 한 행의 칸 글을 한 글 조각으로 내면(평가 기준 별표2 "2 100 1.0 2.0 … 10.0" 9칸, 가계동향조사
+ * 머리 행 "근로소득 사업소득 재산소득 이전소득" 4칸) 어느 칸에도 30% 넘게 겹치지 않아 칸 밖 글로 샜다. 걸친 칸(한 행, 서로 다른 열)
+ * 수와 낱말 수가 같으면 왼→오로 칸마다 한 낱말. 그 밖은 그대로
+ */
+export function splitAcrossCells(item: TextItem, cells: ExtractedCell[]): TextItem[] {
+  const words = item.text.trim().split(/\s+/)
+  if (words.length < 2) return [item]
+  const ih = item.h || item.fontSize
+  const spanned = cells.filter(c => Math.min(item.y + ih, c.bbox.y2) - Math.max(item.y, c.bbox.y1) >= ih * 0.5 &&
+    Math.min(item.x + item.w, c.bbox.x2) - Math.max(item.x, c.bbox.x1) > 1).sort((a, b) => a.bbox.x1 - b.bbox.x1)
+  if (spanned.length !== words.length) return [item]
+  for (let k = 1; k < spanned.length; k++) if (spanned[k].bbox.x1 < spanned[k - 1].bbox.x2 - 1) return [item]
+  // 한 칸에 30% 넘게 겹치면 종전대로 그 칸 글이다
+  const itemArea = Math.max(item.w, 1) * Math.max(ih, 1)
+  if (spanned.some(c => (Math.min(item.x + item.w, c.bbox.x2) - Math.max(item.x, c.bbox.x1)) * ih / itemArea > 0.3)) return [item]
+  return words.map((text, k) => {
+    const b = spanned[k].bbox
+    return { ...item, text, x: b.x1 + 1, w: Math.max(1, b.x2 - b.x1 - 2), hasSpaceBefore: false }
+  })
+}
+
 /** 세로 범위로 칸 후보를 좁힌다. 병합 칸도 포함하고, 동률 배정은 원래 칸 순서를 그대로 따른다. */
 function cellBandLookup(cells: ExtractedCell[]): (lo: number, hi: number) => ExtractedCell[] {
   const sorted = cells.map((cell, index) => ({ cell, index })).sort((a, b) => a.cell.bbox.y1 - b.cell.bbox.y1)

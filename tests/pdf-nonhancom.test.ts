@@ -13,7 +13,7 @@ import type { TableGrid } from "../src/pdf/line-types.js"
 import { parsePdfDocument } from "../src/pdf/parser.js"
 import { extractLines, chainShortSegments } from "../src/pdf/line-extract.js"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
-import { cellTextToString, mapTextToCells } from "../src/pdf/cell-text.js"
+import { cellTextToString, mapTextToCells, splitAcrossCells } from "../src/pdf/cell-text.js"
 import { cleanPdfText } from "../src/pdf/text-clean.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 
@@ -26,6 +26,26 @@ describe("normalizeItems — 자간 숫자 공백 접기", () => {
     assert.equal(mergeLineSimple(items), "Learning and Systems, 5.")
     // 자간을 벌린 숫자열은 그대로 접는다
     assert.equal(mergeLineSimple(normalizeItems([ti("45 0 -7 3 40 )", 10, 100, 80, 10)])), "450-7340)")
+  })
+
+  it("소수 덩어리가 둘 이상이면 따로 선 수들이다 — 표 한 행 값을 담은 조각 (평가 기준 별표2 \"2 100 1.0 2.0 … 10.0\")", () => {
+    assert.equal(normalizeItems([ti("2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0", 385, 135, 151.4, 8)])[0].text, "2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0")
+  })
+})
+
+describe("splitAcrossCells — 칸 여럿에 걸친 한 조각", () => {
+  const cell = (row: number, col: number, x1: number, x2: number) => ({ row, col, rowSpan: 1, colSpan: 1, bbox: { x1, y1: 130, x2, y2: 146 } })
+  const item = (text: string, x: number, w: number) => ({ text, x, y: 135, w, h: 8, fontSize: 8, fontName: "f" })
+  it("걸친 칸 수와 낱말 수가 같으면 칸마다 한 낱말 (별표2 배점비·점수분포 9칸)", () => {
+    const xs = [379, 393, 413, 430, 447, 464, 482, 499, 516, 539]
+    const cells = xs.slice(0, -1).map((x, k) => cell(2, 20 + k, x, xs[k + 1]))
+    const map = mapTextToCells(splitAcrossCells(item("2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0", 385, 151.4), cells), cells)
+    assert.deepEqual(cells.map(c => map.get(c)!.map(i => i.text).join(" ")), ["2", "100", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "10.0"])
+  })
+  it("낱말 수가 다르거나 한 칸에 충분히 겹치면 그대로", () => {
+    const cells = [cell(0, 0, 50, 150), cell(0, 1, 150, 250)]
+    assert.equal(splitAcrossCells(item("1. 연구의 배경", 60, 180), cells).length, 1)
+    assert.equal(splitAcrossCells(item("사업 개요", 60, 100), cells).length, 1)
   })
 })
 
