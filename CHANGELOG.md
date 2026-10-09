@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.4] - 2026-10-09
+
+### Added
+
+- MCP `fill_form` 의 `fields_file` — 채울 값을 JSON 파일(`{"성명": "홍길동"}`, 반복 양식은 값 배열)로 받는다. 값이 도구 인자로 대화 맥락에 남지 않고, 파일로 받은 값은 응답에 글자 수만 낸다(`mask_values: false` 로 끔). 깨진 JSON·잘못된 값 모양은 내용을 되풀이하지 않고 거부한다. CLI `fill -j 값.json` 과 같은 입력.
+- `bench/suite.mjs` — 전 벤치 묶음 러너와 문서별 비교기. 체크아웃 하나의 dist 로 HWPX·HWP5 쌍·PDF 글·표·별표·OCR·OCR 열화·기타 포맷·왕복·생성 재현·ODL 200(기본·`plain+htmlTables`·`ocr: true`·`ocr: false`)을 돌려 `bench/out/suite/<태그>/` 에 모으고, 두 실행을 벤치별 요약과 문서별 DOWN/UP 으로 견준다(하락이 하나라도 있으면 exit 1).
+
 ## [4.21.3] - 2026-10-09
 
 ### Fixed
