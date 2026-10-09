@@ -148,7 +148,7 @@ export function extractPageBlocksWithLines(
   if (shadedEdges) ({ horizontals, verticals } = shadedEdges)
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
-  const lineGrids = detectTables ? buildTableGrids(horizontals, verticals) : []
+  const lineGrids = detectTables ? buildTableGrids(horizontals, verticals, !(items.length > 0 && items.every(it => it.fontName === "ocr"))) : []
   if (shadedEdges) nestRestoredShadedGrids(lineGrids, shadedEdges.restored, horizontals, verticals)
   // 배경 칠한 칸에만 클립을 거는 제작기(cairo·한컴 구버전)의 음영 조각 격자는 버리고 온전한 선 표에 맡긴다 (dropShadingClipGrids)
   // Word 칸 여백 클립(칸 테두리 안쪽 글 영역)의 행 조각 격자도 선 표에 맡긴다 (dropInsetClipGrids)

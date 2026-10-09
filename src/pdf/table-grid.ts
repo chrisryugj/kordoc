@@ -207,6 +207,8 @@ function mergeVertices(vertices: Vertex[]): Vertex[] {
 export function buildTableGrids(
   horizontals: LineSegment[],
   verticals: LineSegment[],
+  /** 좁은 열 무리를 12pt 까지 열로 둔다 — 텍스트층 벡터 괘선만. OCR 래스터 괘선은 조직도 상자 변이 좁은 열 무리처럼 보인다(web068) */
+  narrowRuns = true,
 ): TableGrid[] {
   if (horizontals.length < 2 || verticals.length < 2) return []
 
@@ -325,7 +327,7 @@ export function buildTableGrids(
     if (rowYs.length < 2 || colXs.length < 2) continue
 
     // 5. 그리드 검증: 최소 열 폭, 최소 행 높이
-    const validColXs = enforceMinWidth(colXs, MIN_COL_WIDTH)
+    const validColXs = enforceMinWidth(colXs, MIN_COL_WIDTH, narrowRuns)
     const validRowYs = enforceMinHeight(rowYs, MIN_ROW_HEIGHT)
 
     if (validRowYs.length < 2 || validColXs.length < 2) continue
@@ -433,14 +435,14 @@ export function dropHeadBandClipGrids(clipGrids: TableGrid[], lineGrids: TableGr
 }
 
 /** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합 */
-function enforceMinWidth(colXs: number[], minWidth: number): number[] {
+function enforceMinWidth(colXs: number[], minWidth: number, narrowRuns = true): number[] {
   if (colXs.length <= 2) return colXs
   // 20pt 안 열이 NARROW_RUN_MIN 개 넘게 이어진 무리 안 경계는 12pt 까지 둔다
   const inRun = new Array(colXs.length).fill(false)
   for (let s = 0; s + 1 < colXs.length;) {
     let e = s
     while (e + 1 < colXs.length && colXs[e + 1] - colXs[e] < NARROW_RUN_MAX_WIDTH) e++
-    if (e - s >= NARROW_RUN_MIN) for (let k = s; k <= e; k++) inRun[k] = true
+    if (narrowRuns && e - s >= NARROW_RUN_MIN) for (let k = s; k <= e; k++) inRun[k] = true
     s = Math.max(e, s + 1)
   }
   const result: number[] = [colXs[0]]
