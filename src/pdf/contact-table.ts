@@ -10,8 +10,12 @@ import type { IRBlock, IRCell } from "../types.js"
 
 export const CONTACT_HEAD = /^(?:담당\s*부서|<[^<>]+>)$/
 export const CONTACT_ROLE = /^(?:책임자|담당자)$/
-/** 직위(띄어 쓴 두 글자 "과 장" 포함) · 이름 2~4자 · 연락처(괄호 전화·전자우편) */
-const PERSON = /^(.+?)\s+([가-힣]{2,4})\s+(\([^()]*\d[^()]*\)|\S+@\S+)$/
+/** 직위(띄어 쓴 두 글자 "과 장" 포함) · 이름 2~4자 · 연락처(괄호 전화·전자우편). 원문이 이름에 연락처를 붙여 쓰거나("김형수(044-201-3488)")
+ *  닫는 괄호를 빠뜨린("양재훈 (02-2100-1685") 행도 있다 — 한 행이라도 안 맞으면 표 전체를 4열로 두었다. 모든 사람이 이름에 연락처를 붙여
+ *  쓴 표는 원문도 직위·이름·연락처를 한 칸에 썼다(156775911 HWPX 4열 "과 장 김형수(044-201-3488)") — 가르지 않는다 */
+const PERSON = /^(.+?)\s+([가-힣]{2,4})\s*(\([^()]*\d[^()]*\)?|\S+@\S+)$/
+/** 이름과 연락처 사이가 띄어 있나 */
+const spaced = (m: RegExpExecArray): boolean => /\s/.test(m[0][m[0].length - m[3].length - 1] ?? "")
 
 export function splitContactTables(blocks: IRBlock[]): void {
   for (const b of blocks) {
@@ -27,6 +31,7 @@ export function splitContactTables(blocks: IRBlock[]): void {
       return whole ? [whole] : null
     })
     if (people.some(p => !p) || rows.some(r => !CONTACT_ROLE.test(r[2].text.replace(/\s+/g, "")) || r[2].rowSpan !== 1 || r[3].rowSpan !== 1)) continue
+    if (!people.some(p => p!.some(spaced))) continue
     // 앞 두 열 — 병합 칸만 줄마다 그 병합 행들로 나눈다 (행마다 칸이면 그대로)
     const lead: string[][] = []
     let ok = true
