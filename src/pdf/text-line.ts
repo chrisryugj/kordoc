@@ -41,6 +41,8 @@ export interface NormItem {
   seq?: number
   /** 세로로 돌린 글 (글자 진행 방향이 y)의 세로 길이 — 쪽 여백 도장("arXiv:… [cs.CL]") 가르기용 */
   rotated?: number
+  /** 돌린 글이 아래로 진행(시계 방향 90°) — 없으면 위로(반시계) */
+  rotatedDown?: true
 }
 
 /** 같은 줄 아이템 x 정렬 — x 가 1pt 이내로 붙은 이웃은 콘텐츠 스트림 순서를 따른다. 좌표를 정수로 반올림하므로
@@ -207,8 +209,10 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     // 글자마다 띄운 영문 대문자 표시 글(큰 제목 "H O W") — 한 아이템이 한 낱말이다
     if (fontSize >= 14 && /^[A-Z0-9?!&'’](?: [A-Z0-9?!&'’]){2,}$/.test(text)) text = text.replace(/ /g, "")
 
-    // 균등배분 TextItem 분해: "홍 보 지 원 반" → 개별 글자 아이템으로
-    const split = splitEvenSpacedItem(text, x, w, fontSize)
+    // 균등배분 TextItem 분해: "홍 보 지 원 반" → 개별 글자 아이템으로. 세로로 돌린 글은 가로 축으로 쪼개면 글자 자리가 틀어진다
+    // (돌려 찍은 표의 사업명 "복선 전 철" 조각이 칸 밖으로 샜다)
+    const turned = Math.abs(i.transform[1]) > Math.abs(i.transform[0]) * 4
+    const split = turned ? null : splitEvenSpacedItem(text, x, w, fontSize)
     if (split) {
       split.forEach((s, k) => {
         items.push({ text: s.text, x: s.x, y, w: s.w, h, fontSize, fontName: i.fontName || "", isHidden, seq: seq + k / 1000 })
@@ -218,7 +222,8 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
       // 세로 글의 가로 폭은 글자 높이다 — 진행 길이(width)를 가로 폭으로 두면 나란한 세로 라벨이 서로 겹쳐 붙는다("01/201903/2019")
       const rw = rotated ? Math.max(1, fontSize) : w
       const rx = rotated && i.transform[1] > 0 ? x - rw : x
-      items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq, ...(rotated ? { rotated: Math.max(1, w) } : {}) })
+      items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq,
+        ...(rotated ? { rotated: Math.max(1, w), ...(i.transform[1] < 0 ? { rotatedDown: true as const } : {}) } : {}) })
     }
   }
 

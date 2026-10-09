@@ -303,6 +303,32 @@ function verticalCoverageAt(verticals: LineSegment[], x: number, yMin: number, y
   return total + (e - s)
 }
 
+/**
+ * 90° 돌려 찍은 표 — 가로로 긴 표를 세로 쪽에 반시계로 돌려 넣은 쪽(예산서 계속비 연도별 표, 기록관리 서식)은 격자의 행·열이 읽는 표의
+ * 열·행이고 칸 글이 위로 진행한다. 그대로 세우면 행·열이 뒤바뀌고 사업명이 칸으로 끊겼다(khs 2014 계속비 "광양 | 복선전철"). 칸 글의
+ * 80% 이상이 위로 진행하면 그 격자의 글과 괘선을 읽는 방향(x′=y, y′=쪽폭−x)으로 돌려 같은 쪽 파이프라인으로 표를 세우고, 블록 자리는 격자
+ * 자리로 둔다. 아래로 진행하는 글이 섞이면 돌리지 않는다
+ */
+function rotatedGridBlocks(
+  grid: TableGrid, tableItems: NormItem[], horizontals: LineSegment[], verticals: LineSegment[],
+  pageNum: number, pageWidth: number, pageHeight: number, lex?: WrapLexicon,
+): IRBlock[] | null {
+  const turned = tableItems.filter(it => it.rotated !== undefined)
+  if (turned.length < tableItems.length * 0.8 || turned.some(it => it.rotatedDown)) return null
+  const b = grid.bbox, pad = 3
+  const inside = (l: LineSegment) => Math.min(l.x1, l.x2) >= b.x1 - pad && Math.max(l.x1, l.x2) <= b.x2 + pad &&
+    Math.min(l.y1, l.y2) >= b.y1 - pad && Math.max(l.y1, l.y2) <= b.y2 + pad
+  const W = pageWidth
+  const items: NormItem[] = turned.map(it => ({ ...it, x: it.y, y: W - (it.x + it.w), w: it.rotated!, h: it.fontSize, rotated: undefined }))
+  // 가로 괘선(y 일정)은 읽는 방향의 세로 괘선, 세로 괘선은 가로 괘선이 된다
+  const vs = horizontals.filter(inside).map(l => ({ ...l, x1: l.y1, x2: l.y1, y1: W - Math.max(l.x1, l.x2), y2: W - Math.min(l.x1, l.x2) }))
+  const hs = verticals.filter(inside).map(l => ({ ...l, x1: Math.min(l.y1, l.y2), x2: Math.max(l.y1, l.y2), y1: W - l.x1, y2: W - l.x1 }))
+  const out = extractPageBlocksWithLines(items, pageNum, { fnArray: [], argsArray: [] }, pageHeight, pageWidth, { horizontals: hs, verticals: vs }, true, undefined, lex)
+  if (!out.some(blk => blk.type === "table")) return null
+  const bbox: BoundingBox = { page: pageNum, x: b.x1, y: b.y1, width: b.x2 - b.x1, height: b.y2 - b.y1 }
+  return out.map(blk => ({ ...blk, bbox }))
+}
+
 /** 글 조각마다 깐 클립은 칸이 아니다 — ezPDF Builder·MS Print To PDF 는 글 조각을 그 시작에서 다음 조각 시작까지 한 글줄 높이로 클립해,
  *  맞댄 클립들이 한 행 표가 됐다(고흥 2026 계획서 라벨 "배경 및 필요성" 이 "필요성" 문단 + "| 배경 | 및 |" 표로 찢긴 곳 749, hwpspec
  *  "DocHistory : | 스토리지" 187, 평가 보고서 표 머리 "’22 | 년"). 한 행 클립 격자의 칸마다 글이 칸 왼변에서 곧바로 시작하고(한컴 칸 클립은
@@ -446,6 +472,16 @@ function extractBlocksWithGrids(
       if (gridW < 120 && item.x + item.w > grid.bbox.x2 - 2) continue
       tableItems.push(item)
       usedItems.add(item)
+    }
+
+    // 가로 표를 90° 돌려 찍은 쪽 — 칸 글이 거의 다 위로 진행하는 격자는 읽는 방향으로 돌려 그 자리에 다시 세운다 (rotatedGridBlocks)
+    if (!grid.cells && tableItems.length >= 4) {
+      const turned = rotatedGridBlocks(grid, tableItems, horizontals, verticals, pageNum, pageWidth, pageHeight, lex)
+      if (turned) {
+        for (const it of tableItems) if (it.rotated === undefined) usedItems.delete(it)
+        blocks.push(...turned)
+        continue
+      }
     }
 
     // 셀 추출 — 클립 그리드는 셀이 확정돼 있다
