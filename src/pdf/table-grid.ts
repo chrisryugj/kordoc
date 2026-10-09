@@ -23,6 +23,12 @@ interface Vertex {
 const CONNECT_TOL = 5
 /** 최소 열 폭 (pt) — 이보다 좁은 열은 인접 열과 병합 */
 const MIN_COL_WIDTH = 15
+/** 좁은 열 무리의 최소 열 폭 (pt) — 20pt 안 열이 셋 넘게 이어진 숫자 칸 무리(평가 기준 별표2 "참여업체수에 따른 배분업체수" 2~20 열,
+ *  14~17pt)는 12pt 까지 열이다. 15pt 에서 둘씩 합쳐져 29열 표가 21열이 되고 두 칸 값이 "1 1" 로 한 칸에 들었다. 홀로 좁은 들여쓰기 열은
+ *  종전대로 합친다(영문 계약서 틀 표 — 들여쓰기 열이 서자 문단까지 표로 품었다) */
+const NARROW_RUN_MIN_WIDTH = 12
+const NARROW_RUN_MAX_WIDTH = 20
+const NARROW_RUN_MIN = 4
 /** 최소 행 높이 (pt) */
 const MIN_ROW_HEIGHT = 6
 /** 좌표 병합 최소 tolerance (pt) — vertexRadius가 작아도 이 값 이하로 내려가지 않음 */
@@ -429,10 +435,18 @@ export function dropHeadBandClipGrids(clipGrids: TableGrid[], lineGrids: TableGr
 /** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합 */
 function enforceMinWidth(colXs: number[], minWidth: number): number[] {
   if (colXs.length <= 2) return colXs
+  // 20pt 안 열이 NARROW_RUN_MIN 개 넘게 이어진 무리 안 경계는 12pt 까지 둔다
+  const inRun = new Array(colXs.length).fill(false)
+  for (let s = 0; s + 1 < colXs.length;) {
+    let e = s
+    while (e + 1 < colXs.length && colXs[e + 1] - colXs[e] < NARROW_RUN_MAX_WIDTH) e++
+    if (e - s >= NARROW_RUN_MIN) for (let k = s; k <= e; k++) inRun[k] = true
+    s = Math.max(e, s + 1)
+  }
   const result: number[] = [colXs[0]]
   for (let i = 1; i < colXs.length; i++) {
     const prevX = result[result.length - 1]
-    if (colXs[i] - prevX < minWidth && i < colXs.length - 1) {
+    if (colXs[i] - prevX < (inRun[i] ? NARROW_RUN_MIN_WIDTH : minWidth) && i < colXs.length - 1) {
       // 너무 좁으면 스킵 (다음 열과 병합)
       continue
     }
