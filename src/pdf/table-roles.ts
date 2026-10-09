@@ -8,6 +8,7 @@
  */
 
 import type { BoundingBox, IRBlock, IRTable } from "../types.js"
+import type { NormItem } from "./text-line.js"
 
 /** Paragraph blocks made from a table of contents — a title between two of them is a TOC entry too. */
 export const TOC_BLOCKS = new WeakSet<IRBlock>()
@@ -96,6 +97,18 @@ function hasValueAxis(values: number[]): boolean {
     if (run >= 4) return true
   }
   return false
+}
+
+/** Value-axis ticks set just outside a chart grid's left or right edge — four or more numbers falling by one step top to bottom.
+ * They are chart text: left in the page flow they formed one unit with the legend and source below it, read before the chart values (ODL 077). */
+export function valueAxisBeside(free: NormItem[], box: { x1: number; y1: number; x2: number; y2: number }): NormItem[] {
+  for (const left of [true, false]) {
+    const ticks = free.filter(it => /^-?[\d,]+(?:\.\d+)?%?$/.test(it.text.trim()) && it.y >= box.y1 - it.fontSize && it.y <= box.y2 + it.fontSize &&
+      (left ? it.x + it.w <= box.x1 + 3 && it.x + it.w >= box.x1 - it.fontSize * 2 : it.x >= box.x2 - 3 && it.x <= box.x2 + it.fontSize * 2))
+      .sort((a, b) => b.y - a.y)
+    if (hasValueAxis(ticks.map(it => Number(it.text.trim().replace(/[,%]/g, ""))))) return ticks
+  }
+  return []
 }
 
 /** Bars and gridlines of a chart drawn as vectors look like a sparse numeric grid.

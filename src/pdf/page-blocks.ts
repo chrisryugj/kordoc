@@ -43,7 +43,7 @@ import { pushLineParagraphs } from "./paragraph-lines.js"
 import { buildFrameCellBlocks, takePendingNested, recordFrameTitle, groupFrameParagraphUnits, recordFrameReadingUnit, frameLayoutBoxes, takeFrameSpanningText, frameColumnTextBands, FRAME_RECT_TOL } from "./frame-cell-blocks.js"
 import { groupFlowBoxUnits } from "./flow-boxes.js"
 import { extendNestedShadedHeaders } from "./nested-shaded-headers.js"
-import { isChartTable, isExamLayoutTable, isFormulaTable, isTableOfContents, tocBlock } from "./table-roles.js"
+import { isChartTable, isExamLayoutTable, isFormulaTable, isTableOfContents, tocBlock, valueAxisBeside } from "./table-roles.js"
 import { isSideTabTable, SIDE_TAB_TABLES } from "./side-tabs.js"
 import { attachSideTabBlocks } from "./side-tab-blocks.js"
 import { splitTwoColumnProse, figureColumnBands, topTableBand, tieredHeaderTable, stackedTableBands, threeColumnCards, threeColumnInfographic } from "./page-regions.js"
@@ -604,9 +604,14 @@ function extractBlocksWithGrids(
       continue
     }
     // 벡터로 그린 막대 차트의 눈금선·막대 격자는 표가 아니다 — 값 글자는 차트 영역 안에서
-    // 위→아래 줄 순서의 글로 둔다(쪽 본문과 섞으면 열 감지가 본문을 찢는다, table-roles.ts)
+    // 위→아래 줄 순서의 글로 둔다(쪽 본문과 섞으면 열 감지가 본문을 찢는다, table-roles.ts). 칸에 못 붙어 글 흐름으로 돌려보낸
+    // 막대 끝 값(격자 위 끝에 걸친 "374")과 격자 옆 값 축 눈금도 차트 글이다(ODL 077 — 값이 두 번 나오고 차트가 범례·출처 뒤로 갔다)
     if (!grid.cells && !nestedAttached && isChartTable(irTable)) {
-      blocks.push(chartBlock(tableItems, pageNum, { page: pageNum, x: grid.bbox.x1, y: grid.bbox.y1, width: gridW, height: grid.bbox.y2 - grid.bbox.y1 }))
+      for (const it of tableItems) usedItems.add(it)
+      const axis = valueAxisBeside(items.filter(it => !usedItems.has(it)), grid.bbox)
+      for (const it of axis) usedItems.add(it)
+      const x1 = Math.min(grid.bbox.x1, ...axis.map(it => it.x)), x2 = Math.max(grid.bbox.x2, ...axis.map(it => it.x + it.w))
+      blocks.push(chartBlock([...tableItems, ...axis].sort((a, b) => b.y - a.y || a.x - b.x), pageNum, { page: pageNum, x: x1, y: grid.bbox.y1, width: x2 - x1, height: grid.bbox.y2 - grid.bbox.y1 }))
       continue
     }
 
