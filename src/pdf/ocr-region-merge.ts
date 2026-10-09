@@ -3,6 +3,9 @@ import { FRAME_READING_UNITS, recordFrameReadingUnit } from "./frame-cell-blocks
 
 export interface ImageRegion { x1: number; y1: number; x2: number; y2: number }
 
+/** 세로 괘선이 없는 그림 영역(원그래프 범례·차트 눈금)에서 OCR 글 정렬만으로 묶은 표 — 표로 받지 않고 행 문단으로 (pdf-ocr 가 적는다) */
+export const UNRULED_REGION_TABLES = new WeakSet<IRBlock>()
+
 /** Add OCR evidence only inside image regions with no PDF text layer. */
 export function mergeOcrImageRegions(
   blocks: IRBlock[], page: number, regions: ImageRegion[], ocrBlocks: IRBlock[],
@@ -24,7 +27,8 @@ export function mergeOcrImageRegions(
       if (b.type === "paragraph") return (b.text?.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 2 ||
         (!axisFragments.has(b) && supportedDiagramLabel(b, labels, region))
       const t = b.table
-      if (b.type !== "table" || !t) return false
+      // 원그래프 범례가 머리 있는 표로 받아들여졌다(ODL 124·140) — 그림 속 진짜 표(110 점도 표·122 실험 표)는 영역 안 세로 괘선 5·8개, 범례는 0개
+      if (b.type !== "table" || !t || UNRULED_REGION_TABLES.has(b)) return false
       if (t.rows === 1 && t.cols === 1) {
         const text = t.cells[0]?.[0]?.text ?? ""
         return (text.match(/\n/g)?.length ?? 0) >= 5 && (text.match(/\d/g)?.length ?? 0) >= text.length * 0.25

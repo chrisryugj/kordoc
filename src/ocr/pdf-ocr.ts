@@ -16,6 +16,7 @@ import type { IRBlock, OcrProvider, ParseWarning } from "../types.js"
 import type { NormItem } from "../pdf/text-line.js"
 import type { LineSegment } from "../pdf/line-types.js"
 import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
+import { UNRULED_REGION_TABLES } from "../pdf/ocr-region-merge.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
 import { deskewPage } from "./deskew.js"
@@ -162,7 +163,13 @@ async function ocrOnePage(
         // 그림 속 글은 작다(차트 눈금·범례 6~8pt) — 영역만 두 배로 다시 읽어 글자 수로 가중한 평균 신뢰도가 높은 쪽을 쓴다
         const near = reads[k]
         if (near?.length && meanConfidence(near) > meanConfidence(own)) own = near
-        return own.length ? ocrItemsToBlocks(own, pageNo, pdfW, pdfH, scale, ruling && rulingToPdfLines(ruling, scale, pdfH), detectTables, undefined, true) : []
+        if (!own.length) return []
+        const blocks = ocrItemsToBlocks(own, pageNo, pdfW, pdfH, scale, ruling && rulingToPdfLines(ruling, scale, pdfH), detectTables, undefined, true)
+        // 영역 안 세로 괘선이 둘 미만이면 그 영역의 OCR 표는 글 정렬만으로 묶은 것이다 — 그림 영역 병합이 표로 받지 않는다
+        const x1 = r.x1 * scale - 2, x2 = r.x2 * scale + 2, y1 = (pdfH - r.y2) * scale - 2, y2 = (pdfH - r.y1) * scale + 2
+        const columnRules = ruling?.verticals.filter(s => Math.min(s.x1, s.x2) >= x1 && Math.max(s.x1, s.x2) <= x2 && Math.min(s.y1, s.y2) >= y1 && Math.max(s.y1, s.y2) <= y2).length ?? 0
+        if (columnRules < 2) for (const b of blocks) if (b.type === "table") UNRULED_REGION_TABLES.add(b)
+        return blocks
       })
     }
     // 벡터 글자 쪽: 표 구조는 그 쪽의 실제 괘선으로 (rhwp cairo 13쌍 46표 exact: 래스터 괘선 14 → 실제 괘선 20)
