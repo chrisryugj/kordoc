@@ -424,7 +424,7 @@ function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?
     const prev = merged[merged.length - 1]
     const curr = textLines[i]
     if (wrap
-      ? wrap.wraps[i - 1] && !startsNewItem(prev, curr) && wrapJoiner(prev, curr, wrap.lex) === ""
+      ? wrap.wraps[i - 1] && !startsNewItem(prev, curr) && wrapJoiner(prev, curr, wrap.lex, false) === ""
       : /[가-힣]$/.test(prev) && /^[가-힣]+$/.test(curr) && curr.length <= 8 && !curr.includes(" ")) {
       merged[merged.length - 1] = prev + curr
     }

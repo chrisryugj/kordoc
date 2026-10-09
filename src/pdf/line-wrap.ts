@@ -47,6 +47,10 @@ export class WrapLexicon {
   private readonly words = new Map<string, number>()
   /** 줄 안에서 이웃한 두 어절("개인정보 처리") — 이어 붙인 꼴 증거(joinedWord)의 거부권 */
   private readonly pairs = new Set<string>()
+  /** 줄 안 어절 첫머리 한글(두~여섯 음절) — 꺾인 두 조각이 어절 머리로 이어지나(startsWord) */
+  private readonly heads = new Set<string>()
+  /** 줄 안 이웃 어절의 앞 어절 한글 꼬리 + 뒤 어절 첫 음절("지식재산 보") — 어절 머리 증거의 거부권 */
+  private readonly spacedHeads = new Set<string>()
 
   /** 줄 글 한 줄을 증거로 더한다 — 탭(큰 갭)으로 나뉜 조각은 다른 칸·단이라 조각 사이는 어절 경계 증거로 쓰지 않는다 */
   addLine(text: string): void {
@@ -54,8 +58,16 @@ export class WrapLexicon {
       const toks = seg.split(" ").filter(t => t && !t.includes("]("))
       for (let i = 0; i < toks.length; i++) {
         const t = toks[i], n = t.length
-        if (i > 0 && i < toks.length - 1) bump(this.words, t)
-        if (i + 1 < toks.length) this.pairs.add(t + " " + toks[i + 1])
+        if (i > 0 && i < toks.length - 1) {
+          bump(this.words, t)
+          const run = t.match(/^[가-힣]+/)?.[0] ?? ""
+          for (let j = 2; j <= Math.min(run.length, 6); j++) this.heads.add(run.slice(0, j))
+        }
+        if (i + 1 < toks.length) {
+          this.pairs.add(t + " " + toks[i + 1])
+          const tail = t.match(/[가-힣]+$/)?.[0]
+          if (tail) this.spacedHeads.add(tail + " " + toks[i + 1].charAt(0))
+        }
         for (let a = 0; a + 1 < n; a++) {
           const c1 = t.charCodeAt(a), c2 = t.charCodeAt(a + 1)
           bump(this.joined1, pairKey(c1, c2))
@@ -78,6 +90,16 @@ export class WrapLexicon {
   /** 꺾인 두 조각을 이어 붙인 꼴이 줄 안 한 어절로 나왔고, 두 조각이 줄 안에서 띄어 쓴 이웃 어절로는 나온 적 없나 */
   joinedWord(left: string, right: string): boolean {
     return this.isWord(left + right) && !this.pairs.has(left + " " + right)
+  }
+
+  /** 줄 안 어절이 이 한글로 시작한 적 있나 */
+  startsWord(head: string): boolean {
+    return this.heads.has(head)
+  }
+
+  /** 줄 안에서 이 한글 꼬리로 끝난 어절 뒤에 이 음절로 시작하는 어절을 띄어 쓴 적 있나 */
+  spacedHead(tail: string, syllable: string): boolean {
+    return this.spacedHeads.has(tail + " " + syllable)
   }
 
   /** 두 글자+두 글자 증거만 — 한 글자 쌍으로 물러서지 않는다 (표 칸 조각처럼 줄 꺾임이 아닌 자리에 쓸 때) */
@@ -191,7 +213,7 @@ export function startsNewItem(prevText: string, nextText: string): boolean {
  * 꺾인 자리의 이음 — "" (어절 중간, 붙임) | " " (어절 경계). prevText 는 꺾인 줄, nextText 는 이어지는 줄.
  * 판정 순서와 근거는 머리 주석. 어휘 사전이 없으면(단독 호출) 형태 규칙만 쓴다.
  */
-export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon): "" | " " {
+export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon, heads = true): "" | " " {
   const prev = prevText.replace(MARKUP, "").trimEnd(), next = nextText.replace(MARKUP, "").trimStart()
   const a = prev[prev.length - 1], b = next[0]
   if (!a || !b || /[,;:!?]/.test(a) || (DATE_DAY_END.test(prev) && b !== "(")) return " "
@@ -228,6 +250,13 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
     && ([...right].length === 1 || !lex.isWord(left))) return ""
   const r1 = right.replace(/[.,)」』’”]+$/, "")
   if (lex && /[가-힣]$/.test(left) && /^[가-힣]$/.test(r1) && !STANDALONE_SYLLABLE.test(r1) && !lex.isWord(r1) && !lex.isWord(right)) return ""
+  // 앞 조각 한글 꼬리 + 뒤 조각 첫 두 음절이 문서 줄 안 어절의 머리로 나오고("개⏎최하고" ← "개최하여"), 그 꼬리 뒤에 뒤 조각 첫 음절로
+  // 시작하는 어절을 줄 안에서 띄어 쓴 적이 없으면 붙인다. 증거 없는 꺾임을 띄우던 기본값이 보도자료 99쌍에서 22% 틀렸다(낱말 가운데 꺾임).
+  // 첫 음절만 보면 다른 복합어가 증거가 됐다("처리⏎방안" ← "처리방법"). 칸 글은 빼고(heads=false) — 세로 이름표 "학⏎위⏎기⏎준" 은 원문도 한 자씩이다
+  if (lex && heads) {
+    const tail = left.match(/[가-힣]+$/)?.[0], run = right.match(/^[가-힣]+/)?.[0]
+    if (tail && run && !STANDALONE_SYLLABLE.test(tail) && lex.startsWord(tail + run.slice(0, 2)) && !lex.spacedHead(tail, run[0])) return ""
+  }
   return " "
 }
 
