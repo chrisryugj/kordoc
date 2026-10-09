@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// docx / xlsx / xls / hml(HWPML) 트랙 — 스모크(파싱 성공+비어있지 않음) + 자기참조 GT recall.
+// docx / xlsx / xls / hml(HWPML) / pptx 트랙 — 스모크(파싱 성공+비어있지 않음) + 자기참조 GT recall.
 // hwpx-ref 패턴 이식: 포맷의 원본 XML에서 텍스트 유닛을 독립 추출해 kordoc md와 정렬.
 //
 // 유닛 추출 (파서와 코드 0% 공유):
@@ -12,6 +12,10 @@
 //   xls  : BIFF8 는 XML 이 없어 독립 추출기 대신 같은 파일을 LibreOffice 26.2 로 바꾼 xlsx
 //          (corpus/formats/xls-gt/<같은 이름>.xlsx)를 위 xlsx 추출기로 읽은 유닛이 정답. 파서 출력은 .xls 파싱.
 //   hml  : 본문 P > TEXT > CHAR 텍스트 (헤더의 스타일 정의는 비대상)
+//   pptx : presentation.xml sldIdLst 순서의 슬라이드 a:p 문단(a:r·a:fld 의 a:t, a:br 은 공백) + 노트 슬라이드 본문 개체 틀 문단.
+//          그룹은 펼치고 mc:Fallback 스킵(Choice 이중 렌더), 쪽 번호·날짜·바닥글·머리글·슬라이드 그림 개체 틀은 비대상(내용 아님),
+//          병합이 덮은 표 칸(hMerge·vMerge)의 숨은 글 제외(xlsx·xls 와 같은 정책). 차트·SmartArt 글은 별도 파트라 모수 밖
+//          (파서가 UNSUPPORTED_ELEMENT 경고 — 분량은 행마다 unreadChars 로 보고)
 //
 // 큰 시트(유닛 > UNIT_CAP): 정렬(alignUnits)은 유닛 수에 초선형이라 25만+ 셀에서 수십 분 걸린다. 그런 시트는
 // 셀 단위 multiset 대조로 따로 잰다(bigStr·bigNum — 칸 글이 한 글자라도 다르면 그 칸 전부 miss, 정렬보다 엄격).
@@ -49,9 +53,10 @@ const docFilter = (args.find(a => a.startsWith("--doc=")) ?? "").split("=")[1] ?
 // 8건 중 1만 행 넘는 5건을 1만 행에서 무경고로 잘라 bigStr 0.626·bigNum 0.867 이었다(칸 예산 sheet-blocks 로 수리).
 // 추출기 대칭 3건: 날짜 서식 숫자 셀 ISO 미러(xls num 0.958 → 1), 병합이 덮은 숨은 칸 제외(xls str 0.99996·xlsx str
 // 0.99996 → 1), DOCX 머리글·바닥글 유닛(파서 1회 방출과 함께 — 구 파서로 재면 docx 0.99848)
+// 2026-10-09 pptx 트랙 신설(공공기관 발표 자료 27건, 첫 측정 1.0 — 병합이 덮은 칸 제외 후) — 신설 즉시 만점 잠금
 const GATES = {
   parseErrors: 0, docxRecall: 1, xlsxStrRecall: 1, hmlRecall: 1, xlsxNumRecall: 1,
-  xlsStrRecall: 1, xlsNumRecall: 1, bigStrRecall: 1, bigNumRecall: 1,
+  xlsStrRecall: 1, xlsNumRecall: 1, bigStrRecall: 1, bigNumRecall: 1, pptxRecall: 1,
 }
 
 // 유닛 정렬 상한 — 초대형 스프레드시트(개표결과 25만+ 셀)는 align이 수십 분 걸린다. 시트는 이 상한을 넘으면
@@ -371,6 +376,75 @@ function hmlUnits(xmlText) {
   return { units }
 }
 
+/** pptx: 슬라이드(sldIdLst 순서)·노트 슬라이드 문단 유닛 — 머리 주석의 정책. 관계(rels)·sldId 는 parseXmlLite 가 접두를 떼어
+ *  id 와 r:id 가 한 키로 겹치므로 정규식으로 읽는다 */
+async function pptxUnits(buf) {
+  const zip = await JSZip.loadAsync(buf)
+  const pres = await zip.file("ppt/presentation.xml")?.async("string")
+  if (!pres) throw new Error("ppt/presentation.xml 없음")
+  const resolvePart = (dir, target) => {
+    if (target.startsWith("/")) return target.slice(1)
+    const out = []
+    for (const seg of (dir + target).split("/")) { if (seg === "..") out.pop(); else if (seg !== ".") out.push(seg) }
+    return out.join("/")
+  }
+  const relsOf = async part => {
+    const dir = part.slice(0, part.lastIndexOf("/") + 1)
+    const f = zip.file(`${dir}_rels/${part.slice(dir.length)}.rels`)
+    const map = new Map()
+    if (!f) return map
+    for (const m of (await f.async("string")).matchAll(/<Relationship\b([^>]*)>/g)) {
+      const a = m[1], id = a.match(/\bId="([^"]+)"/)?.[1], target = a.match(/\bTarget="([^"]+)"/)?.[1]
+      if (id && target && !/TargetMode="External"/.test(a)) map.set(id, { target: resolvePart(dir, target), type: a.match(/\bType="([^"]+)"/)?.[1] ?? "" })
+    }
+    return map
+  }
+  const SKIP_PH = new Set(["sldnum", "dt", "ftr", "hdr", "sldimg"])
+  const phType = sp => {
+    const nv = sp.children.find(c => typeof c !== "string" && c.tag === "nvsppr")
+    const ph = nv ? findAll(nv, "ph")[0] : null
+    return ph ? (ph.attrs.type ?? "obj").toLowerCase() : null
+  }
+  const paraText = p => {
+    let t = ""
+    for (const c of p.children) {
+      if (typeof c === "string") continue
+      if (c.tag === "r" || c.tag === "fld") { const tt = c.children.find(x => typeof x !== "string" && x.tag === "t"); if (tt) t += textOf(tt).join("") }
+      else if (c.tag === "br") t += " "
+    }
+    return t.replace(/\s+/g, " ").trim()
+  }
+  const units = []
+  const collect = (node, notes) => {
+    for (const c of node.children) {
+      if (typeof c === "string" || c.tag === "fallback") continue
+      if (c.tag === "sp") {
+        const ph = phType(c)
+        if ((ph && SKIP_PH.has(ph)) || (notes && ph !== "body")) continue
+      }
+      if (c.tag === "tc" && (c.attrs.hmerge === "1" || c.attrs.hmerge === "true" || c.attrs.vmerge === "1" || c.attrs.vmerge === "true")) continue
+      if (c.tag === "p") { const t = paraText(c); if (t) units.push(t); continue }
+      collect(c, notes)
+    }
+  }
+  const presRels = await relsOf("ppt/presentation.xml")
+  let unreadChars = 0
+  for (const m of pres.matchAll(/<p:sldId\b[^>]*\br:id="([^"]+)"/g)) {
+    const slide = presRels.get(m[1])?.target
+    if (!slide || !zip.file(slide)) continue
+    collect(parseXmlLite(await zip.file(slide).async("string")), false)
+    for (const r of (await relsOf(slide)).values()) {
+      if (!zip.file(r.target)) continue
+      if (r.type.endsWith("/notesSlide")) collect(parseXmlLite(await zip.file(r.target).async("string")), true)
+      else if (r.type.endsWith("/chart") || r.type.endsWith("/diagramData")) {
+        const x = await zip.file(r.target).async("string")
+        for (const t of x.matchAll(/<(?:c:v|a:t)>([^<]*)<\/(?:c:v|a:t)>/g)) unreadChars += t[1].replace(/\s/g, "").length
+      }
+    }
+  }
+  return { units, unreadChars }
+}
+
 // ─── recall 계산 (alignUnits 재사용) ─────────────────
 function recallOf(unitTexts, md) {
   const mdKey = normKey(mdToPlain(md).text)
@@ -460,7 +534,7 @@ let parseErrors = 0
 let gtMissing = 0
 const agg = {
   docx: { m: 0, t: 0 }, xlsxStr: { m: 0, t: 0 }, xlsxNum: { m: 0, t: 0 }, xlsStr: { m: 0, t: 0 }, xlsNum: { m: 0, t: 0 },
-  bigStr: { m: 0, t: 0 }, bigNum: { m: 0, t: 0 }, hml: { m: 0, t: 0 },
+  bigStr: { m: 0, t: 0 }, bigNum: { m: 0, t: 0 }, hml: { m: 0, t: 0 }, pptx: { m: 0, t: 0 },
 }
 
 /** xlsx·xls 공통 채점 — 정답 xlsx 유닛(str/num) vs 파서 md. 유닛 > UNIT_CAP 이면 큰 시트 multiset 트랙 */
@@ -479,7 +553,7 @@ async function scoreSheet(row, gtBuf, md, key) {
   agg[kn].m += rn.matched; agg[kn].t += rn.refChars
 }
 
-for (const kind of ["docx", "xlsx", "xls", "hml"]) {
+for (const kind of ["docx", "xlsx", "xls", "hml", "pptx"]) {
   let files = []
   try {
     files = (await readdir(join(base, kind))).filter(n => !n.startsWith(".")).sort()
@@ -517,6 +591,15 @@ for (const kind of ["docx", "xlsx", "xls", "hml"]) {
           try { gtBuf = await readFile(join(base, "xls-gt", name.replace(/\.xls$/i, ".xlsx"))) } catch { /* 아래 */ }
           if (gtBuf) await scoreSheet(row, gtBuf, res.markdown, "xls")
           else { row.gtMissing = true; gtMissing++ }
+        } else if (kind === "pptx") {
+          const { units, unreadChars } = await pptxUnits(buf)
+          if (unreadChars) row.unreadChars = unreadChars
+          if (units.length > UNIT_CAP) { row.unitCapped = units.length }
+          else {
+            const r = recallOf(units, res.markdown)
+            row.recall = round(r.recall); row.refChars = r.refChars; row.topMisses = r.misses
+            agg.pptx.m += r.matched; agg.pptx.t += r.refChars
+          }
         } else {
           const { units } = hmlUnits(buf.toString("utf8"))
           if (units.length > UNIT_CAP) { row.unitCapped = units.length }
@@ -544,7 +627,8 @@ const rate = a => (a.t ? a.m / a.t : 1)
 // 모수 하한 (2026-07-05 실측 docx 7/xlsx 11/hml 9의 ~절반) — 폴더 누락·미동기 시
 // catch{continue}+rate(0/0)=1 로 조용한 만점 PASS가 나는 것 방지 (리뷰 #14).
 // xls 는 2026-09-24 신설 모수 15건의 절반, 큰 시트는 유닛 > UNIT_CAP 시트 8건의 절반
-const MIN_POP = { docx: 4, xlsx: 6, xls: 7, hml: 5, big: 4 }
+// pptx 는 2026-10-09 신설 모수 27건의 절반
+const MIN_POP = { docx: 4, xlsx: 6, xls: 7, hml: 5, big: 4, pptx: 13 }
 const kindCount = k => rows.filter(r => r.kind === k).length
 const bigCount = rows.filter(r => r.bigUnits).length
 const gate = (a, k) => ({ value: round(rate(a)), threshold: GATES[k], pass: rate(a) >= GATES[k] })
@@ -558,13 +642,14 @@ const gates = {
   xlsNumRecall: gate(agg.xlsNum, "xlsNumRecall"),
   bigStrRecall: gate(agg.bigStr, "bigStrRecall"),
   bigNumRecall: gate(agg.bigNum, "bigNumRecall"),
+  pptxRecall: gate(agg.pptx, "pptxRecall"),
   population: {
-    value: `docx ${kindCount("docx")}/xlsx ${kindCount("xlsx")}/xls ${kindCount("xls")}/hml ${kindCount("hml")}/큰 시트 ${bigCount}` +
+    value: `docx ${kindCount("docx")}/xlsx ${kindCount("xlsx")}/xls ${kindCount("xls")}/hml ${kindCount("hml")}/큰 시트 ${bigCount}/pptx ${kindCount("pptx")}` +
       (gtMissing ? ` · xls 정답지 없음 ${gtMissing}` : ""),
-    threshold: `≥ ${MIN_POP.docx}/${MIN_POP.xlsx}/${MIN_POP.xls}/${MIN_POP.hml}/${MIN_POP.big} · 정답지 없음 0`,
+    threshold: `≥ ${MIN_POP.docx}/${MIN_POP.xlsx}/${MIN_POP.xls}/${MIN_POP.hml}/${MIN_POP.big}/${MIN_POP.pptx} · 정답지 없음 0`,
     pass: gtMissing === 0 && (docFilter != null ||
       (kindCount("docx") >= MIN_POP.docx && kindCount("xlsx") >= MIN_POP.xlsx && kindCount("xls") >= MIN_POP.xls &&
-        kindCount("hml") >= MIN_POP.hml && bigCount >= MIN_POP.big)),
+        kindCount("hml") >= MIN_POP.hml && bigCount >= MIN_POP.big && kindCount("pptx") >= MIN_POP.pptx)),
   },
 }
 const pass = Object.values(gates).every(g => g.pass)
@@ -579,7 +664,7 @@ const report = {
 await mkdir(join(root, "out"), { recursive: true })
 await writeFile(join(root, "out", "formats.json"), JSON.stringify(report, null, 1))
 
-console.log(`\n══ formats 트랙 — ${rows.length}건 (docx ${kindCount("docx")} / xlsx ${kindCount("xlsx")} / xls ${kindCount("xls")} / hml ${kindCount("hml")}, 큰 시트 ${bigCount}) (${Math.round(report.elapsedMs / 1000)}s) ══`)
+console.log(`\n══ formats 트랙 — ${rows.length}건 (docx ${kindCount("docx")} / xlsx ${kindCount("xlsx")} / xls ${kindCount("xls")} / hml ${kindCount("hml")} / pptx ${kindCount("pptx")}, 큰 시트 ${bigCount}) (${Math.round(report.elapsedMs / 1000)}s) ══`)
 for (const [k, g] of Object.entries(gates)) console.log(`  ${g.pass ? "✅" : "❌"} ${k.padEnd(14)} ${g.value} (기준 ${g.threshold})`)
 for (const r of rows.filter(r => r.unitCapped)) console.log(`  ⚠ recall 제외(유닛 ${r.unitCapped} > ${UNIT_CAP}): ${r.file} — 스모크만`)
 const score = r => Math.min(r.recall ?? 1, r.strRecall ?? 1, r.numRecall ?? 1)
