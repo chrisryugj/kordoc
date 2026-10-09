@@ -17,7 +17,7 @@
 
 import type { IRTable, IRCell, BoundingBox } from "../types.js"
 import { spaceGapThreshold } from "./cell-text.js"
-import { isCjkLatinAutospace } from "./text-line.js"
+import { isCjkLatinAutospace, PREFIX_SCRIPT } from "./text-line.js"
 import { isProseTable } from "./table-roles.js"
 
 /** parser.ts의 NormItem과 동일한 인터페이스 */
@@ -665,8 +665,8 @@ function mergeOverlappingRows(rows: RowGroup[]): RowGroup[] {
     const a = rowBand(prev)
     const b = rowBand(curr)
     const overlap = Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom)
-    const prevIsFrag = isFragmentRow(prev) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
-    const currIsFrag = isFragmentRow(curr) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
+    const prevIsFrag = isFragmentRow(prev, curr) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
+    const currIsFrag = isFragmentRow(curr, prev) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
     if (prevIsFrag || currIsFrag) {
       // 본문 줄(흡수하는 쪽)의 y를 대표값으로 유지
       const baseY = prevIsFrag ? curr.y : prev.y
@@ -678,9 +678,17 @@ function mergeOverlappingRows(rows: RowGroup[]): RowGroup[] {
   return result
 }
 
-/** 첨자 후보 행: 아이템 ≤3개, 모두 짧은 텍스트(≤8자) */
-function isFragmentRow(row: RowGroup): boolean {
-  return row.items.length <= 3 && row.items.every(i => i.text.length <= 8)
+/** 첨자 후보 행: 모두 짧은 텍스트(≤8자)이고 아이템 ≤3개 — 넘으면 숫자·따옴표·괄호만 든 첨자가 아이템마다 옆 행 글자 앞뒤에 붙어야
+ *  한다(연도 위첨자 "(’10)10.2만건 → (’25)17.1만건" 이 한 줄에 넷 — 넓은 간격의 넷 칸 행이 되어 본문 쪽이 통째로 4열 표가 됐다) */
+function isFragmentRow(row: RowGroup, host: RowGroup): boolean {
+  if (!row.items.every(i => i.text.length <= 8)) return false
+  return row.items.length <= 3 || (row.items.length <= 16 && row.items.every(i => PREFIX_SCRIPT.test(i.text.trim()) && host.items.some(h => scriptAttached(i, h))))
+}
+
+/** 첨자 조각이 본문 글자 뒤에 맞붙었거나(틈 −0.1em ~ 0.35em) 앞에 빈칸 하나 안(0.6em)으로 붙었나 */
+function scriptAttached(i: { x: number; w: number }, h: { x: number; w: number; fontSize: number }): boolean {
+  const after = i.x - (h.x + h.w), before = h.x - (i.x + i.w)
+  return (after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.1) || (before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1)
 }
 
 /** 행 아이템들의 수직 범위 (bottom=min y, top=max y+h) */
