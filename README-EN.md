@@ -12,7 +12,7 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
 - 📊 **0.963 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
-- 🇰🇷 **100% Korean document table structure match** — all **9,865 visible tables** from 2,286 original HWPX documents. [4.18.8 verification](docs/release-4.18.8.json)
+- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.10 verification](docs/benchmarks-en.md)
 
 [![kordoc — watch the demo](./docs/video-demo.jpg)](https://youtu.be/Q13GmgDcIw0)
 
@@ -98,28 +98,31 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.18.8 release verification · 2026-10-02**. Results use fixed corpora and reference criteria.
+**4.21.10 release verification · 2026-10-10**. Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
-| HWPX | 2,286 documents · 9,865 tables | Table structure match **9,865/9,865 · 100%** |
-| HWP 5.x ↔ HWPX | 1,120 pairs · 4,258 tables | Paired-document table structure match **100%** |
-| PDF text | 744 pairs | Character recall **99.83%** · reading order **99.15%** |
-| PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **97.94%** |
+| HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
+| HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
+| PDF text | 744 pairs | Character recall **99.83%** · precision **99.58%** · reading order **99.16%** · word-boundary F1 **98.85%** |
+| PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **97.98%** · cell F1 **0.991** |
+| All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
+| OCR | 53 documents · 102 pages | CER **0.0421** · character recall **99.03%** |
 
-Table structure, cell content and visual fidelity are separate metrics. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions and OCR results, and the [4.18.8 publication record](docs/release-4.18.8.json) for verification of the published package.
+Table structure, cell content and visual fidelity are separate metrics. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions and the per-document comparison of every bench.
 
-The external **opendataloader-bench, 200 documents** was measured separately for 4.21.5: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
+The external **opendataloader-bench, 200 documents** was measured with the 4.21.10 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 
 ## Recent updates
 
-Latest release: **[4.21.9](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.9)** · 2026-10-10
+Latest release: **[4.21.10](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.10)** · 2026-10-10
 
 | Version | Highlights |
 | --- | --- |
-| 4.21.9 | PDF line-break joining — breaks inside words, stacked particles, copulas, suffixes, noun+하다; superscript rows absorbed into their line (no document down) |
-| 4.21.8 | PDF table batch — tables printed sideways, data tables taken for charts, narrow digit columns, one text run across cells, stacked amounts in a cell (no document down) |
-| 4.21.7 | PDF pieced column rules, text-run clips and contact tables — budget detail cells (OCR CER 0.0512 → 0.0445), fake tables from ezPDF and MS Print text-run clips, six-column contact tables (no document down) |
+| 4.21.10 | PDF flow-chart tables and parenthetical glosses — a borderless candidate spanning a ruled table is dropped, a break before a short gloss is joined (word-boundary F1 98.84 → 98.85%, OCR CER 0.0443 → 0.0421, no document down) |
+| 4.21.9 | PDF line-break joining — breaks inside words, stacked particles, copulas, suffixes, noun+하다; superscript rows absorbed into their line (word-boundary F1 98.81 → 98.84%, text coverage 99.79 → 99.80%, no document down) |
+| 4.21.8 | PDF table batch — tables printed sideways, data tables taken for charts, narrow digit columns, one text run across cells, stacked amounts in a cell (OCR CER 0.0445 → 0.0443, degraded-scan OCR 0.0821 → 0.0805, no document down) |
+| 4.21.7 | PDF pieced column rules, text-run clips and contact tables — budget detail cells (OCR CER 0.0512 → 0.0445), fake tables from ezPDF and MS Print text-run clips, six-column contact tables (degraded-scan OCR 0.0954 → 0.0821, text coverage 99.78 → 99.79%, no document down) |
 | 4.21.6 | Press-release contact tables split per department and per person (PDF table structure match 97.94→97.98%), XLSX/XLS cells past column 200 kept, HWP3 embedded pictures extracted, formula OCR keeps LaTeX commands whole, PPTX formats track and a larger corpus (HWP3 75, formats 58, rhwp 230) |
 | 4.21.5 | PDF quality batch — the #141 OCR side effect that boxed two-column text into tables, figure OCR label grouping and single-digit ticks, bare links, vector chart value axes, column tails and footnotes (ODL default 0.958 → 0.963, no document down); gaejosik/report summary boxes survive md→hwpx→md→hwpx |
 | 4.21.4 | MCP `fill_form` takes values from a JSON `fields_file` (values stay out of the conversation; the reply shows only their lengths); `bench/suite.mjs` runs every bench and compares two runs per document |

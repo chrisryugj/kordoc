@@ -2,19 +2,19 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.9 · 2026-10-10
+## Latest release results: 4.21.10 · 2026-10-10
 
-All benches measured on the 4.21.9 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.8, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
+All benches measured on the 4.21.10 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.9, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Structure match 10,342/10,342 · 100%; exact cell text 99.9983%; content NED similarity 99.9955% |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document structure match 4,315/4,315 · 100% |
-| PDF text | 744 pairs | Recall 99.83%, precision 99.58%, order 99.16%, word-boundary F1 98.84% |
+| PDF text | 744 pairs | Recall 99.83%, precision 99.58%, order 99.16%, word-boundary F1 98.85% |
 | PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.98%, cell F1 0.991228 |
 | Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 335/346 · 96.82% |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.80% |
-| OCR | 53 documents · 102 pages | CER 0.0443, character recall 99.03%, precision 99.33%, Hangul recall 99.40% |
+| OCR | 53 documents · 102 pages | CER 0.0421, character recall 99.03%, precision 99.33%, Hangul recall 99.40% |
 | Other formats / roundtrip / fuzz | 146 documents (27 PPTX) / 75 roundtrips / 25,152 fuzz cases | Release gates passed |
 
 Structure scores do not imply perfect visual fidelity or exact text in every cell. The 75 roundtrip cases and 8 generation fixtures are counted separately.
