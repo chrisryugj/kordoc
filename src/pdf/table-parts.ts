@@ -564,6 +564,10 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
   const newCell = pairs.some(([u, d]) => !hasContent(u.cell) && hasContent(d.cell))
   // 글줄은 격자에 놓은 복사본 칸에서 본다 — 옮겨 맞댄 뒤 조각(짝·홀 쪽·단 넘김)은 복사본에만 옮긴 글줄이 있다
   const cell = (a: Anchor): IRCell => table.cells[a.r][a.c]
+  // 번호 열이 다음 차례로 이어지면 새 행이다 — 쪼개진 행의 이어진 조각은 번호 칸이 빈다. 옆 칸 끝줄이 마침 칸을 꽉 채워 글 이어짐으로
+  // 보였다(허용물질 "12 | 사람의 배설물(오줌만인 경우는 제외한다)" 다음 쪽 "13 | 벌레 등 자연적으로 생긴 유기체")
+  const serial = (c: IRCell): number | null => { const t = flowText(c.text).trim(); return /^\d{1,3}$/.test(t) ? +t : null }
+  if (pairs.some(([u, d]) => { const a = serial(cell(u)), b = serial(cell(d)); return a !== null && b === a + 1 })) return false
   // 글 있는 열 쌍이 둘 이상이면 세로 병합 칸만 넘어가고 행은 새로 시작하는 표(규제영향분석서 "10.영향평가 여부" 옆 "기술영향평가 |
   // 경쟁영향평가 | …" / 다음 쪽 "해당없음 | 해당없음 | …")와 가려야 한다. 쪼개진 행 증거로 쓰는 경우 —
   //  · 글 있는 뒤 조각 칸이 모두 여러 행을 덮는다: 쪽 경계에 걸린 행의 세로 병합 칸들이 함께 넘어갔다. 새 행이면 한 행 칸이 적어도
