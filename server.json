@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.chrisryugj/kordoc",
+  "title": "kordoc",
+  "description": "Parse Korean documents (HWP, HWPX, PDF, XLSX, DOCX, PPTX) to Markdown; fill forms, diff, render.",
+  "version": "4.21.12",
+  "websiteUrl": "https://github.com/chrisryugj/kordoc",
+  "repository": {
+    "url": "https://github.com/chrisryugj/kordoc",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "kordoc",
+      "version": "4.21.12",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

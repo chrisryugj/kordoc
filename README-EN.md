@@ -147,6 +147,20 @@ Latest release: **[4.21.12](https://github.com/chrisryugj/kordoc/releases/tag/v4
 
 The 4.18.8 cell-edit path requires the same number of nonempty lines. Blank lines, added/deleted lines, literal `<br>` and ambiguous mappings remain unsupported. [Full changelog](CHANGELOG.md)
 
+## FAQ
+
+**How do I convert an HWP or HWPX file to Markdown?**
+`npx kordoc document.hwp -o document.md`. It reads the file directly, without Hancom Office. Convert many files at once with `npx kordoc *.hwpx -d ./output`.
+
+**How do I let Claude, Cursor or another AI agent read Korean documents?**
+Run `npx -y kordoc setup` to register the MCP server. The agent can then read, compare and fill HWP, PDF and Excel files from a file path.
+
+**Does it work on an air-gapped network?**
+Yes. `KORDOC_OFFLINE=1` blocks all outbound traffic, and OCR runs on the local CPU with no API key. [Offline deployment](docs/offline-deployment.md)
+
+**Can I use it for RAG indexing?**
+`--format chunks` emits structure chunks with heading breadcrumbs plus standalone table chunks. Use `--table-format gfm` (API: `tableFormat: "gfm"`) for tables without HTML. From Python or Java, use the [Python SDK](sdk/python/README.md) or [Java SDK](sdk/java/README.md).
+
 ## Documentation and security
 
 - [Usage guide](docs/usage-en.md): complete CLI, MCP tools, APIs and format support
