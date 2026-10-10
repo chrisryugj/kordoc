@@ -107,3 +107,36 @@ export function markSyntheticSpaces(items: PdfTextItem[], fnArray: ArrayLike<num
   }
   for (const it of marks) if (!failed.has(it.fontName ?? "")) (it as PdfTextItem & { synthetic?: boolean }).synthetic = true
 }
+
+/**
+ * 줄 끝 공백 글리프 — 아이템 글 뒤 글리프가 공백 글리프이고 다음 글 아이템이 다른 줄이면 spaceAfter 표시. 한컴 PDF 는 어절마다 뒤
+ * 공백 글리프까지 찍어("원활한␣") 어절 경계에서 꺾인 줄 끝에도 공백 글리프가 남고, 어절 가운데서 꺾인 줄 끝("업무⏎수행에")에는 없다.
+ * pdfjs 는 줄 끝 공백을 아이템 글에서 지워 이 차이가 글에 안 남는다. hwpx↔pdf 744쌍 줄 잇기 판정 4.4만 곳 실측: 표시된 꺾임 1.2만 곳 중
+ * 원문이 붙여 쓴 곳 0. 공백 글리프는 다른 글꼴로 찍히기도 해 글꼴을 가리지 않고 연산 순서 흐름으로 맞춘다 — 글리프 이름 복원 따위가
+ * 아이템 글을 바꾸기 전에 불러야 흐름과 글자 그대로 맞고, 어긋나면 그 쪽의 나머지는 손대지 않는다
+ */
+export function markTrailingSpaceGlyphs(items: PdfTextItem[], fnArray: ArrayLike<number>, argsArray: ArrayLike<unknown>): void {
+  const glyphs: string[] = []
+  for (let i = 0; i < fnArray.length; i++) {
+    if (fnArray[i] !== OPS.showText) continue
+    for (const g of (argsArray as unknown[][])[i][0] as unknown[]) {
+      if (g && typeof g === "object" && typeof (g as { unicode?: unknown }).unicode === "string") glyphs.push(normalizeUnicode((g as { unicode: string }).unicode))
+    }
+  }
+  const text = items.filter(it => typeof it.str === "string" && it.str.trim())
+  let gi = 0
+  for (let k = 0; k < text.length; k++) {
+    const it = text[k]
+    const want = it.str.replace(/\s+/g, "")
+    while (gi < glyphs.length && /^\s*$/.test(glyphs[gi])) gi++
+    let got = ""
+    while (gi < glyphs.length && got.length < want.length) got += glyphs[gi++].replace(/\s+/g, "")
+    if (got !== want) return
+    let next = gi
+    while (next < glyphs.length && glyphs[next] === "") next++
+    const after = text[k + 1]
+    if (next < glyphs.length && /^\s+$/.test(glyphs[next]) && (!after || Math.abs(after.transform[5] - it.transform[5]) >= 3)) {
+      (it as PdfTextItem & { spaceAfter?: boolean }).spaceAfter = true
+    }
+  }
+}

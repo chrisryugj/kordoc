@@ -33,6 +33,8 @@ export interface NormItem {
   hasSpaceBefore?: boolean
   /** 직전 공백이 pdfjs 가 글자 틈으로 만든 것뿐(글리프 흐름에 공백 글리프 없음, tracked-text markSyntheticSpaces) — 균등배분 run 을 끊지 않는다 */
   syntheticSpace?: boolean
+  /** 글 뒤 글리프가 공백 글리프인 줄 끝 아이템(tracked-text markTrailingSpaceGlyphs) — 이 줄의 꺾임은 어절 경계다 */
+  spaceAfter?: boolean
   /** 취소선이 그어진 텍스트 (신구조문대비표 삭제 표시 등) */
   strike?: boolean
   /** 밑줄이 그어진 텍스트 (개정문 추가·변경 표시, 제목 강조 등) */
@@ -213,16 +215,18 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
     // (돌려 찍은 표의 사업명 "복선 전 철" 조각이 칸 밖으로 샜다)
     const turned = Math.abs(i.transform[1]) > Math.abs(i.transform[0]) * 4
     const split = turned ? null : splitEvenSpacedItem(text, x, w, fontSize)
+    const spaceAfter = (i as { spaceAfter?: boolean }).spaceAfter
     if (split) {
       split.forEach((s, k) => {
-        items.push({ text: s.text, x: s.x, y, w: s.w, h, fontSize, fontName: i.fontName || "", isHidden, seq: seq + k / 1000 })
+        items.push({ text: s.text, x: s.x, y, w: s.w, h, fontSize, fontName: i.fontName || "", isHidden, seq: seq + k / 1000,
+          ...(spaceAfter && k === split.length - 1 ? { spaceAfter } : {}) })
       })
     } else {
       const rotated = Math.abs(i.transform[1]) > Math.abs(i.transform[0]) * 4
       // 세로 글의 가로 폭은 글자 높이다 — 진행 길이(width)를 가로 폭으로 두면 나란한 세로 라벨이 서로 겹쳐 붙는다("01/201903/2019")
       const rw = rotated ? Math.max(1, fontSize) : w
       const rx = rotated && i.transform[1] > 0 ? x - rw : x
-      items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq,
+      items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq, ...(spaceAfter ? { spaceAfter } : {}),
         ...(rotated ? { rotated: Math.max(1, w), ...(i.transform[1] < 0 ? { rotatedDown: true as const } : {}) } : {}) })
     }
   }

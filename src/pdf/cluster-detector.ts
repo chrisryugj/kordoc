@@ -33,6 +33,8 @@ export interface ClusterItem {
   hasSpaceBefore?: boolean
   /** 직전 공백이 pdfjs 가 글자 틈으로 만든 것뿐(글리프 흐름에 공백 글리프 없음, tracked-text markSyntheticSpaces) — 균등배분 run 을 끊지 않는다 */
   syntheticSpace?: boolean
+  /** 줄 끝 공백 글리프 (tracked-text markTrailingSpaceGlyphs) — 칸 줄 꺾임이 어절 경계 */
+  spaceAfter?: boolean
 }
 
 // ─── 상수 ──────────────────────────────────────────────

@@ -39,7 +39,7 @@ import { wrapEquationRuns } from "./equation-runs.js"
 import { remapControlGlyphs, restoreNamedGlyphs } from "./glyph-names.js"
 import { occludedTextItems } from "./occluded-text.js"
 import { joinVerticalColumns } from "./vertical-text.js"
-import { restoreTrackedSpacing, markSyntheticSpaces } from "./tracked-text.js"
+import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs } from "./tracked-text.js"
 import { relocateEndnotes } from "./endnotes.js"
 import { dropTabLeaderDots } from "./tab-leaders.js"
 import { orderTwoUpPage } from "./two-up.js"
@@ -251,6 +251,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           catch { return undefined }
         }
         const differencesOf = (loadedName: string) => (fontObj(loadedName) as { differences?: ArrayLike<string | undefined> } | null | undefined)?.differences
+        // 줄 끝 공백 글리프(어절 경계에서 꺾인 줄) — 아래 복원들이 아이템 글을 바꾸기 전에 흐름과 맞춘다
+        markTrailingSpaceGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray)
         restoreNamedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, differencesOf, n => fontObj(n)?.name)
         // 유니코드 없는 기호 글리프(U+F000)는 글꼴 윤곽 모양으로 되살린다 — 한컴 자동 글머리표 "▸"·"□"·겹화살괄호 (symbol-glyphs.ts)
         restoreUnmappedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as { data?: Uint8Array } | null | undefined)

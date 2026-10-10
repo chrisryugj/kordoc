@@ -142,7 +142,7 @@ export function topTableBand(items: NormItem[]): { top: NormItem[]; rest: NormIt
     const top = upper.flat()
     const candidate = detectClusterTables(top.map(i => ({
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
-      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace,
+      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter,
     })), 1)
     if (!candidate.some(t => t.table.cols >= 3 && t.table.rows >= 3 && t.usedItems.size >= top.length * 0.75)) continue
     return { top, rest: lines.slice(n).flat() }

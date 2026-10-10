@@ -53,6 +53,10 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
       joins[i] = wrapJoiner(geo[i].text, geo[i + 1].text, lex)
     }
   }
+  // 줄 끝 아이템 뒤에 공백 글리프가 찍힌 꺾임은 어절 경계다 — 어휘 증거·형태 규칙이 붙인 것도 띄운다 (markTrailingSpaceGlyphs)
+  for (let i = 0; i + 1 < lines.length; i++) {
+    if (joins[i] === "" && lines[i].items.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a)).spaceAfter) joins[i] = " "
+  }
   // Completed TOC entries remain independent even inside a short-pitch leaf.
   for (const i of tocRecordBoundaries(lines.map(line => line.items))) joins[i] = "\n"
   // 큰 글자로 따로 선 장 번호("2")는 아래 제목 줄과 다른 문단이다 (ODL 021)

@@ -281,7 +281,9 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
   const pad = Math.min(6, Math.max(0, contentLeft - wrap.box.x1), Math.max(0, wrap.box.x2 - cellRight))
   const inner = wrap.box.x2 - wrap.box.x1 - 2 * pad
   const wide = lineEnds.slice(0, -1).map((a, i) => a.right - a.left + 1.5 * lineEnds[i + 1].firstCharW > inner)
-  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide }))
+  // 줄 끝 아이템 뒤 공백 글리프 — 그 꺾임은 어절 경계라 붙이지 않는다 (markTrailingSpaceGlyphs)
+  const spaced = merged.map(s => !!s[s.length - 1].spaceAfter)
+  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide, spaced }))
 }
 
 /** 첨자 행 병합 — cellTextToString 행 그룹핑 결과에 적용 (규칙은 text-line.ts와 동일) */
@@ -419,7 +421,7 @@ export { detectEvenSpacedItems }
  * 경계를 공백으로 잇는 건 삼간다). 종전 조각 규칙 — 8자 이하 한글 조각 붙임·쉼표/여는 괄호 뒤 15자 붙임 — 은 hwpx↔pdf 417쌍
  * 칸 줄 이음 실측에서 정밀도 10%(맞음 101·틀림 874)·2%(맞음 5·틀림 316)라 칸 상자가 있는 호출에서는 쓰지 않는다
  */
-function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon; wide?: boolean[] }): string {
+function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon; wide?: boolean[]; spaced?: boolean[] }): string {
   // 셀 내 줄바꿈 병합 — 잘린 단어/숫자 조각 복구
   if (textLines.length <= 1) return textLines[0] || ""
   const numberWrapped = (k: number) => !!wrap?.wraps[k] && (wrap.wide?.[k] ?? true)
@@ -428,7 +430,7 @@ function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?
     const prev = merged[merged.length - 1]
     const curr = textLines[i]
     if (wrap
-      ? wrap.wraps[i - 1] && !startsNewItem(prev, curr) && wrapJoiner(prev, curr, wrap.lex, false) === ""
+      ? wrap.wraps[i - 1] && !wrap.spaced?.[i - 1] && !startsNewItem(prev, curr) && wrapJoiner(prev, curr, wrap.lex, false) === ""
       : /[가-힣]$/.test(prev) && /^[가-힣]+$/.test(curr) && curr.length <= 8 && !curr.includes(" ")) {
       merged[merged.length - 1] = prev + curr
     }

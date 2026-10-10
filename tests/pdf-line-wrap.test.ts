@@ -274,6 +274,20 @@ describe("cellTextToString — 칸 상자가 있으면 꺾임을 기하·어휘�
     // 칸 상자 없는 호출(과소분할 재구성)은 종전 조각 규칙
     assert.equal(cellTextToString(items), "기준을")
   })
+
+  it("줄 끝 아이템 뒤에 공백 글리프가 찍힌 꺾임은 어절 경계다 — 어휘 증거가 있어도 붙이지 않는다", () => {
+    const lex = lexOf("가 재일학도의용군인 나")
+    const items = [
+      ti("-", 63.1, 608, 5.6), ti("보국수훈자,", 224.8, 608, 55.7), ti("재", 285.7, 608, 10.8),
+      ti("일학도의용군인,", 71.8, 594, 77.1), ti("특별공로자의", 231.7, 594, 64.8),
+      ti("배우자", 71.8, 580, 32.4),
+    ]
+    items[1].hasSpaceBefore = true
+    items[2].hasSpaceBefore = true
+    items[2].spaceAfter = true
+    items[4].hasSpaceBefore = true
+    assert.equal(cellTextToString(items, { box, lex }), "- 보국수훈자, 재\n일학도의용군인, 특별공로자의\n배우자")
+  })
 })
 
 function ni(text: string, x: number, y: number, w: number, hasSpaceBefore = false): NormItem {
@@ -293,6 +307,10 @@ describe("extractPageBlocksFallback — 꺾인 본문 줄을 한 문단으로", 
     const blocks = extractPageBlocksFallback(items, 1, false, false)
     assert.equal(blocks.length, 1, JSON.stringify(blocks.map(b => b.text)))
     assert.equal(blocks[0].text, "○ 가점을 받아 합격하는 사람의 수는 선발 인원을 산정하는 경우 소수점 이하를 버리고 그 결과가 같거나 적은 경우에는 그러하지 아니하다.")
+    // 줄 끝 "산정" 뒤에 공백 글리프가 찍혔으면 원문이 띄운 자리다 — "하는" 을 붙이는 형태 규칙보다 앞선다
+    const spaced = items.map(it => (it.text === "산정" ? { ...it, spaceAfter: true } : it))
+    assert.equal(extractPageBlocksFallback(spaced, 1, false, false)[0].text,
+      "○ 가점을 받아 합격하는 사람의 수는 선발 인원을 산정 하는 경우 소수점 이하를 버리고 그 결과가 같거나 적은 경우에는 그러하지 아니하다.")
   })
 })
 

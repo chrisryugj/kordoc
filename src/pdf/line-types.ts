@@ -52,6 +52,8 @@ export interface TextItem {
   hasSpaceBefore?: boolean
   /** 직전 공백이 pdfjs 가 글자 틈으로 만든 것뿐(글리프 흐름에 공백 글리프 없음, tracked-text markSyntheticSpaces) — 균등배분 run 을 끊지 않는다 */
   syntheticSpace?: boolean
+  /** 줄 끝 공백 글리프 (NormItem.spaceAfter 전파 — 칸 줄 꺾임이 어절 경계) */
+  spaceAfter?: boolean
   /** 콘텐츠 스트림 순번 (NormItem.seq 전파 — 겹친 글자 순서 복원) */
   seq?: number
 }
