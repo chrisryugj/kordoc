@@ -353,7 +353,7 @@ function isTextRunClipStrip(grid: TableGrid, items: NormItem[]): boolean {
  * 기하만으론 다줄셀 정규표, 텍스트만으론 서술형 2열표(용어설명·Q&A)와 구분되지 않아
  * 둘 다 충족할 때만 발동한다.
  */
-function isProseBoxGrid(grid: TableGrid, verticals: LineSegment[], table: IRTable): boolean {
+function isProseBoxGrid(grid: TableGrid, verticals: LineSegment[], table: IRTable, items: NormItem[]): boolean {
   const numCols = grid.colXs.length - 1
   if (numCols < 2 || grid.rowYs.length < 3) return false
 
@@ -362,21 +362,43 @@ function isProseBoxGrid(grid: TableGrid, verticals: LineSegment[], table: IRTabl
   if (span <= 0) return false
   const interior = grid.colXs.slice(1, -1)
   let fullWidthHeight = 0
+  const divided: boolean[] = []
   for (let r = 0; r < grid.rowYs.length - 1; r++) {
     const top = grid.rowYs[r], bot = grid.rowYs[r + 1]
     const h = top - bot
-    if (h <= 0) continue
     // 내부 열 경계 어느 하나라도 이 행의 절반 이상을 덮는 수직선이 있으면 구분된 행
-    const hasDivider = interior.some(cx => verticalCoverageAt(verticals, cx, bot, top) >= h * 0.5)
-    if (!hasDivider) fullWidthHeight += h
+    const hasDivider = h > 0 && interior.some(cx => verticalCoverageAt(verticals, cx, bot, top) >= h * 0.5)
+    divided.push(hasDivider)
+    if (h > 0 && !hasDivider) fullWidthHeight += h
   }
   if (fullWidthHeight < span * PROSEBOX_FULLWIDTH_MIN) return false
+  if (isLabelTabBox(grid, divided, items, span)) return true
 
   const texts = table.cells.flat().map(c => c.text.trim()).filter(Boolean)
   const longCells = texts.filter(s => s.length > PROSEBOX_LONG_CELL_CHARS).length
   if (longCells < PROSEBOX_LONG_CELL_MIN || longCells < texts.length * PROSEBOX_LONG_CELL_RATIO) return false
 
   return true
+}
+
+/**
+ * 라벨탭 상자 — 상자 윗변에 걸친 작은 제목 칩("목 차")의 세로변이 가짜 열 경계가 된 표. 칩 줄(구분된 위 행들) 아래가 통째로 전폭
+ * 행(표 높이 80%+)이고 칩 줄 높이의 글이 칩 안 짧은 제목(12자 이하, 표 폭 60% 이하)뿐이면 칸 글 길이와 상관없이 프로즈 박스다 — 목차처럼
+ * 짧은 줄만 든 상자는 긴 칸 신호를 못 받아 3×2 표로 짜이고 칸 순서가 뒤섞였다(벼·고추 재배면적조사 목차: "□ 통계표" 가 맨 앞 칸)
+ */
+function isLabelTabBox(grid: TableGrid, divided: boolean[], items: NormItem[], span: number): boolean {
+  let k = divided.length
+  while (k > 0 && !divided[k - 1]) k--
+  if (k === 0 || k === divided.length) return false
+  const bodyTop = grid.rowYs[k], b = grid.bbox
+  if (bodyTop - grid.rowYs[grid.rowYs.length - 1] < 0.8 * span) return false
+  const label = items.filter(it => {
+    const cx = it.x + it.w / 2, cy = it.y + it.h / 2
+    return cy > bodyTop && cy < b.y2 && cx > b.x1 && cx < b.x2 && it.text.trim()
+  })
+  if (!label.length) return false
+  const x1 = Math.min(...label.map(it => it.x)), x2 = Math.max(...label.map(it => it.x + it.w))
+  return label.reduce((n, it) => n + it.text.replace(/\s/g, "").length, 0) <= 12 && x2 - x1 <= 0.6 * (b.x2 - b.x1)
 }
 
 /**
@@ -654,7 +676,7 @@ function extractBlocksWithGrids(
     // 프로즈 폴백으로 재추출 (셀 조인 demote는 찢긴 조각을 스크램블하므로 부적합)
     // 클립 그리드는 셀 기하가 확정된 실제 표 — 프로즈 박스·의사 표 강등을 적용하지 않는다
     // 중첩표를 품은 표는 강등하지 않는다 — 강등 경로는 자기 글 아이템만 되살려 붙은 중첩 블록이 통째로 사라진다
-    if (!grid.cells && !nestedAttached && (isProseBoxGrid(grid, verticals, irTable) || ocrPage && isSparseProseGrid(irTable))) {
+    if (!grid.cells && !nestedAttached && (isProseBoxGrid(grid, verticals, irTable, tableItems) || ocrPage && isSparseProseGrid(irTable))) {
       for (const it of tableItems) usedItems.delete(it)
       continue
     }
