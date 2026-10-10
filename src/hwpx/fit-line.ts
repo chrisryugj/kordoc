@@ -24,17 +24,19 @@ const SPACINGS = [0, -3, -5]
  * 보정으로 맞음, 한컴이 더 넓게 잡는 쪽이 최대 +3%). "한 줄에 들어간다"는 판단은 2% 여유를 둔다(여유 0.6% 로 한 줄에 맞춘
  * 압축 문단이 한컴에서 넘친 실사고, 2026-09-23). 근사 클래스는 호출부 값(2~5%).
  */
-function safety(faceClass: FaceClass, approx: number): number {
-  return faceClass.startsWith("font:") ? 0.98 : approx
+function safety(faceClass: FaceClass, approx: number, limit?: number): number {
+  const k = faceClass.startsWith("font:") ? 0.98 : approx
+  // limit(autoFit.safety): 다른 조판기(rhwp 등)로도 그리는 문서가 여유를 더 두게. 기본보다 엄격하게만
+  return limit === undefined ? k : Math.min(k, limit)
 }
 
 /**
  * @param minPt    글자 크기 하한 — pt 와 같으면 크기는 줄이지 않는다(□ 항목: 형제끼리 크기가 달라 들쭉날쭉해 보이는 것 방지)
  * @param minRatio 장평 하한(기본 85) — □ 는 90 (실측 96/95 관행, 85 는 눈에 띄게 납작함)
  */
-export function fitOneLine(text: string, font: string, pt: number, availHu: number, minPt: number = Math.max(pt - 3, 10), minRatio = 85): FitResult {
+export function fitOneLine(text: string, font: string, pt: number, availHu: number, minPt: number = Math.max(pt - 3, 10), minRatio = 85, safetyLimit?: number): FitResult {
   const faceClass = faceClassForGen(font)
-  const avail = availHu * safety(faceClass, 0.98)
+  const avail = availHu * safety(faceClass, 0.98, safetyLimit)
   const fits = (p: number, r: number, s: number) => measureTextWidth(text, p * 100, r, { spacingPct: s, faceClass }) <= avail
   if (fits(pt, 100, 0)) return { pt, ratio: 100, spacing: 0, overflow: false }
   const ratios = RATIOS.filter((r) => r >= minRatio)
@@ -102,10 +104,10 @@ function worstLooseness(text: string, starts: number[], firstW: number, contW: n
  *      + 고아 줄(마지막 줄 ≤ 가용폭 22%) + 압축량. 줄 수는 늘리지 않는다. 무압축이 최선이면 null.
  * @param minRatio 장평 하한 — 공문서 `autoFit.minRatio`(기본 90). 사다리에서 이보다 납작한 장평은 쓰지 않는다
  */
-export function fitParagraph(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88, orphanRatio = ORPHAN_RATIO): { ratio: number; spacing: number } | null {
+export function fitParagraph(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88, orphanRatio = ORPHAN_RATIO, safetyLimit?: number): { ratio: number; spacing: number } | null {
   const faceClass = faceClassForGen(font)
   const h = pt * 100
-  const k = safety(faceClass, 0.95)
+  const k = safety(faceClass, 0.95, safetyLimit)
   const f = firstW * k, c = contW * k
   const ladder: Array<[number, number]> = [[100, 0], ...SQUEEZE.filter(([r]) => r >= minRatio)]
   const base = simulateWrap(text, f, c, h, 100, "keep", { faceClass })
@@ -163,10 +165,10 @@ const LIST_BREAK = new Set([..."·,、/"])
  * ±1% 인 까닭: 글자 단위는 한 글자(1em ≈ 줄폭 3%)만 어긋나도 끊는 자리가 바뀐다. ±2% 면 허용 구간이 한 글자 폭보다 넓어
  * 후보가 거의 없다(서울시 11개 구 목록 문단 실측: ±2% 0건, ±1% 자간 -12 에서 "서초·|성동").
  */
-export function fitCharBreaks(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88): { ratio: number; spacing: number } | null {
+export function fitCharBreaks(text: string, font: string, pt: number, firstW: number, contW: number, minRatio = 88, safetyLimit?: number): { ratio: number; spacing: number } | null {
   const faceClass = faceClassForGen(font)
   const h = pt * 100
-  const k = safety(faceClass, 0.95)
+  const k = safety(faceClass, 0.95, safetyLimit)
   if (!text.split(/ +/).some((w) => measureTextWidth(w, h, 100, { faceClass }) > contW * k)) return null
   const prepared = prepareWrap(text, "charAll", { faceClass })
   let best: { r: number; sp: number; amt: number } | null = null

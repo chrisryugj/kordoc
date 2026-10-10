@@ -82,8 +82,10 @@ export interface GongmunOptions {
    * 문단별 자동 장평 — 한두 글자(짧은 꼬리)만 다음 줄로 넘어가는 문단의 장평을
    * 95→90%까지 자동 축소해 한 줄에 담는다(공무원 실무 관행의 자동화).
    * false로 끄거나 minRatio(기본 90)로 하한 조정. 기본 켜짐.
+   * safety: "한 줄에 들어간다"고 볼 가용폭 비율의 상한(기본 실폭표 0.98). 한컴 밖의 조판기(rhwp 미리보기·PDF 등)로도
+   * 그리는 문서는 0.95 처럼 낮춰 꽉 찬 줄을 조금 더 줄여 둔다. 기본보다 느슨해지지는 않는다.
    */
-  autoFit?: boolean | { minRatio?: number }
+  autoFit?: boolean | { minRatio?: number; safety?: number }
   /**
    * 요소별 글꼴 오버라이드 — 기관 표준 폰트 적용이나 미설치 폰트 대체용.
    * body=본문(개조식 ○·-) / heading=제목 계열(□·장헤더·표지·목차) / ref=※ 참고 / table=표 셀.
@@ -185,6 +187,8 @@ export interface ResolvedGongmun {
   centerTitle: boolean
   /** 자동 장평 하한(%) — null이면 끔 */
   autoFitMinRatio: number | null
+  /** 한 줄 판정 가용폭 비율 상한 (autoFit.safety). 없으면 맞춤 함수 기본값 */
+  autoFitSafety?: number
   /** 표지 설정 — null이면 표지 없음 (개조식 외 프리셋 기본) */
   cover: { date: string | null; org: string; dept?: string; label?: string } | null
   /** 옵션이 명시됐는지 — v5 스킴이 실측 기본값(굴림 12·한컴돋움 15·160/180%)을 쓸지 판단 */
@@ -337,6 +341,9 @@ function validateGongmunOptions(opts: GongmunOptions): void {
   if (typeof opts.autoFit === "object" && opts.autoFit.minRatio !== undefined) {
     assertFiniteRange("autoFit.minRatio", opts.autoFit.minRatio, 50, 99)
   }
+  if (typeof opts.autoFit === "object" && opts.autoFit.safety !== undefined) {
+    assertFiniteRange("autoFit.safety", opts.autoFit.safety, 0.8, 1)
+  }
   if (opts.margins) {
     for (const side of ["top", "bottom", "left", "right"] as const) {
       const value = opts.margins[side]
@@ -479,6 +486,7 @@ export function resolveGongmun(input: GongmunOptions): ResolvedGongmun {
     margins: opts.margins ?? (ministry ? MINISTRY_MARGINS : preset === "report" || preset === "plan" || preset === "bangchim" ? SEOUL_REPORT_MARGINS : reportFamily ? GAEJOSIK_MARGINS : OFFICIAL_MARGINS),
     centerTitle: opts.centerTitle ?? true,
     autoFitMinRatio,
+    ...(typeof opts.autoFit === "object" && opts.autoFit.safety !== undefined ? { autoFitSafety: opts.autoFit.safety } : {}),
     // 보도자료는 머리박스가 1페이지 최상단을 차지하는 서식이라 표지·목차와 양립 불가 —
     // 켜면 머리박스가 표지에 얹히고 25pt 제목·부제가 유실된다 (docHead 프리셋 게이팅과 동일 관례)
     cover: coverOn && preset !== "press" ? { date: coverOpts.date ?? null, org: coverOpts.org ?? "", ...(coverOpts.dept ? { dept: coverOpts.dept } : {}), ...(coverOpts.label ? { label: coverOpts.label } : {}) } : null,

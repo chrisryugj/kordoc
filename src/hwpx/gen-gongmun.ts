@@ -264,15 +264,15 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     if (st.oneLine) {
       // □ 는 크기를 줄이지 않는다(형제 □ 끼리 크기·굵기가 달라 보이던 결함, 라운드 3) — 장평 90·자간 -5 까지만.
       // 그래도 넘치면 억지로 우겨넣지 않고 자연 줄바꿈(내어쓰기) + 경고: 문장을 줄이는 게 정답
-      const fit = fitOneLine(plain(node.text), st.font, st.pt, textW, st.pt, 90)
+      const fit = fitOneLine(plain(node.text), st.font, st.pt, textW, st.pt, 90, g.autoFitSafety)
       if (fit.overflow) warnings.push(`□ 항목이 한 줄에 담기지 않아 두 줄로 꺾입니다 — 문장을 줄이세요(장평 90%·자간 -5 로도 초과): "${node.text.slice(0, 30)}…"`)
       else { ratio = fit.ratio; spacing = fit.spacing }
     } else {
       // 한 줄보다 긴 어절(가운뎃점 목록 등)이 있으면 글자 단위 + 목록 구분자 뒤에서만 끊는 압축. 그 밖엔 짧은 꼬리 줄 올리기·
       // 벌어진 줄 완화(자간 -1%씩 Shift+Alt+N 관행·장평 조합). autoFit false 면 압축 없이 줄나눔만 고른다
       const t = plain(node.text)
-      const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101)
-      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio) : null)
+      const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101, g.autoFitSafety)
+      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio, undefined, g.autoFitSafety) : null)
       if (f) { ratio = f.ratio; spacing = f.spacing }
       charBreaks = !!cb
     }
@@ -309,8 +309,8 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     const left = isMinistry ? st.leadTa * taHu(st.pt) : leadLeft(node.depth, st.pt)
     const textW = W - left - lay.hang
     const t = plain(node.text)
-    const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101)
-    const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio) : null)
+    const cb = fitCharBreaks(t, st.font, st.pt, textW, textW, g.autoFitMinRatio ?? 101, g.autoFitSafety)
+    const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, textW, textW, g.autoFitMinRatio, undefined, g.autoFitSafety) : null)
     const base = { font: st.font, pt: st.pt, bold: st.bold, ratio: f?.ratio ?? 100, spacing: f?.spacing ?? 0 }
     const paraId = reg.para({ align: st.align ?? "JUSTIFY", left, indent: -lay.hang, after: isMinistry ? 400 : 0, lineSp: isMinistry ? 130 : st.lineSp ?? scheme.lineSp, keepWord: !cb, autoTab: true, widowOrphan: true })
     const markerRun = markerRunXml(marker, reg.char({ font: st.font, pt: st.pt, bold: st.bold }), lay)
@@ -339,8 +339,8 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     let ratio = 100, spacing = 0, charBreaks = false
     if (!node.align) {
       const t = plain(node.text)
-      const cb = fitCharBreaks(t, st.font, st.pt, W, W, g.autoFitMinRatio ?? 101)
-      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, W, W, g.autoFitMinRatio) : null)
+      const cb = fitCharBreaks(t, st.font, st.pt, W, W, g.autoFitMinRatio ?? 101, g.autoFitSafety)
+      const f = cb ?? (g.autoFitMinRatio !== null ? fitParagraph(t, st.font, st.pt, W, W, g.autoFitMinRatio, undefined, g.autoFitSafety) : null)
       if (f) { ratio = f.ratio; spacing = f.spacing }
       charBreaks = !!cb
     }
@@ -382,7 +382,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     }
     const label = chapterStyle === "none" ? "" : chapterLabel(node.index, chapterStyle === "number" ? "number" : "roman")
     const text = label ? `${label} ${node.text}` : node.text
-    const fit = fitOneLine(plain(text), st.font, st.pt, W, st.pt - 2)
+    const fit = fitOneLine(plain(text), st.font, st.pt, W, st.pt - 2, undefined, g.autoFitSafety)
     const base = { font: st.font, pt: fit.pt, bold: st.bold, ratio: fit.ratio, spacing: fit.spacing }
     const before = prevKind === "start" || prevKind === "title" || prevKind === "summary" ? 0 : lineHu(scheme.body)
     const paraId = reg.para({ align: "LEFT", before, after: Math.round(lineHu(scheme.body) * 0.3), lineSp: st.lineSp ?? scheme.lineSp, keepWithNext: true })

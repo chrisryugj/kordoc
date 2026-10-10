@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- 공문서 `autoFit.safety`: "한 줄에 들어간다"고 볼 가용폭 비율의 상한(기본 실폭표 0.98, 0.8~1). 한컴 밖의 조판기로도 그리는 문서(rhwp 미리보기·PDF 를 쓰는 앱)는 낮춰 꽉 찬 줄을 조금 더 줄여 둔다. 기본보다 느슨해지지는 않는다. 실측: 보고서 프리셋 생성본 9건에서 rhwp 가 마지막 줄 5글자 이하로 넘긴 문단 25곳은 전부 기본 계수로 97.2~98.1% 까지 채운 한 줄 문단이었고, 0.96 이면 2곳(장평 하한 90 으로도 안 되는 5글자 꼬리)만 남는다. 한글 조판 예측(predict-layout)의 벌어진 줄·고아 줄 수는 그대로.
+
 ## [4.21.15] - 2026-10-10
 
 ### Fixed
