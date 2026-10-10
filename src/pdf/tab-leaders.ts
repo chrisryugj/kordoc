@@ -48,9 +48,9 @@ export function dropTabLeaderDots(items: NormItem[]): NormItem[] {
         edit.set(run[0], { text: "\t", right: tailPage ? last.x : last.x + last.w })
         for (const d of body.slice(1)) drop.add(d)
         if (tailPage) edit.set(last, { text: tailPage })
-        // 첫 점이 붙은 제목 조각("…결과(요약) ·")은 그 점을 뗀다
+        // 첫 점이 붙은 제목 조각("…결과(요약) ·")은 그 점을 뗀다 — 조각 폭이 뒤 공백까지 잡혀 채움과 겹치기도 한다("1. 기 획 실 ·" 오른끝이 첫 점보다 11pt 뒤)
         const head = items.find(it => it !== run[0] && sameLine(it, run[0]) && /[^\s·]\s*·+$/.test(it.text) &&
-          run[0].x - (it.x + it.w) <= run[0].fontSize * 0.7 && run[0].x - (it.x + it.w) >= -run[0].fontSize * 0.5)
+          it.x < run[0].x && run[0].x - (it.x + it.w) <= run[0].fontSize * 0.7)
         if (head && !edit.has(head)) edit.set(head, { text: head.text.replace(/\s*·+$/, "") })
       }
       run = []
