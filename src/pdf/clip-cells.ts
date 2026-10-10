@@ -712,8 +712,9 @@ function addNarrowEdgeCols(colXs: number[], rowYs: number[], out: ExtractedCell[
  *   틀 안 작은 표(발신명의 | 직인)의 괘선이 틀 괘선과 교차해 line 경로가 틀 전체를 3×3 격자로
  *   만들고 본문 문단을 열로 찢는다(영치증 실측: "1. 위 자동차는 자동차세(방세법」…"). 틀 안 글은
  *   문단 경로로 흐르고 작은 표는 클립 그리드가 낸다 — HWP5 파서의 1칸 레이아웃 표 해체와 같은 모양
+ * - 위아래로 쌓인 클립 표들과 그 사이 틈 글줄만 품은 line 그리드: 제거 — 틈을 지나는 안쪽 세로 괘선(verticals)이 없을 때
  */
-export function dropGridsInside(lineGrids: TableGrid[], clipGrids: TableGrid[], containers: ClipRect[] = []): TableGrid[] {
+export function dropGridsInside(lineGrids: TableGrid[], clipGrids: TableGrid[], containers: ClipRect[] = [], verticals: LineSegment[] = []): TableGrid[] {
   if (clipGrids.length === 0 && containers.length === 0) return lineGrids
   type Box = { x1: number; y1: number; x2: number; y2: number }
   const area = (b: Box): number => Math.max(0, b.x2 - b.x1) * Math.max(0, b.y2 - b.y1)
@@ -727,8 +728,24 @@ export function dropGridsInside(lineGrids: TableGrid[], clipGrids: TableGrid[], 
     const ga = area(g)
     return ga > 0 && (ix * iy) / ga >= 0.5
   }
+  // 안에 온전히 든 클립 표 둘 이상이 절반 넘게 덮고 표 사이·위아래 틈을 지나는 안쪽 세로 괘선이 없으면 버린다 — 바깥 세로 괘선(쪽 테두리 포함)이
+  // 위아래로 쌓인 표들을 이어 line 그리드가 표들과 그 사이 글줄(지역 머리·각주·표 제목)을 한 표로 묶었고, 그 글줄이 틀 칸이 되어 표들보다 먼저
+  // 풀렸다(수출 보도자료 12쪽 표 6개, hwp3 쪽 테두리 안 표 여럿). 틈을 안쪽 세로 괘선이 지나면 클립 없는 행이 든 온전한 표다(보도자료 공표 일정 5×2)
+  const inside = (c: Box, g: Box): boolean => c.x1 >= g.x1 - 1 && c.x2 <= g.x2 + 1 && c.y1 >= g.y1 - 1 && c.y2 <= g.y2 + 1
+  const stackedOnly = (g: TableGrid): boolean => {
+    const stacked = clipGrids.filter(c => inside(c.bbox, g.bbox)).sort((a, b) => a.bbox.y1 - b.bbox.y1)
+    if (stacked.length < 2 || g.colXs.length < 3 || stacked.reduce((s, c) => s + area(c.bbox), 0) < area(g.bbox) * 0.5) return false
+    const crossed = (lo: number, hi: number): boolean => verticals.some(v =>
+      v.x1 > g.bbox.x1 + 3 && v.x1 < g.bbox.x2 - 3 && Math.max(v.y1, v.y2) > lo + 1.5 && Math.min(v.y1, v.y2) < hi - 1.5)
+    let cur = g.bbox.y1
+    for (const c of stacked) {
+      if (c.bbox.y1 > cur + 1.5 && crossed(cur, c.bbox.y1)) return false
+      cur = Math.max(cur, c.bbox.y2)
+    }
+    return g.bbox.y2 <= cur + 1.5 || !crossed(cur, g.bbox.y2)
+  }
   return lineGrids.filter(g => {
-    if (clipGrids.some(c => overlapsHalf(g.bbox, c.bbox))) return false
+    if (clipGrids.some(c => overlapsHalf(g.bbox, c.bbox)) || stackedOnly(g)) return false
     if (containers.some(c => overlapsHalf(g.bbox, c))) return false
     return true
   })

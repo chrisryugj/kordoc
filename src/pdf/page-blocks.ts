@@ -158,7 +158,7 @@ export function extractPageBlocksWithLines(
   const tableClipGrids = dropHeadBandClipGrids(dropInsetClipGrids(dropShadingClipGrids(clipGrids, lineGrids, extracted.fillRects, verticals), lineGrids), lineGrids)
   recordClipCellEdges(extendNestedShadedHeaders(tableClipGrids, lineGrids, horizontals, verticals, extracted.fillRects),
     extracted.horizontals.concat(extracted.shortH), extracted.verticals.concat(extracted.shortV), extracted.nonRules)
-  const grids = [...tableClipGrids, ...dropGridsInside(lineGrids, tableClipGrids, clipResult.containers)]
+  const grids = [...tableClipGrids, ...dropGridsInside(lineGrids, tableClipGrids, clipResult.containers, verticals)]
   const figures = () => extractImageRegions(opList.fnArray, opList.argsArray, true).filter(r => r.x2 - r.x1 >= 40 && r.y2 - r.y1 >= 40)
     .map(r => ({ x: r.x1, y: r.y1, w: r.x2 - r.x1, h: r.y2 - r.y1 }))
 

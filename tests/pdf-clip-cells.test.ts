@@ -142,6 +142,25 @@ describe("dropGridsInside — 클립 그리드와 line 그리드 중복 정리",
     const g = mk(0, 0, 10, 10)
     assert.deepEqual(dropGridsInside([g], [], []), [g])
   })
+  // 세로 괘선 — x 에서 y1~y2
+  const vline = (x: number, y1: number, y2: number): LineSegment => ({ x1: x, y1, x2: x, y2, lineWidth: 0.4 })
+  it("위아래로 쌓인 클립 표들과 그 사이 틈 글줄만 품은 line 그리드는 버린다 (수출 보도자료 지역별 표, 쪽 테두리 틀)", () => {
+    // 표 셋 사이 틈 — 바깥 세로 괘선만 틈을 지나 line 그리드가 표들과 틈을 한 표로 묶었다. 안쪽 열 괘선은 표 안에서 끊긴다
+    const tables = [mk(58, 680, 538, 770), mk(58, 560, 538, 650), mk(58, 440, 538, 530)]
+    const merged: TableGrid = { ...mk(58, 440, 538, 770), rowYs: [770, 680, 650, 560, 530, 440] }
+    const edges = [vline(58, 440, 770), vline(538, 440, 770)]
+    const cols = tables.map(t => vline(298, t.bbox.y1, t.bbox.y2))
+    assert.deepEqual(dropGridsInside([merged], tables, [], [...edges, ...cols]), [])
+    // 틈이 넓고 그 안에 행 경계가 있어도 안쪽 세로 괘선이 없으면 표 밖 글줄이다
+    const page: TableGrid = { ...mk(28, 400, 567, 800), rowYs: [800, 790, 770, 680, 650, 560, 545, 530, 440, 400] }
+    assert.deepEqual(dropGridsInside([page], tables, [], [vline(28, 400, 800), vline(567, 400, 800), ...cols]), [])
+  })
+  it("틈을 안쪽 세로 괘선이 지나면 클립 없는 행이 든 온전한 표라 둔다 (공표 일정 5×2)", () => {
+    const tables = [mk(58, 500, 538, 700), mk(58, 210, 538, 355)]
+    const whole: TableGrid = { ...mk(58, 65, 538, 700), rowYs: [700, 645, 500, 355, 210, 65] }
+    const lines = [vline(58, 65, 700), vline(538, 65, 700), vline(298, 65, 700)]
+    assert.deepEqual(dropGridsInside([whole], tables, [], lines), [whole])
+  })
 })
 
 describe("symbol-fonts — Wingdings 글리프 복원", () => {
