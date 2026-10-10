@@ -12,7 +12,7 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
 - 📊 **0.963 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
-- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.14 verification](docs/benchmarks-en.md)
+- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.15 verification](docs/benchmarks-en.md)
 
 If this saves you time, a GitHub ⭐ helps others find it.
 
@@ -100,27 +100,28 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.21.14 release verification · 2026-10-10**. Results use fixed corpora and reference criteria.
+**4.21.15 release verification · 2026-10-10**. Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
-| PDF text | 744 pairs | Character recall **99.84%** · precision **99.64%** · reading order **99.16%** · word-boundary F1 **98.89%** |
+| PDF text | 744 pairs | Character recall **99.84%** · precision **99.64%** · reading order **99.16%** · word-boundary F1 **98.98%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **97.98%** · cell F1 **0.991** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages | CER **0.0412** · character recall **99.02%** |
 
 Table structure, cell content and visual fidelity are separate metrics. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions and the per-document comparison of every bench.
 
-The external **opendataloader-bench, 200 documents** was measured with the 4.21.14 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
+The external **opendataloader-bench, 200 documents** was measured with the 4.21.15 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 
 ## Recent updates
 
-Latest release: **[4.21.14](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.14)** · 2026-10-10
+Latest release: **[4.21.15](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.15)** · 2026-10-10
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.15 | PDF line-end space glyphs mark word-boundary wraps — wraps the source had spaced ("이루어⏎진다면") are no longer glued (PDF word-boundary F1 98.89 → 98.98%) |
 | 4.21.14 | Unmapped Hancom PDF symbols restored — auto bullets and brackets written as U+F000 come back from their font outlines as "▸", "□", "《》", "↓" and more; text-layer coverage scoring change (PDF word-boundary F1 98.87 → 98.89%, text recall 99.83 → 99.84%) |
 | 4.21.13 | PDF statute-annex rows across pages — a serial number moving on starts a new row, "가)" items count as item heads, a long cell flowing across a page spans both rows; parse-worker ends quietly on a closed stdout (#142) (annex PDF table structure match 96.82 → 97.40%, no document down) |
 | 4.21.12 | PDF cell digits, crossing text boxes, spread labels and script overlap — digit lines joined only when they fill the cell, overlapping text boxes read as prose, spread two-syllable row labels joined, attached scripts may overlap their host by a quarter em (PDF word-boundary F1 98.86 → 98.87%, ODL table TEDS 0.9799 → 0.9802, no document down) |

@@ -2,15 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.14 · 2026-10-10
+## Latest release results: 4.21.15 · 2026-10-10
 
-All benches measured on the 4.21.14 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.13, no document is lower in PDF tables, statute annexes, score, degraded OCR, other formats, roundtrip, generation or the four ODL modes. Score coverage uses a changed scoring rule (3-grams across a text-layer U+F000 position are skipped), and the previous release was re-measured with it. Two exceptions come from the measurement: one PDF text reading-order document (hwp3-sample16) gained units in the order population from the restored "□" (the old population scores the same), and one OCR document (Hampyeong plan) has identical OCR output while its reference, the text-layer parse, gained a "□".
+All benches measured on the 4.21.15 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.14, no document is lower in PDF tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes. One exception comes from the reference: in one PDF text document (DAPA armored medical evacuation vehicle) the source cell of a vertical label is the paragraphs "내" / "부 구" / "성", so its reference words are single syllables, and the new output "내부 구성", which keeps the source space in "부 구", yields one more word than the old "내부구성".
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Structure match 10,342/10,342 · 100%; exact cell text 99.9983%; content NED similarity 99.9955% |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document structure match 4,315/4,315 · 100% |
-| PDF text | 744 pairs | Recall 99.84%, precision 99.64%, order 99.16%, word-boundary F1 98.89% |
+| PDF text | 744 pairs | Recall 99.84%, precision 99.64%, order 99.16%, word-boundary F1 98.98% |
 | PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.98%, cell F1 0.991228 |
 | Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 337/346 · 97.40% |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.80% |
