@@ -7,10 +7,10 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { joinSplitParts, mergeCrossPageTables } from "../src/pdf/table-parts.js"
+import { joinSplitParts, mergeCrossPageTables, nextItemHead } from "../src/pdf/table-parts.js"
 import { mergeContinuedCells } from "../src/pdf/cell-continuation.js"
 import { buildClipCellGrids } from "../src/pdf/clip-cells.js"
-import { CLIP_TABLES, CONT_PARTS, FILLER_CELLS, TABLE_COLXS, recordCellLines } from "../src/pdf/table-meta.js"
+import { CLIP_TABLES, CONT_PARTS, FILLER_CELLS, ROW_RULES, TABLE_COLXS, recordCellLines } from "../src/pdf/table-meta.js"
 import type { IRBlock, IRCell, IRTable } from "../src/types.js"
 import type { LineSegment } from "../src/pdf/line-types.js"
 
@@ -412,4 +412,47 @@ describe("쪽 넘김 행 판정 — 번호 차례·항목 꼴·쪽 넘는 글 �
     assert.equal(res.table.cells[2][0].text, "13")
   })
 
+  it("\"가)\" 다음 \"나)\" 도 다음 항목 머리다 — 꼴이 다르면(\"가)\" / \"나.\") 아니다", () => {
+    assert.equal(nextItemHead("가) 등록요건 중 일부가 미달하게 된 경우", "나) 등록요건의 전부가 미달하게 된 경우"), true)
+    assert.equal(nextItemHead("가) 등록요건 중 일부", "나. 등록요건의 전부"), false)
+    assert.equal(nextItemHead("가. 첫 항목", "나. 둘째 항목"), true)
+  })
+
+  it("글이 칸 끝까지 차 낱말 가운데서 쪽을 넘은 칸은 다음 쪽 새 행과 함께 두 행을 덮는다 (보안심사대행기관 처분기준 \"2) … 지정기\" / \"준에 미달하게 된 경우\")", () => {
+    // 위반행위 | 세부 위반행위 | 근거 법령(다음 쪽 클립 없이 이어짐) | 처분. 쪽 경계에 괘선이 있다
+    const prev = grid(1, 4, [[0, 0, "2) 법 제38조제1항에 따른 대행기관 지정기"], [0, 1, "가) 등록요건 중 일부가 미달하게 된 경우"], [0, 2, "법 제38조제2항제2호"], [0, 3, "지정취소"]])
+    const curr = grid(1, 4, [[0, 0, "준에 미달하게 된 경우"], [0, 1, "나) 등록요건의 전부가 미달하게 된 경우"], [0, 2, null], [0, 3, "-"]])
+    lines(prev.cells[0][0], [[3, 97, 40]])
+    lines(prev.cells[0][1], [[103, 190, 40]])
+    lines(prev.cells[0][2], [[205, 255, 40]])
+    lines(prev.cells[0][3], [[265, 295, 40]])
+    lines(curr.cells[0][0], [[3, 60, 760]])
+    lines(curr.cells[0][1], [[103, 192, 760]])
+    lines(curr.cells[0][3], [[278, 282, 760]])
+    ROW_RULES.set(prev, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+    ROW_RULES.set(curr, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+    const res = joinSplitParts(prev, [0, 100, 200, 260, 300], curr, [0, 100, 200, 260, 300], 0, 30)!
+    assert.equal(res.table.rows, 2)
+    assert.equal(res.table.cells[0][0].rowSpan, 2)
+    assert.equal(res.table.cells[0][0].text, "2) 법 제38조제1항에 따른 대행기관 지정기\n준에 미달하게 된 경우")
+    assert.equal(res.table.cells[1][1].text, "나) 등록요건의 전부가 미달하게 된 경우")
+    assert.equal(res.table.cells[1][3].text, "-")
+  })
+
+  it("다른 열에 다음 항목 증거가 없으면 끝줄이 칸을 채워도 두 행으로 둔다 (시험기준표 \"겉모양, 치수, 무게\" / \"화학성분\")", () => {
+    const prev = grid(1, 4, [[0, 0, "2) 법 제38조제1항에 따른 대행기관 지정기"], [0, 1, "등록요건 중 일부가 미달하게 된 경우"], [0, 2, "법 제38조제2항제2호"], [0, 3, "지정취소"]])
+    const curr = grid(1, 4, [[0, 0, "준에 미달하게 된 경우"], [0, 1, "등록요건의 전부가 미달하게 된 경우"], [0, 2, null], [0, 3, "-"]])
+    lines(prev.cells[0][0], [[3, 97, 40]])
+    lines(prev.cells[0][1], [[103, 140, 40]]) // 한 줄로 끝난 이름표 — 다음 쪽 다른 글이라 행은 새로 시작한다
+    lines(prev.cells[0][2], [[205, 255, 40]])
+    lines(prev.cells[0][3], [[265, 295, 40]])
+    lines(curr.cells[0][0], [[3, 60, 760]])
+    lines(curr.cells[0][1], [[103, 192, 760]])
+    lines(curr.cells[0][3], [[278, 282, 760]])
+    ROW_RULES.set(prev, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+    ROW_RULES.set(curr, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+    const res = joinSplitParts(prev, [0, 100, 200, 260, 300], curr, [0, 100, 200, 260, 300], 0, 30)!
+    assert.equal(res.table.cells[0][0].rowSpan, 1)
+    assert.equal(res.table.cells[1][0].text, "준에 미달하게 된 경우")
+  })
 })

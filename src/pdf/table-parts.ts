@@ -256,6 +256,14 @@ function mergeStraddlingCells(table: IRTable, owner: (Anchor | null)[][], first:
     const a = table.cells[u.r][u.c], b = table.cells[first][d.c]
     if (hasContent(a) && hasContent(b) && continuesAcross(a, b, colXs[u.c], colXs[u.c + u.cs])) crossed.add(shape(u, d))
   }
+  // 다른 열이 다음 항목으로 새 행을 열었나("가) …" / 다음 쪽 "나) …") — 그 옆에서 글이 쪽을 넘어 이어지는 칸은 두 행을 덮는 칸이다
+  let itemBreak = false
+  for (let c = 0; c < table.cols && !itemBreak;) {
+    const u = owner[last][c], d = owner[first][c]
+    if (!u) { c++; continue }
+    c = u.c + u.cs
+    if (d && d !== u && d.r === first) itemBreak = nextItemHead(table.cells[u.r][u.c].text, table.cells[d.r][d.c].text)
+  }
   let merged = false
   for (let c = 0; c < table.cols;) {
     const u = owner[last][c], d = owner[first][c]
@@ -263,10 +271,17 @@ function mergeStraddlingCells(table: IRTable, owner: (Anchor | null)[][], first:
     c = u.c + u.cs
     if (!d || d === u || u.r + u.rs - 1 !== last || d.r !== first || d.c !== u.c || d.cs !== u.cs) continue
     const a = table.cells[u.r][u.c], b = table.cells[first][d.c]
+    // 글이 칸 오른끝까지 차 다음 쪽 칸으로 이어진 칸 — 다른 열이 다음 항목으로 새 행을 열고(itemBreak) 경계를 넘어 이어지는 칸도
+    // 있으면(straddles) 앞 조각 끝 행 하나·뒤 조각 한 행이어도 쪽 경계에 걸친 병합 칸이다(보안심사대행기관 처분기준 "2) … 대행기관
+    // 지정기" / 다음 쪽 "준에 미달하게 된 경우" 옆 "가) …" / "나) …"). 항목 증거가 없으면 좁은 칸을 우연히 채운 끝줄과 못 가른다
+    // (시험기준표 "겉모양, 치수, 무게" / 다음 쪽 "화학성분" 은 두 행). 뒤 조각이 새 항목 머리로 열면 끝줄이 우연히 찬 것이다
+    // (총포화약법 행정처분기준 "커. … 2) 2회 이상 위반" / 다음 쪽 "터. 수출하기 위한 …")
+    const flowsOn = itemBreak && straddles && !!colXs && hasContent(a) && hasContent(b) && longLastLine(a) && !startsNewItem(a.text, b.text)
+      && continuesAcross(a, b, colXs[u.c], colXs[u.c + u.cs])
     // 빈 이어짐 — 앞 조각에서 두 행 이상 덮은 이름표 칸 아래 뒤 조각 첫 칸이 비었으면 그 칸의 나머지다. 새 묶음이면 이름표가 있다
     // (aift 기업 현황 "자본잠식현황" 앞 쪽 2행 + 다음 쪽 빈 4행, "자본총계" 2행 + 빈 1행 — 모든 칸이 쪽 경계에서 끝나도).
     // 글이 이어진 칸과 같은 모양(crossed)이면 아래 짧은 글 조건을 보지 않는다
-    if (!crossed.has(shape(u, d)) && !(u.rs >= 2 && u.c + u.cs <= firstNew && hasContent(a) && !hasContent(b))) {
+    if (!flowsOn && !crossed.has(shape(u, d)) && !(u.rs >= 2 && u.c + u.cs <= firstNew && hasContent(a) && !hasContent(b))) {
       if (!straddles && !midWord) continue
       // 앞 조각에 끝 행 하나만 보인 칸도 뒤 조각 칸이 두 행 이상을 덮으면 쪽 경계에 걸친 병합 칸이다(성능시험 TRL 표 "제품화 / 단계",
       // 시험기준표 "플라이애시 / 시멘트(KS L 5211)") — 뒤 조각 한 행 칸은 새 칸일 수 있어 그대로 둔다
@@ -288,6 +303,12 @@ function mergeStraddlingCells(table: IRTable, owner: (Anchor | null)[][], first:
     merged = true
   }
   return merged
+}
+
+/** 칸 끝줄이 글자 여섯 개 폭 이상 — 좁은 칸에서 끝줄이 칸을 채운 짧은 낱말("시정⏎명령" / 다음 쪽 "업무⏎정지 1개월")은 글 이어짐 증거가 아니다 */
+function longLastLine(c: IRCell): boolean {
+  const L = CELL_LINES.get(c), l = L?.[L.length - 1]
+  return !!l && l.r - l.l >= 6 * (l.h || 10)
 }
 
 /**
@@ -327,7 +348,7 @@ const HANGING_TOL = 1
 
 /** 항목 머리 차례 — 한글 가나다(가~하, 거~허, 고~호 …)·숫자 */
 const KO_ITEMS = "가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허고노도로모보소오조초코토포호구누두루무부수우주추쿠투푸후"
-const ITEM_MARK = /^\s*(?:([가-힣])\.|(\d{1,3})[.)]|\(([가-힣\d]{1,3})\))(?=\s)/
+const ITEM_MARK = /^\s*(?:([가-힣])[.)]|(\d{1,3})[.)]|\(([가-힣\d]{1,3})\))(?=\s)/
 
 /** 뒤 글이 앞 글 첫머리 항목의 바로 다음 항목(같은 꼴)으로 시작하는가 — "커." 다음 "터.", "3." 다음 "4.", "(나)" 다음 "(다)" */
 export function nextItemHead(prev: string, next: string): boolean {
@@ -335,7 +356,8 @@ export function nextItemHead(prev: string, next: string): boolean {
   if (!a || !b) return false
   const succ = (x: string, y: string) => /^\d+$/.test(x) ? /^\d+$/.test(y) && Number(y) === Number(x) + 1
     : KO_ITEMS.indexOf(x) >= 0 && KO_ITEMS.indexOf(y) === KO_ITEMS.indexOf(x) + 1
-  if (a[1] && b[1]) return succ(a[1], b[1])
+  // "가." 다음 "나.", "가)" 다음 "나)" — 꼴(마침표·닫는 괄호)이 같아야 한다 (보안심사대행기관 처분기준 "가) 등록요건 중 일부…" / 다음 쪽 "나) …")
+  if (a[1] && b[1]) return succ(a[1], b[1]) && prev.trimStart()[1] === next.trimStart()[1]
   if (a[2] && b[2]) return succ(a[2], b[2]) && prev.trimStart()[a[2].length] === next.trimStart()[b[2].length]
   if (a[3] && b[3]) return succ(a[3], b[3])
   return false
