@@ -12,7 +12,7 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
 - 📊 **0.963 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
-- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.15 verification](docs/benchmarks-en.md)
+- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.16 verification](docs/benchmarks-en.md)
 
 If this saves you time, a GitHub ⭐ helps others find it.
 
@@ -100,7 +100,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.21.15 release verification · 2026-10-10**. Results use fixed corpora and reference criteria.
+**4.21.16 release verification · 2026-10-11**. Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
@@ -113,14 +113,15 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 Table structure, cell content and visual fidelity are separate metrics. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions and the per-document comparison of every bench.
 
-The external **opendataloader-bench, 200 documents** was measured with the 4.21.15 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
+The external **opendataloader-bench, 200 documents** was measured with the 4.21.16 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 
 ## Recent updates
 
-Latest release: **[4.21.15](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.15)** · 2026-10-10
+Latest release: **[4.21.16](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.16)** · 2026-10-11
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.16 | PDF tables: a page-split row whose cell continues a quantity — header cell "30%" / next page "미만" is one cell; gongmun autoFit.safety (one-line fit margin for other renderers) (statute annex PDF tables 97.40 → 97.69%) |
 | 4.21.15 | PDF line-end space glyphs mark word-boundary wraps — wraps the source had spaced ("이루어⏎진다면") are no longer glued (PDF word-boundary F1 98.89 → 98.98%) |
 | 4.21.14 | Unmapped Hancom PDF symbols restored — auto bullets and brackets written as U+F000 come back from their font outlines as "▸", "□", "《》", "↓" and more; text-layer coverage scoring change (PDF word-boundary F1 98.87 → 98.89%, text recall 99.83 → 99.84%) |
 | 4.21.13 | PDF statute-annex rows across pages — a serial number moving on starts a new row, "가)" items count as item heads, a long cell flowing across a page spans both rows; parse-worker ends quietly on a closed stdout (#142) (annex PDF table structure match 96.82 → 97.40%, no document down) |
