@@ -3,7 +3,7 @@
   "name": "io.github.chrisryugj/kordoc",
   "title": "kordoc",
   "description": "Parse Korean documents (HWP, HWPX, PDF, XLSX, DOCX, PPTX) to Markdown; fill forms, diff, render.",
-  "version": "4.21.12",
+  "version": "4.21.13",
   "websiteUrl": "https://github.com/chrisryugj/kordoc",
   "repository": {
     "url": "https://github.com/chrisryugj/kordoc",
@@ -13,7 +13,7 @@
     {
       "registryType": "npm",
       "identifier": "kordoc",
-      "version": "4.21.12",
+      "version": "4.21.13",
       "transport": {
         "type": "stdio"
       },

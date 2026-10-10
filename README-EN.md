@@ -12,7 +12,7 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
 - 📊 **0.963 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
-- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.12 verification](docs/benchmarks-en.md)
+- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.13 verification](docs/benchmarks-en.md)
 
 [![kordoc — watch the demo](./docs/video-demo.jpg)](https://youtu.be/Q13GmgDcIw0)
 
@@ -98,7 +98,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.21.12 release verification · 2026-10-10**. Results use fixed corpora and reference criteria.
+**4.21.13 release verification · 2026-10-10**. Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
@@ -111,14 +111,15 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 Table structure, cell content and visual fidelity are separate metrics. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions and the per-document comparison of every bench.
 
-The external **opendataloader-bench, 200 documents** was measured with the 4.21.12 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
+The external **opendataloader-bench, 200 documents** was measured with the 4.21.13 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 
 ## Recent updates
 
-Latest release: **[4.21.12](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.12)** · 2026-10-10
+Latest release: **[4.21.13](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.13)** · 2026-10-10
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.13 | PDF statute-annex rows across pages — a serial number moving on starts a new row, "가)" items count as item heads, a long cell flowing across a page spans both rows; parse-worker ends quietly on a closed stdout (#142) (annex PDF table structure match 96.82 → 97.40%, no document down) |
 | 4.21.12 | PDF cell digits, crossing text boxes, spread labels and script overlap — digit lines joined only when they fill the cell, overlapping text boxes read as prose, spread two-syllable row labels joined, attached scripts may overlap their host by a quarter em (PDF word-boundary F1 98.86 → 98.87%, ODL table TEDS 0.9799 → 0.9802, no document down) |
 | 4.21.11 | PDF contents pages, title-tab boxes and cell scripts — TOC leaders dropped, a box with a title chip read as prose, TOC titles paired with their page numbers, attached scripts in form cells (PDF text precision 99.58 → 99.64%, OCR CER 0.0421 → 0.0412, no document down; degraded OCR sampled three other pages) |
 | 4.21.10 | PDF flow-chart tables and parenthetical glosses — a borderless candidate spanning a ruled table is dropped, a break before a short gloss is joined (word-boundary F1 98.84 → 98.85%, OCR CER 0.0443 → 0.0421, no document down) |
