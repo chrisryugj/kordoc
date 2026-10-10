@@ -14,7 +14,7 @@ import { tagScripts } from "./script-items.js"
 
 /** 시도·전국 이름표 — 두 음절 배분 칸을 문서 어휘 증거 없이도 붙이는 닫힌 목록. "전 체"·"구 분" 같은 표 머리글은 원고에서 띄어 쓰기도
  *  해서(해외직접투자 보도자료 정답 "전 체") 넣지 않는다 */
-const REGION_LABELS = new Set(["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주", "전국"])
+export const REGION_LABELS = new Set(["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주", "전국"])
 import { type WrapLexicon, cellLineWraps, cellLineFills, startsNewItem, wrapJoiner } from "./line-wrap.js"
 
 /** 셀 경계 내부 판별 여유 (텍스트 매핑용) */

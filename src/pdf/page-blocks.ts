@@ -28,8 +28,9 @@ import { mergeSliverColumns } from "./table-trim.js"
 import { headerLineAbove } from "./grid-header-line.js"
 import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, TABLE_ROWYS, recordCellLines, recordRowRules } from "./table-meta.js"
 import { hasCrossingFrames } from "./crossing-frames.js"
+import { joinSpreadRowLabels } from "./spread-labels.js"
 import { recordClipCellEdges, takeClipCellEdges } from "./cell-edges.js"
-import { cleanCellText, splitAcrossCells } from "./cell-text.js"
+import { cleanCellText, splitAcrossCells, REGION_LABELS } from "./cell-text.js"
 import { rebuildUnitLine, prependUnitRow, attachUnitRow } from "./table-unit-row.js"
 import { WrapLexicon } from "./line-wrap.js"
 import { isPageFrameGrid } from "./page-frame.js"
@@ -570,6 +571,16 @@ function extractBlocksWithGrids(
       takeClipCellEdges(cell, irGrid[cell.row][cell.col])
     }
 
+    // 숫자 값 행의 벌어진 두 음절 머리 칸("건  축")을 붙인다 (spread-labels)
+    if (lex) {
+      const boxes = new Map(cells.map(c => [irGrid[c.row][c.col], c.bbox] as const))
+      // 두 번째 음절 앞에 진짜 공백 글리프(pdfjs 가 틈에 만든 합성 공백 말고)가 있는 칸 — 원문이 띄웠다
+      const spaced = new Set(cells.filter(c => {
+        const its = [...(cellTextMap.get(c) ?? [])].sort((a, b) => a.x - b.x)
+        return its.length === 2 && !!its[1].hasSpaceBefore && !its[1].syntheticSpace
+      }).map(c => irGrid[c.row][c.col]))
+      joinSpreadRowLabels(irGrid, lex, REGION_LABELS, cell => boxes.get(cell), cell => spaced.has(cell))
+    }
     // 과소분할 표 재구성 (ODL TableStructureNormalizer):
     // 행≤5 + 열≥3 + 셀 안에 텍스트 줄이 뭉친 표는 줄 centerY 기반 row band로 행 복원
     // (중첩표를 품은 틀·셀 클립 그리드는 셀 구조가 확정된 것이라 재구성하지 않는다 — 클립 표에 돌리면 상자 안
