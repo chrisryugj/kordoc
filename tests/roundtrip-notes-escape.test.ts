@@ -63,8 +63,10 @@ describe("patchHwpx — 각주 참조 부호가 있는 문단", () => {
     const res = await patchHwpx(original, edited)
     assert.ok(res.success && res.applied === 1, JSON.stringify(res.skipped))
     const ts = tTexts(await sectionXml(res.data!))
-    // 본문 부호 "액체1)" 만 빠지고, 사용자가 띄어 쓴 리터럴 "1)" 은 남는다
-    assert.ok(ts.some(t => t.includes("플라스틱 액체와 같은 원료 1) 를 쓴다")), JSON.stringify(ts))
+    // 본문 부호 "액체1)" 만 빠지고, 사용자가 띄어 쓴 리터럴 "1)" 은 남는다. 바뀐 자리만 고치므로 주석 개체 앞뒤
+    // hp:t 가 각자 제 글을 지킨다: 주석 자리("액체" 뒤)가 문단 끝으로 밀리지 않는다
+    assert.ok(ts.includes("플라스틱 액체") && ts.includes("와 같은 원료 1) 를 쓴다"), JSON.stringify(ts))
+    assert.ok(!ts.some(t => /액체1\)/.test(t)), JSON.stringify(ts))
   })
 
   it("주석 글 수정은 미지원 사유로 보고하고 본문만 적용, 주석 XML 은 그대로", async () => {

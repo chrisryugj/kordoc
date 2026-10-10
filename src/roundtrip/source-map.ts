@@ -729,6 +729,59 @@ export function allLinesegRemovalSplices(xml: string): SpliceEdit[] {
 }
 
 /**
+ * 글이 바뀐 문단의 <hp:linesegarray> 만 지우는 splice 목록: 편집 위치를 품은 가장 안쪽 문단(본문 문단·칸 문단)의 캐시만
+ * 지운다. 표를 담은 호스트 문단은 글이 그대로라 캐시를 둔다(행 추가·삭제처럼 칸 밖 편집이면 그 자리의 가장 안쪽 문단이
+ * 호스트라 지워진다). 편집 범위 안에 통째로 든 캐시(행 삭제·문단 교체)는 편집이 지우므로 뺀다.
+ *
+ * 섹션 전체를 지우면(allLinesegRemovalSplices) 자체 조판이 없는 뷰어(rhwp 미리보기·PDF)가 손대지 않은 쪽까지 다시 짜서
+ * 글자가 벌어지고 줄이 꺾이고 아래가 잘렸다(광진구 실문서 채우기·패치 27건 전부, 원본에서 캐시만 지운 대조본과 픽셀 차이 0).
+ * rhwp 는 최상위 문단 하나라도 캐시가 없으면 그 구역의 세로 배치를 다시 짜고(줄 나눔은 캐시대로), 칸 문단의 캐시가 없는
+ * 것은 그 칸만 다시 짠다: 그래서 호스트 문단 캐시를 지우지 않는 것이 채우기 결과를 지킨다(정부포상 동의서 실측: 최상위
+ * 문단 캐시 1개 삭제 → 두 쪽 픽셀 차이 11.4%·11.2%, 칸 문단 캐시 1개 삭제 → 0%).
+ * 한컴은 캐시가 일부 문단에만 없어도 경고 없이 연다: 한글 2024 실기기 대조(4.x Verified: 전체·일부·미삭제 세 변형 모두
+ * 경고 없음)와 한컴 저장본 자체의 혼합 캐시(verify-reflow 36264961) 근거
+ */
+export function changedLinesegRemovalSplices(xml: string, edits: SpliceEdit[]): SpliceEdit[] {
+  if (edits.length === 0) return []
+  const points = edits.map(e => e.start).sort((a, b) => a - b)
+  const tagRe = /<(\/?)((?:[A-Za-z0-9_]+:)?(?:p|linesegarray))(?=[\s/>])(?:"[^"]*"|'[^']*'|[^>"'])*?(\/?)>/g
+  const stack: Array<{ dirty: boolean; seg?: { start: number; end: number } }> = []
+  const out: SpliceEdit[] = []
+  let pi = 0
+  let m: RegExpExecArray | null
+  while ((m = tagRe.exec(xml)) !== null) {
+    // 이 태그 앞(같은 자리 포함)의 편집 지점은 지금 열린 가장 안쪽 문단을 더럽힌다: 문단 여는 태그 자리의 편집(문단 교체)은 바깥 문단
+    while (pi < points.length && points[pi] <= m.index) {
+      if (stack.length) stack[stack.length - 1].dirty = true
+      pi++
+    }
+    const [full, close, qname, selfClose] = m
+    const isSeg = qname.endsWith("linesegarray")
+    if (isSeg) {
+      if (close) continue
+      let end = m.index + full.length
+      if (!selfClose) {
+        const ci = xml.indexOf(`</${qname}>`, end)
+        if (ci < 0) continue
+        end = ci + qname.length + 3
+        tagRe.lastIndex = end
+      }
+      const top = stack[stack.length - 1]
+      if (top && !top.seg) top.seg = { start: m.index, end }
+      continue
+    }
+    if (close) {
+      const p = stack.pop()
+      if (p?.dirty && p.seg) out.push({ start: p.seg.start, end: p.seg.end, replacement: "" })
+    } else if (!selfClose) {
+      stack.push({ dirty: false })
+    }
+  }
+  const claimed = edits.filter(e => e.end > e.start)
+  return out.filter(ls => !claimed.some(c => ls.start >= c.start && ls.end <= c.end))
+}
+
+/**
  * splice 일괄 적용 — 시작 위치로 정렬(같으면 넣은 순서), 겹치면 내부 오류, 원문 조각과 치환 글을 한 번에 잇는다.
  * 종전엔 뒤에서부터 slice+치환+slice 를 되풀이해 splice 마다 문자열 전체를 복사했다(O(글자 수 × splice 수)) —
  * 줄 배치 캐시를 전부 지우는 큰 섹션(1,020만 자·26,939 splice)에서 patch·fill·seal 이 32.6초 (v4.14.4 리뷰 실측).

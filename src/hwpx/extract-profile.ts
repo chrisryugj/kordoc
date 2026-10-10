@@ -84,7 +84,8 @@ function parseCharPrs(headerDoc: Document, hangulFonts: Map<string, string>): Ma
     if (color) def.textColor = color
     if (cp.getAttribute("bold") === "1") def.bold = true
     if (cp.getAttribute("italic") === "1") def.italic = true
-    if (findChildByLocalName(cp, "underline")) def.underline = true
+    // 판별자는 type: 한컴은 밑줄 없는 charPr 에도 <hh:underline type="NONE"> 을 넣는다 (파서 styles.ts 와 같은 규칙: BOTTOM 만)
+    if (findChildByLocalName(cp, "underline")?.getAttribute("type") === "BOTTOM") def.underline = true
     const fontRef = findChildByLocalName(cp, "fontRef")
     const hangul = fontRef?.getAttribute("hangul")
     if (hangul) {

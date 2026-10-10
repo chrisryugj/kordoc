@@ -164,6 +164,8 @@ export interface ClickHereFillOutcome {
   filled: FormField[]
   /** 매칭된 정규화 키 — 이후 라벨 매칭에서 제외할 대상 */
   matchedKeys: Set<string>
+  /** 고친 자리(치환 뒤 xml 좌표): 그 문단의 줄 배치 캐시만 지우는 데 쓴다 */
+  changedAt: number[]
 }
 
 /**
@@ -205,10 +207,18 @@ export function fillClickHereInXml(
     splices.push({ start: region.start, end: region.end, replacement })
   }
 
+  // 치환 뒤 좌표: 앞선 치환의 길이 차를 누적한다 (applySplices 와 같은 시작 위치 정렬)
+  const changedAt: number[] = []
+  let delta = 0
+  for (const s of [...splices].sort((a, b) => a.start - b.start)) {
+    changedAt.push(s.start + delta)
+    delta += s.replacement.length - (s.end - s.start)
+  }
   return {
     xml: splices.length > 0 ? applySplices(xml, splices) : null,
     filled,
     matchedKeys,
+    changedAt,
   }
 }
 
