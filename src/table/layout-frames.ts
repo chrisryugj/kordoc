@@ -28,6 +28,10 @@ export const CELL_PAGES = new WeakMap<IRCell, number>()
  *  접지 않게 파서가 표시한다 (경찰복제 [별표] 특수복식 도면 행) */
 export const CONTENT_CELLS = new WeakSet<IRCell>()
 
+/** 칸 글 줄마다의 기준선 y (위→아래, 칸 text 의 줄과 같은 수일 때만 쓴다) — PDF 가 칸 글줄 기하로 채운다. 목차 행의 제목 줄과
+ *  쪽 번호 줄을 짝짓는다 (textRow) */
+export const CELL_BASELINES = new WeakMap<IRCell, number[]>()
+
 /** 분수 칸 글 상한(자) — 분자·분모는 식 조각이다. 문장 칸이 가로선 하나로 나뉜 것과 가른다 */
 const FRACTION_MAX_CHARS = 40
 
@@ -180,18 +184,41 @@ function bandTable(t: IRTable, anchors: Anchor[], V: boolean[][], H: boolean[][]
   return { rows, cols, cells, hasHeader: t.hasHeader, ...(emptyBand ? { renderAsTable: true } : {}) }
 }
 
-/** 글 띠 행 → 문단. 칸이 하나면 칸 안 줄마다, 여럿이면 칸 글을 공백으로 이은 한 문단. 칸 블록은 재귀로 푼다 */
+/** 목차 행 — 제목 칸과 쪽 번호 칸("1. 직업계고 현장실습의 이해⏎2. 현장실습 운영지원 | 2⏎8")을 기준선으로 짝지은 줄들. 칸 글을 통째로
+ *  이으면 제목을 다 읽은 뒤 쪽 번호만 몰렸다(현장실습 매뉴얼 목차 "…운영지원 2 8"). 쪽 번호 없는 줄(장 제목)은 홀로 선다. 짝이 안 맞으면 null */
+function tocLines(cells: IRCell[]): string[] | null {
+  if (cells.length !== 2) return null
+  const [titles, pages] = cells.map(c => c.text.trim().split("\n").map(l => l.trim()))
+  const [ty, py] = cells.map(c => CELL_BASELINES.get(c))
+  if (!ty || !py || ty.length !== titles.length || py.length !== pages.length || titles.length < 2 ||
+      !pages.every(l => /^\d{1,4}$/.test(l)) || titles.some(l => !l || /^\d{1,4}$/.test(l))) return null
+  const lines = [...titles], taken = new Set<number>()
+  for (let j = 0; j < pages.length; j++) {
+    const i = ty.findIndex(y => Math.abs(y - py[j]) <= 3)
+    if (i < 0 || taken.has(i)) return null
+    taken.add(i)
+    lines[i] += " " + pages[j]
+  }
+  return lines
+}
+
+/** 글 띠 행 → 문단. 칸이 하나면 칸 안 줄마다, 여럿이면 칸 글을 공백으로 이은 한 문단(목차 행은 줄마다 "제목 쪽"). 칸 블록은 재귀로 푼다 */
 function textRow(row: Anchor[], out: IRBlock[], pageNumber: number | undefined, keepEmptyCols: boolean): void {
   const parts: string[] = []
+  const cells: IRCell[] = []
   const flush = (): void => {
     if (!parts.length) return
-    if (parts.length === 1) {
+    const toc = tocLines(cells)
+    if (toc) {
+      for (const line of toc) out.push({ type: "paragraph", text: line, pageNumber })
+    } else if (parts.length === 1) {
       for (const line of parts[0].split("\n")) if (line.trim()) out.push({ type: "paragraph", text: line.trim(), pageNumber })
     } else {
       const text = parts.map(p => p.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean).join(" ")
       if (text) out.push({ type: "paragraph", text, pageNumber })
     }
     parts.length = 0
+    cells.length = 0
   }
   for (const a of row) {
     if (a.cell.blocks?.length) {
@@ -199,7 +226,7 @@ function textRow(row: Anchor[], out: IRBlock[], pageNumber: number | undefined, 
       out.push(...unframeLayoutTables(a.cell.blocks, keepEmptyCols))
       continue
     }
-    if (a.cell.text.trim()) parts.push(a.cell.text.trim())
+    if (a.cell.text.trim()) { parts.push(a.cell.text.trim()); cells.push(a.cell) }
   }
   flush()
 }

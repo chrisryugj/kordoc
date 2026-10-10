@@ -333,6 +333,13 @@ describe("칸 글 줄 병합 — 숫자", () => {
     const full = (text: string, y: number, x: number) => ({ text, x, y, w: text.length * 5, h: 10, fontSize: 10, fontName: "f" })
     assert.equal(cellTextToString([full("1,234,567,8", 100, 338), full("90", 85, 338)], { box: { x1: 336, x2: 394 } }), "1,234,567,890")
   })
+  it("좁은 쪽 번호 칸에 쌓인 세 자리 번호는 잇지 않는다 — 칸을 다 채우지 않은 줄 (현장실습 매뉴얼 목차 \"124135\")", () => {
+    const page = (text: string, y: number) => ({ text, x: 480 - text.length * 6, y, w: text.length * 6, h: 10, fontSize: 10, fontName: "f" })
+    assert.equal(cellTextToString([page("95", 120), page("124", 100), page("135", 85)], { box: { x1: 439, x2: 479 } }), "95\n124\n135")
+    // 칸 폭을 꽉 채우고 꺾인 숫자는 잇는다
+    const fill = (text: string, y: number) => ({ text, x: 441, y, w: text.length * 6, h: 10, fontSize: 10, fontName: "f" })
+    assert.equal(cellTextToString([fill("123456", 100), fill("78", 85)], { box: { x1: 439, x2: 479 } }), "12345678")
+  })
   it("글 뒤에 붙은 번호 조각(\"02-123\" / \"4567\")은 종전처럼 잇는다", () => {
     assert.equal(cellTextToString([item("02-123", 100), item("4567", 85)]), "02-1234567")
   })

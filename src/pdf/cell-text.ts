@@ -275,9 +275,12 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
   for (const e of lineEnds) if (e.right > cellRight) cellRight = e.right
   const wraps = lineEnds.slice(0, -1).map((a, i) => cellLineWraps(wrap.box, contentLeft, a.right, a.fontSize, lineEnds[i + 1].firstCharW)
     || (lineEnds.length >= 3 && !textLines[i + 1].startsWith("(") && cellLineFills(wrap.box, contentLeft, cellRight, a.right, a.fontSize)))
-  // 줄이 칸 안쪽 폭의 60% 이상을 채웠나 — 오른쪽 정렬 금액("500")은 칸 오른끝에 닿아 꺾임으로 보여도 칸을 채운 줄이 아니다
-  const pad = Math.min(6, Math.max(0, contentLeft - wrap.box.x1)), inner = wrap.box.x2 - wrap.box.x1 - 2 * pad
-  const wide = lineEnds.slice(0, -1).map(a => a.right - a.left >= 0.6 * inner)
+  // 줄이 칸 안쪽 폭을 채웠나 — 다음 줄 첫 글자가 이 줄 앞뒤 어디에도 못 들어갈 때만 꺾여 잘린 숫자다. 오른쪽 정렬 금액("500")은 칸 오른끝에
+  // 닿아 꺾임으로 보여도 칸을 채운 줄이 아니고, 좁은 쪽 번호 칸에 쌓인 세 자리 번호("124" / "135" → 종전 "124135", 현장실습 매뉴얼 목차 —
+  // 칸 안쪽 폭의 64%라 종전 60% 문턱을 넘었다)도 그렇다. 안 여백은 글 왼끝·오른끝 쪽 빈자리 가운데 좁은 쪽 — 오른쪽 정렬 칸의 왼쪽 빈자리는 여백이 아니다
+  const pad = Math.min(6, Math.max(0, contentLeft - wrap.box.x1), Math.max(0, wrap.box.x2 - cellRight))
+  const inner = wrap.box.x2 - wrap.box.x1 - 2 * pad
+  const wide = lineEnds.slice(0, -1).map((a, i) => a.right - a.left + 1.5 * lineEnds[i + 1].firstCharW > inner)
   return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide }))
 }
 

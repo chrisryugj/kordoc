@@ -5,7 +5,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { CELL_EDGES, unframeLayoutTables, type Edges } from "../src/table/layout-frames.js"
+import { CELL_BASELINES, CELL_EDGES, unframeLayoutTables, type Edges } from "../src/table/layout-frames.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 import JSZip from "jszip"
 import { extractHwpxStyles } from "../src/hwpx/styles.js"
@@ -156,6 +156,19 @@ describe("unframeLayoutTables", () => {
     const blocks = unframeLayoutTables([{ type: "table", table: outer }])
     assert.deepEqual(blocks.map(b => b.type), ["paragraph", "paragraph", "table"])
     assert.equal(blocks[2].table, inner)
+  })
+
+  it("목차 행은 제목 줄과 쪽 번호 줄을 기준선으로 짝짓는다 — 장 제목은 홀로 (현장실습 매뉴얼 목차 \"…운영지원 2 8\")", () => {
+    const t = table([[["", 1, 1, NONE], ["Ⅰ. 직업계고 현장실습의 개요\n1. 직업계고 현장실습의 이해\n2. 현장실습 운영지원", 1, 1, NONE], ["2\n8", 1, 1, NONE]]], 3)
+    CELL_BASELINES.set(t.cells[0][1], [583, 564, 545])
+    CELL_BASELINES.set(t.cells[0][2], [563, 547])
+    const texts = unframeLayoutTables([{ type: "table", table: t }]).map(b => b.text)
+    assert.deepEqual(texts, ["Ⅰ. 직업계고 현장실습의 개요", "1. 직업계고 현장실습의 이해 2", "2. 현장실습 운영지원 8"])
+    // 기준선이 없거나(다른 포맷) 짝이 안 맞으면 종전대로 한 문단
+    const u = table([[["가\n나", 1, 1, NONE], ["2\n8", 1, 1, NONE]]], 2)
+    CELL_BASELINES.set(u.cells[0][0], [583, 564])
+    CELL_BASELINES.set(u.cells[0][1], [520, 500])
+    assert.deepEqual(unframeLayoutTables([{ type: "table", table: u }]).map(b => b.text), ["가 나 2 8"])
   })
 })
 
