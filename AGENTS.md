@@ -33,6 +33,7 @@ node bench/predict-layout.mjs 문서.hwpx --loose   # 생성 공문서의 한글
 - `fuzz-sweep` 의 느림 판정은 벽시계 기준이라 다른 게이트와 동시에 돌리면 플레이크 — 의심되면 `node bench/fuzz-sweep.mjs --gate` 단독 재실행.
 - ESLint·Prettier 는 없다. 주변 코드의 스타일·주석 밀도를 따른다.
 - 배포: `npm publish`(prepublishOnly 가 sync-meta 드리프트·notices·typecheck·test·build·게이트를 강제, `--ignore-scripts` 금지) → 태그 → `gh release` → `mcp-publisher publish`(MCP 레지스트리, `server.json` 버전은 sync-meta 가 맞춘다).
+  Python SDK(`sdk/python`)는 별도: pyproject·`__version__` 을 올리고 태그 `python-vX.Y.Z` push → `publish-python.yml` 이 PyPI 신뢰 게시(환경 `pypi`).
   `docs/gongmunseo-engine-spec.md` 를 고치면 `npm run sync-meta` 로 스킬 사본을 맞춘다(드리프트면 게시가 멈춘다).
 
 ## 코퍼스
