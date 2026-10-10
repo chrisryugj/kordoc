@@ -505,6 +505,15 @@ function clauseContinues(u: IRCell, d: IRCell): boolean {
 }
 
 /**
+ * 수량 이어짐 — 앞 쪽 칸 글이 수량(숫자·%·단위)으로 끝나고 뒤 쪽 칸이 수량에만 붙는 비교 의존 명사("미만"·"이상"·"이하"·"초과")로 연다.
+ * 좁은 칸에 가운데 정렬한 짧은 머리 칸은 끝줄이 칸을 채우지 않아 글 이어짐(continuesAcross)으로 못 가른다(대기환경보전법 기본부과금
+ * 부과계수 "30%" / 다음 쪽 "미만"). 법령 별표·표·글 정답지 1,016 PDF 쪽 넘김 행 거절 342건 가운데 이 꼴은 그 한 건뿐이다
+ */
+function quantityContinues(u: IRCell, d: IRCell): boolean {
+  return /\d[\d,.]*\s*(?:%|[가-힣]{1,2})?$/.test(flowText(u.text).trim()) && /^(?:미만|이상|이하|초과)(?![가-힣])/.test(flowText(d.text).trim())
+}
+
+/**
  * 줄 넘침 — 앞 쪽 끝줄에 뒤 쪽 첫 어절을 붙이면 칸 폭을 넘는다(가운데 정렬이어도 그 어절은 그 줄에 못 들어가 줄이 바뀌었다). 좁은 칸의
  * 짧은 글은 새 칸 글과도 곧잘 들어맞아 홀로는 증거가 못 되고, 칸 조각 이어짐(carried)과 함께 볼 때만 쓴다
  * (양곡가공업자 처분기준 "영업정지 / 3개월" 57pt 칸, 선관위 자격증 "방송 / 통신" 40pt 칸)
@@ -614,6 +623,7 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
     if (pairs.some(([u, d]) => nextItemHead(cell(u).text, cell(d).text))
       && pairs.some(([u, d]) => hasContent(u.cell) && hasContent(d.cell) && oneLine(cell(u)) && oneLine(cell(d)) && norm(cell(u)) !== norm(cell(d)))) return false
     const flows = ([u, d]: [Anchor, Anchor]): boolean => continuesAcross(cell(u), cell(d), colXs[u.c], colXs[u.c + u.cs]) || clauseContinues(cell(u), cell(d))
+      || quantityContinues(cell(u), cell(d))
     // 괘선 없는 쪽 경계(3)는 글 증거 없이 합친다 — 앞 쪽 빈 칸 뒤 글(새 칸)이 없을 때만 (쪽 끝 빈 행 다음 새 표 행, 노인복지법 운영기준)
     if (!(cut.open && !newCell)) {
       // 그 칸 글이 스스로 이어지지 않는 여러 행 칸은 다음 쪽에서 새로 시작한 세로 병합 칸이다 (시험기준표 "KS D 3502 / KS F 4603" 아래

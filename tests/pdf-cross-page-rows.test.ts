@@ -455,4 +455,28 @@ describe("쪽 넘김 행 판정 — 번호 차례·항목 꼴·쪽 넘는 글 �
     assert.equal(res.table.cells[0][0].rowSpan, 1)
     assert.equal(res.table.cells[1][0].text, "준에 미달하게 된 경우")
   })
+
+  it("수량으로 끝난 칸 뒤 쪽 조각이 \"미만\"·\"이상\" 으로 열면 같은 칸이다 (대기환경보전법 부과계수 머리 \"30%\" / \"미만\")", () => {
+    // 좁은 칸에 가운데 정렬한 짧은 줄이라 끝줄이 칸을 채우지 않고, 쪽 경계에 괘선이 있다
+    const make = (a: string, b: string, c: string): IRTable => grid(1, 3, [[0, 0, a], [0, 1, b], [0, 2, c]])
+    const prev = make("30%", "30% 이상", "40% 이상"), curr = make("미만", "40% 미만", "50% 미만")
+    for (const [t, y] of [[prev, 40], [curr, 760]] as const) for (let c = 0; c < 3; c++) lines(t.cells[0][c], [[c * 50 + 15, c * 50 + 35, y]])
+    ROW_RULES.set(prev, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+    ROW_RULES.set(curr, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+    const res = joinSplitParts(prev, [0, 50, 100, 150], curr, [0, 50, 100, 150], 0, 30)!
+    assert.equal(res.table.rows, 1)
+    assert.equal(res.table.cells[0][0].text, "30%\n미만")
+    assert.equal(res.table.cells[0][2].text, "40% 이상\n50% 미만")
+  })
+
+  it("수량이 아닌 칸 뒤의 \"이상\" 이나 수량 칸 뒤의 다른 글은 새 행이다", () => {
+    const make = (a: string, b: string): IRTable => grid(1, 2, [[0, 0, a], [0, 1, b]])
+    for (const [up, down] of [[["구분", "기준"], ["이상", "미만"]], [["30%", "40%"], ["합계", "50%"]]] as const) {
+      const prev = make(up[0], up[1]), curr = make(down[0], down[1])
+      for (const [t, y] of [[prev, 40], [curr, 760]] as const) for (let c = 0; c < 2; c++) lines(t.cells[0][c], [[c * 50 + 15, c * 50 + 35, y]])
+      ROW_RULES.set(prev, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+      ROW_RULES.set(curr, { top: true, bottom: true, innerRuled: 0, innerOpen: 0 })
+      assert.equal(joinSplitParts(prev, [0, 50, 100], curr, [0, 50, 100], 0, 30)!.table.rows, 2, `${up} / ${down}`)
+    }
+  })
 })
