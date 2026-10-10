@@ -1,7 +1,7 @@
 {
   "name": "kordoc",
   "mcpName": "io.github.chrisryugj/kordoc",
-  "version": "4.21.17",
+  "version": "4.21.18",
   "description": "Parse Korean documents (HWP3-5, HWPX, HWPML, PDF, XLS(X), DOCX) to Markdown — CLI + MCP server with lossless patch/roundtrip, form-filler, document diff, print & layout-preserving SVG renderer",
   "type": "module",
   "exports": {

@@ -12,7 +12,7 @@ HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, PNG·JPG·WebP를 Markdow
 [English](README-EN.md) · [상세 사용법](docs/usage.md) · [벤치마크](docs/benchmarks.md) · [변경 이력](CHANGELOG.md)
 
 - 📊 **PDF 공개 벤치 종합 0.963** — opendataloader-bench 200문서. 공개 12개 파서 비교 1위(2026-09-29 기록). [측정 조건](docs/benchmarks.md)
-- 🇰🇷 **한국 공문서 표 구조 100%** — 원본 HWPX 2,424문서의 보이는 표 **10,342개 전부 구조 일치**. [4.21.17 검증](docs/benchmarks.md)
+- 🇰🇷 **한국 공문서 표 구조 100%** — 원본 HWPX 2,424문서의 보이는 표 **10,342개 전부 구조 일치**. [4.21.18 검증](docs/benchmarks.md)
 
 쓸모 있었다면 GitHub ⭐ 하나 눌러주세요. 다른 사람이 이 도구를 찾는 데 도움이 됩니다.
 
@@ -100,7 +100,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 검증 결과
 
-**4.21.17 · 2026-10-11 배포 검증**. 고정 코퍼스와 참조 기준으로 측정한 결과입니다.
+**4.21.18 · 2026-10-11 배포 검증**. 고정 코퍼스와 참조 기준으로 측정한 결과입니다.
 
 | 대상 | 규모 | 결과 |
 | --- | --- | --- |
@@ -113,14 +113,15 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 표 구조 점수와 셀 내용·화면 재현은 별도 지표입니다. 채점 범위·제외 기준·전 벤치 문서별 비교는 [벤치마크 상세](docs/benchmarks.md)에 있습니다.
 
-외부 PDF 벤치 **opendataloader-bench 200문서**는 4.21.17 배포 측정에서 기본값 종합 **0.963**, OCR 끔 **0.939**입니다. [옵션별 결과와 재현 방법](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
+외부 PDF 벤치 **opendataloader-bench 200문서**는 4.21.18 배포 측정에서 기본값 종합 **0.963**, OCR 끔 **0.939**입니다. [옵션별 결과와 재현 방법](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
 
 ## 최근 업데이트
 
-최신 배포: **[4.21.17](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.17)** · 2026-10-11
+최신 배포: **[4.21.18](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.18)** · 2026-10-11
 
 | 버전 | 주요 변경 |
 | --- | --- |
+| 4.21.18 | 쪽 넘김 문단 잇기도 줄 끝 공백 글리프를 어절 경계로 — "지원⏎활동이"·"계정⏎정보를" 을 띄워 씀 (PDF 어절 F1 98.986 → 98.987%, 5문서 상승) |
 | 4.21.17 | PDF 공백 없는 꽉 찬 줄 끝 + 영문 괄호 — "공적개발원조⏎(ODA)"·"하네스⏎(safety …)" 를 붙여 씀 (PDF 어절 F1 98.98 → 98.99%) |
 | 4.21.16 | PDF 표 쪽 넘김 갈린 행의 수량 이어짐 — 머리 칸 "30%" / 다음 쪽 "미만" 을 한 칸으로; 공문서 autoFit.safety(다른 조판기용 한 줄 판정 여유) (법령 별표 PDF 표 97.40 → 97.69%) |
 | 4.21.15 | PDF 줄 끝 공백 글리프로 어절 경계 꺾임 가르기 — 원문이 띄운 줄 꺾임("이루어⏎진다면")을 붙이던 것 (PDF 어절 F1 98.89 → 98.98%) |

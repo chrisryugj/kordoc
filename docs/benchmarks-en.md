@@ -2,9 +2,9 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.17 · 2026-10-11
+## Latest release results: 4.21.18 · 2026-10-11
 
-All benches measured on the 4.21.17 dist on 2026-10-11 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.16, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
+All benches measured on the 4.21.18 dist on 2026-10-11 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.17, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
 
 | Target | Population | Result |
 | --- | --- | --- |

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.18] - 2026-10-11
+
+### Fixed
+
+- PDF 쪽 넘김 문단 잇기가 원문이 띄운 자리를 붙이던 것 — 같은 쪽 줄 잇기는 줄 끝 아이템 뒤 공백 글리프를 어절 경계로 보는데(4.21.15) 앞 쪽 끝줄과 다음 쪽 첫 줄을 잇는 경로는 그 표시를 몰라, 어휘·형태 규칙이 원문의 "지원⏎활동이"·"계정⏎정보를"·"안⏎된다"·"ICPSR⏎37080" 같은 경계를 붙였다. 문단 끝줄 기하에 줄 끝 공백 표시를 함께 남겨 쪽 넘김 잇기도 띄운다.
+- 측정 — 4.21.17 대비 PDF 글 어절 F1 0.98986 → 0.98987(5문서 상승: 한-네팔 외교장관 통화 0.98810 → 0.99406, web056 Full-Template 0.99307 → 0.99446, 국민성장펀드 기금운용심의회 0.99199 → 0.99253, hwp3-sample5 0.99587 → 0.99593, 각주 꼬리 쪽 넘침 0.99324 → 0.99327), 재현율·정확도·읽기 순서는 그대로. PDF 표·법령 별표·score·OCR·열화 OCR·ODL 4모드·서식·왕복·생성은 문서별 변화 없음, 문서별 하락 0.
+
 ## [4.21.17] - 2026-10-11
 
 ### Fixed
