@@ -445,6 +445,22 @@ export function groupByY(items: NormItem[]): NormItem[][] {
  */
 /** 글자 앞에 붙는 첨자 꼴 — 라틴 글자·수식 기호가 없다 ("(’10)", "행안부", "①"; 적분 위끝 "3a+x" 는 아님) */
 export const PREFIX_SCRIPT = /^[^A-Za-z+=×÷<>≤≥∫∑∏√∞^_{}\\/]+$/
+/** 첨자 조각 줄 — 짧은 기호 조각 여럿(각 3자 이하 — 저자 줄 소속 표시 ∗·†·a·1)은 합이 10자를 넘어도, 조각마다 옆 줄 글자 오른끝에
+ *  붙어(0.35em 안) 있으면 조각이다. 글자 위에 얹힌 수식 조각(∑ 위아래 극한)은 붙어 있지 않다.
+ *  라틴 글자·수식 기호 없는 8자 이하 첨자는 글자 앞(빈칸 하나 0.6em 안)에 붙어도 같다 — 연도 위첨자 "(’10)10.2만건 → (’25)17.1만건"·
+ *  부처 첨자 "행안부급경사지, 국토부도로비탈면"·원문자 "①디스플레이, ②항공" 이 한 줄에 여럿. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 뺀다.
+ *  본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
+export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number; w: number }>, host: ReadonlyArray<{ x: number; w: number; fontSize: number }>): boolean {
+  return line.length > 1 && line.length <= 16 && line.every(i => {
+    const t = i.text.trim(), n = t.length
+    if (n > 8 || !n) return false
+    return host.some(h => {
+      const after = i.x - (h.x + h.w), before = h.x - (i.x + i.w)
+      return (n <= 3 && after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.1) ||
+        (PREFIX_SCRIPT.test(t) && before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1)
+    })
+  })
+}
 export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   if (lines.length <= 1) return lines
   const band = (line: NormItem[]) => {
@@ -464,19 +480,7 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
     for (const i of line) total += i.text.trim().length
     return total > 0 && total <= 10
   }
-  // 짧은 기호 조각 여럿(각 3자 이하 — 저자 줄 소속 표시 ∗·†·a·1)은 합이 10자를 넘어도, 조각마다 옆 줄 글자 오른끝에
-  // 붙어(0.35em 안) 있으면 조각이다. 글자 위에 얹힌 수식 조각(∑ 위아래 극한)은 붙어 있지 않다.
-  // 라틴 글자·수식 기호 없는 8자 이하 첨자는 글자 앞(빈칸 하나 0.6em 안)에 붙어도 같다 — 연도 위첨자 "(’10)10.2만건 → (’25)17.1만건"·
-  // 부처 첨자 "행안부급경사지, 국토부도로비탈면"·원문자 "①디스플레이, ②항공" 이 한 줄에 여럿. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 뺀다
-  const isMarkers = (line: NormItem[], host: NormItem[]) => line.length > 1 && line.length <= 16 && line.every(i => {
-    const t = i.text.trim(), n = t.length
-    if (n > 8 || !n) return false
-    return host.some(h => {
-      const after = i.x - (h.x + h.w), before = h.x - (i.x + i.w)
-      return (n <= 3 && after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.1) ||
-        (PREFIX_SCRIPT.test(t) && before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1)
-    })
-  })
+  const isMarkers = isAttachedScripts
 
   const result: NormItem[][] = [lines[0]]
   for (let i = 1; i < lines.length; i++) {

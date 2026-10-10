@@ -9,7 +9,7 @@
  */
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
-import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing } from "./text-line.js"
+import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing, isAttachedScripts } from "./text-line.js"
 import { tagScripts } from "./script-items.js"
 
 /** 시도·전국 이름표 — 두 음절 배분 칸을 문서 어휘 증거 없이도 붙이는 닫힌 목록. "전 체"·"구 분" 같은 표 머리글은 원고에서 띄어 쓰기도
@@ -310,8 +310,9 @@ function mergeSuperscriptRows(lines: TextItem[][]): TextItem[][] {
     const a = band(prev)
     const b = band(curr)
     const overlap = Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom)
-    const prevIsFrag = isFrag(prev) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
-    const currIsFrag = isFrag(curr) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
+    // 글자마다 붙은 첨자 여럿(서식 칸 "□예 □아니오" 의 작은 "예"·"아니오" 가 한 줄에 여섯)도 본문 줄과 같은 규칙으로 (isAttachedScripts)
+    const prevIsFrag = (isFrag(prev) || isAttachedScripts(prev, curr)) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
+    const currIsFrag = (isFrag(curr) || isAttachedScripts(curr, prev)) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
     if (prevIsFrag || currIsFrag) {
       result[result.length - 1] = [...prev, ...curr]
     } else {

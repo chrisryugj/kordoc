@@ -9,6 +9,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
+import { cellTextToString } from "../src/pdf/cell-text.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 
 type Row = [y: number, fontSize: number, items: Array<[text: string, x: number, w: number]>]
@@ -68,5 +69,20 @@ describe("첨자 행", () => {
       "* 경력단절여성 규모 : (’14)2,164천 → (‘17)1,811천 → (‘19)1,699천 → (‘25)1,105천",
       "* 과정수(고부가가치) : (’10) 184개(0개) → (‘16)690개(25개) → (‘26)795개(103개)",
     ])
+  })
+})
+
+describe("칸 글 첨자 행", () => {
+  it("서식 칸의 작은 \"예\"·\"아니오\" 여섯이 네모 칸 뒤에 붙어 뜬 줄은 그 줄에 흡수한다 (약물운전자 정황진술보고서 \"□예 □아니오\")", () => {
+    const t = (text: string, x: number, y: number, w: number, fontSize: number) => ({ text, x, y, w, h: fontSize, fontSize, fontName: "F" })
+    const line = [t("∘", 137.4, 558, 5.5, 11), t("지그재그 운전", 142.7, 558, 66.6, 11), t("□", 213.5, 558, 11, 11), t("□", 232.6, 558, 11, 11),
+      t("∘", 267.1, 558, 5.5, 11), t("야간 전조등 미점등", 272.3, 558, 91.8, 11), t("□", 368.2, 558, 11, 11), t("□", 387.4, 558, 11, 11),
+      t("∘", 421.9, 558, 5.5, 11), t("도주", 427.2, 558, 21.6, 11), t("□", 453.6, 558, 11, 11), t("□", 473.5, 558, 11, 11)]
+    // 여섯 조각·12자 — 조각 줄 글자 수 상한(10자)을 넘는다
+    const labels = [t("예", 223.6, 562.9, 7.1, 7.1), t("아니오", 242.6, 562.9, 20, 7.1), t("예", 378.4, 562.9, 7.1, 7.1), t("아니오", 397.5, 562.9, 20, 7.1),
+      t("예", 464.1, 562.9, 7.1, 7.1), t("아니오", 484.1, 562.9, 20.6, 7.1)]
+    // 첨자 태그(<sup>)는 판정 뒤에 붙는다 — PDF 기본 출력은 걷는다
+    const text = cellTextToString([...labels, ...line], { box: { x1: 130, x2: 520 } }).replace(/<\/?sup>/g, "")
+    assert.equal(text, "∘지그재그 운전 □예 □아니오 ∘야간 전조등 미점등 □예 □아니오 ∘도주 □예 □아니오")
   })
 })
