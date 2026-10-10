@@ -137,6 +137,7 @@ Java·Python SDK(`sdk/java`, `sdk/python`)를 쓰면 SDK 쪽에서 두 가지 �
 파일로 쓴 뒤 파싱하고, 성공·실패·취소와 관계없이 그 요청이 끝나면 지운다. 클라이언트를 닫을 때 디렉터리도 지운다.
 이미지 파일 전송(`parse-worker --protocol 2` 의 `transport.images: "files"`)은 호출자가 지정한 디렉터리 아래에 요청별 디렉터리를 만들어
 이미지 바이트를 쓴다. 이 파일은 호출자 소유라 워커와 SDK 가 지우지 않는다. 응답을 보내지 못한 요청의 디렉터리만 지운다.
+워커가 응답 전에 강제 종료되면(SDK 의 제한 시간·취소·close) 그 요청의 `kordoc-<id>-*` 디렉터리가 남을 수 있다. 호출자가 정리한다.
 SDK 에서 엔진을 쓸 때는 번들 안의 `node_modules/kordoc/dist/cli.js` 를 SDK 설정 `cli` 로 지정하고 `KORDOC_OFFLINE=1` 을 워커 환경에 넣는다.
 
 

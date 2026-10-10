@@ -113,9 +113,12 @@ public final class KordocConfig {
     }
 
     private static String which(String name) {
-        String path = System.getenv("PATH");
+        return which(name, System.getenv("PATH"), System.getProperty("os.name", "").toLowerCase().contains("win"));
+    }
+
+    /** path(PATH 값)에서 실행 파일 name 을 찾는다. Windows 면 .exe·.cmd 를 붙여서도 찾는다(npm 전역 설치의 kordoc 은 kordoc.cmd) */
+    static String which(String name, String path, boolean windows) {
         if (path == null) return null;
-        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
         for (String dir : path.split(File.pathSeparator)) {
             for (String ext : windows ? new String[] {".exe", ".cmd", ""} : new String[] {""}) {
                 Path p = Path.of(dir, name + ext);

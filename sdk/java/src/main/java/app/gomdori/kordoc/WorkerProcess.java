@@ -22,13 +22,15 @@ final class WorkerProcess {
     private final BlockingQueue<Object> lines = new LinkedBlockingQueue<>();
     private final byte[] stderrTail;
     private int stderrLen;
-    private Process proc;
+    /** kill 은 다른 스레드(close·취소)에서도 부른다 — 시작 중에 부르면 띄운 뒤의 값을 봐야 한다 */
+    private volatile Process proc;
+    /** kill 을 불렀다 — 프로세스가 생기기 전에 불렀으면 start 가 띄운 직후 이것을 보고 종료한다 */
+    private volatile boolean killed;
     private OutputStream stdin;
     private Thread stdoutThread;
     private Thread stderrThread;
     String version;
     volatile Long lastRss;
-    volatile WarmupReport.Worker warmup;
 
     WorkerProcess(KordocConfig config) {
         this.config = config;
@@ -56,6 +58,7 @@ final class WorkerProcess {
         stdoutThread = daemon("kordoc-worker-stdout-" + proc.pid(), this::readStdout);
         stderrThread = daemon("kordoc-worker-stderr-" + proc.pid(), this::readStderr);
         try {
+            if (killed) throw new KordocStartException("워커를 띄우는 중에 종료 요청을 받았습니다");
             handshake();
         } catch (RuntimeException e) {
             kill();
@@ -95,37 +98,48 @@ final class WorkerProcess {
         version = ready.path("version").asText(null);
     }
 
-    /**
-     * 요청 하나를 보내고 같은 id 의 응답을 돌려준다. 워커가 거부하면 KordocProtocolException(워커는 멀쩡하다).
-     * 워커가 끝났거나 응답이 깨졌으면 KordocWorkerCrashedException — 이 워커는 더 쓰지 않는다.
-     * 다른 스레드가 {@link #kill()} 하면 EOF 로 깨어나 KordocWorkerCrashedException 을 던진다.
-     */
     /** 지금 이 워커가 처리 중인 작업 (killIfRunning 이 다른 작업을 받은 워커를 죽이지 않게). stderr 꼬리와 다른 잠금 —
      *  kill 이 stderr 스레드를 기다리는 동안 그 스레드가 this 잠금(appendTail)에서 막히지 않게 */
     private final Object currentLock = new Object();
     private Object current;
+    /** killIfRunning 으로 이 워커를 죽인 작업 — 응답이 이미 와 있어도 그 작업의 결과로 쓰지 않는다 */
+    private Object killedFor;
 
     /**
-     * 요청 하나(requestLine — 미리 직렬화한 msg)를 보내고 같은 id 의 응답을 돌려준다. job 은 이 요청을 맡긴 작업(취소·제한 시간이
-     * {@link #killIfRunning} 으로 이 워커를 죽일지 가르는 표시, 워밍업은 null)
+     * 이 워커가 job 을 맡는다고 표시한다. {@link #request} 전에, 취소·제한 시간이 이 워커를 찾을 수 있게 되는 시점과 같은 잠금 안에서
+     * 부른다 — 그 사이에 온 취소가 "아직 이 작업을 하지 않는다"로 보고 kill 을 건너뛰지 않게
      */
-    ObjectNode request(ObjectNode msg, byte[] requestLine, Object job) {
+    void assign(Object job) {
         synchronized (currentLock) {
             current = job;
         }
+    }
+
+    /**
+     * 요청 하나(requestLine — 미리 직렬화한 msg)를 보내고 같은 id 의 응답을 돌려준다. job 은 {@link #assign} 으로 맡긴 작업이다.
+     * 워커가 거부하면 KordocProtocolException(워커는 멀쩡하다). 워커가 끝났거나 응답이 깨졌거나 이 작업 때문에
+     * {@link #killIfRunning} 으로 종료됐으면 KordocWorkerCrashedException — 이 워커는 더 쓰지 않는다.
+     */
+    ObjectNode request(ObjectNode msg, byte[] requestLine, Object job) {
+        ObjectNode resp;
+        boolean killedForJob;
         try {
-            return exchange(msg, requestLine);
+            resp = exchange(msg, requestLine);
         } finally {
             synchronized (currentLock) {
+                killedForJob = killedFor == job;
                 current = null;
             }
         }
+        if (killedForJob) throw new KordocWorkerCrashedException("취소·제한 시간으로 워커를 종료했습니다", stderrTail());
+        return resp;
     }
 
     /** 이 워커가 아직 job 을 처리 중일 때만 죽인다 — 늦은 응답과 겹쳐 이미 다음 작업을 받은 워커를 죽이지 않는다 */
     void killIfRunning(Object job) {
         synchronized (currentLock) {
             if (current != job) return;
+            killedFor = job;
             kill();
         }
     }
@@ -183,16 +197,23 @@ final class WorkerProcess {
 
     /** 즉시 종료하고 회수한다. 어느 스레드에서 불러도 된다 */
     void kill() {
+        killed = true;
         Process p = proc;
         if (p == null) return;
         p.destroyForcibly();
-        try {
-            p.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        // interrupt 된 스레드(중단된 warmup·parse)에서 불러도 끝까지 회수한다 — 돌아온 뒤 alive() 가 참이면 다음 요청이 죽어 가는 워커에 쓴다
+        boolean interrupted = Thread.interrupted();
+        while (true) {
+            try {
+                p.waitFor();
+                break;
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
         }
         joinQuietly(stdoutThread);
         joinQuietly(stderrThread);
+        if (interrupted) Thread.currentThread().interrupt();
     }
 
     /** quit 를 보내고 끝나기를 기다린다. 제한 시간을 넘기면 강제 종료 */
@@ -207,11 +228,17 @@ final class WorkerProcess {
             } catch (IOException ignored) {
                 // 이미 끝난 워커
             }
-            try {
-                p.waitFor(Math.max(1, timeoutMillis), TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            // interrupt 돼도 남은 시간까지 기다린다 — close 는 interrupt 와 관계없이 closeTimeout 을 유예한다
+            boolean interrupted = Thread.interrupted();
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(1, timeoutMillis));
+            for (long left; (left = deadline - System.nanoTime()) > 0; ) {
+                try {
+                    if (p.waitFor(left, TimeUnit.NANOSECONDS)) break;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
             }
+            if (interrupted) Thread.currentThread().interrupt();
         }
         kill();
     }

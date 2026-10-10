@@ -86,20 +86,22 @@ files 방식의 파일은 호출자 소유이며 클라이언트를 닫아도 �
 | `maxQueue` | 64 | 워커를 기다리는 요청 수 상한. 넘으면 `KordocQueueFullException` |
 | `requestTimeout` | 없음 | 요청 제한 시간. 대기 큐 입장부터 결과 수신까지 |
 | `startTimeout` | 30초 | 워커가 ready 를 보낼 때까지 |
-| `warmupTimeout` | 5분 | 워밍업 문서 한 건 |
+| `warmupTimeout` | 5분 | 워밍업 문서 한 건. 넘기면 그 워커를 종료하고 실패로 보고합니다 |
 | `closeTimeout` | 10초 | 닫을 때 진행 중 요청을 기다리는 시간 |
 | `maxWorkerRssBytes` | 끔 | 응답의 rss 가 넘으면 그 워커를 다음 작업 전에 새 워커로 바꿉니다 |
 
 - **제한 시간·취소**: `parseAsync` 가 돌려준 Future 를 취소하거나 제한 시간을 넘기면, 대기 중인 요청은 큐에서만 빠지고 실행 중인 요청은 담당 워커를 즉시 종료·회수합니다(엔진 파싱은 중간에 멈출 수 없어서입니다). 다음 요청은 새 워커가 받습니다. 늦게 온 응답이 다른 요청에 섞이지 않습니다. 동기 `parse` 를 기다리던 스레드가 interrupt 되어도 같습니다.
 - **장애**: 워커가 끝나거나 응답이 깨지면 그 요청은 `KordocWorkerCrashedException` 으로 끝나고 자동 재시도하지 않습니다. 다음 요청에서 새 워커를 띄웁니다.
 - **RSS 교체**: `maxWorkerRssBytes` 를 켜면 작업이 끝난 뒤 응답의 rss(완료 시점 값, 처리 중 최댓값 아님)를 보고 교체합니다. N 건마다 재시작하지 않습니다. 풀 메모리는 `workerRss()` 의 합으로 봅니다. Node heap 상한은 별도로 `.env("NODE_OPTIONS", "--max-old-space-size=4096")` 처럼 정합니다.
-- **워밍업**: `warmup(대표 문서, options)` 은 모든 워커에서 그 문서를 실제로 파싱하고, 교체된 워커도 요청을 받기 전에 같은 문서로 워밍업합니다. 결과(`WarmupReport`)의 경고는 그대로 전달합니다. OCR 을 건너뛴 경고가 있으면 OCR 준비가 된 것이 아닙니다. 워밍업은 처리 경로를 한 번 지나게 할 뿐 최적화 완료를 보장하지 않습니다.
-- **닫기**: 새 요청을 막고, 대기 요청은 `KordocClosedException` 으로 끝내고, 진행 요청은 `closeTimeout` 까지 기다린 뒤 워커를 종료합니다.
+- **워밍업**: `warmup(대표 문서, options)` 은 모든 워커에서 그 문서를 실제로 파싱합니다. 한 워커에서라도 성공하면 교체된 워커도 요청을 받기 전에 같은 문서로 워밍업합니다. 교체 워커의 워밍업이 워커를 끝내면 그 요청은 워밍업 없는 새 워커가 받습니다. 결과(`WarmupReport`)의 경고는 그대로 전달합니다. OCR 을 건너뛴 경고가 있으면 OCR 준비가 된 것이 아닙니다. 워밍업은 처리 경로를 한 번 지나게 할 뿐 최적화 완료를 보장하지 않습니다.
+- **콜백 스레드**: `parseAsync` 의 Future 는 SDK 소유 스레드(`kordoc-sdk-complete-*`)에서 완료됩니다. 콜백 안에서 동기 `parse` 를 불러도 되고, 느린 콜백이 다른 요청이나 제한 시간을 늦추지 않습니다. `cancel` 로 끝낸 Future 의 콜백과 이미 끝난 Future 에 붙인 콜백은 그것을 부른 스레드에서 돕니다.
+- **닫기**: 새 요청을 막고, 대기 요청은 `KordocClosedException` 으로 끝내고, 진행 요청은 `closeTimeout` 까지 기다린 뒤 워커를 종료합니다. 닫기 시작한 뒤에는 새 워커를 띄우지 않습니다. `close` 가 돌아오면 요청 Future 는 끝나 있고, 완료 콜백도 `closeTimeout` 까지 기다립니다. interrupt 돼도 똑같이 기다리며 interrupt 상태는 유지합니다.
 
 ## 바이트 입력
 
 `parseBytes(data, options)` 는 바이트를 SDK 소유 임시 디렉터리(`tempDir`, 기본 `java.io.tmpdir` 아래 `kordoc-sdk-*`)에 파일로 쓴 뒤 파싱합니다.
 큰 입력을 NDJSON 에 다시 싣지 않기 위해서이며 임시 파일 I/O 가 생깁니다. 성공·실패·취소와 관계없이 끝나면 지우고, 닫을 때 디렉터리도 지웁니다.
+`close` 와 겹친 `parseBytes` 는 처리되거나 `KordocClosedException` 으로 끝나며, 어느 쪽이든 임시 디렉터리를 남기지 않습니다.
 원본 파일 경로가 필요한 DRM 문서 대체 경로는 바이트 입력에서 파일 입력과 같게 동작하지 않을 수 있습니다.
 
 ## 그 밖에

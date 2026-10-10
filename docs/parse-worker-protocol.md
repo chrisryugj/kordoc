@@ -39,6 +39,8 @@ ready 는 요청을 받을 수 있다는 뜻일 뿐, 워밍업이 끝났다는 �
 
 요청은 한 번에 하나씩 순서대로 처리합니다. 동시에 처리하려면 워커를 여러 개 띄웁니다.
 `{"cmd":"quit"}` 이나 stdin EOF 를 받으면 마지막 응답까지 다 쓴 뒤 종료 코드 0 으로 끝납니다.
+stdout 이 닫히면(EPIPE) 남은 요청을 버리고, stdin EOF 를 기다리지 않은 채 종료 코드 0 으로 끝납니다.
+워커는 stdout 이 닫힌 것을 다음 응답을 쓸 때 알아챕니다. 그 밖의 쓰기 오류는 0 이 아닌 코드로 끝납니다.
 
 ### options 허용 목록
 
@@ -69,14 +71,16 @@ ready 는 요청을 받을 수 있다는 뜻일 뿐, 워밍업이 끝났다는 �
 
 | error.code | 뜻 |
 | --- | --- |
-| `INVALID_JSON` | JSON 이 아닌 줄 |
+| `INVALID_JSON` | JSON 이 아닌 줄(`NaN`·`Infinity` 포함). `id` 없이 답합니다 |
 | `INVALID_REQUEST` | 객체가 아님, `id`·`cmd`·`file`·`transport` 가 잘못됨, 모르는 최상위 필드 |
 | `INVALID_OPTIONS` | `options` 허용 목록·타입 위반, 함께 쓸 수 없는 옵션 |
 | `UNSUPPORTED_COMMAND` | 모르는 `cmd` |
 | `DUPLICATE_ID` | 이미 쓴 `id` |
-| `REQUEST_TOO_LARGE` | 요청 줄이 상한을 넘음(기본 1MiB, `--max-request-bytes`) |
+| `REQUEST_TOO_LARGE` | 요청 줄이 상한을 넘음(기본 1MiB, `--max-request-bytes`). `id` 없이 답합니다 |
 | `RESPONSE_TOO_LARGE` | 응답 줄이 상한을 넘음(기본 256MiB, `--max-response-bytes`). 잘린 결과를 보내지 않습니다 |
 | `ASSET_WRITE_FAILED` | `files` 전송에서 이미지 파일을 쓰지 못함 |
+
+요청·응답 상한은 줄 끝 `\n` 을 뺀 UTF-8 바이트 수로 셉니다.
 
 ### 이미지 전송
 
@@ -94,7 +98,8 @@ ready 는 요청을 받을 수 있다는 뜻일 뿐, 워밍업이 끝났다는 �
 - `dataRef.path` 는 응답 `assetsDir` 기준 파일 이름입니다. Markdown·IR 의 이미지 이름(`filename`)은 그대로입니다.
 - 같은 바이트는 한 파일을 함께 가리킵니다. 이름이 같아도 바이트가 다르면 다른 파일로 씁니다.
 - 파일은 새로 만들기만 하고 기존 파일이나 링크를 덮어쓰지 않습니다. `assetsDir` 가 링크면 실제 경로 아래에 만듭니다.
-- `assetsDir` 와 그 안의 파일은 호출자 소유입니다. 워커는 응답을 보낸 뒤 지우지 않습니다. 응답을 보내지 못한 요청의 디렉터리만 지웁니다.
+- `assetsDir` 와 그 안의 파일은 호출자 소유입니다. 워커는 응답을 보낸 뒤 지우지 않습니다. 결과를 보내지 못한 요청(`RESPONSE_TOO_LARGE`·`ASSET_WRITE_FAILED`·stdout 닫힘)의 디렉터리만 지웁니다.
+- 워커가 응답 전에 강제 종료되면(SDK 의 제한 시간·취소·close) 그 요청의 `kordoc-<id>-*` 디렉터리가 남을 수 있습니다. 호출자가 정리합니다.
 - 이미지가 없으면 디렉터리를 만들지 않고 응답에 `assetsDir` 를 넣지 않습니다.
 - `options.inlineImages`(Markdown 안 data URI)와 `options.images: false`(바이트 추출 생략)는 전송 모드와 따로 동작합니다.
 

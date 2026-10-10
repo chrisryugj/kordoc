@@ -148,25 +148,34 @@ class Worker:
         await self._finish_stderr()
 
     async def quit(self, timeout: float) -> None:
-        """quit 를 보내고 끝나기를 기다린다. 제한 시간을 넘기면 강제 종료."""
+        """quit 를 보내고 끝나기를 기다린다. 제한 시간을 넘기거나 기다리는 중에 취소되면 강제 종료."""
         proc = self._proc
-        if proc is not None and proc.returncode is None and proc.stdin:
-            try:
-                proc.stdin.write(b'{"cmd":"quit"}\n')
-                await proc.stdin.drain()
-                proc.stdin.close()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            try:
-                await asyncio.wait_for(proc.wait(), timeout)
-            except TimeoutError:
-                pass
-        await self.kill()
+        try:
+            if proc is not None and proc.returncode is None and proc.stdin:
+                try:
+                    proc.stdin.write(b'{"cmd":"quit"}\n')
+                    await proc.stdin.drain()
+                    proc.stdin.close()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout)
+                except TimeoutError:
+                    pass
+        finally:
+            await self.kill()
 
     async def _finish_stderr(self) -> None:
-        if self._stderr_task is not None:
-            try:
-                await asyncio.wait_for(self._stderr_task, 1.0)
-            except (TimeoutError, asyncio.CancelledError):
-                self._stderr_task.cancel()
-            self._stderr_task = None
+        # 먼저 떼어 낸다 — 같은 워커를 두 곳에서 동시에 끝내도(aclose 와 실패 요청 정리) 서로의 정리를 깨지 않는다
+        task, self._stderr_task = self._stderr_task, None
+        if task is None:
+            return
+        try:
+            await asyncio.wait_for(task, 1.0)
+        except (TimeoutError, asyncio.CancelledError):
+            task.cancel()
+            # 워커가 끝나도 stderr 를 물려받은 손자 프로세스가 파이프를 쥐고 있다 — 우리 쪽 파이프를 닫아 둔다(닫힌 루프에서
+            # transport 가 뒤늦게 정리되며 경고를 내지 않게)
+            transport = getattr(self._proc, "_transport", None)
+            if transport is not None:
+                transport.close()

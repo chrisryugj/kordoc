@@ -4,7 +4,6 @@
  */
 
 import { createHash } from "crypto"
-import { once } from "events"
 import { mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "fs"
 import { basename, isAbsolute, join } from "path"
 import { z } from "zod"
@@ -190,8 +189,11 @@ export async function runParseWorkerV2(opts: ParseWorkerV2Options = {}): Promise
   const maxRequestBytes = opts.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES
   const maxResponseBytes = opts.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES
   const seen = new Set<number>()
+  let broken = false
+  // 쓰기 오류는 write 콜백이 다룬다 — 리스너가 없으면 뒤따르는 'error' 가 uncaught 로 exit 1 을 낸다
+  output.on("error", () => {})
 
-  /** 한 줄 쓰기 — 상한을 넘거나 직렬화가 터지면 잘린 성공 대신 RESPONSE_TOO_LARGE(false 반환). 버퍼가 차면 drain 을 기다린다 */
+  /** 한 줄 쓰기 — 상한을 넘거나 직렬화가 터지면 잘린 성공 대신 RESPONSE_TOO_LARGE(false 반환). stdout 이 닫혀 못 보냈어도 false */
   const write = async (o: Record<string, unknown>): Promise<boolean> => {
     let text: string
     let sent = true
@@ -202,15 +204,33 @@ export async function runParseWorkerV2(opts: ParseWorkerV2Options = {}): Promise
       sent = false
       text = JSON.stringify({ ...(validId(o.id) ? { id: o.id } : {}), error: { code: "RESPONSE_TOO_LARGE", message: `응답이 상한(${maxResponseBytes}바이트)을 넘습니다 — transport.images "files" 로 이미지를 파일로 받으세요` } })
     }
-    if (!output.write(text + "\n")) await once(output, "drain")
-    return sent
+    // 쓰기 콜백까지 기다린다 — drain 대기를 겸한다
+    const delivered = await new Promise<boolean>((done, reject) => output.write(text + "\n", err => {
+      if (!err) return done(true)
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== "EPIPE" && code !== "ERR_STREAM_DESTROYED") return reject(err)
+      // 답할 곳이 없으니 stdin 도 끊어 다음 줄이나 EOF 를 기다리지 않는다
+      broken = true
+      ;(input as { destroy?: () => void }).destroy?.()
+      done(false)
+    }))
+    return sent && delivered
   }
   const fail = (id: unknown, code: WorkerErrorCode, message: string) =>
     write({ ...(validId(id) ? { id } : {}), error: { code, message } })
 
   await write({ ready: true, version: VERSION, protocol: PARSE_WORKER_PROTOCOL_V2, capabilities: [...CAPABILITIES] })
 
-  for await (const { line, tooLarge } of readLines(input, maxRequestBytes)) {
+  /** stdout 이 닫혀 stdin 을 끊어 생긴 premature close 는 입력의 끝으로 본다 */
+  async function* requests(): AsyncGenerator<{ line?: string; tooLarge?: true }> {
+    try { yield* readLines(input, maxRequestBytes) } catch (err) {
+      if (!broken || (err as NodeJS.ErrnoException).code !== "ERR_STREAM_PREMATURE_CLOSE") throw err
+    }
+  }
+
+  for await (const { line, tooLarge } of requests()) {
+    // stdout 이 닫혔으면 남은 요청은 답할 곳이 없다 — 파싱하지 않고 끝낸다
+    if (broken) break
     if (tooLarge) { await fail(undefined, "REQUEST_TOO_LARGE", `요청이 상한(${maxRequestBytes}바이트)을 넘습니다`); continue }
     const t = line!.trim()
     if (!t) continue
@@ -249,7 +269,7 @@ export async function runParseWorkerV2(opts: ParseWorkerV2Options = {}): Promise
       }
     }
     const sent = await write({ id, rss: process.memoryUsage.rss(), ...(assetsDir ? { assetsDir } : {}), result })
-    // 응답을 못 보냈으면 그 요청의 자산은 아무도 가리키지 않는다 — 미완료 자산으로 지운다
+    // 응답을 못 보냈으면(상한 초과·stdout 닫힘) 그 요청의 자산은 아무도 가리키지 않는다 — 미완료 자산으로 지운다
     if (!sent && assetsDir) rmSync(assetsDir, { recursive: true, force: true })
   }
   // 파이프 stdout 은 맥·윈도에서 비동기라 다 비운 뒤 돌아간다
