@@ -449,15 +449,16 @@ export const PREFIX_SCRIPT = /^[^A-Za-z+=×÷<>≤≥∫∑∏√∞^_{}\\/]+$/
  *  붙어(0.35em 안) 있으면 조각이다. 글자 위에 얹힌 수식 조각(∑ 위아래 극한)은 붙어 있지 않다.
  *  라틴 글자·수식 기호 없는 8자 이하 첨자는 글자 앞(빈칸 하나 0.6em 안)에 붙어도 같다 — 연도 위첨자 "(’10)10.2만건 → (’25)17.1만건"·
  *  부처 첨자 "행안부급경사지, 국토부도로비탈면"·원문자 "①디스플레이, ②항공" 이 한 줄에 여럿. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 뺀다.
- *  본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
+ *  글자 상자가 겹치는 폭은 0.25em 까지 — 좌표를 정수로 반올림하면(normalizeItems) 0.8pt 겹친 첨자가 2pt 로 늘어 한 줄 열둘 가운데 하나가
+ *  0.1em 허용을 넘었고 첨자 줄이 통째로 따로 남았다(특별교통대책 보도자료 "부산(‘22년10:00"). 본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
 export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number; w: number }>, host: ReadonlyArray<{ x: number; w: number; fontSize: number }>): boolean {
   return line.length > 1 && line.length <= 16 && line.every(i => {
     const t = i.text.trim(), n = t.length
     if (n > 8 || !n) return false
     return host.some(h => {
       const after = i.x - (h.x + h.w), before = h.x - (i.x + i.w)
-      return (n <= 3 && after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.1) ||
-        (PREFIX_SCRIPT.test(t) && before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1)
+      return (n <= 3 && after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.25) ||
+        (PREFIX_SCRIPT.test(t) && before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.25)
     })
   })
 }
