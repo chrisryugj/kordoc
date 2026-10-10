@@ -37,6 +37,7 @@ import {
 } from "./markdown-units.js"
 import { stripCellTokens, extractCellTokens, extractImgTags } from "./table-patch.js"
 import { replaceOleStream } from "./ole-surgeon.js"
+import { alignedTextEdits } from "./inline-edit.js"
 
 const require = createRequire(import.meta.url)
 const CFB: CfbModule = require("cfb")
@@ -605,7 +606,14 @@ function patchParagraph(
     return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
   }
 
-  return stageParaPatch(ctx.scans[mapping.para.sectionIndex], mapping.para, newPlain, skip)
+  // 바뀐 자리 계산용 원문 평문: 편집본과 같은 마크다운 경로(공백 접힘·표지 걷기)를 거쳐야 diff 가 고친 자리만 잡는다
+  let origMd = restoreBr(textUnitToPlain(orig.raw, block))
+  if (block.footnoteText) origMd = origMd.replace(/\s*\(주: [\s\S]*\)$/, "")
+  if (mapping.prefixStripped) {
+    const origPrefix = block.text!.split(" ", 1)[0]
+    if (origMd.startsWith(origPrefix + " ")) origMd = origMd.slice(origPrefix.length + 1)
+  }
+  return stageParaPatch(ctx.scans[mapping.para.sectionIndex], mapping.para, newPlain, skip, origMd)
 }
 
 // ── GFM 표 셀 ──
@@ -968,6 +976,38 @@ function rebuildCharShape(csData: Buffer, coreStartUnit: number): { buf: Buffer;
   return { buf, count: kept.length }
 }
 
+/**
+ * CHAR_SHAPE 부분 수정: [start, end) 를 길이 newLen 글로 바꿀 때 run 경계를 옮긴다. start 이전 run 은 그대로(바뀐 글은
+ * start 자리 run 의 모양을 받는다), 범위 안에서 시작한 마지막 run 은 바뀐 글 바로 뒤로, end 뒤 run 은 길이 차만큼 민다.
+ */
+function shiftCharShape(csData: Buffer, start: number, end: number, newLen: number): { buf: Buffer; count: number } {
+  const pairs: Array<[number, number]> = []
+  for (let o = 0; o + 8 <= csData.length; o += 8) pairs.push([csData.readUInt32LE(o), csData.readUInt32LE(o + 4)])
+  if (pairs.length === 0) return { buf: Buffer.from(csData.subarray(0, 8)), count: 1 }
+  const delta = newLen - (end - start)
+  const out: Array<[number, number]> = []
+  let inRange: number | undefined
+  for (const [p, id] of pairs) {
+    if (p <= start) out.push([p, id])
+    else if (p <= end) inRange = id
+    else {
+      if (inRange !== undefined) { out.push([start + newLen, inRange]); inRange = undefined }
+      out.push([p + delta, id])
+    }
+  }
+  if (inRange !== undefined) out.push([start + newLen, inRange])
+  const kept: Array<[number, number]> = []
+  for (const [p, id] of out) {
+    const last = kept[kept.length - 1]
+    if (last && last[0] === p) last[1] = id
+    else if (last && last[1] === id) continue
+    else kept.push([p, id])
+  }
+  const buf = Buffer.alloc(kept.length * 8)
+  kept.forEach(([p, id], k) => { buf.writeUInt32LE(p >>> 0, k * 8); buf.writeUInt32LE(id >>> 0, k * 8 + 4) })
+  return { buf, count: kept.length }
+}
+
 // ─── 한컴 압축 스트림 꼬리 ───────────────────────────
 
 // CRC-32 (IEEE) — zlib.crc32 는 Node 22.2+ 전용이라 engines(>=18) 범위에서 직접 계산한다
@@ -1035,6 +1075,8 @@ function synthesizeLineSegs(lineSegData: Buffer, newRaw: string, startUnits: num
 function stageParaPatch(
   scan: SectionScan5, para: ScanPara5, newPlain: string,
   skip: (reason: string) => number,
+  /** 문단의 IR 평문: 주면 바뀐 자리만 고친다(원문 균등 띄어쓰기·글자 모양 run 유지). 못 맞대면 코어 통째 교체 */
+  origPlain?: string,
 ): number {
   if (!scan.safe) return skip("섹션 레코드 재직렬화 불일치 — 안전을 위해 이 섹션은 미지원")
   if (para.textIdx === -2) return skip("복수 PARA_TEXT 레코드 문단 — 미지원 (v1)")
@@ -1094,10 +1136,15 @@ function stageParaPatch(
   // 코어가 추출 텍스트(rawText)와 일치해야 안전 (가시 control 없음 보장)
   if (seg.core !== para.rawText) return skip("PARA_TEXT 재구성 불일치 — 원문 보존 불가로 미지원")
 
+  // 바뀐 자리만 고친다: IR 평문은 공백을 접어 보이므로("대    상" → "대 상") 통째 교체는 균등 띄어쓰기를 접고
+  // 글자 모양을 첫 글자 하나로 합친다. 원문 코어와 IR 평문을 맞대어 diff 범위만 바꾸고 CHAR_SHAPE run 은 위치만 민다
+  const edit = origPlain !== undefined && !origPlain.includes("\n") && !newPlain.includes("\n")
+    ? alignedTextEdits(para.rawText, origPlain, newPlain)?.[0] : undefined
   // 원문 leading/trailing 공백 보존 (IR은 트림된 텍스트)
   const lead = para.rawText.match(/^\s*/)![0]
   const trail = para.rawText.match(/\s*$/)![0]
-  const newRaw = para.rawText.trim() === para.rawText ? newPlain : lead + newPlain + trail
+  const newRaw = edit ? para.rawText.slice(0, edit.start) + edit.text + para.rawText.slice(edit.end)
+    : para.rawText.trim() === para.rawText ? newPlain : lead + newPlain + trail
 
   // PARA_TEXT = 선두 control + 새 텍스트 + 말미 control/문단끝 (control 블록 바이트 보존)
   const newText = Buffer.concat([seg.prefix, Buffer.from(newRaw, "utf16le"), seg.suffix])
@@ -1108,8 +1155,10 @@ function stageParaPatch(
   const nChars = seg.prefixUnits + newRaw.length + seg.suffixUnits
   newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
 
-  // CHAR_SHAPE — 선두 control run 보존 + 코어는 첫 글자 서식으로 단일화
-  const cs = rebuildCharShape(charShapeRec.data, seg.prefixUnits)
+  // CHAR_SHAPE: 부분 수정이면 run 위치만 민다, 통째 교체면 선두 control run 보존 + 코어는 첫 글자 서식으로 단일화
+  const cs = edit
+    ? shiftCharShape(charShapeRec.data, seg.prefixUnits + edit.start, seg.prefixUnits + edit.end, edit.text.length)
+    : rebuildCharShape(charShapeRec.data, seg.prefixUnits)
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)
 

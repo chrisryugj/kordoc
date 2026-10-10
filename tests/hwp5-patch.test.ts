@@ -996,3 +996,49 @@ describe("patchHwp — 압축 스트림 꼬리 (#71)", () => {
   })
 })
 
+
+describe("patchHwp: 균등 띄어쓰기·글자 모양 run (바뀐 자리만 고친다)", () => {
+  /** 여러 글자 모양 run 문단: runs: [시작 위치, 글자 모양 id] */
+  function styledParagraph(text: string, runs: Array<[number, number]>): Buffer {
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(text.length + 1, 0)
+    header.writeUInt16LE(runs.length, 12)
+    header.writeUInt16LE(1, 16)
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return Buffer.concat([
+      rec(0x42, 0, header),
+      rec(0x43, 1, Buffer.concat([utf16(text), Buffer.from([0x0d, 0x00])])),
+      rec(0x44, 1, cs),
+      rec(0x45, 1, lineSeg36()),
+    ])
+  }
+
+  function paraRecords(data: Uint8Array, needle: string): { text: string; cs: Array<[number, number]> } {
+    const cfb = CFB.read(Buffer.from(data), { type: "buffer" })
+    const si = cfb.FullPaths.findIndex((x: string) => /BodyText\/Section0$/i.test(x))
+    const recs = readRecords(Buffer.from(cfb.FileIndex[si].content as Uint8Array))
+    for (let i = 0; i < recs.length; i++) {
+      if (recs[i].tagId !== TAG_PARA_TEXT) continue
+      const text = recs[i].data.toString("utf16le").replace(/\r$/, "")
+      if (!text.includes(needle)) continue
+      const csRec = recs[i + 1]
+      const cs: Array<[number, number]> = []
+      for (let o = 0; o + 8 <= csRec.data.length; o += 8) cs.push([csRec.data.readUInt32LE(o), csRec.data.readUInt32LE(o + 4)])
+      return { text, cs }
+    }
+    throw new Error(`문단 없음: ${needle}`)
+  }
+
+  it("마크다운이 접어 보인 \"대    상\" 은 고치지 않은 자리에서 원문 띄어쓰기 그대로, 굵은 값 run 은 위치만 밀린다", async () => {
+    // "대    상: " 8자 보통(1) · "9세 " 굵게(2) · "여성" 보통(1)
+    const hwp = buildHwp([styledParagraph("대    상: 9세 여성", [[0, 1], [8, 2], [11, 1]]), paragraph("다음 문단")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("대 상: 9세 여성"), md)
+    const r = await patchHwp(hwp, md.replace("대 상: 9세 여성", "대 상: 12세 여성"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const { text, cs } = paraRecords(r.data!, "여성")
+    assert.equal(text, "대    상: 12세 여성", "균등 띄어쓰기 보존")
+    assert.deepEqual(cs, [[0, 1], [8, 2], [12, 1]], "굵은 값 run 유지, 뒤 run 은 길이 차만큼")
+  })
+})

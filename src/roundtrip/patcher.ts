@@ -19,7 +19,7 @@ import { blocksToMarkdown } from "../table/builder.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
 import type { IRBlock, PatchOptions, PatchResult, PatchSkip, DiffResult, BlockDiff } from "../types.js"
 import {
-  scanSectionXml, buildParagraphSplices, markerRunSplices, applySplices, allLinesegRemovalSplices, findElementEnd, decodeXmlEntities,
+  scanSectionXml, buildParagraphSplices, markerRunSplices, applySplices, changedLinesegRemovalSplices, findElementEnd, decodeXmlEntities,
   type SectionScan, type ScanParagraph, type ScanCell, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
 import { noteFormatFrom, noteRefMark, type NoteNumberFormat } from "../hwpx/notes.js"
@@ -35,6 +35,7 @@ import { collectMaxNumericId, injectCellBorderFill, buildTableParagraphXml } fro
 import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import { detectFormat } from "../detect.js"
 import { patchHwp } from "./hwp5-patch.js"
+import { parseEmphasis, minimalTextSplices } from "./inline-edit.js"
 
 export type { PatchOptions, PatchResult, PatchSkip } from "../types.js"
 
@@ -144,12 +145,10 @@ export async function patchHwpx(
     for (let i = 0; i < scans.length; i++) {
       if (sectionSplices[i].length === 0) continue
       edited.push({ name: sectionPaths[i], xml: scans[i].xml, splices: [...sectionSplices[i]] })
-      // 텍스트가 바뀐 섹션은 줄 레이아웃 캐시(linesegarray)를 전부 비워 한컴 변조
-      // 경고를 막는다 (텍스트 변경으로 캐시가 어긋남 — 뷰어가 열 때 재계산).
+      // 글이 바뀐 문단의 줄 레이아웃 캐시(linesegarray)만 비운다: 어긋난 캐시는 한컴 변조 경고를 띄우고,
+      // 손대지 않은 문단의 캐시까지 지우면 자체 조판이 없는 뷰어가 쪽 전체를 다시 짜 깨진다 (changedLinesegRemovalSplices).
       // 삭제된 행(<hp:tr>) 범위 안의 linesegarray는 삭제 splice에 포함되므로 제외
-      const claimed = sectionSplices[i].filter(s => s.end > s.start)
-      sectionSplices[i].push(...allLinesegRemovalSplices(scans[i].xml)
-        .filter(ls => !claimed.some(c => ls.start >= c.start && ls.end <= c.end)))
+      sectionSplices[i].push(...changedLinesegRemovalSplices(scans[i].xml, sectionSplices[i]))
       const newXml = applySplices(scans[i].xml, sectionSplices[i])
       replacements.set(sectionPaths[i], encoder.encode(newXml))
     }
@@ -548,12 +547,17 @@ function patchParagraphUnit(
     return skip("문단 내 강제 줄바꿈 포함 — 수정 시 줄바꿈 보존 불가로 미지원 (v1)")
   }
 
-  // 편집 마크다운 → 평문
-  const origPlain = textUnitToPlain(orig.raw, block)
-  let newPlain = textUnitToPlain(edited.raw, block)
+  // 편집 마크다운 → 평문 + 서식 조각 (강조 표지는 걷는다: 조각 경계가 run 서식 경계)
+  const origInline = parseEmphasis(textUnitInline(orig.raw, block))
+  const newInline = parseEmphasis(textUnitInline(edited.raw, block))
+  let origPlain = origInline.plain
+  let newPlain = newInline.plain
+  // 각주·참조 부호·자동번호 접두를 떼면 조각 좌표가 어긋나므로 그때는 문단 단위 diff 만
+  const segsUsable = !block.footnoteText && !mapping.noteMarks?.length && !mapping.prefixStripped
 
   // 각주 표기 처리 — 본문이 아닌 각주 ctrl에 있으므로 분리
   if (block.footnoteText) {
+    origPlain = origPlain.replace(/\s*\(주: [\s\S]*\)$/, "")
     const noteMatch = newPlain.match(/\s*\(주: ([\s\S]*)\)$/)
     if (noteMatch) {
       newPlain = newPlain.slice(0, noteMatch.index).trimEnd()
@@ -567,6 +571,7 @@ function patchParagraphUnit(
 
   // 각주·미주 참조 부호 — 개체가 그리는 글이라 hp:t 에 쓰지 않는다
   if (mapping.noteMarks?.length) {
+    origPlain = removeNoteMarks(origPlain, mapping.noteMarks).text
     const r = removeNoteMarks(newPlain, mapping.noteMarks)
     newPlain = r.text
     if (r.missing.length) ctx.skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
@@ -575,6 +580,7 @@ function patchParagraphUnit(
   // 자동번호 접두 — XML에 없는 텍스트이므로 떼고 기록
   if (mapping.prefixStripped) {
     const origPrefix = block.text!.split(" ", 1)[0]
+    if (origPlain.startsWith(origPrefix + " ")) origPlain = origPlain.slice(origPrefix.length + 1)
     const sp = newPlain.indexOf(" ")
     const newFirst = sp > 0 ? newPlain.slice(0, sp) : newPlain
     // 번호 형식: 끝 구두점 필수("1." "가)" "(2)") 또는 단일 원문자/로마자 — 맨 단어 오인 방지
@@ -588,20 +594,30 @@ function patchParagraphUnit(
   if (newPlain === origPlain) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
 
   // 단일 hp:t로 합쳐 기록하면 재파싱 sanitize에서 변형되는 텍스트(run 경계 이중 공백 등)
-  // — 기록 후 동일 렌더가 보장되지 않으므로 미지원
-  if (sanitizeText(newPlain) !== newPlain) {
+  //: 기록 후 동일 렌더가 보장되지 않으므로 미지원. 단 원문 문단이 이미 그 꼴(균등 띄어쓰기 "기   간"이 마크다운에
+  // 그대로 보이는 서식 문단)이면 같은 렌더 경로를 타므로 허용한다: 바뀐 자리만 고쳐 원문 띄어쓰기는 그대로 남는다
+  if (sanitizeText(newPlain) !== newPlain && sanitizeText(origPlain) === origPlain) {
     return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
   }
 
   const xml = ctx.scans[mapping.para.sectionIndex]?.xml
-  const splices = (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
+  const splices = (xml ? minimalTextSplices(mapping.para, xml, origPlain, newPlain, segsUsable ? origInline.segs : undefined, segsUsable ? newInline.segs : undefined) : null)
+    ?? (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
   if (splices === null) return skip("문단에 텍스트 노드를 만들 수 없음")
   ctx.sectionSplices[mapping.para.sectionIndex].push(...splices)
+  if (segsUsable && origInline.segs.length !== newInline.segs.length) {
+    ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
+  }
   return 1
 }
 
-/** 텍스트 유닛 마크다운 → 평문 (builder 렌더링의 역변환) */
+/** 텍스트 유닛 마크다운 → 평문 (builder 렌더링의 역변환): 강조 표지(** · <u> 등)는 걷는다 (글자로 찍히지 않게) */
 export function textUnitToPlain(raw: string, block: IRBlock): string {
+  return parseEmphasis(textUnitInline(raw, block)).plain
+}
+
+/** 텍스트 유닛 마크다운 → 강조 표지가 남은 인라인 글 (헤딩 접두·링크·관련 이탤릭만 벗김) */
+function textUnitInline(raw: string, block: IRBlock): string {
   // 여러 줄(soft-wrap)은 한 문단으로
   let text = raw.split("\n").map(l => l.trim()).filter(Boolean).join(" ")
   // 헤딩 접두 — 헤딩/[별표] 블록만 (리터럴 '# '로 시작하는 일반 문단은 보존)
@@ -617,7 +633,7 @@ export function textUnitToPlain(raw: string, block: IRBlock): string {
   if (/^\*[^*][\s\S]*\*$/.test(text) && block.text && /^\([^)]*조[^)]*관련\)$/.test(sanitizeText(block.text))) {
     text = text.slice(1, -1)
   }
-  return unescapeGfm(text)
+  return text
 }
 
 // ─── 검증 diff ───────────────────────────────────────

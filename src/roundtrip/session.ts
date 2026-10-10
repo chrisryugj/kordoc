@@ -19,7 +19,7 @@ import { parseHwpxDocument } from "../hwpx/parser.js"
 import { detectFormat } from "../detect.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  scanSectionXml, buildParagraphSplices, applySplices, allLinesegRemovalSplices,
+  scanSectionXml, buildParagraphSplices, applySplices, changedLinesegRemovalSplices,
   type SectionScan, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
 import { patchZipEntries } from "./zip-patch.js"
@@ -345,9 +345,8 @@ export class HwpxSession {
     try {
       for (let s = 0; s < st.scans.length; s++) {
         if (sectionSplices[s].length === 0) continue
-        // 텍스트가 바뀐 섹션은 줄 레이아웃 캐시(linesegarray)를 전부 비워 한컴 변조
-        // 경고·구버전 줄배치 렌더를 막는다 (patchHwpx와 동일 — 뷰어가 열 때 재계산)
-        sectionSplices[s].push(...allLinesegRemovalSplices(st.scans[s].xml))
+        // 글이 바뀐 문단의 줄 레이아웃 캐시(linesegarray)만 비운다 (patchHwpx와 동일: changedLinesegRemovalSplices)
+        sectionSplices[s].push(...changedLinesegRemovalSplices(st.scans[s].xml, sectionSplices[s]))
         replacements.set(st.sectionPaths[s], encoder.encode(applySplices(st.scans[s].xml, sectionSplices[s])))
       }
     } catch (err) {

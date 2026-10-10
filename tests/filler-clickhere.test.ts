@@ -69,7 +69,8 @@ describe("fillHwpx — 누름틀 채우기 (내장 표준 서식)", () => {
     const zip = await JSZip.loadAsync(result.buffer)
     const section = await zip.file("Contents/section0.xml")!.async("text")
     assert.ok(/<hp:lineBreak\/>/.test(section), "다문단 본문의 lineBreak")
-    assert.ok(!section.includes("linesegarray"), "수정 섹션의 조판 캐시 제거 (한컴 변조 경고 방지)")
+    // 조판 캐시는 글이 바뀐 문단만 지운다: 이 서식의 캐시는 손대지 않는 첫 빈 문단 하나뿐이라 그대로 남는다
+    assert.equal(section.match(/<hp:linesegarray>/g)?.length, 1, "손대지 않은 문단의 조판 캐시 유지")
   })
 
   it("간이기안문 예시값: 13/13 전부 매칭 + 재파싱 검증", async () => {

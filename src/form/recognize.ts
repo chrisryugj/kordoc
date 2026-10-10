@@ -65,6 +65,27 @@ export function isLabelCell(text: string): boolean {
   return false
 }
 
+/** 빈 값 칸: 비었거나 밑줄·괄호 빈칸·대시 같은 자리표시뿐 */
+export function isBlankValue(text: string): boolean {
+  return /^[\s_()（）\-\u2014\u2013~.·,]*$/.test(text) // 대시(U+2014·U+2013)도 자리표시
+}
+
+/**
+ * 열 머리 행 판정: 라벨이 위에, 값이 아래에 오는 표의 머리 행인가. 채우기(filler-hwpx)와 인식(extractFormSchema)이 같은 규칙을 쓴다.
+ * heads: 그 행의 머리 후보 칸 글(아래로 걸친 구역 라벨 rowSpan 칸은 빼고), below: 같은 칸 좌표의 다음 행 칸 글(없으면 undefined).
+ * - 아래 칸이 전부 비었으면 머리 글이 라벨 꼴이 아니어도 머리("검토의견 (의견제출 내용)")
+ * - 아니면 머리 3칸 이상이 전부 라벨이고 아래 칸이 하나 빼고 빈 경우만 (줄 이름표 "고등학교"·"년 월" 자리표시 허용).
+ *   "성명 | 홍길동" 같은 라벨-값 2칸 행을 머리로 오인하지 않게 좁힌다
+ */
+export function isColumnHeaderRow(heads: string[], below: Array<string | undefined>): boolean {
+  if (heads.length < 2 || below.some(b => b === undefined)) return false
+  const hs = heads.map(h => h.trim())
+  if (hs.some(h => !h || h.length > 40 || SENTENCE_ENDING_RE.test(h))) return false
+  const blanks = below.filter(b => isBlankValue(b!)).length
+  if (blanks === below.length) return true
+  return hs.length >= 3 && blanks >= hs.length - 1 && hs.every(h => h.length <= 20 && isLabelCell(h))
+}
+
 /**
  * IRBlock[]에서 양식 필드를 인식하여 추출.
  * 테이블의 label-value 패턴을 감지.
@@ -113,12 +134,53 @@ function collectTables(blocks: IRBlock[], out: IRTable[] = [], depth = 0): IRTab
   return out
 }
 
+/** IR 격자에서 병합으로 덮인 자리: 격자는 덮인 자리에도 빈 칸을 두므로 앵커와 구분해야 한다 */
+function coveredGrid(table: IRTable): boolean[][] {
+  const covered = Array.from({ length: table.rows }, () => new Array<boolean>(table.cols).fill(false))
+  for (let r = 0; r < table.rows; r++) {
+    for (let c = 0; c < table.cols; c++) {
+      const cell = table.cells[r]?.[c]
+      if (!cell || covered[r][c]) continue
+      for (let rr = r; rr < Math.min(r + cell.rowSpan, table.rows); rr++) {
+        for (let cc = c; cc < Math.min(c + cell.colSpan, table.cols); cc++) if (rr !== r || cc !== c) covered[rr][cc] = true
+      }
+    }
+  }
+  return covered
+}
+
+/** 열 머리 행 번호들 (isColumnHeaderRow): 머리 아래 같은 열 칸이 값 */
+function columnHeaderRows(table: IRTable): Set<number> {
+  const covered = coveredGrid(table)
+  const rows = new Set<number>()
+  for (let r = 0; r + 1 < table.rows; r++) {
+    const heads: number[] = []
+    for (let c = 0; c < table.cols; c++) {
+      const cell = table.cells[r]?.[c]
+      if (cell && !covered[r][c] && cell.rowSpan <= 1) heads.push(c)
+    }
+    const below = heads.map(c => (covered[r + 1][c] ? undefined : table.cells[r + 1]?.[c]?.text))
+    if (isColumnHeaderRow(heads.map(c => table.cells[r]![c].text), below)) rows.add(r)
+  }
+  return rows
+}
+
 function extractFromTable(table: IRTable): FormField[] {
   const fields: FormField[] = []
+  const headerRows = table.cols >= 2 ? columnHeaderRows(table) : new Set<number>()
+  const covered = headerRows.size > 0 ? coveredGrid(table) : []
 
-  // 전략 1: 인접셀 label-value (2열 이상 테이블)
+  // 전략 1: 인접셀 label-value (2열 이상 테이블): 열 머리 행은 아래 칸이 값 (채우기와 같은 방향)
   if (table.cols >= 2) {
     for (let r = 0; r < table.rows; r++) {
+      if (headerRows.has(r)) {
+        for (let c = 0; c < table.cols; c++) {
+          const cell = table.cells[r]?.[c]
+          if (!cell || covered[r][c] || cell.rowSpan > 1 || !cell.text.trim()) continue
+          fields.push({ label: cell.text.trim().replace(/[:：]\s*$/, ""), value: (table.cells[r + 1]?.[c]?.text ?? "").trim(), row: r + 1, col: c })
+        }
+        continue
+      }
       for (let c = 0; c < table.cols - 1; c++) {
         const labelCell = table.cells[r]?.[c]
         const valueCell = table.cells[r]?.[c + 1]

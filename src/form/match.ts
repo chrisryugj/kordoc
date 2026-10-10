@@ -233,6 +233,8 @@ export function fillInCellPatterns(
   matchedLabels: Set<string>,
   /** require_unique 2차에서 거부된 라벨 셀 차단 (sfill-2 전략0) — 전략 1~3과 동일 계약 */
   blockedLabels?: Set<string>,
+  /** 어노테이션 빈칸 "(라벨: )" 으로는 채우지 않을 키: 문서에 그 라벨의 제 칸이 따로 있는 스칼라 키 (filler-hwpx directKeys) */
+  annotationSkip?: Set<string>,
 ): { text: string; matches: Array<{ key: string; label: string; value: string }> } | null {
   let text = cellText
   const matches: Array<{ key: string; label: string; value: string }> = []
@@ -288,7 +290,7 @@ export function fillInCellPatterns(
     (match, keyword: string) => {
       const normalizedKw = normalizeLabel(keyword)
       const matchKey = values.available(normalizedKw) ? normalizedKw : undefined
-      if (matchKey === undefined) return match
+      if (matchKey === undefined || annotationSkip?.has(matchKey)) return match
 
       const newValue = values.consume(matchKey)!
       matchedLabels.add(matchKey)

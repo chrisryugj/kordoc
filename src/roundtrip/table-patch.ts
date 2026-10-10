@@ -21,6 +21,7 @@ import {
 } from "./markdown-units.js"
 import { patchTableRows, type InsertCell } from "./table-rows.js"
 import { buildEmbeddedLineSplices } from "./embedded-line-patch.js"
+import { minimalTextSplices } from "./inline-edit.js"
 
 /** 표 패치에 필요한 컨텍스트 (patcher.ts PatchCtx의 부분집합) */
 export interface TablePatchCtx {
@@ -458,7 +459,10 @@ export function applyCellEdit(
       // assigned는 sanitize된 마크다운 도메인, nonEmpty[i].text는 XML 원문 — 정규화
       // 동치면 미편집 문단이므로 재작성하지 않는다 (공백·run 서식 보존)
       if (assigned[i] === nonEmpty[i].text || normForMatch(assigned[i]) === normForMatch(nonEmpty[i].text)) continue
-      const sp = buildParagraphSplices(nonEmpty[i], assigned[i], ctx.scans[nonEmpty[i].sectionIndex]?.xml)
+      // 바뀐 자리만 고친다: 여러 색 run 제목 칸이 첫 run 하나로 합쳐지지 않게 (맞대지 못하면 문단 통째 쓰기)
+      const xml = ctx.scans[nonEmpty[i].sectionIndex]?.xml
+      const sp = (xml ? minimalTextSplices(nonEmpty[i], xml, normForMatch(nonEmpty[i].text), assigned[i]) : null)
+        ?? buildParagraphSplices(nonEmpty[i], assigned[i], xml)
       if (sp === null) return skip("셀 문단에 텍스트 노드를 만들 수 없음")
       splices.push(...sp)
       sectionIndex = nonEmpty[i].sectionIndex
