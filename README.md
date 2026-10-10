@@ -14,6 +14,8 @@ HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, PNG·JPG·WebP를 Markdow
 - 📊 **PDF 공개 벤치 종합 0.963** — opendataloader-bench 200문서. 공개 12개 파서 비교 1위(2026-09-29 기록). [측정 조건](docs/benchmarks.md)
 - 🇰🇷 **한국 공문서 표 구조 100%** — 원본 HWPX 2,424문서의 보이는 표 **10,342개 전부 구조 일치**. [4.21.14 검증](docs/benchmarks.md)
 
+쓸모 있었다면 GitHub ⭐ 하나 눌러주세요. 다른 사람이 이 도구를 찾는 데 도움이 됩니다.
+
 [![Kordoc 활용하기 — 영상 보기](./docs/video-demo.jpg)](https://youtu.be/Q13GmgDcIw0)
 
 <sub>▶ 클릭하면 유튜브에서 재생됩니다.</sub>
