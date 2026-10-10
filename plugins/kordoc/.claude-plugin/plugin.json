@@ -1,5 +1,6 @@
 {
   "name": "kordoc",
+  "displayName": "kordoc",
   "description": "Parse, generate, fill, patch, compare, validate, and render Korean official documents (HWP 3.x/5.x, HWPX, HWPML, PDF, DOCX, XLS/XLSX) in Claude — 공문서 프리셋 생성, 서식 보존 빈칸 채우기, 라운드트립 패치, 조판 SVG 렌더. Powered by the kordoc npm CLI/MCP — no Hancom Office required.",
   "author": {
     "name": "chrisryugj",
@@ -8,5 +9,16 @@
   "homepage": "https://github.com/chrisryugj/kordoc",
   "repository": "https://github.com/chrisryugj/kordoc.git",
   "license": "MIT",
-  "version": "4.21.12"
+  "version": "4.21.12",
+  "keywords": [
+    "hwp",
+    "hwpx",
+    "pdf",
+    "korean",
+    "document-parser",
+    "markdown",
+    "form-filling"
+  ],
+  "documentationUrl": "https://github.com/chrisryugj/kordoc/blob/main/docs/usage-en.md",
+  "supportUrl": "https://github.com/chrisryugj/kordoc/issues"
 }
