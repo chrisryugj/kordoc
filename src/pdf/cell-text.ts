@@ -447,9 +447,17 @@ function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?
     // 칸 오른끝에 닿아도 잘린 숫자가 아니다(속초 세출예산서 OCR 칸 "500" / "500" → "500500")
     else if (/[\d,]$/.test(prev) && /^[\d,]+[)\]]?$/.test(curr.trim()) && curr.trim().length <= 10
       && !(/\d,\d{3}$/.test(prev) && /^\d/.test(curr.trim()))
+      // 칸 상자를 알면 쉼표 든 숫자도 칸을 채우고 꺾인 줄만 잇는다 — 값 위에 작게 얹은 각주 첨자 "3,4" 가 아래 줄 값 "60" 과 "3,460",
+      // 첨자끼리 "3" / "3,4" 가 "33,4" 로 붙었다(고속선 안전 코드 화재 구역 표 "₃,₄⏎60", 정답 첨자). 상자 없는 호출은 종전대로 잇는다
+      && !(wrap && !numberWrapped(i - 1))
       && !(/(?:^|[^\d,])\d{1,3}$/.test(prev) && /^(\d{1,3}(,\d{3})+|\d{1,3})$/.test(curr.trim()) && !numberWrapped(i - 1))
       && !(/(?:^|\s)\d{1,7}$/.test(prev) && /^\d{1,7}$/.test(curr.trim()) && !numberWrapped(i - 1))) {
       merged[merged.length - 1] = prev + curr.trim()
+    }
+    // 글이 든 줄이 쉼표로 끝나고 다음 줄이 숫자뿐이면 낱말 사이 꺾임이다 — 칸을 다 채운 줄이 아니라 숫자 이음은 아니고(종전엔 숫자째 붙여
+    // "April 30,2022"), 줄바꿈으로 두면 날짜가 갈린다. 공백으로 잇는다(정답 "April 30, 2022", ODL 180 판 이력 표). 글 없는 "3,4" 첨자 줄은 그대로
+    else if (wrap && /[A-Za-z가-힣]/.test(prev) && /,$/.test(prev.trim()) && /^[\d,]+[)\]]?$/.test(curr.trim()) && curr.trim().length <= 10) {
+      merged[merged.length - 1] = prev.trimEnd() + " " + curr.trim()
     }
     else {
       merged.push(curr)

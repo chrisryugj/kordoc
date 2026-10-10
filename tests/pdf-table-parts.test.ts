@@ -340,6 +340,15 @@ describe("칸 글 줄 병합 — 숫자", () => {
     const fill = (text: string, y: number) => ({ text, x: 441, y, w: text.length * 6, h: 10, fontSize: 10, fontName: "f" })
     assert.equal(cellTextToString([fill("123456", 100), fill("78", 85)], { box: { x1: 439, x2: 479 } }), "12345678")
   })
+  it("칸을 채우지 않은 쉼표 든 숫자 줄은 잇지 않는다 — 값 위 각주 첨자 \"3,4\" / \"60\" (고속선 안전 코드 화재 구역 표 \"3,460\")", () => {
+    const at = (text: string, y: number, fontSize: number) => ({ text, x: 300, y, w: text.length * fontSize * 0.5, h: fontSize, fontSize, fontName: "f" })
+    assert.equal(cellTextToString([at("3,4", 102, 6), at("60", 90, 10)], { box: { x1: 290, x2: 340 } }), "3,4\n60")
+    assert.equal(cellTextToString([at("3", 102, 6), at("3,4", 94, 6)], { box: { x1: 290, x2: 340 } }), "3\n3,4")
+    // 글이 든 줄이 쉼표로 끝나 숫자 줄로 이어지면 낱말 사이 꺾임 — 공백으로 잇는다 (ODL 180 판 이력 표 "April 30, 2022")
+    const word = (text: string, y: number) => ({ text, x: 300, y, w: text.length * 5, h: 10, fontSize: 10, fontName: "f" })
+    assert.equal(cellTextToString([word("April 30,", 100), word("2022", 88)], { box: { x1: 296, x2: 360 } }), "April 30, 2022")
+  })
+
   it("글 뒤에 붙은 번호 조각(\"02-123\" / \"4567\")은 종전처럼 잇는다", () => {
     assert.equal(cellTextToString([item("02-123", 100), item("4567", 85)]), "02-1234567")
   })
