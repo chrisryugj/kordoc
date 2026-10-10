@@ -49,6 +49,10 @@ jobs:
   python-sdk:
     needs: engine-dist
     runs-on: ubuntu-latest
+    # 지원 하한과 최신 — 3.14 는 run_coroutine_threadsafe 가 첫 걸음 전 취소를 바로 건다(동기 close 를 Ctrl-C 로 끊는 경로)
+    strategy:
+      matrix:
+        python: ["3.11", "3.14"]
     env:
       KORDOC_CLI: ${{ github.workspace }}/dist/cli.js
       KORDOC_SDK_FIXTURES: ${{ github.workspace }}/.sdk-fixtures
@@ -69,7 +73,7 @@ jobs:
       - run: node --import tsx tests/fixtures/sdk-docs.ts "$KORDOC_SDK_FIXTURES"
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
       - name: 테스트 (실제 엔진·Node parse() 결과 동등성·장애 주입)
         working-directory: sdk/python
         run: |

@@ -562,5 +562,12 @@ class KordocClient:
                 t.cancel()
         while tasks := [t for t in asyncio.all_tasks() if t is not me]:
             await asyncio.wait(tasks)
+        # 닫기가 한 번도 돌지 못했으면 남은 워커를 여기서 끝낸다 — Python 3.14(실측)의 run_coroutine_threadsafe 는 이미 취소된 Future 에
+        # 이을 작업을 루프 스레드에서 만들면 첫 걸음 전에 바로 취소해(3.11 은 call_soon_threadsafe 로 미뤄 첫 걸음이 먼저 돈다), 루프가
+        # 꺼내기 전에 끊긴 close 의 aclose 는 닫기 작업조차 만들지 못한다. 멈춘 루프의 클라이언트는 다시 쓸 수 없다
+        if self._client._close_task is None and self._client._workers:
+            self._client._closed = True
+            await asyncio.gather(*(w.kill() for w in list(self._client._workers)), return_exceptions=True)
+            self._client._workers.clear()
         if self._client._closed:
             self._client._remove_temp_root()
