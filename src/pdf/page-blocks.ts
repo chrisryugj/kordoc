@@ -27,6 +27,7 @@ import { markImageCell } from "./table-trim.js"
 import { mergeSliverColumns } from "./table-trim.js"
 import { headerLineAbove } from "./grid-header-line.js"
 import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, TABLE_ROWYS, recordCellLines, recordRowRules } from "./table-meta.js"
+import { hasCrossingFrames } from "./crossing-frames.js"
 import { recordClipCellEdges, takeClipCellEdges } from "./cell-edges.js"
 import { cleanCellText, splitAcrossCells } from "./cell-text.js"
 import { rebuildUnitLine, prependUnitRow, attachUnitRow } from "./table-unit-row.js"
@@ -690,6 +691,11 @@ function extractBlocksWithGrids(
       const x1 = Math.min(grid.bbox.x1, ...axis.map(it => it.x)), x2 = Math.max(grid.bbox.x2, ...axis.map(it => it.x + it.w))
       charts.push({ x1, x2, y1: grid.bbox.y1 })
       blocks.push(chartBlock([...tableItems, ...axis].sort((a, b) => b.y - a.y || a.x - b.x), pageNum, { page: pageNum, x: x1, y: grid.bbox.y1, width: x2 - x1, height: grid.bbox.y2 - grid.bbox.y1 }))
+      continue
+    }
+    // 걸쳐 겹친 글상자 테두리가 한 격자로 묶인 것도 표가 아니다 (crossing-frames) — 차트 판정 뒤에: 막대 사각형도 그림 영역과 엇갈려 겹친다(ODL 078)
+    if (!grid.cells && !nestedAttached && hasCrossingFrames(grid, horizontals, verticals)) {
+      for (const it of tableItems) usedItems.delete(it)
       continue
     }
 
