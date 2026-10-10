@@ -28,6 +28,12 @@ describe("PDF table roles", () => {
     assert.equal(isTableOfContents(table([["Seoul", "31"], ["Busan", "12"], ["Daegu", "9"], ["Incheon", "8"]])), false)
   })
 
+  it("takes a row holding two entries' page labels (교육청 학교 매뉴얼 목차 \"51 65\")", () => {
+    assert.equal(isTableOfContents(table([["3. 사전의견 수렴", "48"], ["4. 설명회 추진 5. 추진위원회 구성", "51 65"], ["6. 학부모 설문조사", "69"]])), true)
+    // 갈라 읽어도 쪽 번호가 줄면 목차가 아니다
+    assert.equal(isTableOfContents(table([["가", "48"], ["나 다", "65 51"], ["라", "69"]])), false)
+  })
+
   it("keeps contents lines in reading order", () => {
     const block = tocBlock(table([["Introduction", "1"], ["Methods", "7"], ["Results", "12"]]), 1,
       { page: 1, x: 0, y: 0, width: 100, height: 40 })

@@ -26,7 +26,8 @@ function romanValue(label: string): number {
   return total
 }
 
-/** Entries followed by page labels that only grow down the column. */
+/** Entries followed by page labels that only grow down the column. A row may carry two entries' labels when the
+ *  candidate merged two TOC lines into one row ("51 65" — 교육청 학교 매뉴얼 목차) */
 export function isTableOfContents(table: IRTable): boolean {
   if (table.rows < 3 || table.cols < 2) return false
   const labels: string[] = []
@@ -35,9 +36,10 @@ export function isTableOfContents(table: IRTable): boolean {
     const texts = row.map(cell => cell.text.trim())
     const last = texts[texts.length - 1]
     if (!last) continue
-    if (!PAGE_LABEL.test(last)) return false
-    if (/\p{L}/u.test(texts.slice(0, -1).join(""))) entries++
-    labels.push(last)
+    const parts = last.split(/\s+/)
+    if (!parts.every(p => PAGE_LABEL.test(p))) return false
+    if (/\p{L}/u.test(texts.slice(0, -1).join(""))) entries += parts.length
+    labels.push(...parts)
   }
   if (labels.length < 3 || entries < labels.length * 0.8) return false
   let previous: { roman: boolean; value: number } | undefined

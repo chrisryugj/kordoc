@@ -971,10 +971,12 @@ const SIDEBAR_ITEMS = new WeakMap<IRBlock, NormItem[]>()
 /** 무괘선 표 후보를 역할대로 낸다 — 목차는 "항목 쪽번호" 줄, 차트는 영역 안 위→아래 줄 글, 나머지는 표 */
 function clusterTableBlock(cr: ClusterTableResult, source: NormItem[], pageNum: number, horizontals: LineSegment[] = []): IRBlock {
   // 목차 역할은 괘선 증거가 없는 후보에만 — 폭 대부분을 가로지르는 괘선이 행을 가르는 목차는 원문에서도 표다(한컴 목차 표를 OCR 로 읽은 쪽).
-  // 라벨 밑 짧은 밑줄은 증거가 아니다
+  // 라벨 밑 짧은 밑줄은 증거가 아니다. 괘선이 행 절반도 못 가르면 장 제목 밑줄이다(교육청 학교 매뉴얼 목차: 장마다 제목 밑 색 괘선 하나 —
+  // 16행 목차가 3열 표로 남았다)
   const b = cr.bbox
-  const ruled = horizontals.filter(h => h.y1 > b.y && h.y1 < b.y + b.height &&
-    Math.min(h.x2, b.x + b.width) - Math.max(h.x1, b.x) >= b.width * 0.6).length >= 3
+  const rules = horizontals.filter(h => h.y1 > b.y && h.y1 < b.y + b.height &&
+    Math.min(h.x2, b.x + b.width) - Math.max(h.x1, b.x) >= b.width * 0.6).length
+  const ruled = rules >= 3 && rules >= (cr.table.rows - 1) * 0.5
   if (!ruled && isTableOfContents(cr.table)) return tocBlock(cr.table, pageNum, cr.bbox, dominantStyle(source))
   if (isChartTable(cr.table, source.length > 0 && source.every(it => it.fontName === "ocr"))) return chartBlock(source, pageNum, cr.bbox)
   if (isFormulaTable(cr.table)) return chartBlock(source, pageNum, cr.bbox)
