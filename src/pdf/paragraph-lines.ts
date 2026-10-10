@@ -54,8 +54,16 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
     }
   }
   // 줄 끝 아이템 뒤에 공백 글리프가 찍힌 꺾임은 어절 경계다 — 어휘 증거·형태 규칙이 붙인 것도 띄운다 (markTrailingSpaceGlyphs)
+  // 거꾸로 줄 끝 공백을 찍는 쪽에서 오른끝까지 찬 한글 줄이 공백 없이 끝나고 다음 줄이 영문·경로·연도 괄호("(ODA)"·"(/tmp"·"(’27~)")로
+  // 열면 앞 낱말에 붙은 원어·풀이다("공적개발원조⏎(ODA)", "하네스⏎(safety harness)" — 약어만 든 괄호는 원문도 띄운 곳이 섞여 형태 규칙이
+  // 띄운다). hwpx↔pdf 744쌍에서 이 꼴 78곳 모두 원문이 붙여 썼다. 한글·숫자로 여는 괄호("등⏎(국회의원)"·"지역⏎(2024년")는 원문도 띄운
+  // 곳이 섞이고, 덜 찬 줄은 원문 줄바꿈이다(ASEAN 노동장관회의 "…역량 인증⏎(Advancing …)")
+  const blockRight = Math.max(...geo.map(g => g.right))
   for (let i = 0; i + 1 < lines.length; i++) {
-    if (joins[i] === "" && lines[i].items.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a)).spaceAfter) joins[i] = " "
+    const last = lines[i].items.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a))
+    if (joins[i] === "" && last.spaceAfter) joins[i] = " "
+    else if (joins[i] === " " && last.spaceAfter === false && blockRight - geo[i].right < 0.2 * geo[i].fontSize &&
+      /[가-힣]$/.test(geo[i].text.replace(/<\/?u>|~~/g, "").trimEnd()) && /^\((?:[A-Za-z/]|[’'‘])/.test(geo[i + 1].text.replace(/<\/?u>|~~/g, "").trimStart())) joins[i] = ""
   }
   // Completed TOC entries remain independent even inside a short-pitch leaf.
   for (const i of tocRecordBoundaries(lines.map(line => line.items))) joins[i] = "\n"

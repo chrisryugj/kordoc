@@ -71,3 +71,19 @@ describe("markTrailingSpaceGlyphs — 줄 끝 아이템 뒤 공백 글리프(어
     assert.deepEqual(flag(items), [false, false])
   })
 })
+
+describe("markTrailingSpaceGlyphs — 줄 끝 공백을 찍는 쪽이면 공백 없음(false)도 단다", () => {
+  const at = (str: string, y: number): PdfTextItem => ({ str, transform: [11, 0, 0, 11, 100, y], width: 30, height: 11, fontName: "F1" })
+  const lines = ["가나다", "라마바", "사아자", "차카타", "파하가"]
+  it("줄 끝 다섯 곳 가운데 둘에 공백 글리프가 있으면 나머지는 false", () => {
+    const items = lines.map((s, k) => at(s, 100 - k * 15))
+    const flow = ["가나다 ", "라마바", "사아자 ", "차카타", "파하가"]
+    markTrailingSpaceGlyphs(items, [OPS.setFont, ...flow.map(() => OPS.showText)], [["F1", 11], ...flow.map(s => [glyphs(s)])])
+    assert.deepEqual(items.map(i => (i as { spaceAfter?: boolean }).spaceAfter), [true, false, true, false, false])
+  })
+  it("줄 끝 공백 글리프를 찍지 않는 쪽은 false 를 달지 않는다 (공백 없음이 정보가 아님)", () => {
+    const items = lines.map((s, k) => at(s, 100 - k * 15))
+    markTrailingSpaceGlyphs(items, [OPS.setFont, ...lines.map(() => OPS.showText)], [["F1", 11], ...lines.map(s => [glyphs(s)])])
+    assert.deepEqual(items.map(i => (i as { spaceAfter?: boolean }).spaceAfter), [undefined, undefined, undefined, undefined, undefined])
+  })
+})

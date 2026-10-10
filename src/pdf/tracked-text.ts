@@ -113,7 +113,9 @@ export function markSyntheticSpaces(items: PdfTextItem[], fnArray: ArrayLike<num
  * 공백 글리프까지 찍어("원활한␣") 어절 경계에서 꺾인 줄 끝에도 공백 글리프가 남고, 어절 가운데서 꺾인 줄 끝("업무⏎수행에")에는 없다.
  * pdfjs 는 줄 끝 공백을 아이템 글에서 지워 이 차이가 글에 안 남는다. hwpx↔pdf 744쌍 줄 잇기 판정 4.4만 곳 실측: 표시된 꺾임 1.2만 곳 중
  * 원문이 붙여 쓴 곳 0. 공백 글리프는 다른 글꼴로 찍히기도 해 글꼴을 가리지 않고 연산 순서 흐름으로 맞춘다 — 글리프 이름 복원 따위가
- * 아이템 글을 바꾸기 전에 불러야 흐름과 글자 그대로 맞고, 어긋나면 그 쪽의 나머지는 손대지 않는다
+ * 아이템 글을 바꾸기 전에 불러야 흐름과 글자 그대로 맞고, 어긋나면 그 쪽의 나머지는 손대지 않는다.
+ * 줄 끝 공백 글리프를 찍는 쪽(줄 끝 EMIT_MIN_LINES 곳 이상 가운데 EMIT_MIN_RATIO 넘게)이면 공백 없는 줄 끝에 spaceAfter=false 도 단다 —
+ * 찍지 않는 제작기(rhwp 렌더·일부 워드 PDF)에서는 공백 없음이 정보가 아니다
  */
 export function markTrailingSpaceGlyphs(items: PdfTextItem[], fnArray: ArrayLike<number>, argsArray: ArrayLike<unknown>): void {
   const glyphs: string[] = []
@@ -124,6 +126,7 @@ export function markTrailingSpaceGlyphs(items: PdfTextItem[], fnArray: ArrayLike
     }
   }
   const text = items.filter(it => typeof it.str === "string" && it.str.trim())
+  const ends: Array<[PdfTextItem, boolean]> = []
   let gi = 0
   for (let k = 0; k < text.length; k++) {
     const it = text[k]
@@ -131,12 +134,17 @@ export function markTrailingSpaceGlyphs(items: PdfTextItem[], fnArray: ArrayLike
     while (gi < glyphs.length && /^\s*$/.test(glyphs[gi])) gi++
     let got = ""
     while (gi < glyphs.length && got.length < want.length) got += glyphs[gi++].replace(/\s+/g, "")
-    if (got !== want) return
+    if (got !== want) break
     let next = gi
     while (next < glyphs.length && glyphs[next] === "") next++
     const after = text[k + 1]
-    if (next < glyphs.length && /^\s+$/.test(glyphs[next]) && (!after || Math.abs(after.transform[5] - it.transform[5]) >= 3)) {
-      (it as PdfTextItem & { spaceAfter?: boolean }).spaceAfter = true
-    }
+    if (after && Math.abs(after.transform[5] - it.transform[5]) < 3) continue
+    ends.push([it, next < glyphs.length && /^\s+$/.test(glyphs[next])])
   }
+  const spaced = ends.filter(([, s]) => s).length
+  const emits = ends.length >= EMIT_MIN_LINES && spaced >= ends.length * EMIT_MIN_RATIO
+  for (const [it, s] of ends) if (s || emits) (it as PdfTextItem & { spaceAfter?: boolean }).spaceAfter = s
 }
+/** 줄 끝 공백 글리프를 찍는 쪽 판정 — 줄 끝 수 하한과 공백 글리프 비율 (hwpx↔pdf 744쌍 문서별 비율: 찍는 제작기 0.2 이상) */
+const EMIT_MIN_LINES = 5
+const EMIT_MIN_RATIO = 0.2

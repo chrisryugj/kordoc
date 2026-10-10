@@ -314,6 +314,28 @@ describe("extractPageBlocksFallback — 꺾인 본문 줄을 한 문단으로", 
   })
 })
 
+describe("extractPageBlocksFallback — 줄 끝 공백 없음과 다음 줄 괄호 (공백을 찍는 쪽)", () => {
+  const make = (end: boolean | undefined, fullFirst = true): NormItem[] => {
+    const first = [ni("이번", 75, 700, 20), ni("협약은", 100, 700, 30, true), ni("국제", 135, 700, 20, true), ni("공적개발원조", 160, 700, fullFirst ? 60 : 40, true)]
+    if (end !== undefined) first[3] = { ...first[3], spaceAfter: end }
+    return [...first,
+      ni("(ODA)", 75, 684, 25), ni("사업의", 105, 684, 30, true), ni("하나로", 140, 684, 30, true), ni("추진하며", 175, 684, 45, true),
+      ni("올해", 75, 668, 20), ni("마무리한다.", 100, 668, 50, true)]
+  }
+  const text = (items: NormItem[]) => extractPageBlocksFallback(items, 1, false, false).map(b => b.text).join("\n")
+  it("오른끝까지 찬 한글 줄이 공백 없이 끝나고 다음 줄이 괄호로 열면 붙인다 (\"공적개발원조⏎(ODA)\")", () => {
+    assert.equal(text(make(false)), "이번 협약은 국제 공적개발원조(ODA) 사업의 하나로 추진하며 올해 마무리한다.")
+  })
+  it("공백을 찍는지 모르는 쪽(표시 없음)이나 덜 찬 줄은 종전대로 띄운다", () => {
+    assert.ok(text(make(undefined)).includes("공적개발원조 (ODA)"))
+    assert.ok(!text(make(false, false)).includes("공적개발원조(ODA)"))
+  })
+  it("한글·숫자로 여는 괄호는 원문도 띄운 곳이 섞여 붙이지 않는다 (\"강력탈취⏎(상쾌한향)\")", () => {
+    const items = make(false).map(it => (it.text === "(ODA)" ? { ...it, text: "(상쾌한향)" } : it))
+    assert.ok(text(items).includes("공적개발원조 (상쾌한향)"))
+  })
+})
+
 describe("클러스터 표 칸 글 — 같은 줄 아이템은 공백 아이템·갭으로 잇는다", () => {
   const ci = (text: string, x: number, y: number, w: number, hasSpaceBefore = false): ClusterItem =>
     ({ text, x, y, w, h: 10, fontSize: 10, fontName: "T", hasSpaceBefore })
