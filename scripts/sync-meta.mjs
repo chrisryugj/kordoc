@@ -3,6 +3,7 @@
 //  1. plugins/kordoc/.claude-plugin/plugin.json 의 version ← package.json version
 //  2. .claude/skills/gongmunseo/references/engine-spec.md ← docs/gongmunseo-engine-spec.md (정본)
 //  3. server.json 의 version·packages[0].version ← package.json version (MCP 레지스트리)
+//  4. plugins/kordoc/skills/kordoc/SKILL.md 의 npx 고정 버전(kordoc@X.Y.Z) ← package.json version
 //
 // 사용: node scripts/sync-meta.mjs          → 드리프트를 실제로 고침
 //       node scripts/sync-meta.mjs --check  → 드리프트 있으면 exit 1 (prepublishOnly 게이트용)
@@ -59,6 +60,20 @@ if (server.version !== pkg.version || server.packages[0].version !== pkg.version
     server.packages[0].version = pkg.version
     writeFileSync(serverPath, JSON.stringify(server, null, 2) + "\n")
     console.log(`✓ server.json version → ${pkg.version}`)
+  }
+}
+
+// 4. 플러그인 스킬의 npx 고정 버전(kordoc@X.Y.Z) ← package.json version (디렉터리 심사가 범위 버전을 막는다)
+const skillPath = join(root, "plugins/kordoc/skills/kordoc/SKILL.md")
+const skillRaw = readFileSync(skillPath, "utf8")
+const pinned = skillRaw.replace(/kordoc@(?:\^?\d+(?:\.\d+){0,2})(?=[\s`])/g, `kordoc@${pkg.version}`)
+if (pinned !== skillRaw) {
+  drift++
+  if (checkOnly) {
+    console.error(`✗ SKILL.md npx 고정 버전 ≠ package.json ${pkg.version}`)
+  } else {
+    writeFileSync(skillPath, pinned)
+    console.log(`✓ SKILL.md npx 고정 버전 → ${pkg.version}`)
   }
 }
 
