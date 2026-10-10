@@ -23,6 +23,18 @@ describe("dropTabLeaderDots", () => {
     assert.deepEqual(dropTabLeaderDots(items).map(i => i.text), ["제1장 개요", "\t", "5"])
   })
 
+  it("takes a fill whose last dot shares a run with the page number and whose first dot sticks to the title (벼·고추 재배면적조사 목차)", () => {
+    const items = [item("□ 2026년 벼, 고추 재배면적조사 결과(요약) ·", 77, 700, 346), ...Array.from({ length: 6 }, (_, k) => item("·", 424 + 4 * k, 700, 16)), item("·1", 449, 700, 24)]
+    assert.deepEqual(dropTabLeaderDots(items).map(i => i.text), ["□ 2026년 벼, 고추 재배면적조사 결과(요약)", "\t", "1"])
+  })
+
+  it("takes a fill followed by a bracketed page note instead of a number (과제 계획서 양식 \"(페이지 표기)\")", () => {
+    // 점 조각 폭(13)이 점 간격(3.2)보다 넓어 "(" 가 마지막 점 오른끝 앞에서 시작한다
+    const items = [item("1-1. 개발 대상 기술·제품의 개요", 70, 700, 207), ...Array.from({ length: 8 }, (_, k) => item("·", 281 + 3.2 * k, 700, 13)),
+      item("(", 309, 700, 6.5), item("페이지", 315.5, 700, 39), item("표기", 361, 700, 26), item(")", 387, 700, 6.5)]
+    assert.deepEqual(dropTabLeaderDots(items).map(i => i.text), ["1-1. 개발 대상 기술·제품의 개요", "\t", "(", "페이지", "표기", ")"])
+  })
+
   it("keeps a typed dotted separator line with no page number after it (DOCX 서식 구분선)", () => {
     const items = [item("·".repeat(120), 60, 300, 480), item("신청일", 60, 280, 30), ...Array.from({ length: 8 }, (_, k) => item("·", 100 + 3 * k, 250))]
     assert.equal(dropTabLeaderDots(items).length, items.length)
