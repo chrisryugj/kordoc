@@ -368,6 +368,13 @@ describe("joinPageBreakWraps — 쪽 끝 문단이 다음 쪽 첫 문단으로 �
     assert.equal(blocks.length, 2)
     assert.equal(blocks[1].text, "모습을 보여준다. 아이들은 인공지능을 미래의 동반자로 그려냈다.")
   })
+  it("앞 쪽 끝줄 끝에 공백 글리프가 찍혔으면 어휘·형태 규칙이 붙여도 띄운다 (markTrailingSpaceGlyphs)", () => {
+    const blocks = pages(530, "들은 인공지능을 미래의 동반자로 그려냈다.")
+    PARA_LAST_LINE.set(blocks[1].bbox!, { right: 530, width: 458, fontSize: 10, spaceAfter: true })
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 2)
+    assert.equal(blocks[1].text, "모습을 보여준다. 아이 들은 인공지능을 미래의 동반자로 그려냈다.")
+  })
   it("끝줄이 안 찼거나 다음 쪽이 새 항목이면 두 문단 그대로", () => {
     const short = pages(300, "들은 인공지능을")
     joinPageBreakWraps(short)

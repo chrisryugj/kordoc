@@ -279,7 +279,7 @@ const BARE_UNIT_PAREN = /^\((?:%|‰|[가-힣]{1,3}|[A-Za-z]{1,5}|[A-Za-z]+\/[A-
 
 /** 문단 블록의 끝줄 기하 — 쪽 넘김 꺾임 판정용 (page-blocks 가 본문 줄을 문단으로 묶을 때 남긴다, 공개 IR 에 안 나감).
  *  키는 블록의 bbox 객체 — 목록 감지(detectListBlocks)가 블록을 {...block} 으로 새로 만들어도 bbox 는 그대로 넘어간다 */
-export const PARA_LAST_LINE = new WeakMap<BoundingBox, { right: number; width: number; fontSize: number }>()
+export const PARA_LAST_LINE = new WeakMap<BoundingBox, { right: number; width: number; fontSize: number; spaceAfter?: boolean }>()
 /** 문단 블록의 첫 줄 왼끝 — 쪽 넘김 잇기가 다음 쪽 첫 줄 들여쓰기를 볼 때 (키는 PARA_LAST_LINE 과 같다) */
 export const PARA_FIRST_LEFT = new WeakMap<BoundingBox, number>()
 
@@ -344,7 +344,9 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     // (lo-pairs DOCX 쌍 3곳). 문장 속 탭 뒤로 문장이 이어지는 옛 문서("…crash로 인해서\tclinet에 … option은 ⏎ 무엇인가?")와 줄 앞 조항
     // 번호 뒤 탭(".2.3\t손상을 입은 후 … 고 ⏎ 가정한다;")은 칸 구분이 아니다
     if (/\t/.test(a.text.slice(a.text.lastIndexOf("\n") + 1).replace(/^\S{1,8}\t/, "")) && titleLike(bt.trim().split("\n")[0])) continue
-    const head = a.text, joiner = wrapJoiner(a.text, b.text, lex)
+    // 앞 쪽 끝줄 끝 아이템 뒤에 공백 글리프가 찍혔으면 어절 경계다 — 같은 쪽 줄 잇기(pushLineParagraphs)와 같은 거부 (markTrailingSpaceGlyphs)
+    const joined = wrapJoiner(a.text, b.text, lex)
+    const head = a.text, joiner = joined === "" && last.spaceAfter ? " " : joined
     a.text += joiner + b.text
     // b 가 이미 다음 쪽과 이어졌으면 그 경계는 a 글 안에서 head + 이음자만큼 뒤로 밀린다
     const later = (b.bbox && PAGE_BREAK_JOINS.get(b.bbox)) || []

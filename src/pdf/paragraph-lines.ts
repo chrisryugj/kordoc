@@ -92,7 +92,8 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
     for (const it of items) faces.set(it.fontName, (faces.get(it.fontName) ?? 0) + it.text.length)
     FACE_CHARS.set(block, faces)
     // 끝줄 기하 — 쪽 넘김 꺾임 잇기(joinPageBreakWraps) 재료
-    PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize })
+    PARA_LAST_LINE.set(block.bbox!, { right: geo[i].right, width: geo[i].right - geo[i].left, fontSize: geo[i].fontSize,
+      spaceAfter: lines[i].items.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a)).spaceAfter })
     PARA_FIRST_LEFT.set(block.bbox!, geo[first].left)
     out.push(block)
     i++
