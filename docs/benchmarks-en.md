@@ -2,15 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.11 · 2026-10-10
+## Latest release results: 4.21.12 · 2026-10-10
 
-All benches measured on the 4.21.11 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.10, no document is lower in PDF text, tables, statute annexes, score, OCR, other formats, roundtrip, generation or the four ODL modes. Degraded OCR sampled three different pages (the first page per document with over 200 output characters): contents pages that lost their leader dots fell below the threshold and the next page was taken; on the same pages all nine variants are unchanged, so the aggregates are not comparable across the two samples.
+All benches measured on the 4.21.12 dist on 2026-10-10 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.11, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Structure match 10,342/10,342 · 100%; exact cell text 99.9983%; content NED similarity 99.9955% |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document structure match 4,315/4,315 · 100% |
-| PDF text | 744 pairs | Recall 99.83%, precision 99.64%, order 99.16%, word-boundary F1 98.86% |
+| PDF text | 744 pairs | Recall 99.83%, precision 99.64%, order 99.16%, word-boundary F1 98.87% |
 | PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.98%, cell F1 0.991228 |
 | Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 335/346 · 96.82% |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.80% |
