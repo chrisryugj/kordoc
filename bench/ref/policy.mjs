@@ -34,7 +34,7 @@ export const WHITELIST = [
   { id: "img-inline", desc: "셀 내 이미지 인라인 — HTML 표 <img src=… alt=…> / GFM ![image](…) 는 의도적 아티팩트, mdToPlain에서 제거 (phantom 제외). 이미지 보유 셀은 trim 판정 시 비어있지 않음(builder trimAndReturn 미러)" },
   { id: "image-placeholder", desc: "'[이미지: ref]' 플레이스홀더 — phantom 제외" },
   { id: "header-policy", desc: "머리말/꼬리말은 0회 또는 1회 출력 허용 — recall 모수 제외, 정책 위반(2회+)만 검사" },
-  { id: "pdf-nounicode-glyph", desc: "한컴 PDF 가 ToUnicode 없는 글리프(자동 글머리·번호·일부 괄호·칸 채움)를 전부 U+F000 으로 낸다 — 원래 글자 복원 불가라 파서가 제거, 정규화도 양쪽 제거 (lib/normalize.mjs normText)" },
+  { id: "pdf-nounicode-glyph", desc: "한컴 PDF 가 ToUnicode 없는 글리프(자동 글머리·번호·일부 괄호·칸 채움)를 전부 U+F000 으로 낸다 — 파서는 모양이 분명한 기호(▸·□·《·》·↓·►·➡)를 글꼴 윤곽으로 되살리고 나머지는 지운다. 정규화는 양쪽에서 U+F000 을 지우고(lib/normalize.mjs normText), 텍스트층 커버리지 합의는 그 자리를 건너뛴 3-gram 을 모수에서 뺀다(ref/pdf-consensus.mjs, 2026-10-10)" },
   { id: "pua-map", desc: "한컴 PUA 글머리표 → 표준 유니코드 매핑(rhwp 검증 테이블 + 심볼 PUA U+F021~F0FF 는 Wingdings 코드표) — 정규화 대칭을 위해 참조에도 동일 적용 (lib/normalize.mjs mapPua)" },
   // v4.14.3 (rhwp 코퍼스 편입) — 한컴이 그리지만 hp:t 에 없는 글을 참조가 XML 속성으로 재구성 (파서와 독립 구현)
   { id: "note-marks", desc: "각주·미주 본문 참조 부호(개체 number·prefixChar·suffixChar·userChar + 구역 footNotePr/endNotePr 번호 모양)와 주석·캡션 머리 hp:autoNum(FOOTNOTE·ENDNOTE·PICTURE·TABLE·EQUATION) 번호를 참조 글에 넣는다 — 한컴 PDF 실렌더(footnote-01 '액체1)와'·'1) 플라스틱 액체란', 3-09월 '문1）', ta-pic '<그림 1>'). 쪽번호 PAGE 는 종전대로 제외" },

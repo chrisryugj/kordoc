@@ -173,8 +173,11 @@ function trigramBag(texts, { perLine = false } = {}) {
   const chunks = []
   for (const t of texts) {
     if (perLine) {
-      // 하이픈 줄바꿈 결합은 줄 분리 전에 (normPdf 내 동일 규칙은 줄 단위에선 no-op)
-      chunks.push(...t.replace(/(\S)-[ \t]*\n[ \t]*(?=[a-z가-힣])/g, "$1").split("\n"))
+      // 하이픈 줄바꿈 결합은 줄 분리 전에 (normPdf 내 동일 규칙은 줄 단위에선 no-op).
+      // 유니코드 없는 글리프 자리(U+F000)는 지우지 않고 PUA 자리표시로 남긴다 — 정규화(normText)가 지우면 그 앞뒤 글자가 이어 붙어 텍스트층에
+      // 없는 이웃 3-gram("순보를" ← "순보\uF000를")이 합의에 들어가, 파서가 그 글리프를 윤곽으로 되살린 글("순보》를")이 벌점을 받는다.
+      // 자리표시가 든 3-gram 은 아래 PUA 규칙으로 합의에서 빠진다 (2026-10-10 채점 기준 변경)
+      chunks.push(...t.replace(/(\S)-[ \t]*\n[ \t]*(?=[a-z가-힣])/g, "$1").replace(/\uF000/g, "\uE000").split("\n"))
     } else {
       chunks.push(t)
     }
