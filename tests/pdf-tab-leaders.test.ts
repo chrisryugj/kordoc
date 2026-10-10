@@ -33,6 +33,14 @@ describe("dropTabLeaderDots", () => {
     assert.deepEqual(dropTabLeaderDots(items).map(i => i.text), ["1. 기 획 실", "\t", "1"])
   })
 
+  it("turns a fill at the end of a title run into a tab that reaches the page number (여수 업무계획 목차 \"7. 환 경 녹 지 국 ····\" | \"3\")", () => {
+    const out = dropTabLeaderDots([item("7. 환 경 녹 지 국 ··························", 96, 700, 381), item("3", 488.5, 700, 12)])
+    assert.deepEqual(out.map(i => i.text), ["7. 환 경 녹 지 국\t", "3"])
+    assert.equal(out[0].x + out[0].w, 488.5)
+    // 쪽 번호가 안 따라오면 글로 친 점 줄이다
+    assert.deepEqual(dropTabLeaderDots([item("구분선 ··········", 96, 700, 200)]).map(i => i.text), ["구분선 ··········"])
+  })
+
   it("takes a fill followed by a bracketed page note instead of a number (과제 계획서 양식 \"(페이지 표기)\")", () => {
     // 점 조각 폭(13)이 점 간격(3.2)보다 넓어 "(" 가 마지막 점 오른끝 앞에서 시작한다
     const items = [item("1-1. 개발 대상 기술·제품의 개요", 70, 700, 207), ...Array.from({ length: 8 }, (_, k) => item("·", 281 + 3.2 * k, 700, 13)),

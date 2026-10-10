@@ -526,8 +526,12 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
 
     // 리스트 블록
     if (block.type === "list" && block.text) {
-      const listText = sanitizeText(block.text)
+      let listText = sanitizeText(block.text)
       if (!listText) continue
+      // 균등배분 접기가 번호 뒤 공백까지 지웠으면 되살린다 — "13. 농 업 기 술 센 터" 가 "13.농업기술센터" 가 돼 번호 목록이 아닌 줄로 보고
+      // "1. " 를 또 붙였다(여수 업무계획 목차). 표 칸·문단 글은 접기 그대로 둔다
+      const num = /^(\d{1,3}[.)])\s/.exec(block.text.trim())?.[1]
+      if (num && listText.startsWith(num) && !/^\s/.test(listText.slice(num.length))) listText = `${num} ${listText.slice(num.length)}`
       // 텍스트가 이미 번호로 시작하면 그대로 출력 (원래 번호 보존)
       const alreadyNumbered = block.listType === "ordered" && /^\d+\.\s/.test(listText)
       // 글이 이미 "- " 부호로 시작하는 비번호 항목(PDF 목록 감지는 부호째 둔다)에 "- " 를 또 붙이지 않는다

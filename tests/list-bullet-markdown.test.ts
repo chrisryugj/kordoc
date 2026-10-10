@@ -10,6 +10,12 @@ describe("list block markdown", () => {
     assert.equal(blocksToMarkdown([{ type: "list", listType: "unordered", text: "- 영업보고" }]).trim(), "- 영업보고")
   })
 
+  it("keeps the number of an evenly spaced numbered item (여수 업무계획 목차 \"13. 농 업 기 술 센 터\")", () => {
+    // 균등배분 접기가 번호 뒤 공백까지 지워 "13.농업기술센터" → 번호 목록이 아닌 줄로 보고 "1. " 를 또 붙였다
+    assert.equal(blocksToMarkdown([{ type: "list", listType: "ordered", text: "13. 농 업 기 술 센 터\t525" }]).trim(), "13. 농업기술센터\t525")
+    assert.equal(blocksToMarkdown([{ type: "paragraph", text: "현 장 대 응 단 장" }]).trim(), "현장대응단장")
+  })
+
   it("still prefixes other bullet symbols and plain items", () => {
     assert.equal(blocksToMarkdown([{ type: "list", listType: "unordered", text: "○ 추진 배경" }]).trim(), "- ○ 추진 배경")
     assert.equal(blocksToMarkdown([{ type: "list", listType: "unordered", text: "항목" }]).trim(), "- 항목")

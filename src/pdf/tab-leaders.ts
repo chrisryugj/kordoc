@@ -20,6 +20,8 @@ const DOTS = /^·+$/
 const DOTS_PAGE = /^·+(\d{1,4})$/
 /** 쪽 번호 자리의 괄호 쪽 표기 */
 const PAREN_PAGE = /^\(\s*(?:페이지|쪽)/
+/** 제목 조각 끝에 붙은 채움 — 쪽 번호는 다음 조각 ("7. 환 경 녹 지 국 ·······" | "3", 여수 업무계획 목차) */
+const TRAILING = /([^\s·])\s*·{4,}\s*$/
 
 export function dropTabLeaderDots(items: NormItem[]): NormItem[] {
   if (!items.some(it => it.text.includes("·"))) return items
@@ -32,6 +34,12 @@ export function dropTabLeaderDots(items: NormItem[]): NormItem[] {
   const drop = new Set<NormItem>()
   const edit = new Map<NormItem, { text: string; right?: number }>()
   for (const it of items) if (!DOTS.test(it.text.trim()) && it.text.includes("····") && INLINE.test(it.text)) edit.set(it, { text: it.text.replace(INLINE, "\t") })
+  // 제목 끝 채움은 탭으로 바꾸고 오른끝을 쪽 번호 앞까지 늘린다 — 채움 폭만큼 남은 틈이 공백이 되면 "제목\t 3"
+  for (const it of items) {
+    if (edit.has(it) || !it.text.includes("····") || !TRAILING.test(it.text)) continue
+    const page = items.find(p => PAGE_NO.test(p.text.trim()) && sameLine(p, it) && p.x >= it.x + it.w - 2)
+    if (page) edit.set(it, { text: it.text.replace(TRAILING, "$1\t"), right: page.x })
+  }
   // 가운뎃점만 든 조각 — 같은 기준선에서 이웃 조각 사이(앞 조각 끝 → 뒤 조각 시작)가 글자 크기의 0.7배 이하면 한 채움.
   // 좌표가 정수로 반올림돼(normalizeItems) 점 하나짜리 조각은 겹치거나 2~5pt 로 흔들린다
   const byLine = new Map<number, NormItem[]>()
