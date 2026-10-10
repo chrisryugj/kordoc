@@ -28,6 +28,11 @@ describe("dropTabLeaderDots", () => {
     assert.deepEqual(dropTabLeaderDots(items).map(i => i.text), ["□ 2026년 벼, 고추 재배면적조사 결과(요약)", "\t", "1"])
   })
 
+  it("strips the first dot from a title run that overlaps the fill (고흥 업무계획 목차 \"1. 기 획 실 ·\" 폭이 첫 점보다 11pt 뒤까지)", () => {
+    const items = [item("1. 기 획 실 ·", 105.7, 700, 102), ...Array.from({ length: 10 }, (_, k) => item("·", 196.5 + 3.8 * k, 700, 15)), item("·1", 234.5, 700, 20)]
+    assert.deepEqual(dropTabLeaderDots(items).map(i => i.text), ["1. 기 획 실", "\t", "1"])
+  })
+
   it("takes a fill followed by a bracketed page note instead of a number (과제 계획서 양식 \"(페이지 표기)\")", () => {
     // 점 조각 폭(13)이 점 간격(3.2)보다 넓어 "(" 가 마지막 점 오른끝 앞에서 시작한다
     const items = [item("1-1. 개발 대상 기술·제품의 개요", 70, 700, 207), ...Array.from({ length: 8 }, (_, k) => item("·", 281 + 3.2 * k, 700, 13)),
