@@ -29,6 +29,7 @@ import { WrapLexicon, joinPageBreakWraps, splitPageBreakWraps } from "./line-wra
 import { mergeCrossPageTables } from "./table-parts.js"
 import { splitPageTables } from "./table-pages.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
+import { restoreUnmappedGlyphs } from "./symbol-glyphs.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { selectionContextPages, marginContextBlocks } from "./selection-context.js"
 import { restoreImageBullets } from "./image-bullets.js"
@@ -251,6 +252,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         }
         const differencesOf = (loadedName: string) => (fontObj(loadedName) as { differences?: ArrayLike<string | undefined> } | null | undefined)?.differences
         restoreNamedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, differencesOf, n => fontObj(n)?.name)
+        // 유니코드 없는 기호 글리프(U+F000)는 글꼴 윤곽 모양으로 되살린다 — 한컴 자동 글머리표 "▸"·"□"·겹화살괄호 (symbol-glyphs.ts)
+        restoreUnmappedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as { data?: Uint8Array } | null | undefined)
         // 자간 벌린 글("E M A I L") — 글리프 흐름의 진짜 공백으로 낱말 경계를 되살린다
         restoreTrackedSpacing(rawItems, rawOps.fnArray, rawOps.argsArray)
         // pdfjs 가 글자 틈으로 만든 공백 아이템 표시 — 균등배분 판정이 진짜 공백 글리프에서만 끊도록
