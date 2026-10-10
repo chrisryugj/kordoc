@@ -16,9 +16,10 @@
  */
 
 import type { IRTable, IRCell, BoundingBox } from "../types.js"
-import { spaceGapThreshold } from "./cell-text.js"
-import { isCjkLatinAutospace, PREFIX_SCRIPT } from "./text-line.js"
+import { PREFIX_SCRIPT } from "./text-line.js"
 import { isProseTable } from "./table-roles.js"
+import { clusterCellLines, joinClusterCellLines, type ClusterCellLine } from "./cluster-cell-text.js"
+import type { WrapLexicon } from "./line-wrap.js"
 
 /** parser.ts의 NormItem과 동일한 인터페이스 */
 export interface ClusterItem {
@@ -78,7 +79,7 @@ export interface ClusterTableResult {
 /**
  * 클러스터 기반 테이블 감지. 선이 없는 PDF의 fallback 경로에서 호출.
  */
-export function detectClusterTables(items: ClusterItem[], pageNum: number, rejected?: { prose: number }): ClusterTableResult[] {
+export function detectClusterTables(items: ClusterItem[], pageNum: number, rejected?: { prose: number }, lex?: WrapLexicon): ClusterTableResult[] {
   // 쪽 옆 세로 색인 탭 글자는 표 열 후보가 아니다 — 빠진 글자는 usedItems 밖이라 호출 측이 본문 글로 낸다
   const tab = sideTabGlyphs(items)
   if (tab.size) items = items.filter(i => !tab.has(i))
@@ -114,7 +115,7 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
     // boundary 기반 region 탐색 (proximity 대신 headerItems 범위 사용)
     const tableRegions = findTableRegionsByHeader(mergedRows, columns, headerItems)
     for (const region of tableRegions) {
-      const table = buildClusterTable(region.rows, columns, pageNum)
+      const table = buildClusterTable(region.rows, columns, pageNum, lex)
       if (table) {
         expandUsedItems(table.usedItems, originMap)
         results.push(table)
@@ -135,10 +136,10 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
           // 낮아 기호 줄·문장 줄에서 가짜 표가 살아난다(수학 시험지·보도자료 본문)
           const own = extractColumnClusters(region.rows.filter(row => hasSuspiciousGaps(row)))
           const ownTable = own.length >= MIN_COLS && own.length < columns.length
-            ? buildClusterTable(mergeMultiLineRows(region.rows, own), own, pageNum) : null
+            ? buildClusterTable(mergeMultiLineRows(region.rows, own), own, pageNum, lex) : null
           const table = ownTable && ownTable.table.cells.every((row, r) => row.every(cell => (r === 0 || cell.colSpan >= ownTable.table.cols || cell.text.trim().length <= 30) &&
             !/\p{Co}/u.test(cell.text)))
-            ? ownTable : buildClusterTable(mergeMultiLineRows(region.rows, columns), columns, pageNum)
+            ? ownTable : buildClusterTable(mergeMultiLineRows(region.rows, columns), columns, pageNum, lex)
           if (table) {
             expandUsedItems(table.usedItems, originMap)
             results.push(table)
@@ -1065,6 +1066,7 @@ function buildClusterTable(
   rows: RowGroup[],
   columns: ColCluster[],
   pageNum: number,
+  lex?: WrapLexicon,
 ): ClusterTableResult | null {
   const numCols = columns.length
   const numRows = rows.length
@@ -1077,6 +1079,8 @@ function buildClusterTable(
   )
 
   const usedItems = new Set<ClusterItem>()
+  // 칸 글줄 — 칸 글은 다 모은 뒤 열 글줄들의 왼끝·오른끝을 칸 안쪽으로 보고 잇는다(joinClusterCellLines). 후처리 1 이 이어지는 행을 붙일 때도 같은 판정
+  const lines: ClusterCellLine[][][] = cells.map(row => row.map(() => []))
 
   // 머리행이 몸통과 다른 한 서체(굵은 머리)면 그 서체 — 머리 글 사이 틈이 좁아도 열 앵커로 칸을 가른다
   const headFaces = new Set(rows[0]?.items.map(i => i.fontName))
@@ -1094,12 +1098,18 @@ function buildClusterTable(
     // 행별 갭 분석 기반 열 배정
     const assignments = assignRowItems(row.items, columns, numCols, r === 0 ? headerFace : undefined)
     for (const { col, items } of assignments) {
-      const text = joinCellItems(items)
-      const existing = cells[r][col].text
-      cells[r][col].text = existing ? existing + " " + text : text
+      const cell = lines[r][col]
+      if (cell.length) cell[cell.length - 1].spaceAfter = true // 한 행 같은 열에 무리가 여럿이면 종전대로 띄운다
+      cell.push(...clusterCellLines(items))
       for (const item of items) usedItems.add(item)
     }
   }
+  const boxes = columns.map((_, c) => {
+    const col = lines.flatMap(row => row[c])
+    return { x1: Math.min(...col.map(l => l.left)), x2: Math.max(...col.map(l => l.right)) }
+  })
+  const textOf = (r: number, c: number) => joinClusterCellLines(lines[r][c], boxes[c], lex)
+  for (let r = 0; r < numRows; r++) for (let c = 0; c < numCols; c++) if (lines[r][c].length) cells[r][c].text = textOf(r, c)
 
   // 검증: 빈 행이 너무 많으면 테이블 아님
   let emptyRows = 0
@@ -1129,9 +1139,9 @@ function buildClusterTable(
         // ("없음" 행 뒤 "3) 행정규제 : …"·"일부개정령안" 뒤 본문 첫 줄이 마크다운에서 빠지던 것, 제약산업 시행규칙 개정령안)
         if (cells[pr][0].colSpan > 1) break
         for (let c = 0; c < numCols; c++) {
-          const prev = cells[pr][c].text.trim()
-          const curr = cells[r][c].text.trim()
-          if (curr) cells[pr][c].text = prev ? prev + " " + curr : curr
+          if (!cells[r][c].text.trim()) continue
+          lines[pr][c].push(...lines[r][c])
+          cells[pr][c].text = textOf(pr, c)
         }
         for (let c = 0; c < numCols; c++) cells[r][c].text = ""
         break
@@ -1189,32 +1199,4 @@ function buildClusterTable(
     bbox: { page: pageNum, x: minX, y: minY, width: maxX - minX, height: maxY - minY },
     usedItems,
   }
-}
-
-/**
- * 칸 아이템 → 칸 글. 글자를 한 자씩 따로 긋는 제작기(지자체 예산 시스템 — 부천 세출예산사업명세서 굴림체, 글자마다
- * 0~1pt 간격)는 칸 아이템이 글자 하나씩이라 종전처럼 공백으로 이으면 "2 0 , 7 7 5 , 6 6 1"·"활 성 화" 가 된다.
- * 선 표 칸(cellTextToString)과 같게 간격이 낱말 공백 임계(spaceGapThreshold)를 넘거나 pdfjs 공백 힌트가 있을 때만 띄운다.
- * 한 행에 합쳐진 여러 줄(mergeMultiLineRows)은 세로로 겹치는 아이템끼리 한 줄로 묶어 위→아래로 잇는다 — x 로만
- * 세우면 글자 단위 칸에서 두 줄의 글자가 번갈아 섞인다. 첨자(각주 부호·원문자)는 본문 줄과 세로로 겹쳐 같은 줄에 든다
- */
-function joinCellItems(items: ClusterItem[]): string {
-  const hOf = (i: ClusterItem) => (i.h > 0 ? i.h : i.fontSize)
-  const lines: { bottom: number; top: number; items: ClusterItem[] }[] = []
-  for (const it of [...items].sort((a, b) => b.y - a.y || a.x - b.x)) {
-    const bottom = it.y, top = it.y + hOf(it)
-    const line = lines.find(l => Math.min(l.top, top) - Math.max(l.bottom, bottom) >= Math.min(l.top - l.bottom, top - bottom) * 0.5)
-    if (line) { line.items.push(it); line.bottom = Math.min(line.bottom, bottom); line.top = Math.max(line.top, top) }
-    else lines.push({ bottom, top, items: [it] })
-  }
-  return lines.sort((a, b) => b.top - a.top).map(({ items: line }) => {
-    line.sort((a, b) => a.x - b.x)
-    let s = line[0].text
-    for (let i = 1; i < line.length; i++) {
-      const gap = line[i].x - (line[i - 1].x + line[i - 1].w)
-      const fs = (line[i].fontSize + line[i - 1].fontSize) / 2
-      s += (!isCjkLatinAutospace(line[i - 1].text, line[i].text, gap, fs) && ((line[i].hasSpaceBefore && gap >= fs * 0.05) || gap > spaceGapThreshold(fs)) ? " " : "") + line[i].text
-    }
-    return s
-  }).join(" ")
 }

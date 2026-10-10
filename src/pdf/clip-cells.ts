@@ -731,7 +731,7 @@ export function dropGridsInside(lineGrids: TableGrid[], clipGrids: TableGrid[], 
   // 안에 온전히 든 클립 표 둘 이상이 절반 넘게 덮고 표 사이·위아래 틈을 지나는 안쪽 세로 괘선이 없으면 버린다 — 바깥 세로 괘선(쪽 테두리 포함)이
   // 위아래로 쌓인 표들을 이어 line 그리드가 표들과 그 사이 글줄(지역 머리·각주·표 제목)을 한 표로 묶었고, 그 글줄이 틀 칸이 되어 표들보다 먼저
   // 풀렸다(수출 보도자료 12쪽 표 6개, hwp3 쪽 테두리 안 표 여럿). 틈을 안쪽 세로 괘선이 지나면 클립 없는 행이 든 온전한 표다(보도자료 공표 일정 5×2)
-  const inside = (c: Box, g: Box): boolean => c.x1 >= g.x1 - 1 && c.x2 <= g.x2 + 1 && c.y1 >= g.y1 - 1 && c.y2 <= g.y2 + 1
+  const inside = (c: Box, g: Box): boolean => c.x1 >= g.x1 - 3 && c.x2 <= g.x2 + 3 && c.y1 >= g.y1 - 3 && c.y2 <= g.y2 + 3
   const stackedOnly = (g: TableGrid): boolean => {
     const stacked = clipGrids.filter(c => inside(c.bbox, g.bbox)).sort((a, b) => a.bbox.y1 - b.bbox.y1)
     if (stacked.length < 2 || g.colXs.length < 3 || stacked.reduce((s, c) => s + area(c.bbox), 0) < area(g.bbox) * 0.5) return false

@@ -5,6 +5,7 @@ import type { IRBlock } from "../src/types.js"
 import { cellTextToString, type TextItem } from "../src/pdf/line-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
+import { joinClusterCellLines } from "../src/pdf/cluster-cell-text.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 
 /** 문서 줄 안 글을 쌓은 어휘 사전 */
@@ -350,6 +351,43 @@ describe("클러스터 표 칸 글 — 같은 줄 아이템은 공백 아이템�
     assert.deepEqual(res.table.cells.map(row => row.map(c => c.text)), [
       ["명령", "설명"], ["rm", "단일 파일을 지운다."], ["cp", "파일을 복사한다."], ["mv", "파일 이름을 바꾼다."],
     ])
+  })
+})
+
+describe("클러스터 표 칸 글 — 이어지는 행이 어절 가운데서 꺾였으면 붙인다 (SO-SUEOP 틀 표 \"남⏎편이\")", () => {
+  const ci = (text: string, x: number, y: number, w: number, hasSpaceBefore = false, spaceAfter?: boolean): ClusterItem =>
+    ({ text, x, y, w, h: 10, fontSize: 10, fontName: "T", hasSpaceBefore, spaceAfter })
+  const lex = lexOf("남편이 돌아왔다", "남편이 마루에 누웠다")
+  // 괘선 없는 2열 표 — 내용 칸의 꺾인 줄은 행 하나로 잡혀 앞 행 칸에 붙는다(후처리 1). wide 면 다른 행이 열 오른끝을 더 밀어 "남" 줄이 덜 찬다
+  const make = (sp?: boolean, wide = false) => [
+    ci("명령", 50, 700, 20), ci("설명", 250, 700, 20),
+    ci("rm", 50, 680, 12), ci("단일", 250, 680, 20), ci("파일을", 275, 680, 30, true), ci("지운", 310, 680, 20, true), ci("다", 330, 680, 10), ci(".", 340, 680, 3),
+    ci("cp", 50, 660, 12), ci("새벽에", 250, 660, 30), ci("깨어보니", 285, 660, 40, true), ci("남", 330, 660, 13, true, sp),
+    ci("편이", 250, 640, 20), ci("마루에", 275, 640, 30, true), ci("누워", 310, 640, 20, true),
+    ci("mv", 50, 620, 12), ci("파일", 250, 620, 20), ci("이름을", 275, 620, 30, true), ci("바꾼다.", 310, 620, wide ? 60 : 33, true),
+  ]
+  const cell = (items: ClusterItem[]) => detectClusterTables(items, 1, undefined, lex)[0].table.cells[2][1].text
+  it("열 오른끝까지 찬 줄이 공백 글리프 없이 끝나면 어절 판정으로 붙인다", () => {
+    assert.equal(cell(make()), "새벽에 깨어보니 남편이 마루에 누워")
+  })
+  it("줄 끝 공백 글리프가 찍혔거나 열 오른끝에 못 미친 줄은 띄운다", () => {
+    assert.equal(cell(make(true)), "새벽에 깨어보니 남 편이 마루에 누워")
+    assert.equal(cell(make(undefined, true)), "새벽에 깨어보니 남 편이 마루에 누워")
+  })
+  it("열 왼끝에서 먼 줄(가운데 맞춘 \"부      칙\")은 오른끝에 닿아도 꺾임이 아니다", () => {
+    const lines = [
+      { text: "칙", left: 319, right: 333, fontSize: 14, firstCharW: 14 },
+      { text: "이 규칙은 공포한 날부터 시행한다.", left: 71, right: 250, fontSize: 14, firstCharW: 14 },
+    ]
+    assert.equal(joinClusterCellLines(lines, { x1: 71, x2: 333 }, lexOf("부칙이 정한다")), "칙 이 규칙은 공포한 날부터 시행한다.")
+  })
+  it("밑줄이 줄 경계에서 끊기면 붙이지 않는다 (신구조문 대비표 \"…계약의 체\" 와 다른 글상자 \"결\")", () => {
+    const line = (text: string, left: number, right: number) => ({ text, left, right, fontSize: 14, firstCharW: 14 })
+    const lex = lexOf("계약의 체결을 약정한다")
+    assert.equal(joinClusterCellLines([line("<u>라. 조건부지분전환계약의 체</u>", 331, 509), line("결", 349, 363)], { x1: 317, x2: 509 }, lex),
+      "<u>라. 조건부지분전환계약의 체</u> 결")
+    assert.equal(joinClusterCellLines([line("<u>라. 조건부지분전환계약의 체</u>", 331, 509), line("<u>결</u>", 349, 363)], { x1: 317, x2: 509 }, lex),
+      "<u>라. 조건부지분전환계약의 체</u><u>결</u>")
   })
 })
 

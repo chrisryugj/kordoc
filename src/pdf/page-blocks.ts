@@ -784,7 +784,7 @@ function extractBlocksWithGrids(
     // 같은 열 수의 선 격자 표를 세로로 통째 품은 후보도 한 표가 아니다 — 격자가 본문 줄을 가져간 자리를 건너 위 머리띠와 아래 날짜 줄이 4열 표로
     // 묶이고, 같은 열 수라 격자 표와 이어 붙으며 날짜가 본문 앞에 섰다(사이버브릿지 선발 절차 흐름도). 열 수가 다르면 이어 붙지 않는다.
     // OCR 래스터 괘선은 일부 행만 격자가 되고 클러스터 표가 나머지 행을 메운다 — 텍스트층 쪽에만(기록관리 지침 OCR 기울임 3° 의 3열 표)
-    const clusterResults = (proseColumns ? [] : detectClusterTables(clusterItems, pageNum)).filter(cr => {
+    const clusterResults = (proseColumns ? [] : detectClusterTables(clusterItems, pageNum, undefined, lex)).filter(cr => {
       const b = cr.bbox
       const overlapX = (x: BoundingBox) => Math.min(x.x + x.width, b.x + b.width) - Math.max(x.x, b.x)
       return !blocks.some(x => x.bbox && x.bbox.y >= b.y - 2 && x.bbox.y + x.bbox.height <= b.y + b.height + 2 &&
@@ -1223,7 +1223,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     if (regions) return regions.flatMap(region => extractPageBlocksFallback(region, pageNum, false, detectTables, lex))
   }
   const rejected = { prose: 0 }
-  const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum, rejected) : []
+  const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum, rejected, lex) : []
 
   if (clusterResults.length > 0) {
     const ciToIdx = new Map<ClusterItem, number>()

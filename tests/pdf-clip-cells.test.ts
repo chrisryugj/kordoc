@@ -155,6 +155,12 @@ describe("dropGridsInside — 클립 그리드와 line 그리드 중복 정리",
     const page: TableGrid = { ...mk(28, 400, 567, 800), rowYs: [800, 790, 770, 680, 650, 560, 545, 530, 440, 400] }
     assert.deepEqual(dropGridsInside([page], tables, [], [vline(28, 400, 800), vline(567, 400, 800), ...cols]), [])
   })
+  it("격자 밖으로 2pt 삐져나온 클립 표도 안에 든 것으로 본다 (사업체노동력조사 23쪽)", () => {
+    const tables = [mk(56, 680, 540, 770), mk(58, 560, 538, 650)]
+    const merged: TableGrid = { ...mk(58, 560, 538, 770), rowYs: [770, 680, 650, 560] }
+    const cols = tables.map(t => vline(298, t.bbox.y1, t.bbox.y2))
+    assert.deepEqual(dropGridsInside([merged], tables, [], [vline(58, 560, 770), vline(538, 560, 770), ...cols]), [])
+  })
   it("틈을 안쪽 세로 괘선이 지나면 클립 없는 행이 든 온전한 표라 둔다 (공표 일정 5×2)", () => {
     const tables = [mk(58, 500, 538, 700), mk(58, 210, 538, 355)]
     const whole: TableGrid = { ...mk(58, 65, 538, 700), rowYs: [700, 645, 500, 355, 210, 65] }
