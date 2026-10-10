@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "kordoc"
+abstract: "Parse Korean documents (HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX, images) to Markdown and structured data. Library, CLI and MCP server with form filling, document diff and rendering."
+type: software
+authors:
+  - alias: chrisryugj
+repository-code: "https://github.com/chrisryugj/kordoc"
+url: "https://www.npmjs.com/package/kordoc"
+license: MIT
+keywords:
+  - hwp
+  - hwpx
+  - pdf-to-markdown
+  - document-parser
+  - mcp

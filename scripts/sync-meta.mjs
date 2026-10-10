@@ -2,6 +2,7 @@
 //
 //  1. plugins/kordoc/.claude-plugin/plugin.json 의 version ← package.json version
 //  2. .claude/skills/gongmunseo/references/engine-spec.md ← docs/gongmunseo-engine-spec.md (정본)
+//  3. server.json 의 version·packages[0].version ← package.json version (MCP 레지스트리)
 //
 // 사용: node scripts/sync-meta.mjs          → 드리프트를 실제로 고침
 //       node scripts/sync-meta.mjs --check  → 드리프트 있으면 exit 1 (prepublishOnly 게이트용)
@@ -42,6 +43,22 @@ if (existsSync(canonical) && existsSync(copy)) {
       writeFileSync(copy, src)
       console.log("✓ engine-spec.md 동기화 (docs/ → skills/references/)")
     }
+  }
+}
+
+// 3. server.json version (MCP 레지스트리: 게시된 npm 버전과 같아야 등록된다)
+const serverPath = join(root, "server.json")
+const serverRaw = readFileSync(serverPath, "utf8")
+const server = JSON.parse(serverRaw)
+if (server.version !== pkg.version || server.packages[0].version !== pkg.version) {
+  drift++
+  if (checkOnly) {
+    console.error(`✗ server.json version ${server.version} / packages[0] ${server.packages[0].version} ≠ package.json ${pkg.version}`)
+  } else {
+    server.version = pkg.version
+    server.packages[0].version = pkg.version
+    writeFileSync(serverPath, JSON.stringify(server, null, 2) + "\n")
+    console.log(`✓ server.json version → ${pkg.version}`)
   }
 }
 

@@ -146,6 +146,20 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 4.18.8 셀 편집은 같은 수의 비어 있지 않은 줄에 한정됩니다. 빈 줄·줄 추가/삭제·리터럴 `<br>`·모호한 매핑은 계속 건너뜁니다. [전체 변경 이력](CHANGELOG.md)
 
+## 자주 묻는 질문
+
+**Q. HWP·HWPX 파일을 Markdown으로 바꾸려면?**
+`npx kordoc 문서.hwp -o 문서.md` 한 줄입니다. 한컴오피스 없이 파일을 직접 읽으며, 여러 파일은 `npx kordoc *.hwpx -d ./output`으로 한 번에 바꿉니다.
+
+**Q. Claude·Cursor 같은 AI가 한글 문서를 읽게 하려면?**
+`npx -y kordoc setup`으로 MCP를 등록하면 AI가 파일 경로만 받아 HWP·PDF·엑셀을 읽고, 비교하고, 양식을 채웁니다.
+
+**Q. 인터넷이 막힌 폐쇄망에서도 되나요?**
+됩니다. `KORDOC_OFFLINE=1`이 외부 통신을 모두 막고, OCR도 API 키 없이 로컬 CPU에서 돕니다. [폐쇄망 설치](docs/offline-deployment.md)
+
+**Q. RAG 색인용으로 쓸 수 있나요?**
+`--format chunks`가 제목 경로를 붙인 구조 청크와 독립 표 청크를 냅니다. 표를 HTML 없이 받으려면 `--table-format gfm`(API는 `tableFormat: "gfm"`)을 씁니다. Python·Java에서는 [Python SDK](sdk/python/README.md)·[Java SDK](sdk/java/README.md)로 부릅니다.
+
 ## 문서·보안
 
 - [상세 사용법](docs/usage.md): 전체 CLI·MCP 도구·API·지원 포맷
