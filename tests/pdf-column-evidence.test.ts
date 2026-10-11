@@ -39,6 +39,18 @@ describe("PDF column evidence", () => {
     assert.equal(detectColumns(lines), null)
   })
 
+  it("does not treat justified title-case reference lines as columns (web052)", () => {
+    // 낱말마다 대문자로 여는 참고문헌 제목 줄 — 소문자 낱말이 절반에 못 미쳐도 낱말 끝 문장 부호("Angles,\"")로 문장이다
+    const lines: NormItem[][] = []
+    for (let r = 0; r < 5; r++) {
+      const g = 9 + r
+      const y = 700 - r * 12
+      const xs = [298, 298 + 55 + g, 298 + 115 + 2 * g, 298 + 180 + 3 * g]
+      lines.push([part("Mechanisms", xs[0], y, 55), part("Considering", xs[1], y, 60), part("Transmission", xs[2], y, 65), part("Angles,\"", xs[3], y, 30)])
+    }
+    assert.equal(detectColumns(lines), null)
+  })
+
   it("keeps equal-gap rows whose cells are not lowercase words", () => {
     const lines: NormItem[][] = []
     for (let r = 0; r < 5; r++) lines.push([

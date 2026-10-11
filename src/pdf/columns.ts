@@ -28,10 +28,12 @@ function isProseSpread(items: NormItem[]): boolean {
   // 양쪽 정렬 영문 줄 — 낱말마다 아이템이고 줄 안 낱말 틈이 모두 같다(조판기가 남는 폭을 고르게 나눔). 좁은 단의 틈은 1em 을
   // 넘어 낱말 시작 x 가 가짜 열 3~4개를 만들고, 줄들이 한 표 행으로 뭉쳐 뒤섞였다(ODL 043 오른 단 인용문 "interesting the and
   // COVID, …"). 표 칸 사이 틈은 칸마다 다르다. 숫자·표시(O·X) 칸은 폭이 같아 틈도 같을 수 있어 소문자로 시작하는 낱말이
-  // 절반 이상인 줄만 본다(표 칸은 대개 대문자·숫자로 시작, 한글은 대소문자가 없어 해당 없음)
+  // 절반 이상인 줄만 본다(표 칸은 대개 대문자·숫자로 시작, 한글은 대소문자가 없어 해당 없음). 낱말마다 대문자로 여는 참고문헌 제목 줄
+  // ("Mechanisms Considering Transmission Angles,")은 낱말 끝 문장 부호(글자 뒤 쉼표·마침표, 따옴표·괄호 닫힘 포함)로 문장임을 안다 —
+  // 오른 단 참고문헌이 뒤섞였다(web052 "Optimal its Machineability," Considering Synthesis A …"). 표 칸 글은 쉼표로 끝나는 일이 드물다
   const minGap = safeMin(gaps)
   return minGap > 0 && maxGap - minGap <= Math.max(2, maxGap * 0.15) &&
-    items.filter(i => /^\P{L}*\p{Ll}/u.test(i.text)).length * 2 >= items.length
+    (items.filter(i => /^\P{L}*\p{Ll}/u.test(i.text)).length * 2 >= items.length || items.some(i => /\p{L}[,.;:]["”’)]?$/u.test(i.text)))
 }
 
 export function detectColumns(yLines: NormItem[][]): number[] | null {
