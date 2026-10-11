@@ -2,15 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.20 · 2026-10-11
+## Latest release results: 4.21.21 · 2026-10-11
 
-All benches measured on the 4.21.20 dist on 2026-10-11 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.19, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
+All benches measured on the 4.21.21 dist on 2026-10-11 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.20, no document is lower in PDF tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes. The one exception is on the measurement side: PDF text recall of SO-SUEOP drops by 3 characters (0.99850 → 0.99843) because a footnote number that occurs twice inside one reference unit ("111)…111)①") used to be matched by the page-number digits of the footers left on every page (precision of the same document 0.99368 → 0.99783).
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Structure match 10,342/10,342 · 100%; exact cell text 99.9983%; content NED similarity 99.9955% |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document structure match 4,315/4,315 · 100% |
-| PDF text | 744 pairs | Recall 99.85%, precision 99.64%, order 99.23%, word-boundary F1 99.00% |
+| PDF text | 744 pairs | Recall 99.85%, precision 99.67%, order 99.23%, word-boundary F1 99.02% |
 | PDF tables | 708 pairs · 2,331 tables | Detection 99.83%, structure match 97.98%, cell F1 0.991228 |
 | Statute annexes | 272 documents · 346 tables | HWP structure match 346/346; PDF 338/346 · 97.69% |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage 99.80% |
