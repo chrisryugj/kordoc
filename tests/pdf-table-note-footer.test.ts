@@ -1,6 +1,6 @@
 import { it } from "node:test"
 import assert from "node:assert/strict"
-import { removeHeaderFooterBlocks } from "../src/pdf/block-detect.js"
+import { removeHeaderFooterBlocks, runningLinePatterns, stripAbsorbedRunningLines } from "../src/pdf/block-detect.js"
 import type { IRBlock } from "../src/types.js"
 
 function repeated(text: string, gap = 1, noteX = 50): IRBlock[] {
@@ -78,4 +78,63 @@ it("본문 위첨자 참조 표시가 있는 쪽의 각주는 숫자만 바뀌�
   assert.deepEqual(removeHeaderFooterBlocks(blocks, hs, [], notes), [])
   // 참조 표시가 없는 쪽이면 종전대로 꼬리말
   assert.deepEqual(removeHeaderFooterBlocks(blocks, hs, []), [0, 1, 2])
+})
+
+// 쪽 테두리 틀 안 바닥글 — 따로 선 쪽에서 지운 꼴로, 쪽 높이 문단 끝 줄·쪽 끝까지 내려온 표 끝 행에 붙은 것을 걷는다 (hwp3-sample11)
+const footer = (page: number, n: number, text = "DCT Technology Inc.\t"): IRBlock =>
+  ({ type: "paragraph", text: `${text}${n}`, pageNumber: page, bbox: { page, x: 57, y: 58, width: 479, height: 12 } })
+const cell = (text: string, rowSpan = 1) => ({ text, colSpan: 1, rowSpan })
+const table = (page: number, rows: ReturnType<typeof cell>[][], y = 57): IRBlock =>
+  ({ type: "table", pageNumber: page, bbox: { page, x: 57, y, width: 479, height: 300 }, table: { rows: rows.length, cols: rows[0].length, cells: rows, hasHeader: true } })
+const hs = new Map(Array.from({ length: 30 }, (_, i) => [i + 1, 842] as [number, number]))
+const running = () => runningLinePatterns([footer(2, 1), footer(3, 2), footer(4, 3)], hs)
+it("쪽 높이 문단 끝 줄·쪽 끝 표 끝 행에 흡수된 바닥글을 걷는다 (hwp3-sample11 \"DCT Technology Inc. N\")", () => {
+  assert.deepEqual([...running()], [["DCT Technology Inc. #", 1]])
+  const page: IRBlock = { type: "paragraph", text: "SUN Enterprise 10000 : 메인프레임\n\nDCT Technology Inc. 5", pageNumber: 6, bbox: { page: 6, x: 57, y: 58, width: 479, height: 711 } }
+  const onlyFooter: IRBlock = { type: "paragraph", text: "\nDCT Technology Inc. 26", pageNumber: 27, bbox: { page: 27, x: 57, y: 58, width: 479, height: 711 } }
+  const out = stripAbsorbedRunningLines([page, table(17, [[cell("명령"), cell("설명")], [cell("ls"), cell("목록")], [cell("DCT Technology Inc."), cell("16")]]), onlyFooter], hs, running())
+  assert.equal(out.length, 2)
+  assert.equal(out[0].text, "SUN Enterprise 10000 : 메인프레임")
+  assert.equal(out[1].table!.rows, 2)
+  assert.deepEqual(out[1].table!.cells.map(r => r.map(c => c.text)), [["명령", "설명"], ["ls", "목록"]])
+})
+it("꼴·쪽 번호가 안 맞거나 띠에 안 닿거나 병합 칸이 걸친 행은 그대로 둔다", () => {
+  const high: IRBlock = { type: "paragraph", text: "본문\nDCT Technology Inc. 5", pageNumber: 6, bbox: { page: 6, x: 57, y: 300, width: 479, height: 400 } }
+  const wrongNo: IRBlock = { type: "paragraph", text: "본문\nDCT Technology Inc. 3", pageNumber: 10, bbox: { page: 10, x: 57, y: 58, width: 479, height: 400 } }
+  const total = table(5, [[cell("구분"), cell("값")], [cell("합계"), cell("16")]])
+  const spanned = table(9, [[cell("구분"), cell("값")], [cell("가", 2), cell("1")], [cell(""), cell("DCT Technology Inc. 8")]])
+  const out = stripAbsorbedRunningLines([high, wrongNo, total, spanned], hs, running())
+  assert.equal(out[0].text, "본문\nDCT Technology Inc. 5")
+  assert.equal(out[1].text, "본문\nDCT Technology Inc. 3")
+  assert.equal(out[2].table!.rows, 2)
+  assert.equal(out[3].table!.rows, 3)
+})
+it("쪽 번호뿐인 꼴·줄 끝이 아닌 서식 번호(\"<붙임1>\")·숫자 없는 꼴·머리 띠 블록은 걷을 꼴이 아니다", () => {
+  const pageNo = (page: number): IRBlock => ({ type: "paragraph", text: `- ${page} -`, pageNumber: page, bbox: { page, x: 280, y: 40, width: 30, height: 10 } })
+  assert.equal(runningLinePatterns([pageNo(1), pageNo(2), pageNo(3)], hs).size, 0)
+  assert.equal(runningLinePatterns([footer(5, 1, "<붙임"), footer(7, 2, "<붙임"), footer(9, 3, "<붙임")].map(b => ({ ...b, text: b.text + ">" })), hs).size, 0)
+  const head = (page: number): IRBlock => ({ type: "paragraph", text: "2025 행정업무운영 편람", pageNumber: page, bbox: { page, x: 57, y: 790, width: 200, height: 12 } })
+  assert.equal(runningLinePatterns([head(1), head(2), head(3)], hs).size, 0)
+  // 숫자 없는 바닥 띠 꼴 — 쪽마다 아래에 되풀이되는 사업 담당 줄일 수 있다(함평 계획서 "축산과 가축위생팀장 김영수")
+  const staff = (page: number): IRBlock => ({ ...footer(page, 0), text: "축산과 가축위생팀장 김영수" })
+  assert.equal(runningLinePatterns([staff(1), staff(2), staff(3)], hs).size, 0)
+})
+
+// 숫자가 바뀌는 머리 띠 꼴 — 낱말에 붙지 않은 숫자(쪽 번호·도장)나 쪽마다 되풀이되는 글만 러닝 머리말이다
+const top = (text: string, page: number): IRBlock => ({ type: "paragraph", text, pageNumber: page, bbox: { page, x: 60, y: 780, width: 200, height: 11 } })
+const hs40 = new Map(Array.from({ length: 40 }, (_, i) => [i + 1, 842] as [number, number]))
+it("연속 쪽의 첨부 이름표(\"<별지 서식 제3호>\"·\"<붙임2>\")는 서식 번호가 바뀌어도 머리말이 아니다 (pr-1674·pair06)", () => {
+  assert.deepEqual(removeHeaderFooterBlocks([27, 28, 29, 30].map(p => top(`<별지 서식 제${p - 24}호>`, p)), hs40, []), [])
+  assert.deepEqual(removeHeaderFooterBlocks([8, 9, 10].map(p => top(`<붙임${p - 6}>`, p)), hs40, []), [])
+})
+it("쪽 번호·내려받기 도장·되풀이되는 장 머리말은 숫자가 바뀌어도 지운다", () => {
+  assert.deepEqual(removeHeaderFooterBlocks([1, 2, 3].map(p => top(`- ${p} -`, p)), hs40, []), [0, 1, 2])
+  assert.deepEqual(removeHeaderFooterBlocks([1, 2, 3].map(p => top(`김유진 / 2026091716035${p}769 /`, p)), hs40, []), [0, 1, 2])
+  assert.deepEqual(removeHeaderFooterBlocks([1, 2, 3, 4].map(p => top(`제${p < 3 ? 1 : 2}장 일반`, p)), hs40, []), [0, 1, 2, 3])
+})
+it("머리 띠의 드문 번호 글(강의 번호)은 쪽과 같이 늘 때만 지우고, 바닥 띠의 드문 번호 줄은 종전대로 지운다", () => {
+  assert.deepEqual(removeHeaderFooterBlocks([[3, 1], [9, 2], [20, 3]].map(([p, n]) => top(`강의 0${n}.`, p)), hs40, []), [])
+  assert.deepEqual(removeHeaderFooterBlocks([[6, 5], [17, 16], [25, 24]].map(([p, n]) => top(`DCT Technology Inc. ${n}`, p)), hs40, []), [0, 1, 2])
+  const bottom = (text: string, page: number): IRBlock => ({ type: "paragraph", text, pageNumber: page, bbox: { page, x: 60, y: 30, width: 300, height: 11 } })
+  assert.deepEqual(removeHeaderFooterBlocks([[5, "2.3.5"], [17, "2.2.6"], [36, "2.3.4"]].map(([p, n]) => bottom(`부속서 3의 ${n} 참조 - 역주`, p as number)), hs40, []), [0, 1, 2])
 })

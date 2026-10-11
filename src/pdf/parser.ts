@@ -46,7 +46,7 @@ import { orderTwoUpPage } from "./two-up.js"
 import { removeSideTabs } from "./side-tabs.js"
 import { superscriptNoteMarks, inlineFootnotes, footnoteSeparators, type PageNotes } from "./footnotes.js"
 import { demoteNonHeadingRoles } from "./heading-demote.js"
-import { computeMedianFontSizeFromFreq, detectHeadings, mergeStackedHeadingLines, detectTypographyHeadings, detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, refineDocumentStyleHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks } from "./block-detect.js"
+import { computeMedianFontSizeFromFreq, detectHeadings, mergeStackedHeadingLines, detectTypographyHeadings, detectDocumentStyleHeadings, detectSiblingStyleHeadings, detectRepeatedPageLabels, detectPageLeadHeadings, refineDocumentStyleHeadings, detectMarkerHeadings, detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks, runningLinePatterns, stripAbsorbedRunningLines } from "./block-detect.js"
 import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables, joinLatinCellWraps } from "./text-clean.js"
 import { applyLinkAnnotations, mergeLinkRuns } from "./links.js"
 import { applyFormulaOcr } from "./formula-ocr.js"
@@ -532,10 +532,14 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 머리글/바닥글 필터링 (기본 ON — 명시적 false일 때만 비활성화)
     if (options?.removeHeaderFooter !== false && (parsedPageCount >= 3 || headerContext.length)) {
       const removed = removeHeaderFooterBlocks(blocks, pageHeights, warnings, noteMarks, false, headerContext)
+      const running = runningLinePatterns(removed.map(ri => blocks[ri]), pageHeights)
       // 필터링된 블록 제거 (뒤에서부터 삭제)
       for (let ri = removed.length - 1; ri >= 0; ri--) {
         blocks.splice(removed[ri], 1)
       }
+      // 쪽 높이 문단·쪽 끝까지 내려온 표에 흡수된 같은 머리·바닥글
+      const stripped = stripAbsorbedRunningLines(blocks, pageHeights, running)
+      if (stripped !== blocks) { blocks.length = 0; blocks.push(...stripped) }
       // 쪽 옆 띠의 장·절 색인 탭(좌우 바깥 띠에 되풀이되는 짧은 글)
       const kept = removeSideTabs(blocks, pageWidths)
       if (kept !== blocks) { blocks.length = 0; blocks.push(...kept) }

@@ -861,6 +861,24 @@ export function detectSpecialKoreanTables(blocks: IRBlock[]): IRBlock[] {
 
 // ─── 머리글/바닥글 감지 ────────────────────────────
 
+/** 등장마다 같은 자리 숫자 하나가 쪽과 같이 느나(쪽 − 숫자 일정) — 띠 블록이 표에 흡수돼 따로 선 등장이 성긴 쪽 번호(hwp3-sample11) */
+function tracksPages(occ: { page: number; text: string }[]): boolean {
+  const nums = occ.map(o => [...o.text.matchAll(/\d+/g)].map(m => +m[0]))
+  if (!nums.length || nums.some(n => n.length !== nums[0].length)) return false
+  return nums[0].some((_, j) => new Set(occ.map((o, k) => o.page - nums[k][j])).size === 1)
+}
+/** 등장마다 바뀌는 숫자 자리가 낱말에 붙지 않았나 — 쪽 번호 "- 3 -"·"DCT Technology Inc. 5"·내려받기 도장 "김유진 / 2026…7 /" 은 떨어져 있고,
+ *  첨부 이름표 "<붙임2>"·"<별지 서식 제3호>" 의 서식 번호는 낱말에 붙어 있다 */
+function looseVaryingNumber(occ: { text: string }[]): boolean {
+  const nums = occ.map(o => [...o.text.matchAll(/\d+/g)])
+  if (!nums.length || nums.some(n => n.length !== nums[0].length)) return false
+  const loose = (text: string, m: RegExpMatchArray) => !/\p{L}/u.test(text[m.index! - 1] ?? " ") && !/\p{L}/u.test(text[m.index! + m[0].length] ?? " ")
+  for (let j = 0; j < nums[0].length; j++) {
+    if (new Set(nums.map(n => n[j][0])).size > 1 && occ.every((o, k) => loose(o.text, nums[k][j]))) return true
+  }
+  return false
+}
+
 /**
  * 머리글/바닥글 감지 — 텍스트 반복 패턴 (숫자 normalization).
  *
@@ -922,6 +940,7 @@ export function removeHeaderFooterBlocks(
     const patternCount = new Map<string, number>()
     const patternPages = new Map<string, Set<number>>()
     const patternNumbers = new Map<string, Set<string>>()
+    const patternOcc = new Map<string, ZoneEntry[]>()
     for (const e of entries) {
       const norm = e.text.replace(/\d+/g, "#")
       patternCount.set(norm, (patternCount.get(norm) || 0) + 1)
@@ -931,6 +950,7 @@ export function removeHeaderFooterBlocks(
       const pages = patternPages.get(norm) || new Set<number>()
       pages.add(e.page)
       patternPages.set(norm, pages)
+      patternOcc.set(norm, [...(patternOcc.get(norm) ?? []), e])
     }
     const repeatedPatterns = new Set<string>()
     for (const [p, count] of patternCount) {
@@ -941,8 +961,16 @@ export function removeHeaderFooterBlocks(
       const span = pages.length ? Math.max(...pages) - Math.min(...pages) + 1 : 0
       // 숫자가 등장마다 바뀌면(쪽 번호) 드문드문해도 러닝 머리·바닥글이다 — 일부 쪽에선 표에 흡수돼 따로 선 등장이 성기다(hwp3-sample11)
       // 표 상자는 번호만 바뀌는 드문 상자가 본문이다(안건 표지 "제2차 재정운용전략협의회 | 26-2-1", 56쪽 중 4쪽) — 밀도만 본다
-      const pageNumbered = !tables && (patternNumbers.get(p)?.size ?? 0) > 1
-      if (count >= MIN_REPEAT && pages.length >= MIN_REPEAT && (pages.length >= span * 0.4 || pageNumbered)) {
+      // 숫자가 바뀌는 꼴은 바뀌는 숫자가 낱말에 붙지 않았거나(쪽 번호·도장) 같은 글이 쪽마다 되풀이될 때(장 머리말 "제1장 총칙")만이다 —
+      // 쪽마다 하나씩 바뀌는 첨부 이름표 "<붙임2>"·"<별지 서식 제3호>" 는 서식 번호라 본문이다(pair06·pr-1674, 연속 쪽이라 밀도도 넘는다)
+      const varying = !tables && (patternNumbers.get(p)?.size ?? 0) > 1
+      const occ = patternOcc.get(p) ?? []
+      // 머리 띠에서는 낱말에 안 붙은 숫자라도 드문드문하면 쪽과 같이 늘어야 한다 — 교재 강의 번호 "강의 01."·"예제 02-02."(온새미로), 부속서 제목
+      // "부속서 3"(선박 코드)은 쪽 번호가 아니다. 바닥 띠의 드문 번호 줄은 종전대로 지운다(각주 "제19장 부속서 3의 2.3.5 참조 - 역주" — 남기면 쪽 끝에 놓인다)
+      const dense = pages.length >= span * 0.4
+      const loose = looseVaryingNumber(occ) && (entries === bottomEntries || dense || tracksPages(occ))
+      const pageNumbered = varying && (loose || (dense && new Set(occ.map(o => o.text)).size * 2 <= occ.length))
+      if (count >= MIN_REPEAT && pages.length >= MIN_REPEAT && (varying ? pageNumbered : dense)) {
         repeatedPatterns.add(p)
       }
     }
@@ -990,4 +1018,67 @@ export function removeHeaderFooterBlocks(
   }
 
   return [...removeSet].sort((a, b) => a - b)
+}
+
+/**
+ * 지운 바닥글 블록의 꼴(숫자 → #, 공백 접기) → 쪽 번호 차(쪽 − 줄 끝 숫자). 줄 끝 숫자가 쪽과 같이 느는 꼴만 — 숫자 없는 꼴은 쪽 아래에
+ * 되풀이되는 본문일 수 있고(사업 계획서 쪽마다의 담당 "축산과 가축위생팀장 김영수"), 쪽 번호뿐인 "- # -" 은 표 끝 숫자 행과 같아진다
+ */
+export function runningLinePatterns(removed: IRBlock[], pageHeights: Map<number, number>): Map<string, number> {
+  const occ = new Map<string, { page: number; nums: string }[]>()
+  for (const b of removed) {
+    const ph = b.bbox && b.pageNumber ? pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber) : undefined
+    const key = b.text ? runningKey(b.text) : ""
+    if (!ph || !b.bbox || !b.pageNumber || !/\p{L}/u.test(key) || ph - b.bbox.y <= ph * 0.5) continue
+    ;(occ.get(key) ?? occ.set(key, []).get(key)!).push({ page: b.pageNumber, nums: (b.text!.match(/\d+/g) ?? []).join(",") })
+  }
+  const out = new Map<string, number>()
+  for (const [key, list] of occ) {
+    if (!pageNumberAtEnd(key)) continue
+    const offsets = new Set(list.map(o => o.page - +o.nums))
+    if (offsets.size === 1) out.set(key, [...offsets][0])
+  }
+  return out
+}
+const runningKey = (s: string): string => s.replace(/\d+/g, "#").replace(/\s+/g, " ").trim()
+/** 꼴의 숫자가 하나뿐이고 줄 끝에 있나 ("DCT Technology Inc. #") */
+const pageNumberAtEnd = (key: string): boolean => (key.match(/#/g) ?? []).length === 1 && /#\s*[)\]]?$/.test(key)
+
+/**
+ * 큰 블록에 흡수된 바닥글 걷기 — 쪽 테두리 틀 안 바닥글("DCT Technology Inc. 26")은 쪽 높이 문단의 끝 줄이 되거나 쪽 끝까지 내려온 표의 끝
+ * 행으로 붙어 띠 판정(removeHeaderFooterBlocks)을 비켜 갔다(hwp3-sample11 37쪽). 다른 쪽에서 따로 선 블록으로 지운 꼴(runningLinePatterns)만,
+ * 쪽 아래 12% 띠까지 닿은 문단의 끝 줄과 표의 끝 행에서, 그 쪽 번호가 맞을 때만 걷는다. 표 행은 병합 칸이 걸치지 않을 때만
+ */
+export function stripAbsorbedRunningLines(blocks: IRBlock[], pageHeights: Map<number, number>, running: Map<string, number>): IRBlock[] {
+  if (!running.size) return blocks
+  const matches = (line: string, page: number): boolean => {
+    const offset = running.get(runningKey(line))
+    return offset !== undefined && page - +(line.match(/\d+/g) ?? []).pop()! === offset
+  }
+  const out: IRBlock[] = []
+  for (const b of blocks) {
+    const ph = b.bbox && b.pageNumber ? pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber) : undefined
+    if (!ph || !b.bbox || !b.pageNumber || b.bbox.y > ph * 0.12) { out.push(b); continue }
+    if (b.type === "paragraph" && b.text) {
+      const lines = b.text.split("\n")
+      let hi = lines.length
+      while (hi > 0 && !lines[hi - 1].trim()) hi--
+      if (hi > 0 && matches(lines[hi - 1], b.pageNumber)) {
+        const text = lines.slice(0, hi - 1).join("\n").trim()
+        if (!text) continue
+        b.text = text
+      }
+    } else if (b.type === "table" && b.table && b.table.cells.length) {
+      const t = b.table, last = t.cells.length - 1
+      if (matches(t.cells[last].map(c => c.text.trim()).filter(Boolean).join(" "), b.pageNumber) &&
+          !t.cells.slice(0, last).some((row, i) => row.some(c => i + (c.rowSpan || 1) - 1 >= last))) {
+        t.cells.pop()
+        if (!t.cells.length) continue
+        t.rows = t.cells.length
+        t.hasHeader = t.hasHeader && t.rows > 1
+      }
+    }
+    out.push(b)
+  }
+  return out
 }
