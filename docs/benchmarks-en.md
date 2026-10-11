@@ -2,9 +2,9 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## Latest release results: 4.21.21 · 2026-10-11
+## Latest release results: 4.21.22 · 2026-10-11
 
-All benches measured on the 4.21.21 dist on 2026-10-11 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.20, no document is lower in PDF tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes. The one exception is on the measurement side: PDF text recall of SO-SUEOP drops by 3 characters (0.99850 → 0.99843) because a footnote number that occurs twice inside one reference unit ("111)…111)①") used to be matched by the page-number digits of the footers left on every page (precision of the same document 0.99368 → 0.99783).
+All benches measured on the 4.21.22 dist on 2026-10-11 (`node bench/suite.mjs run`). Compared document by document with the previous release 4.21.21, no document is lower in PDF text, tables, statute annexes, score, OCR, degraded OCR, other formats, roundtrip, generation or the four ODL modes.
 
 | Target | Population | Result |
 | --- | --- | --- |

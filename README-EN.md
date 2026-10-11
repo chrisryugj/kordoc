@@ -12,7 +12,7 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
 - 📊 **0.963 overall on the public PDF benchmark** — opendataloader-bench, 200 documents. Ranked first against 12 published parsers in the 2026-09-29 comparison. [Measurement details](docs/benchmarks-en.md)
-- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.21 verification](docs/benchmarks-en.md)
+- 🇰🇷 **100% Korean document table structure match** — all **10,342 visible tables** from 2,424 original HWPX documents. [4.21.22 verification](docs/benchmarks-en.md)
 
 If this saves you time, a GitHub ⭐ helps others find it.
 
@@ -100,7 +100,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.21.21 release verification · 2026-10-11**. Results use fixed corpora and reference criteria.
+**4.21.22 release verification · 2026-10-11**. Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
@@ -113,14 +113,15 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 Table structure, cell content and visual fidelity are separate metrics. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions and the per-document comparison of every bench.
 
-The external **opendataloader-bench, 200 documents** was measured with the 4.21.21 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
+The external **opendataloader-bench, 200 documents** was measured with the 4.21.22 release: overall **0.963** with defaults, **0.939** with OCR off. [Options and reproduction](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 
 ## Recent updates
 
-Latest release: **[4.21.21](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.21)** · 2026-10-11
+Latest release: **[4.21.22](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.22)** · 2026-10-11
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.22 | PDF: justified title-case reference lines are read as prose instead of columns, so their words stay in order (web052 reading order → 1, score coverage → 1 on 2 documents) |
 | 4.21.21 | PDF: footers absorbed inside a page border box are stripped, and form labels ("<붙임2>", "<별지 서식 제3호>") and lecture numbers are no longer taken for running headers (PDF text precision 99.64 → 99.67%, word-boundary F1 99.00 → 99.02%) |
 | 4.21.20 | PDF: a borderless table cell line wrapped mid-word is joined ("남⏎편이") · form fill and patch keep formatting (layout cache cleared only for changed paragraphs, emphasis markers, spread spacing, label cell direction) (PDF word-boundary F1 98.987 → 98.998%) |
 | 4.21.19 | PDF: a ruled grid bundling stacked clip tables with the text between them is dropped — region headers and footnotes stay with their tables (PDF reading order 99.16 → 99.23%) |

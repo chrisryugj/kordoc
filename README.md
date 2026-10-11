@@ -12,7 +12,7 @@ HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, PNG·JPG·WebP를 Markdow
 [English](README-EN.md) · [상세 사용법](docs/usage.md) · [벤치마크](docs/benchmarks.md) · [변경 이력](CHANGELOG.md)
 
 - 📊 **PDF 공개 벤치 종합 0.963** — opendataloader-bench 200문서. 공개 12개 파서 비교 1위(2026-09-29 기록). [측정 조건](docs/benchmarks.md)
-- 🇰🇷 **한국 공문서 표 구조 100%** — 원본 HWPX 2,424문서의 보이는 표 **10,342개 전부 구조 일치**. [4.21.21 검증](docs/benchmarks.md)
+- 🇰🇷 **한국 공문서 표 구조 100%** — 원본 HWPX 2,424문서의 보이는 표 **10,342개 전부 구조 일치**. [4.21.22 검증](docs/benchmarks.md)
 
 쓸모 있었다면 GitHub ⭐ 하나 눌러주세요. 다른 사람이 이 도구를 찾는 데 도움이 됩니다.
 
@@ -100,7 +100,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 검증 결과
 
-**4.21.21 · 2026-10-11 배포 검증**. 고정 코퍼스와 참조 기준으로 측정한 결과입니다.
+**4.21.22 · 2026-10-11 배포 검증**. 고정 코퍼스와 참조 기준으로 측정한 결과입니다.
 
 | 대상 | 규모 | 결과 |
 | --- | --- | --- |
@@ -113,14 +113,15 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 표 구조 점수와 셀 내용·화면 재현은 별도 지표입니다. 채점 범위·제외 기준·전 벤치 문서별 비교는 [벤치마크 상세](docs/benchmarks.md)에 있습니다.
 
-외부 PDF 벤치 **opendataloader-bench 200문서**는 4.21.21 배포 측정에서 기본값 종합 **0.963**, OCR 끔 **0.939**입니다. [옵션별 결과와 재현 방법](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
+외부 PDF 벤치 **opendataloader-bench 200문서**는 4.21.22 배포 측정에서 기본값 종합 **0.963**, OCR 끔 **0.939**입니다. [옵션별 결과와 재현 방법](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
 
 ## 최근 업데이트
 
-최신 배포: **[4.21.21](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.21)** · 2026-10-11
+최신 배포: **[4.21.22](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.22)** · 2026-10-11
 
 | 버전 | 주요 변경 |
 | --- | --- |
+| 4.21.22 | PDF 양쪽 정렬 영문 참고문헌 줄을 열로 읽어 낱말이 뒤섞이던 것 고침 (web052 읽기 순서 → 1, score 커버리지 2문서 → 1) |
 | 4.21.21 | PDF 쪽 테두리 틀 안 바닥글 걷기 · 첨부 이름표("<붙임2>"·"<별지 서식 제3호>")·강의 번호를 머리말로 지우던 것 고침 (PDF 글 정확도 99.64 → 99.67%, 어절 F1 99.00 → 99.02%) |
 | 4.21.20 | PDF 괘선 없는 표 칸의 어절 가운데 꺾임을 붙여 씀("남⏎편이") · 채우기·패치 서식 보존(바뀐 문단만 줄 배치 캐시 삭제·강조 표지·균등 띄어쓰기·라벨 칸 방향) (PDF 어절 F1 98.987 → 98.998%) |
 | 4.21.19 | PDF 위아래로 쌓인 표와 사이 글줄을 한 표로 묶던 괘선 격자 버리기 — 지역 머리·각주가 제 표와 떨어지던 것 (PDF 읽기 순서 99.16 → 99.23%) |

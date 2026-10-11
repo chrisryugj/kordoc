@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.22] - 2026-10-11
+
+### Fixed
+
+- PDF 양쪽 정렬 영문 참고문헌 줄을 열로 읽어 낱말이 뒤섞이던 것 — 좁은 단을 양쪽 정렬하면 줄마다 낱말 틈이 고르게 1em 넘게 벌어지는데, 고른 틈 줄을 문장으로 보는 방어가 소문자로 여는 낱말 절반을 요구해 낱말마다 대문자로 여는 참고문헌 제목 줄("Mechanisms Considering Transmission Angles,")이 비켜 갔다. 그 줄들이 괘선 없는 격자로 읽혀 "Optimal its Machineability," Considering Synthesis A …" 처럼 열 순서로 섞였다(web052 Word 템플릿 오른 단). 고른 틈 줄은 글자 뒤 쉼표·마침표(따옴표·괄호 닫힘 포함)로 끝나는 낱말이 있어도 문장으로 본다.
+- 측정 — 4.21.21 대비 PDF 글 어절 F1 1문서 상승(web052 0.98195 → 0.98436, 읽기 순서 → 1), score PDF 글 커버리지 2문서 상승(web052 0.99707 → 1, treatise sample 0.99912 → 1). PDF 표·법령 별표·OCR·열화 OCR·ODL 4모드·서식·왕복·생성은 문서별 변화 없음, 문서별 하락 0.
+
 ## [4.21.21] - 2026-10-11
 
 ### Fixed
