@@ -62,6 +62,13 @@ export interface ReflowGeom {
   BODY_H: number
 }
 
+/** 조합형 자모 — 첫소리(L)·가운뎃소리(V)·끝소리(T) */
+const isJamoL = (cp: number): boolean => (cp >= 0x1100 && cp <= 0x115f) || (cp >= 0xa960 && cp <= 0xa97c)
+const isJamoV = (cp: number): boolean => (cp >= 0x1160 && cp <= 0x11a7) || (cp >= 0xd7b0 && cp <= 0xd7c6)
+const isJamoT = (cp: number): boolean => (cp >= 0x11a8 && cp <= 0x11ff) || (cp >= 0xd7cb && cp <= 0xd7fb)
+const isJamoLV = (cp: number): boolean => isJamoL(cp) || isJamoV(cp)
+const isJamoVT = (cp: number): boolean => isJamoV(cp) || isJamoT(cp)
+
 /** 한컴 언어 분류 '영문'(U+0250 미만·U+1E00~1FFF·‘’“” 등 U+2018~201F) — 그 글자는 영문 글꼴·장평·자간·상대크기로 잰다 */
 const isLatinCp = (cp: number): boolean => cp < 0x250 || (cp >= 0x1e00 && cp < 0x2000) || (cp >= 0x2018 && cp < 0x2020)
 
@@ -169,7 +176,10 @@ function reflowPara(
     // 폭 테이블: 고정폭 글꼴(굴림체류)은 전용 클래스 — 함초롬 테이블(한글 0.97em)로 재면 줄당 1~2자
     // 과대적재로 wrap 이 어긋난다 (seoul 코퍼스 3건 실측). 폭표 없는 한글 글꼴은 한글 1em(faceClassForReflow).
     // 글자 폭은 한컴처럼 글자마다 4 단위로 양자화하고, 언어별 글꼴·장평·자간·상대크기와 첨자 크기를 따른다(glyphWidth)
-    const { w, sp } = glyphWidth(c.ch, st)
+    // 옛한글: 첫소리 자모 뒤의 가운뎃소리·끝소리 자모는 한 글자로 합쳐진다 — 폭은 첫소리 자리의 한 글자 몫뿐(ᄒ+ᆞ+ᆫ = 1em)
+    const cp = c.ch.codePointAt(0)!
+    const joins = isJamoVT(cp) && isJamoLV(text.codePointAt(text.length - 1) ?? 0)
+    const { w, sp } = joins ? { w: 0, sp: 0 } : glyphWidth(c.ch, st)
     for (let u = 0; u < c.ch.length; u++) { realIdx.push(i); widths.push(u === 0 ? w : 0); spacings.push(u === 0 ? sp : 0) }
     text += c.nb ? "\u00a0" : c.ch
     x += w

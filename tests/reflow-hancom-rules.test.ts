@@ -33,6 +33,12 @@ describe("reflow 한컴 조판 규칙", () => {
     assert.equal(hancomCharWidth("A", 1000, 100, 0, "cjk"), hancomCharWidth("A", 1000, 100, 0, "hcr"))
   })
 
+  it("반각 형태(｢ ｣ ･)는 표에 따로 없으면 반각, 옛한글 조합 자모는 한 글자 폭", () => {
+    for (const fc of ["cjk", "fixedPitch", "hcr", "font:HY견고딕"] as const) assert.equal(hancomCharWidth("｢", 1000, 100, 0, fc), 500, fc)
+    // ᄒ+ᆞ+ᆫ 세 자모가 한 글자 — 41자 폭(41000)에 꼭 차고 넘치지 않는다
+    const old = "ᄒᆞᆫ"
+    assert.deepEqual(reflowed(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${old.repeat(42)}</hp:t></hp:run></hp:p>`)[0].map(s => s[0]), [0])
+  })
   it("KoPub 실측 폭표 — 굵기끼리 같은 표", () => {
     const ga = "가".codePointAt(0)!
     for (const w of ["Light", "Medium", "Bold"]) {

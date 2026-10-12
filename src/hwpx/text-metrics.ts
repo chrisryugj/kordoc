@@ -17,7 +17,7 @@
  * 이 테이블로 근사한다(오차 수 % 이내 — 공문서 본문은 어차피 함초롬바탕 관행).
  */
 
-import { fontWidthFn, hasFontMetrics } from "./font-metrics.js"
+import { fontWidthFn, hasFontMetrics, isHalfwidthForm } from "./font-metrics.js"
 
 /** ASCII 0x20~0x7E advance (em×1000). 0x20은 useFontSpace=1일 때의 글꼴값(300) */
 const ASCII_W = [
@@ -44,6 +44,7 @@ export function charWidthEm1000(cp: number): number {
   if (cp >= 0x20 && cp <= 0x7e) return ASCII_W[cp - 0x20]
   const sym = SYM_W[cp]
   if (sym !== undefined) return sym
+  if (isHalfwidthForm(cp)) return 500 // 반각 형태 ｢ ｣ ･
   if (cp >= 0xac00 && cp <= 0xd7a3) return 970 // 한글 음절 (전수 균일 확인)
   if (cp >= 0x1100 && cp <= 0x11ff) return 970 // 옛한글 자모
   if (cp >= 0x3131 && cp <= 0x318e) return 970 // 호환 자모 (ㆍ 포함)
@@ -127,18 +128,18 @@ function gothicWidthEm1000(cp: number): number {
 /** 폭표 없는 한글 글꼴 advance(em×1000) — 자모·한글·한자·전각 기호(U+1100 이후)는 1em, 그 아래(ASCII·라틴)는 함초롬 폭.
  *  실측 한글 글꼴(바탕·돋움·한양신명조·HY신명조·한컴바탕 …)의 음절 폭은 1em 이고 함초롬 계열만 0.97em 이다 */
 function cjkWidthEm1000(cp: number): number {
-  return cp >= 0x1100 ? 1000 : charWidthEm1000(cp)
+  return isHalfwidthForm(cp) ? 500 : cp >= 0x1100 ? 1000 : charWidthEm1000(cp)
 }
 
 /** 고정폭 글꼴 advance(em×1000) — ASCII 반각 500, 그 외 전각 1000 */
 function fixedPitchWidthEm1000(cp: number): number {
-  return cp < 0x80 ? 500 : 1000
+  return cp < 0x80 || isHalfwidthForm(cp) ? 500 : 1000
 }
 
 /** 폭 클래스 → advance 함수. `font:이름` 은 실측 폭표(없는 글꼴명이면 gothic 근사) */
 function widthFnOf(faceClass: FaceClass | undefined): (cp: number) => number {
   if (faceClass === "fixedPitch") return fixedPitchWidthEm1000
-  if (faceClass === "gothic") return gothicWidthEm1000
+  if (faceClass === "gothic") return cp => (isHalfwidthForm(cp) ? 500 : gothicWidthEm1000(cp))
   if (faceClass === "cjk") return cjkWidthEm1000
   if (faceClass?.startsWith("font:")) {
     const face = faceClass.slice(5)
