@@ -61,7 +61,12 @@ export interface RenderParaGeom {
   /** 글머리표(heading BULLET) — 첫 줄 앞에 글머리표 글자와 간격(textOffset)이 놓인다. autoIndent 면 둘째 줄부터도 그만큼 들어간다.
    *  lineseg horzpos·horzsize 는 바뀌지 않는다(한컴 저장 lineseg 실측: ◦ 1100 + 50% → 1650 만큼 좁게 채움) */
   bullet?: { ch: string; charPrId?: string; offset: number; offsetPct: boolean; autoIndent: boolean }
+  /** 문단 번호(heading NUMBER) — 번호 정의 id·수준(1부터)과 그 수준의 머리 형식(`^1.` 의 ^N 자리에 N 수준 번호). 앞머리 폭은 글머리표와 같다 */
+  number?: { id: string; level: number; heads: Map<number, NumberHead>; charPrId?: string; offset: number; offsetPct: boolean; autoIndent: boolean }
 }
+
+/** 번호 정의 한 수준(hh:paraHead) */
+export interface NumberHead { text: string; format: string; start: number }
 
 export const DEFAULT_PARA_GEOM: RenderParaGeom = {
   lineSpacingType: "PERCENT", lineSpacingValue: 160,
@@ -267,6 +272,9 @@ export function parseRenderStyles(headXml: string): RenderStyles {
   const paraTabRef = new Map<string, string>()
   const paraBullet = new Map<string, string>()
   const bullets = new Map<string, NonNullable<RenderParaGeom["bullet"]>>()
+  const paraNumber = new Map<string, { id: string; level: number }>()
+  /** 번호 정의 id → 수준 → { 머리, 앞머리 속성 } */
+  const numberings = new Map<string, Map<number, { head: NumberHead; charPrId?: string; offset: number; offsetPct: boolean; autoIndent: boolean }>>()
 
   const walk = (el: Element): void => {
     const tag = (el.tagName || "").replace(/^[^:]+:/, "")
@@ -313,6 +321,7 @@ export function parseRenderStyles(headXml: string): RenderStyles {
         if (tab != null) paraTabRef.set(id, tab)
         const heading = findDeep(el, "heading")
         if (heading?.getAttribute("type") === "BULLET") paraBullet.set(id, heading.getAttribute("idRef") ?? "")
+        else if (heading?.getAttribute("type") === "NUMBER") paraNumber.set(id, { id: heading.getAttribute("idRef") ?? "", level: (Number(heading.getAttribute("level")) || 0) + 1 })
       }
     } else if (tag === "bullet") {
       const id = el.getAttribute("id"), head = findChildByLocalName(el, "paraHead")
@@ -325,6 +334,24 @@ export function parseRenderStyles(headXml: string): RenderStyles {
           offsetPct: (head?.getAttribute("textOffsetType") ?? "PERCENT") === "PERCENT",
           autoIndent: head?.getAttribute("autoIndent") !== "0",
         })
+      }
+    } else if (tag === "numbering") {
+      const id = el.getAttribute("id")
+      if (id != null) {
+        const levels = new Map<number, { head: NumberHead; charPrId?: string; offset: number; offsetPct: boolean; autoIndent: boolean }>()
+        for (let i = 0; i < el.childNodes.length; i++) {
+          const h = el.childNodes[i] as Element
+          if (h.nodeType !== 1 || (h.tagName || "").replace(/^[^:]+:/, "") !== "paraHead") continue
+          const cpr = h.getAttribute("charPrIDRef")
+          levels.set(Number(h.getAttribute("level")) || 1, {
+            head: { text: h.textContent ?? "", format: h.getAttribute("numFormat") ?? "DIGIT", start: Number(h.getAttribute("start") ?? 1) },
+            ...(cpr != null && cpr !== "4294967295" ? { charPrId: cpr } : {}),
+            offset: Number(h.getAttribute("textOffset")) || 0,
+            offsetPct: (h.getAttribute("textOffsetType") ?? "PERCENT") === "PERCENT",
+            autoIndent: h.getAttribute("autoIndent") !== "0",
+          })
+        }
+        numberings.set(id, levels)
       }
     } else if (tag === "borderFill") {
       const id = el.getAttribute("id")
@@ -352,6 +379,10 @@ export function parseRenderStyles(headXml: string): RenderStyles {
   for (const [id, tab] of paraTabRef) {
     const g = styles.paraGeom.get(id)
     if (g && autoTabPr.has(tab)) g.autoTabLeft = true
+  }
+  for (const [id, n] of paraNumber) {
+    const g = styles.paraGeom.get(id), levels = numberings.get(n.id), lv = levels?.get(n.level)
+    if (g && levels && lv) g.number = { id: n.id, level: n.level, heads: new Map([...levels].map(([k, v]) => [k, v.head])), ...(lv.charPrId != null ? { charPrId: lv.charPrId } : {}), offset: lv.offset, offsetPct: lv.offsetPct, autoIndent: lv.autoIndent }
   }
   for (const [id, b] of paraBullet) {
     const g = styles.paraGeom.get(id), bu = bullets.get(b)

@@ -28,6 +28,7 @@ import { measureTextWidth, faceClassOf, type WrapMode } from "../hwpx/text-metri
 import { parseRenderStyles, DEFAULT_CHAR, type RenderStyles, type RenderBorderEdge, type RenderParaGeom } from "./head-styles.js"
 import { reflowSection } from "./reflow.js"
 import { RegionCollector, type PageBBox, type RenderRegion, type RenderScene } from "./scene.js"
+import { nextParaNumber, type NumberCounters } from "./para-number.js"
 import { ln, elements, num, findFirst, type Seg, type ParaChar, OBJ_TAGS, type ParaObj, type ParaModel, buildPara, prepareDeletedRanges, tabAdvance, type ExtentMemo, cellContentExtent, collectCells, measureTableHeight } from "./para-model.js"
 import { pageStories } from "./page-stories.js"
 import { mulAffine, objectGeometry, renderingMatrix, shapeGeometry, rotatedBounds, SHAPE_TAGS, type Affine, type RegionRotation } from "./shape-geometry.js"
@@ -89,6 +90,8 @@ interface Ctx {
   defs: string[]
   /** 검색어 형광펜 (소문자 정규화, 빈 문자열 제거) */
   highlights: string[]
+  /** 문단 번호 카운터 — 그리는 순서(문서 순서)로 센다. 전 구역 공유 */
+  nums: NumberCounters
   warnings: string[]
   warned: Set<string>
   stats: { texts: number; images: number; tables: number; shapes: number }
@@ -176,13 +179,14 @@ function lineNaturalWidth(m: ParaModel, styles: RenderStyles, start: number, end
   return { text, obj }
 }
 
-function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
+/** numText: 문단 번호 머리 글("1."·"가)") — 글머리표처럼 첫 줄 앞에 그리고 그만큼 들인다 */
+function planLines(m: ParaModel, styles: RenderStyles, numText = ""): LinePlan[] {
   const align = (m.paraPrId != null ? styles.paraAlign.get(m.paraPrId) : undefined) ?? "JUSTIFY"
   const geom = m.paraPrId != null ? styles.paraGeom.get(m.paraPrId) : undefined
   const hang = geom && geom.marginIntent < 0 ? -geom.marginIntent : 0
   // 줄 앞머리 — 한컴 lineseg 의 horzpos·horzsize 는 첫 줄 들여쓰기(양수 intent)와 글머리표를 빼지 않는다(양수 들여쓰기 문단 645개 전부
   // horzpos = 왼쪽 여백). 글은 그만큼 들어가서 시작하고, 양쪽 정렬도 남는 폭에 맞춘다. 글머리표는 autoIndent 면 둘째 줄부터도 들인다
-  const bu = geom?.bullet
+  const bu = geom?.bullet ?? (numText && geom?.number ? { ch: numText, ...geom.number } : undefined)
   const firstPr = m.chars.find(c => c.ch !== "")?.prId ?? null
   const bst = (bu?.charPrId != null ? styles.charPr.get(bu.charPrId) : firstPr != null ? styles.charPr.get(firstPr) : undefined) ?? DEFAULT_CHAR
   const bulletW = bu ? measureTextWidth(bu.ch, bst.height, bst.ratio, { spacingPct: bst.spacing, faceClass: faceClassOf(bst.face) }) + (bu.offsetPct ? Math.trunc(bst.height * bu.offset / 100) : bu.offset) : 0
@@ -252,6 +256,7 @@ function advanceTo(m: ParaModel, styles: RenderStyles, plan: LinePlan, upto: num
 function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, depth: number, segPages?: number[]): void {
   if (depth > 16) { warnOnce(ctx, "depth", "중첩 깊이 16 초과 — 이하 생략"); return }
   const m = buildPara(p)
+  const numText = nextParaNumber(ctx.nums, m.paraPrId != null ? ctx.styles.paraGeom.get(m.paraPrId) : undefined)
   if (m.segs.length === 0) {
     // 조판 캐시 없는 문단 — 개체만이라도 문단 원점에 배치. 텍스트는 무음 생략 금지
     if (m.chars.some(c => c.ch !== "")) {
@@ -263,7 +268,7 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
     }
     return
   }
-  const plans = planLines(m, ctx.styles)
+  const plans = planLines(m, ctx.styles, numText)
   const baseV = m.segs[0].vertpos
 
   // 문단 region — 실문자가 있는 문단만. 줄(lineseg) 영역의 페이지별 합집합, 페이지가 바뀌면 조각을 나눈다.
@@ -883,7 +888,7 @@ export function renderSectionRoots(sections: SectionRoot[], input: SectionRender
     highlights: (input.highlights ?? []).map(s => s.trim().toLowerCase()).filter(s => s.length > 0),
     warnings: input.warnings, warned: new Set(), stats: { texts: 0, images: 0, tables: 0, shapes: 0 },
     extentMemo: { cell: new WeakMap(), table: new WeakMap() },
-    regions: new RegionCollector(), parentStack: [], pageBase: 0,
+    regions: new RegionCollector(), parentStack: [], pageBase: 0, nums: new Map(),
   }
   const rendered: RenderedSection[] = []
   for (const { root, index, masterPages, hasDeletionMarkers } of sections) {

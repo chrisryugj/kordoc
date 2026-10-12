@@ -169,6 +169,22 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(vps(para(0, 5) + para(1, 3))[1], [0, 1600, 3200]) // 외톨이줄 보호 — 첫 줄 하나만 남기지 않는다
     assert.deepEqual(vps(para(0, 6) + para(2, 1))[1], [800]) // 9600 + 800 넘침 → 새 쪽, 문단 위 간격 800 은 남는다
   })
+  it("문단 번호 — 수준별로 문서 순서대로 세고, 머리 글 폭 + 간격만큼 좁게 채운다", async () => {
+    const { nextParaNumber, formatHeadNumber } = await import("../src/render/para-number.js")
+    const { DEFAULT_PARA_GEOM: DEFAULT_GEOM } = await import("../src/render/head-styles.js")
+    assert.deepEqual([1, 2, 14, 15].map(n => formatHeadNumber(n, "HANGUL_SYLLABLE")), ["가", "나", "하", "가"])
+    assert.equal(formatHeadNumber(3, "CIRCLED_DIGIT"), "③")
+    assert.equal(formatHeadNumber(4, "ROMAN_CAPITAL"), "IV")
+    const heads = new Map([[1, { text: "^1.", format: "DIGIT", start: 1 }], [2, { text: "^1.^2)", format: "HANGUL_SYLLABLE", start: 1 }]])
+    const g = (level: number) => ({ ...DEFAULT_GEOM, number: { id: "1", level, heads, offset: 50, offsetPct: true, autoIndent: true } })
+    const c = new Map()
+    assert.deepEqual([g(1), g(2), g(2), g(1), g(2)].map(x => nextParaNumber(c, x)), ["1.", "1.가)", "1.나)", "2.", "2.가)"])
+    const head = HEAD.replace("</hh:paraProperties>", `<hh:paraPr id="1"><hh:align horizontal="LEFT"/><hh:heading type="NUMBER" idRef="1" level="0"/><hh:breakSetting breakNonLatinWord="KEEP_WORD"/></hh:paraPr></hh:paraProperties>`)
+      .replace("<hh:charProperties>", `<hh:numberings itemCnt="1"><hh:numbering id="1" start="0"><hh:paraHead start="1" level="1" autoIndent="1" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="4294967295">가^1</hh:paraHead></hh:numbering></hh:numberings><hh:charProperties>`)
+    // 머리 "가1" — 바탕 한글 1000 + 숫자 + 간격 500 → 첫 줄과 둘째 줄 모두 42자 미만
+    const [p] = reflowed(`<hp:p paraPrIDRef="1"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(90)}</hp:t></hp:run></hp:p>`, 42000, head)
+    assert.ok(p[1][0] < 42 && p[2][0] - p[1][0] < 42, JSON.stringify(p.map(s => s[0])))
+  })
   it("2단 구역의 각주는 단 폭으로 채운다", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
     const ps = reflowed(body)

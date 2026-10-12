@@ -19,6 +19,7 @@
  */
 
 import { buildPara, measureTableHeight, tabAdvance, type ParaObj } from "./para-model.js"
+import { nextParaNumber, type NumberCounters } from "./para-number.js"
 import { simulateWrap, hancomCharWidth, faceClassForReflow, mulDiv, type WrapMode } from "../hwpx/text-metrics.js"
 import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderCharStyle, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
@@ -111,11 +112,14 @@ function reflowPara(
   startV: number,
   mode: WrapMode,
   zones: WrapZone[] = [],
+  nums: NumberCounters = new Map(),
 ): { paraBottom: number; spaceAfter: number } | null {
   const m = buildPara(p)
+  const geom = styles.paraGeom.get(m.paraPrId ?? "") ?? DEFAULT_PARA_GEOM
+  // 문단 번호는 조판 캐시가 있는 문단도 센다(뒤 문단 번호가 밀리지 않게)
+  const numText = nextParaNumber(nums, geom)
   if (m.segs.length > 0) return null // 이미 캐시 있음 — Tier-1 무회귀
 
-  const geom = styles.paraGeom.get(m.paraPrId ?? "") ?? DEFAULT_PARA_GEOM
   // 실텍스트 + UTF-16 유닛 → chars 슬롯 인덱스 매핑 (서로게이트 쌍은 슬롯 1개, 유닛 2개).
   // 폭은 글자마다 제 charPr(글꼴·크기·장평·자간)로 — 부호 run 과 압축된 내용 run 이 섞인 문단도 한컴과 같게.
   // 탭은 "\t" 한 글자로 넣고 폭 = 탭 전진폭(첫 줄 기준 — 항목부호 뒤 내어쓰기용 자동 탭).
@@ -197,8 +201,11 @@ function reflowPara(
   const firstWidth = avail
   // 글머리표: 글자 폭 + 간격(textOffset — % 면 글자 크기의 %)만큼 첫 줄이, autoIndent 면 둘째 줄부터도 좁게 찬다
   // (한컴 저장 lineseg 260문단: 맞는 문단 65 → 235. 간격을 글머리표 폭의 % 로 보면 224)
-  const bu = geom.bullet
-  const bulletW = bu ? glyphWidth(bu.ch, (bu.charPrId != null ? styles.charPr.get(bu.charPrId) : undefined) ?? domChar).w + (bu.offsetPct ? Math.trunc(height * bu.offset / 100) : bu.offset) : 0
+  // 문단 번호도 같다 — 머리 글("1."·"가)") 폭 + 간격 (한컴 저장본 번호 문단 대조)
+  const bu = geom.bullet ?? (numText && geom.number ? { ch: numText, ...geom.number } : undefined)
+  let headW = 0
+  if (bu) { const bst = (bu.charPrId != null ? styles.charPr.get(bu.charPrId) : undefined) ?? domChar; for (const ch of bu.ch) headW += glyphWidth(ch, bst).w }
+  const bulletW = bu ? headW + (bu.offsetPct ? Math.trunc(height * bu.offset / 100) : bu.offset) : 0
   const contBullet = bu?.autoIndent ? bulletW : 0
   const firstWrapWidth = Math.max(500, avail - Math.max(0, geom.marginIntent) - bulletW)
   const contSegWidth = Math.max(500, avail + Math.min(0, geom.marginIntent))
@@ -372,7 +379,7 @@ function columnWidthIn(p: Element, bodyW: number): number | undefined {
  * 도형 글상자(drawText)와 표 캡션은 저장된 글 영역 폭(lastWidth, 글상자는 안 여백을 뺀다).
  * 종전엔 건너뛰어 캐시 없는 문서에서 이 안의 글이 줄 정보 없이 남았다
  */
-function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number; endNoteW?: number }, noteW = counter.bodyW): void {
+function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number; endNoteW?: number; nums?: NumberCounters }, noteW = counter.bodyW): void {
   const visit = (el: Element): void => {
     for (const ch of elements(el)) {
       const t = ln(ch)
@@ -396,7 +403,7 @@ function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode:
 }
 
 /** 문단 run 안의 표를 찾아 각 셀 subList를 셀 로컬로 reflow (중첩 재귀) */
-function reflowTablesIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number; endNoteW?: number }): void {
+function reflowTablesIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number; endNoteW?: number; nums?: NumberCounters }): void {
   for (const run of elements(p)) {
     if (ln(run) !== "run") continue
     for (const obj of elements(run)) {
@@ -432,7 +439,7 @@ function reflowBlockFlow(
   styles: RenderStyles,
   areaW: number,
   mode: WrapMode,
-  counter: { n: number; bodyW?: number; endNoteW?: number },
+  counter: { n: number; bodyW?: number; endNoteW?: number; nums?: NumberCounters },
   bodyH: number,
 ): void {
   let cursorV = 0
@@ -450,7 +457,8 @@ function reflowBlockFlow(
     reflowSubListsIn(p, doc, styles, mode, counter, bodyFlow ? areaW : undefined)
     const g = styles.paraGeom.get(p.getAttribute("paraPrIDRef") ?? "")
     const startV = cursorV + prevSpaceAfter + (g?.spaceBefore ?? 0)
-    const res = reflowPara(p, doc, styles, areaW, startV, mode, zones)
+    const numsBefore: NumberCounters = new Map([...(counter.nums ?? [])].map(([k, v]) => [k, v.slice()]))
+    const res = reflowPara(p, doc, styles, areaW, startV, mode, zones, counter.nums)
     if (!res) {
       // 캐시 보유 문단(Tier-1) — 한컴 실좌표로 커서를 전진시킨다. 혼합 캐시 문서
       // (한컴 저장본을 프로그램 편집해 일부 문단만 캐시가 없는 경우)에서 캐시 없는
@@ -502,7 +510,7 @@ function reflowBlockFlow(
         zones.length = 0
         const lsa = findChildByLocalName(p, "linesegarray")
         if (lsa) p.removeChild(lsa)
-        cursorV = reflowPara(p, doc, styles, areaW, 0, mode, zones)!.paraBottom
+        cursorV = reflowPara(p, doc, styles, areaW, 0, mode, zones, numsBefore)!.paraBottom // 번호는 이미 셌다 — 센 직전 상태로 다시
       } else {
         // 새 페이지 상단으로 이동 → 프리패스가 vertpos 역행 감지. 문단 위 간격은 새 쪽에서도 남는다(한컴 저장본: 새 쪽 첫 줄 vertpos = prev 1200)
         const top = g?.spaceBefore ?? 0
@@ -532,7 +540,7 @@ export function reflowSection(
   // 미주는 구역 끝에 모여 놓인다 — 폭은 구역 끝의 단 폭(중간에 2단으로 바뀐 구역의 미주 lineseg 폭 = 그 단 폭)
   let endNoteW: number | undefined
   for (const p of elements(root)) if (ln(p) === "p") endNoteW = columnWidthIn(p, geom.BODY_W) ?? endNoteW
-  const counter = { n: 0, bodyW: geom.BODY_W, endNoteW }
+  const counter = { n: 0, bodyW: geom.BODY_W, endNoteW, nums: new Map() as NumberCounters }
   reflowBlockFlow(root, doc, styles, geom.BODY_W, mode, counter, geom.BODY_H)
   return counter.n
 }
