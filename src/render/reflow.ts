@@ -160,7 +160,8 @@ function reflowPara(
       // 그 글 폭의 한 덩어리(미주 lineseg 실측: 8.0pt 문단이 "1) " 몫만큼 일찍 꺾인다), 쪽 번호·필드 등은 폭 0
       let w = 0
       if (c.ctrlText) {
-        const st = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
+        const st0 = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
+        const st = c.ctrlSup ? { ...st0, script: "sup" as const } : st0
         for (const ch of c.ctrlText) w += glyphWidth(ch, st).w
       }
       realIdx.push(i); widths.push(w); spacings.push(0); text += w > 0 ? "\ufffc" : "\u2060"; x += w

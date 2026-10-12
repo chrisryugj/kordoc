@@ -4,7 +4,7 @@
  */
 
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
-import { noteAutoNumOf } from "../hwpx/notes.js"
+import { noteAttrsOf, noteAutoNumOf, noteRefMark, readSectionNoteFormats } from "../hwpx/notes.js"
 import { toInt32, solveRowHeights } from "./layout.js"
 import { type RenderParaGeom } from "./head-styles.js"
 
@@ -40,8 +40,9 @@ export interface Seg { textpos: number; vertpos: number; horzpos: number; horzsi
 
 /** tab: 탭 컨트롤 첫 슬롯(나머지 7슬롯은 필러) — 폭은 줄 조판 때 탭 정지점으로 정한다. tabW: 저장된 hp:tab width.
  * nb: 묶음 빈칸(hp:nbSpace) — 그리기는 공백, 줄바꿈은 끊지 않는 빈칸(U+00A0). br: 강제 줄바꿈(hp:lineBreak) — 폭 0, 뒤 글은 새 줄.
- * ctrlText: 컨트롤이 그리는 글(주석 머리 번호 "1)" 등 hp:autoNum) — 줄 채우기에서 그 글의 폭을 차지한다 */
-export interface ParaChar { ch: string; prId: string | null; tab?: boolean; tabW?: number; nb?: boolean; ctrl?: boolean; br?: boolean; ctrlText?: string }
+ * ctrlText: 컨트롤이 그리는 글(주석 머리 번호 "1)" 등 hp:autoNum, 각주·미주 본문 참조 번호) — 줄 채우기에서 그 글의 폭을 차지한다.
+ * ctrlSup: 그 글을 위첨자 크기로 잰다(각주·미주 본문 참조 번호) */
+export interface ParaChar { ch: string; prId: string | null; tab?: boolean; tabW?: number; nb?: boolean; ctrl?: boolean; br?: boolean; ctrlText?: string; ctrlSup?: boolean }
 
 /** 렌더 대상 개체 태그 — 이 외(도형류)는 경고 후 생략 */
 export const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", "ellipse", "polygon", "curv", "curve", "line", "arc", "ole", "textart"])
@@ -58,6 +59,16 @@ export interface ParaModel { chars: ParaChar[]; segs: Seg[]; objs: ParaObj[]; pa
  * 탭(0x09)은 char가 아니라 inline 컨트롤 = 8슬롯(16바이트)이라 여기 넣으면 안 된다
  * (record.ts 0x09 처리의 i+=14와 같은 모델. 1슬롯로 세면 탭당 7슬롯씩 줄 경계가 밀린다) */
 export const CHAR_CTRL_1SLOT = new Set(["lineBreak", "hyphen", "nbSpace", "fwSpace"])
+
+const noteFmtCache = new WeakMap<object, ReturnType<typeof readSectionNoteFormats>>()
+/** 문단이 속한 구역의 각주·미주 번호 모양(secPr) — 구역 루트별로 한 번 읽는다 */
+function sectionNoteFormats(p: Element): ReturnType<typeof readSectionNoteFormats> {
+  const root = p.ownerDocument?.documentElement as unknown as Element | null
+  if (!root) return {}
+  let f = noteFmtCache.get(root)
+  if (!f) { f = readSectionNoteFormats(root); noteFmtCache.set(root, f) }
+  return f
+}
 
 /** lineseg textpos 정합용 0폭 필러 슬롯 — 컨트롤이 차지하는 문자 위치를 채운다 */
 export function pushFillers(chars: ParaChar[], n: number, prId: string | null): void {
@@ -189,8 +200,12 @@ export function buildPara(p: Element): ParaModel {
             const slot = chars[chars.length - 8]
             slot.ctrl = true
             const an = cn === "ctrl" ? findChildByLocalName(ch, "autoNum") : null
-            const t = an ? noteAutoNumOf(an) : ""
+            // 각주·미주 본문 참조 번호("1)", "문9）")는 위첨자 크기로 그 글 폭을 차지한다 — 구역 번호 모양의 supscript 값과 무관
+            // (한컴 저장 lineseg: 위첨자로 재면 두 줄 이상 문단 줄 시작 일치 +201, 본래 크기면 +173)
+            const note = cn === "ctrl" ? findChildByLocalName(ch, "footNote") ?? findChildByLocalName(ch, "endNote") : null
+            const t = an ? noteAutoNumOf(an) : note ? noteRefMark(noteAttrsOf(note), sectionNoteFormats(p)[ln(note) === "endNote" ? "endnote" : "footnote"]) : ""
             if (t) slot.ctrlText = t
+            if (note) slot.ctrlSup = true
           }
         }
       }
