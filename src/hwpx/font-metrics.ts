@@ -234,16 +234,6 @@ const KOPUB_WORLD_DOTUM: FontMetrics = {
 
 /** 한컴 저장본 lineseg 역추정 폭표 — 실측 폭표가 없는 글꼴. 한컴이 줄을 나눈 위치(두 줄 이상 문단)에 맞게 글자별 em 을 고른 값이다.
  *  문단을 둘로 나눠 한쪽으로 고르고 다른 쪽으로 검증했다(주석의 검증 정답 수). 고르지 않은 글자는 한글 음절 폭·함초롬 영문 폭 그대로 */
-/** Arial — 한컴 저장 lineseg 역추정(두 줄 이상 문단 106개, 검증 문단 정답 26→43/53) */
-const FIT_Arial: FontMetrics = {
-  cjk: 996,
-  ascii: [500,320,320,610,610,830,724,320,320,320,550,550,450,550,320,550,550,550,550,550,550,550,550,550,550,550,320,320,550,550,550,550,830,820,605,360,719,627,617,683,734,305,315,660,605,839,734,732,
-    760,705,660,627,664,731,706,910,705,705,626,320,550,320,550,550,320,280,597,552,720,536,356,562,635,287,288,582,287,760,635,230,597,579,478,496,356,635,563,720,542,543,486,320,320,320,550],
-  ex: {
-    0xb7:320,
-  },
-}
-
 /** HYSinMyeongJo-Medium — 한컴 저장 lineseg 역추정(두 줄 이상 문단 326개, 검증 문단 정답 106→126/163) */
 const FIT_HYSinMyeongJo_Medium: FontMetrics = {
   cjk: 1000,
@@ -495,6 +485,36 @@ const PDF_경기천년바탕_Regular: FontMetrics = {
   },
 }
 
+/** Arial Narrow — 한컴 PDF 임베드 글꼴 /W 실측(ArialNarrow, 글자 75개, 빈 ASCII 는 종전 값) */
+const PDF_Arial_Narrow: FontMetrics = {
+  cjk: 1000,
+  ascii: [228,320,320,610,610,830,546,157,272,272,318,550,228,272,228,228,456,456,456,456,456,456,456,456,456,456,228,320,550,479,550,550,830,546,546,591,591,546,500,638,591,228,410,546,456,683,591,
+    638,546,638,591,546,500,591,546,773,546,546,626,320,550,320,550,550,320,456,456,410,456,456,228,456,456,182,182,410,182,683,456,456,456,456,272,410,228,456,410,591,410,410,410,320,320,320,550],
+  ex: {
+    0xb0:399, 0xffff:228,
+  },
+}
+
+/** Times New Roman — 한컴 PDF 임베드 글꼴 /W 실측(TimesNewRomanPSMT, 글자 95개, 빈 ASCII 는 종전 값) */
+const PDF_Times_New_Roman: FontMetrics = {
+  cjk: 1000,
+  ascii: [250,333,408,500,500,833,724,180,333,333,500,563,250,333,250,277,500,500,500,500,500,500,500,500,500,500,277,277,563,563,563,443,920,722,666,666,722,610,556,722,722,333,389,722,610,889,722,
+    722,556,705,666,556,610,722,722,943,722,722,626,333,277,333,550,500,333,443,500,443,500,443,333,500,500,277,277,500,277,777,500,500,500,500,333,389,277,500,500,722,500,500,443,479,320,479,550],
+  ex: {
+    0x2018:333, 0x2019:333, 0x201c:443, 0x201d:443, 0x2e31:333, 0xffff:777,
+  },
+}
+
+/** Arial — 한컴 PDF 임베드 글꼴 /W 실측(ArialMT, 글자 84개, 빈 ASCII 는 종전 값) */
+const PDF_Arial: FontMetrics = {
+  cjk: 996,
+  ascii: [277,320,320,610,610,889,724,320,333,333,550,583,277,333,277,277,556,556,556,556,556,556,556,556,556,556,277,277,550,583,550,550,830,666,666,722,722,666,610,777,722,277,500,666,556,833,722,
+    777,666,705,722,666,610,722,666,943,666,666,610,320,550,320,550,550,320,556,556,500,556,556,277,556,556,222,222,500,222,833,556,556,556,556,333,500,277,556,500,722,500,500,500,320,320,320,550],
+  ex: {
+    0xb7:333, 0xe7:500, 0xe9:556, 0xf4:556, 0x2014:1000, 0x2019:222, 0x201c:333, 0x201d:333, 0x2192:1000, 0x2219:277, 0xffff:750,
+  },
+}
+
 const FONTS: Record<string, FontMetrics> = {
   "한컴돋움": {
     cjk: 1000,
@@ -596,7 +616,7 @@ const FONTS: Record<string, FontMetrics> = {
   "KoPub돋움체 Light": KOPUB_DOTUM, "KoPub돋움체 Medium": KOPUB_DOTUM, "KoPub돋움체 Bold": KOPUB_DOTUM,
   "KoPubWorld바탕체 Light": KOPUB_WORLD_BATANG, "KoPubWorld바탕체 Medium": KOPUB_WORLD_BATANG, "KoPubWorld바탕체 Bold": KOPUB_WORLD_BATANG, "KoPubWorld바탕체_Pro Light": KOPUB_WORLD_BATANG, "KoPubWorld바탕체_Pro Medium": KOPUB_WORLD_BATANG, "KoPubWorld바탕체_Pro Bold": KOPUB_WORLD_BATANG,
   "KoPubWorld돋움체 Light": KOPUB_WORLD_DOTUM, "KoPubWorld돋움체 Medium": KOPUB_WORLD_DOTUM, "KoPubWorld돋움체 Bold": KOPUB_WORLD_DOTUM, "KoPubWorld돋움체_Pro Light": KOPUB_WORLD_DOTUM, "KoPubWorld돋움체_Pro Medium": KOPUB_WORLD_DOTUM, "KoPubWorld돋움체_Pro Bold": KOPUB_WORLD_DOTUM,
-  "Arial": FIT_Arial,
+  "Arial": PDF_Arial,
   "HYSinMyeongJo-Medium": FIT_HYSinMyeongJo_Medium,
   "궁서": PDF_궁서,
   "돋움": PDF_돋움,
@@ -621,6 +641,8 @@ const FONTS: Record<string, FontMetrics> = {
   "HY울릉도M": PDF_HY울릉도M,
   "HY그래픽": PDF_HY그래픽,
   "경기천년바탕 Regular": PDF_경기천년바탕_Regular,
+  "Arial Narrow": PDF_Arial_Narrow,
+  "Times New Roman": PDF_Times_New_Roman,
 }
 
 /** 실측 폭표가 있는 글꼴인지 */
