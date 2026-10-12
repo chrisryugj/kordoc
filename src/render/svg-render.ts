@@ -29,7 +29,7 @@ import { parseRenderStyles, DEFAULT_CHAR, type RenderStyles, type RenderBorderEd
 import { reflowSection } from "./reflow.js"
 import { RegionCollector, type PageBBox, type RenderRegion, type RenderScene } from "./scene.js"
 import { nextParaNumber, type NumberCounters } from "./para-number.js"
-import { ln, elements, num, findFirst, type Seg, type ParaChar, OBJ_TAGS, type ParaObj, type ParaModel, buildPara, prepareDeletedRanges, tabAdvance, type ExtentMemo, cellContentExtent, collectCells, measureTableHeight } from "./para-model.js"
+import { ln, elements, num, findFirst, type Seg, type ParaChar, OBJ_TAGS, type ParaObj, type ParaModel, buildPara, prepareDeletedRanges, tabAdvance, type ExtentMemo, cellContentExtent, collectCells, measureTableHeight, captionOf, captionExtra } from "./para-model.js"
 import { pageStories } from "./page-stories.js"
 import { mulAffine, objectGeometry, renderingMatrix, shapeGeometry, rotatedBounds, SHAPE_TAGS, type Affine, type RegionRotation } from "./shape-geometry.js"
 export { buildPara, measureTableHeight, tabAdvance, type Seg, type ParaChar, type ParaModel, type ExtentMemo } from "./para-model.js"
@@ -407,7 +407,7 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
       // TAC 표 괘선은 pen + outMargin좌 (advanceTo는 o.index 앞까지라 자신의 om 미포함)
       const x = ox + plan.seg.horzpos + plan.xoff + advanceTo(m, ctx.styles, plan, o.index) + o.omL
       // 개체가 줄보다 낮으면 baseline 위에 얹고, 줄을 채우는 개체(th==h)는 줄 상단
-      const yTop = oy + plan.seg.vertpos + Math.max(0, plan.seg.baseline - o.height)
+      const yTop = oy + plan.seg.vertpos + Math.max(0, plan.seg.baseline - o.height - (o.tag === "tbl" || o.tag === "pic" ? captionExtra(o.el) : 0))
       drawObject(o, x, yTop, baseV, areaW, ctx, depth)
     } else {
       // 앵커 좌표는 첫 seg(baseV) 기준이므로 첫 seg 의 페이지에 귀속
@@ -479,6 +479,18 @@ function drawObject(o: ParaObj, x: number, y: number, baseV: number, areaW: numb
       ctx.parentStack = saved
     } })
     return
+  }
+  // 캡션 — 위 캡션은 개체를 캡션 높이 + 간격만큼 내리고, 아래 캡션은 개체 바닥 + 간격에, 왼쪽·오른쪽은 옆에 그린다
+  const cap = o.tag === "tbl" || o.tag === "pic" ? captionOf(o.el) : null
+  if (cap) {
+    const objH = o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el, ctx.extentMemo)) : o.height
+    let ox = x, oy = y, cx = x, cy = y
+    if (cap.side === "TOP") oy = y + cap.h + cap.gap
+    else if (cap.side === "LEFT") ox = x + cap.width + cap.gap
+    else if (cap.side === "RIGHT") cx = x + o.width + cap.gap
+    else cy = y + objH + cap.gap
+    for (const cp of elements(cap.sub)) if (ln(cp) === "p") drawPara(cp, cx, cy, cap.width, ctx, depth + 1)
+    x = ox; y = oy
   }
   if (o.tag === "tbl") drawTable(o.el, x, y, ctx, depth + 1)
   else if (o.tag === "pic") drawPic(o.el, x, y, ctx)

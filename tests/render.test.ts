@@ -182,6 +182,22 @@ describe("render: 첫 줄 들여쓰기·글머리표 (한컴 lineseg horzpos 는
   })
 })
 
+describe("render: 표 캡션 (위·아래 캡션은 표 줄 높이에 든다)", () => {
+  it("아래 캡션 글을 표 바닥 아래에 그리고, 뒤 문단은 캡션 아래로 내려간다", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("| 가 | 나 |\n| --- | --- |\n| 1 | 2 |\n\n표뒤문단입니다."))
+    const secName = Object.keys(zip.files).find(n => /section0\.xml$/.test(n))!
+    let sec = await zip.file(secName)!.async("string")
+    const cap = `<hp:caption side="BOTTOM" fullSz="0" width="8504" gap="850" lastWidth="40000"><hp:subList><hp:p paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>캡션글입니다</hp:t></hp:run></hp:p></hp:subList></hp:caption>`
+    sec = sec.replace(/(<hp:tbl [^>]*>)/, `$1${cap}`)
+    zip.file(secName, sec)
+    const r = await renderHwpxToSvg(new Uint8Array(await zip.generateAsync({ type: "nodebuffer" })), { reflow: true })
+    const yOf = (needle: string) => parseFloat([...r.svg.matchAll(/<text [^>]*y="([\d.-]+)"[^>]*>([^<]*)<\/text>/g)].find(m => m[2].includes(needle))?.[1] ?? "NaN")
+    const borderYs = [...r.svg.matchAll(/<line x1="[\d.-]+" y1="([\d.-]+)" x2="[\d.-]+" y2="([\d.-]+)"/g)].filter(m => m[1] === m[2]).map(m => parseFloat(m[1]))
+    assert.ok(yOf("캡션글") > Math.max(...borderYs), `캡션 ${yOf("캡션글")} 이 표 바닥 ${Math.max(...borderYs)} 아래`)
+    assert.ok(yOf("표뒤문단") > yOf("캡션글"), "뒤 문단은 캡션 아래")
+  })
+})
+
 describe("render: reflow 표 밀어내기 (셀 콘텐츠 성장)", () => {
   it("긴 셀로 자란 표 뒤 문단이 표 바닥 아래에 온다 (리뷰#6 겹침)", async () => {
     // 셀 폭(약 22000HWPUNIT)을 여러 줄로 감는 긴 텍스트 — 선언 행높이 1500을 훌쩍 넘긴다

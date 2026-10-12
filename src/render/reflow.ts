@@ -18,7 +18,7 @@
  * (seoul 코퍼스 자기일관성 59/59 — 36264961 전 문단 d=0 실측).
  */
 
-import { buildPara, measureTableHeight, tabAdvance, type ParaObj } from "./para-model.js"
+import { buildPara, measureTableHeight, tabAdvance, captionExtra, type ParaObj } from "./para-model.js"
 import { nextParaNumber, type NumberCounters } from "./para-number.js"
 import { simulateWrap, hancomCharWidth, faceClassForReflow, mulDiv, type WrapMode } from "../hwpx/text-metrics.js"
 import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderCharStyle, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
@@ -113,6 +113,8 @@ function reflowPara(
   mode: WrapMode,
   zones: WrapZone[] = [],
   nums: NumberCounters = new Map(),
+  /** 본문 흐름인가 — 표 칸 등 하위 목록에서는 떠 있는 위아래 배치 개체가 글을 밀지 않는다 */
+  bodyFlow = true,
 ): { paraBottom: number; spaceAfter: number } | null {
   const m = buildPara(p)
   const geom = styles.paraGeom.get(m.paraPrId ?? "") ?? DEFAULT_PARA_GEOM
@@ -225,7 +227,7 @@ function reflowPara(
   // · BEHIND_TEXT/IN_FRONT_OF_TEXT 또는 PAGE/PAPER 앵커: 본문 흐름에 불참 (페이지 하단 직인 스탬프가 커서를 밀던 것 제거)
   let floatBelow = 0 // 텍스트 시작을 아래로 미는 float 개체 바닥 (문단 로컬)
   const objBottom = startV
-  const effHOf = (o: ParaObj): number => (o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el)) : o.height)
+  const effHOf = (o: ParaObj): number => (o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el)) : o.height) + (o.tag === "tbl" || o.tag === "pic" ? captionExtra(o.el) : 0)
   for (const o of m.objs) {
     if (o.inline) continue
     const pos = findChildByLocalName(o.el, "pos")
@@ -238,7 +240,8 @@ function reflowPara(
     const vo = Math.max(0, num(pos, "vertOffset"))
     const effH = effHOf(o)
     if (wrapAttr === "TOP_AND_BOTTOM") {
-      floatBelow = Math.max(floatBelow, vo + outT + effH + outB)
+      // 표 칸 안에서는 글을 밀지 않는다(한컴 저장본: 칸 안 떠 있는 위아래 개체 문단 202개 중 201개가 첫 줄 vertpos 0)
+      if (bodyFlow) floatBelow = Math.max(floatBelow, vo + outT + effH + outB)
       continue
     }
     const hRel = pos?.getAttribute("horzRelTo") ?? "COLUMN", hAlign = pos?.getAttribute("horzAlign") ?? "LEFT"
@@ -458,7 +461,7 @@ function reflowBlockFlow(
     const g = styles.paraGeom.get(p.getAttribute("paraPrIDRef") ?? "")
     const startV = cursorV + prevSpaceAfter + (g?.spaceBefore ?? 0)
     const numsBefore: NumberCounters = new Map([...(counter.nums ?? [])].map(([k, v]) => [k, v.slice()]))
-    const res = reflowPara(p, doc, styles, areaW, startV, mode, zones, counter.nums)
+    const res = reflowPara(p, doc, styles, areaW, startV, mode, zones, counter.nums, bodyH > 0)
     if (!res) {
       // 캐시 보유 문단(Tier-1) — 한컴 실좌표로 커서를 전진시킨다. 혼합 캐시 문서
       // (한컴 저장본을 프로그램 편집해 일부 문단만 캐시가 없는 경우)에서 캐시 없는

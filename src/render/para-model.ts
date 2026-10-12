@@ -207,6 +207,30 @@ export function buildPara(p: Element): ParaModel {
   return { chars, segs, objs, paraPrId: p.getAttribute("paraPrIDRef"), runs }
 }
 
+/**
+ * 표·그림 캡션(hp:caption) — 위·아래 캡션은 개체 높이에 캡션 글 높이(마지막 줄 아래 끝, 줄 간격 몫 제외) + 간격(gap)을 더한다
+ * (한컴 저장 lineseg 실측: 캡션 한 줄 1200 + gap 850 = 표 줄이 2050 높다). 왼쪽·오른쪽 캡션은 높이를 더하지 않는다
+ */
+export function captionOf(el: Element): { side: string; h: number; gap: number; width: number; sub: Element } | null {
+  const cap = findChildByLocalName(el, "caption")
+  const sub = cap ? findChildByLocalName(cap, "subList") : null
+  if (!cap || !sub) return null
+  let h = 0
+  for (const p of elements(sub)) {
+    if (ln(p) !== "p") continue
+    const lsa = findChildByLocalName(p, "linesegarray")
+    if (lsa) for (const sg of elements(lsa)) if (ln(sg) === "lineseg") h = Math.max(h, num(sg, "vertpos") + num(sg, "vertsize"))
+  }
+  const side = cap.getAttribute("side") ?? "BOTTOM"
+  return { side, h, gap: num(cap, "gap"), width: num(cap, side === "LEFT" || side === "RIGHT" ? "width" : "lastWidth") || num(cap, "width"), sub }
+}
+
+/** 위·아래 캡션이 개체 높이에 더하는 몫 */
+export function captionExtra(el: Element): number {
+  const c = captionOf(el)
+  return c && (c.side === "TOP" || c.side === "BOTTOM") ? c.h + c.gap : 0
+}
+
 /** 한컴 기본 탭 간격 40pt (실결재 secPr tabStopVal 4000) */
 export const DEFAULT_TAB_HU = 4000
 
