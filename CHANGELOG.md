@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.27] - 2026-10-13
+
+### Changed
+
+- `render` reflow(조판 캐시 없는 문단)의 줄바꿈을 한컴 조판 규칙에 맞췄다. 한컴 저장본에서 lineseg 를 지우고 다시 조판해 대조하면, 두 줄 이상 문단 25,187개 중 줄 시작이 전부 맞는 문단이 37.3% → **52.8%**(12개 코퍼스 모두 상승)다. 문단 줄 수 일치는 94.38% → 94.48%.
+  - 글자 폭을 글자마다 4 HWPUNIT 단위로 양자화한다(공백 4·⌊크기/8⌋, 자간도 같은 단위).
+  - 폭표 없는 한글 글꼴(바탕·돋움·한양신명조 등)은 한글 1em 으로 잰다(함초롬·명조는 그대로 함초롬 폭).
+  - 문단 공백 최소값(`condense`)만큼 줄 가용폭이 늘어난다.
+  - 한컴 기본 금칙 집합을 쓴다(`’`·`”`·`>`·`‰` 줄머리 금지, `¢`·`₩` 줄끝 금지 등).
+- KoPub 바탕체·돋움체(KoPubWorld 포함, 모든 굵기) 실측 폭표 추가 — 한글 0.936em·0.872em. 캐시 재생 렌더의 글자 위치와 생성기 폭 계산도 이 표를 쓴다.
+
 ## [4.21.26] - 2026-10-12
 
 ### Fixed
