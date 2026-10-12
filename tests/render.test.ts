@@ -159,6 +159,29 @@ describe("render: 이미지 dataURI 1회 참조 (리뷰 #10)", () => {
   })
 })
 
+describe("render: 첫 줄 들여쓰기·글머리표 (한컴 lineseg horzpos 는 둘 다 빼지 않는다)", () => {
+  it("양수 들여쓰기 문단의 첫 줄은 그만큼 들어가 그리고, 글머리표 문단은 글머리표 글자를 앞에 그린다", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("기본문단입니다.\n\n들여쓰기문단입니다.\n\n글머리문단입니다."))
+    let head = await zip.file("Contents/header.xml")!.async("string")
+    const pp0 = head.match(/<hh:paraPr id="0"[\s\S]*?<\/hh:paraPr>/)![0]
+    const indented = pp0.replace('id="0"', 'id="900"').replace('<hc:intent value="0"', '<hc:intent value="2000"')
+    const bulleted = pp0.replace('id="0"', 'id="901"').replace('<hh:heading type="NONE" idRef="0" level="0"/>', '<hh:heading type="BULLET" idRef="900" level="0"/>')
+    head = head.replace("</hh:paraProperties>", indented + bulleted + "</hh:paraProperties>")
+      .replace(/<hh:bullets itemCnt="\d+"\s*\/>/, '<hh:bullets itemCnt="1"><hh:bullet id="900" char="◦" useImage="0"><hh:paraHead level="0" autoIndent="1" textOffsetType="PERCENT" textOffset="50" charPrIDRef="4294967295"/></hh:bullet></hh:bullets>')
+    zip.file("Contents/header.xml", head)
+    const secName = Object.keys(zip.files).find(n => /section0\.xml$/.test(n))!
+    let sec = await zip.file(secName)!.async("string")
+    sec = sec.replace(/(<hp:p [^>]*?)paraPrIDRef="\d+"([^>]*>(?:(?!<\/hp:p>)[\s\S])*?들여쓰기문단)/, '$1paraPrIDRef="900"$2')
+      .replace(/(<hp:p [^>]*?)paraPrIDRef="\d+"([^>]*>(?:(?!<\/hp:p>)[\s\S])*?글머리문단)/, '$1paraPrIDRef="901"$2')
+    zip.file(secName, sec)
+    const r = await renderHwpxToSvg(new Uint8Array(await zip.generateAsync({ type: "nodebuffer" })), { reflow: true })
+    const xOf = (needle: string) => parseFloat([...r.svg.matchAll(/<text x="([\d.-]+)"[^>]*>([^<]*)<\/text>/g)].find(m => m[2].includes(needle))![1])
+    assert.ok(Math.abs(xOf("들여쓰기") - xOf("기본문단") - 20) < 0.5, `들여쓰기 2000 HWPUNIT = 20pt: ${xOf("들여쓰기") - xOf("기본문단")}`)
+    assert.ok(Math.abs(xOf("◦") - xOf("기본문단")) < 0.5, "글머리표는 줄 첫머리")
+    assert.ok(xOf("글머리") > xOf("◦") + 5, "글은 글머리표 + 간격 뒤에서 시작")
+  })
+})
+
 describe("render: reflow 표 밀어내기 (셀 콘텐츠 성장)", () => {
   it("긴 셀로 자란 표 뒤 문단이 표 바닥 아래에 온다 (리뷰#6 겹침)", async () => {
     // 셀 폭(약 22000HWPUNIT)을 여러 줄로 감는 긴 텍스트 — 선언 행높이 1500을 훌쩍 넘긴다

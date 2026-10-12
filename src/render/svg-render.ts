@@ -158,6 +158,8 @@ interface LinePlan {
   fixedTo: number
   /** 줄 끝 공백을 뺀 끝 — 줄 끝 공백은 걸리기만 하고(hang) 정렬·그리기에서 빠진다 */
   textEnd: number
+  /** 첫 줄 앞에 그릴 글머리표 — x 는 줄 글 시작 바로 앞 */
+  bullet?: { ch: string; w: number; prId: string | null }
 }
 
 function charW(c: ParaChar, styles: RenderStyles): number {
@@ -178,6 +180,12 @@ function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
   const align = (m.paraPrId != null ? styles.paraAlign.get(m.paraPrId) : undefined) ?? "JUSTIFY"
   const geom = m.paraPrId != null ? styles.paraGeom.get(m.paraPrId) : undefined
   const hang = geom && geom.marginIntent < 0 ? -geom.marginIntent : 0
+  // 줄 앞머리 — 한컴 lineseg 의 horzpos·horzsize 는 첫 줄 들여쓰기(양수 intent)와 글머리표를 빼지 않는다(양수 들여쓰기 문단 645개 전부
+  // horzpos = 왼쪽 여백). 글은 그만큼 들어가서 시작하고, 양쪽 정렬도 남는 폭에 맞춘다. 글머리표는 autoIndent 면 둘째 줄부터도 들인다
+  const bu = geom?.bullet
+  const firstPr = m.chars.find(c => c.ch !== "")?.prId ?? null
+  const bst = (bu?.charPrId != null ? styles.charPr.get(bu.charPrId) : firstPr != null ? styles.charPr.get(firstPr) : undefined) ?? DEFAULT_CHAR
+  const bulletW = bu ? measureTextWidth(bu.ch, bst.height, bst.ratio, { spacingPct: bst.spacing, faceClass: faceClassOf(bst.face) }) + (bu.offsetPct ? Math.trunc(bst.height * bu.offset / 100) : bu.offset) : 0
   const plans: LinePlan[] = []
   for (let i = 0; i < m.segs.length; i++) {
     const seg = m.segs[i]
@@ -185,7 +193,8 @@ function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
     const end = i + 1 < m.segs.length ? m.segs[i + 1].textpos : Math.max(m.chars.length, start)
     // 탭 해석 — 자연폭으로 정지점을 잡고, 마지막 탭까지는 스케일 없이 고정폭으로 둔다
     const tabs = new Map<number, number>()
-    let x = i === 0 ? Math.max(geom?.marginIntent ?? 0, 0) : hang // 첫 줄은 들여쓰기(양수 intent)만큼 들어가서 시작
+    const lead = i === 0 ? Math.max(geom?.marginIntent ?? 0, 0) + bulletW : bu?.autoIndent ? bulletW : 0
+    let x = (i === 0 ? Math.max(geom?.marginIntent ?? 0, 0) : hang) + (i === 0 || bu?.autoIndent ? bulletW : 0) // 첫 줄은 들여쓰기(양수 intent)만큼 들어가서 시작
     let fixedTo = start
     let fixedW = 0
     for (let k = start; k < end && k < m.chars.length; k++) {
@@ -207,18 +216,19 @@ function planLines(m: ParaModel, styles: RenderStyles): LinePlan[] {
     const isLast = i === m.segs.length - 1
     let xoff = 0
     let scale = 1
-    const avail = seg.horzsize - nat.obj
+    const lineW = seg.horzsize - lead
+    const avail = lineW - nat.obj
     if (nat.text > 0 && (!isLast || align === "DISTRIBUTE" || align === "DISTRIBUTE_SPACE")) {
       // 줄바꿈이 고정된 중간 줄·배분정렬 — 줄 영역 폭에 맞춰 고정 (원본 조판 재현)
       scale = avail > 0 ? avail / nat.text : 1
     } else if (nat.text + nat.obj > 0 && isLast) {
       const w = nat.text + nat.obj
-      if (align === "CENTER") xoff = Math.max(0, (seg.horzsize - w) / 2)
-      else if (align === "RIGHT") xoff = Math.max(0, seg.horzsize - w)
+      if (align === "CENTER") xoff = Math.max(0, (lineW - w) / 2)
+      else if (align === "RIGHT") xoff = Math.max(0, lineW - w)
     }
     if (!Number.isFinite(scale) || scale <= 0) scale = 1
     scale = Math.min(4, Math.max(0.25, scale))
-    plans.push({ seg, xoff, scale, start, end, tabs, fixedTo, textEnd })
+    plans.push({ seg, xoff: xoff + lead, scale, start, end, tabs, fixedTo, textEnd, ...(i === 0 && bu ? { bullet: { ch: bu.ch, w: bulletW, prId: bu.charPrId ?? firstPr } } : {}) })
   }
   return plans
 }
@@ -280,6 +290,14 @@ function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx: Ctx, d
     let i = plan.start
     let cursor = ox + seg.horzpos + plan.xoff
     const y = oy + seg.vertpos + seg.baseline
+    if (plan.bullet) {
+      const bs = (plan.bullet.prId != null ? ctx.styles.charPr.get(plan.bullet.prId) : undefined) ?? DEFAULT_CHAR
+      const attrs = [`x="${pt(cursor - plan.bullet.w)}"`, `y="${pt(y)}"`, `font-size="${pt(bs.height)}"`]
+      if (bs.fontFamily) attrs.push(`font-family="${escapeXml(bs.fontFamily)}"`)
+      if (bs.color) attrs.push(`fill="${escapeXml(bs.color)}"`)
+      emit(ctx, `<text ${attrs.join(" ")}>${escapeXml(plan.bullet.ch)}</text>`)
+      ctx.stats.texts++
+    }
     while (i < plan.end && i < m.chars.length) {
       if (i >= plan.textEnd && m.chars[i].ch === " ") { i++; continue }
       // 필러 슬롯(컨트롤·서로게이트 자리)은 그리지 않고 건너뛴다 —
