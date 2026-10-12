@@ -17,7 +17,7 @@
  * 이 테이블로 근사한다(오차 수 % 이내 — 공문서 본문은 어차피 함초롬바탕 관행).
  */
 
-import { fontWidthFn, hasFontMetrics, isHalfwidthForm } from "./font-metrics.js"
+import { HANCOM_FALLBACK_W, fontWidthFn, hasFontMetrics, isHalfwidthForm } from "./font-metrics.js"
 
 /** ASCII 0x20~0x7E advance (em×1000). 0x20은 useFontSpace=1일 때의 글꼴값(300) */
 const ASCII_W = [
@@ -164,6 +164,8 @@ function fixedPitchWidthEm1000(cp: number): number {
 /** 폭 클래스 → advance 함수. `font:이름` 은 실측 폭표(없는 글꼴명이면 gothic 근사) */
 function widthFnOf(faceClass: FaceClass | undefined): (cp: number) => number {
   const f = baseWidthFnOf(faceClass)
+  // 실측 폭표 없는 reflow 근사 클래스(고정폭·한글 1em)도 글꼴에 없는 글자는 한컴바탕 대체 폭 — 함초롬(hcr)은 그 글자를 가진다
+  if (faceClass === "fixedPitch" || faceClass === "cjk") return cp => (isZeroWidthCp(cp) ? 0 : HANCOM_FALLBACK_W[cp] ?? f(cp))
   return cp => (isZeroWidthCp(cp) ? 0 : f(cp))
 }
 

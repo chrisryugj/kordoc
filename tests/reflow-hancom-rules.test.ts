@@ -134,6 +134,10 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(plain.map(s => s[0]), [0]) // 20자 × 1000 = 20000 에 꼭 찬다
     assert.equal(numbered.length, 2) // "1)" 몫만큼 넘친다
   })
+  it("글꼴에 없는 가운뎃점(‧ ․)은 한컴바탕 대체 폭으로 잰다", () => {
+    for (const fc of ["cjk", "fixedPitch", "font:한컴 윤고딕 240"] as const) assert.equal(hancomCharWidth("‧", 1000, 100, 0, fc), 172, fc) // 4·MulDiv(173, 250, 1000)
+    assert.equal(hancomCharWidth("‧", 1000, 100, 0, "font:휴먼명조"), 420) // 그 글자를 가진 글꼴은 제 폭
+  })
   it("굵은 글꼴이 없는 옛 HFT 글꼴의 진하게는 글자마다 폭을 넓힌다", () => {
     assert.equal(hancomCharWidth("가", 1000, 100, 0, "font:한양신명조", syntheticBoldEm("한양신명조")), 1048) // 4·MulDiv(1046, 250, 1000)
     assert.equal(syntheticBoldEm("휴먼명조"), 0) // 굵은 글꼴이 있는 글꼴은 그대로

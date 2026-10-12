@@ -658,8 +658,14 @@ export function fontAdvanceEm1000(face: string, cp: number): number | null {
   if (!hasFontMetrics(face)) return null
   const m = FONTS[face.trim()]
   if (cp >= 0x20 && cp <= 0x7e) return m.ascii[cp - 0x20]
-  return m.ex[cp] ?? (isHalfwidthForm(cp) ? 500 : m.han !== undefined && isHanja(cp) ? m.han : m.cjk)
+  return m.ex[cp] ?? (HANCOM_FALLBACK_W[cp] ?? (isHalfwidthForm(cp) ? 500 : m.han !== undefined && isHanja(cp) ? m.han : m.cjk))
 }
+
+/**
+ * 글꼴에 없는 글자의 대체 폭(em×1000) — 한컴은 그 글자를 한컴바탕(Haansoft Batang)으로 찍는다(한컴 PDF: 바탕·윤고딕·휴먼명조 줄 안의
+ * 가운뎃점 ‧ 이 Haansoft Batang 0.173em 으로 303번). 표에 그 글자가 따로 있으면(실측 글꼴이 가진 글자) 표 값이 먼저다
+ */
+export const HANCOM_FALLBACK_W: Record<number, number> = { 0x2024: 173, 0x2027: 173 }
 
 /** CJK 통합 한자(확장 A·호환 포함) */
 function isHanja(cp: number): boolean {
@@ -671,7 +677,7 @@ export function fontWidthFn(face: string): ((cp: number) => number) | null {
   if (!hasFontMetrics(face)) return null
   const m = FONTS[face.trim()]
   // 표에 따로 없는 반각 형태(U+FF61~FFDC·FFE8~FFEE, ｢ ｣ ･ 등)는 반각 — 한컴 PDF 임베드 글꼴 실측 500
-  return cp => cp >= 0x20 && cp <= 0x7e ? m.ascii[cp - 0x20] : m.ex[cp] ?? (isHalfwidthForm(cp) ? 500 : m.han !== undefined && isHanja(cp) ? m.han : m.cjk)
+  return cp => cp >= 0x20 && cp <= 0x7e ? m.ascii[cp - 0x20] : m.ex[cp] ?? (HANCOM_FALLBACK_W[cp] ?? (isHalfwidthForm(cp) ? 500 : m.han !== undefined && isHanja(cp) ? m.han : m.cjk))
 }
 
 /** 유니코드 반각 형태 블록 */
