@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.21.29] - 2026-10-13
+
+### Changed
+
+- `render` reflow 를 한컴 조판에 더 맞췄다. 한컴 저장본에서 lineseg 를 지우고 다시 조판해 대조하면, 두 줄 이상 문단 25,187개 중 줄 시작이 전부 맞는 문단이 83.7% → **88.9%**, 문단 줄 수 일치는 99.06% → **99.24%** 다. 1,445문서 중 69개가 오르고 18개가 내렸다(내린 폭 최대 2문단).
+
+  | 코퍼스 | 4.21.28 | 4.21.29 |
+  | --- | --- | --- |
+  | rhwp | 8,947/11,626 | 10,122 |
+  | korea-kr-pairs2 | 5,380/6,044 | 5,467 |
+  | korea-kr | 762/928 | 805 |
+  | korea-kr-pairs | 2,738/3,002 | 2,749 |
+  | licbyl | 1,201/1,340 | 1,203 |
+  | 그 밖 7개 | 2,048/2,247 | 2,048 |
+
+  - 옛 HFT 기본 글꼴 `명조`·`고딕` 은 고정폭으로 잰다(한글 1em·ASCII 반각). 한컴 저장본 명조 문단 1,782개 중 1,776개, 고딕 89개 중 83개가 맞는다(역추정 폭표로는 832·65개). 생성기 폭 계산도 같다.
+  - 휴먼명조·맑은 고딕·KoPub 바탕·돋움 표에서 한컴이 hmtx 와 다르게 조판하는 글자 몇십 개(‘’·가운뎃점·일부 숫자·문장부호)를 한컴 저장 lineseg 로 역추정한 폭으로 고쳤다.
+  - 주석 머리 번호(`hp:autoNum`, "1)")가 그 글 폭을 차지한다(종전엔 폭 0). 미주는 구역 끝의 단 폭으로 채운다(구역 중간에 2단으로 바뀐 문서).
+  - 글상자는 안 여백(`textMargin` 좌우)을 뺀 폭으로 채운다(한컴 저장 글상자 419개 중 414개 일치).
+
 ## [4.21.28] - 2026-10-13
 
 ### Changed
