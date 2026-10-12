@@ -117,10 +117,11 @@ The external **opendataloader-bench, 200 documents** was measured with the 4.21.
 
 ## Recent updates
 
-Latest release: **[4.21.27](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.27)** · 2026-10-13
+Latest release: **[4.21.28](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.28)** · 2026-10-13
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.28 | Reflow follows the Hancom Docs line composer — spaces, objects, wrap-around, line breaks, bullets, cell margins, 18 fitted width tables. Multi-line paragraphs with all line starts matching 52.8% → 83.7%, line counts 94.5% → 99.1% |
 | 4.21.27 | Reflow line breaking follows Hancom layout rules (glyph quantization, 1em Hangul, condense, kinsoku): multi-line paragraph line starts 37.3% → 52.8%; KoPub width tables |
 | 4.21.26 | Fill period cells with "년 월 입학/졸업" placeholders; markdown-path label overwrites 2,843 → 486 (#146) |
 | 4.21.25 | Target cells in fill results and fill --dry-run, two-row header forms (#145 #146) |
