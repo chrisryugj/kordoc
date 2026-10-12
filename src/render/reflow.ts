@@ -145,6 +145,11 @@ function reflowPara(
       realIdx.push(i); widths.push(0); spacings.push(0); text += "\u2060"
       continue
     }
+    if (c.br) {
+      // 강제 줄바꿈 — 그 뒤 글은 새 줄(simulateWrap 이 \n 에서 끊는다)
+      realIdx.push(i); widths.push(0); spacings.push(0); text += "\n"; x = Math.max(0, -geom.marginIntent)
+      continue
+    }
     if (c.ch === "") continue
     const st = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
     // 폭 테이블: 고정폭 글꼴(굴림체류)은 전용 클래스 — 함초롬 테이블(한글 0.97em)로 재면 줄당 1~2자
@@ -177,8 +182,8 @@ function reflowPara(
   const height = domChar.height || 1000
 
   const marginL = geom.marginLeft
-  // 한컴은 줄 폭을 4 HWPUNIT 단위로 내린다(저장 lineseg horzsize 실측: 48190 → 48188)
-  const avail = Math.max(1000, Math.floor((areaW - marginL - geom.marginRight) / 4) * 4)
+  // 한컴은 줄 폭을 4 HWPUNIT 단위로 내리고, 1440(0.5 cm) 보다 좁히지 않는다(저장 lineseg horzsize 실측: 48190 → 48188, 칸 폭 200~1400 → 1440)
+  const avail = Math.max(1440, Math.floor((areaW - marginL - geom.marginRight) / 4) * 4)
   // hanging(intent<0): 둘째 줄부터 |intent| 더 들어감 → contWidth 축소·contHorz 우측 이동.
   // 들여쓰기(intent>0)는 첫 줄을 그만큼 좁혀 채운다 — lineseg horzsize 는 한컴처럼 들여쓰기를 빼지 않은 폭으로 둔다
   const firstWidth = avail
@@ -360,15 +365,17 @@ function reflowTablesIn(p: Element, doc: Document, styles: RenderStyles, mode: W
     if (ln(run) !== "run") continue
     for (const obj of elements(run)) {
       if (ln(obj) !== "tbl") continue
+      const inM = findChildByLocalName(obj, "inMargin")
       for (const tr of elements(obj)) {
         if (ln(tr) !== "tr") continue
         for (const tc of elements(tr)) {
           if (ln(tc) !== "tc") continue
           const csz = findChildByLocalName(tc, "cellSz")
-          const cm = findChildByLocalName(tc, "cellMargin")
+          // hasMargin="0" 이면 표 안 여백(inMargin) — collectCells 와 같은 해석
+          const cm = tc.getAttribute("hasMargin") === "0" ? null : findChildByLocalName(tc, "cellMargin")
           const cellW = num(csz, "width")
-          const mL = cm ? num(cm, "left", 141) : 141
-          const mR = cm ? num(cm, "right", 141) : 141
+          const mL = num(cm ?? inM, "left", 141)
+          const mR = num(cm ?? inM, "right", 141)
           const areaW = Math.max(500, cellW - mL - mR)
           const sub = findChildByLocalName(tc, "subList")
           if (sub) reflowBlockFlow(sub, doc, styles, areaW, mode, counter, 0)

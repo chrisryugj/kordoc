@@ -104,6 +104,10 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     const ps = reflowed(body)
     assert.deepEqual(ps[1].map(s => s[0]), [0, 42])
   })
+  it("강제 줄바꿈(lineBreak) 뒤는 새 줄 — 줄바꿈은 앞 줄 끝 한 칸", () => {
+    const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>가나다<hp:lineBreak/>라마<hp:lineBreak/><hp:lineBreak/>바</hp:t></hp:run></hp:p>`
+    assert.deepEqual(reflowed(body)[0].map(s => s[0]), [0, 4, 7, 8])
+  })
   it("2단 구역의 각주는 단 폭으로 채운다", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
     const ps = reflowed(body)

@@ -295,6 +295,26 @@ export function simulateWrap(
   mode: WrapMode = "keep",
   opts?: WrapOptions,
 ): WrapResult {
+  // 강제 줄바꿈(\n — hp:lineBreak): 그 뒤는 새 줄이다. 조각마다 따로 채우고 \n(폭 0)은 앞 줄 끝에 남긴다
+  if (!opts?.prepared && text.includes("\n")) {
+    const starts: number[] = []
+    let off = 0, lastLineWidth = 0
+    for (;;) {
+      const end = text.indexOf("\n", off), stop = end < 0 ? text.length : end, li = starts.length
+      const lw = opts?.lineWidth
+      const sub = simulateWrap(text.slice(off, stop), li === 0 ? firstWidth : contWidth, contWidth, height, ratioPct, mode, {
+        ...opts,
+        widths: opts?.widths?.slice(off, stop),
+        spacings: opts?.spacings?.slice(off, stop),
+        lineWidth: lw ? (i: number) => lw(li + i) : undefined,
+      })
+      for (const st of sub.starts) starts.push(off + st)
+      lastLineWidth = sub.lastLineWidth
+      if (end < 0) break
+      off = end + 1
+    }
+    return { lines: starts.length, starts, lastLineWidth }
+  }
   const EPS = 0.5
   const spaceEm = opts?.spaceEm ?? SPACE_EM_FIXED
   const spacing = opts?.spacingPct ?? 0

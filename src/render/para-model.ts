@@ -38,8 +38,8 @@ export function findFirst(el: Element, name: string, depth = 0): Element | null 
 export interface Seg { textpos: number; vertpos: number; horzpos: number; horzsize: number; textheight: number; baseline: number }
 
 /** tab: 탭 컨트롤 첫 슬롯(나머지 7슬롯은 필러) — 폭은 줄 조판 때 탭 정지점으로 정한다. tabW: 저장된 hp:tab width.
- * nb: 묶음 빈칸(hp:nbSpace) — 그리기는 공백, 줄바꿈은 끊지 않는 빈칸(U+00A0) */
-export interface ParaChar { ch: string; prId: string | null; tab?: boolean; tabW?: number; nb?: boolean; ctrl?: boolean }
+ * nb: 묶음 빈칸(hp:nbSpace) — 그리기는 공백, 줄바꿈은 끊지 않는 빈칸(U+00A0). br: 강제 줄바꿈(hp:lineBreak) — 폭 0, 뒤 글은 새 줄 */
+export interface ParaChar { ch: string; prId: string | null; tab?: boolean; tabW?: number; nb?: boolean; ctrl?: boolean; br?: boolean }
 
 /** 렌더 대상 개체 태그 — 이 외(도형류)는 경고 후 생략 */
 export const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", "ellipse", "polygon", "curv", "curve", "line", "arc", "ole", "textart"])
@@ -90,7 +90,7 @@ export function pushTextSlots(t: Element, chars: ParaChar[], prId: string | null
         if (del.deleted) pushFillers(chars, 8, prId)
         else { chars.push({ ch: "", prId, tab: true, tabW: num(el, "width") }); pushFillers(chars, 7, prId) }
       } else if (CHAR_CTRL_1SLOT.has(tag)) {
-        chars.push(del.deleted ? { ch: "", prId } : tag === "nbSpace" ? { ch: " ", prId, nb: true } : { ch: tag === "fwSpace" ? " " : "", prId })
+        chars.push(del.deleted ? { ch: "", prId } : tag === "nbSpace" ? { ch: " ", prId, nb: true } : tag === "lineBreak" ? { ch: "", prId, br: true } : { ch: tag === "fwSpace" ? " " : "", prId })
       } else {
         pushTextSlots(el, chars, prId, depth + 1, del)
       }
@@ -272,7 +272,8 @@ export function collectCells(tbl: Element): CellModel[] {
       const addr = findChildByLocalName(tc, "cellAddr")
       const span = findChildByLocalName(tc, "cellSpan")
       const csz = findChildByLocalName(tc, "cellSz")
-      const cm = findChildByLocalName(tc, "cellMargin")
+      // hasMargin="0" 이면 칸 여백(cellMargin)은 무시하고 표 안 여백(inMargin)을 쓴다 (한컴 저장 lineseg 실측: 칸 16893 − 142×2 → 16608, cellMargin 494 아님)
+      const cm = tc.getAttribute("hasMargin") === "0" ? null : findChildByLocalName(tc, "cellMargin")
       if (!addr || !csz) continue
       cells.push({
         el: tc,
