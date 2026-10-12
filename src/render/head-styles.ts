@@ -54,6 +54,9 @@ export interface RenderParaGeom {
   autoTabLeft?: boolean
   /** 공백 최소값(paraPr condense, %) — 줄 안 공백이 그만큼 줄어들 수 있어 줄 가용폭이 공백 폭 합 × condense% 늘어난다 */
   condense?: number
+  /** 글머리표(heading BULLET) — 첫 줄 앞에 글머리표 글자와 간격(textOffset)이 놓인다. autoIndent 면 둘째 줄부터도 그만큼 들어간다.
+   *  lineseg horzpos·horzsize 는 바뀌지 않는다(한컴 저장 lineseg 실측: ◦ 1100 + 50% → 1650 만큼 좁게 채움) */
+  bullet?: { ch: string; charPrId?: string; offset: number; offsetPct: boolean; autoIndent: boolean }
 }
 
 export const DEFAULT_PARA_GEOM: RenderParaGeom = {
@@ -253,6 +256,8 @@ export function parseRenderStyles(headXml: string): RenderStyles {
   // 탭 정의 — 문단의 tabPrIDRef 는 워크가 끝난 뒤 해석(순서 무관)
   const autoTabPr = new Set<string>()
   const paraTabRef = new Map<string, string>()
+  const paraBullet = new Map<string, string>()
+  const bullets = new Map<string, NonNullable<RenderParaGeom["bullet"]>>()
 
   const walk = (el: Element): void => {
     const tag = (el.tagName || "").replace(/^[^:]+:/, "")
@@ -297,6 +302,20 @@ export function parseRenderStyles(headXml: string): RenderStyles {
         styles.paraGeom.set(id, parseParaGeom(el))
         const tab = el.getAttribute("tabPrIDRef")
         if (tab != null) paraTabRef.set(id, tab)
+        const heading = findDeep(el, "heading")
+        if (heading?.getAttribute("type") === "BULLET") paraBullet.set(id, heading.getAttribute("idRef") ?? "")
+      }
+    } else if (tag === "bullet") {
+      const id = el.getAttribute("id"), head = findChildByLocalName(el, "paraHead")
+      if (id != null && el.getAttribute("useImage") !== "1") {
+        const cpr = head?.getAttribute("charPrIDRef")
+        bullets.set(id, {
+          ch: el.getAttribute("char") ?? "",
+          ...(cpr != null && cpr !== "4294967295" ? { charPrId: cpr } : {}),
+          offset: Number(head?.getAttribute("textOffset")) || 0,
+          offsetPct: (head?.getAttribute("textOffsetType") ?? "PERCENT") === "PERCENT",
+          autoIndent: head?.getAttribute("autoIndent") !== "0",
+        })
       }
     } else if (tag === "borderFill") {
       const id = el.getAttribute("id")
@@ -324,6 +343,10 @@ export function parseRenderStyles(headXml: string): RenderStyles {
   for (const [id, tab] of paraTabRef) {
     const g = styles.paraGeom.get(id)
     if (g && autoTabPr.has(tab)) g.autoTabLeft = true
+  }
+  for (const [id, b] of paraBullet) {
+    const g = styles.paraGeom.get(id), bu = bullets.get(b)
+    if (g && bu?.ch) g.bullet = bu
   }
   return styles
 }

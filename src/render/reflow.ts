@@ -187,8 +187,14 @@ function reflowPara(
   // hanging(intent<0): 둘째 줄부터 |intent| 더 들어감 → contWidth 축소·contHorz 우측 이동.
   // 들여쓰기(intent>0)는 첫 줄을 그만큼 좁혀 채운다 — lineseg horzsize 는 한컴처럼 들여쓰기를 빼지 않은 폭으로 둔다
   const firstWidth = avail
-  const firstWrapWidth = Math.max(500, avail - Math.max(0, geom.marginIntent))
-  const contWidth = Math.max(500, avail + Math.min(0, geom.marginIntent))
+  // 글머리표: 글자 폭 + 간격(textOffset — % 면 글자 크기의 %)만큼 첫 줄이, autoIndent 면 둘째 줄부터도 좁게 찬다
+  // (한컴 저장 lineseg 260문단: 맞는 문단 65 → 235. 간격을 글머리표 폭의 % 로 보면 224)
+  const bu = geom.bullet
+  const bulletW = bu ? glyphWidth(bu.ch, (bu.charPrId != null ? styles.charPr.get(bu.charPrId) : undefined) ?? domChar).w + (bu.offsetPct ? Math.trunc(height * bu.offset / 100) : bu.offset) : 0
+  const contBullet = bu?.autoIndent ? bulletW : 0
+  const firstWrapWidth = Math.max(500, avail - Math.max(0, geom.marginIntent) - bulletW)
+  const contSegWidth = Math.max(500, avail + Math.min(0, geom.marginIntent))
+  const contWidth = Math.max(500, contSegWidth - contBullet)
   const contHorz = marginL - Math.min(0, geom.marginIntent)
 
   // 문단 paraPr의 breakSetting이 있으면 그 선언(어절/글자)을 따르고, 없으면 호출자 모드
@@ -257,7 +263,7 @@ function reflowPara(
     ? (i: number): number => {
         const b = boxAt(i)
         const w = b ? b[1] : avail
-        return Math.max(500, i === 0 ? w - Math.max(0, geom.marginIntent) : w + Math.min(0, geom.marginIntent))
+        return Math.max(500, i === 0 ? w - Math.max(0, geom.marginIntent) - bulletW : w + Math.min(0, geom.marginIntent) - contBullet)
       }
     : undefined
   const wrap = text.length === 0
@@ -302,7 +308,7 @@ function reflowPara(
     seg.setAttribute("spacing", String(spacing))
     const box = boxAt(li)
     seg.setAttribute("horzpos", String(box ? box[0] + (isFirst ? 0 : -Math.min(0, geom.marginIntent)) : isFirst ? marginL : contHorz))
-    seg.setAttribute("horzsize", String(box ? box[1] + (isFirst ? 0 : Math.min(0, geom.marginIntent)) : isFirst ? firstWidth : contWidth))
+    seg.setAttribute("horzsize", String(box ? box[1] + (isFirst ? 0 : Math.min(0, geom.marginIntent)) : isFirst ? firstWidth : contSegWidth))
     seg.setAttribute("flags", LINESEG_FLAGS)
     lsa.appendChild(seg)
   }

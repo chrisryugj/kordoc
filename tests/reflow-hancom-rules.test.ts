@@ -73,10 +73,10 @@ const HEAD = `<hh:head ${NS}><hh:refList><hh:fontfaces><hh:fontface lang="HANGUL
 <hh:charProperties><hh:charPr id="0" height="1000"><hh:fontRef hangul="0" latin="0"/></hh:charPr><hh:charPr id="1" height="1000"><hh:fontRef hangul="0" latin="0"/><hh:supscript/></hh:charPr></hh:charProperties>
 <hh:paraProperties><hh:paraPr id="0"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD"/></hh:paraPr></hh:paraProperties></hh:refList></hh:head>`
 /** 구역 XML 을 reflow 해 문단마다 lineseg [textpos, horzsize, horzpos] 목록을 돌려준다 */
-function reflowed(body: string, bodyW = 42000): number[][][] {
+function reflowed(body: string, bodyW = 42000, head = HEAD): number[][][] {
   const doc = createXmlParser().parseFromString(`<hs:sec ${NS}>${body}</hs:sec>`, "text/xml")
   const root = doc.documentElement as unknown as Element
-  reflowSection(root, parseRenderStyles(HEAD), { BODY_W: bodyW, BODY_H: 80000 })
+  reflowSection(root, parseRenderStyles(head), { BODY_W: bodyW, BODY_H: 80000 })
   return Array.from(root.getElementsByTagName("hp:p") as unknown as Element[]).map(p => {
     const lsa = Array.from(p.childNodes as unknown as Element[]).find(c => c.nodeName === "hp:linesegarray")
     return lsa ? Array.from(lsa.getElementsByTagName("hp:lineseg") as unknown as Element[]).map(s => [Number(s.getAttribute("textpos")), Number(s.getAttribute("horzsize")), Number(s.getAttribute("horzpos"))]) : []
@@ -107,6 +107,14 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
   it("강제 줄바꿈(lineBreak) 뒤는 새 줄 — 줄바꿈은 앞 줄 끝 한 칸", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>가나다<hp:lineBreak/>라마<hp:lineBreak/><hp:lineBreak/>바</hp:t></hp:run></hp:p>`
     assert.deepEqual(reflowed(body)[0].map(s => s[0]), [0, 4, 7, 8])
+  })
+  it("글머리표 문단은 글머리표 폭 + 간격(글자 크기의 textOffset%)만큼 좁게 채운다 — autoIndent 면 둘째 줄부터도", () => {
+    const head = HEAD.replace("</hh:paraProperties>", `<hh:paraPr id="1"><hh:align horizontal="LEFT"/><hh:heading type="BULLET" idRef="1" level="0"/><hh:breakSetting breakNonLatinWord="KEEP_WORD"/></hh:paraPr></hh:paraProperties>`)
+      .replace("<hh:charProperties>", `<hh:bullets itemCnt="1"><hh:bullet id="1" char="가" useImage="0"><hh:paraHead level="0" autoIndent="1" textOffsetType="PERCENT" textOffset="50" charPrIDRef="4294967295"/></hh:bullet></hh:bullets><hh:charProperties>`)
+    const para = (pp: number) => `<hp:p paraPrIDRef="${pp}"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(90)}</hp:t></hp:run></hp:p>`
+    assert.deepEqual(reflowed(para(0), 42000, head)[0].map(s => s[0]), [0, 42, 84])
+    assert.deepEqual(reflowed(para(1), 42000, head)[0].map(s => s[0]), [0, 40, 80]) // 42000 − (1000 + 500) → 40자
+    assert.deepEqual([...new Set(reflowed(para(1), 42000, head)[0].map(s => s[1]))], [42000]) // lineseg 폭은 그대로
   })
   it("2단 구역의 각주는 단 폭으로 채운다", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
