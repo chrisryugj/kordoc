@@ -373,6 +373,24 @@ function reflowPara(
   return { paraBottom: Math.max(textBottom, objBottom), spaceAfter: geom.spaceAfter }
 }
 
+/** 문단에 앵커된, 쪽 위에 붙은 위아래 배치 개체가 차지하는 띠 [위, 아래](바깥 여백 포함). 없으면 [0, 0] */
+function pageTopBand(p: Element): [number, number] {
+  let top = Infinity, bot = 0
+  for (const run of elements(p)) {
+    if (ln(run) !== "run") continue
+    for (const o of elements(run)) {
+      if (!OBJ_TAGS.has(ln(o)) || o.getAttribute("textWrap") !== "TOP_AND_BOTTOM") continue
+      const pos = findChildByLocalName(o, "pos")
+      if (pos?.getAttribute("treatAsChar") === "1" || pos?.getAttribute("vertRelTo") !== "PAGE" || (pos?.getAttribute("vertAlign") ?? "TOP") !== "TOP") continue
+      const om = findChildByLocalName(o, "outMargin"), sz = findChildByLocalName(o, "sz")
+      const h = ln(o) === "tbl" ? Math.max(num(sz, "height"), measureTableHeight(o)) : num(sz, "height")
+      const vo = Math.max(0, num(pos, "vertOffset"))
+      top = Math.min(top, vo); bot = Math.max(bot, vo + num(om, "top") + h + num(om, "bottom"))
+    }
+  }
+  return bot > 0 ? [top, bot] : [0, 0]
+}
+
 /** 문단에 앵커된, 쪽 아래에 붙은 위아래 배치 개체가 본문 바닥에서 차지하는 높이(바깥 여백·vertOffset 포함). 없으면 0 */
 function pageBottomReserve(p: Element): number {
   let r = 0
@@ -495,7 +513,9 @@ function reflowBlockFlow(
     reflowTablesIn(p, doc, styles, mode, counter)
     reflowSubListsIn(p, doc, styles, mode, counter, bodyFlow ? areaW : undefined)
     const g = styles.paraGeom.get(p.getAttribute("paraPrIDRef") ?? "")
-    const startV = cursorV + prevSpaceAfter + (g?.spaceBefore ?? 0)
+    let startV = cursorV + prevSpaceAfter + (g?.spaceBefore ?? 0)
+    // 쪽 위에 붙은 위아래 배치 개체(vertRelTo=PAGE·vertAlign=TOP, 두문 결재표 등)는 그 아래부터 글을 놓는다(한컴 저장본: 첫 줄 vertpos 17304 = 표 바닥)
+    if (bodyH > 0) { const [top, bot] = pageTopBand(p); if (bot > 0 && top <= startV && startV < bot) startV = bot }
     const numsBefore: NumberCounters = new Map([...(counter.nums ?? [])].map(([k, v]) => [k, v.slice()]))
     const res = reflowPara(p, doc, styles, areaW, startV, mode, zones, counter.nums, bodyH > 0)
     if (!res) {

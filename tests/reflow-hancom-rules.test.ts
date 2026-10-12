@@ -215,6 +215,7 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     const text = (t: string) => `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${t}</hp:t></hp:run></hp:p>`
     assert.deepEqual(vps(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${fl(3000, "PARA", "TOP")}<hp:t/></hp:run></hp:p>${text("다음")}`), [[0], [3000]])
     assert.deepEqual(vps(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${fl(3000, "PARA", "TOP")}<hp:t>글</hp:t></hp:run></hp:p>`), [[3000]])
+    assert.deepEqual(vps(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${fl(3000, "PAGE", "TOP")}<hp:t>글</hp:t></hp:run></hp:p>`), [[3000]]) // 쪽 위에 붙은 표 아래부터
     // 줄 pitch 1600: 앞 문단 4줄(0~4800) 다음, 쪽 아래 표 4000 이 붙은 문단 6400 + 1000 + 600 > 10000 − 4000 → 새 쪽
     assert.deepEqual(vps(text("가".repeat(42 * 4)) + `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${fl(4000, "PAGE", "BOTTOM")}<hp:t>결재</hp:t></hp:run></hp:p>`)[1], [0])
   })
