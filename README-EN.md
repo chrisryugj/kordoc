@@ -117,10 +117,11 @@ The external **opendataloader-bench, 200 documents** was measured with the 4.21.
 
 ## Recent updates
 
-Latest release: **[4.21.29](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.29)** · 2026-10-13
+Latest release: **[4.21.30](https://github.com/chrisryugj/kordoc/releases/tag/v4.21.30)** · 2026-10-13
 
 | Version | Highlights |
 | --- | --- |
+| 4.21.30 | Render draws first-line indents and bullets. Reflow vertical layout (spacing rounding and negative spacing, per-line height and equation baselines, line-by-line page breaks): body line metrics 70.3% → 98.4% matching |
 | 4.21.29 | Reflow: HFT Myeongjo/Gothic as fixed pitch, glyph width fixes for Humanmyeongjo, Malgun Gothic, KoPub, note number width, endnote column, text box margins. Multi-line paragraphs with all line starts matching 83.7% → 88.9% |
 | 4.21.28 | Reflow follows the Hancom Docs line composer — spaces, objects, wrap-around, line breaks, bullets, cell margins, 18 fitted width tables. Multi-line paragraphs with all line starts matching 52.8% → 83.7%, line counts 94.5% → 99.1% |
 | 4.21.27 | Reflow line breaking follows Hancom layout rules (glyph quantization, 1em Hangul, condense, kinsoku): multi-line paragraph line starts 37.3% → 52.8%; KoPub width tables |
