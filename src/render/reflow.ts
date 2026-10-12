@@ -90,7 +90,9 @@ interface WrapZone { top: number; bottom: number; left: number; right: number; f
 function pitchFor(height: number, geom: RenderParaGeom): number {
   const v = geom.lineSpacingValue
   switch (geom.lineSpacingType) {
-    case "PERCENT": return Math.round((height * v) / 100)
+    // 줄 간격 몫(spacing)을 4 HWPUNIT 단위로, 0에서 먼 쪽으로 반올림한다 — 한컴 저장 lineseg 9만 줄 실측:
+    // 1400 × 155% → spacing 770 아닌 772, 1500 × 90% → −150 아닌 −152. 100% 미만이면 spacing 은 음수다
+    case "PERCENT": { const e = (height * (v - 100)) / 400; return height + 4 * Math.sign(e) * Math.floor(Math.abs(e) + 0.5) }
     case "FIXED": return v > 0 ? v : Math.round(height * 1.6) // 고정 줄높이(HWPUNIT)
     case "AT_LEAST": return Math.max(v, height)
     default: return Math.round(height * 1.6) // BETWEEN_LINES 등 — 기본 160% 근사
@@ -207,7 +209,7 @@ function reflowPara(
   const paraMode = geom.wrapMode ?? mode
   const pitch = pitchFor(height, geom)
   const baseline = Math.round(height * BASELINE_RATIO)
-  const spacing = Math.max(0, pitch - height)
+  const spacing = pitch - height // 줄간격 100% 미만이면 음수 — 다음 줄·문단이 그만큼 겹쳐 올라온다(한컴 저장 lineseg spacing −600 실측)
 
   // ── 떠 있는 개체(treatAsChar=0)의 세로 흐름 (Phase 3 — 한컴 실측 모델, 36264961) ──
   // · TOP_AND_BOTTOM + PARA 앵커: 개체가 문단 상단을 차지하고 텍스트는 outTop+개체높이+outBottom 아래부터 흐른다

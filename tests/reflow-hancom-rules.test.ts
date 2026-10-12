@@ -125,6 +125,20 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(plain.map(s => s[0]), [0]) // 20자 × 1000 = 20000 에 꼭 찬다
     assert.equal(numbered.length, 2) // "1)" 몫만큼 넘친다
   })
+  it("줄 간격 몫은 4 단위로 0에서 먼 쪽 반올림 — 100% 미만이면 음수로 겹쳐 올라온다", () => {
+    const head = HEAD.replace("</hh:paraProperties>", `<hh:paraPr id="1"><hh:align horizontal="LEFT"/><hh:lineSpacing type="PERCENT" value="155"/></hh:paraPr><hh:paraPr id="2"><hh:align horizontal="LEFT"/><hh:lineSpacing type="PERCENT" value="90"/></hh:paraPr></hh:paraProperties>`)
+      .replace(`<hh:charPr id="1" height="1000">`, `<hh:charPr id="2" height="1400"><hh:fontRef hangul="0" latin="0"/></hh:charPr><hh:charPr id="3" height="1500"><hh:fontRef hangul="0" latin="0"/></hh:charPr><hh:charPr id="1" height="1000">`)
+    const vert = (pp: number, cpr: number) => {
+      const doc = createXmlParser().parseFromString(`<hs:sec ${NS}><hp:p paraPrIDRef="${pp}"><hp:run charPrIDRef="${cpr}"><hp:t>${"가".repeat(60)}</hp:t></hp:run></hp:p><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>다음</hp:t></hp:run></hp:p></hs:sec>`, "text/xml")
+      const root = doc.documentElement as unknown as Element
+      reflowSection(root, parseRenderStyles(head), { BODY_W: 42000, BODY_H: 80000 })
+      return Array.from(root.getElementsByTagName("hp:lineseg") as unknown as Element[]).map(s => [Number(s.getAttribute("vertpos")), Number(s.getAttribute("spacing"))])
+    }
+    assert.deepEqual(vert(1, 2).slice(0, 2), [[0, 772], [2172, 772]]) // 1400 × 55% = 770 → 772
+    const v90 = vert(2, 3)
+    assert.deepEqual(v90[0], [0, -152]) // 1500 × −10% = −150 → −152
+    assert.equal(v90[v90.length - 1][0], v90[v90.length - 2][0] + 1500 - 152) // 다음 문단도 음수 몫만큼 올라온다
+  })
   it("2단 구역의 각주는 단 폭으로 채운다", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
     const ps = reflowed(body)
