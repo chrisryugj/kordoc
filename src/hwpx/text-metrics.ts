@@ -37,6 +37,8 @@ const SYM_W: Record<number, number> = {
   0x2020: 558, 0x2021: 438, 0x2025: 640, 0x2026: 960, 0x2030: 988, 0x2032: 335, 0x2033: 474,
   0x203b: 770, 0x20ac: 656, 0x261c: 1012, 0x261e: 1012,
   0x274d: 970, // ❍ 2단계 부호(일부 중앙부처) — 미실측, ○ 와 같은 전각으로 둔다
+  // 한컴 PDF 임베드 HCRBatang /W 실측 — 종전 기본값 550 으로 떨어지던 기호
+  0x2bc: 164, 0x2022: 399, 0x2023: 369, 0x2024: 289, 0x2027: 289,
 }
 
 /** 코드포인트의 advance(em×1000). 미상 문자는 CJK권 970 / 라틴권 550 폴백 */
@@ -57,7 +59,15 @@ export function charWidthEm1000(cp: number): number {
   if (cp >= 0x25a0 && cp <= 0x26ff) return 970 // 도형 □○◆★
   if (cp >= 0x3200 && cp <= 0x33ff) return 970 // 괄호한글 ㉮·단위 ㎡㎏
   if (cp >= 0xff01 && cp <= 0xff60) return 970 // 전각형 ！～
+  // 기술 기호 ⌜⌟·상자 선 ━│┌·딩뱃 ❶➊➀ 는 전각(한컴 PDF HCRBatang 실측 970), 한컴 사용자 기호(보충 사용 영역)는 반각 몫 485
+  if ((cp >= 0x2300 && cp <= 0x23ff) || (cp >= 0x2500 && cp <= 0x259f) || (cp >= 0x2700 && cp <= 0x27bf)) return 970
+  if (cp >= 0xf0000) return 485
   return cp >= 0x2e80 ? 970 : 550
+}
+
+/** 폭 없는 문자 — 폭 없는 공백·연결자(U+200B~200D·2060·FEFF)와 결합 부호(U+0300~036F). 어느 글꼴로 재든 0(한컴 PDF 실측 0) */
+function isZeroWidthCp(cp: number): boolean {
+  return (cp >= 0x200b && cp <= 0x200d) || cp === 0x2060 || cp === 0xfeff || (cp >= 0x300 && cp <= 0x36f)
 }
 
 /** HWP 공백 폭(em×1000) — useFontSpace=0(기본): 반각 고정 500 / =1: 글꼴값 300 */
@@ -138,6 +148,11 @@ function fixedPitchWidthEm1000(cp: number): number {
 
 /** 폭 클래스 → advance 함수. `font:이름` 은 실측 폭표(없는 글꼴명이면 gothic 근사) */
 function widthFnOf(faceClass: FaceClass | undefined): (cp: number) => number {
+  const f = baseWidthFnOf(faceClass)
+  return cp => (isZeroWidthCp(cp) ? 0 : f(cp))
+}
+
+function baseWidthFnOf(faceClass: FaceClass | undefined): (cp: number) => number {
   if (faceClass === "fixedPitch") return fixedPitchWidthEm1000
   if (faceClass === "gothic") return cp => (isHalfwidthForm(cp) ? 500 : gothicWidthEm1000(cp))
   if (faceClass === "cjk") return cjkWidthEm1000
