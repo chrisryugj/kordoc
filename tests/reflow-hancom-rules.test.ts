@@ -185,6 +185,20 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     const [p] = reflowed(`<hp:p paraPrIDRef="1"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(90)}</hp:t></hp:run></hp:p>`, 42000, head)
     assert.ok(p[1][0] < 42 && p[2][0] - p[1][0] < 42, JSON.stringify(p.map(s => s[0])))
   })
+  it("떠 있는 위아래 개체 — 글 없는 문단은 줄이 제자리·개체가 다음 문단을 밀고, 쪽 아래에 붙은 개체는 그 쪽 바닥을 올린다", () => {
+    const fl = (h: number, rel: string, align: string) => `<hp:tbl rowCnt="1" colCnt="1" textWrap="TOP_AND_BOTTOM"><hp:sz width="10000" height="${h}"/><hp:pos treatAsChar="0" vertRelTo="${rel}" vertAlign="${align}" vertOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:tr><hp:tc><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>칸</hp:t></hp:run></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSz width="10000" height="${h}"/></hp:tc></hp:tr></hp:tbl>`
+    const vps = (body: string) => {
+      const doc = createXmlParser().parseFromString(`<hs:sec ${NS}>${body}</hs:sec>`, "text/xml")
+      const root = doc.documentElement as unknown as Element
+      reflowSection(root, parseRenderStyles(HEAD), { BODY_W: 42000, BODY_H: 10000 })
+      return Array.from(root.childNodes as unknown as Element[]).filter(c => c.nodeName === "hp:p").map(p => Array.from(p.getElementsByTagName("hp:lineseg") as unknown as Element[]).filter(sg => (sg.parentNode as Element).parentNode === p).map(sg => Number(sg.getAttribute("vertpos"))))
+    }
+    const text = (t: string) => `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${t}</hp:t></hp:run></hp:p>`
+    assert.deepEqual(vps(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${fl(3000, "PARA", "TOP")}<hp:t/></hp:run></hp:p>${text("다음")}`), [[0], [3000]])
+    assert.deepEqual(vps(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${fl(3000, "PARA", "TOP")}<hp:t>글</hp:t></hp:run></hp:p>`), [[3000]])
+    // 줄 pitch 1600: 앞 문단 4줄(0~4800) 다음, 쪽 아래 표 4000 이 붙은 문단 6400 + 1000 + 600 > 10000 − 4000 → 새 쪽
+    assert.deepEqual(vps(text("가".repeat(42 * 4)) + `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${fl(4000, "PAGE", "BOTTOM")}<hp:t>결재</hp:t></hp:run></hp:p>`)[1], [0])
+  })
   it("2단 구역의 각주는 단 폭으로 채운다", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
     const ps = reflowed(body)

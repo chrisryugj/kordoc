@@ -18,7 +18,7 @@
  * (seoul 코퍼스 자기일관성 59/59 — 36264961 전 문단 d=0 실측).
  */
 
-import { buildPara, measureTableHeight, tabAdvance, captionExtra, type ParaObj } from "./para-model.js"
+import { buildPara, measureTableHeight, tabAdvance, captionExtra, OBJ_TAGS, type ParaObj } from "./para-model.js"
 import { nextParaNumber, type NumberCounters } from "./para-number.js"
 import { simulateWrap, hancomCharWidth, faceClassForReflow, mulDiv, type WrapMode } from "../hwpx/text-metrics.js"
 import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderCharStyle, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
@@ -226,7 +226,7 @@ function reflowPara(
   //   (정답 lineseg horzpos 12994 = 그림 폭 12144 + outRight 850), 개체는 다음 문단을 밀지 않는다
   // · BEHIND_TEXT/IN_FRONT_OF_TEXT 또는 PAGE/PAPER 앵커: 본문 흐름에 불참 (페이지 하단 직인 스탬프가 커서를 밀던 것 제거)
   let floatBelow = 0 // 텍스트 시작을 아래로 미는 float 개체 바닥 (문단 로컬)
-  const objBottom = startV
+  let objBottom = startV
   const effHOf = (o: ParaObj): number => (o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el)) : o.height) + (o.tag === "tbl" || o.tag === "pic" ? captionExtra(o.el) : 0)
   for (const o of m.objs) {
     if (o.inline) continue
@@ -250,6 +250,9 @@ function reflowPara(
     const top = startV + vo
     zones.push({ top, bottom: top + effH + outB, left: x0 - num(om, "left"), right: x0 + o.width + num(om, "right"), flow: o.el.getAttribute("textFlow") ?? "BOTH_SIDES" })
   }
+  // 글 없는 문단(개체·컨트롤만)은 줄이 제자리에 남고 개체가 문단 바닥을 민다 — 한컴 저장본: 두문 표만 있는 첫 문단 줄 vertpos 0, 다음 문단 17645
+  const hasText = m.chars.some(c => c.ch !== "")
+  if (!hasText) { objBottom = startV + floatBelow; floatBelow = 0 }
   const textStartV = startV + floatBelow
 
   /** 줄 i 의 [horzpos, horzsize] — 어울림 개체와 세로로 겹치면 남는 폭(넓은 쪽, LEFT_ONLY/RIGHT_ONLY 는 그쪽) */
@@ -358,6 +361,23 @@ function reflowPara(
   return { paraBottom: Math.max(textBottom, objBottom), spaceAfter: geom.spaceAfter }
 }
 
+/** 문단에 앵커된, 쪽 아래에 붙은 위아래 배치 개체가 본문 바닥에서 차지하는 높이(바깥 여백·vertOffset 포함). 없으면 0 */
+function pageBottomReserve(p: Element): number {
+  let r = 0
+  for (const run of elements(p)) {
+    if (ln(run) !== "run") continue
+    for (const o of elements(run)) {
+      if (!OBJ_TAGS.has(ln(o)) || o.getAttribute("textWrap") !== "TOP_AND_BOTTOM") continue
+      const pos = findChildByLocalName(o, "pos")
+      if (pos?.getAttribute("treatAsChar") === "1" || pos?.getAttribute("vertRelTo") !== "PAGE" || pos?.getAttribute("vertAlign") !== "BOTTOM") continue
+      const om = findChildByLocalName(o, "outMargin"), sz = findChildByLocalName(o, "sz")
+      const h = ln(o) === "tbl" ? Math.max(num(sz, "height"), measureTableHeight(o)) : num(sz, "height")
+      r = Math.max(r, num(pos, "vertOffset") + num(om, "top") + h + num(om, "bottom"))
+    }
+  }
+  return r
+}
+
 /** 문단 run 의 단 정의(ctrl>colPr) → 단 폭. 같은 폭이면 (본문 폭 − 간격×(단 수−1)) ÷ 단 수, 아니면 첫 단(colSz) 폭. 없으면 undefined */
 function columnWidthIn(p: Element, bodyW: number): number | undefined {
   for (const run of elements(p)) {
@@ -449,6 +469,8 @@ function reflowBlockFlow(
   let prevSpaceAfter = 0
   /** 이 흐름에 앵커된 어울림 개체 영역 — 뒤 문단의 줄도 피해 간다 */
   const zones: WrapZone[] = []
+  /** 이 쪽에서 글이 내려갈 수 있는 바닥 — 쪽 아래에 붙은 위아래 배치 개체(결재란 표 등)가 있으면 그만큼 올라온다 */
+  let pageLimit = bodyH
   // 구역 본문의 다단(colPr colCount>1) — 단 정의가 나온 문단부터 단 폭으로 채운다(한컴 다단 편집 lineseg horzsize 실측)
   const bodyFlow = areaW === counter.bodyW && bodyH > 0
   for (const p of elements(container)) {
@@ -488,13 +510,18 @@ function reflowBlockFlow(
     // 명시적 쪽 나눔(hp:p pageBreak="1" — 한컴 '쪽 나누기' 저장 속성)과 첫 줄부터 넘치는 문단은 문단째 다음 쪽으로.
     const explicitBreak = bodyH > 0 && startV > 0 && p.getAttribute("pageBreak") === "1"
     const lines = bodyH > 0 ? elements(findChildByLocalName(p, "linesegarray") ?? p).filter(e => ln(e) === "lineseg") : []
-    const firstOver = lines.length > 0 && startV > 0 && num(lines[0], "vertpos") + num(lines[0], "vertsize") > bodyH && num(lines[0], "vertsize") <= bodyH
+    // 쪽 아래에 붙은 위아래 배치 개체(vertRelTo=PAGE·vertAlign=BOTTOM)는 그 쪽 바닥을 개체 몫만큼 올린다 — 앵커 문단이 그 위에 못 들어가면
+    // 문단째(개체와 함께) 다음 쪽으로(한컴 저장본: 결재란 표 26793 이 붙은 끝 문단이 새 쪽 0 에서 시작)
+    const reserve = bodyH > 0 ? pageBottomReserve(p) : 0
+    const lim = reserve > 0 ? Math.min(pageLimit, bodyH - reserve) : pageLimit
+    const lineBottom = (seg: Element): number => num(seg, "vertpos") + num(seg, "vertsize") + (reserve > 0 ? num(seg, "spacing") : 0)
+    const firstOver = lines.length > 0 && startV > 0 && lineBottom(lines[0]) > lim && num(lines[0], "vertsize") <= bodyH
     /** 줄 단위 쪽 넘김으로 뒤 줄들이 옮겨 간 양(음수) — 0 이면 쪽이 안 나뉘었다 */
     let off = 0
     // 넘치는 첫 줄 번호 — 외톨이줄 보호면 쪽 끝 첫 줄 하나만 남기지 않고(문단째), 다음 쪽에 마지막 줄 하나만 보내지 않는다(한 줄 앞에서)
     let cut = -1
     if (!explicitBreak && !firstOver && lines.length > 1) {
-      cut = lines.findIndex((seg, i) => i > 0 && num(seg, "vertpos") + num(seg, "vertsize") > bodyH && num(seg, "vertsize") <= bodyH)
+      cut = lines.findIndex((seg, i) => i > 0 && lineBottom(seg) > lim && num(seg, "vertsize") <= bodyH)
       if (cut > 0 && g?.widowOrphan && lines.length >= 3 && cut === lines.length - 1) cut--
     }
     const orphan = cut === 1 && !!g?.widowOrphan
@@ -523,6 +550,9 @@ function reflowBlockFlow(
     } else {
       cursorV = res.paraBottom + off
     }
+    // 새 쪽으로 넘어갔으면 바닥을 되돌리고, 이 문단의 쪽 아래 개체가 있는 쪽이면 그 몫을 남긴다
+    const moved = explicitBreak || firstOver || orphan || off !== 0
+    pageLimit = reserve > 0 ? bodyH - reserve : moved ? bodyH : lim
     prevSpaceAfter = res.spaceAfter
     counter.n++
   }
