@@ -21,7 +21,7 @@ describe("reflow 한컴 조판 규칙", () => {
   })
 
   it("폭표 없는 한글 글꼴은 한글 1em, 함초롬·명조는 함초롬 폭", () => {
-    assert.equal(faceClassForReflow("HY신명조"), "cjk")
+    assert.equal(faceClassForReflow("HY견명조"), "cjk")
     assert.equal(faceClassForReflow("신명조"), "cjk")
     assert.equal(faceClassForReflow("바탕"), "font:바탕") // 한컴 저장본 역추정 폭표
     assert.equal(faceClassForReflow("명조"), "font:명조") // 역추정 폭표(한글 0.968em)
@@ -72,14 +72,14 @@ const NS = 'xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="http://
 const HEAD = `<hh:head ${NS}><hh:refList><hh:fontfaces><hh:fontface lang="HANGUL"><hh:font id="0" face="바탕"/></hh:fontface><hh:fontface lang="LATIN"><hh:font id="0" face="바탕"/></hh:fontface></hh:fontfaces>
 <hh:charProperties><hh:charPr id="0" height="1000"><hh:fontRef hangul="0" latin="0"/></hh:charPr><hh:charPr id="1" height="1000"><hh:fontRef hangul="0" latin="0"/><hh:supscript/></hh:charPr></hh:charProperties>
 <hh:paraProperties><hh:paraPr id="0"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD"/></hh:paraPr></hh:paraProperties></hh:refList></hh:head>`
-/** 구역 XML 을 reflow 해 문단마다 lineseg [textpos, horzsize] 목록을 돌려준다 */
+/** 구역 XML 을 reflow 해 문단마다 lineseg [textpos, horzsize, horzpos] 목록을 돌려준다 */
 function reflowed(body: string, bodyW = 42000): number[][][] {
   const doc = createXmlParser().parseFromString(`<hs:sec ${NS}>${body}</hs:sec>`, "text/xml")
   const root = doc.documentElement as unknown as Element
   reflowSection(root, parseRenderStyles(HEAD), { BODY_W: bodyW, BODY_H: 80000 })
   return Array.from(root.getElementsByTagName("hp:p") as unknown as Element[]).map(p => {
     const lsa = Array.from(p.childNodes as unknown as Element[]).find(c => c.nodeName === "hp:linesegarray")
-    return lsa ? Array.from(lsa.getElementsByTagName("hp:lineseg") as unknown as Element[]).map(s => [Number(s.getAttribute("textpos")), Number(s.getAttribute("horzsize"))]) : []
+    return lsa ? Array.from(lsa.getElementsByTagName("hp:lineseg") as unknown as Element[]).map(s => [Number(s.getAttribute("textpos")), Number(s.getAttribute("horzsize")), Number(s.getAttribute("horzpos"))]) : []
   })
 }
 const tbl = (w: number) => `<hp:tbl rowCnt="1" colCnt="1"><hp:sz width="${w}" height="2000"/><hp:pos treatAsChar="1"/><hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:tr><hp:tc><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>칸</hp:t></hp:run></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSz width="${w}" height="2000"/></hp:tc></hp:tr></hp:tbl>`
@@ -103,6 +103,20 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:endNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(50)}</hp:t></hp:run></hp:p></hp:subList></hp:endNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
     const ps = reflowed(body)
     assert.deepEqual(ps[1].map(s => s[0]), [0, 42])
+  })
+  it("2단 구역의 각주는 단 폭으로 채운다", () => {
+    const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
+    const ps = reflowed(body)
+    assert.deepEqual(ps[1].map(s => s[1]), [20000, 20000])
+  })
+  it("어울림 그림 옆 줄은 그림 폭 + 바깥 여백만큼 좁아지고, 그림 아래부터는 본문 폭", () => {
+    const pic = `<hp:pic textWrap="SQUARE" textFlow="BOTH_SIDES"><hp:sz width="12000" height="5000"/><hp:pos treatAsChar="0" vertRelTo="PARA" horzRelTo="COLUMN" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="1000" top="0" bottom="0"/></hp:pic>`
+    const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${pic}<hp:t>${"가".repeat(90)}</hp:t></hp:run></hp:p><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(50)}</hp:t></hp:run></hp:p>`
+    const [p1, p2] = reflowed(body)
+    // 줄 간격 1600 — 0·1600·3200·4800 줄이 그림(0~5000)과 겹친다: 4줄 × 29자 > 90자
+    assert.deepEqual(p1.map(s => [s[1], s[2]]), [[29000, 13000], [29000, 13000], [29000, 13000], [29000, 13000]].slice(0, p1.length))
+    assert.ok(p1.length >= 3)
+    assert.deepEqual([...new Set(p2.map(s => s[1]))], [42000])
   })
   it("위첨자는 크기 16/25 로 잰다", () => {
     const sup = (n: number) => `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="1"><hp:t>${"가".repeat(n)}</hp:t></hp:run></hp:p>`

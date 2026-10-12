@@ -261,6 +261,8 @@ export interface WrapOptions extends MeasureOptions {
   kinsoku?: "hancom"
   /** widths 중 자간 몫(UTF-16 단위별) — 한컴은 넘침 판정에 마지막 글자의 자간을 넣지 않는다(판정 뒤 x 에 더한다) */
   spacings?: number[]
+  /** 줄 번호(0부터)별 가용 폭 — 주면 firstWidth·contWidth 대신 쓴다(떠 있는 개체 둘레로 줄이 좁아질 때) */
+  lineWidth?: (line: number) => number
 }
 
 export interface WrapResult {
@@ -341,7 +343,8 @@ export function simulateWrap(
 
   const starts = [0]
   let lineW = 0
-  let avail = firstWidth
+  const lineWidth = opts?.lineWidth
+  let avail = lineWidth ? lineWidth(0) : firstWidth
   let pos = 0
   /** 지금 줄의 공백 폭 합 — 공백 최소값(condense)만큼 공백이 줄어 가용폭이 늘어난다 */
   let spaceW = 0
@@ -366,7 +369,7 @@ export function simulateWrap(
     while (bp - 1 > lineStart() && forbidEnd.has(text[bp - 1])) bp--
     if (bp <= lineStart()) bp = unitPos
     starts.push(bp)
-    avail = contWidth
+    avail = lineWidth ? lineWidth(starts.length - 1) : contWidth
     spaceW = 0
     realSeen = w > 0
     lineEnded = false
@@ -380,7 +383,7 @@ export function simulateWrap(
   /** 금칙 보정 없이 at 에서 새 줄 — 한컴이 공백에서 줄을 끝낼 때(금칙은 낱말이 넘칠 때만 본다) */
   const breakAt = (at: number, leadW: number): void => {
     starts.push(at)
-    avail = contWidth
+    avail = lineWidth ? lineWidth(starts.length - 1) : contWidth
     spaceW = 0
     realSeen = false
     lineEnded = false
@@ -422,7 +425,7 @@ export function simulateWrap(
       pos += u.length
       continue
     }
-    if (empty() || w > contWidth + EPS) {
+    if (empty() || w > (lineWidth ? lineWidth(starts.length) : contWidth) + EPS) {
       // 빈 줄이거나 다음 줄에도 안 들어가는 초장 유닛 — 글자 단위 강제 분해. 어절 단위에서는 한컴이 먼저 다음 줄로
       // 넘긴 뒤 쪼갠다(코퍼스 어절 단위 문단 400개: 넘긴 뒤 347·제자리 340 일치, 갈리는 13건은 넘긴 뒤가 맞음)
       if (mode === "keep" && !empty()) breakBefore(pos, 0)
