@@ -184,8 +184,9 @@ function planLines(m: ParaModel, styles: RenderStyles, numText = ""): LinePlan[]
   const align = (m.paraPrId != null ? styles.paraAlign.get(m.paraPrId) : undefined) ?? "JUSTIFY"
   const geom = m.paraPrId != null ? styles.paraGeom.get(m.paraPrId) : undefined
   const hang = geom && geom.marginIntent < 0 ? -geom.marginIntent : 0
-  // 줄 앞머리 — 한컴 lineseg 의 horzpos·horzsize 는 첫 줄 들여쓰기(양수 intent)와 글머리표를 빼지 않는다(양수 들여쓰기 문단 645개 전부
-  // horzpos = 왼쪽 여백). 글은 그만큼 들어가서 시작하고, 양쪽 정렬도 남는 폭에 맞춘다. 글머리표는 autoIndent 면 둘째 줄부터도 들인다
+  // 줄 앞머리 — 한컴 lineseg 의 horzpos·horzsize 는 첫 줄 들여쓰기(양수 intent)·둘째 줄부터의 내어쓰기(음수 intent)·글머리표를 빼지 않는다
+  // (들여쓰기 문단 645개·내어쓰기 문단 수천 개 전부 horzpos = 왼쪽 여백). 글은 그만큼 들어가서 시작하고, 양쪽 정렬도 남는 폭에 맞춘다.
+  // 글머리표는 autoIndent 면 둘째 줄부터도 들인다
   const bu = geom?.bullet ?? (numText && geom?.number ? { ch: numText, ...geom.number } : undefined)
   const firstPr = m.chars.find(c => c.ch !== "")?.prId ?? null
   const bst = (bu?.charPrId != null ? styles.charPr.get(bu.charPrId) : firstPr != null ? styles.charPr.get(firstPr) : undefined) ?? DEFAULT_CHAR
@@ -197,7 +198,7 @@ function planLines(m: ParaModel, styles: RenderStyles, numText = ""): LinePlan[]
     const end = i + 1 < m.segs.length ? m.segs[i + 1].textpos : Math.max(m.chars.length, start)
     // 탭 해석 — 자연폭으로 정지점을 잡고, 마지막 탭까지는 스케일 없이 고정폭으로 둔다
     const tabs = new Map<number, number>()
-    const lead = i === 0 ? Math.max(geom?.marginIntent ?? 0, 0) + bulletW : bu?.autoIndent ? bulletW : 0
+    const lead = i === 0 ? Math.max(geom?.marginIntent ?? 0, 0) + bulletW : hang + (bu?.autoIndent ? bulletW : 0)
     let x = (i === 0 ? Math.max(geom?.marginIntent ?? 0, 0) : hang) + (i === 0 || bu?.autoIndent ? bulletW : 0) // 첫 줄은 들여쓰기(양수 intent)만큼 들어가서 시작
     let fixedTo = start
     let fixedW = 0

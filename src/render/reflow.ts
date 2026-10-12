@@ -220,9 +220,11 @@ function reflowPara(
   const bulletW = bu ? headW + (bu.offsetPct ? Math.trunc(height * bu.offset / 100) : bu.offset) : 0
   const contBullet = bu?.autoIndent ? bulletW : 0
   const firstWrapWidth = Math.max(500, avail - Math.max(0, geom.marginIntent) - bulletW)
-  const contSegWidth = Math.max(500, avail + Math.min(0, geom.marginIntent))
-  const contWidth = Math.max(500, contSegWidth - contBullet)
-  const contHorz = marginL - Math.min(0, geom.marginIntent)
+  // 내어쓰기(intent<0)는 둘째 줄부터 그만큼 좁게 채우되, lineseg 의 horzpos·horzsize 는 들여쓰기처럼 바꾸지 않는다
+  // (한컴 저장본 내어쓰기 문단 수천 개 전부 둘째 줄 horzpos = 왼쪽 여백 — 그리기가 내어쓰기만큼 민다)
+  const contSegWidth = avail
+  const contWidth = Math.max(500, avail + Math.min(0, geom.marginIntent) - contBullet)
+  const contHorz = marginL
 
   // 문단 paraPr의 breakSetting이 있으면 그 선언(어절/글자)을 따르고, 없으면 호출자 모드
   const paraMode = geom.wrapMode ?? mode
@@ -357,8 +359,8 @@ function reflowPara(
     seg.setAttribute("baseline", String(geom.vertAlign === "CENTER" ? Math.floor(lineH / 2) : Math.max(Math.round(textH * BASELINE_RATIO), lineObjAsc[li])))
     seg.setAttribute("spacing", String(spacing))
     const box = boxAt(li)
-    seg.setAttribute("horzpos", String(box ? box[0] + (isFirst ? 0 : -Math.min(0, geom.marginIntent)) : isFirst ? marginL : contHorz))
-    seg.setAttribute("horzsize", String(box ? box[1] + (isFirst ? 0 : Math.min(0, geom.marginIntent)) : isFirst ? firstWidth : contSegWidth))
+    seg.setAttribute("horzpos", String(box ? box[0] : isFirst ? marginL : contHorz))
+    seg.setAttribute("horzsize", String(box ? box[1] : isFirst ? firstWidth : contSegWidth))
     seg.setAttribute("flags", LINESEG_FLAGS)
     lsa.appendChild(seg)
   }

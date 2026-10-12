@@ -180,6 +180,21 @@ describe("render: 첫 줄 들여쓰기·글머리표 (한컴 lineseg horzpos 는
     assert.ok(Math.abs(xOf("◦") - xOf("기본문단")) < 0.5, "글머리표는 줄 첫머리")
     assert.ok(xOf("글머리") > xOf("◦") + 5, "글은 글머리표 + 간격 뒤에서 시작")
   })
+  it("내어쓰기 문단은 둘째 줄부터 그만큼 들어가 그린다 (lineseg horzpos 는 왼쪽 여백 그대로)", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("가" + "나".repeat(60) + "끝줄"))
+    let head = await zip.file("Contents/header.xml")!.async("string")
+    const pp0 = head.match(/<hh:paraPr id="0"[\s\S]*?<\/hh:paraPr>/)![0]
+    head = head.replace("</hh:paraProperties>", pp0.replace('id="0"', 'id="902"').replace('<hc:intent value="0"', '<hc:intent value="-3000"') + "</hh:paraProperties>")
+    zip.file("Contents/header.xml", head)
+    const secName = Object.keys(zip.files).find(n => /section0\.xml$/.test(n))!
+    let sec = await zip.file(secName)!.async("string")
+    sec = sec.replace(/(<hp:p [^>]*?)paraPrIDRef="\d+"([^>]*>(?:(?!<\/hp:p>)[\s\S])*?끝줄)/, '$1paraPrIDRef="902"$2')
+    zip.file(secName, sec)
+    const r = await renderHwpxToSvg(new Uint8Array(await zip.generateAsync({ type: "nodebuffer" })), { reflow: true })
+    const xs = [...r.svg.matchAll(/<text x="([\d.-]+)"[^>]*>([^<]*)<\/text>/g)].filter(m => /[가나끝]/.test(m[2])).map(m => parseFloat(m[1]))
+    assert.ok(xs.length >= 2, String(xs.length))
+    assert.ok(Math.abs(xs[1] - xs[0] - 30) < 0.5, `둘째 줄은 30pt 들어간다: ${xs[1] - xs[0]}`)
+  })
 })
 
 describe("render: 표 캡션 (위·아래 캡션은 표 줄 높이에 든다)", () => {
