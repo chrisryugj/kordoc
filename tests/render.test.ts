@@ -205,6 +205,8 @@ describe("render: reflow 인라인 표 나란히 배치 (결재란 겹침)", () 
     sec = sec.slice(0, host2Start) + sec.slice(host2End) // 둘째 호스트 문단 제거
     const t1End = sec.indexOf("</hp:tbl>") + "</hp:tbl>".length
     sec = sec.slice(0, t1End) + t2 + sec.slice(t1End) // 첫 표 바로 뒤에 삽입
+    // 결재란처럼 좁은 표 — 본문 폭 표 둘은 한컴도 한 줄에 하나씩 놓는다(아래 테스트)
+    sec = sec.replace(/(<hp:sz width=")\d+/g, "$115000").replace(/(<hp:cellSz width=")\d+/g, "$115000")
     zip.file(secName, sec)
     const buf = await zip.generateAsync({ type: "nodebuffer" })
 

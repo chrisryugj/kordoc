@@ -18,9 +18,9 @@
  * (seoul 코퍼스 자기일관성 59/59 — 36264961 전 문단 d=0 실측).
  */
 
-import { buildPara, measureTableHeight, tabAdvance } from "./para-model.js"
-import { simulateWrap, hancomCharWidth, faceClassForReflow, type WrapMode } from "../hwpx/text-metrics.js"
-import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
+import { buildPara, measureTableHeight, tabAdvance, type ParaObj } from "./para-model.js"
+import { simulateWrap, hancomCharWidth, faceClassForReflow, mulDiv, type WrapMode } from "../hwpx/text-metrics.js"
+import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderCharStyle, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
 import { toInt32 } from "./layout.js"
 
@@ -61,6 +61,28 @@ export interface ReflowGeom {
   BODY_H: number
 }
 
+/** 한컴 언어 분류 '영문'(U+0250 미만·U+1E00~1FFF·‘’“” 등 U+2018~201F) — 그 글자는 영문 글꼴·장평·자간·상대크기로 잰다 */
+const isLatinCp = (cp: number): boolean => cp < 0x250 || (cp >= 0x1e00 && cp < 0x2000) || (cp >= 0x2018 && cp < 0x2020)
+
+/**
+ * 한컴 조판의 글자 폭과 그 중 자간 몫(HWPUNIT). 글자는 제 언어(한글/영문)의 글꼴·장평·상대크기로, 첨자는 크기 16/25 로 잰다.
+ * 공백은 한글 크기·장평으로 재고 자간만 영문 값을 쓴다(한컴 조판 엔진과 같은 규칙)
+ */
+function glyphWidth(ch: string, st: RenderCharStyle): { w: number; sp: number } {
+  const cp = ch.codePointAt(0)!
+  const space = cp === 0x20 || cp === 0xa0
+  const L = !space && st.latin && isLatinCp(cp) ? st.latin : undefined
+  const rel = space ? st.rel ?? 100 : L ? L.rel : st.rel ?? 100
+  let h = rel !== 100 ? mulDiv(st.height, rel, 100) : st.height
+  if (!space && st.script) h = mulDiv(h, 16, 25)
+  const ratio = L ? L.ratio : st.ratio
+  const spacing = space ? st.latin?.spacing ?? st.spacing : L ? L.spacing : st.spacing
+  const fc = faceClassForReflow(L?.face ?? st.face)
+  const base = hancomCharWidth(ch, h, ratio, 0, fc)
+  const w = spacing ? hancomCharWidth(ch, h, ratio, spacing, fc) : base
+  return { w, sp: w - base }
+}
+
 /** 줄 pitch(다음 줄 vertpos 증분, HWPUNIT) — lineSpacing type별 */
 function pitchFor(height: number, geom: RenderParaGeom): number {
   const v = geom.lineSpacingValue
@@ -94,22 +116,38 @@ function reflowPara(
   // 묶음 빈칸은 U+00A0 — 공백 폭이지만 줄을 끊지 않는다("2026. 9. 23."·"3억 원")
   const realIdx: number[] = []
   const widths: number[] = []
+  const spacings: number[] = []
   let text = ""
   let x = Math.max(geom.marginIntent, 0) // 탭 정지점은 왼쪽 여백 기준 — 첫 줄 들여쓰기만큼 들어가서 시작
+  // 글자처럼 취급하는 개체(treatAsChar 표·그림)는 폭(outMargin 좌우 포함)을 가진 글자 하나로 줄 채우기에 넣는다 —
+  // 한컴도 개체를 그 폭의 글자로 줄에 채운다. 넓은 표 두 개는 줄을 하나씩 차지한다(정답 lineseg textpos 0·8)
+  const inlineAt = new Map<number, ParaObj>()
+  for (const o of m.objs) if (o.inline) inlineAt.set(o.index, o)
   for (let i = 0; i < m.chars.length; i++) {
     const c = m.chars[i]
+    const io = inlineAt.get(i)
+    if (io) {
+      const adv = io.omL + io.width + io.omR
+      realIdx.push(i); widths.push(adv); spacings.push(0); text += "\ufffc"; x += adv
+      continue
+    }
     if (c.tab) {
       const adv = tabAdvance(x, true, geom, c.tabW)
-      realIdx.push(i); widths.push(adv); text += "\t"; x += adv
+      realIdx.push(i); widths.push(adv); spacings.push(0); text += "\t"; x += adv
+      continue
+    }
+    if (c.ctrl) {
+      // 폭 0 컨트롤(쪽 번호·필드 등) — 줄의 내용으로 친다(뒤에서 넘치는 개체는 다음 줄로)
+      realIdx.push(i); widths.push(0); spacings.push(0); text += "\u2060"
       continue
     }
     if (c.ch === "") continue
     const st = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
     // 폭 테이블: 고정폭 글꼴(굴림체류)은 전용 클래스 — 함초롬 테이블(한글 0.97em)로 재면 줄당 1~2자
     // 과대적재로 wrap 이 어긋난다 (seoul 코퍼스 3건 실측). 폭표 없는 한글 글꼴은 한글 1em(faceClassForReflow).
-    // 글자 폭은 한컴처럼 글자마다 4 단위로 양자화한다(hancomCharWidth)
-    const w = hancomCharWidth(c.ch, st.height, st.ratio, st.spacing, faceClassForReflow(st.face))
-    for (let u = 0; u < c.ch.length; u++) { realIdx.push(i); widths.push(u === 0 ? w : 0) }
+    // 글자 폭은 한컴처럼 글자마다 4 단위로 양자화하고, 언어별 글꼴·장평·자간·상대크기와 첨자 크기를 따른다(glyphWidth)
+    const { w, sp } = glyphWidth(c.ch, st)
+    for (let u = 0; u < c.ch.length; u++) { realIdx.push(i); widths.push(u === 0 ? w : 0); spacings.push(u === 0 ? sp : 0) }
     text += c.nb ? "\u00a0" : c.ch
     x += w
   }
@@ -136,8 +174,10 @@ function reflowPara(
 
   const marginL = geom.marginLeft
   const avail = Math.max(1000, areaW - marginL - geom.marginRight)
-  // hanging(intent<0): 둘째 줄부터 |intent| 더 들어감 → contWidth 축소·contHorz 우측 이동
+  // hanging(intent<0): 둘째 줄부터 |intent| 더 들어감 → contWidth 축소·contHorz 우측 이동.
+  // 들여쓰기(intent>0)는 첫 줄을 그만큼 좁혀 채운다 — lineseg horzsize 는 한컴처럼 들여쓰기를 빼지 않은 폭으로 둔다
   const firstWidth = avail
+  const firstWrapWidth = Math.max(500, avail - Math.max(0, geom.marginIntent))
   const contWidth = Math.max(500, avail + Math.min(0, geom.marginIntent))
   const contHorz = marginL - Math.min(0, geom.marginIntent)
 
@@ -145,7 +185,7 @@ function reflowPara(
   const paraMode = geom.wrapMode ?? mode
   const wrap = text.length === 0
     ? { lines: 1, starts: [0], lastLineWidth: 0 }
-    : simulateWrap(text, firstWidth, contWidth, height, 100, paraMode, { widths, condensePct: geom.condense, kinsoku: "hancom" })
+    : simulateWrap(text, firstWrapWidth, contWidth, height, 100, paraMode, { widths, spacings, condensePct: geom.condense, kinsoku: "hancom" })
 
   const pitch = pitchFor(height, geom)
   const baseline = Math.round(height * BASELINE_RATIO)
@@ -161,13 +201,21 @@ function reflowPara(
   //   만큼 전진 (실측: 표끝→다음 문단 간격 = 성장 포함 표높이 + spacing)
   let floatBelow = 0 // 텍스트 시작을 아래로 미는 float 개체 바닥 (문단 로컬)
   let objBottom = startV
+  /** 줄마다 인라인 개체 높이(outMargin 위아래 포함)의 최대 — 그 줄 높이가 된다 */
+  const lineObjH = new Array<number>(wrap.starts.length).fill(0)
+  const lineOf = (slot: number): number => {
+    let li = 0
+    for (let k = 1; k < wrap.starts.length; k++) if ((wrap.starts[k] < realIdx.length ? realIdx[wrap.starts[k]] : Infinity) <= slot) li = k
+    return li
+  }
   for (const o of m.objs) {
     const effH = o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el)) : o.height
     const pos = findChildByLocalName(o.el, "pos")
     const om = findChildByLocalName(o.el, "outMargin")
     const outT = num(om, "top"), outB = num(om, "bottom")
     if (o.inline) {
-      objBottom = Math.max(objBottom, startV + outT + effH + outB + spacing)
+      const li = lineOf(o.index)
+      lineObjH[li] = Math.max(lineObjH[li], outT + effH + outB)
       continue
     }
     const wrapAttr = o.el.getAttribute("textWrap") ?? ""
@@ -184,20 +232,25 @@ function reflowPara(
   const textStartV = startV + floatBelow
 
   const lsa = doc.createElement("hp:linesegarray")
+  let v = textStartV
   for (let li = 0; li < wrap.starts.length; li++) {
     const startReal = wrap.starts[li]
     // 실텍스트 없는 문단(인라인 표·개체만)의 textpos는 0 — chars.length로 폴백하면
     // planLines의 plan.start가 개체 index보다 커져 advanceTo 가로 전진에서 개체가
     // 전부 빠지고 같은 x에 겹쳐 그려진다 (공문 결재란 라벨표∩스탬프표 겹침의 원인)
-    const textpos = startReal < realIdx.length ? realIdx[startReal] : 0
-    const vertpos = textStartV + li * pitch
+    // 첫 줄은 늘 0 — 문단 앞 컨트롤(구역·단 정의, 개체) 슬롯도 첫 줄에 속한다(한컴 저장 lineseg)
+    const textpos = li === 0 ? 0 : startReal < realIdx.length ? realIdx[startReal] : 0
+    // 개체가 있는 줄은 개체 높이가 줄 높이·글자 높이, 기준선은 그 85% (한컴 저장 lineseg 실측: 표 h 3679 + 여백 566 = 4245, 기준선 3608)
+    const lineH = Math.max(height, lineObjH[li])
+    const vertpos = v
+    v += lineH === height ? pitch : lineH + spacing
     const isFirst = li === 0
     const seg = doc.createElement("hp:lineseg")
     seg.setAttribute("textpos", String(textpos))
     seg.setAttribute("vertpos", String(vertpos))
-    seg.setAttribute("vertsize", String(height))
-    seg.setAttribute("textheight", String(height))
-    seg.setAttribute("baseline", String(baseline))
+    seg.setAttribute("vertsize", String(lineH))
+    seg.setAttribute("textheight", String(lineH))
+    seg.setAttribute("baseline", String(lineH === height ? baseline : Math.round(lineH * BASELINE_RATIO)))
     seg.setAttribute("spacing", String(spacing))
     seg.setAttribute("horzpos", String(isFirst ? marginL : contHorz))
     seg.setAttribute("horzsize", String(isFirst ? firstWidth : contWidth))
@@ -209,12 +262,55 @@ function reflowPara(
   // 문단 바닥 = 텍스트 줄 흐름(float 개체 아래부터)과 개체 바닥 중 큰 쪽.
   // 표는 셀 콘텐츠 성장으로 선언 sz보다 커질 수 있어 drawTable과 같은 실효 높이를 쓴다
   // (셀 lineseg 필요 — reflowBlockFlow가 reflowTablesIn을 먼저 돌린다).
-  const textBottom = textStartV + wrap.starts.length * pitch
+  const textBottom = v
   return { paraBottom: Math.max(textBottom, objBottom), spaceAfter: geom.spaceAfter }
 }
 
+/** 문단 run 의 단 정의(ctrl>colPr) → 단 폭. 같은 폭이면 (본문 폭 − 간격×(단 수−1)) ÷ 단 수, 아니면 첫 단(colSz) 폭. 없으면 undefined */
+function columnWidthIn(p: Element, bodyW: number): number | undefined {
+  for (const run of elements(p)) {
+    if (ln(run) !== "run") continue
+    for (const ch of elements(run)) {
+      if (ln(ch) !== "ctrl") continue
+      const col = findChildByLocalName(ch, "colPr")
+      if (!col) continue
+      const n = Math.max(1, num(col, "colCount", 1))
+      if (n === 1) return bodyW
+      if (col.getAttribute("sameSz") !== "0") return Math.trunc((bodyW - num(col, "sameGap") * (n - 1)) / n)
+      const first = findChildByLocalName(col, "colSz")
+      return first ? num(first, "width", bodyW) : bodyW
+    }
+  }
+  return undefined
+}
+
+/**
+ * 문단 run 안 표 칸 밖의 하위 목록 reflow — 각주·미주·머리말·꼬리말은 구역 본문 폭, 도형 글상자(drawText)와 표 캡션은
+ * 저장된 글 영역 폭(lastWidth). 종전엔 건너뛰어 캐시 없는 문서에서 이 안의 글이 줄 정보 없이 남았다
+ */
+function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number }): void {
+  const visit = (el: Element): void => {
+    for (const ch of elements(el)) {
+      const t = ln(ch)
+      if (t === "footNote" || t === "endNote" || t === "header" || t === "footer") {
+        const sub = findChildByLocalName(ch, "subList")
+        if (sub && counter.bodyW) reflowBlockFlow(sub, doc, styles, counter.bodyW, mode, counter, 0)
+        continue
+      }
+      if (t === "drawText" || t === "caption") {
+        const sub = findChildByLocalName(ch, "subList"), w = num(ch, "lastWidth")
+        if (sub && w > 0) reflowBlockFlow(sub, doc, styles, w, mode, counter, 0)
+        continue
+      }
+      if (t === "tr" || t === "subList" || t === "linesegarray") continue
+      visit(ch)
+    }
+  }
+  for (const run of elements(p)) if (ln(run) === "run") visit(run)
+}
+
 /** 문단 run 안의 표를 찾아 각 셀 subList를 셀 로컬로 reflow (중첩 재귀) */
-function reflowTablesIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number }): void {
+function reflowTablesIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number }): void {
   for (const run of elements(p)) {
     if (ln(run) !== "run") continue
     for (const obj of elements(run)) {
@@ -248,16 +344,20 @@ function reflowBlockFlow(
   styles: RenderStyles,
   areaW: number,
   mode: WrapMode,
-  counter: { n: number },
+  counter: { n: number; bodyW?: number },
   bodyH: number,
 ): void {
   let cursorV = 0
   let prevSpaceAfter = 0
+  // 구역 본문의 다단(colPr colCount>1) — 단 정의가 나온 문단부터 단 폭으로 채운다(한컴 다단 편집 lineseg horzsize 실측)
+  const bodyFlow = areaW === counter.bodyW && bodyH > 0
   for (const p of elements(container)) {
     if (ln(p) !== "p") continue
+    if (bodyFlow) { const colW = columnWidthIn(p, counter.bodyW!); if (colW !== undefined) areaW = colW }
     // 문단 안 표 셀을 먼저 셀 로컬 좌표로 reflow (본문 세로 흐름과 무관) —
     // reflowPara의 표 실효높이 측정이 셀 lineseg를 읽으므로 호스트 문단보다 앞서야 한다
     reflowTablesIn(p, doc, styles, mode, counter)
+    reflowSubListsIn(p, doc, styles, mode, counter)
     const g = styles.paraGeom.get(p.getAttribute("paraPrIDRef") ?? "")
     const startV = cursorV + prevSpaceAfter + (g?.spaceBefore ?? 0)
     const res = reflowPara(p, doc, styles, areaW, startV, mode)
@@ -308,7 +408,7 @@ export function reflowSection(
   mode: WrapMode = "keep",
 ): number {
   const doc = root.ownerDocument as unknown as Document
-  const counter = { n: 0 }
+  const counter = { n: 0, bodyW: geom.BODY_W }
   reflowBlockFlow(root, doc, styles, geom.BODY_W, mode, counter, geom.BODY_H)
   return counter.n
 }

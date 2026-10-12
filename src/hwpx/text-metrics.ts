@@ -183,7 +183,7 @@ export function measureTextWidth(
 }
 
 /** MulDiv — 반올림(0 에서 멀어지는 쪽) */
-function mulDiv(a: number, b: number, c: number): number {
+export function mulDiv(a: number, b: number, c: number): number {
   const e = a * b
   return Math.trunc(e < 0 ? (e - c / 2) / c : (e + c / 2) / c)
 }
@@ -259,6 +259,8 @@ export interface WrapOptions extends MeasureOptions {
   condensePct?: number
   /** 금칙 집합 — 'hancom' 이면 한컴 기본 집합(reflow), 아니면 생성기 실측 집합 */
   kinsoku?: "hancom"
+  /** widths 중 자간 몫(UTF-16 단위별) — 한컴은 넘침 판정에 마지막 글자의 자간을 넣지 않는다(판정 뒤 x 에 더한다) */
+  spacings?: number[]
 }
 
 export interface WrapResult {
@@ -301,6 +303,16 @@ export function simulateWrap(
   const forbidStart = opts?.kinsoku === "hancom" ? HANCOM_FORBID_START : FORBID_START
   const forbidEnd = opts?.kinsoku === "hancom" ? HANCOM_FORBID_END : FORBID_END
   const condense = opts?.condensePct ?? 0
+  /** 한컴 조판 모드(reflow) — 한컴 금칙 집합과 공백에서 줄 끝내기 규칙 */
+  const hancom = opts?.kinsoku === "hancom"
+  const spAt = opts?.spacings
+  /** [from, to) 마지막 글자의 자간 몫 — 넘침 판정에서 뺀다 */
+  const lastSp = (from: number, to: number): number => {
+    if (!spAt || to <= from) return 0
+    let i = to - 1
+    if (i > from && /[\uDC00-\uDFFF]/.test(text[i])) i--
+    return spAt[i] ?? 0
+  }
   /** i 위치(UTF-16) 글자 ch 의 폭 — widths 가 있으면 그 값(서로게이트 쌍은 두 칸 합) */
   const charWAt = (i: number, ch: string): number => {
     if (unitW) return (unitW[i] ?? 0) + (ch.length === 2 ? unitW[i + 1] ?? 0 : 0)
@@ -333,6 +345,13 @@ export function simulateWrap(
   let pos = 0
   /** 지금 줄의 공백 폭 합 — 공백 최소값(condense)만큼 공백이 줄어 가용폭이 늘어난다 */
   let spaceW = 0
+  /** 이 줄에 공백 아닌 글자가 나왔는가 — 한컴은 줄 첫머리 공백을 공백 최소값 합에 넣지 않는다 */
+  let realSeen = false
+  /** 한컴: 공백에 닿았을 때 이미 줄 폭에 닿아 이 줄이 끝남 — 다음 낱말은 공백 최소값으로 남는 폭이 있어도 다음 줄로 */
+  let lineEnded = false
+  /** 이 줄에 놓인 공백 아닌 단위 수 — 한컴은 폭 0 컨트롤도 줄의 내용으로 쳐서, 그 뒤에서 넘치는 단위는 다음 줄로 보낸다 */
+  let placed = 0
+  const empty = (): boolean => lineW === 0 && (!hancom || placed === 0)
   const cap = (): number => avail + (condense > 0 ? Math.trunc(spaceW * condense / 100) : 0) + EPS
   const lineStart = (): number => starts[starts.length - 1]
 
@@ -349,39 +368,78 @@ export function simulateWrap(
     starts.push(bp)
     avail = contWidth
     spaceW = 0
-    if (condense > 0) for (let i = bp; i < unitPos; i++) if (text[i] === " ") spaceW += rangeW(i, i + 1)
+    realSeen = w > 0
+    lineEnded = false
+    placed = unitPos > bp ? 1 : 0
+    for (let i = bp; i < unitPos; i++) {
+      if (text[i] !== " ") realSeen = true
+      else if (condense > 0 && (realSeen || !hancom)) spaceW += rangeW(i, i + 1)
+    }
     lineW = rangeW(bp, unitPos) + w
+  }
+  /** 금칙 보정 없이 at 에서 새 줄 — 한컴이 공백에서 줄을 끝낼 때(금칙은 낱말이 넘칠 때만 본다) */
+  const breakAt = (at: number, leadW: number): void => {
+    starts.push(at)
+    avail = contWidth
+    spaceW = 0
+    realSeen = false
+    lineEnded = false
+    placed = 0
+    lineW = leadW
   }
 
   for (const u of units) {
     if (u[0] === " ") {
+      if (hancom) {
+        // 한컴: 공백마다 x 가 이미 줄 폭(공백 최소값 전)에 닿았으면 이 줄은 끝난다. 그 공백 덩어리는 앞 두 칸까지만
+        // 이 줄에 남고 셋째 칸부터 다음 줄로 간다(굴림체 "같이  |    알려"). 닿지 않은 공백은 줄 끝에 걸린다(hang)
+        let k = 0
+        for (; k < u.length; k++) {
+          if (!lineEnded && lineW >= avail) lineEnded = true
+          if (lineEnded && k >= 2 && pos + k > lineStart()) break
+          if (!lineEnded) {
+            const sw = rangeW(pos + k, pos + k + 1)
+            lineW += sw
+            if (realSeen) spaceW += sw
+          }
+        }
+        if (k < u.length) breakAt(pos + k, rangeW(pos + k, pos + u.length))
+        pos += u.length
+        continue
+      }
       const sw = rangeW(pos, pos + u.length)
       lineW += sw // 줄 끝 공백은 hang
       spaceW += sw
       pos += u.length
       continue
     }
+    if (lineEnded) breakAt(pos, 0)
     const w = rangeW(pos, pos + u.length)
-    if (lineW + w <= cap()) {
+    if (lineW + w - lastSp(pos, pos + u.length) <= cap()) {
       lineW += w
+      realSeen = true
+      placed++
       pos += u.length
       continue
     }
-    if (lineW === 0 || w > contWidth + EPS) {
+    if (empty() || w > contWidth + EPS) {
       // 빈 줄이거나 다음 줄에도 안 들어가는 초장 유닛 — 글자 단위 강제 분해. 어절 단위에서는 한컴이 먼저 다음 줄로
       // 넘긴 뒤 쪼갠다(코퍼스 어절 단위 문단 400개: 넘긴 뒤 347·제자리 340 일치, 갈리는 13건은 넘긴 뒤가 맞음)
-      if (mode === "keep" && lineW > 0) breakBefore(pos, 0)
+      if (mode === "keep" && !empty()) breakBefore(pos, 0)
       let sub = 0
       for (const ch of u) {
         const c = charWAt(pos + sub, ch)
-        if (lineW + c > cap() && lineW > 0) breakBefore(pos + sub, 0)
+        if (lineW + c - lastSp(pos + sub, pos + sub + ch.length) > cap() && !empty()) breakBefore(pos + sub, 0)
         lineW += c
+        realSeen = true
+        placed++
         sub += ch.length
       }
       pos += u.length
       continue
     }
     breakBefore(pos, w)
+    placed++
     pos += u.length
   }
   return { lines: starts.length, starts, lastLineWidth: lineW }

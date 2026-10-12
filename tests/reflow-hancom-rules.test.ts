@@ -55,3 +55,66 @@ describe("reflow 한컴 조판 규칙", () => {
     assert.deepEqual(simulateWrap(text, 300, 300, 1000, 100, "charAll", { widths, kinsoku: "hancom" }).starts, [0, 2])
   })
 })
+
+import { simulateWrap as wrap } from "../src/hwpx/text-metrics.js"
+import { reflowSection } from "../src/render/reflow.js"
+import { parseRenderStyles } from "../src/render/head-styles.js"
+import { createXmlParser } from "../src/hwpx/parser-shared.js"
+
+const NS = 'xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"'
+const HEAD = `<hh:head ${NS}><hh:refList><hh:fontfaces><hh:fontface lang="HANGUL"><hh:font id="0" face="바탕"/></hh:fontface><hh:fontface lang="LATIN"><hh:font id="0" face="바탕"/></hh:fontface></hh:fontfaces>
+<hh:charProperties><hh:charPr id="0" height="1000"><hh:fontRef hangul="0" latin="0"/></hh:charPr><hh:charPr id="1" height="1000"><hh:fontRef hangul="0" latin="0"/><hh:supscript/></hh:charPr></hh:charProperties>
+<hh:paraProperties><hh:paraPr id="0"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD"/></hh:paraPr></hh:paraProperties></hh:refList></hh:head>`
+/** 구역 XML 을 reflow 해 문단마다 lineseg [textpos, horzsize] 목록을 돌려준다 */
+function reflowed(body: string, bodyW = 42000): number[][][] {
+  const doc = createXmlParser().parseFromString(`<hs:sec ${NS}>${body}</hs:sec>`, "text/xml")
+  const root = doc.documentElement as unknown as Element
+  reflowSection(root, parseRenderStyles(HEAD), { BODY_W: bodyW, BODY_H: 80000 })
+  return Array.from(root.getElementsByTagName("hp:p") as unknown as Element[]).map(p => {
+    const lsa = Array.from(p.childNodes as unknown as Element[]).find(c => c.nodeName === "hp:linesegarray")
+    return lsa ? Array.from(lsa.getElementsByTagName("hp:lineseg") as unknown as Element[]).map(s => [Number(s.getAttribute("textpos")), Number(s.getAttribute("horzsize"))]) : []
+  })
+}
+const tbl = (w: number) => `<hp:tbl rowCnt="1" colCnt="1"><hp:sz width="${w}" height="2000"/><hp:pos treatAsChar="1"/><hp:outMargin left="283" right="283" top="283" bottom="283"/><hp:tr><hp:tc><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>칸</hp:t></hp:run></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSz width="${w}" height="2000"/></hp:tc></hp:tr></hp:tbl>`
+
+describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목록", () => {
+  it("본문 폭 인라인 표 둘은 한 줄에 하나씩 — 표는 그 폭의 글자다", () => {
+    const [p] = reflowed(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${tbl(41700)}${tbl(41700)}<hp:t/></hp:run></hp:p>`)
+    assert.deepEqual(p.map(s => s[0]), [0, 8])
+  })
+  it("쪽 번호 컨트롤 뒤 넓은 표는 다음 줄 — 구역·단 정의가 아닌 컨트롤은 줄의 내용", () => {
+    const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr/><hp:ctrl><hp:colPr colCount="1"/></hp:ctrl></hp:run><hp:run charPrIDRef="0"><hp:ctrl><hp:pageNum/></hp:ctrl>${tbl(41700)}<hp:t/></hp:run></hp:p>`
+    assert.deepEqual(reflowed(body)[0].map(s => s[0]), [0, 24])
+  })
+  it("2단 구역은 단 폭으로 채운다", () => {
+    const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p>`
+    const [p] = reflowed(body)
+    assert.equal(p[0][1], 20000) // (42000 − 2000) ÷ 2
+    assert.deepEqual(p.map(s => s[0]), [0, 28]) // 컨트롤 8칸 + 20자(1000 씩)
+  })
+  it("미주 안 문단도 줄 정보를 만든다", () => {
+    const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:endNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(50)}</hp:t></hp:run></hp:p></hp:subList></hp:endNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
+    const ps = reflowed(body)
+    assert.deepEqual(ps[1].map(s => s[0]), [0, 42])
+  })
+  it("위첨자는 크기 16/25 로 잰다", () => {
+    const sup = (n: number) => `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="1"><hp:t>${"가".repeat(n)}</hp:t></hp:run></hp:p>`
+    assert.deepEqual(reflowed(sup(70))[0].map(s => s[0]), [0, 65]) // 4·MulDiv(1000, ⌊640/4⌋, 1000) = 640 → 42000 ÷ 640 = 65자
+  })
+  it("공백에서 이미 줄 폭에 닿았으면 줄이 끝나고, 공백은 두 칸까지만 남는다", () => {
+    const text = "가가 " + "나".repeat(3) + "      다다"
+    const widths = [...text].map(c => (c === " " ? 50 : 100))
+    // "가가 나나나" = 550 ≥ 550 → 첫 공백에서 줄 끝, 공백 둘은 남고 셋째부터 다음 줄
+    assert.deepEqual(wrap(text, 550, 550, 1000, 100, "charAll", { widths, kinsoku: "hancom" }).starts, [0, 8])
+    // condense 로 남는 폭이 있어도 다음 낱말은 새로 시작하지 못한다
+    const t2 = "가가 나나 다다"
+    const w2 = [...t2].map(c => (c === " " ? 50 : 100))
+    assert.deepEqual(wrap(t2, 440, 440, 1000, 100, "charAll", { widths: w2, condensePct: 100, kinsoku: "hancom" }).starts, [0, 6])
+  })
+  it("마지막 글자의 자간은 넘침 판정에 넣지 않는다", () => {
+    const text = "가가가가"
+    const widths = [96, 96, 96, 96], spacings = [-4, -4, -4, -4] // 100 에 자간 −4
+    assert.deepEqual(wrap(text, 384, 384, 1000, 100, "charAll", { widths, spacings, kinsoku: "hancom" }).starts, [0, 3]) // 288 + 100(자간 전) > 384
+    assert.deepEqual(wrap(text, 384, 384, 1000, 100, "charAll", { widths, kinsoku: "hancom" }).starts, [0]) // 자간 몫을 안 주면 384 에 든다
+  })
+})
