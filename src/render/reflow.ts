@@ -20,7 +20,7 @@
 
 import { buildPara, measureTableHeight, tabAdvance, captionExtra, OBJ_TAGS, type ParaObj } from "./para-model.js"
 import { nextParaNumber, type NumberCounters } from "./para-number.js"
-import { simulateWrap, hancomCharWidth, faceClassForReflow, mulDiv, type WrapMode } from "../hwpx/text-metrics.js"
+import { simulateWrap, hancomCharWidth, faceClassForReflow, mulDiv, syntheticBoldEm, type WrapMode } from "../hwpx/text-metrics.js"
 import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderCharStyle, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
 import { toInt32 } from "./layout.js"
@@ -86,8 +86,9 @@ function glyphWidth(ch: string, st: RenderCharStyle): { w: number; sp: number } 
   const ratio = L ? L.ratio : st.ratio
   const spacing = space ? st.latin?.spacing ?? st.spacing : L ? L.spacing : st.spacing
   const fc = faceClassForReflow(L?.face ?? st.face)
-  const base = hancomCharWidth(ch, h, ratio, 0, fc)
-  const w = spacing ? hancomCharWidth(ch, h, ratio, spacing, fc) : base
+  const bAdd = !space && st.bold ? syntheticBoldEm(L?.face ?? st.face) : 0
+  const base = hancomCharWidth(ch, h, ratio, 0, fc, bAdd)
+  const w = spacing ? hancomCharWidth(ch, h, ratio, spacing, fc, bAdd) : base
   return { w, sp: w - base }
 }
 

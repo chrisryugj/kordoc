@@ -9,7 +9,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { hancomCharWidth, faceClassForReflow, simulateWrap } from "../src/hwpx/text-metrics.js"
+import { hancomCharWidth, faceClassForReflow, simulateWrap, syntheticBoldEm } from "../src/hwpx/text-metrics.js"
 import { fontAdvanceEm1000 } from "../src/hwpx/font-metrics.js"
 
 describe("reflow 한컴 조판 규칙", () => {
@@ -133,6 +133,16 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(plain.map(s => s[1]), [20000]) // (42000 − 2000) ÷ 2 — 미주가 걸린 1단 폭(42000)이 아니다
     assert.deepEqual(plain.map(s => s[0]), [0]) // 20자 × 1000 = 20000 에 꼭 찬다
     assert.equal(numbered.length, 2) // "1)" 몫만큼 넘친다
+  })
+  it("굵은 글꼴이 없는 옛 HFT 글꼴의 진하게는 글자마다 폭을 넓힌다", () => {
+    assert.equal(hancomCharWidth("가", 1000, 100, 0, "font:한양신명조", syntheticBoldEm("한양신명조")), 1048) // 4·MulDiv(1046, 250, 1000)
+    assert.equal(syntheticBoldEm("휴먼명조"), 0) // 굵은 글꼴이 있는 글꼴은 그대로
+    assert.equal(syntheticBoldEm("바탕"), 0)
+    const head = HEAD.replace('<hh:font id="0" face="바탕"/></hh:fontface><hh:fontface lang="LATIN">', '<hh:font id="0" face="바탕"/><hh:font id="1" face="한양신명조"/></hh:fontface><hh:fontface lang="LATIN">')
+      .replace("</hh:charProperties>", `<hh:charPr id="2" height="1000"><hh:fontRef hangul="1" latin="0"/><hh:bold/></hh:charPr><hh:charPr id="3" height="1000"><hh:fontRef hangul="1" latin="0"/></hh:charPr></hh:charProperties>`)
+    const lines = (cpr: number) => reflowed(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="${cpr}"><hp:t>${"가".repeat(41)}</hp:t></hp:run></hp:p>`, 42000, head)[0].length
+    assert.equal(lines(3), 1) // 41 × 1000
+    assert.equal(lines(2), 2) // 41 × 1048 > 42000
   })
   it("글자처럼 취급하는 수식은 outMargin 좌우까지 폭으로 친다", () => {
     const eq = (om: number) => `<hp:equation baseLine="85"><hp:sz width="900" height="1000"/><hp:pos treatAsChar="1"/><hp:outMargin left="${om}" right="${om}" top="0" bottom="0"/><hp:script>x</hp:script></hp:equation>`

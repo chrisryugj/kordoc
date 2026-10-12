@@ -94,6 +94,15 @@ export function faceClassOf(face: string | null | undefined): FaceClass {
   return face && FIXED_PITCH_FACES.test(face.trim()) ? "fixedPitch" : "hcr"
 }
 
+/**
+ * 진하게(bold) 글자의 폭 더하기(em×1000) — 굵은 글꼴이 따로 없는 옛 HFT 글꼴(한양·휴먼 계열(휴먼명조 제외)·명조·고딕·필기)은
+ * 한컴이 획을 두껍게 그리며 글자마다 폭을 넓힌다. 한컴 저장 lineseg: 40~50 이 평평한 최적(두 줄 이상 문단 줄 시작 일치 +128),
+ * 굵은 글꼴이 있는 바탕·맑은 고딕·함초롬·휴먼명조 등은 더하면 나빠진다
+ */
+export function syntheticBoldEm(face: string | null | undefined): number {
+  return face && /^(한양|휴먼(?!명조)|명조$|고딕$|필기$)/.test(face.trim()) ? 46 : 0
+}
+
 /** 한컴 글꼴의 영문 이름 → 한글 이름(같은 글꼴). 한컴 PDF 에 같은 이름으로 박히고 폭도 같다(Haansoft Batang 괄호 0.5em = 한컴바탕) */
 const REFLOW_FACE_ALIAS: Record<string, string> = {
   "Haansoft Batang": "한컴바탕", "Haansoft Dotum": "한컴돋움", "HCR Batang": "함초롬바탕", "HCR Dotum": "함초롬돋움",
@@ -216,14 +225,15 @@ export function mulDiv(a: number, b: number, c: number): number {
  * 글자: 장평 100 이면 4·MulDiv(폭, ⌊크기/4⌋, 1000), 아니면 4·⌊폭·⌊크기/4⌋·장평/(100·1000)⌋.
  * 공백(useFontSpace 0): 4·⌊크기/8⌋ (장평 ≠ 100 이면 4·MulDiv(⌊크기/8⌋, 장평, 100)). 자간: + 4·MulDiv(⌊폭/4⌋, 자간, 100)
  */
-export function hancomCharWidth(ch: string, height: number, ratioPct: number, spacingPct: number, faceClass?: FaceClass): number {
+export function hancomCharWidth(ch: string, height: number, ratioPct: number, spacingPct: number, faceClass?: FaceClass, emAdd = 0): number {
+  // emAdd: 글자 폭(em×1000)에 더하는 몫 — 합성 굵기(syntheticBoldEm). 공백에는 붙지 않는다
   const cp = ch.codePointAt(0)!
   let w: number
   if (isSpaceCp(cp)) {
     const s = Math.trunc(height / 8)
     w = 4 * (ratioPct === 100 ? s : mulDiv(s, ratioPct, 100))
   } else {
-    const em = widthFnOf(faceClass)(cp), q = Math.trunc(height / 4)
+    const em = widthFnOf(faceClass)(cp) + emAdd, q = Math.trunc(height / 4)
     w = ratioPct === 100 ? 4 * mulDiv(em, q, 1000) : 4 * Math.trunc(em * q * ratioPct / 100000)
   }
   if (spacingPct) w += 4 * mulDiv(Math.trunc(w / 4), spacingPct, 100)
