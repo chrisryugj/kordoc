@@ -103,6 +103,26 @@ describe("diffBlocks", () => {
     assert.equal(diff.cellDiffs![0][0].type, "unchanged") // "이름" 동일
     assert.equal(diff.cellDiffs![0][1].type, "modified") // 값 변경
   })
+
+  it("비슷한 문단 사이에 1개 삽입 → 그대로인 문단은 unchanged, 삽입만 added", () => {
+    const p = (text: string): IRBlock => ({ type: "paragraph", text })
+    const a = [p("담당자 명단"), p("담당자: 홍길동 (기획팀)"), p("담당자: 김철수 (총무팀)"), p("담당자: 이영희 (인사팀)")]
+    const b = [p("담당자 명단"), p("담당자: 홍길동 (기획팀)"), p("담당자: 박민수 (재무팀)"), p("담당자: 김철수 (총무팀)"), p("담당자: 이영희 (인사팀)")]
+    const result = diffBlocks(a, b)
+    assert.deepEqual(result.stats, { added: 1, removed: 0, modified: 0, unchanged: 4 })
+    const added = result.diffs.find(d => d.type === "added")
+    assert.equal(added?.after?.text, "담당자: 박민수 (재무팀)")
+  })
+
+  it("짧은 문단 — 그대로인 문단이 added 로 밀리지 않음", () => {
+    const p = (text: string): IRBlock => ({ type: "paragraph", text })
+    const a = [p("보고서"), p("첫 문단."), p("둘째 문단 원본."), p("셋째 문단.")]
+    const b = [p("보고서"), p("첫 문단."), p("둘째 문단 수정본."), p("넷째 문단 추가."), p("셋째 문단.")]
+    const result = diffBlocks(a, b)
+    assert.deepEqual(result.stats, { added: 1, removed: 0, modified: 1, unchanged: 3 })
+    assert.equal(result.diffs[1].type, "unchanged")
+    assert.equal(result.diffs[1].after?.text, "첫 문단.")
+  })
 })
 
 // ─── 정렬 속도 (v4.15.0) — 쌍마다 Levenshtein 을 돌리던 것을 글자 구성 상한으로 먼저 거른다 ───

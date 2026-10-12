@@ -101,12 +101,20 @@ function alignBlocks(a: IRBlock[], b: IRBlock[]): [IRBlock | null, IRBlock | nul
     return blockSimilarity(x, y) >= SIMILARITY_THRESHOLD
   }
 
+  // 짝 점수 — 짝 수가 먼저, 같으면 글이 같은 짝이 많은 정렬. 짝 수만 세면 비슷한 문단 사이에 하나가 끼었을 때
+  // 그대로인 문단을 끼인 문단과 짝지은 정렬과 동점이 되어, 역추적이 그대로인 문단을 '추가'로 밀어낼 수 있다.
+  // 짝 하나 = K, 같은 글이면 K + 1 (K > 짝 최대 수라 동일 가산점이 짝 수를 넘지 못한다. 최대값 ≈ min(m,n)² 라 Int32 안)
+  const na = a.map(blk => textOf(blk).replace(/\s+/g, " ").trim()) // normalizedSimilarity 와 같은 공백 정규화
+  const nb = b.map(blk => textOf(blk).replace(/\s+/g, " ").trim())
+  const K = Math.min(m, n) + 1
+  const weight = (i: number, j: number): number => na[i] === nb[j] ? K + 1 : K
+
   // LCS with similarity threshold
   const dp: Int32Array[] = Array.from({ length: m + 1 }, () => new Int32Array(n + 1))
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       if (passes(i - 1, j - 1)) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
+        dp[i][j] = Math.max(dp[i - 1][j - 1] + weight(i - 1, j - 1), dp[i - 1][j], dp[i][j - 1])
       } else {
         dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
       }
@@ -117,7 +125,7 @@ function alignBlocks(a: IRBlock[], b: IRBlock[]): [IRBlock | null, IRBlock | nul
   const pairs: [number, number][] = []
   let i = m, j = n
   while (i > 0 && j > 0) {
-    if (passes(i - 1, j - 1) && dp[i][j] === dp[i - 1][j - 1] + 1) {
+    if (passes(i - 1, j - 1) && dp[i][j] === dp[i - 1][j - 1] + weight(i - 1, j - 1)) {
       pairs.push([i - 1, j - 1]); i--; j--
     } else if (dp[i - 1][j] >= dp[i][j - 1]) {
       i--
