@@ -54,6 +54,8 @@ export interface RenderParaGeom {
   autoTabLeft?: boolean
   /** 공백 최소값(paraPr condense, %) — 줄 안 공백이 그만큼 줄어들 수 있어 줄 가용폭이 공백 폭 합 × condense% 늘어난다 */
   condense?: number
+  /** 외톨이줄 보호(breakSetting widowOrphan) — 쪽 끝에 첫 줄만 남기거나 다음 쪽에 마지막 줄만 넘기지 않는다 */
+  widowOrphan?: boolean
   /** 문단 세로 정렬(align vertical) — 줄 기준선: BASELINE 은 높이의 85%, CENTER 는 50%(한컴 저장 lineseg 실측) */
   vertAlign?: string
   /** 글머리표(heading BULLET) — 첫 줄 앞에 글머리표 글자와 간격(textOffset)이 놓인다. autoIndent 면 둘째 줄부터도 그만큼 들어간다.
@@ -242,6 +244,7 @@ function parseParaGeom(el: Element): RenderParaGeom {
   const bs = findDeep(el, "breakSetting")
   if (bs) {
     // 속성 의미 역전 주의(위 RenderParaGeom.wrapMode 주석): BREAK_WORD=어절, KEEP_WORD=글자
+    if (bs.getAttribute("widowOrphan") === "1") g.widowOrphan = true
     const nl = bs.getAttribute("breakNonLatinWord")
     if (nl === "BREAK_WORD") g.wrapMode = "keep"
     else if (nl === "KEEP_WORD") g.wrapMode = "charAll"

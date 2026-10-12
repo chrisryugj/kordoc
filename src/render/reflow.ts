@@ -472,10 +472,31 @@ function reflowBlockFlow(
       continue
     }
     const paraH = res.paraBottom - startV
-    // 페이지 넘김: 문단이 현재 페이지를 넘치고, 문단 자체는 한 페이지에 들어가면 다음 페이지로.
-    // 명시적 쪽 나눔(hp:p pageBreak="1" — 한컴 '쪽 나누기' 저장 속성)도 같은 경로로 존중한다.
+    // 페이지 넘김은 줄 단위다: 줄 vertpos + vertsize 가 본문 높이를 넘으면 그 줄부터 다음 쪽 맨 위(0)에서 이어진다
+    // (간격 몫은 넣지 않는다 — 한컴 저장본에서 쪽에 걸친 문단 97개 중 86개, 나머지는 칸 안 쪽 나눔). 쪽보다 높은 줄은 옮기지 않는다.
+    // 명시적 쪽 나눔(hp:p pageBreak="1" — 한컴 '쪽 나누기' 저장 속성)과 첫 줄부터 넘치는 문단은 문단째 다음 쪽으로.
     const explicitBreak = bodyH > 0 && startV > 0 && p.getAttribute("pageBreak") === "1"
-    if (explicitBreak || (bodyH > 0 && startV > 0 && res.paraBottom > bodyH && paraH <= bodyH)) {
+    const lines = bodyH > 0 ? elements(findChildByLocalName(p, "linesegarray") ?? p).filter(e => ln(e) === "lineseg") : []
+    const firstOver = lines.length > 0 && startV > 0 && num(lines[0], "vertpos") + num(lines[0], "vertsize") > bodyH && num(lines[0], "vertsize") <= bodyH
+    /** 줄 단위 쪽 넘김으로 뒤 줄들이 옮겨 간 양(음수) — 0 이면 쪽이 안 나뉘었다 */
+    let off = 0
+    // 넘치는 첫 줄 번호 — 외톨이줄 보호면 쪽 끝 첫 줄 하나만 남기지 않고(문단째), 다음 쪽에 마지막 줄 하나만 보내지 않는다(한 줄 앞에서)
+    let cut = -1
+    if (!explicitBreak && !firstOver && lines.length > 1) {
+      cut = lines.findIndex((seg, i) => i > 0 && num(seg, "vertpos") + num(seg, "vertsize") > bodyH && num(seg, "vertsize") <= bodyH)
+      if (cut > 0 && g?.widowOrphan && lines.length >= 3 && cut === lines.length - 1) cut--
+    }
+    const orphan = cut === 1 && !!g?.widowOrphan
+    if (cut > 0 && !orphan) {
+      for (let i = cut; i < lines.length; i++) {
+        const seg = lines[i]
+        let vp = num(seg, "vertpos") + off
+        const vs = num(seg, "vertsize")
+        if (i === cut || (vp > 0 && vp + vs > bodyH && vs <= bodyH)) { off -= vp; vp = 0; zones.length = 0 }
+        seg.setAttribute("vertpos", String(vp))
+      }
+    }
+    if (explicitBreak || firstOver || orphan || (bodyH > 0 && startV > 0 && lines.length === 0 && res.paraBottom > bodyH && paraH <= bodyH)) {
       if (zones.length) {
         // 앞 쪽의 어울림 개체는 새 쪽 줄을 좁히지 않는다 — 비우고 새 쪽 상단에서 다시 조판
         zones.length = 0
@@ -483,11 +504,13 @@ function reflowBlockFlow(
         if (lsa) p.removeChild(lsa)
         cursorV = reflowPara(p, doc, styles, areaW, 0, mode, zones)!.paraBottom
       } else {
-        shiftParaVert(p, -startV) // 새 페이지 상단(로컬 0)으로 이동 → 프리패스가 vertpos 역행 감지
-        cursorV = paraH
+        // 새 페이지 상단으로 이동 → 프리패스가 vertpos 역행 감지. 문단 위 간격은 새 쪽에서도 남는다(한컴 저장본: 새 쪽 첫 줄 vertpos = prev 1200)
+        const top = g?.spaceBefore ?? 0
+        shiftParaVert(p, top - startV)
+        cursorV = paraH + top
       }
     } else {
-      cursorV = res.paraBottom
+      cursorV = res.paraBottom + off
     }
     prevSpaceAfter = res.spaceAfter
     counter.n++
