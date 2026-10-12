@@ -27,6 +27,9 @@ describe("reflow 한컴 조판 규칙", () => {
     assert.equal(faceClassForReflow("명조"), "fixedPitch") // 옛 HFT 기본 글꼴은 고정폭
     assert.equal(faceClassForReflow("고딕"), "fixedPitch")
     assert.equal(faceClassForReflow("함초롬바탕"), "hcr")
+    assert.equal(faceClassForReflow("HCR Batang"), "hcr") // 영문 이름도 같은 글꼴
+    assert.equal(faceClassForReflow("Haansoft Batang"), "font:한컴바탕")
+    assert.equal(faceClassForReflow("Haansoft Dotum"), "font:한컴돋움")
     assert.equal(faceClassForReflow("돋움체"), "fixedPitch")
     assert.equal(faceClassForReflow("KoPub바탕체 Light"), "font:KoPub바탕체 Light")
     assert.equal(hancomCharWidth("가", 1000, 100, 0, "cjk"), 1000)

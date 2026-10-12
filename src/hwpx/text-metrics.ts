@@ -94,11 +94,17 @@ export function faceClassOf(face: string | null | undefined): FaceClass {
   return face && FIXED_PITCH_FACES.test(face.trim()) ? "fixedPitch" : "hcr"
 }
 
+/** 한컴 글꼴의 영문 이름 → 한글 이름(같은 글꼴). 한컴 PDF 에 같은 이름으로 박히고 폭도 같다(Haansoft Batang 괄호 0.5em = 한컴바탕) */
+const REFLOW_FACE_ALIAS: Record<string, string> = {
+  "Haansoft Batang": "한컴바탕", "Haansoft Dotum": "한컴돋움", "HCR Batang": "함초롬바탕", "HCR Dotum": "함초롬돋움",
+}
+
 /**
  * reflow(조판 캐시 없는 문단) 폭 클래스 — 실측 폭표·고정폭은 faceClassOf 와 같고, 폭표 없는 한글 글꼴은 'cjk'(한글 1em).
  * 함초롬만 함초롬 폭으로 둔다. 한컴 저장본 두 줄 이상 문단 22,577개 대조: 줄 시작 전부 일치 39.4% → 49.8%(이 클래스만)
  */
 export function faceClassForReflow(face: string | null | undefined): FaceClass {
+  face = face && (REFLOW_FACE_ALIAS[face.trim()] ?? face)
   const c = faceClassOf(face)
   if (c !== "hcr" || !face || /^함초롬/.test(face.trim())) return c
   return "cjk"
