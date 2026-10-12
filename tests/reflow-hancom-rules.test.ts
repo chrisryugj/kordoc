@@ -246,6 +246,11 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     const w2 = [...t2].map(c => (c === " " ? 50 : 100))
     assert.deepEqual(wrap(t2, 440, 440, 1000, 100, "charAll", { widths: w2, condensePct: 100, kinsoku: "hancom" }).starts, [0, 6])
   })
+  it("breakLatinWord=BREAK_WORD 면 영문 단어도 글자 단위로 끊는다 (한컴 저장본 좁은 칸 \"Unit P|rice\")", () => {
+    const text = "Unit Price", widths = [...text].map(() => 500)
+    assert.deepEqual(wrap(text, 3344, 3344, 1000, 100, "keep", { widths, kinsoku: "hancom" }).starts, [0, 5])
+    assert.deepEqual(wrap(text, 3344, 3344, 1000, 100, "keep", { widths, kinsoku: "hancom", latinBreak: true }).starts, [0, 6])
+  })
   it("마지막 글자의 자간은 넘침 판정에 넣지 않는다", () => {
     const text = "가가가가"
     const widths = [96, 96, 96, 96], spacings = [-4, -4, -4, -4] // 100 에 자간 −4

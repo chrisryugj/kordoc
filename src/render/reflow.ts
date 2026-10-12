@@ -297,7 +297,7 @@ function reflowPara(
     : undefined
   const wrap = text.length === 0
     ? { lines: 1, starts: [0], lastLineWidth: 0 }
-    : simulateWrap(text, firstWrapWidth, contWidth, height, 100, paraMode, { widths, spacings, condensePct: geom.condense, kinsoku: "hancom", lineWidth })
+    : simulateWrap(text, firstWrapWidth, contWidth, height, 100, paraMode, { widths, spacings, condensePct: geom.condense, kinsoku: "hancom", lineWidth, latinBreak: geom.latinBreak })
 
   // · inline(treatAsChar=1): 그 줄의 높이가 된다 — outMargin 포함 높이
   /** 줄마다 인라인 개체 높이(outMargin 위아래 포함)의 최대 — 그 줄 높이가 된다 */

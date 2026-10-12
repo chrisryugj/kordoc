@@ -248,7 +248,9 @@ export function prepareWrap(text: string, mode: WrapMode, opts?: MeasureOptions)
   return { units: splitWrapUnits(text, mode), advances, steps }
 }
 
-function splitWrapUnits(text: string, mode: WrapMode): string[] {
+function splitWrapUnits(text: string, mode: WrapMode, latinBreak = false): string[] {
+  // 영문 단어 끊기(breakLatinWord="BREAK_WORD" — 영문은 이름 그대로): 영문 글자도 한 글자씩 끊는다
+  if (latinBreak) return text.match(mode === "keep" ? / +|[\x21-\x7e]|[^ \x21-\x7e]+/gu : / +|[^ ](?:\u00a0[^ \u00a0]?)*/gu) ?? []
   return text.match(mode === "keep" ? / +|[^ ]+/gu : / +|(?:[\x21-\x7e]+|[^ ])(?:\u00a0(?:[\x21-\x7e]+|[^ \u00a0])?)*/gu) ?? []
 }
 
@@ -265,6 +267,8 @@ export interface WrapOptions extends MeasureOptions {
   spacings?: number[]
   /** 줄 번호(0부터)별 가용 폭 — 주면 firstWidth·contWidth 대신 쓴다(떠 있는 개체 둘레로 줄이 좁아질 때) */
   lineWidth?: (line: number) => number
+  /** 영문 단어도 글자 단위로 끊는다(breakLatinWord="BREAK_WORD") */
+  latinBreak?: boolean
 }
 
 export interface WrapResult {
@@ -361,7 +365,7 @@ export function simulateWrap(
   // u 플래그 필수 — 없으면 astral 문자(𝐀·이모지 등)가 서로게이트 반쪽 2개로 쪼개져 폭이 2배로 계산된다.
   // 글자 단위에서도 ASCII 연속열("1.):", "LLM),")은 한 단어 — breakLatinWord=KEEP_WORD(한글 2024 실렌더 PDF 대조).
   // 묶음 빈칸(U+00A0)은 어느 모드에서도 끊지 않는다 — 글자 단위에선 앞뒤 단위를 하나로 묶는다
-  const units = prepared?.units ?? splitWrapUnits(text, mode)
+  const units = prepared?.units ?? splitWrapUnits(text, mode, opts?.latinBreak)
 
   const starts = [0]
   let lineW = 0

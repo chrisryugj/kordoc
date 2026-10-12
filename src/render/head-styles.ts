@@ -54,6 +54,8 @@ export interface RenderParaGeom {
   autoTabLeft?: boolean
   /** 공백 최소값(paraPr condense, %) — 줄 안 공백이 그만큼 줄어들 수 있어 줄 가용폭이 공백 폭 합 × condense% 늘어난다 */
   condense?: number
+  /** 영문 단어를 글자 단위로 끊는다(breakLatinWord="BREAK_WORD" — 한글 설정과 달리 이름 그대로. 한컴 저장본 좁은 칸 "Unit P|rice") */
+  latinBreak?: boolean
   /** 외톨이줄 보호(breakSetting widowOrphan) — 쪽 끝에 첫 줄만 남기거나 다음 쪽에 마지막 줄만 넘기지 않는다 */
   widowOrphan?: boolean
   /** 문단 보호(keepLines) — 쪽에 걸치면 문단째 다음 쪽으로 / 다음 문단과 함께(keepWithNext) / 문단 앞에서 쪽 나눔(pageBreakBefore) */
@@ -253,6 +255,7 @@ function parseParaGeom(el: Element): RenderParaGeom {
   const bs = findDeep(el, "breakSetting")
   if (bs) {
     // 속성 의미 역전 주의(위 RenderParaGeom.wrapMode 주석): BREAK_WORD=어절, KEEP_WORD=글자
+    if (bs.getAttribute("breakLatinWord") === "BREAK_WORD") g.latinBreak = true
     if (bs.getAttribute("widowOrphan") === "1") g.widowOrphan = true
     if (bs.getAttribute("keepLines") === "1") g.keepLines = true
     if (bs.getAttribute("keepWithNext") === "1") g.keepWithNext = true
