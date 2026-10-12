@@ -56,6 +56,10 @@ export interface RenderParaGeom {
   condense?: number
   /** 외톨이줄 보호(breakSetting widowOrphan) — 쪽 끝에 첫 줄만 남기거나 다음 쪽에 마지막 줄만 넘기지 않는다 */
   widowOrphan?: boolean
+  /** 문단 보호(keepLines) — 쪽에 걸치면 문단째 다음 쪽으로 / 다음 문단과 함께(keepWithNext) / 문단 앞에서 쪽 나눔(pageBreakBefore) */
+  keepLines?: boolean
+  keepWithNext?: boolean
+  pageBreakBefore?: boolean
   /** 문단 세로 정렬(align vertical) — 줄 기준선: BASELINE 은 높이의 85%, CENTER 는 50%(한컴 저장 lineseg 실측) */
   vertAlign?: string
   /** 글머리표(heading BULLET) — 첫 줄 앞에 글머리표 글자와 간격(textOffset)이 놓인다. autoIndent 면 둘째 줄부터도 그만큼 들어간다.
@@ -250,6 +254,9 @@ function parseParaGeom(el: Element): RenderParaGeom {
   if (bs) {
     // 속성 의미 역전 주의(위 RenderParaGeom.wrapMode 주석): BREAK_WORD=어절, KEEP_WORD=글자
     if (bs.getAttribute("widowOrphan") === "1") g.widowOrphan = true
+    if (bs.getAttribute("keepLines") === "1") g.keepLines = true
+    if (bs.getAttribute("keepWithNext") === "1") g.keepWithNext = true
+    if (bs.getAttribute("pageBreakBefore") === "1") g.pageBreakBefore = true
     const nl = bs.getAttribute("breakNonLatinWord")
     if (nl === "BREAK_WORD") g.wrapMode = "keep"
     else if (nl === "KEEP_WORD") g.wrapMode = "charAll"

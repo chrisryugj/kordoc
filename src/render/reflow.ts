@@ -481,6 +481,8 @@ function reflowBlockFlow(
   const zones: WrapZone[] = []
   /** 이 쪽에서 글이 내려갈 수 있는 바닥 — 쪽 아래에 붙은 위아래 배치 개체(결재란 표 등)가 있으면 그만큼 올라온다 */
   let pageLimit = bodyH
+  /** 바로 앞에 놓은 문단(쪽에 걸치지 않고 제자리에 놓인 경우만) — '다음 문단과 함께' 처리용 */
+  let prevPlaced: { p: Element; startV: number; top: number; h: number; spaceAfter: number; keepWithNext: boolean } | undefined
   // 구역 본문의 다단(colPr colCount>1) — 단 정의가 나온 문단부터 단 폭으로 채운다(한컴 다단 편집 lineseg horzsize 실측)
   const bodyFlow = areaW === counter.bodyW && bodyH > 0
   for (const p of elements(container)) {
@@ -518,7 +520,7 @@ function reflowBlockFlow(
     // 페이지 넘김은 줄 단위다: 줄 vertpos + vertsize 가 본문 높이를 넘으면 그 줄부터 다음 쪽 맨 위(0)에서 이어진다
     // (간격 몫은 넣지 않는다 — 한컴 저장본에서 쪽에 걸친 문단 97개 중 86개, 나머지는 칸 안 쪽 나눔). 쪽보다 높은 줄은 옮기지 않는다.
     // 명시적 쪽 나눔(hp:p pageBreak="1" — 한컴 '쪽 나누기' 저장 속성)과 첫 줄부터 넘치는 문단은 문단째 다음 쪽으로.
-    const explicitBreak = bodyH > 0 && startV > 0 && p.getAttribute("pageBreak") === "1"
+    const explicitBreak = bodyH > 0 && startV > 0 && (p.getAttribute("pageBreak") === "1" || !!g?.pageBreakBefore)
     const lines = bodyH > 0 ? elements(findChildByLocalName(p, "linesegarray") ?? p).filter(e => ln(e) === "lineseg") : []
     // 쪽 아래에 붙은 위아래 배치 개체(vertRelTo=PAGE·vertAlign=BOTTOM)는 그 쪽 바닥을 개체 몫만큼 올린다 — 앵커 문단이 그 위에 못 들어가면
     // 문단째(개체와 함께) 다음 쪽으로(한컴 저장본: 결재란 표 26793 이 붙은 끝 문단이 새 쪽 0 에서 시작)
@@ -534,7 +536,8 @@ function reflowBlockFlow(
       cut = lines.findIndex((seg, i) => i > 0 && lineBottom(seg) > lim && num(seg, "vertsize") <= bodyH)
       if (cut > 0 && g?.widowOrphan && lines.length >= 3 && cut === lines.length - 1) cut--
     }
-    const orphan = cut === 1 && !!g?.widowOrphan
+    // 외톨이줄 보호로 첫 줄만 남거나, 문단 보호(keepLines)면 쪽에 걸치지 않고 문단째 넘긴다
+    const orphan = (cut === 1 && !!g?.widowOrphan) || (cut > 0 && !!g?.keepLines)
     if (cut > 0 && !orphan) {
       for (let i = cut; i < lines.length; i++) {
         const seg = lines[i]
@@ -556,10 +559,18 @@ function reflowBlockFlow(
         const top = g?.spaceBefore ?? 0
         shiftParaVert(p, top - startV)
         cursorV = paraH + top
+        // 앞 문단이 '다음 문단과 함께'면 그 문단도 새 쪽으로 — 앞 문단을 새 쪽 위에 두고 이 문단을 그 아래로
+        if (prevPlaced?.keepWithNext && prevPlaced.startV > prevPlaced.top) {
+          shiftParaVert(prevPlaced.p, prevPlaced.top - prevPlaced.startV)
+          const base = prevPlaced.top + prevPlaced.h + prevPlaced.spaceAfter
+          shiftParaVert(p, base)
+          cursorV += base
+        }
       }
     } else {
       cursorV = res.paraBottom + off
     }
+    prevPlaced = off === 0 && !(explicitBreak || firstOver || orphan) ? { p, startV, top: g?.spaceBefore ?? 0, h: paraH, spaceAfter: res.spaceAfter, keepWithNext: !!g?.keepWithNext } : undefined
     // 새 쪽으로 넘어갔으면 바닥을 되돌리고, 이 문단의 쪽 아래 개체가 있는 쪽이면 그 몫을 남긴다
     const moved = explicitBreak || firstOver || orphan || off !== 0
     pageLimit = reserve > 0 ? bodyH - reserve : moved ? bodyH : lim

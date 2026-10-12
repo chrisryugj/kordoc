@@ -191,6 +191,19 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     const [p] = reflowed(`<hp:p paraPrIDRef="1"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(90)}</hp:t></hp:run></hp:p>`, 42000, head)
     assert.ok(p[1][0] < 42 && p[2][0] - p[1][0] < 42, JSON.stringify(p.map(s => s[0])))
   })
+  it("문단 보호·다음 문단과 함께·문단 앞 쪽 나눔", () => {
+    const head = HEAD.replace("</hh:paraProperties>", `<hh:paraPr id="1"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD" keepLines="1"/></hh:paraPr><hh:paraPr id="2"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD" keepWithNext="1"/></hh:paraPr><hh:paraPr id="3"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD" pageBreakBefore="1"/></hh:paraPr></hh:paraProperties>`)
+    const vps = (body: string) => {
+      const doc = createXmlParser().parseFromString(`<hs:sec ${NS}>${body}</hs:sec>`, "text/xml")
+      const root = doc.documentElement as unknown as Element
+      reflowSection(root, parseRenderStyles(head), { BODY_W: 42000, BODY_H: 10000 })
+      return Array.from(root.getElementsByTagName("hp:p") as unknown as Element[]).map(p => Array.from(p.getElementsByTagName("hp:lineseg") as unknown as Element[]).map(s => Number(s.getAttribute("vertpos"))))
+    }
+    const para = (pp: number, n: number) => `<hp:p paraPrIDRef="${pp}"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(42 * n)}</hp:t></hp:run></hp:p>`
+    assert.deepEqual(vps(para(0, 5) + para(1, 3))[1], [0, 1600, 3200]) // 쪽에 걸칠 문단을 통째로
+    assert.deepEqual(vps(para(0, 5) + para(2, 1) + para(0, 3)).slice(1), [[0], [1600, 3200, 4800]]) // 다음 문단 첫 줄이 넘치면 앞 문단도 함께 새 쪽
+    assert.deepEqual(vps(para(0, 1) + para(3, 1))[1], [0])
+  })
   it("떠 있는 위아래 개체 — 글 없는 문단은 줄이 제자리·개체가 다음 문단을 밀고, 쪽 아래에 붙은 개체는 그 쪽 바닥을 올린다", () => {
     const fl = (h: number, rel: string, align: string) => `<hp:tbl rowCnt="1" colCnt="1" textWrap="TOP_AND_BOTTOM"><hp:sz width="10000" height="${h}"/><hp:pos treatAsChar="0" vertRelTo="${rel}" vertAlign="${align}" vertOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:tr><hp:tc><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>칸</hp:t></hp:run></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSz width="10000" height="${h}"/></hp:tc></hp:tr></hp:tbl>`
     const vps = (body: string) => {
