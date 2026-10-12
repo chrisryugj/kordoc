@@ -65,11 +65,12 @@ export const SPACE_EM_FONT = 300
 
 /**
  * 폭 테이블 클래스 — 'hcr'(함초롬 실측, 기본) / 'fixedPitch'(고정폭 글꼴:
- * ASCII 0.5em·그 외 1.0em). 굴림체·돋움체·바탕체·궁서체('체' 접미 = 고정폭)가
+ * ASCII 0.5em·그 외 1.0em). 굴림체·돋움체·바탕체·궁서체('체' 접미 = 고정폭)와 옛 HFT 기본 글꼴 명조·고딕이
  * 대상 — 전자결재 변환기 산출물의 지배 본문 글꼴. 한글이 HCR(0.97em)보다 3%
  * 넓어 함초롬 테이블로 재면 줄당 1~2자 과대적재로 wrap 지점이 어긋난다
- * (bench/verify-linebreak.mjs seoul 코퍼스 실측: fixedPitch 테이블로 74/75 일치).
+ * (bench/verify-linebreak.mjs seoul 코퍼스 실측: fixedPitch 테이블로 74/75 일치. 한컴 저장본 HFT 명조 문단 1,782개 중 1,776개·고딕 89개 중 83개 일치).
  */
+const FIXED_PITCH_FACES = /^(굴림체|돋움체|바탕체|궁서체|명조|고딕)$/
 export type FaceClass = "hcr" | "fixedPitch" | "gothic" | "cjk" | `font:${string}`
 
 /**
@@ -79,16 +80,16 @@ export type FaceClass = "hcr" | "fixedPitch" | "gothic" | "cjk" | `font:${string
  */
 export function faceClassOf(face: string | null | undefined): FaceClass {
   if (face && hasFontMetrics(face)) return `font:${face.trim()}`
-  return face && /^(굴림체|돋움체|바탕체|궁서체)$/.test(face.trim()) ? "fixedPitch" : "hcr"
+  return face && FIXED_PITCH_FACES.test(face.trim()) ? "fixedPitch" : "hcr"
 }
 
 /**
  * reflow(조판 캐시 없는 문단) 폭 클래스 — 실측 폭표·고정폭은 faceClassOf 와 같고, 폭표 없는 한글 글꼴은 'cjk'(한글 1em).
- * 함초롬·명조만 함초롬 폭으로 둔다. 한컴 저장본 두 줄 이상 문단 22,577개 대조: 줄 시작 전부 일치 39.4% → 49.8%(이 클래스만)
+ * 함초롬만 함초롬 폭으로 둔다. 한컴 저장본 두 줄 이상 문단 22,577개 대조: 줄 시작 전부 일치 39.4% → 49.8%(이 클래스만)
  */
 export function faceClassForReflow(face: string | null | undefined): FaceClass {
   const c = faceClassOf(face)
-  if (c !== "hcr" || !face || /^함초롬|^명조$/.test(face.trim())) return c
+  if (c !== "hcr" || !face || /^함초롬/.test(face.trim())) return c
   return "cjk"
 }
 
@@ -103,7 +104,7 @@ export function faceClassForGen(face: string | null | undefined): FaceClass {
   if (!face) return "hcr"
   const f = face.trim()
   if (hasFontMetrics(f)) return `font:${f}`
-  if (/^(굴림체|돋움체|바탕체|궁서체)$/.test(f)) return "fixedPitch"
+  if (FIXED_PITCH_FACES.test(f)) return "fixedPitch"
   if (/^함초롬/.test(f)) return "hcr"
   return "gothic"
 }

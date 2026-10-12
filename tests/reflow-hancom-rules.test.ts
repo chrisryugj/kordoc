@@ -1,7 +1,7 @@
 /**
  * reflow 한컴 조판 규칙 — 한컴독스 웹 한글 조판 엔진에서 읽어 낸 규칙을 kordoc 코드로 다시 쓴 것.
  *  1. 글자 폭은 글자마다 4 HWPUNIT 단위(hancomCharWidth) — 공백은 4·⌊크기/8⌋, 자간은 ⌊폭/4⌋ 의 %를 4 단위로
- *  2. 폭표 없는 한글 글꼴은 한글 1em(faceClassForReflow) — 함초롬·명조만 함초롬 폭
+ *  2. 폭표 없는 한글 글꼴은 한글 1em(faceClassForReflow) — 함초롬만 함초롬 폭, 옛 HFT 명조·고딕은 고정폭
  *  3. KoPub 바탕·돋움 실측 폭표(한글 0.936em·0.872em, 굵기끼리 같음)
  *  4. 공백 최소값(condense): 줄 가용폭 + 그 줄 공백 폭 합 × condense%
  *  5. 한컴 기본 금칙 집합 — 닫는 작은따옴표(’)는 줄머리 금지
@@ -20,11 +20,12 @@ describe("reflow 한컴 조판 규칙", () => {
     for (const [ch, h] of [["가", 1000], ["A", 1100], [" ", 1300]] as const) assert.equal(hancomCharWidth(ch, h, 100, 0, "hcr") % 4, 0)
   })
 
-  it("폭표 없는 한글 글꼴은 한글 1em, 함초롬·명조는 함초롬 폭", () => {
+  it("폭표 없는 한글 글꼴은 한글 1em, 함초롬은 함초롬 폭, 명조·고딕은 고정폭", () => {
     assert.equal(faceClassForReflow("HY견명조"), "cjk")
     assert.equal(faceClassForReflow("신명조"), "cjk")
     assert.equal(faceClassForReflow("바탕"), "font:바탕") // 한컴 저장본 역추정 폭표
-    assert.equal(faceClassForReflow("명조"), "font:명조") // 역추정 폭표(한글 0.968em)
+    assert.equal(faceClassForReflow("명조"), "fixedPitch") // 옛 HFT 기본 글꼴은 고정폭
+    assert.equal(faceClassForReflow("고딕"), "fixedPitch")
     assert.equal(faceClassForReflow("함초롬바탕"), "hcr")
     assert.equal(faceClassForReflow("돋움체"), "fixedPitch")
     assert.equal(faceClassForReflow("KoPub바탕체 Light"), "font:KoPub바탕체 Light")
@@ -41,9 +42,8 @@ describe("reflow 한컴 조판 규칙", () => {
     assert.equal(fontAdvanceEm1000("KoPubWorld돋움체_Pro Light", ga), 872)
   })
 
-  it("실측 폭표 없는 주요 글꼴은 한컴 저장본 역추정 폭표 — 명조 한글 0.968em", () => {
+  it("실측 폭표 없는 주요 글꼴은 한컴 저장본 역추정 폭표", () => {
     const ga = "가".codePointAt(0)!
-    assert.equal(fontAdvanceEm1000("명조", ga), 968)
     for (const f of ["바탕", "한양신명조", "한컴바탕", "돋움"]) assert.ok(fontAdvanceEm1000(f, ga) !== null, f)
   })
 
