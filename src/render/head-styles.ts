@@ -227,7 +227,7 @@ function findDeep(el: Element, name: string, depth = 0): Element | null {
 }
 
 /** paraPr 요소 → 문단 기하 (margin·lineSpacing은 hp:switch/case 안이라 재귀 탐색) */
-function parseParaGeom(el: Element): RenderParaGeom {
+function parseParaGeom(el: Element, oldUnit = false): RenderParaGeom {
   const g: RenderParaGeom = { ...DEFAULT_PARA_GEOM }
   const condense = Number(el.getAttribute("condense")) || 0
   if (condense > 0) g.condense = condense
@@ -240,9 +240,9 @@ function parseParaGeom(el: Element): RenderParaGeom {
   }
   const margin = findDeep(el, "margin")
   if (margin) {
-    // hp:switch 밖에 바로 놓인 margin 은 옛 단위(HWPUNIT 의 2배) — 한컴은 절반으로 조판한다
-    // (한컴 저장 lineseg: 그런 문단 첫 줄 horzpos = left/2 가 262개 중 243개, hp:case 안의 margin 은 값 그대로)
-    const plain = ((margin.parentNode as Element | null)?.tagName ?? "").replace(/^[^:]+:/, "") === "paraPr"
+    // head version 1.4 미만 문서에서 hp:switch 밖에 바로 놓인 margin 은 옛 단위(HWPUNIT 의 2배) — 한컴은 절반으로 조판한다
+    // (한컴 저장 lineseg: 1.2·1.3 문서의 그런 문단 첫 줄 horzpos = left/2 가 262개 중 243개. hp:case 안·1.4 이상(생성기 포함)은 값 그대로)
+    const plain = oldUnit && ((margin.parentNode as Element | null)?.tagName ?? "").replace(/^[^:]+:/, "") === "paraPr"
     const v = (n: string): number => {
       const c = findDeep(margin, n)
       const x = c ? Number(c.getAttribute("value")) || 0 : 0
@@ -278,6 +278,8 @@ export function parseRenderStyles(headXml: string): RenderStyles {
   const root = doc.documentElement as unknown as Element | null
   if (!root) return styles
 
+  const hv = Number.parseFloat(root.getAttribute("version") ?? "")
+  const oldUnit = Number.isFinite(hv) && hv < 1.4
   // fontfaces(HANGUL) 선파싱 — charPr fontRef 해석에 쓴다
   const hangulFonts = collectHangulFonts(root)
   const latinFonts = collectHangulFonts(root, "LATIN")
@@ -330,7 +332,7 @@ export function parseRenderStyles(headXml: string): RenderStyles {
       if (id != null) {
         const align = findChildByLocalName(el, "align")
         styles.paraAlign.set(id, (align?.getAttribute("horizontal") as ParaAlign) || "JUSTIFY")
-        styles.paraGeom.set(id, parseParaGeom(el))
+        styles.paraGeom.set(id, parseParaGeom(el, oldUnit))
         const tab = el.getAttribute("tabPrIDRef")
         if (tab != null) paraTabRef.set(id, tab)
         const heading = findDeep(el, "heading")
