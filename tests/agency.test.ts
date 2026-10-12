@@ -114,8 +114,9 @@ describe("미실측 글꼴 폭 (생성)", () => {
   it("함초롬 계열만 0.97em, 폭표 없는 다른 글꼴은 1em 쪽(gothic)으로 넉넉히", async () => {
     const { faceClassForGen } = await import("../src/hwpx/text-metrics.js")
     assert.equal(faceClassForGen("함초롬바탕"), "hcr")
-    assert.equal(faceClassForGen("바탕"), "gothic")
-    assert.equal(faceClassForGen("한양신명조"), "gothic")
+    assert.equal(faceClassForGen("HY신명조"), "gothic")
+    assert.equal(faceClassForGen("신명조"), "gothic")
+    assert.equal(faceClassForGen("바탕"), "font:바탕") // 한컴 저장본 역추정 폭표
     assert.equal(faceClassForGen("휴먼명조"), "font:휴먼명조")
     assert.equal(faceClassForGen("바탕체"), "fixedPitch")
   })

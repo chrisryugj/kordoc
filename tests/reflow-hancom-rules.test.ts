@@ -21,9 +21,10 @@ describe("reflow 한컴 조판 규칙", () => {
   })
 
   it("폭표 없는 한글 글꼴은 한글 1em, 함초롬·명조는 함초롬 폭", () => {
-    assert.equal(faceClassForReflow("바탕"), "cjk")
-    assert.equal(faceClassForReflow("한양신명조"), "cjk")
-    assert.equal(faceClassForReflow("명조"), "hcr")
+    assert.equal(faceClassForReflow("HY신명조"), "cjk")
+    assert.equal(faceClassForReflow("신명조"), "cjk")
+    assert.equal(faceClassForReflow("바탕"), "font:바탕") // 한컴 저장본 역추정 폭표
+    assert.equal(faceClassForReflow("명조"), "font:명조") // 역추정 폭표(한글 0.968em)
     assert.equal(faceClassForReflow("함초롬바탕"), "hcr")
     assert.equal(faceClassForReflow("돋움체"), "fixedPitch")
     assert.equal(faceClassForReflow("KoPub바탕체 Light"), "font:KoPub바탕체 Light")
@@ -38,6 +39,12 @@ describe("reflow 한컴 조판 규칙", () => {
       assert.equal(fontAdvanceEm1000(`KoPub돋움체 ${w}`, ga), 872)
     }
     assert.equal(fontAdvanceEm1000("KoPubWorld돋움체_Pro Light", ga), 872)
+  })
+
+  it("실측 폭표 없는 주요 글꼴은 한컴 저장본 역추정 폭표 — 명조 한글 0.968em", () => {
+    const ga = "가".codePointAt(0)!
+    assert.equal(fontAdvanceEm1000("명조", ga), 968)
+    for (const f of ["바탕", "한양신명조", "한컴바탕", "돋움"]) assert.ok(fontAdvanceEm1000(f, ga) !== null, f)
   })
 
   it("공백 최소값만큼 줄에 더 들어간다", () => {
