@@ -54,6 +54,8 @@ export interface RenderParaGeom {
   autoTabLeft?: boolean
   /** 공백 최소값(paraPr condense, %) — 줄 안 공백이 그만큼 줄어들 수 있어 줄 가용폭이 공백 폭 합 × condense% 늘어난다 */
   condense?: number
+  /** 문단 세로 정렬(align vertical) — 줄 기준선: BASELINE 은 높이의 85%, CENTER 는 50%(한컴 저장 lineseg 실측) */
+  vertAlign?: string
   /** 글머리표(heading BULLET) — 첫 줄 앞에 글머리표 글자와 간격(textOffset)이 놓인다. autoIndent 면 둘째 줄부터도 그만큼 들어간다.
    *  lineseg horzpos·horzsize 는 바뀌지 않는다(한컴 저장 lineseg 실측: ◦ 1100 + 50% → 1650 만큼 좁게 채움) */
   bullet?: { ch: string; charPrId?: string; offset: number; offsetPct: boolean; autoIndent: boolean }
@@ -219,7 +221,9 @@ function parseParaGeom(el: Element): RenderParaGeom {
   const ls = findDeep(el, "lineSpacing")
   if (ls) {
     g.lineSpacingType = ls.getAttribute("type") ?? "PERCENT"
-    g.lineSpacingValue = Number(ls.getAttribute("value")) || 160
+    // 0% 도 저장값 그대로(줄 간격 몫 = −글자 높이) — `|| 160` 이면 0 이 160% 로 바뀐다
+    const lv = Number(ls.getAttribute("value"))
+    g.lineSpacingValue = Number.isFinite(lv) && ls.getAttribute("value") !== null ? lv : 160
   }
   const margin = findDeep(el, "margin")
   if (margin) {
@@ -233,6 +237,8 @@ function parseParaGeom(el: Element): RenderParaGeom {
     g.spaceBefore = v("prev")
     g.spaceAfter = v("next")
   }
+  const va = findDeep(el, "align")?.getAttribute("vertical")
+  if (va && va !== "BASELINE") g.vertAlign = va
   const bs = findDeep(el, "breakSetting")
   if (bs) {
     // 속성 의미 역전 주의(위 RenderParaGeom.wrapMode 주석): BREAK_WORD=어절, KEEP_WORD=글자

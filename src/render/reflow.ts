@@ -208,8 +208,6 @@ function reflowPara(
   // 문단 paraPr의 breakSetting이 있으면 그 선언(어절/글자)을 따르고, 없으면 호출자 모드
   const paraMode = geom.wrapMode ?? mode
   const pitch = pitchFor(height, geom)
-  const baseline = Math.round(height * BASELINE_RATIO)
-  const spacing = pitch - height // 줄간격 100% 미만이면 음수 — 다음 줄·문단이 그만큼 겹쳐 올라온다(한컴 저장 lineseg spacing −600 실측)
 
   // ── 떠 있는 개체(treatAsChar=0)의 세로 흐름 (Phase 3 — 한컴 실측 모델, 36264961) ──
   // · TOP_AND_BOTTOM + PARA 앵커: 개체가 문단 상단을 차지하고 텍스트는 outTop+개체높이+outBottom 아래부터 흐른다
@@ -281,6 +279,8 @@ function reflowPara(
   // · inline(treatAsChar=1): 그 줄의 높이가 된다 — outMargin 포함 높이
   /** 줄마다 인라인 개체 높이(outMargin 위아래 포함)의 최대 — 그 줄 높이가 된다 */
   const lineObjH = new Array<number>(wrap.starts.length).fill(0)
+  /** 줄마다 인라인 개체의 기준선 위 높이(윗부분) 최대 — 수식은 높이 × baseLine%, 그 밖의 개체는 85% */
+  const lineObjAsc = new Array<number>(wrap.starts.length).fill(0)
   const lineOf = (slot: number): number => {
     let li = 0
     for (let k = 1; k < wrap.starts.length; k++) if ((wrap.starts[k] < realIdx.length ? realIdx[wrap.starts[k]] : Infinity) <= slot) li = k
@@ -290,29 +290,48 @@ function reflowPara(
     if (!o.inline) continue
     const om = findChildByLocalName(o.el, "outMargin")
     const li = lineOf(o.index)
-    lineObjH[li] = Math.max(lineObjH[li], num(om, "top") + effHOf(o) + num(om, "bottom"))
+    const h = num(om, "top") + effHOf(o) + num(om, "bottom")
+    lineObjH[li] = Math.max(lineObjH[li], h)
+    // 수식 기준선: 한컴 저장 lineseg 631줄 전부 일치(높이 900·baseLine 86 → 774)
+    const bl = o.tag === "equation" ? Number(o.el.getAttribute("baseLine")) : NaN
+    lineObjAsc[li] = Math.max(lineObjAsc[li], Math.round(h * (Number.isFinite(bl) ? bl / 100 : BASELINE_RATIO)))
   }
 
   const lsa = doc.createElement("hp:linesegarray")
   let v = textStartV
+  // 실텍스트 없는 문단(인라인 표·개체만)의 textpos는 0 — chars.length로 폴백하면
+  // planLines의 plan.start가 개체 index보다 커져 advanceTo 가로 전진에서 개체가
+  // 전부 빠지고 같은 x에 겹쳐 그려진다 (공문 결재란 라벨표∩스탬프표 겹침의 원인)
+  // 첫 줄은 늘 0 — 문단 앞 컨트롤(구역·단 정의, 개체) 슬롯도 첫 줄에 속한다(한컴 저장 lineseg)
+  const textposOf = wrap.starts.map((startReal, li) => (li === 0 ? 0 : startReal < realIdx.length ? realIdx[startReal] : 0))
+  const heightOf = (prId: string | null): number => (prId != null ? styles.charPr.get(prId)?.height : undefined) || 0
+  /** 줄 li 의 글자 높이 — 그 줄 슬롯의 글자와 그 자리 run(마지막 줄은 문단 끝 빈 run 까지) 중 가장 큰 글자 크기.
+   *  한컴 저장 lineseg 실측: 표 run 1200 + 문단 끝 빈 run 1500 → 줄간격 180% 의 spacing 1200(1500 기준) */
+  const lineTextH = (li: number): number => {
+    const s = textposOf[li], last = li === wrap.starts.length - 1, e = last ? m.chars.length : textposOf[li + 1]
+    let h = 0
+    for (let k = s; k < e; k++) h = Math.max(h, heightOf(m.chars[k].prId))
+    for (const r of m.runs) if (r.at >= s && (last ? r.at <= e : r.at < e)) h = Math.max(h, heightOf(r.prId))
+    return h || height
+  }
   for (let li = 0; li < wrap.starts.length; li++) {
-    const startReal = wrap.starts[li]
-    // 실텍스트 없는 문단(인라인 표·개체만)의 textpos는 0 — chars.length로 폴백하면
-    // planLines의 plan.start가 개체 index보다 커져 advanceTo 가로 전진에서 개체가
-    // 전부 빠지고 같은 x에 겹쳐 그려진다 (공문 결재란 라벨표∩스탬프표 겹침의 원인)
-    // 첫 줄은 늘 0 — 문단 앞 컨트롤(구역·단 정의, 개체) 슬롯도 첫 줄에 속한다(한컴 저장 lineseg)
-    const textpos = li === 0 ? 0 : startReal < realIdx.length ? realIdx[startReal] : 0
-    // 개체가 있는 줄은 개체 높이가 줄 높이·글자 높이, 기준선은 그 85% (한컴 저장 lineseg 실측: 표 h 3679 + 여백 566 = 4245, 기준선 3608)
-    const lineH = Math.max(height, lineObjH[li])
+    const textpos = textposOf[li]
+    // 개체가 있는 줄은 개체 높이가 줄 높이·글자 높이, 기준선은 그 85% (한컴 저장 lineseg 실측: 표 h 3679 + 여백 566 = 4245, 기준선 3608).
+    // 줄 간격 몫은 그 줄 글자 높이로 정한다(개체 줄도 — 표 줄 spacing −600 = 1500 × (60% − 100%))
+    const textH = lineTextH(li)
+    const lineH = Math.max(textH, lineObjH[li])
+    const spacing = pitchFor(textH, geom) - textH // 줄간격 100% 미만이면 음수 — 다음 줄·문단이 그만큼 겹쳐 올라온다
     const vertpos = v
-    v += lineH === height ? pitch : lineH + spacing
+    v += lineH + spacing
     const isFirst = li === 0
     const seg = doc.createElement("hp:lineseg")
     seg.setAttribute("textpos", String(textpos))
     seg.setAttribute("vertpos", String(vertpos))
     seg.setAttribute("vertsize", String(lineH))
     seg.setAttribute("textheight", String(lineH))
-    seg.setAttribute("baseline", String(lineH === height ? baseline : Math.round(lineH * BASELINE_RATIO)))
+    // 기준선 = 글자(높이의 85%)와 개체 윗부분 중 가장 높은 것 — 줄 높이는 그 둘의 합이 아니라 가장 큰 높이다(수식 1650·1050 줄 → 1650, 기준선 924).
+    // 문단 세로 정렬이 가운데면 기준선이 줄 가운데(개체 줄 2817 → 1408, 글 줄 1100 → 550)
+    seg.setAttribute("baseline", String(geom.vertAlign === "CENTER" ? Math.floor(lineH / 2) : Math.max(Math.round(textH * BASELINE_RATIO), lineObjAsc[li])))
     seg.setAttribute("spacing", String(spacing))
     const box = boxAt(li)
     seg.setAttribute("horzpos", String(box ? box[0] + (isFirst ? 0 : -Math.min(0, geom.marginIntent)) : isFirst ? marginL : contHorz))

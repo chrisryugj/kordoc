@@ -51,7 +51,8 @@ export const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", 
  * (rhwp #3396 동종 — 오라클 실측이 표뿐이라 표 외 개체는 0). */
 export interface ParaObj { el: Element; tag: string; index: number; inline: boolean; width: number; height: number; omL: number; omR: number }
 
-export interface ParaModel { chars: ParaChar[]; segs: Seg[]; objs: ParaObj[]; paraPrId: string | null }
+/** runs: run 마다 시작 슬롯과 글자 모양 — 글 없는 run(문단 끝 빈 hp:t 등)도 그 자리 줄의 높이에 든다 */
+export interface ParaModel { chars: ParaChar[]; segs: Seg[]; objs: ParaObj[]; paraPrId: string | null; runs: { at: number; prId: string | null }[] }
 
 /** hp:t 안에서 1슬롯을 차지하는 문자형 컨트롤 (HWP5 문자 스트림 모델) —
  * 탭(0x09)은 char가 아니라 inline 컨트롤 = 8슬롯(16바이트)이라 여기 넣으면 안 된다
@@ -146,11 +147,13 @@ export function buildPara(p: Element): ParaModel {
   const chars: ParaChar[] = []
   const objs: ParaObj[] = []
   let segs: Seg[] = []
+  const runs: ParaModel["runs"] = []
   let deleted = deletedStarts.get(p) ?? 0
   for (const runEl of elements(p)) {
     const tag = ln(runEl)
     if (tag === "run") {
       const prId = runEl.getAttribute("charPrIDRef")
+      runs.push({ at: chars.length, prId })
       for (const ch of elements(runEl)) {
         const cn = ln(ch)
         if (cn === "t") {
@@ -201,7 +204,7 @@ export function buildPara(p: Element): ParaModel {
       }))
     }
   }
-  return { chars, segs, objs, paraPrId: p.getAttribute("paraPrIDRef") }
+  return { chars, segs, objs, paraPrId: p.getAttribute("paraPrIDRef"), runs }
 }
 
 /** 한컴 기본 탭 간격 40pt (실결재 secPr tabStopVal 4000) */

@@ -139,6 +139,22 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(v90[0], [0, -152]) // 1500 × −10% = −150 → −152
     assert.equal(v90[v90.length - 1][0], v90[v90.length - 2][0] + 1500 - 152) // 다음 문단도 음수 몫만큼 올라온다
   })
+  it("줄 높이·기준선은 그 줄의 가장 큰 글자·개체로 — 수식은 baseLine%, 세로 가운데 정렬은 줄 가운데", () => {
+    const head = HEAD.replace("</hh:paraProperties>", `<hh:paraPr id="1"><hh:align horizontal="LEFT" vertical="CENTER"/></hh:paraPr></hh:paraProperties>`)
+      .replace(`<hh:charPr id="1" height="1000">`, `<hh:charPr id="2" height="1500"><hh:fontRef hangul="0" latin="0"/></hh:charPr><hh:charPr id="1" height="1000">`)
+    const segs = (body: string) => {
+      const doc = createXmlParser().parseFromString(`<hs:sec ${NS}>${body}</hs:sec>`, "text/xml")
+      const root = doc.documentElement as unknown as Element
+      reflowSection(root, parseRenderStyles(head), { BODY_W: 42000, BODY_H: 80000 })
+      return Array.from(root.getElementsByTagName("hp:lineseg") as unknown as Element[]).map(s => ["vertsize", "baseline", "spacing"].map(a => Number(s.getAttribute(a))))
+    }
+    // 글자 1000 run + 문단 끝 빈 1500 run → 줄 높이 1500, 간격 몫도 1500 기준(160% → 900)
+    assert.deepEqual(segs(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run><hp:run charPrIDRef="2"><hp:t/></hp:run></hp:p>`), [[1500, 1275, 900]])
+    const eq = (h: number, bl: number) => `<hp:equation baseLine="${bl}"><hp:sz width="1000" height="${h}"/><hp:pos treatAsChar="1"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:script>x</hp:script></hp:equation>`
+    // 수식 1650@51·1050@88: 높이는 1650(합 아님), 기준선은 윗부분 최대 round(1050 × 0.88) = 924
+    assert.deepEqual(segs(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${eq(1650, 51)}${eq(1050, 88)}<hp:t/></hp:run></hp:p>`)[0].slice(0, 2), [1650, 924])
+    assert.deepEqual(segs(`<hp:p paraPrIDRef="1"><hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run></hp:p>`)[0].slice(0, 2), [1000, 500]) // 세로 가운데
+  })
   it("2단 구역의 각주는 단 폭으로 채운다", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
     const ps = reflowed(body)
