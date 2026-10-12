@@ -240,9 +240,13 @@ function parseParaGeom(el: Element): RenderParaGeom {
   }
   const margin = findDeep(el, "margin")
   if (margin) {
+    // hp:switch 밖에 바로 놓인 margin 은 옛 단위(HWPUNIT 의 2배) — 한컴은 절반으로 조판한다
+    // (한컴 저장 lineseg: 그런 문단 첫 줄 horzpos = left/2 가 262개 중 243개, hp:case 안의 margin 은 값 그대로)
+    const plain = ((margin.parentNode as Element | null)?.tagName ?? "").replace(/^[^:]+:/, "") === "paraPr"
     const v = (n: string): number => {
       const c = findDeep(margin, n)
-      return c ? Number(c.getAttribute("value")) || 0 : 0
+      const x = c ? Number(c.getAttribute("value")) || 0 : 0
+      return plain ? Math.trunc(x / 2) : x
     }
     g.marginLeft = v("left")
     g.marginRight = v("right")

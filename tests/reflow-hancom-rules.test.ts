@@ -162,7 +162,7 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(segs(`<hp:p paraPrIDRef="1"><hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run></hp:p>`)[0].slice(0, 2), [1000, 500]) // 세로 가운데
   })
   it("쪽 넘김은 줄 단위 — 넘친 줄부터 새 쪽 0, 문단째 넘길 땐 문단 위 간격을 남기고, 외톨이줄 보호면 첫 줄만 남기지 않는다", () => {
-    const head = HEAD.replace("</hh:paraProperties>", `<hh:paraPr id="1"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD" widowOrphan="1"/></hh:paraPr><hh:paraPr id="2"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD"/><hh:margin><hc:prev value="800"/></hh:margin></hh:paraPr></hh:paraProperties>`)
+    const head = HEAD.replace("</hh:paraProperties>", `<hh:paraPr id="1"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD" widowOrphan="1"/></hh:paraPr><hh:paraPr id="2"><hh:align horizontal="LEFT"/><hh:breakSetting breakNonLatinWord="KEEP_WORD"/><hp:switch><hp:case hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar"><hh:margin><hc:prev value="800"/></hh:margin></hp:case></hp:switch></hh:paraPr></hh:paraProperties>`)
     const vps = (body: string) => {
       const doc = createXmlParser().parseFromString(`<hs:sec ${NS}>${body}</hs:sec>`, "text/xml")
       const root = doc.documentElement as unknown as Element
