@@ -70,7 +70,7 @@ export const SPACE_EM_FONT = 300
  * 넓어 함초롬 테이블로 재면 줄당 1~2자 과대적재로 wrap 지점이 어긋난다
  * (bench/verify-linebreak.mjs seoul 코퍼스 실측: fixedPitch 테이블로 74/75 일치).
  */
-export type FaceClass = "hcr" | "fixedPitch" | "gothic" | `font:${string}`
+export type FaceClass = "hcr" | "fixedPitch" | "gothic" | "cjk" | `font:${string}`
 
 /**
  * HWP 글꼴명 → 폭 테이블 클래스. 미상/미지정은 hcr (기존 동작 불변).
@@ -80,6 +80,16 @@ export type FaceClass = "hcr" | "fixedPitch" | "gothic" | `font:${string}`
 export function faceClassOf(face: string | null | undefined): FaceClass {
   if (face && hasFontMetrics(face)) return `font:${face.trim()}`
   return face && /^(굴림체|돋움체|바탕체|궁서체)$/.test(face.trim()) ? "fixedPitch" : "hcr"
+}
+
+/**
+ * reflow(조판 캐시 없는 문단) 폭 클래스 — 실측 폭표·고정폭은 faceClassOf 와 같고, 폭표 없는 한글 글꼴은 'cjk'(한글 1em).
+ * 함초롬·명조만 함초롬 폭으로 둔다. 한컴 저장본 두 줄 이상 문단 22,577개 대조: 줄 시작 전부 일치 39.4% → 49.8%(이 클래스만)
+ */
+export function faceClassForReflow(face: string | null | undefined): FaceClass {
+  const c = faceClassOf(face)
+  if (c !== "hcr" || !face || /^함초롬|^명조$/.test(face.trim())) return c
+  return "cjk"
 }
 
 /**
@@ -113,6 +123,12 @@ function gothicWidthEm1000(cp: number): number {
   return 500
 }
 
+/** 폭표 없는 한글 글꼴 advance(em×1000) — 자모·한글·한자·전각 기호(U+1100 이후)는 1em, 그 아래(ASCII·라틴)는 함초롬 폭.
+ *  실측 한글 글꼴(바탕·돋움·한양신명조·HY신명조·한컴바탕 …)의 음절 폭은 1em 이고 함초롬 계열만 0.97em 이다 */
+function cjkWidthEm1000(cp: number): number {
+  return cp >= 0x1100 ? 1000 : charWidthEm1000(cp)
+}
+
 /** 고정폭 글꼴 advance(em×1000) — ASCII 반각 500, 그 외 전각 1000 */
 function fixedPitchWidthEm1000(cp: number): number {
   return cp < 0x80 ? 500 : 1000
@@ -122,6 +138,7 @@ function fixedPitchWidthEm1000(cp: number): number {
 function widthFnOf(faceClass: FaceClass | undefined): (cp: number) => number {
   if (faceClass === "fixedPitch") return fixedPitchWidthEm1000
   if (faceClass === "gothic") return gothicWidthEm1000
+  if (faceClass === "cjk") return cjkWidthEm1000
   if (faceClass?.startsWith("font:")) {
     const face = faceClass.slice(5)
     return fontWidthFn(face) ?? gothicWidthEm1000
@@ -165,6 +182,31 @@ export function measureTextWidth(
   return (em / 1000) * height * (ratioPct / 100)
 }
 
+/** MulDiv — 반올림(0 에서 멀어지는 쪽) */
+function mulDiv(a: number, b: number, c: number): number {
+  const e = a * b
+  return Math.trunc(e < 0 ? (e - c / 2) / c : (e + c / 2) / c)
+}
+
+/**
+ * 한컴 조판의 글자 폭(HWPUNIT) — 글자마다 4 단위로 양자화한다(한컴독스 웹 한글 조판 엔진의 산식).
+ * 글자: 장평 100 이면 4·MulDiv(폭, ⌊크기/4⌋, 1000), 아니면 4·⌊폭·⌊크기/4⌋·장평/(100·1000)⌋.
+ * 공백(useFontSpace 0): 4·⌊크기/8⌋ (장평 ≠ 100 이면 4·MulDiv(⌊크기/8⌋, 장평, 100)). 자간: + 4·MulDiv(⌊폭/4⌋, 자간, 100)
+ */
+export function hancomCharWidth(ch: string, height: number, ratioPct: number, spacingPct: number, faceClass?: FaceClass): number {
+  const cp = ch.codePointAt(0)!
+  let w: number
+  if (isSpaceCp(cp)) {
+    const s = Math.trunc(height / 8)
+    w = 4 * (ratioPct === 100 ? s : mulDiv(s, ratioPct, 100))
+  } else {
+    const em = widthFnOf(faceClass)(cp), q = Math.trunc(height / 4)
+    w = ratioPct === 100 ? 4 * mulDiv(em, q, 1000) : 4 * Math.trunc(em * q * ratioPct / 100000)
+  }
+  if (spacingPct) w += 4 * mulDiv(Math.trunc(w / 4), spacingPct, 100)
+  return w
+}
+
 // ─── 줄바꿈 시뮬레이션 (한컴 조판 모델 — 실측 linesegarray 98% 일치 검증) ───
 //
 // 검증: bench/verify-linebreak.mjs — 서울 정보소통광장 실제 결재문서의 linesegarray
@@ -180,6 +222,11 @@ export function measureTextWidth(
 const FORBID_START = new Set([..."!%),.:;?]}¢°′″℃〉》」』】〕!%),.:;?]}₩~…·、。〃"])
 /** 줄끝 금지(끝금칙) 문자 — 한컴 기본 */
 const FORBID_END = new Set([..."$([{£¥〈《「『【〔$([{₩"])
+
+/** 한컴 기본 금칙 집합(한컴독스 웹 한글 조판 엔진의 기본값) — 줄머리 금지 */
+const HANCOM_FORBID_START = new Set([..."!%),.:;>?]^`}~°·〉》」』】〕〗〙〛・！％），．：；＞？］＾｀｝～･ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ、。〃々ー゛゜ゝゞヽヾ’”․‥…‰‱′″‴‵‶‷℃℉"])
+/** 한컴 기본 금칙 집합 — 줄끝 금지(통화 기호 U+20A0~20AC 포함) */
+const HANCOM_FORBID_END = new Set([..."(<[\\{§‘“〈《「『【〔〖〘〚＄（＜［＼｛￠￡￥￦$¢£¤¥৲৳฿", ...Array.from({ length: 13 }, (_, i) => String.fromCharCode(0x20a0 + i))])
 
 export type WrapMode = "keep" | "charAll"
 
@@ -208,6 +255,10 @@ export interface WrapOptions extends MeasureOptions {
   widths?: number[]
   /** 같은 text·mode·글꼴·공백 폭으로 준비한 원 폭 — 한 문단 압축 후보에만 재사용 */
   prepared?: PreparedWrap
+  /** 공백 최소값(paraPr condense, %) — 줄 가용폭에 그 줄 공백 폭 합 × condense% 를 더한다 */
+  condensePct?: number
+  /** 금칙 집합 — 'hancom' 이면 한컴 기본 집합(reflow), 아니면 생성기 실측 집합 */
+  kinsoku?: "hancom"
 }
 
 export interface WrapResult {
@@ -247,6 +298,9 @@ export function simulateWrap(
   const widthEm = prepared ? null : widthFnOf(opts?.faceClass)
   const k = (height * ratioPct) / 100 / 1000
   const unitW = opts?.widths
+  const forbidStart = opts?.kinsoku === "hancom" ? HANCOM_FORBID_START : FORBID_START
+  const forbidEnd = opts?.kinsoku === "hancom" ? HANCOM_FORBID_END : FORBID_END
+  const condense = opts?.condensePct ?? 0
   /** i 위치(UTF-16) 글자 ch 의 폭 — widths 가 있으면 그 값(서로게이트 쌍은 두 칸 합) */
   const charWAt = (i: number, ch: string): number => {
     if (unitW) return (unitW[i] ?? 0) + (ch.length === 2 ? unitW[i + 1] ?? 0 : 0)
@@ -277,6 +331,9 @@ export function simulateWrap(
   let lineW = 0
   let avail = firstWidth
   let pos = 0
+  /** 지금 줄의 공백 폭 합 — 공백 최소값(condense)만큼 공백이 줄어 가용폭이 늘어난다 */
+  let spaceW = 0
+  const cap = (): number => avail + (condense > 0 ? Math.trunc(spaceW * condense / 100) : 0) + EPS
   const lineStart = (): number => starts[starts.length - 1]
 
   /** 유닛(시작 unitPos, 폭 w)이 안 들어갈 때 줄바꿈 + 금칙 보정 */
@@ -285,23 +342,27 @@ export function simulateWrap(
     const u = text[unitPos]
     const prevStart = (end: number): number => end - (end >= 2 && /[\uDC00-\uDFFF]/.test(text[end - 1]) && /[\uD800-\uDBFF]/.test(text[end - 2]) ? 2 : 1)
     // 시작금칙: 줄머리 금지 문자면 직전 글자 1개를 함께 내린다 (밀어내기)
-    if (u !== undefined && FORBID_START.has(u) && prevStart(bp) > lineStart() && text[bp - 1] !== " ") bp = prevStart(bp)
+    if (u !== undefined && forbidStart.has(u) && prevStart(bp) > lineStart() && text[bp - 1] !== " ") bp = prevStart(bp)
     // 끝금칙: 남는 줄 끝이 여는 괄호류면 그 글자(들)도 함께 내린다
-    while (bp - 1 > lineStart() && FORBID_END.has(text[bp - 1])) bp--
+    while (bp - 1 > lineStart() && forbidEnd.has(text[bp - 1])) bp--
     if (bp <= lineStart()) bp = unitPos
     starts.push(bp)
     avail = contWidth
+    spaceW = 0
+    if (condense > 0) for (let i = bp; i < unitPos; i++) if (text[i] === " ") spaceW += rangeW(i, i + 1)
     lineW = rangeW(bp, unitPos) + w
   }
 
   for (const u of units) {
     if (u[0] === " ") {
-      lineW += rangeW(pos, pos + u.length) // 줄 끝 공백은 hang
+      const sw = rangeW(pos, pos + u.length)
+      lineW += sw // 줄 끝 공백은 hang
+      spaceW += sw
       pos += u.length
       continue
     }
     const w = rangeW(pos, pos + u.length)
-    if (lineW + w <= avail + EPS) {
+    if (lineW + w <= cap()) {
       lineW += w
       pos += u.length
       continue
@@ -313,7 +374,7 @@ export function simulateWrap(
       let sub = 0
       for (const ch of u) {
         const c = charWAt(pos + sub, ch)
-        if (lineW + c > avail + EPS && lineW > 0) breakBefore(pos + sub, 0)
+        if (lineW + c > cap() && lineW > 0) breakBefore(pos + sub, 0)
         lineW += c
         sub += ch.length
       }

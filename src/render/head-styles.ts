@@ -46,6 +46,8 @@ export interface RenderParaGeom {
   wrapMode?: "keep" | "charAll"
   /** 탭 정의(tabPrIDRef)가 내어쓰기용 자동 탭(autoTabLeft) — 첫 줄 탭이 내어쓰기 위치에 선다 */
   autoTabLeft?: boolean
+  /** 공백 최소값(paraPr condense, %) — 줄 안 공백이 그만큼 줄어들 수 있어 줄 가용폭이 공백 폭 합 × condense% 늘어난다 */
+  condense?: number
 }
 
 export const DEFAULT_PARA_GEOM: RenderParaGeom = {
@@ -203,6 +205,8 @@ function findDeep(el: Element, name: string, depth = 0): Element | null {
 /** paraPr 요소 → 문단 기하 (margin·lineSpacing은 hp:switch/case 안이라 재귀 탐색) */
 function parseParaGeom(el: Element): RenderParaGeom {
   const g: RenderParaGeom = { ...DEFAULT_PARA_GEOM }
+  const condense = Number(el.getAttribute("condense")) || 0
+  if (condense > 0) g.condense = condense
   const ls = findDeep(el, "lineSpacing")
   if (ls) {
     g.lineSpacingType = ls.getAttribute("type") ?? "PERCENT"

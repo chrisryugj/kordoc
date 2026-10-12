@@ -19,7 +19,7 @@
  */
 
 import { buildPara, measureTableHeight, tabAdvance } from "./para-model.js"
-import { simulateWrap, measureTextWidth, faceClassOf, type WrapMode } from "../hwpx/text-metrics.js"
+import { simulateWrap, hancomCharWidth, faceClassForReflow, type WrapMode } from "../hwpx/text-metrics.js"
 import { DEFAULT_CHAR, DEFAULT_PARA_GEOM, type RenderStyles, type RenderParaGeom } from "./head-styles.js"
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
 import { toInt32 } from "./layout.js"
@@ -106,8 +106,9 @@ function reflowPara(
     if (c.ch === "") continue
     const st = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
     // 폭 테이블: 고정폭 글꼴(굴림체류)은 전용 클래스 — 함초롬 테이블(한글 0.97em)로 재면 줄당 1~2자
-    // 과대적재로 wrap 이 어긋난다 (seoul 코퍼스 3건 실측)
-    const w = measureTextWidth(c.ch, st.height, st.ratio, { spacingPct: st.spacing, faceClass: faceClassOf(st.face) })
+    // 과대적재로 wrap 이 어긋난다 (seoul 코퍼스 3건 실측). 폭표 없는 한글 글꼴은 한글 1em(faceClassForReflow).
+    // 글자 폭은 한컴처럼 글자마다 4 단위로 양자화한다(hancomCharWidth)
+    const w = hancomCharWidth(c.ch, st.height, st.ratio, st.spacing, faceClassForReflow(st.face))
     for (let u = 0; u < c.ch.length; u++) { realIdx.push(i); widths.push(u === 0 ? w : 0) }
     text += c.nb ? "\u00a0" : c.ch
     x += w
@@ -144,7 +145,7 @@ function reflowPara(
   const paraMode = geom.wrapMode ?? mode
   const wrap = text.length === 0
     ? { lines: 1, starts: [0], lastLineWidth: 0 }
-    : simulateWrap(text, firstWidth, contWidth, height, 100, paraMode, { widths })
+    : simulateWrap(text, firstWidth, contWidth, height, 100, paraMode, { widths, condensePct: geom.condense, kinsoku: "hancom" })
 
   const pitch = pitchFor(height, geom)
   const baseline = Math.round(height * BASELINE_RATIO)
