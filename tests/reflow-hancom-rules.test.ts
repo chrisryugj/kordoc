@@ -134,6 +134,12 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(plain.map(s => s[0]), [0]) // 20자 × 1000 = 20000 에 꼭 찬다
     assert.equal(numbered.length, 2) // "1)" 몫만큼 넘친다
   })
+  it("글자처럼 취급하는 수식은 outMargin 좌우까지 폭으로 친다", () => {
+    const eq = (om: number) => `<hp:equation baseLine="85"><hp:sz width="900" height="1000"/><hp:pos treatAsChar="1"/><hp:outMargin left="${om}" right="${om}" top="0" bottom="0"/><hp:script>x</hp:script></hp:equation>`
+    const lines = (om: number) => reflowed(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(41)}</hp:t>${eq(om)}</hp:run></hp:p>`)[0].length
+    assert.equal(lines(0), 1) // 41000 + 900 ≤ 42000
+    assert.equal(lines(56), 2) // 41000 + 56 + 900 + 56 > 42000 — 종전엔 표만 outMargin 을 셌다
+  })
   it("각주·미주 본문 참조 번호는 위첨자 크기로 그 글 폭을 차지한다", () => {
     const fn = `<hp:ctrl><hp:footNote number="1"><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>주</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl>`
     const body = (tail: string) => reflowed(`<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(41)}</hp:t>${fn}<hp:t>${tail}</hp:t></hp:run></hp:p>`)[0].length

@@ -47,9 +47,9 @@ export interface ParaChar { ch: string; prId: string | null; tab?: boolean; tabW
 /** 렌더 대상 개체 태그 — 이 외(도형류)는 경고 후 생략 */
 export const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", "ellipse", "polygon", "curv", "curve", "line", "arc", "ole", "textart"])
 
-/** omL/omR: TAC 인라인 표의 outMargin 좌/우(HWPUNIT) — 한글은 TAC 표를 "outMargin 포함
- * 폭의 문자"로 배치한다: 가로 전진폭 = om좌 + 표폭 + om우, 괘선(표 자체)은 pen + om좌
- * (rhwp #3396 동종 — 오라클 실측이 표뿐이라 표 외 개체는 0). */
+/** omL/omR: 글자처럼 취급하는 개체(TAC)의 outMargin 좌/우(HWPUNIT) — 한글은 TAC 개체를 "outMargin 포함
+ * 폭의 문자"로 배치한다: 가로 전진폭 = om좌 + 개체 폭 + om우, 개체 자체는 pen + om좌
+ * (rhwp #3396 동종. 수식도 같다 — 한컴 저장 lineseg: 수식 outMargin 좌우 56 을 넣으면 두 줄 이상 문단 줄 시작 일치 +184). */
 export interface ParaObj { el: Element; tag: string; index: number; inline: boolean; width: number; height: number; omL: number; omR: number }
 
 /** runs: run 마다 시작 슬롯과 글자 모양 — 글 없는 run(문단 끝 빈 hp:t 등)도 그 자리 줄의 높이에 든다 */
@@ -178,8 +178,8 @@ export function buildPara(p: Element): ParaModel {
           const w = num(sz, "width") || num(findChildByLocalName(ch, "curSz"), "width") || num(findChildByLocalName(ch, "orgSz"), "width")
           const h = num(sz, "height") || num(findChildByLocalName(ch, "curSz"), "height") || num(findChildByLocalName(ch, "orgSz"), "height")
           const inline = pos?.getAttribute("treatAsChar") === "1"
-          // TAC 표만 outMargin 좌/우를 가로 배선 (ParaObj.omL 주석 — rhwp #3396 동종)
-          const om = inline && cn === "tbl" ? findChildByLocalName(ch, "outMargin") : null
+          // 글자처럼 취급하는 개체는 outMargin 좌/우를 가로 배선 (ParaObj.omL 주석 — rhwp #3396 동종)
+          const om = inline ? findChildByLocalName(ch, "outMargin") : null
           if (!deleted) objs.push({
             el: ch, tag: cn, index: chars.length,
             inline,
