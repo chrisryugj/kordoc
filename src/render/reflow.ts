@@ -348,7 +348,7 @@ function columnWidthIn(p: Element, bodyW: number): number | undefined {
 /**
  * 문단 run 안 표 칸 밖의 하위 목록 reflow — 머리말·꼬리말은 구역 본문 폭, 각주는 noteW(본문 흐름이면 그 단 폭 —
  * 2단 문서의 미주 lineseg 폭 = 단 폭), 미주는 구역 끝의 단 폭(counter.endNoteW, 없으면 noteW),
- * 도형 글상자(drawText)와 표 캡션은 저장된 글 영역 폭(lastWidth).
+ * 도형 글상자(drawText)와 표 캡션은 저장된 글 영역 폭(lastWidth, 글상자는 안 여백을 뺀다).
  * 종전엔 건너뛰어 캐시 없는 문서에서 이 안의 글이 줄 정보 없이 남았다
  */
 function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number; endNoteW?: number }, noteW = counter.bodyW): void {
@@ -361,7 +361,9 @@ function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode:
         continue
       }
       if (t === "drawText" || t === "caption") {
-        const sub = findChildByLocalName(ch, "subList"), w = num(ch, "lastWidth")
+        // 글상자는 안 여백(textMargin 좌우)을 뺀 폭 — 한컴 저장 lineseg 실측: lastWidth 30907 − 283×2 → 30340
+        const sub = findChildByLocalName(ch, "subList"), tm = findChildByLocalName(ch, "textMargin")
+        const w = num(ch, "lastWidth") - num(tm, "left") - num(tm, "right")
         if (sub && w > 0) reflowBlockFlow(sub, doc, styles, w, mode, counter, 0)
         continue
       }
