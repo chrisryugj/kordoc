@@ -116,6 +116,15 @@ describe("reflow 한컴 조판 규칙 — 개체·컨트롤·다단·하위 목�
     assert.deepEqual(reflowed(para(1), 42000, head)[0].map(s => s[0]), [0, 40, 80]) // 42000 − (1000 + 500) → 40자
     assert.deepEqual([...new Set(reflowed(para(1), 42000, head)[0].map(s => s[1]))], [42000]) // lineseg 폭은 그대로
   })
+  it("미주는 구역 끝의 단 폭, 머리 번호(autoNum \"1)\")는 그 글 폭을 차지한다", () => {
+    const note = (num: boolean) => `<hp:endNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${num ? `<hp:ctrl><hp:autoNum num="1" numType="ENDNOTE"><hp:autoNumFormat type="DIGIT" suffixChar=")"/></hp:autoNum></hp:ctrl>` : ""}<hp:t>${"가".repeat(20)}</hp:t></hp:run></hp:p></hp:subList></hp:endNote>`
+    const body = (num: boolean) => `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="1"/></hp:ctrl><hp:ctrl>${note(num)}</hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>` +
+      `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:t>둘째 단</hp:t></hp:run></hp:p>`
+    const plain = reflowed(body(false))[1], numbered = reflowed(body(true))[1]
+    assert.deepEqual(plain.map(s => s[1]), [20000]) // (42000 − 2000) ÷ 2 — 미주가 걸린 1단 폭(42000)이 아니다
+    assert.deepEqual(plain.map(s => s[0]), [0]) // 20자 × 1000 = 20000 에 꼭 찬다
+    assert.equal(numbered.length, 2) // "1)" 몫만큼 넘친다
+  })
   it("2단 구역의 각주는 단 폭으로 채운다", () => {
     const body = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:colPr colCount="2" sameSz="1" sameGap="2000"/></hp:ctrl><hp:ctrl><hp:footNote><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${"가".repeat(30)}</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t>본문</hp:t></hp:run></hp:p>`
     const ps = reflowed(body)

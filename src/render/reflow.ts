@@ -141,8 +141,14 @@ function reflowPara(
       continue
     }
     if (c.ctrl) {
-      // 폭 0 컨트롤(쪽 번호·필드 등) — 줄의 내용으로 친다(뒤에서 넘치는 개체는 다음 줄로)
-      realIdx.push(i); widths.push(0); spacings.push(0); text += "\u2060"
+      // 컨트롤 — 줄의 내용으로 친다(뒤에서 넘치는 개체는 다음 줄로). 주석 머리 번호("1)")처럼 글을 그리는 컨트롤은
+      // 그 글 폭의 한 덩어리(미주 lineseg 실측: 8.0pt 문단이 "1) " 몫만큼 일찍 꺾인다), 쪽 번호·필드 등은 폭 0
+      let w = 0
+      if (c.ctrlText) {
+        const st = (c.prId != null ? styles.charPr.get(c.prId) : undefined) ?? DEFAULT_CHAR
+        for (const ch of c.ctrlText) w += glyphWidth(ch, st).w
+      }
+      realIdx.push(i); widths.push(w); spacings.push(0); text += w > 0 ? "\ufffc" : "\u2060"; x += w
       continue
     }
     if (c.br) {
@@ -340,16 +346,17 @@ function columnWidthIn(p: Element, bodyW: number): number | undefined {
 }
 
 /**
- * 문단 run 안 표 칸 밖의 하위 목록 reflow — 머리말·꼬리말은 구역 본문 폭, 각주·미주는 noteW(본문 흐름이면 그 단 폭 —
- * 2단 문서의 미주 lineseg 폭 = 단 폭), 도형 글상자(drawText)와 표 캡션은 저장된 글 영역 폭(lastWidth).
+ * 문단 run 안 표 칸 밖의 하위 목록 reflow — 머리말·꼬리말은 구역 본문 폭, 각주는 noteW(본문 흐름이면 그 단 폭 —
+ * 2단 문서의 미주 lineseg 폭 = 단 폭), 미주는 구역 끝의 단 폭(counter.endNoteW, 없으면 noteW),
+ * 도형 글상자(drawText)와 표 캡션은 저장된 글 영역 폭(lastWidth).
  * 종전엔 건너뛰어 캐시 없는 문서에서 이 안의 글이 줄 정보 없이 남았다
  */
-function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number }, noteW = counter.bodyW): void {
+function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number; endNoteW?: number }, noteW = counter.bodyW): void {
   const visit = (el: Element): void => {
     for (const ch of elements(el)) {
       const t = ln(ch)
       if (t === "footNote" || t === "endNote" || t === "header" || t === "footer") {
-        const sub = findChildByLocalName(ch, "subList"), w = t === "footNote" || t === "endNote" ? noteW : counter.bodyW
+        const sub = findChildByLocalName(ch, "subList"), w = t === "endNote" ? counter.endNoteW ?? noteW : t === "footNote" ? noteW : counter.bodyW
         if (sub && w) reflowBlockFlow(sub, doc, styles, w, mode, counter, 0)
         continue
       }
@@ -366,7 +373,7 @@ function reflowSubListsIn(p: Element, doc: Document, styles: RenderStyles, mode:
 }
 
 /** 문단 run 안의 표를 찾아 각 셀 subList를 셀 로컬로 reflow (중첩 재귀) */
-function reflowTablesIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number }): void {
+function reflowTablesIn(p: Element, doc: Document, styles: RenderStyles, mode: WrapMode, counter: { n: number; bodyW?: number; endNoteW?: number }): void {
   for (const run of elements(p)) {
     if (ln(run) !== "run") continue
     for (const obj of elements(run)) {
@@ -402,7 +409,7 @@ function reflowBlockFlow(
   styles: RenderStyles,
   areaW: number,
   mode: WrapMode,
-  counter: { n: number; bodyW?: number },
+  counter: { n: number; bodyW?: number; endNoteW?: number },
   bodyH: number,
 ): void {
   let cursorV = 0
@@ -476,7 +483,10 @@ export function reflowSection(
   mode: WrapMode = "keep",
 ): number {
   const doc = root.ownerDocument as unknown as Document
-  const counter = { n: 0, bodyW: geom.BODY_W }
+  // 미주는 구역 끝에 모여 놓인다 — 폭은 구역 끝의 단 폭(중간에 2단으로 바뀐 구역의 미주 lineseg 폭 = 그 단 폭)
+  let endNoteW: number | undefined
+  for (const p of elements(root)) if (ln(p) === "p") endNoteW = columnWidthIn(p, geom.BODY_W) ?? endNoteW
+  const counter = { n: 0, bodyW: geom.BODY_W, endNoteW }
   reflowBlockFlow(root, doc, styles, geom.BODY_W, mode, counter, geom.BODY_H)
   return counter.n
 }

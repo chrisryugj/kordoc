@@ -4,6 +4,7 @@
  */
 
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
+import { noteAutoNumOf } from "../hwpx/notes.js"
 import { toInt32, solveRowHeights } from "./layout.js"
 import { type RenderParaGeom } from "./head-styles.js"
 
@@ -38,8 +39,9 @@ export function findFirst(el: Element, name: string, depth = 0): Element | null 
 export interface Seg { textpos: number; vertpos: number; horzpos: number; horzsize: number; textheight: number; baseline: number }
 
 /** tab: 탭 컨트롤 첫 슬롯(나머지 7슬롯은 필러) — 폭은 줄 조판 때 탭 정지점으로 정한다. tabW: 저장된 hp:tab width.
- * nb: 묶음 빈칸(hp:nbSpace) — 그리기는 공백, 줄바꿈은 끊지 않는 빈칸(U+00A0). br: 강제 줄바꿈(hp:lineBreak) — 폭 0, 뒤 글은 새 줄 */
-export interface ParaChar { ch: string; prId: string | null; tab?: boolean; tabW?: number; nb?: boolean; ctrl?: boolean; br?: boolean }
+ * nb: 묶음 빈칸(hp:nbSpace) — 그리기는 공백, 줄바꿈은 끊지 않는 빈칸(U+00A0). br: 강제 줄바꿈(hp:lineBreak) — 폭 0, 뒤 글은 새 줄.
+ * ctrlText: 컨트롤이 그리는 글(주석 머리 번호 "1)" 등 hp:autoNum) — 줄 채우기에서 그 글의 폭을 차지한다 */
+export interface ParaChar { ch: string; prId: string | null; tab?: boolean; tabW?: number; nb?: boolean; ctrl?: boolean; br?: boolean; ctrlText?: string }
 
 /** 렌더 대상 개체 태그 — 이 외(도형류)는 경고 후 생략 */
 export const OBJ_TAGS = new Set(["tbl", "pic", "container", "equation", "rect", "ellipse", "polygon", "curv", "curve", "line", "arc", "ole", "textart"])
@@ -180,7 +182,13 @@ export function buildPara(p: Element): ParaModel {
           // secPr·ctrl(구역/단 정의)·필드 등 나머지 run 자식도 확장/인라인 컨트롤 8슬롯
           pushFillers(chars, 8, prId)
           // 구역·단 정의가 아닌 컨트롤(쪽 번호·필드 등)은 폭 0 이어도 줄의 내용이다 — 한컴은 그 뒤에서 넘치는 개체를 다음 줄로 보낸다
-          if (cn !== "secPr" && !(cn === "ctrl" && findChildByLocalName(ch, "colPr"))) chars[chars.length - 8].ctrl = true
+          if (cn !== "secPr" && !(cn === "ctrl" && findChildByLocalName(ch, "colPr"))) {
+            const slot = chars[chars.length - 8]
+            slot.ctrl = true
+            const an = cn === "ctrl" ? findChildByLocalName(ch, "autoNum") : null
+            const t = an ? noteAutoNumOf(an) : ""
+            if (t) slot.ctrlText = t
+          }
         }
       }
     } else if (tag === "deleteBegin" || tag === "deleteEnd") {
