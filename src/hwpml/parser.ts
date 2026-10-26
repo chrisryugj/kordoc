@@ -243,6 +243,19 @@ function parseParagraph(
   }
 }
 
+/**
+ * <CHAR> 안 요소 글자. 묶음·고정폭 빈칸(NBSPACE·FWSPACE)은 빈칸, 강제 줄바꿈(LINEBREAK)은 줄바꿈 — 빠뜨리면 "추진<NBSPACE/>배경" 이
+ * "추진배경" 으로 붙는다(HWPX nbSpace·fwSpace·lineBreak 와 같은 정책). 하이픈(HYPEN)은 HWP5 0x18 처럼 내지 않는다
+ */
+function charElementText(e: Element): string {
+  switch (localName(e)) {
+    case "TAB": return "\t"
+    case "NBSPACE": case "FWSPACE": return " "
+    case "LINEBREAK": return "\n"
+    default: return textContent(e)
+  }
+}
+
 /** <P> 에서 텍스트 추출 — <TEXT><CHAR> 순회 */
 function extractParagraphText(p: Element): string {
   const parts: string[] = []
@@ -262,7 +275,7 @@ function collectCharText(node: Element, parts: string[], depth: number = 0): voi
       // 자식 텍스트 노드 직접 수집. <TAB/>(채움 탭 포함)은 탭 — 빠뜨리면 목차 "사업 개요 및 추진체계<TAB/>3" 의 쪽 번호가
       // 글에 붙는다("추진체계3", formats/hml mof-*. HWPX·HWP5 채움 탭과 같은 정책)
       for (const c of Array.from(el.childNodes)) {
-        const t = c.nodeType === 1 ? (localName(c as Element) === "TAB" ? "\t" : textContent(c)) : c.nodeType === 3 || c.nodeType === 4 ? c.nodeValue ?? "" : ""
+        const t = c.nodeType === 1 ? charElementText(c as Element) : c.nodeType === 3 || c.nodeType === 4 ? c.nodeValue ?? "" : ""
         if (t) parts.push(escapeLiteralTags(t)) // 태그 모양 글자 "<sub>" 는 \<sub> (#122)
       }
     } else if (tag === "TABLE" || tag === "PICTURE" || tag === "SHAPEOBJECT") {

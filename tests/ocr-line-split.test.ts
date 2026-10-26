@@ -366,6 +366,14 @@ describe("gapGlyphs — 두 글자 사이에서 빠진 기호 · ▲ 「 」 □
     const open = canvas(w, h); glyphs(open, w); rect(open, w, 55, 6, 58, 22); rect(open, w, 55, 6, 67, 9)
     assert.deepEqual(gapGlyphs(open, w, h, inkStats(open)).glyphs.map(x => x.mark), ["\u300c"])
   })
+  it("다음 글자와 빈 열 없이 맞닿은 「 도 잡고, x 가 겹치면 잡지 않는다", () => {
+    const w = 130, h = 40
+    // 「 끝 열(89) 바로 다음 열(90)에서 글자가 시작한다 — 「 는 위에, 글자는 아래쪽이 넓어 픽셀은 닿지 않는다
+    const abut = canvas(w, h); rect(abut, w, 10, 6, 38, 34); rect(abut, w, 90, 12, 118, 34); rect(abut, w, 78, 6, 81, 22); rect(abut, w, 78, 6, 90, 9)
+    assert.deepEqual(gapGlyphs(abut, w, h, inkStats(abut)).glyphs.map(x => x.mark), ["\u300c"])
+    const overlap = canvas(w, h); rect(overlap, w, 10, 6, 38, 34); rect(overlap, w, 86, 12, 118, 34); rect(overlap, w, 78, 6, 81, 22); rect(overlap, w, 78, 6, 90, 9)
+    assert.deepEqual(gapGlyphs(overlap, w, h, inkStats(overlap)).glyphs.map(x => x.mark), [])
+  })
   it("속 찬 삼각형은 ▲, 속 빈 정사각은 □", () => {
     const w = 130, h = 40
     const tri = canvas(w, h); glyphs(tri, w)

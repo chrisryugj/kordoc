@@ -633,6 +633,11 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
     const oneLine = (c: IRCell): boolean => CELL_LINES.get(c)?.length === 1
     if (pairs.some(([u, d]) => nextItemHead(cell(u).text, cell(d).text))
       && pairs.some(([u, d]) => hasContent(u.cell) && hasContent(d.cell) && oneLine(cell(u)) && oneLine(cell(d)) && norm(cell(u)) !== norm(cell(d)))) return false
+    // 앞 조각에서 여러 행을 덮은 칸에 한 줄만 들었으면 칸이 차지 않아 글이 쪽을 넘을 수 없다 — 뒤 조각 같은 열의 다른 한 줄 값은 새 칸이고
+    // 행도 새로 시작한다. 가운데 정렬이라 끝난 이름표 판정(lineEnded)에 안 걸리는 값 열이다(시험기준표 "KS F 3218" 3행 칸 / 다음 쪽
+    // "KS M 3705", 옆 칸 "90도 박리 접착 강도(바닥 시트)" 가 꽉 차 글 이어짐으로 보여 "비중" 행을 삼켰다)
+    if (cut.ruled && pairs.some(([u, d]) => u.rs >= 2 && hasContent(u.cell) && hasContent(d.cell) && oneLine(cell(u)) && oneLine(cell(d))
+      && norm(cell(u)) !== norm(cell(d)))) return false
     const flows = ([u, d]: [Anchor, Anchor]): boolean => continuesAcross(cell(u), cell(d), colXs[u.c], colXs[u.c + u.cs]) || clauseContinues(cell(u), cell(d))
       || quantityContinues(cell(u), cell(d))
     // 괘선 없는 쪽 경계(3)는 글 증거 없이 합친다 — 앞 쪽 빈 칸 뒤 글(새 칸)이 없을 때만 (쪽 끝 빈 행 다음 새 표 행, 노인복지법 운영기준)

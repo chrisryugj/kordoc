@@ -2,6 +2,28 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.8: security, OCR and PDF · 2026-10-26
+
+Same corpora and scorers as 4.24.7; every suite benchmark compared per document (rendering measured for text, images and page counts — unchanged). This release brings known dependency vulnerabilities to zero (zod 4 — the input schemas and validation of all 18 MCP tools are unchanged), fixes two OCR cases (leading ring bullets read as digits, 「 touching the next character) and PDF tables clipped only in their header cells. One regression: table content NED of the rice/pepper statistics document 0.92767 → 0.92732 (the header text now sits in the 7-column grid and is one cell off the reference's 9-column merged cells; the same document's reading order went 0.99784 → 1 and its two phantom tables are gone).
+
+| Metric | 4.24.7 | 4.24.8 |
+| --- | --- | --- |
+| `npm audit` (clone + `npm ci` · fresh npm install) | 6 · 2 | **0 · 0** |
+| OCR CER (fair · strict) | 0.03274 · 0.06419 | **0.03140 · 0.06290** |
+| OCR character recall · precision · table structure (67 tables) | 0.99043 · 0.99400 · 25 | **0.99052 · 0.99404** · 25 |
+| Degraded-input OCR CER (clean · 1° skew · noise · blur · 150dpi · scan) | 0.0509 · 0.0585 · 0.0566 · 0.0663 · 0.0553 · 0.0764 | **0.0483 · 0.0559 · 0.0540 · 0.0638 · 0.0528 · 0.0738** |
+| PDF reading order | 0.99307 | **0.99309** |
+| PDF tables · statutory annexes · HWPX · ODL 200 documents · rendering | — | unchanged |
+
+## 4.24.7: template generation, HWPML and OCR · 2026-10-26
+
+Same corpora and scorers as 4.24.6. This release fixes three OCR cases (background pattern read as characters at line ends, numeric columns merged into the header row, hyphens and dashes decided by stroke length), template generation and HWPML reading. Template detection was compared against the previous release on 3,105 corpus HWPX files: 4 changed, all of them a table-of-contents box previously taken as the summary box. The other benchmarks pass the release gate (`bench:gate`).
+
+| Metric | 4.24.6 | 4.24.7 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.03321 · 0.06461 | **0.03274 · 0.06419** |
+| OCR character recall · table structure (67 tables) | 0.99019 · 25 | **0.99043** · 25 |
+
 ## 4.24.6: rounds 81–90 on OCR, PDF, rendering and HWPX · 2026-10-25
 
 Measured again on the 4.24.5 corpora and scorers (every suite benchmark compared per document; rendering measured by text runs, images and page counts). The rendered-text denominator grows from 90,762 to 90,906 because page numbers that now follow page-number restarts pair with the Hancom PDF page numbers. Round 89 (whitespace in indented HWPX XML) changes the HWPX parse used as the PDF-text reference: that document (issue2019 form) gains reference text from 6,960 to 9,219 characters, so its recall and word-boundary F1 rise and its reading order falls from 0.904 to 0.871 while the PDF output is unchanged.

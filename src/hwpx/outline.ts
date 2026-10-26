@@ -168,6 +168,8 @@ export function buildOutline(blocks: MdBlock[], opts: OutlineOptions): Outline {
    * ("ㅇ (먹거리) …" 문단 뒤 "- 신선란 …" → -(2단계)). 명시 부호·문단·헤딩이 나오면 리셋. 값 -1 = 미확정
    */
   let listBase = -1
+  /** 부호 항목 아래 목록의 첫 항목 들여쓰기 — 원고가 "ㅇ …" 아래 목록을 들여 써도("    - 세부") 단계는 listBase 부터 센다 */
+  let listIndent = 0
   let lastExplicitDepth = -1
   const pushItem = (depth: number, text: string, legalMarker?: string, fromHeading = false, marker?: string, explicit = true) => {
     nodes.push({ kind: "item", depth, text, ...(legalMarker ? { legalMarker } : {}), ...(fromHeading ? { fromHeading: true } : {}), ...(marker ? { marker } : {}) })
@@ -218,11 +220,13 @@ export function buildOutline(blocks: MdBlock[], opts: OutlineOptions): Outline {
         if (lm.kind === "keep") { pushItem(lm.depth, lm.rest, undefined, false, lm.marker); break }
         if (lm.kind === "legal" && opts.gaejosik) { pushItem(Math.max(lastItemDepth, 0), lm.rest, lm.marker); break }
         let base = headingDepth >= 0 ? headingDepth + 1 : 0
+        let indent = b.indent ?? 0
         if (opts.headingFrames || opts.listUnderMarker) {
-          if (listBase < 0) listBase = lastExplicitDepth + 1
+          if (listBase < 0) { listBase = lastExplicitDepth + 1; listIndent = lastExplicitDepth >= 0 ? indent : 0 }
           base = listBase
+          indent = Math.max(0, indent - listIndent)
         }
-        pushItem(Math.min(base + (b.indent ?? 0), 7), lm.kind === "legal" ? lm.rest : text, undefined, false, undefined, false)
+        pushItem(Math.min(base + indent, 7), lm.kind === "legal" ? lm.rest : text, undefined, false, undefined, false)
         break
       }
       case "paragraph": {

@@ -395,6 +395,21 @@ interface ParaInfo { xml: string; tbl: TableInfo | null; plain: string; role: Ro
 /** 그림·도형 개체 (표 아닌 것) — 이런 문단은 원형으로 쓰지 않는다 */
 const DRAWING = new Set(["pic", "rect", "ellipse", "arc", "polygon", "curve", "line", "connectLine", "container", "textart", "ole", "equation", "chart", "video"])
 
+const TOC_HEAD = /^(목차|차례|contents)$/i
+const CHAPTER_LINE = /^(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|(?:I{1,3}|IV|VI{0,3}|IX|X)\s*[.．]|제\s*\d+\s*장)/
+
+/**
+ * 목차 상자 (1×1) — 첫 줄이 "목 차"이거나, 바로 앞 문단이 "목 차" 제목이거나, 장 번호(Ⅰ.·제1장)로 시작하는 줄이 둘 이상.
+ * 표지·목차 쪽이 앞에 있는 견본(개조식 계획서)에서 쪽 높이 목차 상자를 요약 상자로 쓰지 않게
+ */
+function isTocBox(infos: ParaInfo[], i: number): boolean {
+  const lines = (infos[i].tbl?.cells[0]?.text ?? "").split("\n").map((l) => l.trim()).filter(Boolean)
+  if (lines[0] && TOC_HEAD.test(lines[0].replace(/\s+/g, ""))) return true
+  const prev = infos[i - 1]
+  if (prev && TOC_HEAD.test((prev.tbl ? prev.tbl.cells.map((c) => c.text).join("") : prev.plain).replace(/\s+/g, ""))) return true
+  return lines.filter((l) => CHAPTER_LINE.test(l)).length >= 2
+}
+
 export function scanTemplate(sectionXml: string, headerXml: string): TemplateScan {
   const heights = charHeights(headerXml)
   let secPr = "", headCharPr = "0"
@@ -462,7 +477,7 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
   }
   const subIdx = head.find(({ x, i }) => i !== titleIdx && !x.tbl && x.objs === 0 && SUBTITLE_RE.test(mapPuaText(x.plain.trim())))?.i ?? -1
   if (subIdx >= 0) set("subtitle", subIdx)
-  const summaryIdx = head.find(({ x, i }) => i > titleIdx && x.tbl?.rowCnt === 1 && x.tbl.colCnt === 1 && !CONTACT_RE.test(x.tbl.cells[0]?.text ?? ""))?.i ?? -1
+  const summaryIdx = head.find(({ x, i }) => i > titleIdx && x.tbl?.rowCnt === 1 && x.tbl.colCnt === 1 && !CONTACT_RE.test(x.tbl.cells[0]?.text ?? "") && !isTocBox(infos, i))?.i ?? -1
   if (summaryIdx >= 0) set("summary", summaryIdx)
   const contactIdx = contactInTitle ? -1
     : head.find(({ x, i }) => i !== titleIdx && i !== summaryIdx && i !== subIdx && CONTACT_RE.test(x.tbl ? x.tbl.cells.map((c) => c.text).join(" ") : x.plain))?.i ?? -1

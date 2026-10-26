@@ -85,6 +85,14 @@ describe("HWPML <TAB/> — 쪽 번호가 글에 붙지 않는다", () => {
     const r = await parseOk(Buffer.from(xml, "utf8"), "toc.hml")
     assert.deepEqual(texts(r.blocks), ["Ⅰ. 사업 개요 및 추진체계\t3"])
   })
+  it("묶음·고정폭 빈칸은 빈칸, 강제 줄바꿈은 줄바꿈, 하이픈은 내지 않는다", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><HWPML Version="2.9" SubVersion="10.0.0.0" Style="embed">` +
+      `<HEAD><MAPPINGTABLE></MAPPINGTABLE></HEAD><BODY><SECTION Id="0">` +
+      `<P ParaShape="0"><TEXT CharShape="0"><CHAR>추진<NBSPACE/>배경<FWSPACE/>및<LINEBREAK/>목적<HYPEN/>안</CHAR></TEXT></P>` +
+      `</SECTION></BODY></HWPML>`
+    const r = await parseOk(Buffer.from(xml, "utf8"), "spaces.hml")
+    assert.deepEqual(texts(r.blocks), ["추진 배경 및\n목적안"])
+  })
 })
 
 describe("DOCX 목차 채움 탭 — 쪽 번호(PAGEREF 표시값)가 남는다 (고정점)", () => {

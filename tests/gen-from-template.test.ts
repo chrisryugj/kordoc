@@ -247,3 +247,35 @@ describe("generate --template (부서 서식 견본)", () => {
     assert.match(r.content[0].text, /견본\(template\)은 preset/)
   })
 })
+
+describe("generate --template — 표지·목차 쪽이 앞에 있는 견본", () => {
+  const COVER_MD = `# 견본 디지털 행정 추진계획
+
+> 견본 요약 문장으로 상자를 채움
+
+## 추진 배경
+
+□ 견본 대항목
+  ㅇ 견본 중항목
+    - 견본 세부
+
+## 추진 계획
+
+□ 견본 계획 항목
+`
+
+  it("목차 상자는 요약 상자로 쓰지 않는다 (본문 첫 쪽의 요약 상자)", async () => {
+    const tpl = await markdownToHwpx(COVER_MD, { gongmun: { preset: "gaejosik", cover: { org: "견본시 견본과", date: "2026. 10. 1." }, toc: true } })
+    const tplSec = await entry(tpl, "Contents/section0.xml")
+    const scan = scanTemplate(tplSec, await entry(tpl, "Contents/header.xml"))
+    assert.match(scan.protos.get("summary") ?? "", /견본 요약 문장/, "요약 상자 = 본문 첫 쪽 상자")
+    assert.doesNotMatch(scan.protos.get("summary") ?? "", /추진 계획/, "목차 상자가 아니다")
+    const warnings: string[] = []
+    const out = await markdownToHwpx("# 새 계획\n\n> 새 요약\n\n## 현황\n\n□ 새 대항목\n  ㅇ 새 중항목\n    - 새 세부\n", { template: tpl, warnings })
+    assert.ok((await validateHwpx(out)).ok)
+    const outSec = await entry(out, "Contents/section0.xml")
+    assert.ok(!warnings.some((w) => w.includes("4단계")), "네 칸 들여 쓴 - 세부는 3단계")
+    assert.ok(!warnings.some((w) => w.includes("요약 상자")), warnings.join(" / "))
+    assert.equal(paraOf(outSec, "새 세부").paraPr, paraOf(tplSec, "견본 세부").paraPr)
+  })
+})

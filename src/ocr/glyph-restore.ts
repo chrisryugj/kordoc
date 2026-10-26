@@ -3,7 +3,7 @@
  * 모델이 줄여·바꿔·빠뜨려 읽는 글자를 고친다(괄호 「」【】·여는 따옴표·원문자·로마 숫자·두 글자 사이에서 빠진 기호). 모양 판정은
  * line-split.ts, 여기는 글자열 배선만. 글자 배열은 CTC 글자와 1:1 로 두고 칸마다 바꿔 넣거나(빈 글·여러 글자 허용) 끝에 잇는다
  */
-import { bracketFeatures, bracketShape, circledAt, discAt, gapGlyphs, grayCrop, inkStats, quoteHead, ringBullet, romanStems, serifOne, starRun } from "./line-split.js"
+import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, quoteHead, ringBullet, romanStems, serifOne, starRun } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
 import type { Box } from "./crop.js"
 
@@ -23,6 +23,7 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   if (/(^|\D)[1-9](\D|$)/.test(text)) circled(c)
   if (text.includes("*")) stars(c)
   if (/[\u00b7\u2022]/.test(text)) discs(c)
+  if (/[-\u2013\u2014]/.test(text)) dashes(c)
   gaps(c)
   note.ringLead = ring(c)
   if (/[I1Ⅰ-Ⅲ]|^\s*\./.test(text)) roman(c)
@@ -97,6 +98,22 @@ function quotes({ chars, cx, gray, w, h, ink }: Ctx) {
     if (!year(i) && !single[kind]) continue
     const r = quoteHead(gray, w, h, ink, cx(i))
     if (r !== null && r >= 0.47) { chars[i] = kind === "'" ? "‘" : "“"; open[kind] = true }
+  }
+}
+
+/**
+ * 대시 길이 — 붙임표를 "–"·"—" 로, 긴 줄표를 "-" 로 읽은 자리를 획 길이(line-split dashRatio)로 다시 정한다. 0.65~0.75배 사이는 그대로.
+ * 긴 줄표로 늘리는 건 글자가 있는 줄의 머리 글머리("―상하수도요금")만 — 숫자뿐인 쪽 번호 "- 3 -" 은 띠가 낮게 잡히고, 숫자 사이
+ * "511-01" 은 스캔에서 번져 길게 잰다
+ */
+function dashes({ chars, cx, gray, w, h, ink }: Ctx) {
+  const head = chars.findIndex(c => c.trim()), letters = chars.some(c => /[가-힣A-Za-z]/.test(c))
+  for (let i = 0; i < chars.length; i++) {
+    if (!/^[-\u2013\u2014]$/.test(chars[i])) continue
+    const r = dashRatio(gray, w, h, ink, cx(i))
+    if (r === null) continue
+    if (r < 0.65) chars[i] = "-"
+    else if (r > 0.75 && i === head && letters) chars[i] = "\u2014"
   }
 }
 
@@ -192,9 +209,10 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
 function ring({ chars, cx, gray, w, h, ink }: Ctx): boolean {
   const k = chars.findIndex(c => c.trim())
   if (k < 0 || !/^[\u3147Oo0\u25cb]$/.test(chars[k])) return false
-  // 뒤 글이 한글이거나 여는 괄호 뒤 한글("❍(정책) 민생성장")
+  // 뒤 글이 한글이거나 여는 괄호 뒤 한글("❍(정책) 민생성장"), 숫자 뒤 한글("ｏ4대보험" 을 모델은 "04대보험" 으로 읽는다 — 숫자 0 은
+  // 세로로 길어 ringBullet 이 고리로 보지 않는다)
   const rest = chars.slice(k + 1).join("").trimStart()
-  if (!/^[(\[「【<]?[가-힣]/.test(rest)) return false
+  if (!/^[(\[「【<]?\d*[가-힣]/.test(rest)) return false
   const r = ringBullet(gray, w, h, ink, cx(k))
   if (r) chars[k] = r
   return r !== null

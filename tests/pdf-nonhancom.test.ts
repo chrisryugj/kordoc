@@ -389,4 +389,20 @@ describe("dropHeadBandClipGrids — 선 표 윗변의 되풀이 머리 행 클�
     // 중첩표(틀 칸 안 클립)는 대상이 아니다
     assert.equal(dropHeadBandClipGrids([{ ...band, clipParent: band.bbox }], [line]).length, 1)
   })
+  // 벼·고추 재배면적 통계표 실측: 머리 칸에만 클립이 칸 무리 셋(1x2·2x5·2x3)으로 갈리고, 본문 21행은 선만
+  const stat: TableGrid = { rowYs: [660.4, 648.4, 620.4, 63.7], colXs: [58.1, 125, 199, 273, 331, 404, 478, 536.3], bbox: { x1: 58.1, y1: 63.7, x2: 536.3, y2: 660.4 }, vertexRadius: 1 }
+  const clip = (colXs: number[], rowYs: number[]): TableGrid => ({
+    rowYs, colXs, vertexRadius: 1, bbox: { x1: colXs[0], y1: rowYs[rowYs.length - 1], x2: colXs[colXs.length - 1], y2: rowYs[0] },
+    cells: [cell(0, 0, colXs[0], rowYs[1], colXs[1], rowYs[0])],
+  })
+  const heads = [clip([58.1, 125, 196.3], [660.4, 620.4]), clip([196.3, 199, 273, 331, 402, 404.5], [660.4, 648.4, 620.4]), clip([401.7, 405, 478, 536.3], [660.4, 648.4, 620.4])]
+  it("머리 띠를 왼끝부터 오른끝까지 나눠 덮은 클립 격자들도 버린다", () => {
+    assert.equal(dropHeadBandClipGrids(heads, [stat]).length, 0)
+  })
+  it("머리 띠에 빈 곳이 있거나 본문을 덮는 클립이 있으면 둔다", () => {
+    assert.equal(dropHeadBandClipGrids(heads.slice(0, 2), [stat]).length, 2)
+    assert.equal(dropHeadBandClipGrids([heads[0], heads[2]], [stat]).length, 2)
+    const bodyClip = clip([58.1, 125, 199], [620.4, 600])
+    assert.equal(dropHeadBandClipGrids([...heads, bodyClip], [stat]).length, 4)
+  })
 })

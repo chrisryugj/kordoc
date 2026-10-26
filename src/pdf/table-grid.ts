@@ -430,10 +430,30 @@ export function dropHeadBandClipGrids(clipGrids: TableGrid[], lineGrids: TableGr
   if (clipGrids.length === 0 || lineGrids.length === 0) return clipGrids
   const near = (a: number, b: number) => Math.abs(a - b) <= SHADE_CLIP_TOL
   const overlaps = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => Math.min(a.x2, b.x2) > Math.max(a.x1, b.x1) && Math.min(a.y2, b.y2) > Math.max(a.y1, b.y1)
-  return clipGrids.filter(c => c.clipParent || !c.cells?.length || !lineGrids.some(l =>
+  const kept = clipGrids.filter(c => c.clipParent || !c.cells?.length || !lineGrids.some(l =>
     l.rowYs.length > c.rowYs.length && l.colXs.length === c.colXs.length && c.colXs.every((x, k) => near(x, l.colXs[k]))
     && c.rowYs.every((y, k) => near(y, l.rowYs[k]))
     && !clipGrids.some(o => o !== c && overlaps(o.bbox, l.bbox))))
+  return kept.filter(c => !lineGrids.some(l => headBandTiles(kept, l, near, overlaps).includes(c)))
+}
+
+/**
+ * 머리 띠를 클립 격자 여럿이 나눠 덮은 선 표 — 한컴이 머리 칸에만 클립을 걸고 가로로 이어 붙인 머리를 칸 무리마다 따로 클립했다
+ * (벼·고추 재배면적 통계표 "연도|벼|증감|증감률|고추…" = 1x2·2x5·2x3 클립 셋, 본문 21행은 선만). 선 격자 윗변에 붙고 아랫변이
+ * 선 격자 행 경계에 놓인 클립 격자들이 왼끝부터 오른끝까지 이어 덮고, 그 아래 선 격자를 덮는 다른 클립이 없으면 그 클립들을 돌려준다
+ */
+function headBandTiles(clips: TableGrid[], l: TableGrid, near: (a: number, b: number) => boolean,
+  overlaps: (a: TableGrid["bbox"], b: TableGrid["bbox"]) => boolean): TableGrid[] {
+  const onRow = (y: number) => l.rowYs.some(r => near(r, y))
+  const band = clips.filter(c => !c.clipParent && c.cells?.length && near(c.bbox.y2, l.bbox.y2) && c.bbox.y1 > l.bbox.y1 + SHADE_CLIP_TOL
+    && c.bbox.x1 >= l.bbox.x1 - SHADE_CLIP_TOL && c.bbox.x2 <= l.bbox.x2 + SHADE_CLIP_TOL && c.rowYs.every(onRow))
+    .sort((a, b) => a.bbox.x1 - b.bbox.x1)
+  if (band.length < 2 || !near(band[0].bbox.x1, l.bbox.x1) || !near(band[band.length - 1].bbox.x2, l.bbox.x2)) return []
+  // 이웃 클립은 맞닿거나 겹친다(겹선 안쪽 클립은 3pt 남짓 겹친다)
+  if (band.some((c, k) => k > 0 && c.bbox.x1 > band[k - 1].bbox.x2 + SHADE_CLIP_TOL)) return []
+  const bottom = Math.min(...band.map(c => c.bbox.y1))
+  const body = { ...l.bbox, y2: bottom }
+  return clips.some(o => !band.includes(o) && overlaps(o.bbox, body)) ? [] : band
 }
 
 /** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합 */

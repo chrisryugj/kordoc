@@ -45,7 +45,7 @@
 ## 4. 오픈소스 라이선스·취약점
 
 - **라이선스**: kordoc은 Apache-2.0이다. 배포 의존성(운영·선택) 118개는 전부 MIT·ISC·Apache-2.0·BSD 계열이다(GPL·AGPL 0건). jszip은 MIT/GPL 이중 라이선스라 MIT를 고른다. 출시 게이트가 `scripts/check-licenses.mjs`로 매번 검사하고, 허용 목록 밖이면 출시를 멈춘다. 포함한 제3자 저작물 고지는 `NOTICE`·`THIRD_PARTY/`에 있다.
-- **알려진 취약점**: `npm audit` 0건(운영·개발 의존성 모두, 2026-10-13).
+- **알려진 취약점**: `npm audit` 0건(운영·개발 의존성 모두, 2026-10-26). 출시 게이트(`prepublishOnly`)와 CI가 매번 `npm audit --audit-level=low`를 돌려 1건이라도 나오면 멈춘다. 저장소의 `package-lock.json`도 같은 기준이라, 클론해 `npm ci` 한 환경과 npm으로 새로 설치한 환경 모두 0건이다.
 - **SBOM**: `npm run sbom` → `sbom.cdx.json` (CycloneDX 1.5). 제출본은 도입하는 버전에서 새로 만든다.
 
 ## 5. 도입 기관 권장 설정

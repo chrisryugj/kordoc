@@ -62,8 +62,8 @@ const tableProfile = z.object({
   width_hwpunit: z.string().optional(),
   col_widths_hwpunit: z.array(z.string()).optional(),
   cells: z.array(cellProfile),
-  used_border_fills: z.record(borderFillDef),
-  used_char_prs: z.record(charPrDef).optional(),
+  used_border_fills: z.record(z.string(), borderFillDef),
+  used_char_prs: z.record(z.string(), charPrDef).optional(),
 })
 
 export const formatProfileSchema = z.object({

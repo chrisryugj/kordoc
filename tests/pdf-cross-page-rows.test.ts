@@ -456,6 +456,28 @@ describe("쪽 넘김 행 판정 — 번호 차례·항목 꼴·쪽 넘는 글 �
     assert.equal(res.table.cells[1][0].text, "준에 미달하게 된 경우")
   })
 
+  it("앞 조각에서 여러 행을 덮은 칸에 한 줄만 든 값 열은 다음 쪽 다른 한 줄 값과 새 행이다 (시험기준표 \"KS F 3218\" / \"비중 | KS M 3705\")", () => {
+    // 종별(쪽을 넘어 이어짐) | 시험종목 | 시험방법(앞 조각 3행 칸, 가운데 정렬 한 줄). 앞 쪽 끝 시험종목 칸은 글이 칸을 채워 이어짐처럼 보인다
+    const prev = grid(3, 3, [[0, 0, "비닐계 바닥재용접착제", 1, 3], [0, 1, "도포성"], [1, 1, "인장 접착 강도(바닥 타일)"], [2, 1, "90도 박리 접착 강도(바닥 시트)"], [0, 2, "KS F 3218", 1, 3]])
+    const curr = grid(2, 3, [[0, 0, null, 1, 2], [0, 1, "비중"], [1, 1, "실내공기 오염물질 방출량"], [0, 2, "KS M 3705"], [1, 2, "KS F 3218, KS M 1998"]])
+    // 앞 조각 행 기준선 80·60·40(쪽 바닥 30), 3행 칸 글은 가운데(60)
+    lines(prev.cells[0][0], [[3, 97, 60]])
+    lines(prev.cells[0][1], [[103, 130, 80]])
+    lines(prev.cells[1][1], [[103, 190, 60]])
+    lines(prev.cells[2][1], [[103, 197, 40]])
+    lines(prev.cells[0][2], [[230, 270, 60]])
+    lines(curr.cells[0][1], [[103, 115, 760]])
+    lines(curr.cells[1][1], [[103, 180, 775]])
+    lines(curr.cells[0][2], [[230, 270, 760]])
+    lines(curr.cells[1][2], [[212, 288, 775]])
+    ROW_RULES.set(prev, { top: true, bottom: true, innerRuled: 2, innerOpen: 0 })
+    ROW_RULES.set(curr, { top: true, bottom: true, innerRuled: 1, innerOpen: 0 })
+    const res = joinSplitParts(prev, [0, 100, 200, 300], curr, [0, 100, 200, 300], 0, 30)!
+    assert.equal(res.table.rows, 5)
+    assert.equal(res.table.cells[3][1].text, "비중")
+    assert.equal(res.table.cells[2][1].text, "90도 박리 접착 강도(바닥 시트)")
+  })
+
   it("수량으로 끝난 칸 뒤 쪽 조각이 \"미만\"·\"이상\" 으로 열면 같은 칸이다 (대기환경보전법 부과계수 머리 \"30%\" / \"미만\")", () => {
     // 좁은 칸에 가운데 정렬한 짧은 줄이라 끝줄이 칸을 채우지 않고, 쪽 경계에 괘선이 있다
     const make = (a: string, b: string, c: string): IRTable => grid(1, 3, [[0, 0, a], [0, 1, b], [0, 2, c]])
