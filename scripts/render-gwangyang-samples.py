@@ -29,5 +29,3 @@ try:
 finally:
     app.Quit()
 (root/'hancom-export.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf8')
-
-

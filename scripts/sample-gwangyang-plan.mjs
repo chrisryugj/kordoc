@@ -11,5 +11,3 @@ await writeFile(stem+'.hwpx',Buffer.from(bytes))
 await writeFile(stem+'.options.json',JSON.stringify(options,null,2))
 await writeFile(out+'/generation.json',JSON.stringify({engine:'local kordoc dist/index.js',options,warnings,postprocessing:false},null,2))
 console.log(warnings)
-
-

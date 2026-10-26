@@ -125,4 +125,3 @@ export function buildGwangyangExtended(block:GwangyangBlock,ctx:FrameCtx,images:
   const bottom=host(ftbl([cell(0,0,6500,6000,picture(GWANGYANG_EMBLEM,5200))+cell(0,1,15000,6000,para(cityText,reg.para({align:"LEFT",lineSp:110}),reg.char({font:ctx.frame.titleFont,pt:26,bold:true}))+deptXml)],21500,6000,2),reg.para({align:"CENTER",lineSp:100,before:600}),cp)
   return top+metadata+title+summary+bottom
 }
-
