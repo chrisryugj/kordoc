@@ -83,7 +83,7 @@ MCP 생성 도구에는 동일 마크다운과 `preset: "report"`, `agency: "광
 ```
 
 ```gwangyang
-{"type":"staff-header","title":"담당자","date":"2026. 10. 26.","staff":[{"role":"담당 팀장","name":"홍길동","phone":"0000"}]}
+{"type":"staff-header","title":"담당자","date":"2026. 10. 26.","staff":[{"role":"○○과장","name":"홍길동","phone":"0000"},{"role":"○○팀장","name":"김담당","phone":"0001"}]}
 ```
 
 ```gwangyang
