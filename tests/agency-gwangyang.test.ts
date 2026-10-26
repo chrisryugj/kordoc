@@ -96,3 +96,16 @@ it("1안 제목 띠는 원본 장식 2개를 패키지에 넣고 셀 배경으�
   assert.deepEqual(second.t, ["0.12 mm", "#000000", "DASH"])
   assert.deepEqual(second.b, second.t)
 })
+
+
+it("지역기관 크기 보정이 기존 경찰청 단계 크기를 덮어쓰지 않는다", () => {
+  for (const preset of ["report", "plan"] as const) {
+    const legacy = pickScheme(resolveGongmun({ preset, agency: "경찰청" }), true)
+    assert.deepEqual(legacy.levels.slice(0, 3).map(l => l.pt), [17, 15, 14])
+    const local = pickScheme(resolveGongmun({ preset, agency: " 광양시 " }), true)
+    assert.deepEqual(local.levels.slice(0, 3).map(l => l.pt), [16, 15, 15])
+    const explicit = pickScheme(resolveGongmun({ preset, agency: "광양시", bodyPt: 14 }), true)
+    const common = pickScheme(resolveGongmun({ preset, bodyPt: 14 }), true)
+    assert.deepEqual(explicit.levels.map(l => l.pt), common.levels.map(l => l.pt))
+  }
+})
