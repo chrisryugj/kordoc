@@ -17,6 +17,7 @@
  * 복제한 표·그림·도형은 id·instid·zOrder 를 새로 매긴다 — 견본 id 를 그대로 두면 한글이 개체를 잘못 집는다.
  */
 
+import { appendBorderFills, createBorderVariants, type BorderVariants } from "../roundtrip/border-variants.js"
 import { parseMarkdownToBlocks, buildPrvText, beginInlineDoc, endInlineDoc, extractFootnoteDefs, parseInlineMarkdown, type MdBlock } from "./md-runs.js"
 import { buildOutline, type OutlineNode } from "./outline.js"
 import { polishGongmunBlock } from "./gongmun-typo.js"
@@ -32,7 +33,7 @@ import { KordocError } from "../utils.js"
 import { loadTemplateZip, packTemplateZip } from "./template-zip.js"
 import {
   scanTemplate, fillParagraph, tableInfo, hostTable, elementAt, resetBreaks, lineRole, removeElements, dropNonChars, bodyText,
-  BAND_LABEL_RE, SUBTITLE_RE, type TemplateScan, type CellInfo, type RoleKey,
+  BAND_LABEL_RE, SUBTITLE_RE, type TemplateScan, type CellInfo, type TableInfo, type RoleKey,
 } from "./template-scan.js"
 
 export { scanTemplate, type TemplateScan, type RoleKey } from "./template-scan.js"
@@ -160,6 +161,8 @@ interface EmitCtx {
   notes: Set<string>
   /** 표 합계 행 위치 */
   totalRow: TotalRowPosition
+  /** 본문 행 테두리를 자리에 맞게 고친 변형 (header 에 덧붙임) */
+  borders: BorderVariants
 }
 
 /** 견본 바탕글 문단 — 본문 원형이 없을 때 */
@@ -254,13 +257,15 @@ function tableXml(ctx: EmitCtx, grid: Grid): string {
     middle: (c) => c.col > 0 && c.col + c.colSpan < info.colCnt,
   }
   const memo = new Map<string, CellInfo>()
-  const pick = (rk: string, ck: string): CellInfo => {
-    const key = `${rk}|${ck}`
+  // 본문 행은 자리(첫 행·가운데·마지막)가 같은 견본 행을 먼저 — 첫 본문 행 칸을 모든 행에 쓰면 윗변 머리 구분선이 행마다 그어졌다
+  const pick = (rk: string, ck: string, pos: "first" | "mid" | "last" = "first"): CellInfo => {
+    const key = `${rk}|${ck}|${pos}`
     const hit = memo.get(key)
     if (hit) return hit
     const n = info.rowCnt
     const body = [...Array(n).keys()].slice(1).filter((r) => r !== tplTotalRow)
-    const rows = rk === "header" ? [...Array(n).keys()] : rk === "total" ? [tplTotalRow!, ...body] : [...body, 0]
+    const prefer = pos === "mid" ? body.filter((r) => r > 1 && r < n - 1) : pos === "last" ? body.filter((r) => r === n - 1) : []
+    const rows = rk === "header" ? [...Array(n).keys()] : rk === "total" ? [tplTotalRow!, ...body] : [...prefer, ...body, 0]
     const order = ck === "middle" ? ["middle", "last", "first"] : ck === "last" ? ["last", "middle", "first"] : ["first", "middle", "last"]
     let found: CellInfo | undefined
     for (const k of order) {
@@ -285,7 +290,7 @@ function tableXml(ctx: EmitCtx, grid: Grid): string {
   const rowH = Array.from({ length: grid.rowCnt }, (_, r) => pick(rowKind(r), "first").height || 1500)
 
   const trs = Array.from({ length: grid.rowCnt }, (_, r) => (gByRow.get(r) ?? []).map((g) => {
-    const pc = pick(rowKind(g.r), colKind(g.c, g.cs))
+    const pc = pick(rowKind(g.r), colKind(g.c, g.cs), g.r <= 1 ? "first" : g.r + g.rs - 1 === grid.rowCnt - 1 ? "last" : "mid")
     const tcXml = proto.slice(pc.el.start, pc.el.end)
     let tc = applySplices(tcXml, pc.paras.length ? [{
       start: pc.paras[0].start - pc.el.start, end: pc.paras[pc.paras.length - 1].end - pc.el.start,
@@ -293,6 +298,7 @@ function tableXml(ctx: EmitCtx, grid: Grid): string {
     }] : [])
     const w = widths.slice(g.c, g.c + g.cs).reduce((a, b) => a + b, 0)
     const h = rowH.slice(g.r, g.r + g.rs).reduce((a, b) => a + b, 0)
+    if (g.r > 0) tc = placeRowBorders(ctx, proto, tc, info, byRow, g.r, g.r + g.rs - 1 === grid.rowCnt - 1, colKind(g.c, g.cs), fits)
     tc = tc.replace(/<hp:cellAddr\b[^>]{0,1024}\/>/, `<hp:cellAddr colAddr="${g.c}" rowAddr="${g.r}"/>`)
       .replace(/<hp:cellSpan\b[^>]{0,1024}\/>/, `<hp:cellSpan colSpan="${g.cs}" rowSpan="${g.rs}"/>`)
       .replace(/<hp:cellSz\b[^>]{0,1024}\/>/, `<hp:cellSz width="${w}" height="${h}"/>`)
@@ -307,6 +313,34 @@ function tableXml(ctx: EmitCtx, grid: Grid): string {
     .replace(/(<hp:sz\b[^>]{0,1024}?)\bwidth="\d+"/, `$1width="${tblW}"`).replace(/(<hp:sz\b[^>]{0,1024}?)\bheight="\d+"/, `$1height="${tblH}"`)
   const tbl = headPart + trs.map((t) => `<hp:tr>${t}</hp:tr>`).join("") + tblXml.slice(lastTr)
   return resetBreaks(proto.slice(0, info.el.start) + tbl + proto.slice(info.el.end))
+}
+
+/**
+ * 본문 행 칸 테두리를 자리에 맞게 — 원형 칸은 견본 첫 본문 행(윗변 = 머리 구분선)이나 마지막 행(아랫변 = 바깥선)에서 오므로 그대로 쓰면
+ * 모든 행에 이중선·굵은 바깥선이 그어졌다. 첫 본문 행만 윗변에 견본 머리 구분선을, 마지막 행만 아랫변에 견본 바깥선을 두고 나머지는
+ * 안쪽 가로선(견본 셋째 행부터의 윗변 → 원형 칸이 마지막 행이 아니면 그 아랫변 → 같은 칸 안쪽 세로선)으로
+ */
+function placeRowBorders(ctx: EmitCtx, proto: string, tc: string, info: TableInfo, byRow: Map<number, CellInfo[]>, row: number, isLast: boolean,
+  ck: string, fits: Record<string, (c: CellInfo) => boolean>): string {
+  const m = /^<hp:tc\b[^>]{0,4096}?\bborderFillIDRef="(\d+)"/.exec(tc)
+  if (!m) return tc
+  const id = Number(m[1])
+  const bfOf = (r: number) => {
+    const c = byRow.get(r)?.find(fits[ck]) ?? byRow.get(r)?.[0]
+    const b = c && /^<hp:tc\b[^>]{0,4096}?\bborderFillIDRef="(\d+)"/.exec(proto.slice(c.el.start, c.el.end))
+    return b ? ctx.borders.sides(Number(b[1])) : null
+  }
+  const own = ctx.borders.sides(id)
+  if (!own) return tc
+  const lastTpl = info.rowCnt - 1
+  let inner: string | undefined
+  for (let r = 2; r <= lastTpl && !inner; r++) inner = bfOf(r)?.top
+  if (!inner) inner = info.rowCnt > 2 ? bfOf(1)?.bottom : ck === "last" ? own.left : own.right
+  if (!inner) return tc
+  const top = row === 1 ? bfOf(1)?.top ?? own.top : inner
+  const bottom = isLast ? bfOf(lastTpl)?.bottom ?? own.bottom : inner
+  const nid = ctx.borders.variant(id, { top, bottom })
+  return nid === id ? tc : tc.slice(0, m.index + m[0].length - m[1].length - 1) + nid + tc.slice(m.index + m[0].length - 1)
 }
 
 /** 견본에 표 원형이 없을 때 — 실선 테두리 기본 표 (header 에 borderFill 하나 덧붙임) */
@@ -578,6 +612,7 @@ function appendHeader(ctx: EmitCtx): string {
     const inj = injectCellBorderFill(headerXml, ctx.fallbackBf.id)
     if (inj) headerXml = applySplices(headerXml, inj.headerSplices)
   }
+  headerXml = appendBorderFills(headerXml, ctx.borders.added())
   if (ctx.centered.size) {
     let added = ""
     for (const [from, to] of [...ctx.centered].sort((a, b) => Number(a[1]) - Number(b[1]))) {
@@ -617,9 +652,13 @@ export async function markdownToHwpxFromTemplate(markdown: string, template: Uin
   const { blocks, contact, sub } = takeHeadLines(parsed.filter((b) => !imageOnly.includes(b)))
 
   const maxId = (re: RegExp) => maxOf([...headerXml.matchAll(re)].map((m) => Number(m[1])))
+  const fallbackBfId = maxId(/<hh:borderFill\b[^>]{0,4096}?\bid="(\d{1,10})"/g) + 1
+  // 테두리 변형은 견본 표 원형이 있을 때만 생기고, 그때는 대체 테두리(fallbackBf)를 쓰지 않는다 — 같은 번호부터 잇는다
+  let nextBf = fallbackBfId
   const ctx: EmitCtx = {
     scan, headerXml, warnings,
-    fallbackBf: { id: maxId(/<hh:borderFill\b[^>]{0,4096}?\bid="(\d{1,10})"/g) + 1, used: false },
+    fallbackBf: { id: fallbackBfId, used: false },
+    borders: createBorderVariants(headerXml, () => nextBf++),
     centered: new Map(), nextParaPr: maxId(/<hh:paraPr\b[^>]{0,4096}?\bid="(\d{1,10})"/g) + 1,
     missing: new Set(), notes: new Set(),
     // 합계 행은 맨 위가 공문 관행 — 견본은 머리행·본문행 서식(칸 좌표 서식이 아님)이라 프로필과 달리 옮겨도 된다

@@ -565,7 +565,9 @@ export function gapGlyphs(gray: Uint8Array, w: number, h: number, ink: InkStats)
     const dot = ch <= bh * 0.25 && cw <= bh * 0.25 && ch >= speck && cw >= speck && cw >= ch * 0.6 && cw <= ch * 1.6
     // 이웃 글자와 x 가 겹치거나(촘촘한 글꼴 "개발·보급") 2px 까지 작은 둥근 점은 공백 자리 대체용으로만 — 한글 자모엔 떨어진 둥근 점이 없다
     const small = ch <= bh * 0.25 && cw <= bh * 0.25 && ch >= 2 && cw >= 2 && cw >= ch * 0.6 && cw <= ch * 1.6 && fill >= 0.6 && cy >= 0.3 && cy <= 0.7
-    if (!apart && !abut && !(nearlyApart && ch >= bh * 0.6)) { if (small) out.push({ x0: c.x0, x1: c.x1, mark: "\u00b7\u0001" }); continue }
+    // 아래쪽 점은 이웃과 x 가 겹치지만 않으면(빈 열 없이 맞닿음) 본다 — 날짜 끝 마침표 뒤에 쉼표가 붙은 "2013.3.23.,2014.11.19." 의 "." (교육청 공문서 지침)
+    const flushDot = !apart && dot && fill >= 0.6 && cy >= 0.75 && cw >= ch * 0.8 && !others.some(o => o.x0 < c.x1 && o.x1 > c.x0)
+    if (!apart && !abut && !flushDot && !(nearlyApart && ch >= bh * 0.6)) { if (small) out.push({ x0: c.x0, x1: c.x1, mark: "\u00b7\u0001" }); continue }
     // 줄기 쪽 — 가로 변을 뺀 줄의 잉크 x 평균(폭 비). 「 는 왼쪽, 」 는 오른쪽 (한글 ㄱ·ㄴ 은 반대쪽이라 걸리지 않는다)
     const bracket = (): string | null => {
       const stem = (from: number, to: number) => {
@@ -577,7 +579,8 @@ export function gapGlyphs(gray: Uint8Array, w: number, h: number, ink: InkStats)
       if (c.y1 >= bandB - bh * 0.15 && bottom >= 0.7 && top <= 0.5 && stem(c.y0, c.y1 - band) >= 0.65) return "\u300d"
       return null
     }
-    if (!apart && !abut) { /* 빗금 후보만 아래에서 */ } else if (abut) { if (fill < 0.5) mark = bracket() } else if (dot && fill >= 0.6 && cy >= 0.3 && cy <= 0.7) mark = "\u00b7"
+    if (flushDot) mark = "."
+    else if (!apart && !abut) { /* 빗금 후보만 아래에서 */ } else if (abut) { if (fill < 0.5) mark = bracket() } else if (dot && fill >= 0.6 && cy >= 0.3 && cy <= 0.7) mark = "\u00b7"
     else if (small) mark = "\u00b7\u0001"
     else if (dot && fill >= 0.6 && cy >= 0.75 && cw >= ch * 0.8) mark = "." // 꼬리 달린 쉼표(세로로 긴 점)는 빼고
     else if (ch <= bh * 0.4 && ch >= speck && cw >= ch * 0.75 && cw <= ch * 1.3 && fill < 0.6 && runs[ch >> 1] === 2 && cy >= 0.6) mark = "\u3002"
@@ -777,10 +780,13 @@ export function bracketShape(f: BracketFeatures, close: boolean): string | null 
  *   ◎ 이중 원 — 성분 둘 이상이 안팎으로 겹치고 속이 빈 둥근 조각 (함평 계획 21개가 "O")
  *   ● 큰 속 찬 원 — 채움 0.65~0.88(원 π/4≈0.79), 글자 높이 0.45배 이상 (교육청 안내문 17개가 "•"·누락)
  *   ▪ 작은 속 찬 네모 — 채움 0.9 이상, 글자 높이 0.28~0.6배 (가운뎃점 "·" 은 0.21배 안팎)
+ *   ❐·❏ 그림자 진 네모 — 오른쪽과 위(❐)·아래(❏) 변이 맞은편보다 1.8배 넘게 두꺼운 네모 (모델은 자모 ㅁ 으로 읽는다)
+ *   ‣ 오른쪽 삼각 — 줄마다 한 토막이 왼끝에서 시작하고 가운데 줄이 가장 긴 글자 높이 0.3~0.7배 조각 (모델은 → 로 읽는다)
+ *   ▣ 속 찬 네모를 품은 네모 — 바깥 네모 테두리 + 가운데 속 찬 정사각, 글자 높이 0.6~0.92배
  * 속 빈 원(○·ㅇ·❍)은 픽셀로 못 가르니 건드리지 않는다. firstX 는 첫 인식 글자의 CTC 자리(박스 로컬) —
  * 덩어리가 그 앞에서 끝나면 인식에서 빠진 것, 그 글자 자리에 걸치면 그 글자가 이 기호를 잘못 읽은 것이다
  */
-export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkStats, firstX: number): { mark: "◎" | "●" | "▪" | "□"; covers: boolean } | null {
+export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkStats, firstX: number): { mark: "◎" | "●" | "▪" | "□" | "▣" | "❐" | "❏" | "‣"; covers: boolean } | null {
   const { comps, label } = components(gray, w, h, ink)
   let charH = 0
   for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
@@ -791,6 +797,23 @@ export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkSt
   const cl = cand.filter(c => c.x0 < first.x1 && c.x1 > first.x0)
   const x0 = Math.min(...cl.map(c => c.x0)), x1 = Math.max(...cl.map(c => c.x1)), y0 = Math.min(...cl.map(c => c.y0)), y1 = Math.max(...cl.map(c => c.y1))
   const cw = x1 - x0, ch = y1 - y0
+  // 오른쪽 삼각 글머리 ‣ — 줄마다 한 토막이 모두 왼끝에서 시작하고 가운데 줄이 가장 길다(서울기록원 지침 "‣ 기록관리기준표 …",
+  // 모델은 → 로 읽거나 빠뜨림). 화살표 → 는 머리 쪽 줄이 왼끝에서 시작하지 않는다
+  if (cl.length === 1 && cw >= ch * 0.55 && cw <= ch * 1.1 && ch >= charH * 0.3 && ch <= charH * 0.7) {
+    const runs: number[] = []
+    let aligned = true
+    for (let y = y0; y < y1 && aligned; y++) {
+      let first = -1, last = -1, segs = 0, prev = false
+      for (let x = x0; x < x1; x++) { const on = label[y * w + x] === cl[0].id; if (on) { if (!prev) segs++; if (first < 0) first = x; last = x } prev = on }
+      aligned = segs === 1 && first - x0 <= Math.max(1, cw * 0.15)
+      runs.push(last - first + 1)
+    }
+    const peak = runs.indexOf(Math.max(...runs))
+    if (aligned && Math.abs(peak - ch / 2) <= ch * 0.2 && runs[0] <= cw * 0.45 && runs[runs.length - 1] <= cw * 0.45 && Math.max(...runs) >= cw * 0.85) {
+      const next = cand.find(c => c.x0 >= x1)
+      if (!next || next.x0 - x1 >= ch * 0.3) return { mark: "\u2023", covers: firstX <= x1 + ch * 0.3 }
+    }
+  }
   if (cw < ch * 0.8 || cw > ch * 1.25) return null
   // 덩어리 뒤에 틈이 있어야 글머리다 (글자 획이 아님). 기호 하나만 든 상자(목차 열의 ◎)는 뒤가 비어 있다
   const next = cand.find(c => c.x0 >= x1)
@@ -811,8 +834,30 @@ export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkSt
   let midRuns = 0
   { let prev = false; const my = y0 + (ch >> 1); for (let x = x0; x < x1; x++) { const on = cl.some(c => label[my * w + x] === c.id); if (on && !prev) midRuns++; prev = on } }
   const hollowSquare = cl.length === 1 && fill < 0.5 && midRuns === 2 && edgeFull(y0, 1) && edgeFull(y1 - 1, -1)
-  let mark: "\u25ce" | "\u25cf" | "\u25aa" | "\u25a1" | null = null
-  if (hollowSquare && rel >= 0.6 && rel <= 0.92) mark = "\u25a1"
+  // 속 찬 네모를 품은 네모 ▣ — 바깥 조각 위아래 변이 차고, 안쪽 조각이 가운데 놓인 속 찬 정사각(선거 사례집 "▣ 선거별 법정 일자")
+  const core = cl.length === 2 ? cl.find(b => cl.some(a => a !== b && b.x0 > a.x0 && b.x1 < a.x1 && b.y0 > a.y0 && b.y1 < a.y1)) : undefined
+  const coreFill = (() => {
+    if (!core) return 0
+    let k = 0
+    for (let y = core.y0; y < core.y1; y++) for (let x = core.x0; x < core.x1; x++) if (label[y * w + x] === core.id) k++
+    return k / ((core.x1 - core.x0) * (core.y1 - core.y0))
+  })()
+  const filledSquare = !!core && coreFill >= 0.85 && ring(core) && Math.abs((core.x0 + core.x1) - (x0 + x1)) <= cw * 0.2
+    && Math.abs((core.y0 + core.y1) - (y0 + y1)) <= ch * 0.2 && edgeFull(y0, 1) && edgeFull(y1 - 1, -1)
+  // 그림자 진 네모 — 오른쪽 변과 위·아래 한 변이 맞은편보다 1.8배 넘게 두껍다(농진청 계획 "❐ 글로벌 경쟁 …", 모델은 자모 ㅁ 으로 읽음).
+  // 획 두께는 가운데 가로줄·세로줄에서 바깥 끝부터 이어진 잉크 길이. 자모 ㅁ·□ 는 네 변 두께가 고르다
+  const run = (x: number, y: number, dx: number, dy: number) => { let n = 0; while (x >= x0 && x < x1 && y >= y0 && y < y1 && cl.some(c => label[y * w + x] === c.id)) { n++; x += dx; y += dy } return n }
+  const my0 = y0 + (ch >> 1), mx0 = x0 + (cw >> 1)
+  // 비율만 보면 가는 획(1px·2px)에서 갈린다 — 그림자 쪽이 실제로 몇 px 더 두꺼워야 한다(web044 "□ (경과)" 아랫변 2px·윗변 1px)
+  const thin = (a: number, b: number) => a > 0 && b >= a * 1.8 && b - a >= Math.max(3, ch * 0.08)
+  const boxed = cl.length === 1 && midRuns === 2 && edgeFull(y0, 1) && edgeFull(y1 - 1, -1) && thin(run(x0, my0, 1, 0), run(x1 - 1, my0, -1, 0))
+  const top = run(mx0, y0, 0, 1), bottom = run(mx0, y1 - 1, 0, -1)
+  // 오른쪽 위 그림자 ❐(U+2750) · 오른쪽 아래 그림자 ❏(U+274F)
+  const shadow = !boxed ? null : thin(bottom, top) ? "\u2750" : thin(top, bottom) ? "\u274f" : null
+  let mark: "\u25ce" | "\u25cf" | "\u25aa" | "\u25a1" | "\u25a3" | "\u2750" | "\u274f" | null = null
+  if (shadow && rel >= 0.6 && rel <= 0.92) mark = shadow
+  else if (hollowSquare && rel >= 0.6 && rel <= 0.92) mark = "\u25a1"
+  else if (filledSquare && rel >= 0.6 && rel <= 0.92) mark = "\u25a3"
   else if (nested && fill < 0.45 && rel >= 0.6) mark = "\u25ce"
   else if (cl.length === 1 && fill >= 0.9 && rel >= 0.28 && rel <= 0.6) mark = "\u25aa"
   else if (cl.length === 1 && fill >= 0.65 && fill <= 0.88 && rel >= 0.5 && rel <= 0.8) mark = "\u25cf"

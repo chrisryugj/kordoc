@@ -239,6 +239,38 @@ describe("leadingBullet — 사전 밖·작은 점으로 읽히거나 빠지는 
     }
   }
   const text = (g: Uint8Array, w: number) => rect(g, w, 60, 6, 110, 34) // 뒤 글자 (글자 높이 28)
+  it("왼끝이 곧은 오른쪽 삼각형은 ‣, 줄기 달린 화살표는 아니다", () => {
+    const w = 120, h = 40
+    const tri = canvas(w, h)
+    for (let y = 13; y < 28; y++) { const half = 7 - Math.abs(y - 20); rect(tri, w, 12, y, 12 + Math.max(1, Math.round(half * 1.7)), y + 1) }
+    text(tri, w)
+    assert.deepEqual(leadingBullet(tri, w, h, inkStats(tri), 18), { mark: "\u2023", covers: true })
+    const arrow = canvas(w, h)
+    rect(arrow, w, 8, 19, 30, 22) // 줄기
+    for (let y = 13; y < 28; y++) { const half = 7 - Math.abs(y - 20); rect(arrow, w, 30 - half, y, 32, y + 1) } // 머리
+    text(arrow, w)
+    assert.notEqual(leadingBullet(arrow, w, h, inkStats(arrow), 18)?.mark, "\u2023")
+  })
+  it("오른쪽·위 변이 두꺼운 그림자 네모는 ❐ — 자모 ㅁ 으로 읽은 자리(covers)도 표시한다, 네 변이 고르면 □", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    rect(g, w, 10, 9, 34, 15); rect(g, w, 10, 29, 34, 31); rect(g, w, 10, 9, 12, 31); rect(g, w, 28, 9, 34, 31) // 위 6px·오른쪽 6px, 아래·왼쪽 2px
+    text(g, w)
+    assert.deepEqual(leadingBullet(g, w, h, inkStats(g), 22), { mark: "\u2750", covers: true })
+    const low = canvas(w, h)
+    rect(low, w, 10, 9, 34, 11); rect(low, w, 10, 25, 34, 31); rect(low, w, 10, 9, 12, 31); rect(low, w, 28, 9, 34, 31) // 아래·오른쪽이 두꺼우면 ❏
+    text(low, w)
+    assert.equal(leadingBullet(low, w, h, inkStats(low), 22)?.mark, "\u274f")
+  })
+  it("속 찬 네모를 품은 네모는 ▣ — 인식에서 빠졌으면(첫 글자 자리가 뒤) covers 거짓", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    rect(g, w, 10, 9, 33, 11); rect(g, w, 10, 29, 33, 31); rect(g, w, 10, 9, 12, 31); rect(g, w, 31, 9, 33, 31) // 바깥 테두리 23×22
+    rect(g, w, 16, 14, 27, 26) // 가운데 속 찬 네모
+    text(g, w)
+    assert.deepEqual(leadingBullet(g, w, h, inkStats(g), 85), { mark: "\u25a3", covers: false })
+    const hollow = canvas(w, h)
+    rect(hollow, w, 10, 9, 33, 11); rect(hollow, w, 10, 29, 33, 31); rect(hollow, w, 10, 9, 12, 31); rect(hollow, w, 31, 9, 33, 31); text(hollow, w)
+    assert.equal(leadingBullet(hollow, w, h, inkStats(hollow), 85)?.mark, "\u25a1")
+  })
   it("안팎으로 겹친 두 고리는 ◎", () => {
     const w = 120, h = 40, g = canvas(w, h)
     disc(g, w, 22, 20, 12, 2); disc(g, w, 22, 20, 6, 2); text(g, w)
@@ -304,6 +336,19 @@ describe("circledAt — 원문자 숫자 (모델이 고리를 버리고 숫자�
     rect(g, w, 90, 6, 92, 34); rect(g, w, 99, 10, 102, 30); rect(g, w, 109, 6, 111, 34) // ( 1 )
     rect(g, w, 120, 6, 138, 34) // 한글 글자 (글자 높이 28)
     assert.deepEqual(circledAt(g, w, h, inkStats(g), [20, 61, 100]), [true, false, false])
+  })
+})
+
+describe("gapGlyphs — 쉼표에 맞닿은 날짜 끝 마침표", () => {
+  it("빈 열 없이 쉼표와 맞닿아도 x 가 겹치지 않는 아래쪽 점은 . 이다", () => {
+    const w = 120, h = 40
+    const g = canvas(w, h)
+    rect(g, w, 10, 6, 24, 34) // 숫자
+    rect(g, w, 26, 29, 30, 33) // 마침표
+    rect(g, w, 30, 34, 33, 39) // 쉼표 — 마침표 끝 열 바로 다음 열부터(빈 열 없음), 픽셀은 떨어짐
+    rect(g, w, 40, 6, 54, 34) // 숫자
+    const { glyphs } = gapGlyphs(g, w, h, inkStats(g))
+    assert.ok(glyphs.some(o => o.mark === "." && o.x0 === 26), JSON.stringify(glyphs))
   })
 })
 

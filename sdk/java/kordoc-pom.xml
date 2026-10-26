@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pom.xml 이 아닌 이름 — 정부 GitLab 미러의 저장소 보안 검사(OSV-Scanner·Trivy)는 pom.xml 을 보면 Maven Central 에서
+  전이 의존성을 받아 풀려고 하는데, 그 서버는 해외로 나가지 못해 검사가 매달리고 push 가 120초 만에 502 로 끊겼다.
+  (examples/consumer/consumer-pom.xml 과 같은 사정.) 의존성 취약점은 GitHub CI(java-sdk 잡)가 OSV-Scanner 로 이 파일을 명시해 검사한다.
+  실행: mvn -f sdk/java/kordoc-pom.xml verify
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">

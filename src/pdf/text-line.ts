@@ -86,9 +86,13 @@ export function sortLineByX<T extends { x: number; seq?: number; w?: number; fon
 // Hidden text 필터링 (prompt injection 방어)
 // ═══════════════════════════════════════════════════════
 
-/** 한자·가나와 라틴 글자·숫자 사이의 좁은 틈(글자 크기 0.3배 미만)인가 — 조판기의 아시아-라틴 자동 간격이라 공백이 아니다(한글 제외) */
-export function isCjkLatinAutospace(prevText: string, nextText: string, gap: number, fontSize: number): boolean {
-  if (!(gap < fontSize * 0.3)) return false
+/** 한자·가나와 라틴 글자·숫자 사이의 좁은 틈(글자 크기 0.35배 미만)인가 — 조판기의 아시아-라틴 자동 간격이라 공백이 아니다(한글 제외).
+ *  LibreOffice 는 이 간격을 0.2~0.3em 공백 글리프로 찍는다 — 정확히 0.3em(kpipa 계약서 일문 "第⏎3者" 3.00pt/10pt)이 경계에 걸려 띄워졌다.
+ *  원문에 띄어쓰기가 있으면 자동 간격에 공백 폭이 더해져 0.45em 을 넘는다 */
+export function isCjkLatinAutospace(prevText: string, nextText: string, gap: number, fontSize: number, hangulLine = false): boolean {
+  if (!(gap < fontSize * 0.35)) return false
+  // 한글 줄 속 한자 약칭 뒤 띄어쓰기는 진짜 공백이다("中 H형강" — 한컴 글꼴 공백이 0.3em 남짓으로 좁고, "H" 는 영문 글꼴 조각이라 줄 전체로 본다)
+  if (hangulLine) return false
   const a = prevText.slice(-1), b = nextText[0] ?? ""
   const cjk = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/, latin = /[A-Za-z0-9]/
   return (cjk.test(a) && latin.test(b)) || (latin.test(a) && cjk.test(b))
@@ -530,6 +534,7 @@ export function mergeLineSimple(items: TextItem[]): string {
 
   // 좌표 기반 균등배분 감지 (ODL TextLineProcessor 방식)
   const isEvenSpaced = detectEvenSpacedItems(sorted)
+  const hangulLine = sorted.some(it => /[가-힣]/.test(it.text))
 
   let result = sorted[0].text
   for (let i = 1; i < sorted.length; i++) {
@@ -554,7 +559,7 @@ export function mergeLineSimple(items: TextItem[]): string {
     // 한자·가나와 라틴 글자·숫자 사이의 좁은 틈(글자 크기 0.3배 미만)은 조판기의 아시아-라틴 자동 간격이다 — 원문에 공백이 없다.
     // pdfjs 는 이 틈에도 공백 아이템을 만들어 넣으니 아래 공백 힌트보다 먼저 본다
     // ("第1条"·"1番地" 가 "第 1 条"·"1 番地" 로, LibreOffice·Word 일본어·중국어 문서). 한글은 "1 번지" 처럼 실제로 띄어 써 제외
-    if (isCjkLatinAutospace(sorted[i - 1].text, sorted[i].text, gap, avgFs)) {
+    if (isCjkLatinAutospace(sorted[i - 1].text, sorted[i].text, gap, avgFs, hangulLine)) {
       result += sorted[i].text
       continue
     }

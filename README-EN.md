@@ -105,35 +105,35 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables and OCR: 4.24.8 · 2026-10-26). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables and OCR: 4.24.11 · 2026-10-27). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
-| PDF text | 744 pairs | Character recall **99.881%** · precision **99.676%** · reading order **99.309%** · word-boundary F1 **99.064%** |
-| PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.20%** · cell F1 **0.9919** |
+| PDF text | 744 pairs | Character recall **99.881%** · precision **99.677%** · reading order **99.309%** · word-boundary F1 **99.066%** |
+| PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **342/346 · 98.84%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
-| OCR | 53 documents · 102 pages · 67 tables | CER **0.0314** · character recall **99.05%** · table structure **25/67** |
+| OCR | 53 documents · 102 pages · 67 tables | CER **0.0306** · character recall **99.12%** · table structure **25/67** |
 | opendataloader-bench | 200 PDF documents | Overall **0.964** with defaults · **0.939** with OCR off |
-| HWPX render layout (4.24.8) | Hancom PDF pairs · 90,906 text runs · 4,107 images | Text position (±1.5pt) **87,620 · 96.4%** · image position (±2pt) **4,019 · 97.9%** |
+| HWPX render layout (4.24.11) | Hancom PDF pairs · 90,840 text runs · 4,107 images | Text position (±1.5pt) **87,577 · 96.4%** · image position (±2pt) **4,019 · 97.9%** |
 
 Table structure, cell content and visual fidelity are separate metrics. The nested-table 100% applies only to these 101 tables, not all PDF parsing or page layout. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions, per-option scores and reproduction.
 
 ## Recent updates
 
-Latest release: **[4.24.8](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.8)** · 2026-10-26
+Latest release: **[4.24.11](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.11)** · 2026-10-27
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.11 | OCR: detection boxes split at table cell and row boundaries, date commas, 前/現 before titles · Rendering: page-number font size · Generation: Seoul policy-plan title spacing and summary alignment | OCR CER 0.0310 → **0.0306** · character recall 99.10% → **99.12%** · rendered text position 87,546 → **87,577** · generation fidelity 0.806 → **0.807** |
+| 4.24.10 | Security: zod and fast-uri in the demo lockfile, government GitLab mirror restored (Java SDK `kordoc-pom.xml`) · OCR: leading ▣, ❐ and ‣ bullets, Roman numerals read as `\|`, date-final periods · PDF: vertical-writing 、。, gradient backgrounds taken as rules, CJK–Latin autospacing | OCR CER 0.0313 → **0.0310** · character recall 99.06% → **99.10%** · all 9 degraded-input variants improved (scan 0.0734 → **0.0730**) · PDF word-boundary F1 99.064% → **99.066%** |
+| 4.24.9 | Double rules on every row of tables built from a template or grown by patch · OCR: leading ○ bullets the recognizer dropped · PDF: tables split across pages no longer swallow the next page's first row | OCR CER 0.0314 → **0.0313** · blurred-input OCR CER 0.0638 → **0.0635** · PDF table structure 98.20% → **98.24%** |
 | 4.24.8 | Security: known dependency vulnerabilities 6 → 0 (zod 4, MCP SDK transitive dependencies), `npm audit` gate in release and CI · OCR: leading ring bullets read as digits, 「 touching the next character · PDF: statistics tables clipped only in header cells | `npm audit` 6 → **0** · OCR CER 0.0327 → **0.0314** · blurred-input OCR CER 0.0663 → **0.0638** · PDF reading order 99.307% → **99.309%** |
 | 4.24.7 | Template generation: the table-of-contents box is no longer taken as the summary box, indented lists under marker paragraphs keep their level · HWPML: non-breaking and fixed-width spaces, line breaks · OCR: background pattern at line ends, numeric columns merged into the header row, hyphen and dash length | OCR CER 0.0332 → **0.0327** · character recall 99.02% → **99.04%** |
-| 4.24.6 | OCR: budget-statement sub-rows (expense codes and item lines), coloured header bands split into cells, two stacked lines inside a cell no longer swapped · PDF: four-glyph vertical side tabs · Rendering: page-number restarts · HWPX: whitespace in indented XML | OCR CER 0.0409 → **0.0332** · OCR table structure 24 → **25/67** · rendered text position 87,509 → **87,620** · PDF reading order 99.302% → **99.307%** |
-| 4.24.5 | PDF: line-drawn fraction bars restored as equations, false borderless tables from monospace lines, overprinted table-of-contents page numbers · OCR: sub-rows stacked without rules, faint white dividers in coloured header bands, no underline markup on OCR text · HWPX·HWP: below-table captions in reading order | PDF reading order 99.247% → **99.302%** · annex equations 7 → **11/11** · OCR table structure 21 → **24/67** |
-| 4.24.4 | Rendering: overfull lines shrink spaces to 20% then every glyph, cell heights grown by floating objects, documents authored with a KoPub substitute font, page-bottom row checks · PDF: cell edges crossed by a neighbouring cell's rule | Rendered text positions 87,289 → **87,509** (new measurement basis) · images 4,017 → **4,019** · PDF table structure 98.16% → **98.20%** |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

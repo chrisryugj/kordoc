@@ -119,8 +119,14 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+          cache-dependency-path: sdk/java/kordoc-pom.xml
+      # kordoc-pom.xml 은 pom.xml 이름이 아니라 GitLab 미러 보안 검사가 건너뛴다 — Java 의존성(전이 포함) 취약점은 여기서 막는다
+      - uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        with:
+          scan-args: |-
+            --lockfile=pom.xml:sdk/java/kordoc-pom.xml
       - name: 테스트·JAR·sources JAR (실제 엔진·Node parse() 결과 동등성·장애 주입)
-        run: mvn -B -f sdk/java/pom.xml install
+        run: mvn -B -f sdk/java/kordoc-pom.xml install
       - name: 별도 Maven 예제가 설치한 JAR 로 실제 파싱
         run: |
           mvn -B -q -f sdk/java/examples/consumer/consumer-pom.xml compile exec:java -Dexec.args="'$KORDOC_SDK_FIXTURES/중첩 표.hwpx' --gfm" > "$RUNNER_TEMP/java-example.md"

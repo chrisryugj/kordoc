@@ -99,6 +99,17 @@ describe("extractLines — 칸 테두리 선이 아닌 선 (nonRules)", () => {
     const rule = r.horizontals.find(l => Math.abs(l.y1 - 500.25) < 0.01)
     assert.ok(rule && !r.nonRules.has(rule))
   })
+
+  it("맞붙은 그러데이션 채움 띠는 괘선이 아니다, 이중선 채움 괘선은 괘선이다", () => {
+    // 한글 PDF 그러데이션: 0.45pt 띠를 m/l/l/l/h 채움으로 수십 개 맞붙인다 (대광위 보도자료 "목표" 상자)
+    const band = (y: number): Ops => ({ fn: [OPS.constructPath, OPS.fill], args: [[[OPS.moveTo, OPS.lineTo, OPS.lineTo, OPS.lineTo, OPS.closePath], [-311, y, 536.7, y, 536.7, y + 0.45, -311, y + 0.45]], []] })
+    const bands = concat(...Array.from({ length: 40 }, (_, k) => band(600 + k * 0.45)))
+    const g = extractLines(bands.fnArray, bands.argsArray)
+    assert.equal(g.horizontals.filter(l => l.y1 >= 599 && l.y1 <= 620).length, 0)
+    const dbl = concat(band(500), band(501.5))
+    const d = extractLines(dbl.fnArray, dbl.argsArray)
+    assert.equal(d.horizontals.filter(l => l.y1 >= 499 && l.y1 <= 503).length, 4)
+  })
 })
 
 describe("recordClipCellEdges — 클립 격자 칸에만", () => {

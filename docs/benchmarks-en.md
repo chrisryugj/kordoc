@@ -2,6 +2,44 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.11: OCR, rendering and generation · 2026-10-27
+
+Compared document by document against 4.24.10 on the same corpora and scorers: OCR, degraded inputs and ODL OCR (rounds 115, 116, 118, 119), rendered text and image positions and page counts (112), and generation fidelity and round trip (113). PDF text, table and annex code is unchanged. The two exceptions are listed in the changelog.
+
+| Metric | 4.24.10 | 4.24.11 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.03096 · 0.06255 | **0.03055 · 0.06215** |
+| OCR character recall | 0.99100 | **0.99121** |
+| Degraded-input OCR CER (clean · blur · JPEG · scan) | 0.0476 · 0.0631 · 0.0504 · 0.0730 | **0.0475 · 0.0630 · 0.0503 · 0.0730** |
+| Rendered text position (same measurement) | 87,546/90,840 | **87,577/90,840** |
+| Generation fidelity (mean of 5) | 0.80596 | **0.80681** |
+| PDF text · tables · statute annexes · ODL · round trip · image position · page count | — | unchanged |
+
+## 4.24.10: security, OCR and PDF · 2026-10-26
+
+Compared document by document against 4.24.9 on the same corpora and scorers for OCR, degraded inputs, PDF text and tables, statute annexes and ODL (no regressions; HWPX, round-trip, generation and rendering code is unchanged). This release fixes the vulnerable demo lockfile and the Java SDK build-file name that blocked the government GitLab mirror, plus OCR leading bullets (▣, ❐, ‣), Roman numerals read as a vertical bar and date-final periods, and PDF vertical-writing 、。, gradient backgrounds taken as rules and CJK–Latin autospacing.
+
+| Metric | 4.24.9 | 4.24.10 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.03128 · 0.06278 | **0.03096 · 0.06255** |
+| OCR character recall | 0.99064 | **0.99100** |
+| Degraded-input OCR CER (clean · skew +1 · noise · blur · JPEG · scan) | 0.0481 · 0.0557 · 0.0530 · 0.0635 · 0.0508 · 0.0734 | **0.0476 · 0.0553 · 0.0526 · 0.0631 · 0.0504 · 0.0730** |
+| PDF text precision · word-boundary F1 | 0.99676 · 0.99064 | **0.99677 · 0.99066** |
+| PDF table content NED | 0.98794 | **0.98795** |
+| Statute annexes · ODL · HWPX · round-trip · generation · rendering | — | unchanged |
+
+## 4.24.9: table borders, OCR and PDF tables · 2026-10-26
+
+Same corpora and scorers as 4.24.8; every suite benchmark compared per document (no regressions). Fixes double rules on every row of tables built from a template or grown by patch (round-trip and generation benchmarks unchanged — borders are not scored, so regression tests pin them), leading ○ bullets the OCR recognizer dropped, and PDF tables split across pages swallowing the next page's first row.
+
+| Metric | 4.24.8 | 4.24.9 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.03140 · 0.06290 | **0.03128 · 0.06278** |
+| OCR character recall | 0.99052 | **0.99064** |
+| Degraded-input OCR CER (clean · noise · blur · JPEG · scan) | 0.0483 · 0.0540 · 0.0638 · 0.0517 · 0.0738 | **0.0481 · 0.0530 · 0.0635 · 0.0508 · 0.0734** |
+| PDF table structure · cell F1 · content NED | 0.98198 · 0.99187 · 0.98767 | **0.98241 · 0.99193 · 0.98794** |
+| PDF text · statutory annexes · HWPX · ODL · round trip · generation · rendering | — | unchanged |
+
 ## 4.24.8: security, OCR and PDF · 2026-10-26
 
 Same corpora and scorers as 4.24.7; every suite benchmark compared per document (rendering measured for text, images and page counts — unchanged). This release brings known dependency vulnerabilities to zero (zod 4 — the input schemas and validation of all 18 MCP tools are unchanged), fixes two OCR cases (leading ring bullets read as digits, 「 touching the next character) and PDF tables clipped only in their header cells. One regression: table content NED of the rice/pepper statistics document 0.92767 → 0.92732 (the header text now sits in the 7-column grid and is one cell off the reference's 9-column merged cells; the same document's reading order went 0.99784 → 1 and its two phantom tables are gone).

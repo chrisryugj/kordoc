@@ -40,7 +40,7 @@ import {
 import { edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
 import { restoreGlyphs, trimInklessEnds } from "./glyph-restore.js"
 import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
-import { bandBoxes, splitBoxAtCellRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
+import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { disableOrtTelemetry } from "./runtime-env.js"
 import { findOcrTextGaps, rememberOcrTextGaps } from "./text-gaps.js"
 
@@ -233,10 +233,12 @@ export class OcrEngine {
     stats?: OcrPageStats,
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
     cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }> = [],
+    rowRules: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }> = [],
   ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
     const detected = await this.detect(rgba, width, height, tuning, stats)
-    const boxes = cellRules.length ? detected.flatMap(b => splitBoxAtCellRules(b, cellRules)) : detected
+    const rows = rowRules.length ? detected.flatMap(b => splitBoxAtRowRules(b, rowRules)) : detected
+    const boxes = cellRules.length ? rows.flatMap(b => splitBoxAtCellRules(b, cellRules)) : rows
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
     const jobs: LineJob[] = []
@@ -320,7 +322,7 @@ export class OcrEngine {
       let text = tuning.postprocess ? restoreSymbols(raw.trim(), note.ringLead) : raw
       if (!text.trim()) continue
       // 사전 밖·작은 점으로 읽히거나 빠지는 글머리(◎ ● ▪ □) — 첫 글리프 모양으로 되살린다 (line-split.ts)
-      if (tuning.postprocess && job.rot === 0 && !/^[◎●▪□■○ㅇ]/.test(text)) {
+      if (tuning.postprocess && job.rot === 0 && !/^[◎●▪□■▣❐❏○ㅇ]/.test(text)) {
         const chars = [...read], k = chars.findIndex(c => c.trim())
         if (k >= 0 && steps.length === chars.length) {
           const g = grayCrop(rgba, width, job.box)
@@ -331,7 +333,10 @@ export class OcrEngine {
           const miss = /^[Oo0•·ㆍ∙‧○]/.test(text)
           if (b?.mark === "\u25ce" && b.covers && /^[Oo0○]/.test(text)) text = b.mark + " " + text.slice(1).trimStart()
           // □ 는 인식에서 빠진 자리만(첫 글자 앞) — 모델은 사전에 □ 가 있어도 내지 않고 통째로 빠뜨린다
-          else if (b?.mark === "\u25a1") { if (!b.covers && body) text = b.mark + " " + text }
+          else if (b?.mark === "\u25a1" || b?.mark === "\u25a3") { if (!b.covers && body) text = b.mark + " " + text }
+          // ❐ 는 모델이 자모 ㅁ 으로 읽거나 빠뜨린다 — 그림자 모양으로 정했으니 그 글자를 바꾸거나 붙인다
+          else if (b?.mark === "\u2023") { if (b.covers ? text.startsWith("\u2192") : body) text = b.covers ? b.mark + " " + text.slice(1).trimStart() : b.mark + " " + text }
+          else if (b?.mark === "\u2750" || b?.mark === "\u274f") { if (b.covers ? /^[ㅁ口]/.test(text) : body) text = b.covers ? b.mark + text.slice(1) : b.mark + " " + text }
           else if (b && b.mark !== "\u25ce" && body) text = b.covers ? (miss ? b.mark + " " + text.slice(1).trimStart() : text) : b.mark + " " + text
           // 통째로 빠진 고리 글머리 ○ — 첫 글자 앞 맨 왼쪽 조각이 도형 ○ 일 때만 (line-split leadingRing)
           else if (!b && body && /^[가-힣]/.test(chars[k]) && leadingRing(g, job.box.w, job.box.h, inkStats(g), (steps[k] + 0.5) * stepPx)) text = "\u25cb " + text

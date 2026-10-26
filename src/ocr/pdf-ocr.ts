@@ -17,7 +17,7 @@ import type { NormItem } from "../pdf/text-line.js"
 import type { LineSegment } from "../pdf/line-types.js"
 import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
 import { UNRULED_REGION_TABLES } from "../pdf/ocr-region-merge.js"
-import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
+import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-lines.js"
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
 import { deskewPage } from "./deskew.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
@@ -81,6 +81,18 @@ export function pageLines(pageNumber: number, width: number, height: number, sca
   const lines = [...kept.map(it => toOcrLine(it)), ...dropped.map(it => toOcrLine(it, true))]
     .sort((a, b) => (a.box.y - b.box.y) || (a.box.x - b.box.x))
   return { pageNumber, width, height, scale, deskewAngle, ...(regionsOnly ? { regionsOnly: true as const } : {}), lines }
+}
+
+/** 위아래 끝이 모두 가로 괘선에 닿는 세로선 — 표 칸 경계 */
+export function cellEdgeVerticals(r: RulingLines): RulingLines["verticals"] {
+  const touches = (x: number, y: number) => r.horizontals.some(h => Math.abs(h.y1 - y) <= h.thicknessPx + 3 && h.x1 - 3 <= x && h.x2 + 3 >= x)
+  return r.verticals.filter(v => touches(v.x1, Math.min(v.y1, v.y2)) && touches(v.x1, Math.max(v.y1, v.y2)))
+}
+
+/** 양끝이 모두 세로 괘선에 닿는 가로선 — 표 행 경계 */
+export function cellEdgeHorizontals(r: RulingLines): RulingLines["horizontals"] {
+  const touches = (x: number, y: number) => r.verticals.some(v => Math.abs(v.x1 - x) <= v.thicknessPx + 3 && Math.min(v.y1, v.y2) - 3 <= y && Math.max(v.y1, v.y2) + 3 >= y)
+  return r.horizontals.filter(h => touches(Math.min(h.x1, h.x2), h.y1) && touches(Math.max(h.x1, h.x2), h.y1))
 }
 
 /** pdfjs 연산자 목록 (그래픽만 쓴다 — 괘선·채움·그림 영역) */
@@ -187,7 +199,12 @@ export async function ocrOnePage(
     const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
     const ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
     const tuning = regions ? regionTuning(config.tuning) : config.tuning
-    const items = await engine!.recognizePage(upright, rw, rh, stats, tuning, ruling?.cellDividers)
+    // 검출 박스가 표 칸 경계를 가로지르면 그 선에서 가른다 — 연한 칸 구분선(cellDividers)만이 아니라 진한 칸 경계도. 촘촘한 표에서
+    // 검출기가 이웃 칸 글을 한 줄로 묶었다(검정고시 계획 과목 표). 칸 경계 = 위아래 끝이 모두 가로 괘선에 닿는 세로선 — 끝이 떠 있는
+    // 여백선·단 구분선은 글줄을 가르면 안 된다(속기록 2단)
+    // 위아래 두 행을 한 박스로 묶은 검출도 그 사이 행 경계(양끝이 세로 괘선에 닿는 가로선)에서 가른다
+    const items = await engine!.recognizePage(upright, rw, rh, stats, tuning, ruling ? [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)] : undefined,
+      ruling ? cellEdgeHorizontals(ruling) : undefined)
     if (stats.droppedLowConf > 0) {
       warnings.push({
         page: pageNo,

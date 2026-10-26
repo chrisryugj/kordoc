@@ -19,6 +19,16 @@ describe("joinVerticalColumns", () => {
     assert.deepEqual(joinVerticalColumns(items).map(i => i.text), ["죽는 날까지", "한 점 부끄럼"])
   })
 
+  it("turns vertical 、。 back into the comma and period of Hangul text", () => {
+    const items = [...column("한 점 없기를、", 258), ...column("나는 괴로워했다。", 242)]
+    assert.deepEqual(joinVerticalColumns(items).map(i => i.text), ["한 점 없기를,", "나는 괴로워했다."])
+  })
+
+  it("keeps 、。 in non-Hangul columns", () => {
+    const items = [...column("春眠 不覺曉、", 258), ...column("處處 聞啼鳥。", 242)]
+    assert.deepEqual(joinVerticalColumns(items).map(i => i.text), ["春眠 不覺曉、", "處處 聞啼鳥。"])
+  })
+
   it("leaves table columns of stacked short labels alone (row pitch wider than the letters)", () => {
     const rows = ["팀장", "대리", "팀장", "대리"]
     const items = rows.flatMap((t, r) => [...t].map((c, k) => ch(c, 400 + k * 12, 700 - r * 22)))

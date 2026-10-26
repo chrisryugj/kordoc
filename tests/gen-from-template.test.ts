@@ -210,7 +210,11 @@ describe("generate --template (부서 서식 견본)", () => {
     const rows = /<hp:tbl\b[^>]*rowCnt="4" colCnt="2"[^>]*>[\s\S]*?<\/hp:tbl>/.exec(sec)![0].split("</hp:tr>")
     assert.ok(rows[1].includes(">합계<"))
     assert.equal(firstBf(rows[1]), totalBf, "합계 행(맨 위로 옮김)은 견본 합계 행 서식")
-    assert.equal(firstBf(rows[3]), bodyBf, "마지막 데이터 행은 본문 서식")
+    // 마지막 데이터 행은 합계가 아닌 본문 서식 — 자리가 같은 견본 마지막 본문 행 칸(바깥 아랫변)을 쓴다
+    const tplLastBf = firstBf(tplRows.filter((r) => r.includes("<hp:tc")).pop()!)
+    assert.notEqual(firstBf(rows[3]), totalBf, "마지막 데이터 행은 합계 서식이 아니다")
+    assert.equal(firstBf(rows[3]), tplLastBf, "마지막 데이터 행은 견본 마지막 본문 행 서식")
+    assert.equal(firstBf(rows[2]), bodyBf, "가운데가 없는 견본이면 첫 본문 행 서식")
   })
 
   it("구역이 둘인 견본 — 첫 구역만 쓰고 manifest·spine·secCnt 를 함께 맞춘다", async () => {
@@ -277,5 +281,29 @@ describe("generate --template — 표지·목차 쪽이 앞에 있는 견본", (
     assert.ok(!warnings.some((w) => w.includes("4단계")), "네 칸 들여 쓴 - 세부는 3단계")
     assert.ok(!warnings.some((w) => w.includes("요약 상자")), warnings.join(" / "))
     assert.equal(paraOf(outSec, "새 세부").paraPr, paraOf(tplSec, "견본 세부").paraPr)
+  })
+})
+
+describe("견본 표 본문 행 테두리 — 머리 구분선·바깥선을 행마다 긋지 않는다", () => {
+  it("본문 1행 견본으로 8행 표를 만들면 이중선은 머리 아래 한 번, 굵은 바깥선은 마지막 행 아래에만", async () => {
+    const template = new Uint8Array(await markdownToHwpx("# 견본\n\n| 구분 | 내용 |\n| --- | --- |\n| 가 | 나 |\n", { gongmun: { preset: "official" } }))
+    const md = "# 결과\n\n| 구분 | 내용 |\n| --- | --- |\n" + Array.from({ length: 8 }, (_, i) => `| 항목${i + 1} | 내용${i + 1} |`).join("\n") + "\n"
+    const out = await markdownToHwpx(md, { template })
+    const zip = await JSZip.loadAsync(out)
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    const section = await zip.file("Contents/section0.xml")!.async("string")
+    const side = (id: string, s: string) => {
+      const m = header.match(new RegExp(`<hh:borderFill id="${id}"[\\s\\S]*?</hh:borderFill>`))![0].match(new RegExp(`<hh:${s}Border type="(\\w+)" width="([^"]+)"`))!
+      return `${m[1]} ${m[2]}`
+    }
+    const rows = [...section.matchAll(/<hp:tr>[\s\S]*?<\/hp:tr>/g)].map(tr => tr[0].match(/<hp:tc [^>]*borderFillIDRef="(\d+)"/)![1])
+    assert.equal(rows.length, 9)
+    assert.match(side(rows[1], "top"), /^DOUBLE_SLIM/)
+    for (let i = 2; i < 9; i++) assert.equal(side(rows[i], "top"), "SOLID 0.12 mm", `${i}행 윗변`)
+    for (let i = 1; i < 8; i++) assert.equal(side(rows[i], "bottom"), "SOLID 0.12 mm", `${i}행 아랫변`)
+    assert.equal(side(rows[8], "bottom"), "SOLID 0.4 mm")
+    const ids = [...header.matchAll(/<hh:borderFill id="(\d+)"/g)].map(m => Number(m[1]))
+    assert.deepEqual(ids, ids.map((_, i) => i + 1)) // 새 정의도 번호가 빈틈없이 이어진다
+    assert.equal(Number(header.match(/<hh:borderFills itemCnt="(\d+)"/)![1]), ids.length)
   })
 })

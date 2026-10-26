@@ -22,5 +22,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "typescript": "^6.0.2"
+  },
+  "overrides": {
+    "zod": "^4.6.7"
   }
 }

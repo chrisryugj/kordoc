@@ -8,6 +8,7 @@
  * 중첩표 셀은 재귀 패치, 이미지는 변경 불가(텍스트만 적용).
  */
 
+import type { BorderVariants } from "./border-variants.js"
 import type { IRTable, PatchSkip } from "../types.js"
 import {
   buildParagraphSplices, buildRangeSplices, paraTText,
@@ -32,6 +33,8 @@ export interface TablePatchCtx {
   skipped: PatchSkip[]
   /** 칸 안 줄 수가 바뀌면 문단을 더하고 지운다 (patchHwpx structure — 세션 API 는 끔) */
   structure?: boolean
+  /** 행 추가 때 복제 행 테두리를 안쪽 선으로 고칠 borderFill 변형기 (header 를 못 찾으면 없음 — 복제 그대로) */
+  borders?: BorderVariants
 }
 
 // ── GFM 표 ──

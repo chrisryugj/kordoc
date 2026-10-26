@@ -119,6 +119,17 @@ describe("서울 방침서 — 골격", () => {
     assert.ok(!/<hp:t>AI 인재양성[^<]*<\/hp:t>/.test(s.replace(/- AI 인재양성 1089\(십중팔구\) 프로젝트 -/, "")))
     assert.match(head, /textColor="#0000FF"/)
     assert.match(head, /horizontal="DISTRIBUTE"/)
+    // 제목 줄간격 120%·요약 양쪽 — 정본이 아니라 방침서 16건 문서별 값 (제목 120% 4/8, 요약 양쪽 8/10)
+    const prOf = (text: string) => {
+      const i = s.indexOf(text), id = s.slice(s.lastIndexOf("<hp:p ", i), i).match(/paraPrIDRef="(\d+)"/)![1]
+      return head.match(new RegExp(`<hh:paraPr id="${id}"[\\s\\S]*?</hh:paraPr>`))![0]
+    }
+    const title = prOf("「청년취업사관학교 2.0」추진계획")
+    assert.match(title, /horizontal="CENTER"/)
+    assert.match(title, /<hh:lineSpacing type="PERCENT" value="120"/)
+    const summary = s.slice(s.indexOf('name="__kordoc_summary"'))
+    const sumId = summary.match(/<hp:p [^>]*paraPrIDRef="(\d+)"/)![1]
+    assert.match(head.match(new RegExp(`<hh:paraPr id="${sumId}"[\\s\\S]*?</hh:paraPr>`))![0], /horizontal="JUSTIFY"/)
   })
 
   it("장은 [Ⅰ] 상자(1×3), 절은 번호 띠(#437FC1), 과제 소제목은 장 안에서 ❶❷❸ 로 이어 센다", async () => {

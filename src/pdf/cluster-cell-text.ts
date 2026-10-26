@@ -28,11 +28,12 @@ export function clusterCellLines(items: ClusterItem[]): ClusterCellLine[] {
   }
   return lines.sort((a, b) => b.top - a.top).map(({ items: line }) => {
     line.sort((a, b) => a.x - b.x)
+    const hangulLine = line.some(it => /[가-힣]/.test(it.text))
     let s = line[0].text
     for (let i = 1; i < line.length; i++) {
       const gap = line[i].x - (line[i - 1].x + line[i - 1].w)
       const fs = (line[i].fontSize + line[i - 1].fontSize) / 2
-      s += (!isCjkLatinAutospace(line[i - 1].text, line[i].text, gap, fs) && ((line[i].hasSpaceBefore && gap >= fs * 0.05) || gap > spaceGapThreshold(fs)) ? " " : "") + line[i].text
+      s += (!isCjkLatinAutospace(line[i - 1].text, line[i].text, gap, fs, hangulLine) && ((line[i].hasSpaceBefore && gap >= fs * 0.05) || gap > spaceGapThreshold(fs)) ? " " : "") + line[i].text
     }
     const last = line.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a))
     return { text: s, left: line[0].x, right: last.x + last.w, fontSize: line[0].fontSize, spaceAfter: last.spaceAfter,

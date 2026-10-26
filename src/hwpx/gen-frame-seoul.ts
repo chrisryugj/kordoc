@@ -299,8 +299,10 @@ export function buildChapterBand(roman: string, title: string, ctx: FrameCtx, sp
 
 // ─── 서울 방침서 골격 (bangchim) ───────────────────
 // 정본 「청년취업사관학교 2.0」 추진계획(시장방침 제81호) 실측 — 제목표 2×1 w48758(제목칸 상 0.4·하 0.15mm / 담당칸 상 0.15·하 0.4mm),
-// 제목 HY헤드라인M 26 굵게 가운데 100% + 부제 HY헤드라인M 18 굵게 파랑(#0000FF), 담당 휴먼명조 12 균등배분(왼쪽 300) 160%.
-// 요약박스 1×1 w48758 셀 여백 566, 0.4mm #DFE6F7, 한컴돋움 15 굵게 균등배분(왼쪽 500) 140%.
+// 제목 HY헤드라인M 26 굵게 가운데 120% + 부제 HY헤드라인M 18 굵게 파랑(#0000FF), 담당 휴먼명조 12 균등배분(왼쪽 300) 160%.
+// 요약박스 1×1 w48758 셀 여백 566, 0.4mm #DFE6F7, 한컴돋움 15 굵게 양쪽(왼쪽 500) 140%.
+// 제목 줄간격·요약 정렬은 정본 한 건이 아니라 방침서 16건 문서별 값으로 — 제목표 제목 120% 4·140% 2·100%·150% 각 1(정본 100%),
+// 요약 양쪽 8·균등배분 1(정본)·왼쪽 1 (줄간격은 160·150·140% 가 3·2·2 로 갈려 정본 140% 그대로)
 // 장 상자 1×3 h3014: [번호 3223 — 0.5mm 네 변, HY견명조 19 굵게] [간격 1414 — 왼쪽 0.5mm] [제목 — 위아래 0.5mm, HY견고딕 20, 폭 = 글폭 + 여유]
 
 const MM05: BorderSide = ["0.5 mm", "#000000"]
@@ -311,9 +313,9 @@ export function buildBangchimTitleTable(title: string, subtitle: string | null, 
   const w = ctx.W - 566
   const fit = fitOneLine(title, frame.titleFont, frame.titlePt, w - 2 * 141 - 400, 20)
   const cTitle = reg.char({ font: frame.titleFont, pt: fit.pt, bold: true, ratio: fit.ratio, spacing: fit.spacing })
-  const center = reg.para({ align: "CENTER", lineSp: 100 })
+  const center = reg.para({ align: "CENTER", lineSp: 120 })
   let paras = para(title, center, cTitle)
-  let h = Math.round(fit.pt * 100) + 1400
+  let h = Math.round(fit.pt * 100 * 1.2) + 1400
   if (subtitle) {
     paras += para(subtitle, center, reg.char({ font: frame.titleFont, pt: 18, bold: true, color: BANGCHIM_BLUE }))
     h += 1800
@@ -332,7 +334,7 @@ export function buildBangchimSummary(text: string, ctx: FrameCtx): { xml: string
   const w = ctx.W - 566
   const pad = 566, left = 500
   const avail = w - 2 * pad - left
-  const p = reg.para({ align: "DISTRIBUTE", lineSp: 140, left })
+  const p = reg.para({ align: "JUSTIFY", lineSp: 140, left })
   const c = reg.char({ font: frame.summaryFont, pt: frame.summaryPt, bold: true })
   const bodies = text.split("\n").map((l) => l.trim().replace(/^[□■○ㅇ◦●\-–ㆍ·•]\s*/u, "")).filter(Boolean)
   let lines = 0

@@ -25,8 +25,10 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   if (/[\u00b7\u2022]/.test(text)) discs(c)
   if (/[-\u2013\u2014]/.test(text)) dashes(c)
   gaps(c)
+  // 「 는 brackets("[" → 「)·gaps(빠진 「 되살림)가 넣은 것일 수 있어 그 뒤에 본다
+  if (chars.some(t => t.includes("\u300c")) && chars.includes(",")) cornerCommas(c)
   note.ringLead = ring(c)
-  if (/[I1Ⅰ-Ⅲ]|^\s*\./.test(text)) roman(c)
+  if (/[I1Ⅰ-Ⅲ|]|^\s*\./.test(text)) roman(c)
   return chars.join("")
 }
 
@@ -69,6 +71,23 @@ export function trimInklessEnds(rgba: Uint8Array, pageW: number, box: Box, text:
  * 사전 밖 괄호 — 인식 사전에 「」·【】 가 없어 모델은 모두 [ ] 로 읽는다(코퍼스 정답 「」44·｢｣23·【】41·[]159 쌍 ↔ OCR [ 274).
  * [ ] 자리 잉크 조각이 속이 찬 조각이면 【】, 윗변 가로 획만이면 「, 아랫변 가로 획만이면 」 ([ ] 는 위아래 모두)
  */
+/**
+ * 쉼표로 읽은 닫는 홑낫표 — 짝 없는 「 뒤 쉼표 자리 잉크가 」 꼴이면 바꾼다("「국가교통통계집,수록 통계표" → "「국가교통통계집」 수록",
+ * 교통 통계 해설·기록물 지침). 쉼표는 아랫줄이 꼬리라 」 의 꽉 찬 밑변 조건(bracketShape)을 넘지 못한다
+ */
+function cornerCommas({ chars, cx, gray, w, h, ink }: Ctx) {
+  // 칸 하나에 기호가 붙어 있을 수 있다(gaps 가 「 를 다음 글자 칸에 붙인다 — "「국")
+  const count = (t: string, ch: string) => t.split(ch).length - 1
+  let open = 0
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== ",") { open = Math.max(0, open + count(chars[i], "\u300c") - count(chars[i], "\u300d")); continue }
+    if (open > 0) {
+      const f = bracketFeatures(gray, w, h, ink, cx(i))
+      if (f && bracketShape(f, true) === "\u300d") { chars[i] = "\u300d"; open-- }
+    }
+  }
+}
+
 function brackets({ chars, cx, gray, w, h, ink }: Ctx) {
   for (let i = 0; i < chars.length; i++) {
     if (chars[i] !== "[" && chars[i] !== "]") continue
@@ -229,6 +248,18 @@ function roman({ chars, cx, gray, w, h, ink }: Ctx) {
   for (let i = 0; i < chars.length; i++) {
     if (chars[i] !== "1" || /[\dA-Za-z]$/.test(chars[i - 1] ?? "") || /^[\dA-Za-z,]/.test(chars[i + 1] ?? "")) continue
     if (serifOne(gray, w, h, ink, cx(i))) chars[i] = "Ⅰ"
+  }
+  // 세로 막대 | 로 읽은 로마 숫자 — 한글 바로 뒤("희망키움통장|")·마침표 앞("|.직업계고")·붙임표 사이("63-|-")의 홑 막대만, 그 자리 세로
+  // 획 수로 Ⅰ~Ⅲ. 겹 막대 "||"·빈칸 사이 홑 막대는 장식 괘선이 튄 것이라 두지 않는다(목차 "목 차 ||")
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== "|" || chars[i - 1] === "|" || chars[i + 1] === "|") continue
+    let p = i - 1, q = i + 1
+    while (p >= 0 && !chars[p].trim()) p--
+    while (q < chars.length && !chars[q].trim()) q++
+    const glued = /[가-힣]$/.test(chars[i - 1] ?? "") || (chars[i + 1] ?? "") === "." || (chars[p] === "-" && chars[q] === "-")
+    if (!glued) continue
+    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity)
+    if (n) chars[i] = String.fromCharCode(0x215f + n)
   }
   // 로마 숫자에 붙은 1 은 같은 토막으로 센다 ("[표 Ⅱ-4]" → "[표I1-4]")
   const inRoman = (i: number) => ROMAN.test(chars[i]) || (chars[i] === "1" && (ROMAN.test(chars[i - 1] ?? "") || ROMAN.test(chars[i + 1] ?? "")))

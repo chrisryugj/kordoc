@@ -18,6 +18,7 @@ import {
 } from "./source-map.js"
 import { alignUnits, sanitizeText, summarize } from "./markdown-units.js"
 import type { TablePatchCtx } from "./table-patch.js"
+import type { BorderVariants } from "./border-variants.js"
 
 /** 삽입될 행의 셀 하나 — 마크다운에서 추출한 평문 라인들과 병합 시그니처 */
 export interface InsertCell {
@@ -199,10 +200,13 @@ export function patchTableRows(input: RowOpsInput): number {
   // 삽입 — 같은 앵커의 연속 삽입은 시퀀스 순서로 이어붙여 한 splice로
   const fragmentsByAnchor = new Map<number, string[]>()
   let heightDelta = 0
+  const lastFinal = numRows + net - 1
+  const borders = ctx.borders ? rowBorders(xml, scanTable, ctx.borders) : null
   for (const plan of insertPlans) {
     const finalRow = finalIndex.get(plan.entry)!
-    const fragment = buildRowFragment(xml, scanTable, plan.template, plan.cells, finalRow, hasExplicitAddr, ctx)
+    let fragment = buildRowFragment(xml, scanTable, plan.template, plan.cells, finalRow, hasExplicitAddr, ctx)
     if (fragment === null) return skip("행 복제 실패 (셀 문단 구조 미지원)")
+    if (borders) fragment = borders.inserted(fragment, plan.template, finalRow === lastFinal)
     const p = plan.entry.insertAt!
     const anchor = p === 0 ? scanTable.rowRanges[0].start : scanTable.rowRanges[p - 1].end
     let list = fragmentsByAnchor.get(anchor)
@@ -218,6 +222,10 @@ export function patchTableRows(input: RowOpsInput): number {
     const rr = scanTable.rowRanges[d.oi!]
     heightDelta -= rowHeightOf(xml.slice(rr.start, rr.end))
   }
+
+  // 원래 마지막 행 뒤에 행이 붙으면 그 행 아랫변(표 바깥선)은 안쪽 선이 된다 — 바깥선은 새 마지막 행이 가져갔다
+  const origLast = keeps.find(k => k.oi === numRows - 1)
+  if (borders && origLast && finalIndex.get(origLast) !== lastFinal) splices.push(...borders.unlast(numRows - 1))
 
   // 유지 행 rowAddr 재작성 (명시 주소일 때만 — 미표기 표는 tr 순서가 곧 격자)
   if (hasExplicitAddr) {
@@ -358,4 +366,64 @@ function tableSzHeightSplice(
   const newH = Math.max(0, oldH + delta)
   const valStart = from + szM.index + hM.index + hM[0].indexOf('"') + 1
   return { start: valStart, end: valStart + hM[1].length, replacement: String(newH) }
+}
+
+// ─── 복제 행 테두리 ───────────────────────────────────
+
+const TC_BF_RE = /<hp:tc\b[^>]*?\bborderFillIDRef="(\d+)"/g
+
+/** 행 XML 안 셀 여는 태그의 borderFillIDRef 값 위치 (행 시작 기준) */
+function cellBorderRefs(rowXml: string): Array<{ id: number; at: number; len: number }> {
+  const out: Array<{ id: number; at: number; len: number }> = []
+  for (const m of rowXml.matchAll(TC_BF_RE)) out.push({ id: +m[1], at: m.index! + m[0].length - m[1].length - 1, len: m[1].length })
+  return out
+}
+
+/**
+ * 행 추가 복제 행 테두리 — 새 행은 안쪽 행이라 위·아래 변을 표 안쪽 가로선으로, 표 끝이 되면 아랫변만 원래 마지막 행 아랫변(바깥선)으로.
+ * 머리 행 바로 아래 행을 복제하면 윗변 이중선(머리 구분선)이, 마지막 행을 복제하면 아랫변 굵은 바깥선이 행마다 그어졌다.
+ * 안쪽 가로선은 셋째 행부터의 윗변 → 견본 행이 마지막 행이 아니면 그 아랫변 → 같은 칸 안쪽 세로선 순으로 찾는다
+ */
+function rowBorders(xml: string, scanTable: ScanTable, borders: BorderVariants) {
+  const rows = scanTable.rowRanges.map(rr => xml.slice(rr.start, rr.end))
+  const refs = rows.map(r => (ROW_OBJECT_RE.test(r) ? null : cellBorderRefs(r)))
+  const last = rows.length - 1
+  const inner = (template: number, ci: number): string | undefined => {
+    const n = refs[template]?.length ?? 0
+    for (let r = 2; r < rows.length; r++) {
+      const id = refs[r]?.length === n ? refs[r]![ci].id : undefined
+      const top = id !== undefined ? borders.sides(id)?.top : undefined
+      if (top) return top
+    }
+    const own = borders.sides(refs[template]![ci].id)
+    if (!own) return undefined
+    if (template < last) return own.bottom
+    return n < 2 ? undefined : ci < n - 1 ? own.right : own.left
+  }
+  return {
+    inserted(fragment: string, template: number, isLast: boolean): string {
+      const tmpl = refs[template]
+      const cells = cellBorderRefs(fragment)
+      if (!tmpl || cells.length !== tmpl.length) return fragment
+      let out = fragment
+      for (let ci = cells.length - 1; ci >= 0; ci--) {
+        const h = inner(template, ci)
+        if (!h) continue
+        const outer = isLast ? (refs[last]?.length === cells.length ? borders.sides(refs[last]![ci].id)?.bottom : undefined) ?? h : h
+        const id = borders.variant(cells[ci].id, { top: h, bottom: outer })
+        out = out.slice(0, cells[ci].at) + id + out.slice(cells[ci].at + cells[ci].len)
+      }
+      return out
+    },
+    unlast(row: number): SpliceEdit[] {
+      const own = refs[row]
+      if (!own) return []
+      const base = scanTable.rowRanges[row].start
+      return own.flatMap((c, ci) => {
+        const h = inner(row, ci)
+        const id = h ? borders.variant(c.id, { bottom: h }) : c.id
+        return id === c.id ? [] : [{ start: base + c.at, end: base + c.at + c.len, replacement: String(id) }]
+      })
+    },
+  }
 }

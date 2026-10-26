@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
+import { dateCommas, isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
 
 describe("restoreSymbols — 사전 밖 기호 복원", () => {
   it("줄 머리 O/o + 한글 → ○", () => {
@@ -89,6 +89,27 @@ describe("restoreBulletItems — 떨어진 글머리 O", () => {
     const d = [item("O", 100, 100), item("사업", 140, 200)]
     restoreBulletItems(d)
     assert.equal(d[0].text, "O", "다른 줄")
+  })
+})
+
+describe("restoreSymbols — 직함 앞 전(前)·현(現)", () => {
+  it("낱말 머리 전·현 뒤 빈 괄호만 채운다", () => {
+    assert.equal(restoreSymbols("트리셰 전()유럽중앙은행 총재"), "트리셰 전(前)유럽중앙은행 총재")
+    assert.equal(restoreSymbols("및 현()명예총재"), "및 현(現)명예총재")
+    assert.equal(restoreSymbols("하여 생기()되는 직무"), "하여 생기()되는 직무")
+    assert.equal(restoreSymbols("발전()"), "발전()")
+  })
+})
+
+describe("dateCommas — 날짜 마침표를 쉼표로 읽은 것", () => {
+  it("네 자리 연도 뒤 한두 자리 월·일만 마침표로", () => {
+    assert.equal(dateCommas("2021, 12, 9(목)"), "2021. 12. 9(목)")
+    assert.equal(dateCommas("2026,1,8."), "2026.1.8.")
+  })
+  it("천 단위 숫자·세 자리 값·짧은 목록은 그대로", () => {
+    assert.equal(dateCommas("2,021,123"), "2,021,123")
+    assert.equal(dateCommas("총 2021, 12, 123명"), "총 2021, 12, 123명")
+    assert.equal(dateCommas("1,2,3"), "1,2,3")
   })
 })
 

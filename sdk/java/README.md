@@ -126,12 +126,12 @@ files 방식의 파일은 호출자 소유이며 클라이언트를 닫아도 �
 
 ```bash
 npm ci && npm run build                    # 저장소 루트 — 엔진(dist/cli.js)
-mvn -f sdk/java/pom.xml verify             # 실제 엔진 + 합성 문서(tests/fixtures/sdk-docs.ts) + 장애 주입 워커, JAR·sources JAR
+mvn -f sdk/java/kordoc-pom.xml verify             # 실제 엔진 + 합성 문서(tests/fixtures/sdk-docs.ts) + 장애 주입 워커, JAR·sources JAR
 ```
 
 ### 소비 예제
 
 ```bash
-mvn -f sdk/java/pom.xml install
+mvn -f sdk/java/kordoc-pom.xml install
 mvn -f sdk/java/examples/consumer/consumer-pom.xml compile exec:java -Dexec.args="'문서.hwpx' --gfm"
 ```

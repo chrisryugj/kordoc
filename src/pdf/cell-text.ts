@@ -243,6 +243,7 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
 
     // 균등배분 구간 감지 (좌표 기반)
     const evenSpaced = detectEvenSpacedItems(s, true)
+    const hangulLine = s.some(it => /[가-힣]/.test(it.text))
 
     let result = s[0].text
     for (let j = 1; j < s.length; j++) {
@@ -255,7 +256,7 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
       const gap = s[j].x - (s[j - 1].x + s[j - 1].w)
       const avgFs = (s[j].fontSize + s[j - 1].fontSize) / 2
       // pdfjs 공백 아이템 힌트 — 단어 경계 확정 (Type3 폰트 글자 분리 셀 텍스트 복원)
-      if (isCjkLatinAutospace(s[j - 1].text, s[j].text, gap, avgFs)) {
+      if (isCjkLatinAutospace(s[j - 1].text, s[j].text, gap, avgFs, hangulLine)) {
         result += s[j].text
       } else if (s[j].hasSpaceBefore && gap >= avgFs * 0.05) {
         result += " " + s[j].text

@@ -374,11 +374,45 @@ export function extractLines(
     }
   }
 
+  const gradient = gradientBands(horizontals, verticals)
   return {
-    horizontals: chainShortSegments(horizontals, thinShortH, "h", l => thinFill.has(l)),
-    verticals: chainShortSegments(verticals, thinShortV, "v", l => thinFill.has(l)),
+    horizontals: chainShortSegments(horizontals.filter(l => !gradient.has(l)), thinShortH, "h", l => thinFill.has(l)),
+    verticals: chainShortSegments(verticals.filter(l => !gradient.has(l)), thinShortV, "v", l => thinFill.has(l)),
     clipRects, fillRects, hiddenBoxes, shortH, shortV, nonRules,
   }
+}
+
+/** 그러데이션 띠로 보는 채움 변 겹수 — 이중선·삼중선 채움 괘선(변 4~6개)보다 많아야 한다 */
+const GRADIENT_MIN_EDGES = 8
+/** 이웃 변 간격 상한 (pt) — 그러데이션 띠는 0.4~0.5pt 두께로 맞붙는다 */
+const GRADIENT_PITCH = 1
+
+/**
+ * 그러데이션 채움 띠 — 한글 PDF 는 그러데이션 배경을 0.4pt 남짓한 채움 띠 수백 개를 맞붙여 칠한다(대광위 보도자료 참고
+ * "목표" 상자: 폭 848pt 띠 240개, 클립으로 오른쪽 칸만 보임). 띠 변이 모두 가로선으로 잡혀 클립 밖 빈 틈 열까지 가로질러,
+ * 그 열의 행 경계가 보이는 선이 되어 빈 여백 행이 접히지 않았다(1×3 이 3×3, layout-frames). 같은 폭의 채움 변이 1pt 간격
+ * 안으로 8개 넘게 이어지면 괘선이 아니라 면이다
+ */
+function gradientBands(horizontals: LineSegment[], verticals: LineSegment[]): Set<LineSegment> {
+  const out = new Set<LineSegment>()
+  for (const [lines, dir] of [[horizontals, "h"], [verticals, "v"]] as const) {
+    const pos = (l: LineSegment) => (dir === "h" ? l.y1 : l.x1)
+    const span = (l: LineSegment) => (dir === "h" ? `${Math.round(l.x1)}|${Math.round(l.x2)}` : `${Math.round(l.y1)}|${Math.round(l.y2)}`)
+    const groups = new Map<string, LineSegment[]>()
+    for (const l of lines) if (l.fromFill) { const k = span(l); const g = groups.get(k); if (g) g.push(l); else groups.set(k, [l]) }
+    for (const g of groups.values()) {
+      if (g.length < GRADIENT_MIN_EDGES) continue
+      g.sort((a, b) => pos(a) - pos(b))
+      let run = [g[0]]
+      const flush = () => { if (run.length >= GRADIENT_MIN_EDGES) for (const l of run) out.add(l) }
+      for (let i = 1; i < g.length; i++) {
+        if (pos(g[i]) - pos(g[i - 1]) <= GRADIENT_PITCH) run.push(g[i])
+        else { flush(); run = [g[i]] }
+      }
+      flush()
+    }
+  }
+  return out
 }
 
 // ─── 짧은 괘선 조각 잇기 ──────────────────────────────

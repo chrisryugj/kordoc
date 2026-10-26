@@ -32,6 +32,7 @@ import { AUTONUM_PREFIX_RE,
   type MdUnit,
 } from "./markdown-units.js"
 import { patchGfmTable, patchHtmlTable, patchTextChunkTable } from "./table-patch.js"
+import { appendBorderFills, createBorderVariants, type BorderVariants } from "./border-variants.js"
 import { collectMaxNumericId, injectCellBorderFill, buildTableParagraphXml } from "./table-insert.js"
 import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import { detectFormat } from "../detect.js"
@@ -111,11 +112,14 @@ export async function patchHwpx(
   // 2b) header.xml 로드 — 문단→표 변환 시 셀 테두리 borderFill 주입 대상
   //     (header 엔트리를 못 찾으면 tableInsert undefined → 문단→표 변환만 graceful skip)
   let tableInsert: TableInsertState | undefined
+  let borders: BorderVariants | undefined
   const headerEntryName = await resolveHeaderEntryName(zip)
   if (headerEntryName) {
     const headerXml = await readZipEntry(zip.file(headerEntryName)!, "text")
     const maxId = collectMaxNumericId([...scans.map(s => s.xml), headerXml])
     tableInsert = { headerEntryName, headerXml, headerSplices: [], borderFillId: null, nextId: maxId + 1 }
+    const ti = tableInsert
+    borders = createBorderVariants(headerXml, () => ti.nextId++)
   }
 
   // 3) 유닛 구성 + 정렬 (마크다운 도메인 diff)
@@ -132,7 +136,7 @@ export async function patchHwpx(
   //    삭제+추가로 보고하므로 그대로 반영하면 원본 서식이 전부 복제본으로 갈린다
   const sectionSplices: SpliceEdit[][] = scans.map(() => [])
   const structural = options?.structure !== false && origUnits.length * editedUnits.length <= 4_000_000
-  const ctx: PatchCtx = { origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped, tableInsert, structure: structural }
+  const ctx: PatchCtx = { origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped, tableInsert, structure: structural, borders }
   const struct = structural ? createStructureEditor({
     origUnits, origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped,
     inlineOf: oi => textUnitInline(origUnits[oi].raw, origBlocks[origUnits[oi].blockIdx]),
@@ -174,8 +178,9 @@ export async function patchHwpx(
       replacements.set(sectionPaths[i], encoder.encode(newXml))
     }
     // header.xml 변경 — 문단→표 변환으로 셀 테두리 borderFill이 주입된 경우만
-    if (tableInsert && tableInsert.headerSplices.length > 0) {
-      const newHeader = applySplices(tableInsert.headerXml, tableInsert.headerSplices)
+    // 행 추가가 만든 테두리 변형도 같은 header 에 덧붙인다
+    if (tableInsert && (tableInsert.headerSplices.length > 0 || borders?.added().length)) {
+      const newHeader = appendBorderFills(applySplices(tableInsert.headerXml, tableInsert.headerSplices), borders?.added() ?? [])
       replacements.set(tableInsert.headerEntryName, encoder.encode(newHeader))
     }
   } catch (err) {
@@ -464,6 +469,8 @@ interface PatchCtx {
   tableInsert?: TableInsertState
   /** 문단 추가·삭제 반영 (표 칸 안 줄 수 변경 포함) */
   structure?: boolean
+  /** 행 추가 복제 행 테두리 고침 (table-rows) */
+  borders?: BorderVariants
 }
 
 /** 변경된 유닛 쌍 처리 — 적용 건수 반환 */

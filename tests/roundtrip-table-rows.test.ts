@@ -316,3 +316,38 @@ describe("patchHwpx 정직한 보고: 셀 줄 수 변경", () => {
     assert.ok(note?.partial === true, `partial 보고: ${JSON.stringify(res.skipped)}`)
   })
 })
+
+describe("행 추가 복제 행 테두리 — 머리 구분선·바깥선을 행마다 긋지 않는다", () => {
+  /** 행마다 첫 칸이 참조하는 borderFill 의 윗변·아랫변 [type, width] */
+  async function rowBorders(data: Uint8Array): Promise<Array<{ top: string; bottom: string }>> {
+    const zip = await JSZip.loadAsync(data)
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    const section = await zip.file("Contents/section0.xml")!.async("string")
+    const side = (id: string, s: string) => {
+      const def = header.match(new RegExp(`<hh:borderFill id="${id}"[\\s\\S]*?</hh:borderFill>`))![0]
+      const m = def.match(new RegExp(`<hh:${s}Border type="(\\w+)" width="([^"]+)"`))!
+      return `${m[1]} ${m[2]}`
+    }
+    return [...section.matchAll(/<hp:tr>[\s\S]*?<\/hp:tr>/g)].map(tr => {
+      const id = tr[0].match(/<hp:tc [^>]*borderFillIDRef="(\d+)"/)![1]
+      return { top: side(id, "top"), bottom: side(id, "bottom") }
+    })
+  }
+
+  it("본문 1행 공문서 표를 8행으로 늘리면 이중선은 머리 아래 한 번, 굵은 바깥선은 새 마지막 행 아래에만", async () => {
+    const buf = await markdownToHwpx("# 시험\n\n| 구분 | 내용 |\n| --- | --- |\n| 가 | 나 |\n", { gongmun: { preset: "official" } })
+    const original = new Uint8Array(buf)
+    const before = await rowBorders(original)
+    assert.match(before[1].top, /^DOUBLE_SLIM/) // 머리 구분선
+    const md = (await parseHwpx(buf)).markdown
+    const edited = md.replace("| 가 | 나 |", Array.from({ length: 8 }, (_, i) => `| 항목${i + 1} | 내용${i + 1} |`).join("\n"))
+    const r = await patchHwpx(original, edited)
+    assert.ok(r.success && r.data, r.error)
+    const rows = await rowBorders(r.data!)
+    assert.equal(rows.length, 9)
+    assert.equal(rows[1].top, before[1].top)
+    for (let i = 2; i < 9; i++) assert.equal(rows[i].top, "SOLID 0.12 mm", `${i}행 윗변`)
+    for (let i = 1; i < 8; i++) assert.equal(rows[i].bottom, "SOLID 0.12 mm", `${i}행 아랫변`)
+    assert.equal(rows[8].bottom, before[1].bottom) // 바깥 아랫변은 새 마지막 행으로
+  })
+})

@@ -73,13 +73,15 @@ export function joinVerticalColumns(items: NormItem[]): NormItem[] {
       const col = [...g].filter(c => c.x <= p.x).sort((a, b) => b.x - a.x)[0]
       if (col) { col.items.push(p); members.add(p) }
     }
+    // 한글 세로쓰기의 、。 는 원문 쉼표·마침표를 세로 모양으로 찍은 것이다(한글 PDF 가 문자표도 U+3001·3002 로 단다) — 한글 기둥이면 되돌린다
+    const hangul = g.some(c => c.items.some(it => /[가-힣]/.test(it.text)))
     g.forEach((col, k) => {
       col.items.sort((a, b) => b.y - a.y)
       let text = ""
       for (let n = 0; n < col.items.length; n++) {
         const it = col.items[n]
         if (n > 0 && col.items[n - 1].y - it.y > fs * 1.3 && !PUNCT.test(it.text)) text += " "
-        text += it.text
+        text += hangul ? it.text.replace(/[、，]/g, ",").replace(/[。．]/g, ".") : it.text
       }
       // 폭은 글자 수의 반 — 글상자 틀(1칸 표) 안에서 칸 폭을 채우고 꺾인 줄로 읽혀 다음 기둥에 이어 붙지 않게
       add.push({ ...col.items[0], text, x: x1, y: top - fs * 0.2 - k * lineH, w: [...text].length * fs * 0.5, h: fs })
