@@ -6,7 +6,6 @@ import { type FrameCtx, ftbl, host } from "./gen-frame-seoul.js"
 import { tc, para } from "./gen-gongmun-extra.js"
 import type { ImageRegistry } from "./gen-image.js"
 import { type CellBfSpec } from "./gen-table-bf.js"
-import { GWANGYANG_VISION_9, GWANGYANG_SUNSHINE, GWANGYANG_EMBLEM } from "./gwangyang-brand-assets.js"
 import { localTitle } from "./gen-frame-local.js"
 import { generateParagraph } from "./md-runs.js"
 import { inlineMapper } from "./style-registry.js"
@@ -47,15 +46,9 @@ export function roundedBox(block:GwangyangBlock,ctx:FrameCtx,minHeight=0):string
 
 export function buildGwangyangExtended(block:GwangyangBlock,ctx:FrameCtx,images:ImageRegistry|null):string {
   if(block.type === "rounded-box") return roundedBox(block,ctx)
-  if(!images) throw new Error("광양시 머리표·표지에는 이미지 레지스트리가 필요합니다")
   const {reg,bf,W}=ctx
   const cp=reg.char({font:"맑은 고딕",pt:11}), pp=reg.para({align:"CENTER",lineSp:100})
   const empty=para("",pp,reg.char({font:"맑은 고딕",pt:1}))
-  const picture=(uri:string,w:number):string=>{
-    const part=images.take(uri)
-    if(!part?.wHU || !part.hHU) throw new Error("광양시 로고 등록 실패")
-    return host(images.inlinePicXml({...part,wHU:w,hHU:Math.round(w*part.hHU/part.wHU)}),pp,cp)
-  }
   const cell=(row:number,col:number,w:number,h:number,text:string,spec:CellBfSpec=none,extra={})=>{
     const xml=tc({row,col,w,h,paras:text,bf:bf.get(spec),...extra})
     return text.includes("<hp:tbl ") ? xml.replace('hasMargin="0"','hasMargin="1"').replace(/<hp:cellMargin left="141" right="141" top="141" bottom="141"\/>(?=<\/hp:tc>$)/, '<hp:cellMargin left="0" right="0" top="0" bottom="0"/>') : xml
@@ -88,7 +81,7 @@ export function buildGwangyangExtended(block:GwangyangBlock,ctx:FrameCtx,images:
       cell(row,col,w,h,text,spec,extra).replace('hasMargin="0"','hasMargin="1"').replace('<hp:cellMargin left="141" right="141" top="141" bottom="141"/>','<hp:cellMargin left="510" right="510" top="141" bottom="141"/>')
     const rowHeights=staff.map((_,i)=>Math.max(1212,roleFits[i].height-282,nameFits[i].height-282)+85)
     const staffHeight=rowHeights.reduce((a,b)=>a+b,0)
-    const logo=picture(GWANGYANG_VISION_9,logoW).replace(`paraPrIDRef="${pp}"`,`paraPrIDRef="${reg.para({align:"LEFT",lineSp:100})}"`)
+    const logo=empty // 슬로건 이미지 자리는 기존 너비·행 높이를 유지한다.
     // 중첩 표의 셀 경계에서 오른쪽·아래 획이 잘리지 않도록 단일 표로 배치한다.
     const rows=[
       cell(0,0,logoW,dh+staffHeight,logo,none,{rowSpan:staff.length+1})
@@ -101,7 +94,7 @@ export function buildGwangyangExtended(block:GwangyangBlock,ctx:FrameCtx,images:
     ].map(row=>row.replace(/hasMargin="0"/g,'hasMargin="1"').replace(/<hp:cellMargin left="141" right="141" top="141" bottom="141"\/>/g,'<hp:cellMargin left="0" right="0" top="0" bottom="0"/>'))
     return host(ftbl(rows,W,dh+staffHeight,4),reg.para({lineSp:100,after:500,keepWithNext:true}),hc)
   }
-  const logos=cell(0,0,14000,4200,picture(GWANGYANG_SUNSHINE,11500))+cell(0,1,W-28000,4200,empty)+cell(0,2,14000,4200,picture(GWANGYANG_VISION_9,13000))
+  const logos=cell(0,0,14000,4200,empty)+cell(0,1,W-28000,4200,empty)+cell(0,2,14000,4200,empty)
   const top=host(ftbl([logos],W,4200,3),reg.para({lineSp:100,after:500}),cp)
   const mw=13000,gap=4000,aw=W-mw-gap,ml=4000
   const edge:CellBfSpec={t:"thin",b:"thin",l:"thin",r:"thin"}
@@ -122,6 +115,6 @@ export function buildGwangyangExtended(block:GwangyangBlock,ctx:FrameCtx,images:
   const cityWidth=Math.min(14718,Math.ceil(measureTextWidth(cityText,2600,100,{faceClass:faceClassForGen(ctx.frame.titleFont)})))
   const dept=block.dept??"",deptFit=fitGwangyangText(dept,ctx.frame.titleFont,14,cityWidth,ctx,true)
   const deptXml=para(dept,reg.para({align:deptFit.lines>1?"LEFT":"DISTRIBUTE",right:14718-cityWidth,lineSp:110,keepWord:true}),reg.char({font:ctx.frame.titleFont,pt:14,ratio:deptFit.ratio,spacing:deptFit.spacing}))
-  const bottom=host(ftbl([cell(0,0,6500,6000,picture(GWANGYANG_EMBLEM,5200))+cell(0,1,15000,6000,para(cityText,reg.para({align:"LEFT",lineSp:110}),reg.char({font:ctx.frame.titleFont,pt:26,bold:true}))+deptXml)],21500,6000,2),reg.para({align:"CENTER",lineSp:100,before:600}),cp)
+  const bottom=host(ftbl([cell(0,0,6500,6000,empty)+cell(0,1,15000,6000,para(cityText,reg.para({align:"LEFT",lineSp:110}),reg.char({font:ctx.frame.titleFont,pt:26,bold:true}))+deptXml)],21500,6000,2),reg.para({align:"CENTER",lineSp:100,before:600}),cp)
   return top+metadata+title+summary+bottom
 }

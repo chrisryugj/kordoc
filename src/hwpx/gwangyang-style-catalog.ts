@@ -2,7 +2,7 @@
 export const GWANGYANG_STYLE_ASSETS = [
   {
     "id": "gy1-title",
-    "name": "사선 파란 띠 대제목",
+    "name": "대제목(장식 이미지 자리)",
     "reportFrame": "gwangyang-1",
     "input": "# 제목"
   },

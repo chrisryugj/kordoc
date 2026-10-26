@@ -2,7 +2,7 @@
 
 등록 자료: [style.json](style.json) · 모델용 [작성 지침](writing-guide.md) · 다른 기관 추가용 [등록 규격](../../docs/agency-style-registration.md).
 
-광양시 보고서·계획서 작성용 로컬 스타일 모음이다. 사용자 확인을 거친 1안 11종과 2안 3종이며, 시의 공식 표준으로 지정됐다는 뜻은 아니다. 민선9기 로고는 **대한민국 산업수도 광양**을 사용한다.
+광양시 보고서·계획서 작성용 로컬 스타일 모음이다. 사용자 확인을 거친 1안 11종과 2안 3종이며, 시의 공식 표준으로 지정됐다는 뜻은 아니다. 로고·슬로건·제목 장식 이미지는 포함하지 않고 자리만 유지한다. [이미지 정책](../../docs/gwangyang-image-policy.md)을 참조한다.
 
 ## 빠른 시작
 
@@ -23,7 +23,7 @@ node scripts/sample-gwangyang-library.mjs "출력폴더"
 
 | ID | 에셋 | 입력 |
 |---|---|---|
-| gy1-title | 사선 파란 띠 대제목 | `# 제목` |
+| gy1-title | 대제목(장식 이미지 자리) | `# 제목` |
 | gy1-chapter | 네이비 번호칸 소제목 | `## 소제목` |
 | gy1-attachment | 붙임 머리표 | `attachment` |
 | gy1-box-white | 흰 설명상자 | `box`, `variant:white` |
@@ -100,7 +100,7 @@ MCP 생성 도구에는 동일 마크다운과 `preset: "report"`, `agency: "광
 
 ## 근거·검증
 
-사용자 로컬 `광양시 1안.hwpx`와 감동시대 보고서의 표·도형을 분석했다. 민선9기 로고는 기록허브에 기록된 기존 검증 보고전 자산을 사용했다. 2안의 선·색은 공개 PDF 시각 근사다. [상세 근거](../../docs/gwangyang-agency.md), [확장 부품](../../docs/gwangyang-extended.md).
+사용자 로컬 `광양시 1안.hwpx`와 감동시대 보고서의 표·도형을 분석했다. 원본 이미지는 배포에서 제외했다. 2안의 선·색은 공개 PDF 시각 근사다. [상세 근거](../../docs/gwangyang-agency.md), [확장 부품](../../docs/gwangyang-extended.md).
 
 `samples.json`은 4개 작성 사례의 입력·옵션·사용 에셋 목록이다. 생성기는 빌드된 API로 작성하고 제목 재파싱, 도형·쪽나눔, 경고 없음, 14종 사용 여부를 검사한다. PDF는 한글 COM으로 별도 출력·검수한다. 로컬 작성테스트와 PR·배포는 별개다.
 

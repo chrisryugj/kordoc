@@ -9,12 +9,13 @@ const staff={type:"staff-header",title:"담당자",date:"2026. 10. 26.",staff:[{
 const rounded={type:"rounded-box",title:"검토 개요",variant:"tab",body:["□ 변경 가능한 본문 & 참고 <값>"]}
 const cover={type:"institution-cover",title:"표지 제목",dept:"담당부서",body:["□ 표지 요약"],approvers:["담당자","과장"]}
 const options={gongmun:{preset:"report" as const,agency:"광양시",cover:false as const,toc:false}}
-it("담당자 머리표는 H1 앞에 한 번만 나오고 민선9기 로고를 임베드한다",async()=>{
+it("담당자 머리표는 H1 앞에 한 번만 나오고 로고 자리를 비워 둔다",async()=>{
  const buf=await markdownToHwpx(["# 본문제목",f(staff),f(rounded)].join("\n\n"),options),z=await JSZip.loadAsync(buf)
  const s=await z.file("Contents/section0.xml")!.async("string")
  assert.ok(s.indexOf("홍길동")<s.indexOf("본문제목"));assert.equal(s.split("홍길동").length-1,1)
  assert.match(s,/xmlns:hc="http:\/\/www.hancom.co.kr\/hwpml\/2011\/core"/)
- assert.ok(z.file(/BinData\//).length>=3)
+ assert.equal(z.file(/BinData\//).length,0)
+ assert.ok(!s.includes("<hp:pic"))
  assert.ok(!s.includes("감동시대"));assert.doesNotThrow(()=>new DOMParser({onError:(_level,message)=>{throw new Error(message)}}).parseFromString(s,"text/xml"))
  const parsed=await parse(buf)
  assert.ok(parsed.markdown.includes("변경 가능한 본문"))

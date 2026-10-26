@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gwangyang",
   "name": "광양시",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "status": "local-tested",
   "officialStandard": false,
   "presets": [
@@ -28,28 +28,28 @@
       "kind": "user-original",
       "reference": "광양시 1안.hwpx",
       "use": "1안 제목·번호칸·설명상자·표",
-      "redistribution": "not-reviewed"
+      "redistribution": "excluded"
     },
     {
       "id": "reports",
       "kind": "user-original",
       "reference": "감동시대 보고서 D08/D13/D24",
       "use": "담당자 머리표·표지·둥근 상자",
-      "redistribution": "not-reviewed"
+      "redistribution": "excluded"
     },
     {
       "id": "brand",
       "kind": "user-original",
       "reference": "민선9기 로고: 대한민국 산업수도 광양",
       "use": "기관 로고",
-      "redistribution": "not-reviewed"
+      "redistribution": "excluded"
     },
     {
       "id": "pdf",
       "kind": "public-document",
       "reference": "원문공개 조사; docs/gwangyang-agency.md",
       "use": "2안 시각 근사",
-      "redistribution": "not-reviewed"
+      "redistribution": "excluded"
     }
   ],
   "writingGuide": "writing-guide.md",
@@ -78,7 +78,7 @@
   "assets": [
     {
       "id": "gy1-title",
-      "name": "사선 파란 띠 대제목",
+      "name": "대제목(장식 이미지 자리)",
       "variant": "gwangyang-1",
       "input": "# 제목"
     },
@@ -178,7 +178,8 @@
       "summary"
     ],
     "evidenceDocs": [
-      "../../docs/gwangyang-fitting.md"
+      "../../docs/gwangyang-fitting.md",
+      "../../docs/gwangyang-image-policy.md"
     ]
   },
   "runtime": {

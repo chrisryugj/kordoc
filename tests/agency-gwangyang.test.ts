@@ -77,17 +77,17 @@ it("병합 셀을 포함한 본문표 외곽과 헤더 경계가 기관 골격�
 })
 
 
-it("1안 제목 띠는 원본 장식 2개를 패키지에 넣고 셀 배경으로 참조한다", async () => {
+it("1안 제목 띠는 이미지 없이 원본 장식 자리의 높이를 유지한다", async () => {
   const buf = await markdownToHwpx("# 제목\n\n## 추진 배경\n\n| 구분 | 내용 |\n|---|---|\n| 1 | 첫 행 |\n| 2 | 둘째 행 |", { gongmun: { preset: "report", agency: "광양시" } })
   const z = await JSZip.loadAsync(buf)
   const header = await z.file("Contents/header.xml")!.async("string")
   const section = await z.file("Contents/section0.xml")!.async("string")
   const manifest = await z.file("Contents/content.hpf")!.async("string")
   const refs = [...header.matchAll(/<hc:img binaryItemIDRef="([^"]+)"/g)].map(m => m[1])
-  assert.equal(refs.length, 2)
+  assert.equal(refs.length, 0)
   for (const id of refs) assert.ok(manifest.includes(`id="${id}"`))
   const images = Object.keys(z.files).filter(n => /^BinData\/.+\.png$/.test(n))
-  assert.equal(images.length, 2)
+  assert.equal(images.length, 0)
   assert.ok(header.includes('width="0.4 mm" color="#263056"'))
   assert.ok(header.includes('type="DASH" width="0.12 mm"'))
   assert.ok(section.includes('height="537"'))

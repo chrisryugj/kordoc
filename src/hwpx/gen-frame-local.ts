@@ -4,7 +4,6 @@ import { type FrameCtx, ftbl, host } from "./gen-frame-seoul.js"
 import { tc, para } from "./gen-gongmun-extra.js"
 import { type CellBfSpec } from "./gen-table-bf.js"
 import { type ImageRegistry } from "./gen-image.js"
-import { GWANGYANG_TITLE_1, GWANGYANG_TITLE_2 } from "./gwangyang-title-assets.js"
 
 export type ReportFrame = "gwangyang-1" | "gwangyang-2"
 const BLUE = "#003366"
@@ -19,13 +18,11 @@ export function localTitle(title: string, variant: ReportFrame, ctx: FrameCtx, i
   const cp = reg.char({ font: ctx.frame.titleFont, pt: fit.pt, ratio: fit.ratio, spacing: fit.spacing, bold: !first, color: appearance.color ?? "#000000" })
   const empty = para("", reg.para({ lineSp: 100 }), reg.char({ font: ctx.frame.titleFont, pt: 1 }))
   if (first) {
-    if (!images) throw new Error("광양시 1안 제목 띠에는 이미지 레지스트리가 필요합니다")
-    const parts = [images.take(GWANGYANG_TITLE_1), images.take(GWANGYANG_TITLE_2)]
-    if (!parts[0] || !parts[1]) throw new Error("광양시 1안 제목 띠 등록 실패")
+    // 장식 이미지 대신 기존 높이의 빈 셀을 남긴다.
     const sub=appearance.subtitle ? fitGwangyangText(appearance.subtitle,ctx.frame.titleFont,16,W-1800,ctx,true) : null
     const heights = [537, Math.max(appearance.subtitle ? 5500 : 3116, fit.lines*size*130+282+(sub?sub.lines*16*120:0)), 565]
     const rows = heights.map((h,row) => tc({ row, col: 0, w: W, h,
-      bf: bf.get(row === 1 ? none : { ...none, imageRef: parts[row === 0 ? 0 : 1]!.itemId }),
+      bf: bf.get(none),
       paras: row === 1 ? (appearance.subtitle ? para(appearance.subtitle,reg.para({left:1400,lineSp:120}),reg.char({font:ctx.frame.titleFont,pt:16,ratio:sub!.ratio,spacing:sub!.spacing})) : "") + para(title, pp, cp) : empty }))
     return { xml: host(ftbl(rows, W, heights.reduce((a,b) => a+b,0), 1), reg.para({ after: 1400, keepWithNext: true }), cp), overflow: fit.overflow }
   }
