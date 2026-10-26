@@ -27,7 +27,7 @@ it('다른 기관의 중복 ID·미등록 변형·지원하지 않는 등록 필
 })
 it('작성 지침의 괄호 항목 예시를 기존 생성 경로로 작성할 수 있다',async()=>{
   const guide=readFileSync(new URL('../templates/gwangyang/writing-guide.md',import.meta.url),'utf8')
-  const md=guide.match(/```markdown\n([\s\S]*?)\n```/)![1]
+  const md=guide.match(/```markdown\r?\n([\s\S]*?)\r?\n```/)![1]
   const bytes=await markdownToHwpx('# 기관 스타일 작성 시험\n\n> 부서별 서식 활용을 지원하고자 함\n\n'+md,{gongmun:{preset:'plan',agency:'광양시',cover:false,toc:false}})
   const zip=await JSZip.loadAsync(bytes),xml=await zip.file('Contents/section0.xml')!.async('string')
   for(const label of ['(지원대상)','(지원범위)','(적용방법)']) assert.ok(xml.includes(label))
