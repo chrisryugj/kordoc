@@ -46,7 +46,7 @@ export function registerGenerateTools(server: McpServer): void {
     "generate_document",
     "마크다운을 HWPX 한글 문서로 생성합니다(kordoc 공문서 서식). \"보고서로/공문서로/개조식으로/계획서로 뽑아줘·만들어줘\" 요청이 이 도구입니다. ⚠ 사용자가 견본 HWPX/HWP 를 주며 \"이 서식대로·똑같이·이거처럼 써줘\"라고 하면 이 도구가 아니라 parse_document → 내용만 새로 쓴 마크다운 → patch_document(견본 서식·로고·결재란·표 그대로, 문단 추가·삭제 가능)입니다 — 견본과 표·항목 구조가 다른 새 문서를 부서 서식으로 짤 때만 이 도구의 template_path. 프리셋 매핑: 정부 표준 보고서(표지·목차·로마숫자 장헤더 자동)='개조식', 중앙부처 업무보고·국회 서면보고(재경부 실측: 장 띠·절 숫자칸·소제목 박스·① 항목 띠·연노랑 성과 요약박스·별첨 띠, □ 뒤 (키워드) 파랑)='업무보고', 지방자치단체 방침서·추진계획(서울시 시장방침 실측: 제목표·파랑 부제·요약박스·[Ⅰ] 장 상자·절 띠)='서울방침' — 보고서·계획서를 만들 때 정부(업무보고)형과 지방(서울방침)형 중 무엇으로 할지 불명확하면 사용자에게 물어보세요, 기안문·시행문·알림공문='기안문', 1페이지 요약보고서='보고서', 추진계획='계획서'. 표는 실측 정부 서식(헤더 음영+이중선·외곽 굵은선·내용 비례 열폭), 쪽번호·결재란·'끝.' 표시 지원. ⚠ 생성 전 확인 권장: 문서종류(보고서/기안문)·제목·기관명(org)·날짜·목차 여부가 불명확하면 사용자에게 물어보세요 — 엉뚱한 프리셋 선택이 가장 흔한 오생성 원인. 마크다운 규칙(v4.13 서울 실결재 실측 위계): #(h1)=문서 제목, ##(h2)=장(보고서 Ⅰ Ⅱ / 기안문·통지는 법정 1.), ###(h3)=□ 대항목(기안문 가.), 그 아래 리스트=ㅇ → - → ㆍ(기안문 가. → 1) → 가)), 본문에 □/ㅇ/-/1./가. 를 직접 써도 같은 위계로 정규화, ※시작·'출처:'·'자료:'=참고(13pt), 제목 직후 인용문(>)=요약박스(보고서·계획서·개조식·서울방침 — 개조식은 표지(기본) 다음 본문 첫 쪽 제목 상자 아래·첫 장 앞 — cover:false 면 ※ 참고, 그 밖의 자리 인용문은 ※ 참고 / 업무보고는 `> ▪ …`=연노랑 성과 요약박스, 자리 무관) — ★내용 구성(보고서·계획서): 왜(추진배경·근거·현황 및 문제점) → 무엇을(추진개요·개선방안·세부 추진계획) → 어떻게(추진일정·소요예산·기대효과·향후계획)를 장 이름으로 — '서론·본론·결론'이라고 쓰지 말 것, 배경은 사실(지시 일자·법령 시행일·건수)로 열고 문제점마다 방안을 한 짝씩, 기대효과는 문제점 지표의 목표치, '결론적으로·만족도 향상·급변하는' 같은 AI 상투구 금지, 모르는 수치는 ○○ 자리표시. 결재용이면 gate: true(미통과면 지적 목록만 돌려줌 — 고쳐 쓰고 다시 호출). ★보고서·개조식은 반드시 제목 직후 `> …하고자 함` 한 문장(쉼표 허용·부호 없음·3줄 이내 약 90~100자)로 보고 목적을 넣을 것(3줄 초과·두 문장 이상이면 경고, 보고서·계획서·서울방침은 없어도 경고), <right>텍스트</right>=우측정렬. □·제목은 한 줄에 자동 축소, 본문은 어절 단위 줄바꿈(낱말·날짜가 줄 끝에서 안 쪼개짐)·부호 뒤 탭 정렬(둘째 줄이 첫 줄 내용과 같은 위치), 마지막 줄이 짧은 고아 줄과 공백이 크게 벌어지는 줄은 자간 축소로 정리, 곧은따옴표는 ‘’“”로. 법령 코드 (282791)·KOSIS 표 ID DT_…·(법정동코드 …)·○○ MCP 조회 같은 내부 식별자·도구 언급은 자동 제거 — 출처는 기관·자료명만 쓸 것. (원본 서식 보존 제자리 수정은 patch_document, 서식 빈칸 채우기는 fill_form)",
     {
-      markdown: z.string().min(1).describe("HWPX로 변환할 마크다운 전문. 표는 GFM 문법 사용 (예: '| 이름 | 부서 |\\n| --- | --- |\\n| 홍길동 | 기획팀 |')"),
+      markdown: z.string().min(1).describe("HWPX로 변환할 마크다운 전문. 광양시 1안에서는 gwangyang JSON 코드블록(type: attachment/box/table-title, title, label 또는 variant:white/purple와 body:문자열배열)으로 붙임·설명상자·표 제목 사용 가능. 표는 GFM 문법 사용 (예: '| 이름 | 부서 |\\n| --- | --- |\\n| 홍길동 | 기획팀 |')"),
       output_path: z.string().min(1).describe("출력 HWPX 파일의 절대 경로 (.hwpx 권장)"),
       profile_path: z.string().optional().describe("서식 프로필 JSON 경로 (extract_profile로 추출) — 참조 문서의 표 테두리·음영·열폭·셀 글꼴을 재현. 표 행·열 수와 첫 셀 텍스트가 일치하는 표에만 적용"),
       template_path: z.string().optional().describe("부서 서식 견본 HWPX 절대 경로 — 견본의 쪽 설정·글꼴·제목표·담당 줄(☎)·요약 상자(>)·□○-·※ 문단·데이터 표·참고N 띠 서식을 그대로 쓰고 내용만 markdown 으로 새로 짠다(견본 글은 남지 않음). 견본과 내용 구조가 달라도 된다 — 견본을 고쳐 쓰는(줄·칸 그대로) 일은 patch_document. preset·서식·쪽·image_dir·profile_path 와 함께 못 씀"),
@@ -81,13 +81,14 @@ export function registerGenerateTools(server: McpServer): void {
       levels: z.record(z.string().regex(/^[0-7]$/), z.object(Object.fromEntries(LEVEL_STYLE_KEYS.map(k => [k, k === "pt" ? z.number().min(SIZE_PT_RANGE.min).max(SIZE_PT_RANGE.max).optional() : k === "bold" ? z.boolean().optional() : z.string().optional()]))))
         .optional().describe("항목부호 단계별 위계 타이포(공문서 모드, v4.12.3) — {\"0\":{font:\"HY견고딕\",pt:17,bold:true},\"1\":{font:\"한컴돋움\",bold:true}} 꼴(depth 0~7). 실측: 전자결재 기안문 □/ㅇ/- 계열은 □=HY견고딕 +2~3pt 굵게·ㅇ=한컴돋움 굵게·-=휴먼명조 본문. 법정 8단계(1. 가.)는 본문 동일이 관행이라 기본 미적용"),
       bullet2: z.enum(BULLET2_CHARS).optional().describe("2단계 항목부호 — 'ㅇ'(이응, 전자결재 기안문·공고문 실측 지배) / '○'(원, 보고서 양식) / '◦'·'❍'(일부 중앙부처). 미지정 시 통지·보도자료 ㅇ, 그 외 ○"),
-      agency: z.enum([AGENCY_COMMON_NAME, ...agencyNames()] as [string, ...string[]]).optional().describe("기관 서식 — 중앙행정기관 이름 또는 '공통'(기관 간 최빈값). 정책브리핑 보도자료 2,670건 실측으로 그 기관의 □·ㅇ·- 글꼴·크기, 2단계 부호, 표 머리, 기관 색을 기본값으로 깐다(명시 옵션이 우선). 보고서·계획서·업무보고·개조식·보도자료 전용"),
+      agency: z.enum([AGENCY_COMMON_NAME, ...agencyNames()] as [string, ...string[]]).optional().describe("기관 서식 — 기관 이름(국세청·교육부·광양시 등) 또는 '공통'. 기관별 □·ㅇ·- 글꼴·크기, 2단계 부호, 표 머리, 기관 색을 기본값으로 깐다(명시 옵션이 우선). 보고서·계획서·업무보고·개조식·보도자료 전용. 광양시는 공개 보고서 기반 후보이며 표본 없는 종류는 공통값 사용"),
       total_row: z.enum(TOTAL_ROWS).optional().describe("표 합계·총계·계 행 위치: top=머리행 바로 아래(기본, 공문 실무 관행) | bottom=맨 아래 | keep=원고 그대로. GFM 표에만 적용"),
       suppress_single: z.boolean().optional().describe("단일 형제 항목 부호 생략(편람 규정, 법정 번호 standard 전용 — 불릿 체계인 보고서·계획서·개조식·보도자료엔 무효). 기본 false — 하나뿐인 항목에도 부호(1. 가.)를 부여 (부호 없는 계단 들여쓰기가 실무 눈에 어색)"),
       doc_head: z.object(Object.fromEntries(DOC_HEAD_KEYS.map(k => [k, z.string().optional()])))
         .optional().describe("기안문 두문표(별지 제1호서식·서울 실결재 6행 표) — org=행정기관명(굴림 20pt bold 자간띄움)/slogan=원훈(상단 10pt)/to=수신('내부결재'면 발신명의 생략)/via=경유/title=제목(미지정 시 첫 h1). 기안문 프리셋 전용"),
       doc_foot: z.object(Object.fromEntries(DOC_FOOT_KEYS.map(k => [k, z.string().optional()])))
         .optional().describe("기안문 결문표 — sender=발신명의(18pt bold 중앙)/drafter·reviewer·approver='직위 성명' 결재선/cooperator=협조자/recipients=수신자 목록/docNum=시행 '과-번호 (날짜)'/receive=접수/zip·address·site/phone·fax·email/disclosure=공개구분. 기안문 프리셋 전용"),
+      report_frame: z.enum(["gwangyang-1", "gwangyang-2"]).optional().describe("보고서·계획서 대제목표/소제목표/본문표 골격. 광양시는 gwangyang-1 기본"),
       report_info: z.string().optional().describe("보고서: 제목표 아래 담당자 행 '(2026. 9. 6., 스마트도시과 홍길동, ☎450-1234)' / 기안문: 우상단 12pt 보고정보 행"),
       notice_head: z.object(Object.fromEntries(NOTICE_HEAD_KEYS.map(k => [k, z.string().optional()])))
         .optional().describe("공고문 두문·결문 — no=공고번호(본문 위 bold)/date=날짜(본문 아래 우측)/sender=발신명의(우측 bold). 통지 프리셋 전용"),
@@ -108,11 +109,11 @@ export function registerGenerateTools(server: McpServer): void {
       inline_math: z.boolean().optional().describe("본문·표 셀의 인라인 수식 $…$ 를 한글 수식 개체로 생성 (블록 $$…$$ 는 늘 수식). 미지정 시 글자 그대로 — 가격 표기 같은 일반 $ 오인 방지. 켜도 짝이 맞는 $…$ 만(공백으로 시작·끝나거나 \\$ 이스케이프면 제외)"),
       gate: z.boolean().optional().describe("공문서 게이트 — 표기법·문체 error 와 윤문(생성형 AI 문체)·구성(왜→무엇→어떻게, 문제점↔방안 짝, 배경 사실·기대효과 목표치) 지적이 하나라도 있으면 파일을 만들지 않고 지적 목록을 돌려준다. 결재용 원고는 켜고, 지적을 고쳐 쓴 뒤 다시 호출"),
     },
-    async ({ markdown, output_path, profile_path, template_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, total_row, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math, gate }) => {
+    async ({ markdown, output_path, profile_path, template_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, total_row, doc_head, doc_foot, report_info, report_frame, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math, gate }) => {
       try {
         // 부서 서식 견본 — 서식은 견본이 정한다. 함께 준 서식 옵션은 조용히 버리지 않고 오류
         if (template_path) {
-          const given: Record<string, unknown> = { profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math }
+          const given: Record<string, unknown> = { profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, doc_head, doc_foot, report_info, report_frame, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math }
           const clash = Object.keys(given).filter((k) => given[k] !== undefined)
           if (clash.length) return { content: [{ type: "text", text: `오류: ${templateConflictMessage(clash)}` }], isError: true }
           const out = safeOutputPath(output_path, new Set([".hwpx"]))
@@ -146,7 +147,7 @@ export function registerGenerateTools(server: McpServer): void {
             org, date, cover, toc, approval,
             pageNumbers: page_numbers, endMark: end_mark, bodyTitleBox: body_title_box, chapterFit: chapter_fit,
             h2Marker: h2_marker, bandColor: band_color, bandTextColor: band_text_color, fonts, sizes, levels, bullet2, suppressSingle: suppress_single, totalRow: total_row,
-            docHead: doc_head, docFoot: doc_foot, reportInfo: report_info,
+            docHead: doc_head, docFoot: doc_foot, reportInfo: report_info, reportFrame: report_frame,
             noticeHead: notice_head, press, summary, docInfo: doc_info, dept, coverLabel: cover_label, agency,
             checklist: checklist && typeof checklist === "object" ? { na: checklist.na, notes: checklist.notes && Object.fromEntries(Object.entries(checklist.notes).map(([k, v]) => [Number(k), v])) } : checklist,
           })

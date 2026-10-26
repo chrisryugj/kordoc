@@ -300,7 +300,8 @@ export function applySchemeOverrides(s: Scheme, g: ResolvedGongmun): Scheme {
       if (st.font) l.font = st.font
       // pt 미지정(resolveLevels 가 프리셋 bodyHeight 로 채움)이면 스킴 단계 크기 유지 — 프리셋 bodyPt(통지 15)와
       // v5 스킴 기본(법정 12)이 다를 때 15pt 로 튀지 않게
-      if (st.height !== g.bodyHeight) l.pt = st.height / 100
+      // 기관이 지정한 15pt도 실제 단계에 반영한다(본문 기본 15pt와 같아도 - 단계 기본 14pt와는 다름).
+      if (st.height !== g.bodyHeight || (g.agency && !g.bodyPtExplicit)) l.pt = st.height / 100
       l.bold = st.bold
     }
   }

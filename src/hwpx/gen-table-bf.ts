@@ -8,7 +8,7 @@
  * (blocksToSectionXml이 header보다 먼저 실행되는 조립 순서를 이용)
  */
 
-import { borderFillEntry, type BorderSide } from "./gen-ids.js"
+import { escapeXml, borderFillEntry, type BorderSide } from "./gen-ids.js"
 
 const THIN: BorderSide = ["0.12 mm", "#000000"]
 const THICK: BorderSide = ["0.4 mm", "#000000"]
@@ -26,6 +26,7 @@ export interface CellBfSpec {
   l: EdgeKind
   r: EdgeKind
   /** 단색 채움(#RRGGBB) 또는 gradient(기본 RADIAL 2색 — LINEAR·다색은 type/angle 지정) */
+  imageRef?: string
   fill?: string | GradientFill
 }
 
@@ -53,14 +54,14 @@ export class TableBfRegistry {
 
   get(spec: CellBfSpec): number {
     const fillKey = typeof spec.fill === "string" ? spec.fill : spec.fill ? `${spec.fill.type ?? "RADIAL"}@${spec.fill.angle ?? 0}:${spec.fill.gradient.join("-")}` : ""
-    const key = `${edgeKey(spec.t)}|${edgeKey(spec.b)}|${edgeKey(spec.l)}|${edgeKey(spec.r)}|${fillKey}`
+    const key = `${edgeKey(spec.t)}|${edgeKey(spec.b)}|${edgeKey(spec.l)}|${edgeKey(spec.r)}|${fillKey}|${spec.imageRef ?? ""}`
     const hit = this.map.get(key)
     if (hit !== undefined) return hit
     const id = this.nextId++
     this.map.set(key, id)
-    this.xmls.push(
-      borderFillEntry(id, { t: sideOf(spec.t), b: sideOf(spec.b), l: sideOf(spec.l), r: sideOf(spec.r) }, spec.fill),
-    )
+    let xml = borderFillEntry(id, { t: sideOf(spec.t), b: sideOf(spec.b), l: sideOf(spec.l), r: sideOf(spec.r) }, spec.fill)
+    if (spec.imageRef) xml = xml.replace("</hh:borderFill>", `<hc:fillBrush><hc:imgBrush mode="TOTAL"><hc:img binaryItemIDRef="${escapeXml(spec.imageRef)}" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/></hc:imgBrush></hc:fillBrush></hh:borderFill>`)
+    this.xmls.push(xml)
     return id
   }
 
@@ -81,6 +82,8 @@ export class TableBfRegistry {
  *  - 그 외 내부 변 thin(0.12)
  */
 export function dataCellSpec(opts: {
+  theme?: "gwangyang-1" | "gwangyang-2"
+  groupBoundaries?: ReadonlySet<number>
   row: number
   rowEnd: number // row + rowSpan - 1
   col: number
@@ -95,11 +98,22 @@ export function dataCellSpec(opts: {
   const isBottom = rowEnd === rowCnt - 1
   const isHeaderBottom = headerRows > 0 && rowEnd === headerRows - 1
   const isBelowHeader = headerRows > 0 && row === headerRows
+  if (opts.theme === "gwangyang-1") {
+    const dash: EdgeKind = ["0.12 mm", "#000000", "DASH"]
+    return {
+      t: isTop || row <= headerRows || opts.groupBoundaries?.has(row) ? "thin" : dash,
+      b: isBottom || rowEnd < headerRows || opts.groupBoundaries?.has(rowEnd+1) ? "thin" : dash,
+      l: col === 0 ? "none" : "thin",
+      r: colEnd === colCnt - 1 ? "none" : "thin", fill,
+    }
+  }
+  const header: EdgeKind = opts.theme ? "thick" : "double"
+  const outer: EdgeKind = "thick"
   return {
-    t: isTop ? "thick" : isBelowHeader ? "double" : "thin",
-    b: isBottom ? "thick" : isHeaderBottom ? "double" : "thin",
-    l: col === 0 ? "thick" : "thin",
-    r: colEnd === colCnt - 1 ? "thick" : "thin",
+    t: isTop ? "thick" : isBelowHeader ? header : "thin",
+    b: isBottom ? "thick" : isHeaderBottom ? header : "thin",
+    l: col === 0 ? outer : "thin",
+    r: colEnd === colCnt - 1 ? outer : "thin",
     fill,
   }
 }

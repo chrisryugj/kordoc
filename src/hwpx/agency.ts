@@ -1,5 +1,5 @@
 /**
- * 기관 서식(`agency`) — 중앙행정기관 보도자료 2,670건 실측값(agency-styles.ts)을 공문서 옵션의 기본값으로 깐다.
+ * 기관 서식(`agency`) — 중앙행정기관 실측값(agency-styles.ts)과 지역기관 후보(agency-local-styles.ts)를 기본값으로 깐다.
  *
  * 기관값은 빈자리만 채운다. 명시 옵션(levels 의 그 단계·bullet2·fonts 의 그 역할·띠 색·본문 크기)이 늘 이긴다.
  *   - 보고서 계열(report·plan·ministry — v5 엔진): 참고·붙임 구간(보고서형) 실측 □·ㅇ·- 글꼴·크기, ※ 글꼴·크기, 표 머리
@@ -11,6 +11,7 @@
  */
 
 import { AGENCY_COMMON, AGENCY_STYLES, type AgencyFont, type AgencyPressStyle, type AgencyStyle } from "./agency-styles.js"
+import { LOCAL_AGENCY_STYLES } from "./agency-local-styles.js"
 import type { GongmunLevelStyle, GongmunOptions, GongmunPreset } from "./gongmun.js"
 import { KordocError } from "../utils.js"
 
@@ -33,12 +34,12 @@ export interface ResolvedAgency {
 
 /** 지원 기관 이름 (가나다순, "공통" 제외) */
 export function agencyNames(): string[] {
-  return Object.keys(AGENCY_STYLES)
+  return [...new Set([...Object.keys(AGENCY_STYLES), ...Object.keys(LOCAL_AGENCY_STYLES)])].sort((a, b) => a.localeCompare(b, "ko"))
 }
 
 function findAgency(name: string): AgencyStyle | undefined {
   const n = name.trim()
-  return n === AGENCY_COMMON_NAME ? AGENCY_COMMON : AGENCY_STYLES[n]
+  return n === AGENCY_COMMON_NAME ? AGENCY_COMMON : LOCAL_AGENCY_STYLES[n] ?? AGENCY_STYLES[n]
 }
 
 /** 기관 실측 서식 — 없는 이름은 오류(지원 기관 목록을 붙인다) */
@@ -132,6 +133,7 @@ export function agencyWarnings(opts: GongmunOptions, preset: GongmunPreset): str
   if (!name) return []
   if (!AGENCY_PRESETS.has(preset)) return [`agency(기관 서식)는 보고서·계획서·업무보고·개조식·보도자료 전용 — '${preset}' 프리셋에서 무시됨`]
   const st = findAgency(name)
+  if (st && preset === "press" && !st.press) return [`agency: ${name} 은 보도자료 실측 표본이 없어 기관 간 공통 서식을 씀`]
   if (st && preset !== "press" && !st.report) return [`agency: ${name} 은 보고서형 실측 표본이 모자라 기관 간 공통 서식을 씀`]
   return []
 }

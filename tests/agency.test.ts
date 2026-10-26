@@ -16,8 +16,9 @@ async function header(buf: ArrayBuffer): Promise<string> {
 }
 
 describe("agency 데이터", () => {
-  it("현행 52개 기관, 공통과 없는 이름", () => {
-    assert.equal(agencyNames().length, 52)
+  it("중앙 52개 기관과 광양시, 공통과 없는 이름", () => {
+    assert.equal(agencyNames().length, 53)
+    assert.ok(agencyNames().includes("광양시"))
     assert.ok(agencyNames().includes("국세청"))
     assert.equal(agencyStyle("공통").report?.levels[0].font, "휴먼명조")
     assert.throws(() => agencyStyle("국세처"), /실측 서식이 없는 기관.*국세청/)

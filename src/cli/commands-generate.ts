@@ -18,7 +18,7 @@ import type { Command } from "commander"
 const TEMPLATE_CLI_CONFLICTS = [
   "preset", "font", "pt", "lineSpacing", "profile", "org", "date", "toc", "cover", "approval", "pageNumbers", "endMark",
   "bodyTitleBox", "chapterFit", "h2Marker", "bandColor", "bandTextColor", "summary", "docInfo", "dept", "checklist", "coverLabel",
-  "fonts", "sizes", "levels", "levelsFrom", "bullet2", "agency", "suppressSingle", "docHead", "docFoot", "reportInfo",
+  "fonts", "sizes", "levels", "levelsFrom", "bullet2", "agency", "suppressSingle", "docHead", "docFoot", "reportInfo", "reportFrame",
   "noticeHead", "pressHead", "pressSub", "pressPeople", "plain", "paper", "landscape", "columns", "header", "footer",
   "imageDir", "inlineMath",
 ]
@@ -61,11 +61,12 @@ export function registerGenerateCommands(program: Command): void {
     .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
     .option("--levels-from <hwpx>", "견본 HWPX 에서 항목부호 단계별 글꼴·크기·굵기를 배워 적용 (kordoc levels 와 같은 추출, --levels 로 준 단계가 우선)")
     .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배)·○(원 — 보고서 양식)·◦·❍")
-    .option("--agency <name>", "기관 서식 — 중앙행정기관 이름(국세청·교육부 …) 또는 공통. 보도자료 2,670건 실측 단계 글꼴·크기·2단계 부호·표 머리·기관 색 (보고서·계획서·업무보고·개조식·보도자료)")
+    .option("--agency <name>", "기관 서식 — 기관 이름(국세청·교육부·광양시 …) 또는 공통. 단계 글꼴·크기·2단계 부호·표 머리·기관 색 (보고서·계획서·업무보고·개조식·보도자료, 표본 없는 종류는 공통값)")
     .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
     .option("--total-row <pos>", "표 합계·총계·계 행 위치: top(머리행 바로 아래, 기본 — 공문 실무 관행) | bottom | keep(원고 그대로)")
     .option("--doc-head <spec>", "기안문 두문표: org=기관명,slogan=원훈,to=수신처,title=제목 (별지 제1호서식·서울 실결재 6행 표)")
     .option("--doc-foot <spec>", "기안문 결문표: sender=발신명의,drafter=주무관 홍길동,reviewer=과장 김철수,approver=국장 박영희,cooperator=협조자,docNum=시행(과-번호 (날짜)),receive=접수,zip=우편번호,address=주소,site=홈페이지,phone=전화,fax=전송,email=메일,disclosure=공개구분")
+    .option("--report-frame <style>", "보고서 표 골격: gwangyang-1(사선 파란 띠) | gwangyang-2(3색 띠)")
     .option("--report-info <text>", "보고서 담당자 행(제목표 아래) / 기안문 우상단 보고정보 행 — 예: '(2026. 7. 11., 과장 홍길동, ☎02-120)'")
     .option("--notice-head <spec>", "공고문 두문·결문: no=공고 제2026-1호,date=2026년 7월 11일,sender=행정안전부장관")
     .option("--press-head <spec>", "보도자료 머리: release=보도시점,distribute=배포일,dept=담당부서,manager=담당자,phone=연락처")
@@ -219,6 +220,7 @@ export function registerGenerateCommands(program: Command): void {
             totalRow: enumCheck("--total-row", opts.totalRow, TOTAL_ROWS),
             docHead: opts.docHead ? parseKv(String(opts.docHead), "--doc-head") : undefined,
             docFoot: opts.docFoot ? parseKv(String(opts.docFoot), "--doc-foot") : undefined,
+            reportFrame: opts.reportFrame,
             reportInfo: opts.reportInfo ? String(opts.reportInfo) : undefined,
             summary: opts.summary ? String(opts.summary) : undefined,
             docInfo: opts.docInfo ? parseKv(String(opts.docInfo), "--doc-info") : undefined,

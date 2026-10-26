@@ -7,13 +7,14 @@
  * 순서 = id 순서로 일괄 붙인다. 시작 id는 호출자가 정적 블록 크기에서 넘긴다.
  */
 
-import { charPr as charPrXml, paraPr as paraPrXml, CHAR_NORMAL, CHAR_BOLD, CHAR_ITALIC, CHAR_BOLD_ITALIC } from "./gen-ids.js"
+import { escapeXml, charPr as charPrXml, paraPr as paraPrXml, CHAR_NORMAL, CHAR_BOLD, CHAR_ITALIC, CHAR_BOLD_ITALIC } from "./gen-ids.js"
 
 export interface CharSpec {
   font: string
   pt: number
   bold?: boolean
   italic?: boolean
+  underline?: boolean
   /** 장평 % (기본 100) */
   ratio?: number
   /** 자간 % (기본 0) */
@@ -67,14 +68,16 @@ export class StyleRegistry {
   }
 
   char(spec: CharSpec): number {
-    const key = `${spec.font}|${spec.pt}|${spec.bold ? 1 : 0}|${spec.italic ? 1 : 0}|${spec.ratio ?? 100}|${spec.spacing ?? 0}|${spec.color ?? "#000000"}`
+    const key = `${spec.font}|${spec.pt}|${spec.bold ? 1 : 0}|${spec.italic ? 1 : 0}|${spec.ratio ?? 100}|${spec.spacing ?? 0}|${spec.color ?? "#000000"}|${spec.underline ? 1 : 0}`
     const hit = this.chars.get(key)
     if (hit !== undefined) return hit
     const id = this.charBase + this.charXmls.length
     const fontId = this.font(spec.font)
     // 한글·라틴만 지정 글꼴, 그 외 언어는 0 (HANJA 이하 fontface는 1종만 있어 append id가 없다)
     // 나머지 언어 슬롯도 같은 글꼴 — 7슬롯이 같아야 한컴 툴바가 글꼴명을 보여준다(전 언어 목록 동일, gen-header)
-    this.charXmls.push(charPrXml(id, Math.round(spec.pt * 100), !!spec.bold, !!spec.italic, fontId, spec.color ?? "#000000", spec.ratio ?? 100, fontId, spec.spacing ?? 0))
+    let xml = charPrXml(id, Math.round(spec.pt * 100), !!spec.bold, !!spec.italic, fontId, spec.color ?? "#000000", spec.ratio ?? 100, fontId, spec.spacing ?? 0)
+    if (spec.underline) xml = xml.replace("</hh:charPr>", `<hh:underline type="BOTTOM" shape="SOLID" color="${escapeXml(spec.color ?? "#000000")}"/></hh:charPr>`)
+    this.charXmls.push(xml)
     this.chars.set(key, id)
     return id
   }

@@ -54,6 +54,9 @@ export interface GongmunTableStyle {
   /** 데이터 표 호스트 문단 paraPr(RIGHT) — bfRegistry와 함께 지정 */
   rightParaPr?: number
   /** 헤더행 음영색 (기본 #E6E6E6 — 실측 GT1·샘플양식1) */
+  borderTheme?: "gwangyang-1" | "gwangyang-2"
+  /** 기관 표를 글자처럼 배치하고 개체 바깥 여백을 0으로 유지 */
+  inlineTable?: boolean
   headerFill?: string
   /** 라벨열 음영색 (기본 #E7E7E7 — 실측 GT6/GT7 표3) */
   labelFill?: string
@@ -387,7 +390,7 @@ export function generateTable(rows: string[][], theme: ResolvedTheme, style: Gon
     ? (id: number) => (id === CHAR_NORMAL ? style.charPr : id === CHAR_BOLD ? style.boldCharPr : id)
     : undefined
 
-  const rowHeights = cellWidths.map((row) => style ? estimateRowHeight(row, colWidths, measureH) : 1500)
+  const rowHeights = cellWidths.map((row) => style ? estimateRowHeight(row, colWidths, measureH) + (style.borderTheme ? 568 : 0) : 1500)
 
   const trElements = rows.map((row, rowIdx) => {
     // 부족한 셀은 빈 문자열로 채워 colCnt 맞춤
@@ -432,6 +435,7 @@ export function generateTable(rows: string[][], theme: ResolvedTheme, style: Gon
       const bf = prof?.cellBf.get(k)
         ?? (reg
           ? reg.get(dataCellSpec({
+              theme: style?.borderTheme,
               row: rowIdx, rowEnd: rowIdx, col: colIdx, colEnd: colIdx,
               rowCnt, colCnt, headerRows: 1,
               fill: isHeaderRow ? (style!.headerFill ?? "#E6E6E6") : isLabelCell ? (style!.labelFill ?? "#E7E7E7") : undefined,
@@ -456,13 +460,13 @@ export function generateTable(rows: string[][], theme: ResolvedTheme, style: Gon
   // 실측 모드: 데이터 표 호스트 문단 RIGHT (실측: GT6/GT7/GT11 관행, TBL-09)
   const hostPr = reg && style?.rightParaPr !== undefined ? style.rightParaPr : 0
   // 2행 이상은 부유 앵커 — 한글이 쪽 경계에서 나눌 수 있도록 (tablePosXml 참조)
-  const float = rowCnt >= 2
+  const float = !style?.inlineTable && rowCnt >= 2
 
   // <hp:tbl>에 필수 속성 + <hp:sz>/<hp:outMargin>/<hp:inMargin>
   const tblInner = `<hp:sz width="${tblW}" widthRelTo="ABSOLUTE" height="${tblH}" heightRelTo="ABSOLUTE" protect="0"/>`
     + tablePosXml(float, hostPr !== 0)
     + tableOutMarginXml(float, measureH)
-    + `<hp:inMargin left="510" right="510" top="141" bottom="141"/>`
+    + `<hp:inMargin left="${style?.borderTheme ? 600 : 510}" right="${style?.borderTheme ? 600 : 510}" top="${style?.borderTheme ? 425 : 141}" bottom="${style?.borderTheme ? 425 : 141}"/>`
     + trElements
 
   // 공문서: 쪽 넘어가면 헤더행 반복 (repeatHeader)
@@ -570,7 +574,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   const colWidths = profileColWidths(prof, colCnt) ?? computeColWidths(colMax, totalWidth, colMinWord, roles, colSlack(curFace))
   const colCentered = colWidths.map((w, c) => roles[c] !== "content" && colMaxBody[c] + CELL_PAD <= w)
 
-  const cellH = style ? Math.round(measureH * 1.6) + 282 : 1500
+  const cellH = style ? Math.round(measureH * 1.6) + (style.borderTheme ? 850 : 282) : 1500
   const tblW = colWidths.reduce((a, b) => a + b, 0)
   const tblId = nextTableId()
   const useHeaderStyle = !style && (theme.tableHeader !== theme.body || theme.tableHeaderBold)
@@ -580,6 +584,13 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   // 헤더 행 수 — 연속된 th 행 (이중선 경계 판정용)
   let htmlHeaderRows = 0
   while (htmlHeaderRows < rows.length && rows[htmlHeaderRows].tag === "th") htmlHeaderRows++
+  // 1안: 첫 열의 세로 병합 묶음 경계는 실선, 묶음 내부는 점선.
+  const groupBoundaries = new Set<number>()
+  if (style?.borderTheme === "gwangyang-1") for (const cell of placed) {
+    if (cell.c === 0 && cell.r >= htmlHeaderRows && cell.rowSpan > 1) {
+      groupBoundaries.add(cell.r); groupBoundaries.add(cell.r + cell.rowSpan)
+    }
+  }
 
   // Pass 1 — 셀별 내용 높이를 재고 행별 최대치(tableRowHeights)를 확정한다.
   //   · rowSpan은 실제 그리드 행수로 클램프 — 오버스팬은 무효 HWPX + 맨아랫줄 병합셀
@@ -615,7 +626,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     let wrapLines = 0
     for (const line of lines) wrapLines += Math.max(1, Math.ceil(measureTextWidth(line.trim(), measureH, 100, { faceClass: curFace }) / usable))
     const lineH = style ? Math.round(measureH * 1.6) : 800
-    const contentH = Math.max(cellH * rowSpan, Math.max(wrapLines, 1) * lineH + nestedH)
+    const contentH = Math.max(cellH * rowSpan, Math.max(wrapLines, 1) * lineH + nestedH + (style?.borderTheme ? 850 : 0))
     const cellHeight = Math.max(prof?.cellH.get(`${cell.r},${cell.c}`) ?? 0, contentH)
     const perRow = Math.ceil(cellHeight / rowSpan)
     for (let r = cell.r; r < cell.r + rowSpan; r++) tableRowHeights[r] = Math.max(tableRowHeights[r], perRow)
@@ -675,8 +686,9 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
     const bf = prof?.cellBf.get(k)
       ?? (reg
         ? reg.get(dataCellSpec({
+              theme: style?.borderTheme,
             row: cell.r, rowEnd, col: cell.c, colEnd: cell.c + cell.colSpan - 1,
-            rowCnt, colCnt, headerRows: htmlHeaderRows,
+            rowCnt, colCnt, headerRows: htmlHeaderRows, groupBoundaries,
             fill: isHeader ? (style!.headerFill ?? "#E6E6E6") : undefined,
           }))
         : style && isHeader ? style.headerBf : 2)
@@ -699,13 +711,13 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
   const tableH = tableRowHeights.reduce((sum, height) => sum + height, 0)
   // 2행 이상 최상위 표는 부유 앵커 (tablePosXml 참조) — 호스트 문단은 호출자가 감싸며
   // 실측 모드(bfRegistry)에서 우측정렬이라 horzAlign도 같이 맞춘다
-  const float = !nested && rowCnt >= 2
+  const float = !style?.inlineTable && !nested && rowCnt >= 2
 
   return `<hp:tbl id="${tblId}" zOrder="0" numberingType="TABLE"${float ? FLOAT_TBL_ATTRS : ""} pageBreak="CELL" repeatHeader="${style ? 1 : 0}" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="2" noShading="0">`
     + `<hp:sz width="${tblW}" widthRelTo="ABSOLUTE" height="${tableH}" heightRelTo="ABSOLUTE" protect="0"/>`
     + tablePosXml(float, !!reg && style?.rightParaPr !== undefined)
     + tableOutMarginXml(float, measureH)
-    + `<hp:inMargin left="510" right="510" top="141" bottom="141"/>`
+    + `<hp:inMargin left="${style?.borderTheme ? 600 : 510}" right="${style?.borderTheme ? 600 : 510}" top="${style?.borderTheme ? 425 : 141}" bottom="${style?.borderTheme ? 425 : 141}"/>`
     + trXmls.join("")
     + `</hp:tbl>`
 }

@@ -175,10 +175,12 @@ export interface GongmunOptions {
     contact?: { dept?: string; manager?: string; phone?: string; people?: Array<{ role?: string; title?: string; name?: string; phone?: string }> }
   }
   /**
-   * 기관 서식 — 중앙행정기관 이름(예: "국세청") 또는 "공통". 정책브리핑 보도자료 2,670건 실측(UpstageAI/korean-report-hwpx)의
+   * 기관 서식 — 기관 이름(예: "국세청", "광양시") 또는 "공통". 중앙부처는 정책브리핑 보도자료 2,670건 실측(UpstageAI/korean-report-hwpx),
+   * 지역기관의 표본·선택 기준은 별도 문서(docs/gwangyang-agency.md)를 참조한다.
    * 그 기관 단계별 글꼴·크기·2단계 부호·표 머리·기관 색을 기본값으로 깐다. 명시 옵션이 이긴다.
    * 보고서·계획서·업무보고·개조식·보도자료 전용 (agency.ts)
    */
+  reportFrame?: "gwangyang-1" | "gwangyang-2"
   agency?: string
 }
 
@@ -248,6 +250,7 @@ export interface ResolvedGongmun {
   /** 보도자료 머리·담당 — press 프리셋이면 옵션 미지정이어도 빈 객체(머리박스는 항상) */
   press: NonNullable<GongmunOptions["press"]> | null
   /** 기관 서식 중 옵션으로 표현하지 않는 값(※·표 크기, 표 머리 음영, 보도자료 본문 방식) — agency 미지정이면 null */
+  reportFrame: "gwangyang-1" | "gwangyang-2" | null
   agency: ResolvedAgency | null
 }
 
@@ -470,6 +473,7 @@ export function resolveGongmun(input: GongmunOptions): ResolvedGongmun {
   const preset = normalizeGongmunPreset(input.preset)
   // 기관 서식은 명시 옵션이 비운 자리만 채운다 — 이 아래는 깔린 옵션으로 해석
   const { opts, agency } = applyAgency(input, preset)
+  if (opts.reportFrame !== undefined && !["gwangyang-1", "gwangyang-2"].includes(opts.reportFrame)) throw new Error("reportFrame: gwangyang-1 또는 gwangyang-2 필요")
   const d = PRESET_DEFAULTS[preset]
   const bodyPt = opts.bodyPt ?? d.bodyPt
   const autoFitMinRatio =
@@ -540,6 +544,7 @@ export function resolveGongmun(input: GongmunOptions): ResolvedGongmun {
     noticeHead: preset === "notice" && opts.noticeHead ? opts.noticeHead : null,
     // 보도자료 머리박스는 프리셋 자체가 요구 — 옵션 미지정이어도 빈 객체
     press: preset === "press" ? (opts.press ?? {}) : null,
+    reportFrame: preset === "report" || preset === "plan" ? opts.reportFrame ?? (agency?.name === "광양시" ? "gwangyang-1" : null) : null,
     agency,
   }
 }

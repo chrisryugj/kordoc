@@ -34,7 +34,8 @@
     "sync-meta": "node scripts/sync-meta.mjs",
     "license:check": "node scripts/check-licenses.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx --omit dev --sbom-type library > sbom.cdx.json",
-    "prepublishOnly": "node scripts/sync-meta.mjs --check && node scripts/check-notices.mjs && node scripts/check-licenses.mjs && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs"
+    "prepublishOnly": "node scripts/sync-meta.mjs --check && node scripts/check-notices.mjs && node scripts/check-licenses.mjs && npm run typecheck && npm run test && npm run build && node bench/gate-if-corpus.mjs",
+    "sample:gwangyang": "npm run build && node scripts/sample-gwangyang-library.mjs"
   },
   "keywords": [
     "hwp",

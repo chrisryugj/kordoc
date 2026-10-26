@@ -1,3 +1,5 @@
+import { parseGwangyangBlock, buildGwangyangBlock } from "./gen-gwangyang-block.js"
+import { localTitle, localChapter, localSummary } from "./gen-frame-local.js"
 /**
  * 공문서 생성 엔진 v5 — 아웃라인(outline.ts) + 위계 스킴(gongmun-scheme.ts) → section0.xml.
  *
@@ -81,6 +83,11 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   const { reg, bfReg, remap, images, page } = deps
   const warnings: string[] = []
   const g = gongmun
+  // 광양시 행정문서 표기: 휴먼명조 가운뎃점은 U+2027. 폭 계산 전에 정규화한다.
+  if (g.reportFrame?.startsWith("gwangyang-")) blocks=blocks.map(b=>{
+    if (b.type === "code_block" || b.type === "equation" || b.type === "html_table") return b
+    return {...b,text:b.text?.replace(/·/g,"‧"),rows:b.rows?.map(row=>row.map(t=>t.replace(/·/g,"‧")))}
+  })
   const preset = g.preset
   const isBangchim = preset === "bangchim"
   const isReport = preset === "report" || preset === "plan" || isBangchim
@@ -102,17 +109,26 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     }
     if (k > h1 + 1) blocks = [...blocks.slice(0, h1 + 1), ...blocks.slice(k)]
   }
+  // 머리표·표지는 본문이 아니므로 선두 인용문의 보고요지 판정에 영향을 주지 않는다.
+  const localFront = g.reportFrame === "gwangyang-1" ? blocks.flatMap(b => b.type === "code_block" && b.lang?.toLowerCase() === "gwangyang" ? [parseGwangyangBlock(b.text || "")] : []).filter(b => b.type === "staff-header" || b.type === "institution-cover") : []
+  const outlineBlocks = blocks.filter(b => !(g.reportFrame === "gwangyang-1" && b.type === "code_block" && b.lang?.toLowerCase() === "gwangyang" && ["staff-header","institution-cover"].includes(parseGwangyangBlock(b.text || "").type)))
   // 1차 아웃라인(스킴 미정) — 본문 □ 부호 자동감지용. 업무보고는 h3~h6 을 서식 틀로, 인용문은 어디서나 요약박스로
-  const pre = buildOutline(blocks, isMinistry
+  const pre = buildOutline(outlineBlocks, isMinistry
     ? { gaejosik: true, consumeTitle: true, summaryFromQuote: true, quoteBox: true, headingFrames: true, keepMarkers: true }
     : { gaejosik: true, consumeTitle: true, summaryFromQuote: isReport, ...(isBangchim ? { headingFrames: true, keepMarkers: true, numbered: true } : {}) })
   const scheme = pickScheme(g, pre.hasBoxMarkers, pre.numbered)
   const gaejosik = scheme.kind === "gaejosik"
-  const raw: Outline = gaejosik ? pre : buildOutline(blocks, { gaejosik: false, consumeTitle: true, summaryFromQuote: false })
+  const raw: Outline = gaejosik ? pre : buildOutline(outlineBlocks, { gaejosik: false, consumeTitle: true, summaryFromQuote: false })
   // 문자 다듬기(날짜·금액 묶음 빈칸, ‘’“”) — 폭 계산·방출이 같은 문자열을 보도록 조판 전에
   const outline: Outline = { ...raw, title: raw.title && polishGongmunText(raw.title), nodes: raw.nodes.map(polishNode) }
 
-  const frame: FrameCtx = { reg, bf: bfReg, frame: scheme.frame, W }
+  const frame: FrameCtx = { reg, bf: bfReg, frame: scheme.frame, W, fit: {minRatio:g.autoFitMinRatio,safety:g.autoFitSafety} }
+
+  const localCover = localFront.find(b => b.type === "institution-cover")
+  const localStaff = localFront.find(b => b.type === "staff-header")
+  if (localFront.filter(b=>b.type === "institution-cover").length>1 || localFront.filter(b=>b.type === "staff-header").length>1) throw new Error("gwangyang 머리표와 표지는 문서마다 하나씩만 지정하세요")
+  if (localCover && (g.cover || g.approval)) throw new Error("institution-cover와 기존 cover/approval을 중복 지정할 수 없습니다. cover:false를 지정하세요")
+
   const lineHu = (st: LevelStyle) => Math.round(st.pt * 100 * ((st.lineSp ?? scheme.lineSp) / 100))
   const paras: string[] = []
   let pendingPageBreak = false
@@ -129,9 +145,12 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     tblCenterParaPr: reg.para({ align: "CENTER", lineSp: 130 }),
     tblLeftParaPr: reg.para({ align: "LEFT", lineSp: 130 }),
     bfRegistry: bfReg,
-    rightParaPr: reg.para({ align: "RIGHT", lineSp: scheme.lineSp }),
-    headerFill: scheme.table.headerFill,
-    labelFill: scheme.table.labelFill,
+    // 글자취급 표 높이에 줄간격 배율을 곱하지 않고 문단 앞뒤 간격으로 본문과 구분한다.
+    rightParaPr: reg.para({ align: "RIGHT", lineSp: g.reportFrame ? 100 : scheme.lineSp, before: g.reportFrame ? 400 : 0, after: g.reportFrame ? 800 : 0 }),
+    inlineTable: !!g.reportFrame,
+    borderTheme: g.reportFrame ?? undefined,
+    headerFill: g.reportFrame === "gwangyang-2" ? "#FFFFFF" : scheme.table.headerFill,
+    labelFill: g.reportFrame ? "#FFFFFF" : scheme.table.labelFill,
     faceClass: faceClassForGen(scheme.table.font),
   }
 
@@ -140,7 +159,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   // 요약박스 — 한 문장 3줄 이내, 넘치면 경고
   const pushSummary = (t: string) => {
     frontKind = "summary"
-    const box = (isBangchim ? buildBangchimSummary : buildSummaryBox)(polishGongmunText(t), frame)
+    const box = g.reportFrame ? localSummary(polishGongmunText(t), g.reportFrame, frame, scheme.body) : (isBangchim ? buildBangchimSummary : buildSummaryBox)(polishGongmunText(t), frame)
     warnings.push(...summaryWarnings(t, box.lines))
     paras.push(box.xml)
   }
@@ -176,6 +195,12 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
       frontKind = "title"
     }
   } else if (isReport) {
+    if (localCover) {
+      let xml = buildGwangyangBlock(localCover,frame,images)
+      if (g.pageNumbers) xml = xml.replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${pageHidingCtrl()}`)
+      paras.push(xml)
+      pendingPageBreak = true
+    }
     if (g.cover) {
       paras.push(...buildReportCover({
         title: docTitle, date: g.cover.date ?? formatGaejosikDate(new Date()).replace(/\s\d+\.$/, "."), org: g.cover.org || undefined,
@@ -203,17 +228,22 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
       warnings.push("목차 쪽번호 칸은 비워 둡니다 — 쪽은 조판 뒤에 정해지므로 한글에서 채우세요")
       pendingPageBreak = true
     }
+    if (localStaff) {
+      let xml = buildGwangyangBlock(localStaff,frame,images)
+      if (pendingPageBreak) { xml = xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `).replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`); pendingPageBreak=false }
+      paras.push(xml)
+    }
     if (docTitle) {
-      const t = isBangchim ? buildBangchimTitleTable(docTitle, bangchimSub, reportInfo ?? bangchimContact, frame) : buildReportTitleTable(docTitle, reportInfo, frame)
-      if (t.overflow) warnings.push(`제목이 길어 한 줄에 담지 못했습니다(20pt·장평 85%까지 축소) — 제목을 줄이세요: "${docTitle.slice(0, 30)}…"`)
+      const t = g.reportFrame ? localTitle(docTitle, g.reportFrame, frame, images) : isBangchim ? buildBangchimTitleTable(docTitle, bangchimSub, reportInfo ?? bangchimContact, frame) : buildReportTitleTable(docTitle, reportInfo, frame)
+      if (t.overflow) warnings.push(g.reportFrame ? `광양시 제목이 길어 글자 크기를 유지하고 제목표 높이를 늘렸습니다: "${docTitle.slice(0,30)}…"` : `제목이 길어 한 줄에 담지 못했습니다 — 제목을 줄이세요: "${docTitle.slice(0,30)}…"`)
       if (pendingPageBreak) { paras.push(t.xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `).replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`)); pendingPageBreak = false }
       else paras.push(t.xml)
       frontKind = "title"
     }
     // 제목 없는 보고서의 담당자 행 — 우상단 12pt (기안문 보고정보 행과 동일)
-    if (!docTitle && reportInfo) paras.push(generateParagraph(reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
+    if ((!docTitle || g.reportFrame) && reportInfo) paras.push(generateParagraph(reportInfo, reg.para({ align: "RIGHT", lineSp: scheme.lineSp }), reg.char({ font: scheme.body.font, pt: 12 })))
     if (g.summary) pushSummary(g.summary)
-    else if (!outline.nodes.some((n) => n.kind === "summary")) warnings.push("보고서 요약박스가 없습니다 — 제목 직후 인용문(>)에 보고 목적을 한 문장(쉼표 허용) 3줄 이내 \"…하고자 함\"으로 넣거나 summary 옵션을 지정하세요")
+    else if (!outline.nodes.some((n) => n.kind === "summary" || (g.reportFrame === "gwangyang-1" && n.kind === "block" && n.block.type === "code_block" && n.block.lang?.toLowerCase() === "gwangyang" && ["box","rounded-box"].includes(parseGwangyangBlock(n.block.text || "").type)))) warnings.push("보고서 요약박스가 없습니다 — 제목 직후 인용문(>)에 보고 목적을 한 문장(쉼표 허용) 3줄 이내 \"…하고자 함\"으로 넣거나 summary 옵션을 지정하세요")
   } else {
     // 통지·회의록 — 제목 가운데 굵게, 공고번호
     if (g.noticeHead) paras.push(...buildNoticeHead(g))
@@ -352,6 +382,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
 
   const renderChapter = (node: Extract<OutlineNode, { kind: "chapter" }>): string => {
     const st = scheme.chapter
+    if (g.reportFrame) return localChapter(node.label ? plain(node.text).replace(CHAPTER_LABEL_RE, "") : plain(node.text), node.index, g.reportFrame, frame)
     if (isMinistry) {
       sectionSeq = 0; subheadSeq = 0; itemBandSeq = 0
       // 실측: 장(Ⅰ·Ⅱ·Ⅲ)·별첨은 전부 새 쪽 첫머리 — 첫 장 외엔 쪽 나눔
@@ -426,6 +457,12 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
         return txt ? renderPara({ kind: "para", depth: 0, text: txt }) : ""
       }
       case "code_block": {
+        if ((b.lang || "").toLowerCase() === "gwangyang") {
+          if (g.reportFrame !== "gwangyang-1") throw new Error("gwangyang 블록은 report/plan의 광양시 1안에서 사용하세요")
+          const block = parseGwangyangBlock(b.text || "")
+          if (block.type === "staff-header" || block.type === "institution-cover") return ""
+          return buildGwangyangBlock(block, frame, images)
+        }
         if ((b.lang || "").toLowerCase() === "chart") {
           const fence = parseChartFence(b.text || "")
           if (fence) {

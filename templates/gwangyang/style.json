@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "id": "gwangyang",
+  "name": "광양시",
+  "version": "0.1.0",
+  "status": "local-tested",
+  "officialStandard": false,
+  "presets": [
+    "report",
+    "plan"
+  ],
+  "defaultVariant": "gwangyang-1",
+  "variants": [
+    {
+      "id": "gwangyang-1",
+      "label": "1안",
+      "evidence": "hwpx-user-confirmed"
+    },
+    {
+      "id": "gwangyang-2",
+      "label": "2안",
+      "evidence": "pdf-approximation"
+    }
+  ],
+  "sources": [
+    {
+      "id": "gy1",
+      "kind": "user-original",
+      "reference": "광양시 1안.hwpx",
+      "use": "1안 제목·번호칸·설명상자·표",
+      "redistribution": "not-reviewed"
+    },
+    {
+      "id": "reports",
+      "kind": "user-original",
+      "reference": "감동시대 보고서 D08/D13/D24",
+      "use": "담당자 머리표·표지·둥근 상자",
+      "redistribution": "not-reviewed"
+    },
+    {
+      "id": "brand",
+      "kind": "user-original",
+      "reference": "민선9기 로고: 대한민국 산업수도 광양",
+      "use": "기관 로고",
+      "redistribution": "not-reviewed"
+    },
+    {
+      "id": "pdf",
+      "kind": "public-document",
+      "reference": "원문공개 조사; docs/gwangyang-agency.md",
+      "use": "2안 시각 근사",
+      "redistribution": "not-reviewed"
+    }
+  ],
+  "writingGuide": "writing-guide.md",
+  "sampleIndex": "samples.json",
+  "tokens": {
+    "bodyFont": "휴먼명조",
+    "bodyPt": 15,
+    "middleDot": "‧",
+    "summaryCaption": false,
+    "summaryPaddingHU": {
+      "x": 1100,
+      "y": 700
+    },
+    "tablePaddingHU": {
+      "x": 600,
+      "y": 425
+    }
+  },
+  "fitting": {
+    "engine": "kordoc-existing",
+    "minRatio": 90,
+    "safety": 0.95,
+    "overflow": "grow-or-split-or-error",
+    "targetPagesGuaranteed": false
+  },
+  "assets": [
+    {
+      "id": "gy1-title",
+      "name": "사선 파란 띠 대제목",
+      "variant": "gwangyang-1",
+      "input": "# 제목"
+    },
+    {
+      "id": "gy1-chapter",
+      "name": "네이비 번호칸 소제목",
+      "variant": "gwangyang-1",
+      "input": "## 소제목"
+    },
+    {
+      "id": "gy1-attachment",
+      "name": "붙임 머리표",
+      "variant": "gwangyang-1",
+      "input": "attachment"
+    },
+    {
+      "id": "gy1-box-white",
+      "name": "흰 설명상자",
+      "variant": "gwangyang-1",
+      "input": "box:white"
+    },
+    {
+      "id": "gy1-box-purple",
+      "name": "보라 설명상자",
+      "variant": "gwangyang-1",
+      "input": "box:purple"
+    },
+    {
+      "id": "gy1-table-title",
+      "name": "밑줄 표 제목",
+      "variant": "gwangyang-1",
+      "input": "table-title"
+    },
+    {
+      "id": "gy1-table",
+      "name": "열린 외곽·점선 본문표",
+      "variant": "gwangyang-1",
+      "input": "table"
+    },
+    {
+      "id": "gy1-staff-header",
+      "name": "담당자 머리표",
+      "variant": "gwangyang-1",
+      "input": "staff-header"
+    },
+    {
+      "id": "gy1-cover",
+      "name": "기관 표지",
+      "variant": "gwangyang-1",
+      "input": "institution-cover"
+    },
+    {
+      "id": "gy1-rounded-plain",
+      "name": "일반 둥근 상자",
+      "variant": "gwangyang-1",
+      "input": "rounded-box:plain"
+    },
+    {
+      "id": "gy1-rounded-tab",
+      "name": "제목 탭 둥근 상자",
+      "variant": "gwangyang-1",
+      "input": "rounded-box:tab"
+    },
+    {
+      "id": "gy2-title",
+      "name": "네이비·터콰이즈·라임 제목 띠",
+      "variant": "gwangyang-2",
+      "input": "# 제목"
+    },
+    {
+      "id": "gy2-chapter",
+      "name": "윤곽 번호칸 소제목",
+      "variant": "gwangyang-2",
+      "input": "## 소제목"
+    },
+    {
+      "id": "gy2-table",
+      "name": "닫힌 외곽·실선 본문표",
+      "variant": "gwangyang-2",
+      "input": "table"
+    }
+  ],
+  "validation": {
+    "automated": [
+      "catalog-coverage",
+      "invalid-input",
+      "content-preservation",
+      "fitting-on-off",
+      "xml-validity"
+    ],
+    "visual": [
+      "short",
+      "long",
+      "page-boundary",
+      "merged-table",
+      "staff-header",
+      "summary"
+    ],
+    "evidenceDocs": [
+      "../../docs/gwangyang-fitting.md"
+    ]
+  },
+  "runtime": {
+    "kind": "compiled-adapter",
+    "codeRefs": [
+      "../../src/hwpx/agency-local-styles.ts",
+      "../../src/hwpx/gen-frame-local.ts",
+      "../../src/hwpx/gen-gwangyang-block.ts",
+      "../../src/hwpx/gen-gwangyang-extended.ts",
+      "../../src/hwpx/gen-gwangyang-fit.ts"
+    ],
+    "manifestLoadsRenderer": false
+  }
+}

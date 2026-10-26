@@ -92,6 +92,7 @@ export interface GongmunSurfaceInput {
   totalRow?: (typeof TOTAL_ROWS)[number]
   docHead?: NonNullable<GongmunOptions["docHead"]>
   docFoot?: NonNullable<GongmunOptions["docFoot"]>
+  reportFrame?: "gwangyang-1" | "gwangyang-2"
   reportInfo?: string
   noticeHead?: NonNullable<GongmunOptions["noticeHead"]>
   press?: NonNullable<GongmunOptions["press"]>
@@ -105,7 +106,7 @@ export interface GongmunSurfaceInput {
   dept?: string
   /** 표지 우상단 취급 표시 — "대외주의" 등 (업무보고 프리셋, cover와 함께) */
   coverLabel?: string
-  /** 기관 서식 — 중앙행정기관 이름 또는 "공통" (agency.ts) */
+  /** 기관 서식 — 기관 이름 또는 "공통" (agency.ts) */
   agency?: string
 }
 
@@ -150,6 +151,7 @@ export function buildGongmunOptions(input: GongmunSurfaceInput): GongmunOptions 
   if (input.totalRow) g.totalRow = input.totalRow
   if (input.docHead) g.docHead = input.docHead
   if (input.docFoot) g.docFoot = input.docFoot
+  if (input.reportFrame) g.reportFrame = input.reportFrame
   if (input.reportInfo) g.reportInfo = input.reportInfo
   if (input.noticeHead) g.noticeHead = input.noticeHead
   if (input.press) g.press = input.press

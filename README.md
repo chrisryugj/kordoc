@@ -165,3 +165,8 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 ## 만든 사람
 
 대한민국 지방공무원. 광진구청에서 7년간 HWP 파일과 싸우다가 이걸 만들었습니다. 5개 공공 프로젝트에서 수천 건의 실제 관공서 문서를 파싱하며 검증했습니다.
+
+## 로컬 기관 스타일
+
+- [기관 스타일 등록 규격 — 새 기관 추가 절차와 검증](docs/agency-style-registration.md)
+- [광양시 기관 스타일 14종 — 사용법과 작성 샘플](templates/gwangyang/README.md)

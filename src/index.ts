@@ -535,3 +535,8 @@ export { blocksToMarkdown } from "./table/builder.js"
 export type { MarkdownOptions } from "./table/builder.js"
 export { blocksToPages } from "./page-markdown.js"
 export { VERSION } from "./utils.js"
+
+/** 광양시 1안 Markdown fence의 공개 입력 타입. */
+export type { GwangyangBlock } from "./hwpx/gen-gwangyang-block.js"
+
+export { GWANGYANG_STYLE_ASSETS, type GwangyangStyleAssetId } from "./hwpx/gwangyang-style-catalog.js"

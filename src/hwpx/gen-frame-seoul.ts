@@ -32,6 +32,8 @@ interface FrameCtx {
   frame: FrameSpec
   /** 본문 폭 (HWPUNIT) */
   W: number
+  /** 기관 부품에 전달할 기존 공문서 자동 피팅 정책 */
+  fit?: { minRatio: number | null; safety?: number }
 }
 
 /** 골격표 — treatAsChar, 셀 여백 실측(140), outMargin 좌우 0 (gen-frame-ministry 도 같은 골격을 쓴다) */

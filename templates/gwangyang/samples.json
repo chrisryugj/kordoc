@@ -1,0 +1,98 @@
+[
+  {
+    "name": "01_1안_기본부품",
+    "file": "examples/01_1안_기본부품.md",
+    "assets": [
+      "gy1-title",
+      "gy1-chapter",
+      "gy1-attachment",
+      "gy1-box-white",
+      "gy1-box-purple",
+      "gy1-table-title",
+      "gy1-table"
+    ],
+    "options": {
+      "preset": "report",
+      "agency": "광양시",
+      "reportFrame": "gwangyang-1",
+      "cover": false,
+      "toc": false,
+      "margins": {
+        "top": 15,
+        "bottom": 15,
+        "left": 20,
+        "right": 20
+      }
+    }
+  },
+  {
+    "name": "02_1안_머리표와둥근상자",
+    "file": "examples/02_1안_머리표와둥근상자.md",
+    "assets": [
+      "gy1-title",
+      "gy1-staff-header",
+      "gy1-rounded-plain",
+      "gy1-rounded-tab"
+    ],
+    "options": {
+      "preset": "report",
+      "agency": "광양시",
+      "reportFrame": "gwangyang-1",
+      "cover": false,
+      "toc": false,
+      "margins": {
+        "top": 15,
+        "bottom": 15,
+        "left": 20,
+        "right": 20
+      }
+    }
+  },
+  {
+    "name": "03_1안_기관표지보고서",
+    "file": "examples/03_1안_기관표지보고서.md",
+    "assets": [
+      "gy1-title",
+      "gy1-chapter",
+      "gy1-box-purple",
+      "gy1-staff-header",
+      "gy1-cover",
+      "gy1-rounded-tab"
+    ],
+    "options": {
+      "preset": "report",
+      "agency": "광양시",
+      "reportFrame": "gwangyang-1",
+      "cover": false,
+      "toc": false,
+      "margins": {
+        "top": 15,
+        "bottom": 15,
+        "left": 20,
+        "right": 20
+      }
+    }
+  },
+  {
+    "name": "04_2안_추진계획",
+    "file": "examples/04_2안_추진계획.md",
+    "assets": [
+      "gy2-title",
+      "gy2-chapter",
+      "gy2-table"
+    ],
+    "options": {
+      "preset": "plan",
+      "agency": "광양시",
+      "reportFrame": "gwangyang-2",
+      "cover": false,
+      "toc": false,
+      "margins": {
+        "top": 15,
+        "bottom": 15,
+        "left": 20,
+        "right": 20
+      }
+    }
+  }
+]
