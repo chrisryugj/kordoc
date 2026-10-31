@@ -684,12 +684,16 @@ function detectHeaderRow(rows: RowGroup[]): HeaderResult | null {
     const columns: ColCluster[] = sorted.map(item => ({ x: item.x, count: 0 }))
 
     // 후속 행 검증: 헤더 이후 MIN_ROWS+ 행이 2+ 열에 매칭
-    let matchCount = 0
-    for (let j = ri + 1; j < rows.length && matchCount < MIN_ROWS + 2; j++) {
+    // 맞은 행이 모두 열 틈(1.5em) 없는 줄이면 낱말 아이템이 폭을 덮은 본문이다 — 고시안 머리 "○○고시 제 호" 아래 본문이 3열 표가 됐다
+    let matchCount = 0, gapped = 0
+    for (let j = ri + 1; j < rows.length && (matchCount < MIN_ROWS + 2 || !gapped); j++) {
       const matched = countMatchedColumnsRange(rows[j], columns, sorted)
-      if (matched >= MIN_COLS) matchCount++
+      if (matched < MIN_COLS) continue
+      matchCount++
+      const line = [...rows[j].items].sort((a, b) => a.x - b.x)
+      if (line.some((it, k) => k > 0 && it.x - (line[k - 1].x + line[k - 1].w) >= Math.max(it.fontSize, line[k - 1].fontSize) * 1.5)) gapped++
     }
-    if (matchCount < MIN_ROWS) continue
+    if (matchCount < MIN_ROWS || !gapped) continue
 
     return { columns, headerIdx: ri }
   }
