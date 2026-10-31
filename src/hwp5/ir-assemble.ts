@@ -113,7 +113,9 @@ export function emitParagraphBlocks(p: ParaEmitInput): IRBlock[] {
     if (p.tocEntry) TOC_ENTRY_BLOCKS.add(block)
     if (style) {
       block.style = style
-      if (style.strike || style.underline) block.text = headMarker ? `${headMarker} ${decorate(trimmed)}` : decorate(trimmed)
+      // 강조 span 이 붙은 문단은 span 이 취소선·밑줄을 담는다 — 글에 표지를 구우면 칸 글(중첩 표 칸 등 글로 그리는 경로)에 표지가
+      // 남는다(HWPX 는 글이 평문)
+      if ((style.strike || style.underline) && !block.spans) block.text = headMarker ? `${headMarker} ${decorate(trimmed)}` : decorate(trimmed)
     }
     if (footnotes.length > 0) block.footnoteText = footnotes.join("; ")
     if (footnoteBlocks) block.footnoteBlocks = footnoteBlocks

@@ -338,7 +338,7 @@ describe("이미지 형식 판별 — 한컴 BinData WMF(배치 헤더 없음)·
 
 describe("인라인 강조 span — HWPX run-spans 와 같은 판정 (글자 모양 굵게·밑줄)", () => {
   const docInfo = {
-    charShapes: [{ fontSize: 100, attrFlags: 0 }, { fontSize: 100, attrFlags: 0x02 }, { fontSize: 100, attrFlags: 1 << 2 }],
+    charShapes: [{ fontSize: 100, attrFlags: 0 }, { fontSize: 100, attrFlags: 0x02 }, { fontSize: 100, attrFlags: 1 << 2 }, { fontSize: 100, attrFlags: 1 << 15 }],
     paraShapes: [], styles: [], binData: [], numberings: [], bullets: [], borderEdges: [],
   } as unknown as Parameters<typeof parseSection>[1]
   const para = (text: string, runs: Array<[number, number]>): Buffer[] => {
@@ -352,6 +352,23 @@ describe("인라인 강조 span — HWPX run-spans 와 같은 판정 (글자 모
     const blocks = parseWith(para("성명 홍길동 확인", [[0, 0], [3, 1], [6, 0], [7, 2]]))
     assert.deepEqual(blocks[0].spans, [{ text: "성명 " }, { text: "홍길동", bold: true }, { text: " " }, { text: "확인", underline: true }])
     assert.equal(blocksToMarkdown(blocks).trim(), "성명 **홍길동** <u>확인</u>")
+  })
+
+  it("굵은 글 사이 보통 위첨자 — 첨자 태그가 span 마다 짝이 맞아 강조를 버리지 않는다 (HWPX 와 같다)", () => {
+    // 굵은 "확충" · 보통 위첨자 "*" · 굵은 " 및" — 종전엔 닫는 </sup> 가 다음 span 으로 가 문단 강조가 통째 사라졌다
+    const blocks = parseWith(para("확충* 및", [[0, 1], [2, 3], [3, 1]]))
+    assert.equal(blocksToMarkdown(blocks).trim(), "**확충**<sup>\\*</sup> **및**")
+  })
+
+  it("강제 줄바꿈이 든 문단은 강조 span 없이 평문 (HWPX 는 줄바꿈 요소가 든 문단에서 강조를 내지 않는다)", () => {
+    const blocks = parseWith(para("첫 줄\n둘째 줄", [[0, 1]]))
+    assert.equal(blocks[0].spans, undefined)
+  })
+
+  it("span 이 붙은 밑줄 문단은 글에 <u> 를 굽지 않는다 — 표지는 span 이 담는다 (칸 글로 그리는 경로에 표지가 남지 않게)", () => {
+    const blocks = parseWith(para("밑줄 문단", [[0, 2]]))
+    assert.equal(blocks[0].text, "밑줄 문단")
+    assert.equal(blocksToMarkdown(blocks).trim(), "<u>밑줄 문단</u>")
   })
 
   it("강조 없는 문단은 span 없이 평문", () => {

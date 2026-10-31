@@ -483,14 +483,15 @@ describe("patchHwp — 붙인 글의 서식은 마크다운대로", () => {
     assert.deepEqual(pairsOf(r.data!, "\u{F02B1}"), [[0, 1], [2, 0]])
   })
 
-  it("강제 줄바꿈 굵은 문단 끝에 붙인 글 — 마크다운 맨 줄바꿈을 줄바꿈으로 맞대 굵게를 물려받지 않는다", async () => {
+  it("강제 줄바꿈 문단 끝에 붙인 글 — 마크다운 맨 줄바꿈을 줄바꿈으로 맞대 바뀐 자리만 고친다", async () => {
+    // 줄바꿈 문단은 HWPX 처럼 강조 표지를 내지 않는다 — 표지가 안 보이니 붙인 글은 들어간 run(굵게) 모양을 받는다
     const hwp = buildHwp([paragraph("첫 문단"), styled("붙임 1. 지침\n2. 질의응답", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    assert.ok(md.includes("**붙임 1. 지침\n2. 질의응답**"), md)
-    const r = await patchHwp(hwp, md.replace("**붙임 1. 지침\n2. 질의응답**", "**붙임 1. 지침\n2. 질의응답** 수정"))
+    assert.ok(md.includes("붙임 1. 지침\n2. 질의응답") && !md.includes("**붙임"), md)
+    const r = await patchHwp(hwp, md.replace("붙임 1. 지침\n2. 질의응답", "붙임 1. 지침\n2. 질의응답 수정"))
     assert.deepEqual(r.skipped, [])
     assert.equal(r.verification?.stats.modified, 0, reread(r.data!))
-    assert.deepEqual(pairsOf(r.data!, "붙임"), [[0, 1], [16, 0]])
+    assert.deepEqual(pairsOf(r.data!, "붙임"), [[0, 1]])
   })
 
   it("이중 공백이 마크다운에 그대로 보이는 문단도 고친다 — 원문 띄어쓰기는 그대로", async () => {

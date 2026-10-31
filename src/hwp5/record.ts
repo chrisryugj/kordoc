@@ -505,11 +505,15 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
 
   while (i + 1 < data.length) {
     const ch = data.readUInt16LE(i)
+    // 첨자 태그는 강조 경계를 사이에 두고 닫고 연다 — 닫는 태그는 앞 강조 span, 여는 태그는 새 span 에 들어야 span 마다 태그 짝이
+    // 맞는다(종전엔 닫는 태그가 경계 뒤로 가 "확충<sup>*</sup> 및" 의 강조가 문단째 버려졌다)
+    const script = state.scriptAt ? (ch >= 0x0020 ? state.scriptAt(wbase + i / 2) : null) : undefined
+    if (script !== undefined && state.script && state.script !== script) setScript(null)
     if (state.emphAt && ch >= 0x0020) {
       const key = state.emphAt(wbase + i / 2), runs = (state.emphRuns ??= [])
       if (runs.length === 0 || runs[runs.length - 1][1] !== key) runs.push([base + result.length, key])
     }
-    if (state.scriptAt) setScript(ch >= 0x0020 ? state.scriptAt(wbase + i / 2) : null)
+    if (script !== undefined) setScript(script)
     i += 2
 
     switch (ch) {

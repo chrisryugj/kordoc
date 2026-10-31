@@ -56,6 +56,13 @@ const CTRL_OLE = cid("ole ")    // OLE 개체
 const FIELD_HLK = cid("%hlk")   // 필드: 하이퍼링크
 const FIELD_CLK = cid("%clk")   // 필드: 누름틀
 const FIELD_UNK = cid("%unk")   // 필드: 그 밖(메모 "MEMO/…" 명령)
+/**
+ * HWPX run-spans 가 강조를 내지 않는 문단의 컨트롤 — run 자식이 되는 개체(표·그리기·수식·양식·OLE·글자 겹침·덧말)와 글을 담은 ctrl
+ * (각주·미주·머리말·꼬리말·숨은 설명·찾아보기 표식). 필드('%' 로 시작 — 매개변수 글을 담는다)도 같다
+ */
+const NO_SPAN_CTRLS = new Set([cid("tbl "), cid("gso "), cid("eqed"), cid("form"), cid("ole "), cid("tcps"), cid("tdut"),
+  cid("fn  "), cid("en  "), cid("head"), cid("foot"), cid("tcmt"), cid("idxm")])
+const isFieldCtrl = (id: number): boolean => id >>> 24 === 0x25
 
 const KNOWN_CTRL_IDS = new Set([
   CTRL_TBL, CTRL_GSO, CTRL_EQED, CTRL_HEAD, CTRL_FOOT, CTRL_FN, CTRL_EN,
@@ -363,8 +370,10 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
   // 목차 항목(채움 탭 + 쪽 번호 줄) 판정 — 채움 탭 표지는 여기서 보통 탭이 된다 (#121, HWPX 와 같은 규칙)
   const toc = takeTocLeaders(text)
   text = toc.text
-  // 인라인 강조 span — 개체·링크·누름틀 안내문·목차 문단은 글 위치가 어긋나 평문 경로만
-  const spans = !inlined && !fieldsApplied && !toc.tocEntry ? emphasisSpans(state, text) : undefined
+  // 인라인 강조 span — HWPX run-spans 와 같은 문단만: 개체·글 담은 컨트롤(필드·각주 등)·강제 줄바꿈이 든 문단은 평문 경로(HWPX 는
+  // 그런 문단에서 강조를 내지 않는다), 링크·누름틀 안내문·목차 문단은 글 위치가 어긋나 평문 경로
+  const noSpan = inlined || fieldsApplied || toc.tocEntry || text.includes("\n") || ctrls.some(c => NO_SPAN_CTRLS.has(c.id) || isFieldCtrl(c.id))
+  const spans = !noSpan ? emphasisSpans(state, text) : undefined
   if (memoAnchors.length) {
     const plain = (t: string): string => resolveLiteralLt(t.replaceAll(LITERAL_DOLLAR_MARK, "$")).replace(/\\</g, "<").replace(/[ \t]+/g, " ").trim()
     const paragraph = plain(text.replaceAll(INLINE_TABLE_MARK, ""))
