@@ -449,6 +449,18 @@ function extractBlocksWithGrids(
       // 지정서·영치증의 "발신명의 | 직인" 표가 틀 뒤 별도 블록으로 빠지던 것을 HWP 파서 IR 과
       // 같은 모양(셀 안 문단 + 중첩표)으로 (v4.12.2)
       const nested = pendingNested.length ? takePendingNested(pendingNested, cell.bbox, !!grid.cells) : []
+      // 칸 글 전부를 품고 칸 폭을 거의 다 덮는 한 줄 짧은 글(30자 이하) 1×1 클립은 칸을 한 겹 더 깐 것이지 중첩 표가 아니다 — 통계표
+      // 숫자 칸마다 클립이 한 겹 더 깔려 "63,185" 칸이 1×1 표를 품은 칸이 됐다(주택통계 거래량 표, HWPX 는 평칸). 여러 줄 칸("비고 1. …")은
+      // 쪽 넘김 칸 잇기가 칸 글줄을 보므로 종전대로 둔다
+      const lone = nested.length === 1 && !cellItems.length ? nested[0] : null
+      const cw = cell.bbox.x2 - cell.bbox.x1
+      if (lone?.table && lone.bbox && lone.table.rows === 1 && lone.table.cols === 1 && CLIP_TABLES.has(lone.table) &&
+          !lone.table.cells[0][0].blocks?.some(b => b.type === "table") && lone.bbox.width >= cw * 0.9 &&
+          /^[^\n]{1,30}$/.test(lone.table.cells[0][0].text.trim())) {
+        irGrid[cell.row][cell.col] = { text: lone.table.cells[0][0].text, colSpan: cell.colSpan, rowSpan: cell.rowSpan }
+        takeClipCellEdges(cell, irGrid[cell.row][cell.col])
+        continue
+      }
       if (nested.length > 0) {
         nestedAttached = true
         const built = buildFrameCellBlocks(cellItems, nested, pageNum, lex)
