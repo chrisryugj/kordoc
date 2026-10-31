@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.33: 2-up cell continuation · 1×1 clips over cells · 2026-11-01
+
+PDF table benchmark (708 pairs): cell content NED .98794 → **.98896**, exact cells .99153 → **.99221**; detection, structure and cell F1 unchanged. PDF text, statute annexes and ODL 200 documents unchanged per document; OCR reference (text layer) skipped tables 36 → 35 (matching and exact unchanged).
+
+- 2-up continuation: the disqualification cell of a hiring notice (pair06) .872 → 1.
+- 1×1 clips over statistics number cells: housing statistics (156776040) .962 → 1.
+
 ## 4.24.32: two columns on one line grid · running header boxes · 2026-11-01
 
 PDF text benchmark (744 pairs): reading order .99348 → **.99356**, precision .99680 → **.99682**, word F1 .99069 → **.99071**, recall .99883 unchanged. PDF tables, statute annexes and ODL 200 documents unchanged per document.
