@@ -15,14 +15,15 @@ import {
   type SectionScan, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
 import {
-  normForMatch, sanitizeText, escapeGfm, unescapeGfm, summarize,
+  normForMatch, noScriptTags, sanitizeText, escapeGfm, unescapeGfm, summarize,
   replicateGfmTable, parseGfmTable, unescapeGfmCell, isInlineColumnTable, replicateColumnTable,
   replicateHtmlTable, replicateTableToHtml, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   type MdUnit, type HtmlRowInfo, type MappedCell,
 } from "./markdown-units.js"
 import { patchTableRows, type InsertCell } from "./table-rows.js"
 import { buildEmbeddedLineSplices } from "./embedded-line-patch.js"
-import { minimalTextSplices, parseEmphasis } from "./inline-edit.js"
+import { minimalTextSplices, parseEmphasis, styledInline, flagsPerChar, type InsertStyle } from "./inline-edit.js"
+import type { CharPrBook } from "./char-pr.js"
 import { isDatePlaceholder } from "../form/recognize.js"
 import { hasInlineCellBlocks } from "../table/builder.js"
 import { clickHereEditSplices } from "../form/click-here.js"
@@ -37,6 +38,8 @@ export interface TablePatchCtx {
   structure?: boolean
   /** 행 추가 때 복제 행 테두리를 안쪽 선으로 고칠 borderFill 변형기 (header 를 못 찾으면 없음 — 복제 그대로) */
   borders?: BorderVariants
+  /** header 글자 모양 책 — 칸에 넣는 새 글을 마크다운 서식대로 (patcher PatchCtx.charBook) */
+  charBook?: CharPrBook
 }
 
 // ── GFM 표 ──
@@ -106,7 +109,7 @@ function patchGfmRowPair(
 /** GFM 칸 → 평문 줄: 그림 토큰을 떼고 줄(<br>)마다 강조 표지를 걷어 역이스케이프한다 — 표지는 builder 가 칸 span 서식으로 단
  *  표기라 hp:t 에 쓰면 안 된다 */
 function gfmCellLines(md: string): string[] {
-  return stripCellTokens(md).split(/(?<!\\)<br\s*\/?>/i).map(l => parseEmphasis(l).plain.trim()).filter(Boolean)
+  return stripCellTokens(md).split(/(?<!\\)<br\s*\/?>/i).map(l => styledInline(l).plain.trim()).filter(Boolean)
 }
 
 /** GFM 칸의 강조 조각 수 — 편집 전후가 다르면 강조를 더하거나 뺀 것 */
@@ -357,7 +360,7 @@ export function patchTextChunkTable(
         skip("셀 내 이미지 변경은 미지원")
         continue
       }
-      const newLines = after.map(l => parseEmphasis(stripCellTokens(l)).plain.trim()).filter(Boolean)
+      const newLines = after.map(l => styledInline(stripCellTokens(l)).plain.trim()).filter(Boolean)
       applied += applyCellEdit(table, scanTable, r, 0, newLines, ctx, before.join("<br>"), after.join("<br>"), before.length)
     }
     return applied
@@ -389,11 +392,12 @@ export function applyCellEdit(
   // (IR 셀 텍스트의 이미지 토큰은 스캔 문단에 없는 평탄화 산물이므로 제외)
   const irCell = table.cells[gridR]?.[gridC]
   const scanJoined = cell.paragraphs.map(p => p.text).filter(t => normForMatch(t)).join("\n")
-  if (irCell && normForMatch(scanJoined) !== normForMatch(stripCellTokens(irCell.text))) {
+  // IR 글의 첨자 태그는 파서 표기(원문 hp:t 엔 없다)라 떼고 맞댄다
+  if (irCell && normForMatch(scanJoined) !== normForMatch(noScriptTags(stripCellTokens(irCell.text)))) {
     // 중첩표/글상자 등 구조 셀 — 평탄화 텍스트가 섞여 1:1 치환 불가
     if (normForMatch(irCell.text) !== "" || normForMatch(scanJoined) !== "") {
       const flatBlocks = (irCell.blocks ?? []).filter(b => b.type === "paragraph" || b.type === "heading")
-      const flatJoined = flatBlocks.map(b => b.text ?? "").join("\n")
+      const flatJoined = noScriptTags(flatBlocks.map(b => b.text ?? "").join("\n"))
       if (normForMatch(scanJoined) !== normForMatch(flatJoined)) {
         return skip("셀 콘텐츠 구조 복잡 (중첩표/글상자) — 매핑 신뢰 불가")
       }
@@ -481,6 +485,20 @@ export function applyCellEdit(
       ctx.skipped.push({ reason: "셀 내 줄 추가는 문단 생성 미지원 — 한 문단으로 병합 적용", after: summarize(after), partial: true })
     }
   } else {
+    // 새 글을 마크다운 서식대로 — 편집 칸 줄마다 서식 비트(강조·첨자). 줄이 문단 글과 같을 때만 (본문 문단과 같은 InsertStyle)
+    const book = ctx.charBook
+    const linesOf = (md: string) => md.split(/\n|(?<!\\)<br\s*\/?>/i).map(l => styledInline(stripCellTokens(l))).filter(l => l.plain.trim())
+    const afterStyled = book ? linesOf(after) : []
+    const beforeStyled = book ? linesOf(before) : []
+    // 보이는 서식 비트는 그 줄(문단) 것만 — 칸 문단은 통째 굵으면 표지를 숨긴다(혼합 가드). 칸 전체로 모으면 옆 줄의 굵게 때문에
+    // 표지 없는 굵은 줄에 붙인 글을 굵게 빼 버렸다
+    const styleFor = (i: number, text: string): InsertStyle | undefined => {
+      const st = afterStyled[i]
+      if (!book || !st || st.plain.trim() !== text || !beforeStyled[i]) return undefined
+      const lead = st.plain.length - st.plain.trimStart().length
+      const known = beforeStyled[i].flags.reduce((a, b) => a | b, 0)
+      return { flags: flagsPerChar(st.segs, st.flags).slice(lead), known, flagsOf: id => book.flagsOf(id), variant: (id, f) => book.variant(id, f) }
+    }
     // 라인 → 문단 순서 매핑
     const assigned: string[] = []
     for (let i = 0; i < nonEmpty.length; i++) {
@@ -507,7 +525,7 @@ export function applyCellEdit(
       const xml = ctx.scans[nonEmpty[i].sectionIndex]?.xml
       const placeholderRaw = xml && isDatePlaceholder(nonEmpty[i].text) ? paraTText(nonEmpty[i], xml) : null
       const sp = (placeholderRaw !== null ? buildRangeSplices(nonEmpty[i], xml!, 0, placeholderRaw.length, assigned[i]) : null)
-        ?? (xml ? minimalTextSplices(nonEmpty[i], xml, normForMatch(nonEmpty[i].text), assigned[i]) : null)
+        ?? (xml ? minimalTextSplices(nonEmpty[i], xml, normForMatch(nonEmpty[i].text), assigned[i], undefined, undefined, styleFor(i, assigned[i])) : null)
         ?? buildParagraphSplices(nonEmpty[i], assigned[i], xml)
       if (sp === null) return skip("셀 문단에 텍스트 노드를 만들 수 없음")
       splices.push(...sp)

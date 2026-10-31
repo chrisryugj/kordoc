@@ -8,7 +8,7 @@
  *    균등 띄어쓰기·run 경계·글자 모양은 그대로 남는다.
  */
 
-import { paraTText, buildRangeSplices, paraTCharMap, buildMappedRangeSplices, hasPua, type ScanParagraph, type SpliceEdit } from "./source-map.js"
+import { paraTText, buildRangeSplices, paraTCharMap, buildMappedRangeSplices, hasPua, escapeXmlText, type ScanParagraph, type SpliceEdit } from "./source-map.js"
 
 interface Tok {
   kind: "text" | "u-open" | "u-close" | "strike" | "star"
@@ -25,12 +25,15 @@ interface Tok {
 const ESCAPABLE = new Set(["~", "*", "_", "`", "|", "#", "<", "$", "\\"])
 const isWs = (c: string | undefined): boolean => c !== undefined && /\s/.test(c)
 
+/** 서식 비트 — 강조 표지(parseEmphasis kinds)와 첨자 태그(styledInline) */
+export const EMPH_BOLD = 1, EMPH_ITALIC = 2, EMPH_STRIKE = 4, EMPH_UNDERLINE = 8, EMPH_SUP = 16, EMPH_SUB = 32
+
 /**
- * 마크다운 인라인 글 → { plain, segs, marks }: plain 은 표지를 걷고 역이스케이프한 글, segs 는 서식이 같은 조각의 글(이으면 plain),
- * marks 는 조각마다 강조 표지(** · * · ~~ · <u>) 안인지. 표지는 짝이 맞고 글자에 붙은 것만 인정한다(여는 쪽 뒤·닫는 쪽 앞이
- * 공백이 아님). 짝 없는 표지는 글자로 둔다("3 * 4").
+ * 마크다운 인라인 글 → { plain, segs, marks, kinds }: plain 은 표지를 걷고 역이스케이프한 글, segs 는 서식이 같은 조각의 글(이으면
+ * plain), marks 는 조각마다 강조 표지(** · * · ~~ · <u>) 안인지, kinds 는 그 강조 비트(EMPH_*). 표지는 짝이 맞고 글자에 붙은 것만
+ * 인정한다(여는 쪽 뒤·닫는 쪽 앞이 공백이 아님). 짝 없는 표지는 글자로 둔다("3 * 4").
  */
-export function parseEmphasis(text: string): { plain: string; segs: string[]; marks: boolean[] } {
+export function parseEmphasis(text: string): { plain: string; segs: string[]; marks: boolean[]; kinds: number[] } {
   const toks: Tok[] = []
   const pushText = (s: string, code = false): void => {
     const last = toks[toks.length - 1]
@@ -89,16 +92,51 @@ export function parseEmphasis(text: string): { plain: string; segs: string[]; ma
   }
 
   // 조각: 짝 맞은 표지가 서식 경계, 짝 없는 표지는 글자
-  const segs: string[] = [], marks: boolean[] = []
-  let cur = "", depth = 0
-  const cut = (): void => { if (cur) { segs.push(cur); marks.push(depth > 0) } cur = "" }
+  const segs: string[] = [], marks: boolean[] = [], kinds: number[] = []
+  let cur = ""
+  const open: number[] = [] // 열린 표지마다 강조 비트
+  const kindOf = (t: Tok): number => t.kind === "u-open" || t.kind === "u-close" ? EMPH_UNDERLINE : t.kind === "strike" ? EMPH_STRIKE
+    : ((t.n ?? 0) & 2 ? EMPH_BOLD : 0) | ((t.n ?? 0) & 1 ? EMPH_ITALIC : 0)
+  const push = (s: string): void => { segs.push(s); marks.push(open.length > 0); kinds.push(open.reduce((a, b) => a | b, 0)) }
+  const cut = (): void => { if (cur) push(cur); cur = "" }
   for (const t of toks) {
-    if (t.kind !== "text" && t.paired) { cut(); depth += t.opener ? 1 : -1; continue }
-    if (t.code) { cut(); segs.push(t.text); marks.push(depth > 0); continue }
+    if (t.kind !== "text" && t.paired) { cut(); if (t.opener) open.push(kindOf(t)); else open.pop(); continue }
+    if (t.code) { cut(); push(t.text); continue }
     cur += t.text
   }
   cut()
-  return { plain: segs.join(""), segs, marks }
+  return { plain: segs.join(""), segs, marks, kinds }
+}
+
+const SUP_OPEN = "\uFDD0", SUP_CLOSE = "\uFDD1", SUB_OPEN = "\uFDD2", SUB_CLOSE = "\uFDD3"
+
+/**
+ * parseEmphasis 에 첨자 태그(<sup>·<sub>, 이스케이프 안 된 것)까지 걷은 평문 — 조각은 강조·첨자 비트(flags)가 같은 글. 첨자는 글자
+ * 모양이라 원문 글에 태그가 없다(파서가 IR 글에 넣는 표기)
+ */
+export function styledInline(text: string): { plain: string; segs: string[]; flags: number[] } {
+  const marked = text.replace(/(\\*)<(\/?)(sup|sub)>/g, (m, bs: string, close: string, tag: string) =>
+    bs.length % 2 ? m : bs + (tag === "sup" ? (close ? SUP_CLOSE : SUP_OPEN) : (close ? SUB_CLOSE : SUB_OPEN)))
+  const em = parseEmphasis(marked)
+  const segs: string[] = [], flags: number[] = []
+  let script = 0
+  em.segs.forEach((seg, k) => {
+    let cur = ""
+    const cut = (): void => {
+      if (!cur) return
+      const f = em.kinds[k] | script
+      if (segs.length && flags[flags.length - 1] === f) segs[segs.length - 1] += cur
+      else { segs.push(cur); flags.push(f) }
+      cur = ""
+    }
+    for (const c of seg) {
+      if (c === SUP_OPEN || c === SUB_OPEN) { cut(); script = c === SUP_OPEN ? EMPH_SUP : EMPH_SUB }
+      else if (c === SUP_CLOSE || c === SUB_CLOSE) { cut(); script = 0 }
+      else cur += c
+    }
+    cut()
+  })
+  return { plain: segs.join(""), segs, flags }
 }
 
 /** 원문 글 raw 와 IR 평문 norm 맞대기: norm[i] 의 raw 위치. raw 의 여분 공백은 건너뛴다. 못 맞추면 null */
@@ -128,7 +166,8 @@ export function commonEnds(a: string, b: string): { p: number; s: number } {
   return { p, s }
 }
 
-export interface RawEdit { start: number; end: number; text: string }
+/** 원문 좌표 편집 — at 은 새 글(newNorm)에서 text 가 시작하는 자리 (alignedTextEdits 만 단다) */
+export interface RawEdit { start: number; end: number; text: string; at?: number }
 
 /**
  * IR 평문 편집(origNorm → newNorm)을 원문 글 raw 의 최소 편집들로 옮긴다. 조각(서식 run 경계)이 양쪽에 같은 수로 있으면
@@ -138,21 +177,22 @@ export function alignedTextEdits(raw: string, origNorm: string, newNorm: string,
   if (!origNorm) return null
   const pos = alignToRaw(raw, origNorm)
   if (!pos) return null
-  const ranges: Array<{ a: number; b: number; text: string }> = []
-  const diffInto = (o: string, n: string, base: number): void => {
+  const ranges: Array<{ a: number; b: number; text: string; at: number }> = []
+  const diffInto = (o: string, n: string, base: number, nbase: number): void => {
     if (o === n) return
     const { p, s } = commonEnds(o, n)
-    ranges.push({ a: base + p, b: base + o.length - s, text: n.slice(p, n.length - s) })
+    ranges.push({ a: base + p, b: base + o.length - s, text: n.slice(p, n.length - s), at: nbase + p })
   }
   if (origSegs && newSegs && origSegs.length === newSegs.length && origSegs.length > 1
     && origSegs.join("") === origNorm && newSegs.join("") === newNorm) {
-    let base = 0
+    let base = 0, nbase = 0
     for (let k = 0; k < origSegs.length; k++) {
-      diffInto(origSegs[k], newSegs[k], base)
+      diffInto(origSegs[k], newSegs[k], base, nbase)
       base += origSegs[k].length
+      nbase += newSegs[k].length
     }
   } else {
-    diffInto(origNorm, newNorm, 0)
+    diffInto(origNorm, newNorm, 0, 0)
   }
   const at = (a: number): number => (a < pos.length ? pos[a] : pos[pos.length - 1] + 1)
   // 편집이 IR 공백 하나로 끝나면 그 공백이 접어 보인 원문 공백 줄 전체를 바꾼다. 종전엔 첫 칸만 바꿔
@@ -163,7 +203,89 @@ export function alignedTextEdits(raw: string, origNorm: string, newNorm: string,
     if (isWs(origNorm[r.b - 1])) while (e < raw.length && isWs(raw[e]) && (r.b >= pos.length || e < pos[r.b])) e++
     return e
   }
-  return ranges.map(r => ({ start: at(r.a), end: endOf(r), text: r.text }))
+  return ranges.map(r => ({ start: at(r.a), end: endOf(r), text: r.text, at: r.at }))
+}
+
+/**
+ * 새 글을 마크다운 서식대로 넣기 (minimalTextSplices) — 바뀐 자리의 새 글 조각이 들어갈 run 과 서식 비트가 다르면 서식만 다른
+ * 글자 모양 run 으로 가른다. 굵은 글·위첨자 끝에 붙인 글이 그 run 서식을 물려받던 것("**제목** 수정" → 굵게 "수정")
+ */
+export interface InsertStyle {
+  /** 새 평문 글자마다 서식 비트 (styledInline flags 를 글자마다 편 것) */
+  flags: number[]
+  /** 원본 마크다운에 보이던 서식 비트 — 이 비트만 맞춘다(마크다운에 안 보이는 구조 서식은 run 그대로) */
+  known: number
+  /** 글자 모양 id → 서식 비트 / 서식 비트만 다른 글자 모양 id (header charPr — char-pr.ts) */
+  flagsOf(charPr: string): number | undefined
+  variant(charPr: string, flags: number): string | undefined
+  /** 맞는 글자 모양을 못 구해 run 서식 그대로 둔 조각 수 (호출자가 부분 적용으로 알린다) */
+  missed?: number
+}
+
+/** 조각(segs)·서식 비트(flags)를 글자마다 편다 — InsertStyle.flags */
+export function flagsPerChar(segs: string[], flags: number[]): number[] {
+  const out: number[] = []
+  segs.forEach((seg, k) => { for (let i = 0; i < seg.length; i++) out.push(flags[k]) })
+  return out
+}
+
+/** 원문 위치 pos 를 감싸는 run 여는 태그 — 문단 시작부터 run 여닫음을 세어 가장 안쪽 (못 찾으면 undefined) */
+function runOpenAt(xml: string, from: number, pos: number): { start: number; tag: string; prefix: string } | undefined {
+  const stack: Array<{ start: number; tag: string; prefix: string }> = []
+  for (const m of xml.slice(from, pos).matchAll(/<(\/?)(?:(\w+):)?run\b[^>]*?(\/?)>/g)) {
+    if (m[3]) continue
+    if (m[1]) stack.pop()
+    else stack.push({ start: from + m.index!, tag: m[0], prefix: m[2] ?? "" })
+  }
+  return stack[stack.length - 1]
+}
+
+/**
+ * 글을 싣는 splice 하나를 서식대로 가른다 — 새 글 조각마다 바라는 비트((run 비트 − 보이는 비트) + 조각의 보이는 비트)가 run 과 다르면
+ * 그 비트의 글자 모양 run 으로. 다를 게 없으면 null (원래 splice 그대로)
+ */
+function styleSplice(sp: SpliceEdit, text: string, at: number, para: ScanParagraph, xml: string, style: InsertStyle): SpliceEdit[] | null {
+  const run = runOpenAt(xml, para.start, sp.start)
+  const charPr: string | undefined = run ? /\bcharPrIDRef="(\d{1,10})"/.exec(run.tag)?.[1] : undefined
+  const runFlags: number | undefined = charPr !== undefined ? style.flagsOf(charPr) : undefined
+  if (!run || charPr === undefined || runFlags === undefined) return null
+  // 조각: 같은 바라는 글자 모양끼리
+  const pieces: Array<{ text: string; charPr: string }> = []
+  for (let k = 0; k < text.length; k++) {
+    const f = style.flags[at + k] ?? 0
+    const want: number = (runFlags & ~style.known) | (f & style.known)
+    let id = charPr
+    if (want !== runFlags) {
+      const v = style.variant(charPr, want)
+      if (v === undefined) style.missed = (style.missed ?? 0) + 1
+      else id = v
+    }
+    const last = pieces[pieces.length - 1]
+    if (last && last.charPr === id) last.text += text[k]
+    else pieces.push({ text: text[k], charPr: id })
+  }
+  if (pieces.every(p => p.charPr === charPr)) return null
+  const P = run.prefix ? `${run.prefix}:` : ""
+  const t = para.tRanges.find(r => !r.selfClosing && r.contentStart <= sp.start && sp.start <= r.contentEnd)
+  if (!t) return null
+  const tOpen = xml.slice(xml.lastIndexOf("<", t.contentStart - 1), t.contentStart)
+  const runWith = (id: string, body: string): string =>
+    `${run.tag.replace(/\bcharPrIDRef="\d{1,10}"/, `charPrIDRef="${id}"`)}<${P}t>${escapeXmlText(body)}</${P}t></${P}run>`
+  // 새 글 끝이 run 끝(hp:t 끝 바로 뒤 run 닫힘)이면 다른 서식 꼬리 조각은 run 뒤에 새 run 으로 — 빈 run 을 남기지 않게
+  const tail = `</${P}t></${P}run>`
+  let k = pieces.length
+  while (k > 0 && pieces[k - 1].charPr !== charPr) k--
+  if (k < pieces.length && sp.end === t.contentEnd && xml.startsWith(tail, sp.end)) {
+    const head = pieces.slice(0, k)
+    const out: SpliceEdit[] = [{ start: sp.start, end: sp.end, replacement: inline(head) }]
+    out.push({ start: sp.end + tail.length, end: sp.end + tail.length, replacement: pieces.slice(k).map(p => runWith(p.charPr, p.text)).join("") })
+    return out
+  }
+  return [{ start: sp.start, end: sp.end, replacement: inline(pieces) }]
+  /** run 안 자리의 글 — 다른 서식 조각은 run 을 닫고 새 run 으로 넣은 뒤 원래 run·hp:t 를 다시 연다 */
+  function inline(list: typeof pieces): string {
+    return list.map(p => p.charPr === charPr ? escapeXmlText(p.text) : `</${P}t></${P}run>${runWith(p.charPr, p.text)}${run!.tag}${tOpen}`).join("")
+  }
 }
 
 /**
@@ -172,7 +294,7 @@ export function alignedTextEdits(raw: string, origNorm: string, newNorm: string,
  * 글자별 원문 범위 좌표계(paraTCharMap)로. 맞대지 못하면 null (호출자가 문단 통째 쓰기 buildParagraphSplices 로)
  */
 export function minimalTextSplices(
-  para: ScanParagraph, xml: string, origPlain: string, newPlain: string, origSegs?: string[], newSegs?: string[],
+  para: ScanParagraph, xml: string, origPlain: string, newPlain: string, origSegs?: string[], newSegs?: string[], style?: InsertStyle,
 ): SpliceEdit[] | null {
   const raw = paraTText(para, xml)
   const map = raw === null || hasPua(raw) ? paraTCharMap(para, xml) : null
@@ -182,7 +304,9 @@ export function minimalTextSplices(
   for (const e of edits) {
     const sp = map ? buildMappedRangeSplices(map, e.start, e.end, e.text) : buildRangeSplices(para, xml, e.start, e.end, e.text)
     if (!sp) return null
-    out.push(...sp)
+    // 글을 싣는 첫 splice 만 서식대로 가른다 (나머지는 지우기)
+    const styled = style && e.text && e.at !== undefined ? styleSplice(sp[0], e.text, e.at, para, xml, style) : null
+    out.push(...(styled ?? [sp[0]]), ...sp.slice(1))
   }
   return out
 }

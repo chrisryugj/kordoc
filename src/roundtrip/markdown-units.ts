@@ -197,6 +197,11 @@ export { sanitizeText }
 
 /** 매칭용 정규화 — sanitize + 공백 붕괴. 스캔 텍스트(IR 변환 전)와 IR 텍스트 양쪽에 적용.
  *  IR 은 리터럴 $ 를 \$ 로(escapeLiteralDollar), 태그 꼴 글자 "<sub>" 를 \<sub> 로(escapeLiteralTags) 담으므로 원문 쪽과 같게 푼다 */
+/** IR 글의 첨자 태그(<sup>·<sub> — 파서 표기, 원문 글엔 없다)를 뗀다. 이스케이프된 원문 글자 "\\<sup>" 는 둔다 */
+export function noScriptTags(text: string): string {
+  return text.replace(/(?<!\\)<\/?su[bp]>/g, "")
+}
+
 export function normForMatch(text: string): string {
   return sanitizeText(text.replace(/\\\$/g, "$").replace(/\\(?=<\/?(?:u|sup|sub)>)/g, "")).replace(/\s+/g, " ").trim()
 }

@@ -8,6 +8,8 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import { markdownToHwpx, parseHwpx, patchHwpx } from "../src/index.js"
 import { scanSectionXml, applySplices, type SpliceEdit } from "../src/roundtrip/source-map.js"
 import { fallbackTextEdit, fallbackTableEdits } from "../src/roundtrip/text-fallback.js"
@@ -130,6 +132,32 @@ describe("hp:t 안 탭 요소·엔티티·PUA 기호가 든 문단 수정", () =
     assert.equal(r.applied, 1, JSON.stringify(r.skipped))
     assert.ok((await markdownOf(r.data!)).includes("**굵은 글** 뒤 글 수정"))
     assert.ok((await sectionXml(r.data!)).includes("\uF0DC 앞 글"))
+  })
+})
+
+describe("붙인 글의 서식은 마크다운대로", () => {
+  it("굵은 제목 끝 표지 밖에 붙인 글은 굵게를 물려받지 않는다 — 표지 안이면 굵게", async () => {
+    const src = new Uint8Array(await markdownToHwpx("첫 문단\n\n**굵은 제목**\n\n끝 문단"))
+    const md = await markdownOf(src)
+    assert.ok(md.includes("**굵은 제목**"), md)
+    const r = await patchHwpx(src, md.replace("**굵은 제목**", "**굵은 제목** 붙인 글"))
+    assert.equal(r.applied, 1)
+    assert.deepEqual(r.skipped, [])
+    assert.ok((await markdownOf(r.data!)).includes("**굵은 제목** 붙인 글"))
+    const r2 = await patchHwpx(src, md.replace("**굵은 제목**", "**굵은 제목 안쪽**"))
+    assert.ok((await markdownOf(r2.data!)).includes("**굵은 제목 안쪽**"))
+  })
+
+  const SUP = join(import.meta.dirname, "..", "bench", "corpus", "korea-kr")
+  const supFile = existsSync(SUP) ? readdirSync(SUP).find(f => f.startsWith("156765974_") && f.endsWith(".hwpx")) : undefined
+  it("위첨자 끝에 붙인 글은 위첨자가 되지 않는다 (코퍼스)", { skip: !supFile }, async () => {
+    const src = new Uint8Array(readFileSync(join(SUP, supFile!)))
+    const md = await markdownOf(src)
+    const unit = "**및 품질 제고**<sup>\\*\\*</sup>"
+    assert.ok(md.includes(unit), "코퍼스 문서 꼴이 바뀜")
+    const r = await patchHwpx(src, md.replace(unit, unit + " 수정"))
+    assert.equal(r.applied, 1)
+    assert.ok((await markdownOf(r.data!)).includes(unit + " 수정"))
   })
 })
 

@@ -26,7 +26,7 @@ import {
 import { noteFormatFrom, noteRefMark, type NoteNumberFormat } from "../hwpx/notes.js"
 import { patchZipEntries } from "./zip-patch.js"
 import { checkPatchIntegrity } from "./integrity.js"
-import { stripHeadMarker, stripShownHeadMarker,
+import { stripHeadMarker, stripShownHeadMarker, noScriptTags,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable, parseHtmlTable, htmlCellInnerToLines,
   alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
@@ -37,7 +37,8 @@ import { collectMaxNumericId, injectCellBorderFill, buildTableParagraphXml } fro
 import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import { detectFormat } from "../detect.js"
 import { patchHwp } from "./hwp5-patch.js"
-import { parseEmphasis, minimalTextSplices } from "./inline-edit.js"
+import { parseEmphasis, styledInline, minimalTextSplices, flagsPerChar, commonEnds, type InsertStyle } from "./inline-edit.js"
+import { charPrBook, type CharPrBook } from "./char-pr.js"
 import { clickHereEditSplices } from "../form/click-here.js"
 import { lineBreakTextSplices } from "./line-break-edit.js"
 import { fallbackTextEdit, fallbackTableEdits } from "./text-fallback.js"
@@ -139,7 +140,8 @@ export async function patchHwpx(
   //    삭제+추가로 보고하므로 그대로 반영하면 원본 서식이 전부 복제본으로 갈린다
   const sectionSplices: SpliceEdit[][] = scans.map(() => [])
   const structural = options?.structure !== false && origUnits.length * editedUnits.length <= 4_000_000
-  const ctx: PatchCtx = { origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped, tableInsert, structure: structural, borders,
+  const charBook = tableInsert && charPrBook(tableInsert.headerXml)
+  const ctx: PatchCtx = { origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped, tableInsert, structure: structural, borders, charBook,
     unitKeys: origUnits.map(u => (u.kind === "text" ? fallbackPlain(u.raw, origBlocks[u.blockIdx]).replace(/\s+/g, "") : "")) }
   const struct = structural ? createStructureEditor({
     origUnits, origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped,
@@ -184,8 +186,8 @@ export async function patchHwpx(
     }
     // header.xml 변경 — 문단→표 변환으로 셀 테두리 borderFill이 주입된 경우만
     // 행 추가가 만든 테두리 변형도 같은 header 에 덧붙인다
-    if (tableInsert && (tableInsert.headerSplices.length > 0 || borders?.added().length)) {
-      const newHeader = appendBorderFills(applySplices(tableInsert.headerXml, tableInsert.headerSplices), borders?.added() ?? [])
+    if (tableInsert && (tableInsert.headerSplices.length > 0 || borders?.added().length || charBook?.added())) {
+      const newHeader = charBook!.apply(appendBorderFills(applySplices(tableInsert.headerXml, tableInsert.headerSplices), borders?.added() ?? []))
       replacements.set(tableInsert.headerEntryName, encoder.encode(newHeader))
     }
   } catch (err) {
@@ -347,13 +349,15 @@ export function resolveParagraphMappings(blocks: IRBlock[], scans: SectionScan[]
     if ((b.type !== "paragraph" && b.type !== "heading") || !b.text) continue
     if (pageText.has(i)) { result.set(i, {}); continue }
 
-    let key = normForMatch(b.text)
+    // 첨자 태그는 파서 표기(원문 hp:t 엔 없다)라 떼고 맞댄다 — 종전엔 위첨자가 든 문단은 늘 매핑에 실패해 원문 글 찾기로 갔다
+    const text = noScriptTags(b.text)
+    let key = normForMatch(text)
     let prefixStripped = false
     let noteMarks: string[] | undefined
     if (!buckets.has(key)) {
       // 자동번호/글머리 접두 제거 후 재시도 (resolveParaHeading가 붙인 prefix)
-      const sp = b.text.indexOf(" ")
-      const alt = sp > 0 ? normForMatch(b.text.slice(sp + 1)) : ""
+      const sp = text.indexOf(" ")
+      const alt = sp > 0 ? normForMatch(text.slice(sp + 1)) : ""
       if (alt && buckets.has(alt)) { key = alt; prefixStripped = true }
       else {
         // 각주·미주 참조 부호를 뺀 텍스트가 그 문단 스캔 텍스트와 같으면 그 문단 (접두 제거와도 조합)
@@ -481,6 +485,8 @@ interface PatchCtx {
   borders?: BorderVariants
   /** 원본 유닛별 글 열쇠(공백 뺀 평문, 글 유닛만) — 글로 찾아 고치기의 등장 순번 */
   unitKeys?: string[]
+  /** header 글자 모양 책 — 새 글을 마크다운 서식대로 넣을 때 서식만 다른 글자 모양 (header 를 못 읽으면 없음) */
+  charBook?: CharPrBook
 }
 
 /** 글로 찾아 고치기용 평문(줄은 "\n") — 강조 표지·첨자 태그·그림 줄을 걷는다 (원문 hp:t 에 없는 표기) */
@@ -665,9 +671,9 @@ function patchParagraphUnit(
   // 문단 내 강제 줄바꿈(<hp:lineBreak/>) — 줄바꿈을 "\n" 으로 맞대 바뀐 자리만 고친다
   if (block.text && block.text.includes("\n")) return patchLineBreakParagraph(block, orig, edited, mapping, ctx, skip)
 
-  // 편집 마크다운 → 평문 + 서식 조각 (강조 표지는 걷는다: 조각 경계가 run 서식 경계)
-  const origInline = parseEmphasis(textUnitInline(orig.raw, block))
-  const newInline = parseEmphasis(textUnitInline(edited.raw, block))
+  // 편집 마크다운 → 평문 + 서식 조각 (강조 표지·첨자 태그는 걷는다: 조각 경계가 run 서식 경계, 원문 hp:t 엔 태그가 없다)
+  const origInline = styledInline(textUnitInline(orig.raw, block))
+  const newInline = styledInline(textUnitInline(edited.raw, block))
   let origPlain = origInline.plain
   let newPlain = newInline.plain
   // 각주·참조 부호·자동번호 접두를 떼면 조각 좌표가 어긋나므로 그때는 문단 단위 diff 만
@@ -715,16 +721,32 @@ function patchParagraphUnit(
   }
 
   const xml = ctx.scans[mapping.para.sectionIndex]?.xml
+  // 새 글은 마크다운 서식대로 — 바뀐 자리가 다른 서식 run 에 들면 서식만 다른 글자 모양 run 으로 (굵은 제목 끝에 붙인 글)
+  const book = ctx.charBook
+  const style: InsertStyle | undefined = segsUsable && book ? {
+    flags: flagsPerChar(newInline.segs, newInline.flags), known: origInline.flags.reduce((a, b) => a | b, 0),
+    flagsOf: id => book.flagsOf(id), variant: (id, f) => book.variant(id, f),
+  } : undefined
   // 미기입 누름틀 자리에 쓴 값은 누름틀에 채운다 — 아니면 바뀐 자리만, 그것도 안 되면 문단 통째
+  const minimal = xml ? minimalTextSplices(mapping.para, xml, origPlain, newPlain, segsUsable ? origInline.segs : undefined, segsUsable ? newInline.segs : undefined, style) : null
   const splices = (xml ? clickHereEditSplices(mapping.para, xml, origPlain, newPlain) : null)
-    ?? (xml ? minimalTextSplices(mapping.para, xml, origPlain, newPlain, segsUsable ? origInline.segs : undefined, segsUsable ? newInline.segs : undefined) : null)
-    ?? (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
+    ?? minimal ?? (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
   if (splices === null) return skip("문단에 텍스트 노드를 만들 수 없음")
   ctx.sectionSplices[mapping.para.sectionIndex].push(...splices)
-  if (segsUsable && origInline.segs.length !== newInline.segs.length) {
+  if (segsUsable && origInline.segs.length !== newInline.segs.length
+    && (!minimal || !style || style.missed || restyledKept(origInline, newInline, origPlain, newPlain))) {
     ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
   }
   return 1
+}
+
+/** 바뀐 자리 밖(공통 앞·뒤) 글의 강조가 달라졌는가 — 그 강조 추가·삭제는 글자 모양을 못 바꿔 부분 적용으로 알린다 */
+function restyledKept(o: { segs: string[]; flags: number[] }, n: { segs: string[]; flags: number[] }, oPlain: string, nPlain: string): boolean {
+  const of = flagsPerChar(o.segs, o.flags), nf = flagsPerChar(n.segs, n.flags)
+  const { p, s } = commonEnds(oPlain, nPlain)
+  for (let i = 0; i < p; i++) if (of[i] !== nf[i]) return true
+  for (let i = 1; i <= s; i++) if (of[of.length - i] !== nf[nf.length - i]) return true
+  return false
 }
 
 /** 강제 줄바꿈 문단: 마크다운 줄을 "\n" 으로 이은 평문끼리 diff 해 줄바꿈 요소를 지키며 고친다. 줄바꿈을 늘리고 줄여도 된다 */
