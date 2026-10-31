@@ -216,6 +216,20 @@ describe("detectClusterTables — 낱말마다 찍은 고정폭 글줄", () => {
     assert.ok(found[0].table.cells.flat().every(cell => !/routed|router/.test(cell.text)))
   })
 
+  it("머리 행 표 아래 산문 줄도 표 영역을 잇지 않는다", () => {
+    // HWP 3.x 기술 교재 "기정 변수명 설 명" 표 — 머리 행 경로 영역이 아래 절 본문 줄까지 먹었다
+    const items: ClusterItem[] = [item("변수명", 40, 500, 30, 10), item("설", 160, 500, 5, 10), item("명", 240, 500, 5, 10)]
+    ;[["path", "명령어 검색 경로 directory명의 list"], ["home", "HOME DIR.의 절대 경로명"], ["shell", "default c-shell은 shell을"], ["cwd", "사용자의 현재 사용 directory"]]
+      .forEach(([k, v], r) => items.push(item(k, 40, 485 - r * 15, k.length * 5, 10), ...wordLine(v, 160, 485 - r * 15)))
+    items.push(...wordLine("15. shell 변수의 특성", 40, 410),
+      ...wordLine("① shell script에서 정의되어 생성된 변수는 shell script가 수행되는 동안만 존재하므로 명령어", 50, 395),
+      ...wordLine("입력 line에서 대화식으로 참조하거나 다른 shell script에서 사용할 수 없다.", 60, 380),
+      ...wordLine("② terminal에서 keyboard 입력으로 변수를 설정한 경우 shell script내에서 대화식으로 사용한", 50, 365))
+    const found = detectClusterTables(items, 1)
+    assert.equal(found.length, 1)
+    assert.ok(found[0].table.cells.flat().every(cell => !/terminal|대화식/.test(cell.text)))
+  })
+
   it("비례 글꼴 머리 행(낱말 틈과 열 틈이 다름)은 낱말 줄이 아니다", () => {
     // ODL 117 꼴: "Saccharometer DI Water Glucose Solution Yeast Suspension" — 열 틈 6pt·낱말 틈 3pt
     const head = [["Saccharometer", 40, 70], ["DI", 116, 12], ["Water", 131, 30], ["Glucose", 200, 40], ["Solution", 243, 45], ["Yeast", 300, 30], ["Suspension", 333, 55]]

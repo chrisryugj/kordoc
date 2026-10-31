@@ -478,6 +478,8 @@ export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
       && a.y - b.y > 0 && a.y - b.y < maxPitch
       && Math.abs(b.fontSize - fs) <= 0.15 * fs
       && !startsNewItem(a.text, b.text)
+      // 문장이 끝난 찬 줄 뒤 다단계 번호 줄도 새 조항 — "…참조할 수 있다." ⏎ "7.3.4 명명법" (KS 표준안)
+      && !(SENTENCE_END.test(a.text.trimEnd()) && MULTI_LEVEL_NUMBER.test(b.text.trimStart()))
     // 어절 단위 줄넘김은 띄우되 중·일문의 글자 단위 꺾임에는 공백을 넣지 않는다
     out.push(!wraps ? "\n" : wordWrap ? (unspacedCjkBoundary(a.text, b.text) ? "" : " ") : wrapJoiner(a.text, b.text, lex))
   }

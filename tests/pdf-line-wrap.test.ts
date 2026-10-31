@@ -209,6 +209,8 @@ describe("bodyLineJoins — 본문 꺾임 기하", () => {
     assert.deepEqual(bodyLineJoins([base, line("열었다.", 72, 120, 660)]), ["\n"])
     assert.deepEqual(bodyLineJoins([base, line("열었다.", 72, 120, 684, 14)]), ["\n"])
     assert.deepEqual(bodyLineJoins([base, line("○ 둘째 항목", 72, 200, 684)]), ["\n"])
+    // 문장이 끝난 찬 줄 뒤 다단계 번호 줄은 새 조항 (KS 표준안 "…참조할 수 있다." ⏎ "7.3.4 명명법")
+    assert.deepEqual(bodyLineJoins([line("영어로 된 다양한 상표명 범주에 대한 자세한 내용은 C.2을 참조할 수 있다.", 72, 530, 700), line("7.3.4 명명법", 72, 140, 684)]), ["\n"])
     assert.deepEqual(bodyLineJoins([base, line("열었다.", 72, 120, 684)]), [" "])
   })
 

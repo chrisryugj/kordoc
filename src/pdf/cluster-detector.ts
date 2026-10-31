@@ -884,7 +884,7 @@ function findTableRegionsByHeader(
 
   for (const row of allRows) {
     const matchedCols = countMatchedColumnsRange(row, columns, headerItems)
-    if (matchedCols >= MIN_COLS) {
+    if (matchedCols >= MIN_COLS && !isWordLine(row)) {
       currentRegion.push(row)
       missStreak = 0
     } else if (currentRegion.length > 0 && (row.items.length <= 2 || missStreak === 0) && !isProseLine(row, columns)) {
