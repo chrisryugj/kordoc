@@ -72,23 +72,22 @@ const SHADOW_TYPES = ["NONE", "PARELLEL_LEFTTOP", "PARELLEL_RIGHTTOP", "PARELLEL
   "SHEAR_RIGHTTOP", "SHEAR_LEFTBOTTOM", "SHEAR_RIGHTBOTTOM", "SHEAR_LEFTTOP", "SHEAR_RIGHTTOP"] as const
 
 /** 선 — 색·굵기·속성(종류·끝 모양·화살표) */
-function lineShapeXml(lineColor: number, width: number, a: number, outline: number): string {
+function lineShapeXml(lineColor: number, width: number, a: number, outline: number, alpha = 0): string {
   return el("hp:lineShape", [["color", color(lineColor)], ["width", width], ["style", pick(BORDER_TYPES, bits(a, 0, 6))],
     ["endCap", pick(END_CAPS, bits(a, 6, 4))], ["headStyle", pick(ARROW_STYLES, bits(a, 10, 6))], ["tailStyle", pick(ARROW_STYLES, bits(a, 16, 6))],
     ["headfill", bit(a, 30)], ["tailfill", bit(a, 31)], ["headSz", pick(ARROW_SIZES, bits(a, 22, 4))], ["tailSz", pick(ARROW_SIZES, bits(a, 26, 4))],
-    ["outlineStyle", pick(OUTLINE_STYLES, outline)], ["alpha", 0]])
+    ["outlineStyle", pick(OUTLINE_STYLES, outline)], ["alpha", alpha]])
 }
 
-/** 그리기 개체 공통 — 선(lineShape) · 채우기(fillBrush) · 그림자(shadow), 그 뒤 인스턴스 id */
+/** 그리기 개체 공통 — 선(lineShape) · 채우기(fillBrush) · 그림자(shadow), 그 뒤 인스턴스 id · 선 투명도 · 그림자 투명도 */
 function drawingStyle(k: Component, ctx: ConvertContext): { xml: string; instId: number } {
   const c = k.rest
   const lineColor = c.u32(), width = c.i32(), a = c.u32(), outline = c.u8()
-  const line = lineShapeXml(lineColor, width, a, outline)
   const fill = fillBrushXml(c, ctx.binRef)
   const sType = c.u32(), sColor = c.u32(), sx = c.i32(), sy = c.i32()
   const instId = c.u32()
-  c.u8()
-  const sAlpha = c.u8()
+  const lineAlpha = c.u8(), sAlpha = c.u8()
+  const line = lineShapeXml(lineColor, width, a, outline, lineAlpha)
   const shadow = el("hp:shadow", [["type", pick(SHADOW_TYPES, sType)], ["color", color(sColor)], ["offsetX", sx], ["offsetY", sy], ["alpha", sAlpha]])
   return { xml: line + fill + shadow, instId }
 }
