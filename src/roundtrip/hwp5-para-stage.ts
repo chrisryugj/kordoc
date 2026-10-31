@@ -273,11 +273,13 @@ export function stageParaPatch(
   // 바뀐 자리만 고친다: IR 평문은 공백을 접어 보이므로("대    상" → "대 상") 통째 교체는 균등 띄어쓰기를 접고
   // 글자 모양을 첫 글자 하나로 합친다. 원문 코어와 IR 평문을 맞대어 diff 범위만 바꾸고 CHAR_SHAPE run 은 위치만 민다.
   // 강제 줄바꿈(0x000a)은 코어와 IR 양쪽에 "\n" 한 글자라 그대로 맞댄다
-  const edit = origPlain !== undefined ? alignedTextEdits(para.rawText, origPlain, newPlain)?.[0] : undefined
+  // 고친 자리는 낱말 덩어리마다 — 뒤에서부터 적용하면 앞 자리 좌표가 그대로다
+  const edits = origPlain !== undefined ? alignedTextEdits(para.rawText, origPlain, newPlain) : null
+  const desc = edits?.length ? [...edits].sort((x, y) => y.start - x.start) : undefined
   // 원문 leading/trailing 공백 보존 (IR은 트림된 텍스트)
   const lead = para.rawText.match(/^\s*/)![0]
   const trail = para.rawText.match(/\s*$/)![0]
-  const newRaw = edit ? para.rawText.slice(0, edit.start) + edit.text + para.rawText.slice(edit.end)
+  const newRaw = desc ? desc.reduce((t, e) => t.slice(0, e.start) + e.text + t.slice(e.end), para.rawText)
     : para.rawText.trim() === para.rawText ? newPlain : lead + newPlain + trail
 
   // PARA_TEXT = 선두 control + 새 텍스트 + 말미 control/문단끝 (control 블록 바이트 보존)
@@ -289,15 +291,21 @@ export function stageParaPatch(
   const nChars = seg.prefixUnits + newRaw.length + seg.suffixUnits
   newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
 
-  // CHAR_SHAPE: 부분 수정이면 run 위치만 민다, 통째 교체면 선두 control run 보존 + 코어는 첫 글자 서식으로 단일화
-  let cs = edit
-    ? shiftCharShape(charShapeRec.data, seg.prefixUnits + edit.start, seg.prefixUnits + edit.end, edit.text.length)
+  // CHAR_SHAPE: 부분 수정이면 run 위치만 민다(뒤 자리부터), 통째 교체면 선두 control run 보존 + 코어는 첫 글자 서식으로 단일화
+  let cs = desc
+    ? desc.reduce((c, e) => shiftCharShape(c.buf, seg.prefixUnits + e.start, seg.prefixUnits + e.end, e.text.length), { buf: charShapeRec.data, count: 0 })
     : rebuildCharShape(charShapeRec.data, seg.prefixUnits)
-  // 새 글 글자 모양 — 문단 끝에 붙인 글은 끝 표시 말고 마지막 글자 것을 받고(끝 표시만 위첨자인 문단), 마크다운 서식이 다르면 서식만 다른 짝으로
-  if (edit && edit.text) {
-    const landing = edit.start === edit.end && edit.start === para.rawText.length && edit.start > 0 ? edit.start - 1 : edit.start
-    const toEnd = edit.end === para.rawText.length && seg.suffix.length === 2 && seg.suffix.readUInt16LE(0) === 0x0d
-    cs = restyleInserted(cs.buf, seg.prefixUnits + edit.start, edit.text, edit.at ?? 0, style, seg.prefixUnits + landing, toEnd) ?? cs
+  // 새 글 글자 모양 — 앞 자리부터 새 좌표(앞 편집들의 길이 차를 더한 자리)로. 문단 끝에 붙인 글은 끝 표시 말고 마지막 글자 것을
+  // 받고(끝 표시만 위첨자인 문단), 마크다운 서식이 다르면 서식만 다른 짝으로
+  let delta = 0
+  for (const e of desc ? [...desc].reverse() : []) {
+    const at = e.start + delta
+    if (e.text) {
+      const landing = e.start === e.end && e.start === para.rawText.length && at > 0 ? at - 1 : at
+      const toEnd = e.end === para.rawText.length && seg.suffix.length === 2 && seg.suffix.readUInt16LE(0) === 0x0d
+      cs = restyleInserted(cs.buf, seg.prefixUnits + at, e.text, e.at ?? 0, style, seg.prefixUnits + landing, toEnd) ?? cs
+    }
+    delta += e.text.length - (e.end - e.start)
   }
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)
@@ -340,9 +348,38 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
   }
   if (text !== para.rawText) return false
   // 보이는 글이 비었으면(누름틀만 든 칸 등) 맨 앞에 넣는 편집 — alignedTextEdits 는 빈 글을 맞대지 않는다
-  const edits = !origPlain && !text.trim() ? [{ start: 0, end: 0, text: newPlain }] : alignedTextEdits(text, origPlain, newPlain)
-  if (!edits || edits.length !== 1) return false
-  const e = edits[0]
+  const found = !origPlain && !text.trim() ? [{ start: 0, end: 0, text: newPlain, at: 0 }] : alignedTextEdits(text, origPlain, newPlain)
+  if (!found?.length) return false
+  /** 보이는 글 편집 → PARA_TEXT 바이트 범위. 넣기는 이웃 글자 경계, 바꾸기는 일반 글자만 덮을 때(사이에 제어 문자·안내문 없음) */
+  const byteRange = (e: { start: number; end: number }): { byteStart: number; byteEnd: number; landing?: number } | null => {
+    if (e.start === e.end) {
+      const at = spans.find(x => x.from === e.start && x.to > x.from) ?? spans.find(x => x.to === e.start && x.to > x.from)
+      if (!at) return null
+      const b = at.from === e.start ? at.tok.start : at.tok.end
+      // 뒤에 글자가 없는 자리(문단 끝)에 넣은 글은 앞 글자 모양 — 끝 표시 모양을 받지 않게
+      return { byteStart: b, byteEnd: b, landing: at.from !== e.start ? b / 2 - 1 : undefined }
+    }
+    const hit = spans.filter(x => x.from < e.end && x.to > e.start)
+    if (!hit.length || hit.some(x => !x.tok.plain || x.from < e.start || x.to > e.end)) return null
+    const byteStart = hit[0].tok.start, byteEnd = hit[hit.length - 1].tok.end
+    // 덮은 낱자 사이에 끼인 제어 문자·누름틀 안내문(글 기여 0)이 있으면 지우지 않는다
+    if (toks.some(t => t.start >= byteStart && t.end <= byteEnd && !t.plain)) return null
+    if (spans.some(x => x.hidden && x.tok.start >= byteStart && x.tok.end <= byteEnd)) return null
+    return { byteStart, byteEnd }
+  }
+  const visibleAfter = (list: Array<{ start: number; end: number; text: string }>): string =>
+    [...list].sort((x, y) => y.start - x.start).reduce((t, e) => t.slice(0, e.start) + e.text + t.slice(e.end), text)
+  // 낱말 덩어리 여럿 — 덩어리마다 일반 글자만 덮으면 따로 고친다(사이 글·run 그대로). 하나라도 제어 문자에 걸치면 처음~끝 한
+  // 덩어리로 (누름틀 채우기도 한 자리 기준)
+  if (found.length > 1) {
+    const ranges = found.map(byteRange)
+    if (ranges.every(r => r)) {
+      return stageTextBytes(scan, para, found.map((h, k) => ({ ...ranges[k]!, text: h.text, at: h.at ?? 0 })), visibleAfter(found), keepLineseg, false, style)
+    }
+  }
+  const last = found[found.length - 1]
+  const e = found.length === 1 ? found[0]
+    : { start: found[0].start, end: last.end, text: newPlain.slice(found[0].at ?? 0, (last.at ?? 0) + last.text.length), at: found[0].at }
   // 값을 미기입 누름틀 자리에 넣었으면(넣은 자리와 누름틀 사이가 공백뿐) 안내문 대신 누름틀 안에 넣고 수정 표시(속성 bit 15)를
   // 켠다 — 한글에서 누름틀을 눌러 입력한 것과 같다(HWPX 누름틀 채우기의 dirty="1" 과 같은 규칙). 앞에 공백이 있으면 값의
   // 앞 공백은 뗀다
@@ -354,52 +391,49 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
     const ctrl = Buffer.from(scan.records[para.guides[g].ctrl].data)
     ctrl.writeUInt32LE((ctrl.readUInt32LE(4) | (1 << 15)) >>> 0, 4)
     scan.repl.set(para.guides[g].ctrl, ctrl)
-    return stageTextBytes(scan, para, at.byteStart, at.byteEnd, value, text.slice(0, at.vis) + value + text.slice(at.vis), keepLineseg, true)
+    return stageTextBytes(scan, para, [{ byteStart: at.byteStart, byteEnd: at.byteEnd, text: value, at: 0 }],
+      text.slice(0, at.vis) + value + text.slice(at.vis), keepLineseg, true)
   }
-  let byteStart: number, byteEnd: number
-  let landing: number | undefined
-  if (e.start === e.end) {
-    const at = spans.find(x => x.from === e.start && x.to > x.from) ?? spans.find(x => x.to === e.start && x.to > x.from)
-    if (!at) return false
-    byteStart = byteEnd = at.from === e.start ? at.tok.start : at.tok.end
-    // 뒤에 글자가 없는 자리(문단 끝)에 넣은 글은 앞 글자 모양 — 끝 표시 모양을 받지 않게
-    if (at.from !== e.start) landing = byteStart / 2 - 1
-  } else {
-    const hit = spans.filter(x => x.from < e.end && x.to > e.start)
-    if (!hit.length || hit.some(x => !x.tok.plain || x.from < e.start || x.to > e.end)) return false
-    byteStart = hit[0].tok.start
-    byteEnd = hit[hit.length - 1].tok.end
-    // 덮은 낱자 사이에 끼인 제어 문자·누름틀 안내문(글 기여 0)이 있으면 지우지 않는다
-    if (toks.some(t => t.start >= byteStart && t.end <= byteEnd && !t.plain)) return false
-    if (spans.some(x => x.hidden && x.tok.start >= byteStart && x.tok.end <= byteEnd)) return false
-  }
-  return stageTextBytes(scan, para, byteStart, byteEnd, e.text, text.slice(0, e.start) + e.text + text.slice(e.end), keepLineseg, false,
-    { style, at: e.at ?? 0, landing })
+  const range = byteRange(e)
+  if (!range) return false
+  return stageTextBytes(scan, para, [{ ...range, text: e.text, at: e.at ?? 0 }], visibleAfter([e]), keepLineseg, false, style)
 }
 
+/** PARA_TEXT 바이트 편집 — at 은 새 평문(style.flags) 좌표, landing 은 새 글이 받을 글자 자리(원문 WCHAR 좌표) */
+interface ByteEdit { byteStart: number; byteEnd: number; text: string; at: number; landing?: number }
+
 /**
- * PARA_TEXT 의 [byteStart, byteEnd) 를 새 글로 바꾸고 nChars·CHAR_SHAPE 위치·LINE_SEG 를 맞춘다. restyle 이면 새 글은 바로 앞 글자
- * 모양을 받는다 — 누름틀 안내문에는 한글이 빨간 기울임 모양을 따로 걸어 두는데, 한글이 직접 채운 누름틀의 값은 앞 글 모양이다
+ * PARA_TEXT 의 [byteStart, byteEnd) 들을 새 글로 바꾸고 nChars·CHAR_SHAPE 위치·LINE_SEG 를 맞춘다(뒤 자리부터 바꾸고, 새 글 모양은
+ * 앞 자리부터 새 좌표로). restyle 이면 새 글은 바로 앞 글자 모양을 받는다 — 누름틀 안내문에는 한글이 빨간 기울임 모양을 따로
+ * 걸어 두는데, 한글이 직접 채운 누름틀의 값은 앞 글 모양이다. 아니면 새 글을 마크다운 서식대로(restyleInserted)
  */
 function stageTextBytes(
-  scan: SectionScan5, para: ScanPara5, byteStart: number, byteEnd: number, newText: string, newVisible: string, keepLineseg: boolean,
-  restyle = false,
-  /** 새 글을 마크다운 서식대로 (restyleInserted — at 은 새 평문 좌표, landing 은 새 글이 받을 글자 자리) */
-  insert?: { style?: HwpInsertStyle; at: number; landing?: number },
+  scan: SectionScan5, para: ScanPara5, edits: ByteEdit[], newVisible: string, keepLineseg: boolean, restyle = false, style?: HwpInsertStyle,
 ): boolean {
   const data = scan.records[para.textIdx].data
-  const rep = Buffer.from(newText, "utf16le")
   const records = scan.records
   const newHeader = Buffer.from(records[para.headerIdx].data)
-  const nChars = (data.length - (byteEnd - byteStart) + rep.length) / 2
-  newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
-  let cs = shiftCharShape(records[para.charShapeIdx].data, byteStart / 2, byteEnd / 2, rep.length / 2)
-  if (restyle) cs = restyleSpan(cs.buf, byteStart / 2, (byteStart + rep.length) / 2)
-  else if (insert && newText) {
-    const toEnd = data.length - byteEnd === 2 && data.readUInt16LE(byteEnd) === 0x0d
-    cs = restyleInserted(cs.buf, byteStart / 2, newText, insert.at, insert.style, insert.landing ?? byteStart / 2, toEnd) ?? cs
+  const desc = [...edits].sort((x, y) => y.byteStart - x.byteStart)
+  let out = data
+  let cs = { buf: records[para.charShapeIdx].data, count: 0 }
+  for (const e of desc) {
+    const rep = Buffer.from(e.text, "utf16le")
+    out = Buffer.concat([out.subarray(0, e.byteStart), rep, out.subarray(e.byteEnd)])
+    cs = shiftCharShape(cs.buf, e.byteStart / 2, e.byteEnd / 2, rep.length / 2)
   }
-  scan.repl.set(para.textIdx, Buffer.concat([data.subarray(0, byteStart), rep, data.subarray(byteEnd)]))
+  const nChars = out.length / 2
+  newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
+  let delta = 0
+  for (const e of [...desc].reverse()) {
+    const at = e.byteStart / 2 + delta
+    if (restyle) cs = restyleSpan(cs.buf, at, at + e.text.length)
+    else if (e.text) {
+      const toEnd = data.length - e.byteEnd === 2 && data.readUInt16LE(e.byteEnd) === 0x0d
+      cs = restyleInserted(cs.buf, at, e.text, e.at, style, e.landing !== undefined ? e.landing + delta : at, toEnd) ?? cs
+    }
+    delta += e.text.length - (e.byteEnd - e.byteStart) / 2
+  }
+  scan.repl.set(para.textIdx, out)
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)
   stageLineSegs(scan, para, newHeader, newVisible, 0, nChars, keepLineseg)

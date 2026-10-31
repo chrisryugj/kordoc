@@ -23,10 +23,22 @@ export function hwpEmphasisFlags(attr: number): number {
 
 export interface HwpCharBook {
   flagsOf(id: number): number | undefined
-  /** id 와 서식 비트만 다른(flags) 글자 모양 — DocInfo 에 있으면 그 id, 없으면 비트를 빼서만 될 때(creatable) 만든 새 id, 아니면 undefined */
+  /** id 와 서식 비트만 다른(flags) 글자 모양 — DocInfo 에 있으면 그 id, 없으면 비트를 빼고 더해(creatable 일 때) 만든 새 id, 아니면 undefined */
   variant(id: number, flags: number): number | undefined
   /** 만든 CHAR_SHAPE 레코드 데이터 (새 id 순 — 기존 개수부터) */
   added(): Buffer[]
+}
+
+/** 서식 비트를 켠 CHAR_SHAPE 속성 — 밑줄은 글자 아래(종류 1), 취소선은 종류 1·모양 실선(0) */
+function withBitsAttr(attr: number, bits: number): number {
+  let a = attr
+  if (bits & EMPH_BOLD) a |= 0x2
+  if (bits & EMPH_ITALIC) a |= 0x1
+  if (bits & EMPH_UNDERLINE) a = (a & ~(0x3 << 2)) | (1 << 2)
+  if (bits & EMPH_STRIKE) a = (a & ~(0x7 << 18) & ~(0xf << 26)) | (1 << 18)
+  if (bits & EMPH_SUP) a = (a & ~(1 << 16)) | (1 << 15)
+  if (bits & EMPH_SUB) a = (a & ~(1 << 15)) | (1 << 16)
+  return a >>> 0
 }
 
 /** 서식 비트를 뺀 CHAR_SHAPE 속성 */
@@ -60,10 +72,10 @@ export function hwpCharBook(docInfo: Array<{ tagId: number; data: Buffer }>, cre
       if (flags[id] === f) return id
       if (keys[id] === undefined) return undefined
       for (let j = 0; j < flags.length; j++) if (keys[j] === keys[id] && flags[j] === f) return j
-      if (!creatable || (f & ~flags[id]!)) return undefined
+      if (!creatable) return undefined
       const src = id < base ? datas[id] : added[id - base]
       const d = Buffer.from(src)
-      d.writeUInt32LE(withoutBits(d.readUInt32LE(ATTR), flags[id]! & ~f), ATTR)
+      d.writeUInt32LE(withBitsAttr(withoutBits(d.readUInt32LE(ATTR), flags[id]! & ~f), f & ~flags[id]!), ATTR)
       if (hwpEmphasisFlags(d.readUInt32LE(ATTR)) !== f) return undefined
       added.push(d)
       register(d)
@@ -77,7 +89,7 @@ export function hwpCharBook(docInfo: Array<{ tagId: number; data: Buffer }>, cre
 export interface HwpInsertStyle {
   /** 새 평문 글자마다 서식 비트 */
   flags: number[]
-  /** 원본 마크다운에 보이던 서식 비트 — 이 비트만 맞춘다 */
+  /** 원본 마크다운에 보이던 서식 비트 — 이 비트는 마크다운대로 끄고 켜고, 그 밖 비트는 새 글에 표시됐을 때 더하기만 한다(숨은 구조 서식은 안 지움) */
   known: number
   book: HwpCharBook
   /** 맞는 글자 모양이 DocInfo 에 없어 run 서식 그대로 둔 조각 수 */
@@ -105,7 +117,7 @@ export function restyleInserted(
     const f = style?.flags[newAt + k] ?? 0
     let e = k + 1
     while (e < text.length && (style?.flags[newAt + e] ?? 0) === f) e++
-    const want = runFlags === undefined || !style ? undefined : (runFlags & ~style.known) | (f & style.known)
+    const want = runFlags === undefined || !style ? undefined : (runFlags & ~style.known) | f
     let id: number | undefined = want === undefined || want === runFlags ? runId : style!.book.variant(runId, want)
     if (id === undefined) { style!.missed = (style!.missed ?? 0) + 1; id = runId }
     if (id !== idAt(at + k)) {

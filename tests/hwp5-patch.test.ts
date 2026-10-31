@@ -426,6 +426,42 @@ describe("patchHwp — 붙인 글의 서식은 마크다운대로", () => {
     return out
   }
 
+  it("굵게 없던 문단에 새로 쓴 굵은 낱말은 굵게로 — DocInfo 에 굵게를 더한 글자 모양을 만든다", async () => {
+    const idMappings = Buffer.alloc(72); idMappings.writeInt32LE(1, 36)
+    const di = Buffer.concat([rec(0x11, 0, idMappings), rec(0x15, 0, charShape(0)), rec(0x19, 0, Buffer.alloc(54))])
+    const hwp = buildHwp([paragraph("첫 문단"), styled("보통 문단입니다", [[0, 0]]), paragraph("끝 문단")], 0, di)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("보통 문단입니다", "보통 **강조** 문단입니다"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("보통 **강조** 문단입니다"), reread(r.data!))
+    const recs = readRecords(Buffer.from(CFB.find(CFB.read(Buffer.from(r.data!), { type: "buffer" }), "/DocInfo").content))
+    assert.equal(recs.filter(x => x.tagId === 0x15).length, 2)
+    assert.equal(recs.find(x => x.tagId === 0x11)!.data.readInt32LE(36), 2)
+    assert.equal(recs[2].data.readUInt32LE(46) & 0x2, 0x2) // 새 글자 모양은 굵게
+    assert.deepEqual(pairsOf(r.data!, "보통"), [[0, 0], [3, 1], [5, 0]])
+  })
+
+  it("바뀌지 않은 글의 강조를 뗀 편집은 글만 고치고 부분 적용으로 알린다 (HWPX 와 같다)", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목입니다", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "굵은 제목입니다 수정"))
+    assert.equal(r.applied, 1)
+    assert.ok(r.skipped.some(s => s.partial && /강조/.test(s.reason)), JSON.stringify(r.skipped))
+  })
+
+  it("한 문단 두 곳을 고쳐도 사이 글의 글자 모양은 그대로 — 바뀐 낱말 자리만 고친다", async () => {
+    // "가운데"만 큰 글자(마크다운에 안 보이는 모양) — 종전엔 처음~끝을 한 덩어리로 다시 써 가운데 run 이 사라졌다
+    const big = (attr: number): Buffer => { const b = charShape(attr); b.writeUInt32LE(200, 42); return b }
+    const di = Buffer.concat([rec(0x15, 0, charShape(0)), rec(0x15, 0, big(0))])
+    const hwp = buildHwp([paragraph("첫 문단"), styled("처음 가운데 끝", [[0, 0], [3, 1], [6, 0]]), paragraph("끝 문단")], 0, di)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("처음 가운데 끝"), md)
+    const r = await patchHwp(hwp, md.replace("처음 가운데 끝", "앞변경 가운데 뒤변경"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(reread(r.data!).includes("앞변경 가운데 뒤변경"), reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "앞변경"), [[0, 0], [4, 1], [7, 0]])
+  })
+
   it("문단 끝에 붙인 글의 글자 모양은 끝 표시까지 덮는다 — 끝 표시만 남은 run 을 두지 않는다", async () => {
     // 끝 표시만 남은 run 이 생기면 run 수가 늘어 파서의 대표 글자 모양(run 최빈값)이 바뀌고 제목 판정이 뒤집혔다
     const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)

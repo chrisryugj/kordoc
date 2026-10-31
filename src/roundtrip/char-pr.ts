@@ -1,6 +1,6 @@
 /**
  * patch 가 새 글을 마크다운 서식대로 넣을 때 쓰는 HWPX 글자 모양 책 — header 의 charPr 마다 서식 비트(굵게·기울임·취소선·밑줄·첨자,
- * 파서 styles.ts 와 같은 판정)를 읽고, 서식 비트만 다른 짝을 찾거나 비트를 빼서 만든다. 만든 짝은 header 끝에 덧붙인다.
+ * 파서 styles.ts 와 같은 판정)를 읽고, 서식 비트만 다른 짝을 찾거나 비트를 빼고 더해 만든다. 만든 짝은 header 끝에 덧붙인다.
  */
 
 import { isRealStrikeShape } from "../hwpx/styles.js"
@@ -42,10 +42,43 @@ function withoutBits(xml: string, bits: number): string {
   return x
 }
 
+/**
+ * 서식 비트를 더한 charPr XML — 요소를 스키마 순서(fontRef·ratio·spacing·relSz·offset·italic·bold·underline·strikeout·outline·shadow·
+ * emboss·engrave·supscript·subscript) 자리에 넣는다. 밑줄은 종류 BOTTOM·취소선은 모양 SOLID, 요소가 없으면(kordoc 생성 header) 만든다
+ */
+function withBits(xml: string, bits: number): string {
+  let x = xml
+  /** after 중 마지막으로 있는 요소 뒤(하나도 없으면 charPr 닫기 앞)에 el 을 넣는다 */
+  const put = (after: string[], el: string): void => {
+    let at = -1
+    for (const t of after) {
+      const m = new RegExp(`<hh:${t}\\b[^>]{0,1024}?(?:/>|>[\\s\\S]{0,4096}?</hh:${t}>)`).exec(x)
+      if (m) at = Math.max(at, m.index + m[0].length)
+    }
+    if (at < 0) at = x.lastIndexOf("</hh:charPr>")
+    if (at >= 0) x = x.slice(0, at) + el + x.slice(at)
+  }
+  const head = ["fontRef", "ratio", "spacing", "relSz", "offset"]
+  if (bits & EMPH_ITALIC && !/<hh:italic\b/.test(x)) put(head, "<hh:italic/>")
+  if (bits & EMPH_BOLD && !/<hh:bold\b/.test(x)) put([...head, "italic"], "<hh:bold/>")
+  if (bits & EMPH_UNDERLINE) {
+    if (/<hh:underline\b/.test(x)) x = x.replace(/(<hh:underline\b[^>]{0,512}?\btype=")[^"]{0,16}"/, '$1BOTTOM"')
+    else put([...head, "italic", "bold"], `<hh:underline type="BOTTOM" shape="SOLID" color="#000000"/>`)
+  }
+  if (bits & EMPH_STRIKE) {
+    if (/<hh:strikeout\b/.test(x)) x = x.replace(/(<hh:strikeout\b[^>]{0,512}?\bshape=")[^"]{0,40}"/, '$1SOLID"')
+    else put([...head, "italic", "bold", "underline"], `<hh:strikeout shape="SOLID" color="#000000"/>`)
+  }
+  const tail = [...head, "italic", "bold", "underline", "strikeout", "outline", "shadow", "emboss", "engrave"]
+  if (bits & EMPH_SUP && !/<hh:supscript\b/.test(x)) put(tail, "<hh:supscript/>")
+  if (bits & EMPH_SUB && !/<hh:subscript\b/.test(x)) put(tail, "<hh:subscript/>")
+  return x
+}
+
 export interface CharPrBook {
   /** 글자 모양의 서식 비트 (header 에 없으면 undefined) */
   flagsOf(id: string): number | undefined
-  /** id 와 서식 비트만 다른(flags) 글자 모양 — header 에 있으면 그 id, 없으면 비트를 빼서만 될 때 만들어 새 id. 비트를 더해야 하면 undefined */
+  /** id 와 서식 비트만 다른(flags) 글자 모양 — header 에 있으면 그 id, 없으면 비트를 빼고 더해 만든 새 id. 그렇게 못 만들면 undefined */
   variant(id: string, flags: number): string | undefined
   /** 만든 글자 모양 수 */
   added(): number
@@ -77,8 +110,7 @@ export function charPrBook(headerXml: string): CharPrBook {
       if (e.flags === flags) return id
       const hit = byKey.get(e.key)?.get(flags)
       if (hit !== undefined) return hit
-      if (flags & ~e.flags) return undefined
-      const xml = withoutBits(e.xml, e.flags & ~flags).replace(/\bid="\d{1,10}"/, `id="${next}"`)
+      const xml = withBits(withoutBits(e.xml, e.flags & ~flags), flags & ~e.flags).replace(/\bid="\d{1,10}"/, `id="${next}"`)
       if (charPrFlags(xml) !== flags) return undefined
       const nid = String(next++)
       register(nid, xml)

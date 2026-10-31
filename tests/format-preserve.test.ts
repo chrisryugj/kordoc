@@ -139,7 +139,8 @@ describe("patchHwpx: 강조 표지를 글자로 찍지 않고 run 서식을 지�
     assert.ok(res.success && res.applied === 1, JSON.stringify(res.skipped))
     const xml = await sectionOf(res.data!)
     assert.ok(!xml.includes("&lt;u&gt;") && !xml.includes("<u>"), "밑줄 표지가 글자로 남으면 안 된다")
-    assert.ok(xml.includes("일시: 2026. 11. 3."))
+    // 새 글에 표시한 밑줄은 밑줄 글자 모양으로 들어간다(원문 문단에 밑줄이 없어도)
+    assert.ok((await markdownOf(res.data!)).includes("<u>일시</u>: 2026. 11. 3."), await markdownOf(res.data!))
   })
 
   it("한 run 안만 고치면 다른 run(다른 글자 모양)은 바이트 그대로", async () => {

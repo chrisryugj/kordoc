@@ -148,6 +148,24 @@ describe("붙인 글의 서식은 마크다운대로", () => {
     assert.ok((await markdownOf(r2.data!)).includes("**굵은 제목 안쪽**"))
   })
 
+  it("굵게 없던 문단에 새로 쓴 굵은 낱말은 굵게로 — 원문에 안 보이던 서식 비트도 새 글에 표시했으면 더한다", async () => {
+    const src = new Uint8Array(await markdownToHwpx("첫 문단\n\n보통 문단입니다\n\n끝 문단"))
+    const md = await markdownOf(src)
+    const r = await patchHwpx(src, md.replace("보통 문단입니다", "보통 **강조** 문단입니다"))
+    assert.equal(r.applied, 1)
+    assert.deepEqual(r.skipped, [])
+    assert.ok((await markdownOf(r.data!)).includes("보통 **강조** 문단입니다"), await markdownOf(r.data!))
+  })
+
+  it("기울임·밑줄·취소선도 새 글에 표시했으면 넣는다 — kordoc 생성 header 처럼 밑줄·취소선 요소가 없는 글자 모양이면 만든다", async () => {
+    const src = new Uint8Array(await markdownToHwpx("첫 문단\n\n보통 문단입니다\n\n끝 문단"))
+    const md = await markdownOf(src)
+    const want = "보통 *기울임* <u>밑줄</u> ~~취소~~ 문단입니다"
+    const r = await patchHwpx(src, md.replace("보통 문단입니다", want))
+    assert.deepEqual(r.skipped, [])
+    assert.ok((await markdownOf(r.data!)).includes(want), await markdownOf(r.data!))
+  })
+
   const SUP = join(import.meta.dirname, "..", "bench", "corpus", "korea-kr")
   const supFile = existsSync(SUP) ? readdirSync(SUP).find(f => f.startsWith("156765974_") && f.endsWith(".hwpx")) : undefined
   it("위첨자 끝에 붙인 글은 위첨자가 되지 않는다 (코퍼스)", { skip: !supFile }, async () => {
@@ -158,6 +176,23 @@ describe("붙인 글의 서식은 마크다운대로", () => {
     const r = await patchHwpx(src, md.replace(unit, unit + " 수정"))
     assert.equal(r.applied, 1)
     assert.ok((await markdownOf(r.data!)).includes(unit + " 수정"))
+  })
+})
+
+describe("한 문단 여러 곳 고치기", () => {
+  it("처음·끝 낱말을 고쳐도 사이 run(마크다운에 안 보이는 글자 모양)은 그대로 — 바뀐 낱말 자리만 쓴다", async () => {
+    const src = await withSection("첫 문단\n\n처음 가운데 끝\n\n끝 문단", xml => xml.replace(
+      `<hp:run charPrIDRef="0"><hp:t>처음 가운데 끝</hp:t></hp:run>`,
+      `<hp:run charPrIDRef="0"><hp:t>처음 </hp:t></hp:run><hp:run charPrIDRef="9"><hp:t>가운데</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t> 끝</hp:t></hp:run>`,
+    ))
+    const md = await markdownOf(src)
+    assert.ok(md.includes("처음 가운데 끝"), md)
+    const r = await patchHwpx(src, md.replace("처음 가운데 끝", "앞변경 가운데 뒤변경"))
+    assert.equal(r.applied, 1)
+    assert.deepEqual(r.skipped, [])
+    const xml = await sectionXml(r.data!)
+    assert.ok(xml.includes(`<hp:run charPrIDRef="9"><hp:t>가운데</hp:t></hp:run>`), "사이 run 유지")
+    assert.ok((await markdownOf(r.data!)).includes("앞변경 가운데 뒤변경"))
   })
 })
 

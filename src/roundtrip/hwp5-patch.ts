@@ -28,7 +28,7 @@ import {
 } from "../hwp5/record.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
+  buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, restyledKept, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
 } from "./patcher.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
@@ -773,7 +773,8 @@ function patchParagraph(
     ? { flags: flagsPerChar(editedStyled.segs, editedStyled.flags).slice(off), known: origStyled.flags.reduce((a, b) => a | b, 0), book: ctx.charBook }
     : undefined
   const n = stageParaPatch(ctx.scans[mapping.para.sectionIndex], mapping.para, newPlain, skip, ctx.keepLineseg, origMd, style)
-  if (n && style?.missed) {
+  // 맞는 글자 모양을 못 구했거나, 바뀐 자리 밖 글의 강조를 바꾼 편집(그 글자 모양은 안 고친다) — HWPX 와 같다
+  if (n && (style?.missed || (style && restyledKept(origStyled, editedStyled, origStyled.plain, editedStyled.plain)))) {
     ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
   }
   return n

@@ -721,10 +721,13 @@ function patchParagraphUnit(
   }
 
   const xml = ctx.scans[mapping.para.sectionIndex]?.xml
-  // 새 글은 마크다운 서식대로 — 바뀐 자리가 다른 서식 run 에 들면 서식만 다른 글자 모양 run 으로 (굵은 제목 끝에 붙인 글)
+  // 새 글은 마크다운 서식대로 — 바뀐 자리가 다른 서식 run 에 들면 서식만 다른 글자 모양 run 으로 (굵은 제목 끝에 붙인 글).
+  // 머리 기호·각주 표기를 뗀 글은 그만큼 좌표를 민다(앞에서 뗐으면 뒤 맞춤, 뒤에서 뗐으면 앞 맞춤). 가운데서 뗀 참조 부호는 못 맞춘다
   const book = ctx.charBook
-  const style: InsertStyle | undefined = segsUsable && book ? {
-    flags: flagsPerChar(newInline.segs, newInline.flags), known: origInline.flags.reduce((a, b) => a | b, 0),
+  const off = newInline.plain.endsWith(newPlain) && origInline.plain.endsWith(origPlain) ? newInline.plain.length - newPlain.length
+    : newInline.plain.startsWith(newPlain) && origInline.plain.startsWith(origPlain) ? 0 : -1
+  const style: InsertStyle | undefined = book && off >= 0 && !mapping.noteMarks?.length ? {
+    flags: flagsPerChar(newInline.segs, newInline.flags).slice(off), known: origInline.flags.reduce((a, b) => a | b, 0),
     flagsOf: id => book.flagsOf(id), variant: (id, f) => book.variant(id, f),
   } : undefined
   // 미기입 누름틀 자리에 쓴 값은 누름틀에 채운다 — 아니면 바뀐 자리만, 그것도 안 되면 문단 통째
@@ -733,15 +736,16 @@ function patchParagraphUnit(
     ?? minimal ?? (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
   if (splices === null) return skip("문단에 텍스트 노드를 만들 수 없음")
   ctx.sectionSplices[mapping.para.sectionIndex].push(...splices)
-  if (segsUsable && origInline.segs.length !== newInline.segs.length
-    && (!minimal || !style || style.missed || restyledKept(origInline, newInline, origPlain, newPlain))) {
+  // 강조가 바뀐 편집인데 새 글 서식을 못 맞췄거나(좌표·글자 모양) 바뀐 자리 밖 글의 강조를 바꿨으면 부분 적용으로 알린다
+  if (origInline.segs.length !== newInline.segs.length
+    && (!minimal || !style || style.missed || restyledKept(origInline, newInline, origInline.plain, newInline.plain))) {
     ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
   }
   return 1
 }
 
 /** 바뀐 자리 밖(공통 앞·뒤) 글의 강조가 달라졌는가 — 그 강조 추가·삭제는 글자 모양을 못 바꿔 부분 적용으로 알린다 */
-function restyledKept(o: { segs: string[]; flags: number[] }, n: { segs: string[]; flags: number[] }, oPlain: string, nPlain: string): boolean {
+export function restyledKept(o: { segs: string[]; flags: number[] }, n: { segs: string[]; flags: number[] }, oPlain: string, nPlain: string): boolean {
   const of = flagsPerChar(o.segs, o.flags), nf = flagsPerChar(n.segs, n.flags)
   const { p, s } = commonEnds(oPlain, nPlain)
   for (let i = 0; i < p; i++) if (of[i] !== nf[i]) return true

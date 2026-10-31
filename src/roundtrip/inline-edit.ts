@@ -166,12 +166,60 @@ export function commonEnds(a: string, b: string): { p: number; s: number } {
   return { p, s }
 }
 
+/**
+ * 낱말 LCS 로 나눈 diff 덩어리 — a 좌표 범위 [s, e) 와 b 의 글(b 의 t 자리부터). 덩어리마다 글자 단위로 앞뒤 공통을 깎는다: tailFirst 면
+ * 꼬리부터(낱말을 덧붙인 덩어리 " " → " 고침 " 이 앞 낱말 끝에 붙게 — 문단 묶음 글 찾기), 아니면 앞부터(commonEnds 와 같은 자리)
+ */
+export function wordHunks(a: string, b: string, tailFirst = true): Array<{ s: number; e: number; text: string; t: number }> {
+  const words = (s: string) => [...s.matchAll(/\S+/g)].map(m => ({ w: m[0], s: m.index!, e: m.index! + m[0].length }))
+  const A = words(a), B = words(b)
+  const n = A.length, m = B.length
+  const raw: Array<{ s: number; e: number; text: string; t: number }> = []
+  if (n * m > 4_000_000) raw.push({ s: 0, e: a.length, text: b, t: 0 })
+  else {
+    const dp = new Uint32Array((n + 1) * (m + 1))
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
+      dp[i * (m + 1) + j] = A[i].w === B[j].w ? dp[(i + 1) * (m + 1) + j + 1] + 1 : Math.max(dp[(i + 1) * (m + 1) + j], dp[i * (m + 1) + j + 1])
+    }
+    const matches: Array<[number, number]> = []
+    for (let i = 0, j = 0; i < n && j < m;) {
+      if (A[i].w === B[j].w) { matches.push([i, j]); i++; j++ }
+      else if (dp[(i + 1) * (m + 1) + j] >= dp[i * (m + 1) + j + 1]) i++
+      else j++
+    }
+    matches.push([n, m])
+    let pi = -1, pj = -1
+    for (const [ni, nj] of matches) {
+      if (ni > pi + 1 || nj > pj + 1) {
+        const s = pi >= 0 ? A[pi].e : 0
+        const e = ni < n ? A[ni].s : a.length
+        const bs = pj >= 0 ? B[pj].e : 0
+        const be = nj < m ? B[nj].s : b.length
+        raw.push({ s, e, text: b.slice(bs, be), t: bs })
+      }
+      pi = ni; pj = nj
+    }
+  }
+  const out: Array<{ s: number; e: number; text: string; t: number }> = []
+  for (const h of raw) {
+    const o = a.slice(h.s, h.e)
+    let p = 0, q = 0
+    const tail = (): void => { while (q < o.length - p && q < h.text.length - p && o[o.length - 1 - q] === h.text[h.text.length - 1 - q]) q++ }
+    const head = (): void => { while (p < o.length - q && p < h.text.length - q && o[p] === h.text[p]) p++ }
+    if (tailFirst) { tail(); head() } else { head(); tail() }
+    if (o.length - p - q === 0 && h.text.length - p - q === 0) continue
+    out.push({ s: h.s + p, e: h.e - q, text: h.text.slice(p, h.text.length - q), t: h.t + p })
+  }
+  return out
+}
+
 /** 원문 좌표 편집 — at 은 새 글(newNorm)에서 text 가 시작하는 자리 (alignedTextEdits 만 단다) */
 export interface RawEdit { start: number; end: number; text: string; at?: number }
 
 /**
  * IR 평문 편집(origNorm → newNorm)을 원문 글 raw 의 최소 편집들로 옮긴다. 조각(서식 run 경계)이 양쪽에 같은 수로 있으면
- * 조각마다 따로 diff 해 각 run 이 제 글을 받는다. raw 와 origNorm 을 못 맞추면 null (호출자가 문단 통째 쓰기로).
+ * 조각마다 따로 diff 해 각 run 이 제 글을 받는다. diff 는 낱말 덩어리마다 — 고친 자리 둘 사이 글(그 run 의 글자 모양)은 건드리지
+ * 않는다. raw 와 origNorm 을 못 맞추면 null (호출자가 문단 통째 쓰기로).
  */
 export function alignedTextEdits(raw: string, origNorm: string, newNorm: string, origSegs?: string[], newSegs?: string[]): RawEdit[] | null {
   // 한컴 PUA 기호가 든 원문(HWP PARA_TEXT)은 IR 처럼 표시값으로 펴서 맞대고 좌표만 원문으로 되돌린다. 번호 조각 둘을 합친
@@ -194,8 +242,7 @@ function alignedShownEdits(raw: string, origNorm: string, newNorm: string, origS
   const ranges: Array<{ a: number; b: number; text: string; at: number }> = []
   const diffInto = (o: string, n: string, base: number, nbase: number): void => {
     if (o === n) return
-    const { p, s } = commonEnds(o, n)
-    ranges.push({ a: base + p, b: base + o.length - s, text: n.slice(p, n.length - s), at: nbase + p })
+    for (const h of wordHunks(o, n, false)) ranges.push({ a: base + h.s, b: base + h.e, text: h.text, at: nbase + h.t })
   }
   if (origSegs && newSegs && origSegs.length === newSegs.length && origSegs.length > 1
     && origSegs.join("") === origNorm && newSegs.join("") === newNorm) {
@@ -227,7 +274,7 @@ function alignedShownEdits(raw: string, origNorm: string, newNorm: string, origS
 export interface InsertStyle {
   /** 새 평문 글자마다 서식 비트 (styledInline flags 를 글자마다 편 것) */
   flags: number[]
-  /** 원본 마크다운에 보이던 서식 비트 — 이 비트만 맞춘다(마크다운에 안 보이는 구조 서식은 run 그대로) */
+  /** 원본 마크다운에 보이던 서식 비트 — 이 비트는 마크다운대로 끄고 켠다. 그 밖 비트는 새 글에 표시됐을 때 더하기만 한다(마크다운에 안 보이는 구조 서식은 run 그대로) */
   known: number
   /** 글자 모양 id → 서식 비트 / 서식 비트만 다른 글자 모양 id (header charPr — char-pr.ts) */
   flagsOf(charPr: string): number | undefined
@@ -255,7 +302,7 @@ function runOpenAt(xml: string, from: number, pos: number): { start: number; tag
 }
 
 /**
- * 글을 싣는 splice 하나를 서식대로 가른다 — 새 글 조각마다 바라는 비트((run 비트 − 보이는 비트) + 조각의 보이는 비트)가 run 과 다르면
+ * 글을 싣는 splice 하나를 서식대로 가른다 — 새 글 조각마다 바라는 비트((run 비트 − 보이는 비트) + 조각 비트)가 run 과 다르면
  * 그 비트의 글자 모양 run 으로. 다를 게 없으면 null (원래 splice 그대로)
  */
 function styleSplice(sp: SpliceEdit, text: string, at: number, para: ScanParagraph, xml: string, style: InsertStyle): SpliceEdit[] | null {
@@ -267,7 +314,7 @@ function styleSplice(sp: SpliceEdit, text: string, at: number, para: ScanParagra
   const pieces: Array<{ text: string; charPr: string }> = []
   for (let k = 0; k < text.length; k++) {
     const f = style.flags[at + k] ?? 0
-    const want: number = (runFlags & ~style.known) | (f & style.known)
+    const want: number = (runFlags & ~style.known) | f
     let id = charPr
     if (want !== runFlags) {
       const v = style.variant(charPr, want)

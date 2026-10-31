@@ -10,7 +10,7 @@
 
 import { buildParagraphSplices, type SectionScan, type ScanCell, type ScanParagraph, type ScanTable, type SpliceEdit } from "./source-map.js"
 import { paraTokens, tokenSplices, type TextTok } from "./line-break-edit.js"
-import type { RawEdit } from "./inline-edit.js"
+import { wordHunks, type RawEdit } from "./inline-edit.js"
 import { AUTONUM_PREFIX_RE } from "./markdown-units.js"
 
 const isWs = (c: string | undefined): boolean => c !== undefined && /\s/.test(c)
@@ -100,51 +100,6 @@ function align(raw: string, norm: string, opt?: boolean[]): { pos: number[]; zw:
   }
   if (raw.slice(j).trim() !== "") return null
   return { pos, zw }
-}
-
-/** 낱말 LCS 로 나눈 diff 덩어리 (a 좌표 범위 + b 글) — 덩어리마다 글자 단위로 앞뒤 공통을 깎는다 */
-function wordHunks(a: string, b: string): Array<{ s: number; e: number; text: string }> {
-  const words = (s: string) => [...s.matchAll(/\S+/g)].map(m => ({ w: m[0], s: m.index!, e: m.index! + m[0].length }))
-  const A = words(a), B = words(b)
-  const n = A.length, m = B.length
-  const raw: Array<{ s: number; e: number; text: string }> = []
-  if (n * m > 4_000_000) raw.push({ s: 0, e: a.length, text: b })
-  else {
-    const dp = new Uint32Array((n + 1) * (m + 1))
-    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
-      dp[i * (m + 1) + j] = A[i].w === B[j].w ? dp[(i + 1) * (m + 1) + j + 1] + 1 : Math.max(dp[(i + 1) * (m + 1) + j], dp[i * (m + 1) + j + 1])
-    }
-    const matches: Array<[number, number]> = []
-    for (let i = 0, j = 0; i < n && j < m;) {
-      if (A[i].w === B[j].w) { matches.push([i, j]); i++; j++ }
-      else if (dp[(i + 1) * (m + 1) + j] >= dp[i * (m + 1) + j + 1]) i++
-      else j++
-    }
-    matches.push([n, m])
-    let pi = -1, pj = -1
-    for (const [ni, nj] of matches) {
-      if (ni > pi + 1 || nj > pj + 1) {
-        const s = pi >= 0 ? A[pi].e : 0
-        const e = ni < n ? A[ni].s : a.length
-        const bs = pj >= 0 ? B[pj].e : 0
-        const be = nj < m ? B[nj].s : b.length
-        raw.push({ s, e, text: b.slice(bs, be) })
-      }
-      pi = ni; pj = nj
-    }
-  }
-  const out: Array<{ s: number; e: number; text: string }> = []
-  for (const h of raw) {
-    const o = a.slice(h.s, h.e)
-    // 꼬리부터 깎는다 — 낱말을 덧붙인 덩어리(" " → " 고침 ")가 앞 낱말 끝에 붙게 (뒤 문단 머리로 가지 않게)
-    let q = 0
-    while (q < o.length && q < h.text.length && o[o.length - 1 - q] === h.text[h.text.length - 1 - q]) q++
-    let p = 0
-    while (p < o.length - q && p < h.text.length - q && o[p] === h.text[p]) p++
-    if (o.length - p - q === 0 && h.text.length - p - q === 0) continue
-    out.push({ s: h.s + p, e: h.e - q, text: h.text.slice(p, h.text.length - q) })
-  }
-  return out
 }
 
 /** 원문 글 T 와 IR 평문을 맞대 낱말 diff 덩어리를 T 좌표 편집으로 (못 맞대면 null) */
