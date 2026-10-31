@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.32: two columns on one line grid · running header boxes · 2026-11-01
+
+PDF text benchmark (744 pairs): reading order .99348 → **.99356**, precision .99680 → **.99682**, word F1 .99069 → **.99071**, recall .99883 unchanged. PDF tables, statute annexes and ODL 200 documents unchanged per document.
+
+- Two-column detection for columns typeset on one line grid (minutes, exams) — exam_kor order .9776 → .992. issue2019 (synthetic old/new comparison form) .871 → .864 (side-by-side current|amended text is now read as columns).
+- Running header boxes whose cells swap on even and odd pages — exam_kor precision .9916 → .9931.
+- OCR: the reference is kordoc's reading of the same PDF text layer, so it changes too (scoring unchanged). Minutes 1231 had both reference and OCR interleaving two columns, which kept CER low; both now read left column then right, CER against the corrected reference .018 → .0249, overall CER .02373 → .0239.
+
 ## 4.24.31: PDF reading order · false tables · 2026-10-31
 
 PDF text benchmark (744 pairs): reading order .99312 → **.99348**, precision .99678 → **.99680**, word F1 .99067 → **.99069**, recall .99883 unchanged. PDF tables: reordered 5 → **2**, otherwise unchanged per document. Statute annexes, ODL 200 documents and OCR unchanged per document.
