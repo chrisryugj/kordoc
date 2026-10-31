@@ -78,3 +78,22 @@ describe("PDF frame paragraph IR", () => {
     assert.deepEqual(splitSingleCellTables([box("선 서\n나는 헌법을 준수한다.")]).map(b => b.text), ["선 서", "나는 헌법을 준수한다."])
   })
 })
+
+describe("buildFrameCellBlocks — 나란한 안쪽 표", () => {
+  const table = (text: string, x: number, y: number, width: number, height: number): IRBlock => ({
+    type: "table", pageNumber: 1, bbox: { page: 1, x, y, width, height },
+    table: { rows: 1, cols: 1, cells: [[{ text, colSpan: 1, rowSpan: 1 }]] },
+  })
+  const names = (blocks: IRBlock[]) => blocks.map(b => b.table!.cells[0][0].text)
+
+  it("윗변이 조금 높은 오른쪽 결재 칸보다 왼쪽 문서번호 표를 먼저 둔다", () => {
+    // 결재문서 머리 — 문서번호 표 54~223 × 647~725, 결재 칸 280~505 × 640~765
+    const built = buildFrameCellBlocks([], [table("결재", 280, 640, 225, 125), table("문서번호", 54, 647, 169, 78)], 1)
+    assert.deepEqual(names(built.blocks), ["문서번호", "결재"])
+  })
+
+  it("세로로 거의 안 겹치는 표는 위→아래 그대로", () => {
+    const built = buildFrameCellBlocks([], [table("위 오른쪽", 280, 700, 225, 60), table("아래 왼쪽", 54, 600, 169, 70)], 1)
+    assert.deepEqual(names(built.blocks), ["위 오른쪽", "아래 왼쪽"])
+  })
+})

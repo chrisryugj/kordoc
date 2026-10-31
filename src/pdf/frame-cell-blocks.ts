@@ -157,6 +157,13 @@ export function takePendingNested(
  */
 export function buildFrameCellBlocks(cellItems: TextItem[], nested: IRBlock[], pageNum: number, lex?: WrapLexicon): { blocks: IRBlock[]; text: string } {
   const tables = [...nested].sort((a, b) => (b.bbox!.y + b.bbox!.height) - (a.bbox!.y + a.bbox!.height))
+  // 나란한 표 둘(결재문서 머리: 왼쪽 문서번호 표 · 윗변이 조금 높은 오른쪽 결재 칸)은 왼쪽부터 — 가로로 떨어졌고 세로로 낮은 쪽 높이 절반 넘게 겹칠 때
+  for (let i = 0; i + 1 < tables.length; i++) {
+    const a = tables[i].bbox!, b = tables[i + 1].bbox!
+    if (b.x + b.width > a.x || Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) < Math.min(a.height, b.height) * 0.5) continue
+    ;[tables[i], tables[i + 1]] = [tables[i + 1], tables[i]]
+    i++
+  }
   const blocks: IRBlock[] = []
   let rest = [...cellItems]
   const pushParagraphs = (items: TextItem[]) => {
