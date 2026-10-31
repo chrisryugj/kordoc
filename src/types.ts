@@ -286,6 +286,8 @@ export interface ParseOptions {
   /** 미기입 누름틀 안내문도 마크다운에 낸다 (#92). 기본 false: 종전대로 뺀다(한컴은 화면에만 흐리게 보이고 인쇄하지 않는 글).
    *  빈 서식 문서에서 "이 칸에 무엇을 적나"(예: "학교명 기재 금지")가 안내문뿐일 때 켠다. HWPX·HWP5 */
   includeFieldPlaceholders?: boolean
+  /** 메모(한글 "메모 넣기")를 마크다운 끝에 "메모" 절로 모아 낸다 (#180). 기본 false: 본문만 — 메모는 결과 `memos` 로만. HWPX·HWP5 */
+  memos?: boolean
   /** 비밀번호로 보호된 문서의 열기 암호.
    *  HWPX(ODF AES-256-CBC)·HWP3(DES) 지원. 한컴 DRM(문서 보안)은 별개라 해당 없음. */
   password?: string
@@ -457,6 +459,29 @@ export interface ParseSuccess extends ParseResultBase {
   qualitySummary?: DocumentQualitySummary
   /** 내장 OCR 이 읽은 쪽별 글줄 — `ocrLines` 옵션을 켠 PDF·이미지 입력에서만(OCR 을 돌린 쪽이 없으면 빈 배열). 쪽 번호 순 */
   ocrLines?: OcrPageLines[]
+  /** 문서의 메모(한글 "메모 넣기") — 메모가 있는 HWPX·HWP5 문서에서만, 문서 순서 (#180). 본문 마크다운에는 섞지 않는다
+   *  (`memos` 옵션을 켜면 끝에 모아 낸다) */
+  memos?: MemoNote[]
+}
+
+/** 메모 하나 (#180) */
+export interface MemoNote {
+  /** 메모 글 — 메모 안 문단은 줄바꿈으로 잇는다 */
+  text: string
+  /** 메모가 붙은 본문 글 (한글이 메모 범위로 칠한 글) */
+  anchor: string
+  /** 메모가 붙은 문단의 글 (표 칸 안이면 그 칸 문단) */
+  paragraph: string
+  /** `paragraph` 안에서 `anchor` 가 시작하는 글자 위치 */
+  offset: number
+  /** 메모가 붙은 문단이 든 블록의 `blocks` 순번 (표 칸 안이면 그 표 블록) — 못 찾으면 없음 */
+  blockIndex?: number
+  /** 작성자 */
+  author?: string
+  /** 만든 시각 (ISO 8601) */
+  createdAt?: string
+  /** 문서 안 메모 번호 */
+  number?: number
 }
 
 /** 로컬 OCR 모델 파일 — 엔진은 로드 전에 SHA-256 을 대조하고 다르면 거부한다 */
@@ -705,6 +730,8 @@ export interface InternalParseResult {
   outline?: OutlineItem[]
   warnings?: ParseWarning[]
   images?: ExtractedImage[]
+  /** HWPX·HWP5: 메모 (#180) */
+  memos?: MemoNote[]
   /** PDF 전용: 이미지 기반 PDF 여부 */
   isImageBased?: boolean
   /** PDF 전용: 페이지별 품질 신호 */

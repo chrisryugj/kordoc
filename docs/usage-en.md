@@ -97,6 +97,7 @@ if (result.success) {
 | `keepTrailingEmptyCols` | `--keep-empty-cols` | keep empty trailing table columns (form input columns) — `patch` detects from the table shapes whether the edited Markdown came from this extraction |
 | `keepEmptyParagraphs` | `--keep-empty-paragraphs` | keep empty paragraphs — source paragraph count = line count (HWPX) |
 | `includeFieldPlaceholders` | `--include-field-placeholders` | also emit unfilled click-here field guide text (HWPX · HWP5) |
+| `memos` | `--memos` | append document memos (Hangul "insert memo") as a final "메모" section — the memo list is always in the result's `memos` (memo text, anchored text, paragraph, author, time, block index; HWPX · HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | drop running headers repeated per page in HWP5 layout tables (opt-in: may also drop per-attachment renumbering) |
 | `inlineImages` | `--inline-images` | inline images as base64 data URIs (BMP→PNG, HWP5) |
 | `classifyTables` | — | classify tables as data / layout / uncertain into `IRTable.classification` |
@@ -353,6 +354,7 @@ npx kordoc patch original.hwpx edited.md --json --silent            # applied co
 npx kordoc to-hwpx document.hwp                                     # HWP → HWPX (5.x keeps formatting; -o needed when a same-name .hwpx exists)
 npx kordoc compare old.hwp new.hwpx                                 # document diff (exit 1 when they differ, --json)
 npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx
+npx kordoc memo report.hwpx --anchor "phrase" --text "memo text" -o reviewed.hwpx   # attach a memo to an anchor phrase (.hwp converts to HWPX keeping formatting)
 npx kordoc validate output.hwpx                                     # HWPX structure validation (ZIP, required parts, XML)
 npx kordoc lint report.md                                           # 27-rule notation linter (md/txt or documents, '-' = stdin, exit 1 on errors)
 npx kordoc lint report.hwpx --numbers --styles                      # + body↔table number check, per-level style deviations (review lists)
@@ -447,7 +449,7 @@ codex mcp add kordoc -- npx -y kordoc mcp          # Codex
 
 On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": ["/c", "npx", "-y", "kordoc", "mcp"]`.
 
-**21 tools**
+**22 tools**
 
 | Tool | Description |
 |------|-------------|
@@ -468,6 +470,7 @@ On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": 
 | `agency_pack_info` | agency pack summary and writing guide — read it before writing a manuscript for the pack |
 | `lint_document` | official-document review — notation always, plus opt-in style/slop/logic/number/budget checks (calculation basis, table totals, foreign currency, increase basis); each finding has line and column |
 | `place_seal` | float a stamp/signature image over an anchor phrase |
+| `add_memo` | attach a memo (Hangul "insert memo") to an anchor phrase — body text and formatting untouched. Read existing memos with `parse_document`'s `memos` |
 | `render_document` | render HWPX/HWP as typeset to PNG/JPEG (inline) or SVG/HTML/PDF files — lets the AI visually check generated/edited output |
 | `redact_document` | PII detection + format-preserving masking (HWPX/HWP incl. headers, footnotes, previews and document info, with a re-scan; other formats: masked Markdown) |
 | `crop_regions` | crop rendered regions (tables/images/paragraphs/shapes) from page images at true scale + regions.json |
@@ -507,6 +510,7 @@ To tell ZIP formats apart, call `await detectZipFormat(buffer)` when `detectForm
 | `openHwpxDocument(bytes, options?)` | `HwpxSession` incremental block-patch session for editors |
 | `patchHwpxBlocks(bytes, edits, options?)` | one-shot block edits without a session |
 | `placeSealHwpx(buffer, seals)` | float stamp/signature images over anchor phrases |
+| `addMemoHwpx(buffer, memos)` | attach memos to anchor phrases — `{ anchor, text, author?, occurrence? }` |
 | `validateHwpx(buffer)` | HWPX structure validation — ZIP, mimetype, required parts, XML well-formedness |
 
 ### Generate · render

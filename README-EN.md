@@ -39,7 +39,7 @@ Run the CLI without installing it globally: `npx kordoc`. PDF/OCR dependencies a
 npx -y kordoc setup
 ```
 
-Registers MCP with installed clients such as Claude Desktop, Claude Code, Cursor and Codex. Restart the client to use **21 tools** for parsing, comparison, generation, review, rendering and more. kordoc is also listed on the official MCP Registry as [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc).
+Registers MCP with installed clients such as Claude Desktop, Claude Code, Cursor and Codex. Restart the client to use **22 tools** for parsing, comparison, generation, review, rendering and more. kordoc is also listed on the official MCP Registry as [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc).
 
 One-click install for VS Code and Cursor:
 

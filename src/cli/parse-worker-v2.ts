@@ -50,6 +50,7 @@ const optionsSchema = z.object({
   keepTrailingEmptyCols: z.boolean(),
   keepEmptyParagraphs: z.boolean(),
   includeFieldPlaceholders: z.boolean(),
+  memos: z.boolean(),
   pages: z.union([z.string(), z.array(z.number().int().positive())]),
   images: z.boolean(),
   inlineImages: z.boolean(),

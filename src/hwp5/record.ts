@@ -16,6 +16,8 @@ export const TAG_PARA_SHAPE = 0x0045
 export const TAG_PARA_LINE_SEG = 0x0045
 export const TAG_CTRL_HEADER = 0x0047
 export const TAG_LIST_HEADER = 0x0048
+/** 구역 끝 메모 목록 — 메모 번호 DWORD, 뒤 LIST_HEADER·문단이 메모 글 (#180) */
+export const TAG_MEMO_LIST = 0x005d
 export const TAG_TABLE = 0x004d
 export const TAG_SHAPE_COMPONENT = 0x004c           // HWPTAG_BEGIN + 60
 export const TAG_SHAPE_COMPONENT_PICTURE = 0x0055   // HWPTAG_BEGIN + 69
@@ -213,6 +215,13 @@ function readHwpString(data: Buffer, offset: number): { value: string; next: num
   const end = start + len * 2
   if (len === 0 || end > data.length) return { value: "", next: start }
   return { value: data.subarray(start, end).toString("utf16le"), next: end }
+}
+
+/** FILETIME(1601년부터 100ns) → 한글처럼 지역 시각에 Z 를 붙인 꼴 (메모 만든 시각 — HWPX CreateDateTime 과 같은 꼴) */
+export function fileTimeText(low: number, high: number): string {
+  const d = new Date(Number((BigInt(high) * 2n ** 32n + BigInt(low)) / 10000n) - 11644473600000)
+  const p2 = (n: number): string => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}Z`
 }
 
 /** DocInfo 레코드들에서 스타일 정보 추출 */

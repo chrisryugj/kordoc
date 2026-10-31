@@ -393,6 +393,53 @@ export function registerDocCommands(program: Command): void {
     })
 
   program
+    .command("memo <file>")
+    .description('앵커 문구에 메모(한글 메모 넣기)를 단다 — 본문 글·서식은 그대로 (#180) — kordoc memo 보고서.hwpx --anchor "찾을 문구" --text "메모 내용" -o 결과.hwpx')
+    .requiredOption("--anchor <text>", "메모를 붙일 본문 글 (한 문단 안)")
+    .requiredOption("--text <text>", "메모 글 (\\n 은 메모 안 줄바꿈)")
+    .option("--author <name>", "작성자", "kordoc")
+    .option("-n, --occurrence <num>", "같은 앵커가 여럿일 때 0-based 선택", "0")
+    .option("-o, --output <path>", "출력 경로 (기본: <입력>.memo.hwpx)")
+    .option("--silent", "진행 메시지 숨기기")
+    .action(async (file: string, opts) => {
+      try {
+        const { addMemoHwpx, detectFormat, hwpToHwpx } = await import("../index.js")
+        const rootOpts = program.opts()
+        const output: string | undefined = opts.output ?? rootOpts.output
+        const silent: boolean = opts.silent ?? rootOpts.silent
+        let buf: Uint8Array = new Uint8Array(readFileSync(resolve(file)))
+        let format = detectFormat(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer)
+        if (format === "hwp") {
+          // HWP 5.x 는 서식 그대로 HWPX 로 바꿔 메모를 단다
+          buf = await hwpToHwpx(buf)
+          format = "hwpx"
+          if (!silent) process.stderr.write(`[kordoc] HWP 를 서식 그대로 HWPX 로 바꿔 메모를 답니다\n`)
+        }
+        if (format !== "hwpx") {
+          process.stderr.write(`[kordoc] memo 는 HWPX·HWP 5.x 전용입니다 (감지된 포맷: ${format})\n`)
+          process.exit(1)
+        }
+        const occurrence = Number(opts.occurrence)
+        if (!Number.isInteger(occurrence) || occurrence < 0) {
+          process.stderr.write(`[kordoc] --occurrence 값이 잘못됐습니다: ${opts.occurrence} (0 이상 정수)\n`)
+          process.exit(1)
+        }
+        const result = await addMemoHwpx(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+          [{ anchor: opts.anchor, text: String(opts.text).replace(/\\n/g, "\n"), author: opts.author, occurrence }])
+        const outPath = resolve(output ?? file.replace(/\.hwpx?$/i, "") + ".memo.hwpx")
+        mkdirSync(dirname(outPath), { recursive: true })
+        writeFileSync(outPath, Buffer.from(result.buffer))
+        if (!silent) {
+          for (const p of result.placed) process.stderr.write(`[kordoc] 메모 ${p.number}: "${p.anchor}" #${p.occurrence}\n`)
+          process.stderr.write(`[kordoc] → ${outPath}\n`)
+        }
+      } catch (err) {
+        process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
+        process.exit(1)
+      }
+    })
+
+  program
     .command("patch <original> <edited>")
     .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx). 견본 서식 그대로 새 문서 쓰기(서식 베끼기)도 이 경로: 견본을 --keep-layout-tables 로 읽어 내용만 새로 쓴 뒤 patch — HWPX 는 문단 추가·삭제를 같은 항목 부호 견본 문단 서식으로 반영. 제자리 반영 못 한 편집(HWP 의 문단 추가·삭제 등)이 있으면 편집 내용을 다 담은 대체본 <출력>.rewrite.hwpx(HWP 는 서식 그대로 HWPX 로 바꿔 반영, HWPX 는 원본 서식 새로쓰기)도 쓰고 exit 2")
     .option("-o, --output <path>", "출력 경로 (기본: <원본>.patched.hwpx|.hwp)")

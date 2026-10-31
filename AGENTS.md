@@ -1,7 +1,7 @@
 # kordoc 작업 지침
 
 kordoc — 한국 공문서(HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, 이미지)를 Markdown·IR 로 바꾸고 비교·생성하는 파서 라이브러리.
-npm 패키지로 배포하고 라이브러리 API·CLI(`kordoc`)·MCP 서버(`kordoc-mcp`, 도구 21개)를 낸다.
+npm 패키지로 배포하고 라이브러리 API·CLI(`kordoc`)·MCP 서버(`kordoc-mcp`, 도구 22개)를 낸다.
 
 이 파일이 에이전트 공통 지침의 정본이다. Codex 는 이 파일을 바로 읽고, Claude Code 는 `CLAUDE.md` 의 `@AGENTS.md` 로 읽는다.
 상세 참고: [docs/architecture.md](docs/architecture.md)(모듈 구조·설계 결정·구현 주의 상세), [docs/corpus.md](docs/corpus.md)(벤치 코퍼스 이력),

@@ -1,4 +1,4 @@
-/** kordoc MCP 도구 — 서식·편집 — parse_form·fill_form·place_seal·patch_document·redact_document */
+/** kordoc MCP 도구 — 서식·편집 — parse_form·fill_form·place_seal·add_memo·patch_document·redact_document */
 
 import { z } from "zod"
 import { readFile, mkdir, stat, realpath } from "fs/promises"
@@ -326,6 +326,45 @@ export function registerFormTools(server: McpServer): void {
           content: [{ type: "text", text: `도장 배치 실패: ${describeError(err)}` }],
           isError: true,
         }
+      }
+    },
+  )
+
+  // ─── 도구: add_memo ───────────────────────────────
+
+  server.tool(
+    "add_memo",
+    "앵커 문구에 메모(한글 \"메모 넣기\")를 답니다 — 본문 글·서식은 그대로 두고 메모 필드만 끼웁니다 (#180, HWPX·HWP 5.x — HWP 는 서식 그대로 HWPX 로 바꿔 달아 HWPX 로 냅니다). 기존 메모는 parse_document 결과 머리 줄·memos 옵션으로 읽습니다.",
+    {
+      file_path: z.string().min(1).describe("대상 HWPX·HWP 문서의 절대 경로"),
+      anchor: z.string().min(1).describe("메모를 붙일 본문 글 (한 문단 안 — 마크다운에 보이는 꼴)"),
+      text: z.string().min(1).describe("메모 글 (줄바꿈은 메모 안 문단)"),
+      author: z.string().optional().describe("작성자 (기본 \"kordoc\")"),
+      occurrence: z.number().int().min(0).default(0).describe("같은 앵커가 여럿일 때 0-based 선택"),
+      output_path: z.string().min(1).describe("출력 HWPX 저장 경로"),
+    },
+    async ({ file_path, anchor, text, author, occurrence, output_path }) => {
+      try {
+        const outPath = safeOutputPath(output_path, new Set([".hwpx"]))
+        let { buffer } = await readValidatedFile(file_path)
+        let format: string = detectFormat(buffer)
+        if (format === "hwp" && detectOle2Format(buffer) === "hwp") {
+          // HWP 5.x 는 서식 그대로 HWPX 로 바꿔 메모를 단다
+          const hwpx = await hwpToHwpx(new Uint8Array(buffer))
+          buffer = hwpx.buffer.slice(hwpx.byteOffset, hwpx.byteOffset + hwpx.byteLength) as ArrayBuffer
+          format = "hwpx"
+        }
+        if (format !== "hwpx") {
+          return { content: [{ type: "text", text: `add_memo 는 HWPX·HWP 5.x 파일만 지원합니다 (감지된 포맷: ${format}).` }], isError: true }
+        }
+        const { addMemoHwpx } = await import("../form/memo.js")
+        const result = await addMemoHwpx(buffer, [{ anchor, text, author, occurrence }])
+        await mkdir(dirname(outPath), { recursive: true })
+        await writeOutputFile(outPath, Buffer.from(result.buffer))
+        const p0 = result.placed[0]
+        return { content: [{ type: "text", text: `메모 ${p0.number} 달기 완료: "${p0.anchor}" #${p0.occurrence}\n저장: ${outPath}` }] }
+      } catch (err) {
+        return { content: [{ type: "text", text: `메모 달기 실패: ${describeError(err)}` }], isError: true }
       }
     },
   )

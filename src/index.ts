@@ -8,6 +8,7 @@ import { stripScriptTags } from "./script-tags.js"
 import { toPlainMarkdown } from "./plain-markdown.js"
 import { parsePageRange } from "./page-range.js"
 import { toHtmlTables } from "./html-tables.js"
+import { memosMarkdown } from "./memo-notes.js"
 import { readFile } from "fs/promises"
 import { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
 import { parseHwpxDocument } from "./hwpx/parser.js"
@@ -219,9 +220,10 @@ export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Pr
 export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
     const doc = await parseHwpxDocument(buffer, options)
-    const { blocks, metadata, outline, images } = doc
-    const { markdown, warnings } = await withEmbeddedImageOcr(blocks, doc.markdown, doc.warnings, undefined, options)
-    return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
+    const { blocks, metadata, outline, images, memos } = doc
+    const ocr = await withEmbeddedImageOcr(blocks, doc.markdown, doc.warnings, undefined, options)
+    const markdown = options?.memos && memos?.length ? ocr.markdown + memosMarkdown(memos) : ocr.markdown
+    return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings: ocr.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwpx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -230,7 +232,7 @@ export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Pr
 /** HWP 5.x 바이너리 파일을 Markdown으로 변환 */
 export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
-    const { markdown, blocks, metadata, outline, warnings, images } = parseHwp5Document(Buffer.from(buffer), options)
+    const { markdown, blocks, metadata, outline, warnings, images, memos } = parseHwp5Document(Buffer.from(buffer), options)
 
     // 배포용 HWP 5.x 감지 — 본문이 "상위 버전의 배포용 문서입니다..." 플레이스홀더뿐이면
     // COM fallback으로 재시도 (Windows + 한컴오피스 환경에서만). 이슈 #25 대응.
@@ -255,7 +257,8 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
     }
 
     const ocred = await withEmbeddedImageOcr(blocks, markdown, warnings, images, options)
-    return scriptsOff({ success: true, fileType: "hwp", markdown: ocred.markdown, blocks, metadata, outline, warnings: ocred.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
+    const md = options?.memos && memos?.length ? ocred.markdown + memosMarkdown(memos) : ocred.markdown
+    return scriptsOff({ success: true, fileType: "hwp", markdown: md, blocks, metadata, outline, warnings: ocred.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwp", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -449,6 +452,8 @@ export { BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate, readBui
 export type { BuiltinTemplate } from "./form/templates.js"
 export { placeSealHwpx } from "./form/seal.js"
 export type { SealOp, SealPlacement, PlaceSealResult } from "./form/seal.js"
+export { addMemoHwpx } from "./form/memo.js"
+export type { MemoOp, MemoPlacement, AddMemoResult } from "./form/memo.js"
 export { markdownToHwpx } from "./hwpx/generator.js"
 // HWP 5.x → HWPX 서식 그대로 변환
 export { hwpToHwpx, convertToHwpx, type HwpToHwpxOptions, type ConvertToHwpxResult } from "./hwp5/to-hwpx/index.js"
@@ -535,7 +540,7 @@ export type {
   PageMarkdown, PageQuality, DocumentQualitySummary,
   IRBlock, IRBlockType, IRTable, IRCell, CellContext,
   BoundingBox, InlineStyle, ImageData, ExtractedImage,
-  DocumentMetadata, ParseOptions, ErrorCode,
+  DocumentMetadata, ParseOptions, ErrorCode, MemoNote,
   ParseWarning, WarningCode, OutlineItem,
   DiffResult, BlockDiff, CellDiff, DiffChangeType,
   FormField, FormResult,

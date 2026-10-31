@@ -108,7 +108,7 @@ function measureMm(text: string, emMm: number): number {
 }
 
 /** 문단이 속한 셀·표 (앵커 문단 → 셀 폭·좌측 오프셋·정렬 이동 계산용) */
-interface ParaSite {
+export interface ParaSite {
   para: ScanParagraph
   cell?: ScanCell
   table?: ScanTable
@@ -119,7 +119,7 @@ interface ParaSite {
 }
 
 /** 섹션의 본문+셀+글상자 문단을 문서 순서로 평탄화 (머리말·각주 등 excluded 제외) */
-function collectSites(scan: SectionScan): ParaSite[] {
+export function collectSites(scan: SectionScan): ParaSite[] {
   const sites: ParaSite[] = []
   for (const p of scan.bodyParagraphs) sites.push({ para: p })
   const walkTables = (tables: ScanTable[], depth: number, outer: Array<{ cell: ScanCell; table: ScanTable }>): void => {

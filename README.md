@@ -39,7 +39,7 @@ CLI는 설치 없이 `npx kordoc`으로 실행할 수 있습니다. PDF·OCR 의
 npx -y kordoc setup
 ```
 
-Claude Desktop·Claude Code·Cursor·Codex 등 설치된 클라이언트에 MCP를 등록합니다. 공식 MCP 레지스트리에도 [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc)으로 등재돼 있습니다. 클라이언트를 재시작하면 파싱·비교·생성·검수·렌더 등 **21개 도구**를 사용할 수 있습니다.
+Claude Desktop·Claude Code·Cursor·Codex 등 설치된 클라이언트에 MCP를 등록합니다. 공식 MCP 레지스트리에도 [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc)으로 등재돼 있습니다. 클라이언트를 재시작하면 파싱·비교·생성·검수·렌더 등 **22개 도구**를 사용할 수 있습니다.
 
 VS Code·Cursor는 버튼 한 번으로 등록됩니다.
 

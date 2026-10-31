@@ -23,6 +23,7 @@ import { parseSection, createHwp5DocState } from "./body.js"
 export { parseSection, createHwp5DocState, hasRealStrike, hasRealUnderline, type Hwp5DocState } from "./body.js"
 
 import { createRequire } from "module"
+import { locateMemoBlocks } from "../memo-notes.js"
 const require = createRequire(import.meta.url)
 const CFB: CfbModule = require("cfb")
 
@@ -287,7 +288,8 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
       warnings.push({ message: `이미지 인라인 실패 — 원본 파일 참조로 폴백: ${inlineErr instanceof Error ? inlineErr.message : "알 수 없는 오류"}`, code: "SKIPPED_IMAGE" })
     }
   }
-  return { markdown, blocks: flatBlocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined }
+  const memos = doc.memos.length ? locateMemoBlocks(flatBlocks, doc.memos) : undefined
+  return { markdown, blocks: flatBlocks, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined, memos }
 }
 
 /** DocInfo 스트림 파싱 (best-effort) */

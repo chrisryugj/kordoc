@@ -64,6 +64,7 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
       if (opts.keepEmptyCols) parseOptions.keepTrailingEmptyCols = true
       if (opts.keepEmptyParagraphs) parseOptions.keepEmptyParagraphs = true
       if (opts.includeFieldPlaceholders) parseOptions.includeFieldPlaceholders = true
+      if (opts.memos) parseOptions.memos = true
       if (opts.inlineImages) parseOptions.inlineImages = true
       if (opts.password) parseOptions.password = opts.password as string
       if (opts.images === false) parseOptions.images = false

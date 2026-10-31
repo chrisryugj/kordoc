@@ -6,7 +6,7 @@
 import { DOMParser } from "@xmldom/xmldom"
 import type JSZip from "jszip"
 import { KordocError, unzipLimitBytes } from "../utils.js"
-import type { CellContext, IRBlock, ParseWarning } from "../types.js"
+import type { CellContext, IRBlock, MemoNote, ParseWarning } from "../types.js"
 // WalkCtx.styleMap 타입 참조 — 타입 전용이라 styles.ts와의 순환은 컴파일 시 소거됨
 import type { HwpxStyleMap } from "./styles.js"
 import type { NoteNumberFormat } from "./notes.js"
@@ -135,6 +135,8 @@ export interface SectionShared {
   pageState: { base: number; allUsable: boolean }
   /** 목차 항목(채움 탭 + 쪽 번호 줄) 글 — 표 칸 안 목차는 틀 표 풀기가 문단을 새로 만들어 블록 표시가 사라지므로 글로도 기억한다 (#121) */
   tocTexts: Set<string>
+  /** 메모(fieldBegin type=MEMO) — 문서 순서 (#180). seen 은 같은 문단을 두 번 읽을 때 겹치지 않게 */
+  memos: { list: MemoNote[]; seen: WeakSet<Element> }
 }
 
 export function createSectionShared(): SectionShared {
@@ -144,6 +146,7 @@ export function createSectionShared(): SectionShared {
     track: { deleteDepth: 0, warned: false, deletedObjects: new WeakSet(), deletedImageRefs: new Set() },
     pageState: { base: 0, allUsable: true },
     tocTexts: new Set(),
+    memos: { list: [], seen: new WeakSet() },
   }
 }
 

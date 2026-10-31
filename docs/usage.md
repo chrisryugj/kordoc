@@ -97,6 +97,7 @@ if (result.success) {
 | `keepTrailingEmptyCols` | `--keep-empty-cols` | 표 오른쪽 끝 빈 열(서식 입력란) 보존 — `patch` 는 편집본이 이 추출에서 나왔는지 표 모양으로 알아서 맞춘다 |
 | `keepEmptyParagraphs` | `--keep-empty-paragraphs` | 빈 문단 보존 — 원문 문단 수 = 줄 수(HWPX) |
 | `includeFieldPlaceholders` | `--include-field-placeholders` | 미기입 누름틀 안내문도 출력(HWPX·HWP5) |
+| `memos` | `--memos` | 메모(한글 메모 넣기)를 문서 끝 "메모" 절로 — 메모 목록은 옵션 없이도 결과 `memos`(메모 글·붙은 글·문단·작성자·시각·블록 순번, HWPX·HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | HWP5 레이아웃 표의 쪽마다 반복된 러닝 헤더 제거(붙임별 재번호도 지울 수 있어 opt-in) |
 | `inlineImages` | `--inline-images` | 이미지를 base64 data URI 로 인라인(BMP→PNG, HWP5) |
 | `classifyTables` | — | 표를 의미표/레이아웃/불확실로 분류해 `IRTable.classification` 에 |
@@ -356,6 +357,7 @@ npx kordoc patch 원본.hwpx 편집.md --json --silent                  # 적용
 npx kordoc to-hwpx 문서.hwp                                         # HWP → HWPX (5.x 는 서식 그대로, 같은 이름 .hwpx 가 있으면 -o 필요)
 npx kordoc compare 구버전.hwp 신버전.hwpx                           # 문서 비교 (차이 있으면 exit 1, --json)
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx
+npx kordoc memo 보고서.hwpx --anchor "찾을 문구" --text "메모 내용" -o 검토.hwpx   # 앵커 문구에 메모 달기 (.hwp 는 서식 그대로 HWPX 로)
 npx kordoc validate 산출물.hwpx                                    # HWPX 구조 검증 (ZIP·필수 파트·XML)
 npx kordoc lint 보고서.md                                          # 공문서 표기법 27룰 (md/txt·문서, '-'=stdin, error 면 exit 1)
 npx kordoc lint 보고서.hwpx --numbers --styles                      # + 본문↔표 수치 대조·단계별 서식 편차 (확인 목록)
@@ -454,7 +456,7 @@ codex mcp add kordoc -- npx -y kordoc mcp          # Codex
 
 Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "args": ["/c", "npx", "-y", "kordoc", "mcp"]`.
 
-**21개 도구**
+**22개 도구**
 
 | 도구 | 설명 |
 |------|------|
@@ -475,6 +477,7 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `agency_pack_info` | 기관팩 요약·작성 요령 — 팩으로 원고를 쓰기 전에 읽는다 |
 | `lint_document` | 공문서 검수 — 표기법 + 문체·윤문·구성·수치 대조·예산(산출근거 검산·표 합계·외화·증감 기준) 옵트인. 지적마다 줄·글자 위치 |
 | `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 |
+| `add_memo` | 앵커 문구에 메모(한글 메모 넣기) 달기 — 본문 글·서식은 그대로. 문서의 메모는 `parse_document` 의 `memos` 로 읽는다 |
 | `render_document` | HWPX·HWP 를 조판 그대로 PNG/JPEG(응답 이미지)·SVG/HTML/PDF(파일)로 — 생성·수정 결과를 AI 가 눈으로 검증 |
 | `redact_document` | 개인정보 탐지 + 서식 보존 마스킹 (HWPX/HWP 는 머리말·각주·미리보기·문서 정보까지 + 잔존 재검사, 그 외는 마스킹된 Markdown) |
 | `crop_regions` | 렌더 영역(표·이미지·문단·도형)을 쪽 이미지에서 실배율로 잘라 저장 + regions.json |
@@ -514,6 +517,7 @@ ZIP 종류를 가르려면 `detectFormat()` 이 `hwpx` 일 때 `await detectZipF
 | `openHwpxDocument(bytes, options?)` | 에디터용 블록 단위 증분 패치 세션 `HwpxSession` |
 | `patchHwpxBlocks(bytes, edits, options?)` | 세션 없이 블록 편집 1회 패치 |
 | `placeSealHwpx(buffer, seals)` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 |
+| `addMemoHwpx(buffer, memos)` | 앵커 문구에 메모 달기 — `{ anchor, text, author?, occurrence? }` |
 | `validateHwpx(buffer)` | HWPX 구조 검증 — ZIP·mimetype·필수 파트·XML 웰폼드 |
 
 ### 생성 · 렌더

@@ -251,6 +251,34 @@ describe("fill_form·fill — HWP 서식을 원본 서식으로 채우기", () =
 })
 
 const RHWP = join(import.meta.dirname, "..", "bench", "corpus", "rhwp")
+describe("메모 달기 — HWP 원본 (#180)", () => {
+  it("HWP 5.x 에 메모를 달면 서식 그대로 바꾼 HWPX 에 단다 (MCP·CLI)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kordoc-memo-hwp-"))
+    const previousRoot = process.env.KORDOC_ROOT
+    process.env.KORDOC_ROOT = dir
+    try {
+      const src = join(dir, "확인서.hwp")
+      writeFileSync(src, buildHwp(Buffer.concat([paragraph("확인서", [[0, 0]], 0, 31), paragraph("신청인 홍길동 (인)", [[0, 0]], 0, 32)])))
+      let memo: any
+      registerFormTools({ tool(name: string, ...args: any[]) { if (name === "add_memo") memo = args.at(-1) } } as any)
+      const out = join(dir, "mcp.hwpx")
+      const r = await memo({ file_path: src, anchor: "홍길동", text: "성명 확인", occurrence: 0, output_path: out })
+      assert.ok(!r.isError, r.content[0].text)
+      const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+      const c = spawnSync(process.execPath, ["--import", "tsx", cli, "memo", src, "--anchor", "홍길동", "--text", "성명 확인\\n둘째 줄", "--author", "검토자"], { encoding: "utf8", timeout: 60000 })
+      assert.equal(c.status, 0, c.stderr)
+      assert.match(c.stderr, /서식 그대로 HWPX 로 바꿔 메모를 답니다/)
+      const read = async (file: string) => { const p = await parse(readFileSync(file), { filename: "x.hwpx" }); assert.ok(p.success); return p.memos }
+      assert.deepEqual((await read(out))?.map(m => [m.anchor, m.text, m.author]), [["홍길동", "성명 확인", "kordoc"]])
+      assert.deepEqual((await read(join(dir, "확인서.memo.hwpx")))?.map(m => [m.anchor, m.text, m.author]), [["홍길동", "성명 확인\n둘째 줄", "검토자"]])
+    } finally {
+      if (previousRoot === undefined) delete process.env.KORDOC_ROOT
+      else process.env.KORDOC_ROOT = previousRoot
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe("hwpToHwpx — 확장 바탕쪽(코퍼스)", { skip: !existsSync(join(RHWP, "hwpx", "exam_kor.hwpx")) }, () => {
   it("구역 끝 바탕쪽을 한글 저장본처럼 마지막 쪽·임의 쪽으로 쓴다", async () => {
     const kinds = async (zip: JSZip): Promise<string[]> => {

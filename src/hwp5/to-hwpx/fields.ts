@@ -7,6 +7,7 @@
  */
 
 import { Cur, type RecNode, el, escText } from "./util.js"
+import { fileTimeText as fileTime } from "../record.js"
 import { TAG, paragraphsXml } from "./section.js"
 import { subListAttrs, type ConvertContext } from "./controls.js"
 
@@ -65,12 +66,6 @@ function params(type: string, prop: number, command: string): string {
 
 export interface FieldState { stack: Array<{ id: number; fieldid: number }> }
 
-/** FILETIME(1601년부터 100ns) → 한글처럼 지역 시각에 Z 를 붙인 꼴 */
-function fileTime(low: number, high: number): string {
-  const d = new Date(Number((BigInt(high) * 2n ** 32n + BigInt(low)) / 10000n) - 11644473600000)
-  const p2 = (n: number): string => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}Z`
-}
 
 /**
  * 메모 — HWP 는 '%unk' 필드에 "MEMO/모양/번호/생성 시각 하위/상위/작성자/" 명령을 두고 글은 구역 끝 메모 목록에 둔다. HWPX 는 MEMO 필드

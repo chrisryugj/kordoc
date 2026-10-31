@@ -30,6 +30,7 @@ import { parseSectionXml } from "./section-walker.js"
 import { extractImagesFromZip } from "./images.js"
 import { extractHwpxMetadata } from "./metadata.js"
 import { extractFromBrokenZip, resolveSectionPaths, readKordocLayout } from "./zip-sections.js"
+import { locateMemoBlocks } from "../memo-notes.js"
 
 export { extractHwpxMetadataOnly } from "./metadata.js"
 
@@ -180,6 +181,7 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
     .map(b => ({ level: b.level!, text: b.text!, pageNumber: b.pageNumber }))
 
   const markdown = blocksToMarkdown(shown, { tableFormat: options?.tableFormat })
-  return { markdown, blocks: shown, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined }
+  const memos = shared.memos.list.length ? locateMemoBlocks(shown, shared.memos.list) : undefined
+  return { markdown, blocks: shown, metadata, outline: outline.length > 0 ? outline : undefined, warnings: warnings.length > 0 ? warnings : undefined, images: images.length > 0 ? images : undefined, memos }
 }
 

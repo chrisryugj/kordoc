@@ -10,7 +10,7 @@ import { collectImageRefs, DELETABLE_OBJECT_TAGS, extractImageRef, findDescendan
 import { KordocError, sanitizeHref, stripDtd } from "../utils.js"
 import { escapeLiteralTags, wrapScript, tidyScriptTags } from "../script-tags.js"
 import { captionedText, convertTableToText, escapeLiteralDollar, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, ParseWarning } from "../types.js"
+import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, MemoNote, ParseWarning } from "../types.js"
 import { hmlToLatex } from "./equation.js"
 import {
   clampSpan,
@@ -854,6 +854,32 @@ function extractHyperlinkHref(fieldBegin: Element): string | undefined {
   return undefined
 }
 
+/** fieldBegin 이 메모(type MEMO)면 작성자·시각·번호와 메모 글(안쪽 subList 문단) — 붙은 글·문단은 fieldEnd 에서 (#180) */
+function memoOf(fieldBegin: Element, ctx: WalkCtx): Pick<MemoNote, "text" | "author" | "createdAt" | "number"> | undefined {
+  if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "MEMO") return undefined
+  const params: Record<string, string> = {}
+  const kids = findChildByLocalName(fieldBegin, "parameters")?.childNodes
+  for (let i = 0; i < (kids?.length ?? 0); i++) {
+    const ch = kids![i] as Element
+    if (ch.nodeType === 1 && ch.getAttribute("name")) params[ch.getAttribute("name")!] = (ch.textContent || "").trim()
+  }
+  // 메모 글 — subList 문단마다 글만 (문단 머리 번호를 풀지 않는다: 본문 번호 카운터를 건드리지 않게)
+  const lines: string[] = []
+  const kids2 = findChildByLocalName(fieldBegin, "subList")?.childNodes
+  for (let i = 0; i < (kids2?.length ?? 0); i++) {
+    const p = kids2![i] as Element
+    if (p.nodeType !== 1 || (p.tagName || p.localName || "").replace(/^[^:]+:/, "") !== "p") continue
+    const t = extractParagraphInfo(p, ctx.styleMap, ctx).text
+    if (t) lines.push(t.replace(/\\([$<])/g, "$1"))
+  }
+  const num = Number(params.Number)
+  const memo: Pick<MemoNote, "text" | "author" | "createdAt" | "number"> = { text: lines.join("\n") }
+  if (params.Author) memo.author = params.Author
+  if (params.CreateDateTime) memo.createdAt = params.CreateDateTime
+  if (params.Number !== undefined && Number.isFinite(num)) memo.number = num
+  return memo
+}
+
 /** 변경추적 삭제 구간 내부 여부 */
 function isInDeletedRange(ctx?: WalkCtx): boolean {
   return (ctx?.shared.track.deleteDepth ?? 0) > 0
@@ -883,13 +909,20 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   // 인라인 [anchor](url)로 방출 (HWP5 fieldRanges와 동일 모델). extent를 못 닫으면
   // (문단 경계 걸침 등) 기존 문단 전체 href로 폴백.
   const linkRanges: Array<{ url: string; start: number; end?: number }> = []
-  const openFields: Array<{ rangeIdx?: number; guide?: string; start?: number }> = []
+  type MemoDraft = Pick<MemoNote, "text" | "author" | "createdAt" | "number">
+  const openFields: Array<{ rangeIdx?: number; guide?: string; start?: number; memo?: MemoDraft }> = []
+  const memos: Array<MemoDraft & { raw: string }> = []
   const onFieldBegin = (el: Element) => {
     const url = extractHyperlinkHref(el)
     if (url) {
       linkRanges.push({ url, start: text.length })
       openFields.push({ rangeIdx: linkRanges.length - 1 })
       if (!href) href = url
+    } else if (ctx && (el.getAttribute("type") || "").toUpperCase() === "MEMO") {
+      // 메모 — 같은 문단을 두 번 읽어도 한 번만 (#180)
+      const memo = ctx.shared.memos.seen.has(el) ? undefined : memoOf(el, ctx)
+      ctx.shared.memos.seen.add(el)
+      openFields.push(memo ? { memo, start: text.length } : {})
     } else {
       const guide = clickHereGuide(el)
       openFields.push(guide ? { guide, start: text.length } : {})
@@ -897,6 +930,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   }
   const onFieldEnd = () => {
     const open = openFields.pop()
+    if (open?.memo && open.start !== undefined) memos.push({ ...open.memo, raw: text.slice(open.start) })
     if (open?.rangeIdx !== undefined) linkRanges[open.rangeIdx].end = text.length
     // 미기입 누름틀: 값 자리 글이 안내문 그대로면 표지로 감싼다 (글은 IR 에 남고 마크다운에서만 빠진다)
     if (open?.guide !== undefined && open.start !== undefined) {
@@ -1230,6 +1264,17 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
       if (charProp.italic) style.italic = true
       if (charProp.fontName) style.fontName = charProp.fontName
       if (!style.fontSize && !style.bold && !style.italic) style = undefined
+    }
+  }
+
+  // 메모 — 문단을 넘어가는 메모(끝을 못 만난 것)는 문단 끝까지를 붙은 글로 (#180)
+  for (const open of openFields) if (open.memo && open.start !== undefined) memos.push({ ...open.memo, raw: text.slice(open.start) })
+  if (memos.length && ctx) {
+    const unescape = (s: string): string => s.replace(/\\([$<])/g, "$1")
+    const paragraph = unescape(cleanText)
+    for (const { raw, ...memo } of memos) {
+      const anchor = unescape(stripPlaceholderMarks(raw).replace(/\x1E/g, "").replace(/[ \t]+/g, " ").trim())
+      ctx.shared.memos.list.push({ ...memo, anchor, paragraph, offset: Math.max(0, paragraph.indexOf(anchor)) })
     }
   }
 
