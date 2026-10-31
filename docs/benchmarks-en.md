@@ -2,6 +2,20 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.28: formatting of appended text in patch · memos · 2026-10-31
+
+Benchmark metrics are the same as 4.24.27 (every `bench:gate` stage passes). In the patch edit experiment (same method as 4.24.25) the number of applied edits is unchanged, and the verification residual — units that differ when the patched file is parsed again, formatting included — went down:
+
+| Experiment | 4.24.27 | 4.24.28 |
+| --- | --- | --- |
+| HWPX text edits (117 documents · 540 edits) residual | 45 | **3** |
+| HWP 5.x text edits (30 documents · 140 edits) residual | 8 (24 once the parser emits emphasis) | **5** |
+| Wider HWP sample (138 documents · 605 edits) residual | 2 (37 once the parser emits emphasis) | **6** |
+| HWP rewrites in the original formatting (98 rewrites) | 90 | **94** |
+| Same document parsed from HWP and HWPX (37 pairs), differing units | 390 | **118** |
+
+The residual dropped because text appended after a bold or superscript run no longer inherits that formatting — it is inserted with the formatting its Markdown shows. The low 4.24.27 HWP residuals came from the HWP parser not emitting bold, which hid formatting differences; with emphasis now emitted they read 24 and 37, and this release brings them down to 5 and 6. Most of what remains is a word appended to evenly spaced text ("동 작 소 방 서") that the parser reads back joined (the document itself changes as intended).
+
 ## 4.24.27: patch edit coverage · HWP form filling · 2026-10-31
 
 Benchmark metrics are the same as 4.24.26 (every `bench:gate` stage passes — only the patch and form-filling paths changed). The patch edit experiment (same method as 4.24.25):
