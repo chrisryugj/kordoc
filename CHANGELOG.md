@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- HWP 5.x 파서: 굵게·기울임·취소선·밑줄을 HWPX 처럼 인라인 강조(`**`·`*`·`~~`·`<u>`)로 낸다. 같은 문서도 HWPX 로 읽으면 굵게가 있고 HWP 로 읽으면 없었다. 판정은 HWPX 와 같다 — 제목·목차·채운 누름틀 문단은 빼고, 표 칸은 칸 전체가 굵게·기울임이면(머리 행·라벨 열의 구조 서식) 달지 않는다. 글자 크기로 다는 HWP 제목(`#`)은 그대로. 같은 문서의 HWP·HWPX parse 대조(37짝): 다른 단위 390 → **118**, 완전 일치 17 → **20**. patch 는 강조 표지가 든 칸과 1×1·1열 표도 표 좌표로 고치고, 칸 글의 표지를 걷어 바뀐 글자만 고친다(굵은 조각 글자 모양 유지).
+
+### Fixed
+
+- patch(HWPX): hp:t 안에 탭 요소·엔티티(`&amp;` 등)나 한컴 PUA 기호가 든 문단은 바뀐 자리를 원문과 맞대지 못해 문단을 첫 run 하나로 통째 다시 썼다 — 굵게 같은 글자 모양이 사라졌다. 글자마다 원문 범위를 단 좌표계로 바뀐 자리만 고친다(PUA 는 표시값으로 맞대고 원문 글자는 그대로 둔다).
+- patch(HWP 5.x) 대체본: 굵은 글 끝에 붙인 글("**□ 행사개요** 수정")처럼 바뀐 자리가 굵게 표지에 닿으면 원본 견본으로 갔다. 편집이 표지를 그대로 두었으면, 바꾼 판 자리에 같은 표지가 있을 때는 그대로, 없을 때는 표지를 걷어 옮긴다. 대체본(98건) 원본 그대로 반영 90 → **93**.
+
 ## [4.24.27] - 2026-10-31
 
 ### Changed

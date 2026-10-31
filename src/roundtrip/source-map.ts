@@ -8,6 +8,7 @@
  */
 
 import { isDatePlaceholder } from "../form/recognize.js"
+import { mapPuaText, pairedNumber } from "../shared/pua.js"
 
 // ─── 타입 ───────────────────────────────────────────
 
@@ -738,6 +739,87 @@ export function buildRangeSplices(
     placed = true
   }
   return placed ? splices : null
+}
+
+/** hp:t 콘텐츠 안 글자 요소 — tContentToText 가 공백 한 칸으로 보는 것 */
+const T_CHAR_TAG_RE = /^<\/?(?:[A-Za-z0-9_]+:)?(?:tab|fwSpace|hwSpace|nbSpace|br|lineBreak)(?:\s[^>]*)?\/?>$/
+
+/** paraTCharMap 좌표계 — 글자마다 소속 hp:t(tRanges 번호)와 원문 범위 [from, to) */
+export interface TCharMap { text: string; seg: number[]; from: number[]; to: number[] }
+
+const PUA_RE = /[\uE000-\uF8FF]|[\u{F0000}-\u{10FFFF}]/u
+
+/** hp:t 글에 한컴 PUA 기호가 있는가 — IR·normForMatch 는 표시값(mapPuaText)이라 원문 글과 바로 맞대지 못한다 */
+export function hasPua(text: string): boolean { return PUA_RE.test(text) }
+
+/**
+ * hp:t 이음 글을 IR 평문과 맞댈 꼴로 펴고 글자마다 원문 범위를 단다: 엔티티를 풀고 탭·줄바꿈 요소는 공백 한 칸, 그 밖 요소는 지움
+ * (tContentToText), PUA 기호는 표시값(sanitizePua 의 mapPuaText·남은 보조 PUA 지움). 엔티티·PUA 에서 나온 글자는 그 원문 전체, 요소
+ * 글자는 그 태그 범위. paraTText 가 못 다루는 문단(hp:t 안 엔티티·요소, PUA)의 정밀 치환 좌표계 (buildMappedRangeSplices)
+ */
+export function paraTCharMap(para: ScanParagraph, xml: string): TCharMap {
+  const m: TCharMap = { text: "", seg: [], from: [], to: [] }
+  const add = (c: string, k: number, a: number, b: number): void => { m.text += c; m.seg.push(k); m.from.push(a); m.to.push(b) }
+  para.tRanges.forEach((t, k) => {
+    if (t.selfClosing) return
+    const raw = xml.slice(t.contentStart, t.contentEnd)
+    const re = /<[^>]*>|&(?:lt|gt|amp|quot|apos|#x?[0-9a-fA-F]+);/g
+    let last = 0
+    for (let mm = re.exec(raw); mm; mm = re.exec(raw)) {
+      for (let i = last; i < mm.index; i++) add(raw[i], k, t.contentStart + i, t.contentStart + i + 1)
+      const a = t.contentStart + mm.index, b = a + mm[0].length
+      if (mm[0][0] !== "<") for (const c of decodeXmlEntities(mm[0]).split("")) add(c, k, a, b)
+      else if (T_CHAR_TAG_RE.test(mm[0])) add(" ", k, a, b)
+      last = mm.index + mm[0].length
+    }
+    for (let i = last; i < raw.length; i++) add(raw[i], k, t.contentStart + i, t.contentStart + i + 1)
+  })
+  if (!PUA_RE.test(m.text)) return m
+  // 코드포인트마다 표시값 — mapPuaText 처럼 두 자리 번호 조각 둘은 한 글자로(같은 hp:t 안일 때만, 아니면 맞대기가 실패해 호출자 폴백)
+  const d: TCharMap = { text: "", seg: [], from: [], to: [] }
+  const cps: Array<{ s: string; i: number }> = []
+  for (let i = 0; i < m.text.length;) {
+    const n = m.text.codePointAt(i)! > 0xffff ? 2 : 1
+    cps.push({ s: m.text.slice(i, i + n), i })
+    i += n
+  }
+  for (let k = 0; k < cps.length; k++) {
+    const a = cps[k]
+    const b = k + 1 < cps.length && m.seg[cps[k + 1].i] === m.seg[a.i] ? cps[k + 1] : undefined
+    const pair = b ? pairedNumber(a.s, b.s) : undefined
+    const last = pair !== undefined ? cps[++k] : a
+    const out = (pair ?? mapPuaText(a.s)).replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
+    for (const c of out.split("")) {
+      d.text += c; d.seg.push(m.seg[a.i]); d.from.push(m.from[a.i]); d.to.push(m.to[last.i + last.s.length - 1])
+    }
+  }
+  return d
+}
+
+/**
+ * paraTCharMap 좌표 [start, end) 치환 — 겹친 hp:t 마다 그 글자들의 원문 범위를 바꾼다(buildRangeSplices 처럼 첫 조각에 새 글, 나머지는 지움).
+ * 바꿀 글자 사이에 폭 없는 요소(형광펜 표지 등)가 끼었거나 엔티티 한가운데서 끊기면 null. start === end 는 앞 글자 뒤(맨 앞이면 첫 글자 앞)에 넣는다
+ */
+export function buildMappedRangeSplices(map: TCharMap, start: number, end: number, replacement: string): SpliceEdit[] | null {
+  const n = map.text.length
+  if (n === 0 || start < 0 || end < start || end > n) return null
+  const inEntity = (i: number): boolean => i > 0 && i < n && map.from[i] === map.from[i - 1]
+  if (inEntity(start) || inEntity(end)) return null
+  const escaped = escapeXmlText(replacement)
+  if (start === end) {
+    const at = start === 0 ? map.from[0] : map.to[start - 1]
+    return [{ start: at, end: at, replacement: escaped }]
+  }
+  const splices: SpliceEdit[] = []
+  for (let i = start; i < end;) {
+    let j = i
+    for (; j + 1 < end && map.seg[j + 1] === map.seg[i]; j++) {
+      if (map.to[j] !== map.from[j + 1] && map.from[j] !== map.from[j + 1]) return null // 사이에 폭 없는 요소
+    }
+    splices.push({ start: map.from[i], end: map.to[j], replacement: splices.length ? "" : escaped })
+    i = j + 1
+  }
+  return splices
 }
 
 /**

@@ -9,7 +9,7 @@
  */
 
 import type { IRTable } from "../types.js"
-import { MAX_COLS, MAX_ROWS, cellToMarkdown, escapeGfm, escapeHtmlCellText, noteSuffix, noteTableHtml, sanitizeText, visibleText } from "../table/builder.js"
+import { MAX_COLS, MAX_ROWS, cellToMarkdown, escapeGfm, escapeHtmlCellText, hasInlineCellBlocks, noteSuffix, noteTableHtml, sanitizeText, visibleText } from "../table/builder.js"
 import { escapeHtml, unescapeHtml } from "../utils.js"
 import { clampSpan } from "../hwpx/parser-shared.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
@@ -266,6 +266,27 @@ export function replicateGfmTable(table: IRTable): MappedCell[][] | null {
     uniqueRows.push(row)
   }
   return uniqueRows.length > 0 ? uniqueRows : null
+}
+
+/** builder 가 칸 블록 마크다운으로 내는 1열 표인가 — 칸에 인라인 블록(강조 span·그림)이 있으면 1×1·1열 평문 경로보다 먼저 탄다 */
+export function isInlineColumnTable(table: IRTable): boolean {
+  return table.cols === 1 && table.cells.some(row => !!row[0] && hasInlineCellBlocks(row[0]))
+}
+
+/**
+ * builder 1열 표(텍스트 청크) 재현 — 줄마다 격자 행. 인라인 블록 표는 칸 블록 마크다운(cellToMarkdown), 그 밖은 칸 글(칸 안 줄바꿈도
+ * 줄로, v4.12.1). 1×1 평문 표는 줄 장식(번호 줄 굵게·가. 들여쓰기)이 달라 호출자가 따로 한다
+ */
+export function replicateColumnTable(table: IRTable): Array<{ line: string; gridR: number }> {
+  const inline = isInlineColumnTable(table)
+  const out: Array<{ line: string; gridR: number }> = []
+  for (let r = 0; r < table.rows; r++) {
+    const cell = table.cells[r]?.[0]
+    if (!cell) continue
+    const md = inline ? cellToMarkdown(cell, "\n") : escapeGfm(sanitizeText(cell.text))
+    for (const line of md.split("\n").map(l => l.trim()).filter(Boolean)) out.push({ line, gridR: r })
+  }
+  return out
 }
 
 /** GFM 표 유닛 파싱 — 구분 행 제거, 이스케이프된 파이프 보존 분할 */

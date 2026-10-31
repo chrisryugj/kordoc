@@ -275,6 +275,54 @@ describe("patchHwp — 문단 텍스트 교체", () => {
   })
 })
 
+describe("patchHwp — 굵은 조각이 있는 표 칸", () => {
+  const charShape = (attr: number): Buffer => { const b = Buffer.alloc(74); b.writeUInt32LE(100, 42); b.writeUInt32LE(attr, 46); return b }
+  const docInfo = Buffer.concat([rec(0x15, 0, charShape(0)), rec(0x15, 0, charShape(0x02))]) // 글자 모양 0 보통 · 1 굵게
+  function styled(text: string, runs: Array<[number, number]>): Buffer {
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(text.length + 1, 0)
+    header.writeUInt16LE(runs.length, 12)
+    header.writeUInt16LE(1, 16)
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return Buffer.concat([rec(0x42, 2, header), rec(0x43, 3, Buffer.concat([utf16(text), Buffer.from([0x0d, 0x00])])), rec(0x44, 3, cs), rec(0x45, 3, lineSeg36())])
+  }
+  function table(cells: Buffer[][]): Buffer {
+    const anchorHeader = Buffer.alloc(24)
+    const ctrlChar = Buffer.alloc(16)
+    ctrlChar.writeUInt16LE(0x0b, 0)
+    ctrlChar.write(" lbt", 2, "ascii")
+    ctrlChar.writeUInt16LE(0x0b, 14)
+    const anchorText = Buffer.concat([ctrlChar, Buffer.from([0x0d, 0x00])])
+    anchorHeader.writeUInt32LE(anchorText.length / 2, 0)
+    anchorHeader.writeUInt32LE(1 << 11, 4)
+    anchorHeader.writeUInt16LE(1, 12)
+    anchorHeader.writeUInt16LE(1, 16)
+    const tableData = Buffer.alloc(8)
+    tableData.writeUInt16LE(2, 4)
+    tableData.writeUInt16LE(2, 6)
+    const parts = [rec(0x42, 0, anchorHeader), rec(0x43, 1, anchorText), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36)),
+      rec(0x47, 1, Buffer.concat([Buffer.from(" lbt", "ascii"), Buffer.alloc(42)])), rec(0x4d, 2, tableData)]
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+      const lh = Buffer.alloc(34)
+      lh.writeUInt16LE(1, 0); lh.writeUInt16LE(c, 8); lh.writeUInt16LE(r, 10); lh.writeUInt16LE(1, 12); lh.writeUInt16LE(1, 14)
+      parts.push(rec(0x48, 2, lh), cells[r][c])
+    }
+    return Buffer.concat(parts)
+  }
+
+  it("칸 글의 강조 표지는 걷고 글만 고친다 — 굵은 조각 run 은 그대로", async () => {
+    const hwp = buildHwp([table([[styled("구분", [[0, 0]]), styled("성명 홍길동", [[0, 0], [3, 1]])], [styled("가", [[0, 0]]), styled("나", [[0, 0]])]])], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.ok(md.includes("성명 **홍길동**"), md)
+    // 같은 표의 다른 칸도 고친다 — 표 경로가 한 칸이라도 고치면 원문 글 찾기로 넘어가지 않으므로 표 경로가 바뀐 자리만 써야 한다
+    const r = await patchHwp(hwp, md.replace("성명 **홍길동**", "성명 **김철수**").replace("| 구분 |", "| 구분2 |"))
+    assert.equal(r.applied, 2, JSON.stringify(r.skipped))
+    const out = parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown
+    assert.ok(out.includes("성명 **김철수**"), out)
+  })
+})
+
 describe("patchHwp — 1열 표 여러 줄 칸", () => {
   /** 1열 표 — 칸마다 문단 여러 개(줄) */
   function columnTable(rows: string[][]): Buffer {

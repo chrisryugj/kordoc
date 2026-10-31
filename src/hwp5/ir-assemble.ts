@@ -7,7 +7,7 @@
  */
 
 import { buildTable, captionedText, convertTableToText, MAX_COLS, MAX_ROWS } from "../table/builder.js"
-import type { CellContext, IRBlock, IRTable, InlineStyle } from "../types.js"
+import type { CellContext, IRBlock, IRTable, IRSpan, InlineStyle } from "../types.js"
 import { CELL_EDGES, type Edges } from "../table/layout-frames.js"
 import { TOC_ENTRY_BLOCKS } from "../toc-entry.js"
 
@@ -45,6 +45,8 @@ export interface ParaEmitInput {
   footnoteBlocks?: IRBlock[]
   objects: ParaObject[]
   pageNumber?: number
+  /** 인라인 강조 span (굵게·기울임·취소선·밑줄) — 글이 한 문단 블록으로만 나갈 때 붙인다(HWPX run-spans 대칭) */
+  spans?: IRSpan[]
 }
 
 /** 문단 1개 → [문단 블록(들), 개체 블록] */
@@ -107,6 +109,7 @@ export function emitParagraphBlocks(p: ParaEmitInput): IRBlock[] {
       pageNumber,
     }
     if (p.headingLevel > 0) block.level = p.headingLevel
+    else if (p.spans) block.spans = headMarker ? [{ text: `${headMarker} ` }, ...p.spans] : p.spans
     if (p.tocEntry) TOC_ENTRY_BLOCKS.add(block)
     if (style) {
       block.style = style
@@ -178,8 +181,13 @@ export function cellTextFromBlocks(blocks: IRBlock[]): { text: string; hasStruct
         b.text += ` (주: ${b.footnoteText})`
         delete b.footnoteText
         delete b.footnoteBlocks
+        delete b.spans // 접은 각주 글은 span 에 없다 — 평문 경로로
       }
       add(b.text, b)
+      // 칸 문단은 HWPX 외래 문서처럼 혼합 가드 — 칸 전체가 굵게·기울임이면(머리 행·라벨 열의 구조 서식) 표지를 달지 않는다.
+      // 남은 강조 span 이 있는 칸은 블록째 남긴다(칸 마크다운에 강조 표지)
+      if (b.spans && !b.spans.some(s => s.strike || s.underline) && !b.spans.some(s => !(s.bold || s.italic))) delete b.spans
+      if (b.spans?.length) hasStructure = true
     }
   }
   return { text, hasStructure }

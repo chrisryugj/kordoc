@@ -4,7 +4,7 @@ import { tidyScriptTags, type ScriptKind } from "../script-tags.js"
 import {
   extractEquationText, createParaTextState, appendParaText, LITERAL_DOLLAR_MARK, LITERAL_LT_MARK, resolveLiteralLt, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
   TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE, TAG_EQEDIT, TAG_SHAPE_COMPONENT, TAG_SHAPE_COMPONENT_CONTAINER,
-  TAG_SHAPE_COMPONENT_PICTURE, type HwpRecord, type HwpDocInfo, type IndexedControlResolver,
+  TAG_SHAPE_COMPONENT_PICTURE, type HwpRecord, type HwpDocInfo, type IndexedControlResolver, type ParaTextState,
 } from "./record.js"
 import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
 import { hwpEquationToLatex } from "./equation.js"
@@ -12,7 +12,7 @@ import { buildTable, flattenLayoutTables, markNonLayoutTable, MAX_COLS, MAX_ROWS
 import {
   INLINE_TABLE_MARK, blocksPlainText, buildAddressedTable, cellTextFromBlocks, emitParagraphBlocks,
 } from "./ir-assemble.js"
-import type { CellContext, IRBlock, IRTable, ParseOptions, ParseWarning, InlineStyle } from "../types.js"
+import type { CellContext, IRBlock, IRTable, IRSpan, ParseOptions, ParseWarning, InlineStyle } from "../types.js"
 import type { Edges } from "../table/layout-frames.js"
 import { sanitizeHref } from "../utils.js"
 import { takeTocLeaders } from "../toc-entry.js"
@@ -272,6 +272,8 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
   state.dollarMark = true
   state.tocLeaders = true
   state.scriptAt = scriptLookup(charShapeRuns, ctx.docInfo)
+  state.emphAt = emphasisLookup(charShapeRuns, ctx.docInfo)
+  let inlined = false
   const resolver: IndexedControlResolver = (idx, id) => {
     let ctrl = idx >= 0 && idx < ctrls.length ? ctrls[idx] : undefined
     if (!ctrl || (ctrl.idRaw !== id && ctrl.id !== id)) {
@@ -279,6 +281,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     }
     if (!ctrl) return null
     ctrl.resolved = true
+    if (ctrl.inlineText) inlined = true
     return ctrl.inlineText ?? null
   }
   for (const data of textRecords) {
@@ -288,6 +291,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
   // FIELD_BEGIN/END 범위 — 시작 위치 내림차순으로 안전하게 치환. 하이퍼링크는 [anchor](url),
   // 미기입 누름틀의 안내문 run 은 지운다(한컴은 화면에만 흐리게 보이고 인쇄하지 않는다 — PDF 실측)
   let text = state.text
+  let fieldsApplied = false
   if (state.fieldRanges.length > 0) {
     const ranges = [...state.fieldRanges].sort((a, b) => b.start - a.start)
     const applied: Array<[number, number]> = []
@@ -312,6 +316,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
       text = text.slice(0, r.start) + `[${anchor}](${href})` + text.slice(r.end)
       applied.push([r.start, r.end])
     }
+    fieldsApplied = applied.length > 0
   }
   // 리터럴 $ → \$ (필드 위치를 다 쓴 뒤라 이제 두 글자로 늘려도 된다, escapeLiteralDollar 규약)
   if (text.includes(LITERAL_DOLLAR_MARK)) text = text.replaceAll(LITERAL_DOLLAR_MARK, "\\$")
@@ -321,6 +326,8 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
   // 목차 항목(채움 탭 + 쪽 번호 줄) 판정 — 채움 탭 표지는 여기서 보통 탭이 된다 (#121, HWPX 와 같은 규칙)
   const toc = takeTocLeaders(text)
   text = toc.text
+  // 인라인 강조 span — 개체·링크·누름틀 안내문·목차 문단은 글 위치가 어긋나 평문 경로만
+  const spans = !inlined && !fieldsApplied && !toc.tocEntry ? emphasisSpans(state, text) : undefined
 
   // 문단번호/글머리표/개요 처리 (DocInfo PARA_SHAPE headType)
   let headingLevel = 0
@@ -367,6 +374,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
     // 컨트롤 파생 블록 (표/이미지/글상자) — 컨트롤 순서대로
     objects: ctrls.filter(c => c.afterBlocks).map(c => ({ blocks: c.afterBlocks!, table: c.id === CTRL_TBL, inline: c.inlineText === INLINE_TABLE_MARK })),
     pageNumber: ctx.page,
+    spans,
   })
 }
 
@@ -868,6 +876,58 @@ function scriptLookup(runs: Array<[number, number]>, docInfo: HwpDocInfo | null)
     while (k + 1 < runs.length && runs[k + 1][0] <= pos) k++
     return k >= 0 ? kindOf(runs[k][1]) : null
   }
+}
+
+const EMPH_BOLD = 1, EMPH_ITALIC = 2, EMPH_STRIKE = 4, EMPH_UNDERLINE = 8
+
+/**
+ * 글자 위치 → 강조 키(굵게·기울임·취소선·밑줄 비트). 판정은 HWPX 글자 모양(styles.ts)과 같다 — 굵게 bit 1·기울임 bit 0,
+ * 취소선은 모양까지(hasRealStrike), 밑줄은 글자 아래만(hasRealUnderline). 강조 글자 모양이 없으면 undefined
+ */
+function emphasisLookup(runs: Array<[number, number]>, docInfo: HwpDocInfo | null): ((pos: number) => number) | undefined {
+  if (!docInfo || !runs.length) return undefined
+  const keyOf = (id: number): number => {
+    const f = docInfo.charShapes[id]?.attrFlags ?? 0
+    return (f & 0x02 ? EMPH_BOLD : 0) | (f & 0x01 ? EMPH_ITALIC : 0) | (hasRealStrike(f) ? EMPH_STRIKE : 0) | (hasRealUnderline(f) ? EMPH_UNDERLINE : 0)
+  }
+  if (!runs.some(([, id]) => keyOf(id))) return undefined
+  let k = -1 // 글자 위치는 늘어나는 순서로 묻는다 — 커서를 앞으로만(되돌아가면 처음부터)
+  return (pos) => {
+    if (k >= 0 && runs[k][0] > pos) k = -1
+    while (k + 1 < runs.length && runs[k + 1][0] <= pos) k++
+    return k >= 0 ? keyOf(runs[k][1]) : 0
+  }
+}
+
+/**
+ * 강조 키가 바뀐 자리(emphRuns)로 문단 글을 span 으로 나눈다 — 문단 글과 같은 정리(리터럴 표지·첨자 태그)를 span 마다 하고,
+ * 이은 글이 문단 글과 같을 때만(HWPX run-spans 무결성 가드와 같다). 강조 span 이 없거나 첨자 태그가 span 경계에 걸리면 undefined
+ */
+function emphasisSpans(state: ParaTextState, text: string): IRSpan[] | undefined {
+  const runs = state.emphRuns
+  if (!runs?.some(([, key]) => key)) return undefined
+  const spans: Array<IRSpan & { key: number }> = []
+  for (let r = 0; r < runs.length; r++) {
+    const end = r + 1 < runs.length ? runs[r + 1][0] : state.text.length
+    const raw = state.text.slice(r === 0 ? 0 : runs[r][0], end) // 첫 키 앞 글(제어 문자 자리)은 첫 span 에
+    const t = tidyScriptTags(resolveLiteralLt(raw.replaceAll(LITERAL_DOLLAR_MARK, "\\$")))
+    if (!t) continue
+    const key = runs[r][1], last = spans[spans.length - 1]
+    if (last && last.key === key) { last.text += t; continue }
+    spans.push({ text: t, key })
+  }
+  const flat = (s: string): string => s.replace(/[ \t]+/g, " ").trim()
+  if (flat(spans.map(s => s.text).join("")) !== flat(text)) return undefined
+  const tagsPaired = (s: string): boolean => ["sup", "sub"].every(t => (s.split(`<${t}>`).length) === (s.split(`</${t}>`).length))
+  if (!spans.every(s => tagsPaired(s.text))) return undefined
+  return spans.map(({ text: t, key }) => {
+    const span: IRSpan = { text: t }
+    if (key & EMPH_BOLD) span.bold = true
+    if (key & EMPH_ITALIC) span.italic = true
+    if (key & EMPH_STRIKE) span.strike = true
+    if (key & EMPH_UNDERLINE) span.underline = true
+    return span
+  })
 }
 
 /** CHAR_SHAPE ID 배열에서 대표 스타일 결정 (최빈값) */

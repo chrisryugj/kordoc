@@ -8,7 +8,7 @@
  *    균등 띄어쓰기·run 경계·글자 모양은 그대로 남는다.
  */
 
-import { paraTText, buildRangeSplices, type ScanParagraph, type SpliceEdit } from "./source-map.js"
+import { paraTText, buildRangeSplices, paraTCharMap, buildMappedRangeSplices, hasPua, type ScanParagraph, type SpliceEdit } from "./source-map.js"
 
 interface Tok {
   kind: "text" | "u-open" | "u-close" | "strike" | "star"
@@ -168,19 +168,19 @@ export function alignedTextEdits(raw: string, origNorm: string, newNorm: string,
 
 /**
  * HWPX 문단의 바뀐 자리만 고치는 splice: hp:t 이음 글과 IR 평문을 맞대어 diff 범위를 원문 좌표로 옮긴다. 고치지 않은
- * run(굵게·색)·균등 띄어쓰기는 그대로, 서식 조각이 같은 수면 조각마다 제 run 에 쓴다. 맞대지 못하면(엔티티·탭·PUA 등) null
- * (호출자가 문단 통째 쓰기 buildParagraphSplices 로)
+ * run(굵게·색)·균등 띄어쓰기는 그대로, 서식 조각이 같은 수면 조각마다 제 run 에 쓴다. hp:t 안에 엔티티·탭 요소나 PUA 기호가 있으면
+ * 글자별 원문 범위 좌표계(paraTCharMap)로. 맞대지 못하면 null (호출자가 문단 통째 쓰기 buildParagraphSplices 로)
  */
 export function minimalTextSplices(
   para: ScanParagraph, xml: string, origPlain: string, newPlain: string, origSegs?: string[], newSegs?: string[],
 ): SpliceEdit[] | null {
   const raw = paraTText(para, xml)
-  if (raw === null) return null
-  const edits = alignedTextEdits(raw, origPlain, newPlain, origSegs, newSegs)
+  const map = raw === null || hasPua(raw) ? paraTCharMap(para, xml) : null
+  const edits = alignedTextEdits(map ? map.text : raw!, origPlain, newPlain, origSegs, newSegs)
   if (!edits || edits.length === 0) return null
   const out: SpliceEdit[] = []
   for (const e of edits) {
-    const sp = buildRangeSplices(para, xml, e.start, e.end, e.text)
+    const sp = map ? buildMappedRangeSplices(map, e.start, e.end, e.text) : buildRangeSplices(para, xml, e.start, e.end, e.text)
     if (!sp) return null
     out.push(...sp)
   }

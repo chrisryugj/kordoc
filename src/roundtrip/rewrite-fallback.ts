@@ -91,11 +91,12 @@ const unitsOf = (md: string): string[] => splitMarkdownUnits(md).map(u => u.raw)
  * 단위 원문 → 표지를 걷은 글과 글자마다의 원문 구간. # 제목 머리·** 굵게·태그는 두 파서가 달리 달고, 띄어쓰기도 다르다(HWP 는
  * 균등 배분 글자 "재 무 상 태 표" 를 붙여 낸다) — 이것들은 글로 치지 않는다
  */
-interface Plain { text: string; at: number[]; to: number[] }
+interface Plain { text: string; at: number[]; to: number[]; head: number }
 function plainOf(raw: string): Plain {
   let text = ""
   const at: number[] = [], to: number[] = []
-  let i = /^#{1,6} /.exec(raw)?.[0].length ?? 0
+  const head = /^#{1,6} /.exec(raw)?.[0].length ?? 0
+  let i = head
   while (i < raw.length) {
     const tag = raw[i] === "<" ? /^<\/?[a-zA-Z][^<>]*>/.exec(raw.slice(i, i + 300)) : null
     if (tag) { i += tag[0].length; continue }
@@ -106,11 +107,16 @@ function plainOf(raw: string): Plain {
     at.push(i); to.push(i + n)
     i += n
   }
-  return { text, at, to }
+  return { text, at, to, head }
 }
 
 /** 옮기지 않는 자리 — 굵게·태그 경계, 줄, GFM 칸 경계 */
 const BOUNDARY = /\*\*|<\/?[a-zA-Z]|\n|(?<!\\)\|/
+/** 줄·칸 경계 — 표지 대조로도 옮기지 않는다 */
+const STRUCT = /\n|(?<!\\)\||<br\s*\/?>/i
+/** 굵게·태그 표지 (역슬래시 이스케이프 글자는 건너뛴다 — plainOf 와 같은 읽기) */
+const MARK_RE = /\\[\s\S]|\*\*|<\/?[a-zA-Z][^<>]*>/g
+const marksOf = (x: string): string => (x.match(MARK_RE) ?? []).filter(m => m[0] !== "\\").join(" ")
 
 /**
  * 고친 단위의 글 차이만 바꾼 판 단위에 옮긴다 — 바뀐 자리(앞 공통부 끝 ~ 뒤 공통부 시작, 그 사이 띄어쓰기 포함)를 편집본의 같은
@@ -126,8 +132,18 @@ function transplant(b: string, e: string, t: string): string | null {
   const span = (q: Plain): [number, number] => [p > 0 ? q.to[p - 1] : q.at[0], s > 0 ? q.at[q.at.length - s] : q.to[q.at.length - 1]]
   const [ts, te] = span(pt), [es, ee] = span(pe)
   const put = e.slice(es, ee)
-  if (BOUNDARY.test(t.slice(ts, te)) || BOUNDARY.test(put)) return null
-  return t.slice(0, ts) + put + t.slice(te)
+  if (!BOUNDARY.test(t.slice(ts, te)) && !BOUNDARY.test(put)) return t.slice(0, ts) + put + t.slice(te)
+  // 표지가 걸리면 단위 끝까지 넓힌 자리로 — 편집이 굵게·태그 표지를 그대로 두었을 때만, 바꾼 판 자리에 같은 표지가 있으면 그대로,
+  // 표지가 없으면 걷어서 옮긴다 ("**제목** 수정" 처럼 굵은 글 뒤에 붙인 글. 두 파서가 다 굵게를 달면 종전엔 늘 견본으로 갔다)
+  const wide = (q: Plain, raw: string): [number, number] => [p > 0 ? q.to[p - 1] : q.head, s > 0 ? q.at[q.at.length - s] : raw.length]
+  const [ws, we] = wide(pt, t), [xs, xe] = wide(pe, e), [bs, be] = wide(pb, b)
+  const wput = e.slice(xs, xe), treg = t.slice(ws, we)
+  if (STRUCT.test(wput) || STRUCT.test(treg)) return null
+  const mb = marksOf(b.slice(bs, be)), me = marksOf(wput), mt = marksOf(treg)
+  if (me !== mb) return null
+  if (mt === mb) return t.slice(0, ws) + wput + t.slice(we)
+  if (mt === "") return t.slice(0, ws) + wput.replace(MARK_RE, m => m[0] === "\\" ? m : "") + t.slice(we)
+  return null
 }
 
 /** 편집(base → edited)을 바꾼 판 parse(target) 위로 옮긴다. 편집된 단위를 바꾼 판에서 못 찾거나 못 옮기면 null */

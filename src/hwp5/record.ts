@@ -407,6 +407,10 @@ export interface ParaTextState {
   scriptAt?: (pos: number) => ScriptKind | null
   /** 지금 열린 첨자 태그 */
   script?: ScriptKind | null
+  /** 글자 위치(문단 WCHAR 순번)의 강조 키(굵게·기울임·취소선·밑줄 비트) — 있으면 보이는 글자마다 키가 바뀌는 자리를
+   *  emphRuns 에 [state.text 위치, 키] 로 적는다(본문 파서가 인라인 강조 span 을 만든다) */
+  emphAt?: (pos: number) => number
+  emphRuns?: Array<[number, number]>
   /** 앞 PARA_TEXT 레코드까지의 WCHAR 수 — 글자 모양 위치는 문단 전체 기준 */
   wpos?: number
 }
@@ -492,6 +496,10 @@ export function appendParaText(state: ParaTextState, data: Buffer, resolveContro
 
   while (i + 1 < data.length) {
     const ch = data.readUInt16LE(i)
+    if (state.emphAt && ch >= 0x0020) {
+      const key = state.emphAt(wbase + i / 2), runs = (state.emphRuns ??= [])
+      if (runs.length === 0 || runs[runs.length - 1][1] !== key) runs.push([base + result.length, key])
+    }
     if (state.scriptAt) setScript(ch >= 0x0020 ? state.scriptAt(wbase + i / 2) : null)
     i += 2
 

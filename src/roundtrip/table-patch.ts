@@ -16,7 +16,7 @@ import {
 } from "./source-map.js"
 import {
   normForMatch, sanitizeText, escapeGfm, unescapeGfm, summarize,
-  replicateGfmTable, parseGfmTable, unescapeGfmCell,
+  replicateGfmTable, parseGfmTable, unescapeGfmCell, isInlineColumnTable, replicateColumnTable,
   replicateHtmlTable, replicateTableToHtml, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   type MdUnit, type HtmlRowInfo, type MappedCell,
 } from "./markdown-units.js"
@@ -321,7 +321,7 @@ export function patchTextChunkTable(
   table: IRTable, scanTable: ScanTable, orig: MdUnit, edited: MdUnit, ctx: TablePatchCtx,
   skip: (reason: string) => number,
 ): number {
-  if (table.rows === 1 && table.cols === 1) {
+  if (table.rows === 1 && table.cols === 1 && !isInlineColumnTable(table)) {
     // builder 1x1 경로 재현 (라인별 장식 포함, 유닛 분할 시 트림됨)
     const content = sanitizeText(table.cells[0][0].text)
     const replicaLines = content.split(/\n/).map(line => {
@@ -342,13 +342,10 @@ export function patchTextChunkTable(
     return applyCellEdit(table, scanTable, 0, 0, newLines, ctx, orig.raw, edited.raw, orig.lines.length)
   }
 
-  if (table.cols === 1 && table.rows >= 2) {
-    // builder 1열 다행 경로 재현 — 칸 안 줄바꿈도 줄로 따로 낸다(v4.12.1, 별지서식 1열 틀 표). 줄마다 격자 행을 기록한다.
-    // 종전엔 칸 줄을 공백으로 이어 여러 줄 칸이 든 표(제목 상자 등)를 늘 "재현 불일치"로 건너뛰었다
-    const replica: { line: string; gridR: number }[] = []
-    for (let r = 0; r < table.rows; r++) {
-      for (const line of escapeGfm(sanitizeText(table.cells[r][0].text)).split("\n").map(l => l.trim()).filter(Boolean)) replica.push({ line, gridR: r })
-    }
+  if (table.cols === 1) {
+    // builder 1열 경로 재현 — 칸 안 줄바꿈도 줄로 따로(v4.12.1), 칸에 강조 span·그림이 있으면 칸 블록 마크다운으로. 줄마다 격자 행을
+    // 기록한다. 종전엔 칸 줄을 공백으로 이어 여러 줄 칸이 든 표(제목 상자 등)를 늘 "재현 불일치"로 건너뛰었다
+    const replica = replicateColumnTable(table)
     if (replica.map(x => x.line).join("\n") !== orig.lines.join("\n")) return skip("표 좌표 재현 불일치 — 매핑 신뢰 불가")
     if (edited.lines.length !== replica.length) return skip("표 행 추가/삭제는 미지원 (표 구조 변경)")
     let applied = 0
@@ -360,7 +357,7 @@ export function patchTextChunkTable(
         skip("셀 내 이미지 변경은 미지원")
         continue
       }
-      const newLines = after.map(l => stripCellTokens(unescapeGfm(l)).trim()).filter(Boolean)
+      const newLines = after.map(l => parseEmphasis(stripCellTokens(l)).plain.trim()).filter(Boolean)
       applied += applyCellEdit(table, scanTable, r, 0, newLines, ctx, before.join("<br>"), after.join("<br>"), before.length)
     }
     return applied

@@ -110,6 +110,29 @@ describe("원문 글로 찾아 고치기 (text-fallback)", () => {
   })
 })
 
+describe("hp:t 안 탭 요소·엔티티·PUA 기호가 든 문단 수정", () => {
+  it("굵은 run 은 그대로 두고 바뀐 자리만 쓴다 — 탭 요소·엔티티", async () => {
+    const src = await withSection("첫 문단\n\n앞 글 A&B **굵은 글** 뒤 글\n\n끝 문단", x => x.replace(">앞 글", '><hp:tab width="4000" leader="0" type="1"/>앞 글'))
+    assert.ok((await sectionXml(src)).includes('type="1"/>앞 글 A&amp;B'))
+    const md = await markdownOf(src)
+    assert.ok(md.includes("**굵은 글** 뒤 글"), md)
+    const r = await patchHwpx(src, md.replace("뒤 글", "뒤 글 수정"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok((await markdownOf(r.data!)).includes("A&B **굵은 글** 뒤 글 수정"))
+    assert.ok((await sectionXml(r.data!)).includes('type="1"/>앞 글 A&amp;B'))
+  })
+
+  it("PUA 기호는 원문 글자 그대로, 굵은 run 도 그대로", async () => {
+    const src = await withSection("첫 문단\n\n앞 글 **굵은 글** 뒤 글\n\n끝 문단", x => x.replace(">앞 글", ">\uF0DC 앞 글"))
+    const md = await markdownOf(src)
+    assert.ok(!md.includes("\uF0DC"), "parse 는 PUA 표시값")
+    const r = await patchHwpx(src, md.replace("뒤 글", "뒤 글 수정"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok((await markdownOf(r.data!)).includes("**굵은 글** 뒤 글 수정"))
+    assert.ok((await sectionXml(r.data!)).includes("\uF0DC 앞 글"))
+  })
+})
+
 describe("새로쓰기 대체본 (rewrite-fallback)", () => {
   it("글을 반영 못 한 건너뜀이 있을 때만 대체본이 필요하다", () => {
     assert.equal(needsRewrite({ success: true, data: new Uint8Array(1), applied: 1, skipped: [] }), false)
@@ -126,6 +149,14 @@ describe("새로쓰기 대체본 (rewrite-fallback)", () => {
     const target = "**공고 제1호**\n\n**재 무 상 태 표**\n\n지울 문단\n\n본문 끝"
     assert.equal(rebaseEdits(base, "### 공고 제2호\n\n# 재무상태표 수정\n\n본문 끝\n\n새 문단", target),
       "**공고 제2호**\n\n**재 무 상 태 표 수정**\n\n본문 끝\n\n새 문단")
+  })
+
+  it("굵은 글 뒤에 붙인 글 — 바꾼 판에 같은 굵게가 있으면 그 밖에, 없으면 표지를 걷어 옮긴다", () => {
+    assert.equal(rebaseEdits("**□ 행사개요**\n\n본문", "**□ 행사개요** 수정\n\n본문", "**□ 행사개요**\n\n본문"), "**□ 행사개요** 수정\n\n본문")
+    assert.equal(rebaseEdits("**□ 행사개요**\n\n본문", "**□ 행사개요** 수정\n\n본문", "□ 행사개요\n\n본문"), "□ 행사개요 수정\n\n본문")
+    assert.equal(rebaseEdits("가 **나** 다", "가 **나** 새 다", "가 **나** 다"), "가 **나** 새 다")
+    // 표지를 바꾼 편집(새 글을 굵게)은 옮기지 않는다 — 견본으로
+    assert.equal(rebaseEdits("**가**\n\n본문", "**가** **새**\n\n본문", "**가**\n\n본문"), null)
   })
 
   it("바뀐 자리가 굵게·칸 경계를 가로지르거나 바꾼 판에서 짝을 못 찾으면 옮기지 않는다", () => {

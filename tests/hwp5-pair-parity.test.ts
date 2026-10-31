@@ -335,3 +335,26 @@ describe("이미지 형식 판별 — 한컴 BinData WMF(배치 헤더 없음)·
     assert.equal(detectImageMime(Buffer.from([0x01, 0x00, 0x00, 0x00])), "image/emf")
   })
 })
+
+describe("인라인 강조 span — HWPX run-spans 와 같은 판정 (글자 모양 굵게·밑줄)", () => {
+  const docInfo = {
+    charShapes: [{ fontSize: 100, attrFlags: 0 }, { fontSize: 100, attrFlags: 0x02 }, { fontSize: 100, attrFlags: 1 << 2 }],
+    paraShapes: [], styles: [], binData: [], numberings: [], bullets: [], borderEdges: [],
+  } as unknown as Parameters<typeof parseSection>[1]
+  const para = (text: string, runs: Array<[number, number]>): Buffer[] => {
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return [rec(TAG_PARA_HEADER, 0, paraHeaderData()), rec(TAG_PARA_TEXT, 1, utf16(text)), rec(0x44, 1, cs)]
+  }
+  const parseWith = (bufs: Buffer[]) => parseSection(readRecords(Buffer.concat(bufs)), docInfo, [], 1, createHwp5DocState())
+
+  it("문단 안 굵게·밑줄 조각을 span 으로 — 마크다운 ** · <u>", () => {
+    const blocks = parseWith(para("성명 홍길동 확인", [[0, 0], [3, 1], [6, 0], [7, 2]]))
+    assert.deepEqual(blocks[0].spans, [{ text: "성명 " }, { text: "홍길동", bold: true }, { text: " " }, { text: "확인", underline: true }])
+    assert.equal(blocksToMarkdown(blocks).trim(), "성명 **홍길동** <u>확인</u>")
+  })
+
+  it("강조 없는 문단은 span 없이 평문", () => {
+    assert.equal(parseWith(para("평문 문단", [[0, 0]]))[0].spans, undefined)
+  })
+})

@@ -33,14 +33,14 @@ import {
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
-  splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize,
+  splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   AUTONUM_PREFIX_RE, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
 } from "./markdown-units.js"
 import { stripCellTokens, extractCellTokens, extractImgTags } from "./table-patch.js"
 import { replaceOleStream } from "./ole-surgeon.js"
-import { alignedTextEdits } from "./inline-edit.js"
+import { alignedTextEdits, parseEmphasis } from "./inline-edit.js"
 
 const require = createRequire(import.meta.url)
 const CFB: CfbModule = require("cfb")
@@ -774,7 +774,7 @@ function patchGfmCells(
         const para = cell.paras[0]
         if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); continue }
         if (afterEach.some(l => sanitizeText(l!) !== l)) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); continue }
-        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg)
+        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before) // 바뀐 자리만 — 굵은 조각 등 run 유지
         continue
       }
       if (beforeParts.length !== cell.paras.length || afterParts.length !== cell.paras.length) {
@@ -789,7 +789,7 @@ function patchGfmCells(
         const para = cell.paras[k]
         if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); break }
         if (sanitizeText(after) !== after) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); break }
-        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg)
+        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before) // 바뀐 자리만 — 굵은 조각 등 run 유지
       }
     }
   }
@@ -866,7 +866,7 @@ function patchTextChunk5(
   table: IRTable, scanTable: ScanTable5, orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5,
   skip: (reason: string) => number,
 ): number {
-  if (table.rows === 1 && table.cols === 1) {
+  if (table.rows === 1 && table.cols === 1 && !isInlineColumnTable(table)) {
     // builder 1x1 경로 재현 (라인별 장식 포함, 유닛 분할 시 트림됨)
     const content = sanitizeText(table.cells[0][0].text)
     const replicaLines = content.split(/\n/).map(line => {
@@ -886,12 +886,9 @@ function patchTextChunk5(
     return applyCellEdit5(table, scanTable, 0, 0, newLines, ctx, orig.raw, edited.raw, orig.lines.length)
   }
 
-  if (table.cols === 1 && table.rows >= 2) {
-    // builder 1열 다행 경로 재현 — 칸 안 줄바꿈도 줄로 따로 낸다(v4.12.1). 줄마다 격자 행을 기록 (HWPX patchTextChunkTable 과 같다)
-    const replica: { line: string; gridR: number }[] = []
-    for (let r = 0; r < table.rows; r++) {
-      for (const line of escapeGfm(sanitizeText(table.cells[r][0].text)).split("\n").map(l => l.trim()).filter(Boolean)) replica.push({ line, gridR: r })
-    }
+  if (table.cols === 1) {
+    // builder 1열 경로 재현 — HWPX patchTextChunkTable 과 같다 (칸 줄마다 격자 행, 강조 span 칸은 칸 블록 마크다운)
+    const replica = replicateColumnTable(table)
     if (replica.map(x => x.line).join("\n") !== orig.lines.join("\n")) return skip("표 좌표 재현 불일치 — 매핑 신뢰 불가")
     if (edited.lines.length !== replica.length) return skip("표 행 추가/삭제는 미지원 (표 구조 변경)")
     let applied = 0
@@ -903,7 +900,7 @@ function patchTextChunk5(
         skip("셀 내 이미지 변경은 미지원")
         continue
       }
-      const newLines = after.map(l => stripCellTokens(unescapeGfm(l)).trim()).filter(Boolean)
+      const newLines = after.map(l => parseEmphasis(stripCellTokens(l)).plain.trim()).filter(Boolean)
       applied += applyCellEdit5(table, scanTable, r, 0, newLines, ctx, before.join("<br>"), after.join("<br>"), before.length)
     }
     return applied
@@ -978,14 +975,13 @@ function applyCellEdit5(
 
 /** GFM 셀 마크다운 → 평문. 굵게 래핑(**…**)은 벗기되 내부 서식은 미지원(null) */
 function gfmCellToPlain(md: string): string | null {
-  let t = md.trim()
-  const bold = t.match(/^\*\*([\s\S]+)\*\*$/)
-  if (bold) t = bold[1]
-  if (/[*`]|!\[|\]\(/.test(t)) return null
-  // '<'는 HTML 태그/autolink 시작(뒤에 영문자·'/')일 때만 서식으로 간주.
+  const t = md.trim()
+  if (/!\[|\]\(/.test(t)) return null
+  // '<'는 HTML 태그/autolink 시작(뒤에 영문자·'/')일 때만 서식으로 간주 — 밑줄 <u> 는 강조 표지다.
   // 통계표의 부등호 셀("<0.01", "≤5") 등 평문 '<'는 허용. ('<br>'은 줄바꿈 셀로 별도 게이트가 처리)
-  if (/<(?!br\s*\/?>)[a-zA-Z/]/i.test(t)) return null
-  return unescapeGfm(unescapeGfmCell(t))
+  if (/<(?!br\s*\/?>|\/?u>)[a-zA-Z/]/i.test(t)) return null
+  // 강조 표지(파서가 칸 글자 모양으로 단 ** · * · ~~ · <u>)는 걷고 역이스케이프한다 — PARA_TEXT 에 없는 표기
+  return t.split(/(?<!\\)<br\s*\/?>/i).map(l => parseEmphasis(l).plain).join("\n")
 }
 
 // ─── 바이너리 패치 스테이징 ──────────────────────────

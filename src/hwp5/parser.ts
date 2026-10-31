@@ -373,6 +373,7 @@ function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo, tocTexts?: S
     if (level > 0) {
       block.type = "heading"
       block.level = level
+      delete block.spans // 제목은 강조 표지 없이 (HWPX 와 같다)
     }
   }
 }
