@@ -31,13 +31,13 @@ import { stripHeadMarker, stripShownHeadMarker, noScriptTags,
   alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
 } from "./markdown-units.js"
-import { patchGfmTable, patchHtmlTable, patchTextChunkTable } from "./table-patch.js"
+import { patchGfmTable, patchHtmlTable, patchTextChunkTable, EMPHASIS_NOTE } from "./table-patch.js"
 import { appendBorderFills, createBorderVariants, type BorderVariants } from "./border-variants.js"
 import { collectMaxNumericId, injectCellBorderFill, buildTableParagraphXml } from "./table-insert.js"
 import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import { detectFormat } from "../detect.js"
 import { patchHwp } from "./hwp5-patch.js"
-import { parseEmphasis, styledInline, minimalTextSplices, flagsPerChar, commonEnds, type InsertStyle } from "./inline-edit.js"
+import { parseEmphasis, styledInline, minimalTextSplices, flagsPerChar, restyledKept, type InsertStyle } from "./inline-edit.js"
 import { charPrBook, type CharPrBook } from "./char-pr.js"
 import { clickHereEditSplices } from "../form/click-here.js"
 import { lineBreakTextSplices } from "./line-break-edit.js"
@@ -739,18 +739,9 @@ function patchParagraphUnit(
   // 강조가 바뀐 편집인데 새 글 서식을 못 맞췄거나(좌표·글자 모양) 바뀐 자리 밖 글의 강조를 바꿨으면 부분 적용으로 알린다
   if (origInline.segs.length !== newInline.segs.length
     && (!minimal || !style || style.missed || restyledKept(origInline, newInline, origInline.plain, newInline.plain))) {
-    ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
+    ctx.skipped.push({ reason: EMPHASIS_NOTE, before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
   }
   return 1
-}
-
-/** 바뀐 자리 밖(공통 앞·뒤) 글의 강조가 달라졌는가 — 그 강조 추가·삭제는 글자 모양을 못 바꿔 부분 적용으로 알린다 */
-export function restyledKept(o: { segs: string[]; flags: number[] }, n: { segs: string[]; flags: number[] }, oPlain: string, nPlain: string): boolean {
-  const of = flagsPerChar(o.segs, o.flags), nf = flagsPerChar(n.segs, n.flags)
-  const { p, s } = commonEnds(oPlain, nPlain)
-  for (let i = 0; i < p; i++) if (of[i] !== nf[i]) return true
-  for (let i = 1; i <= s; i++) if (of[of.length - i] !== nf[nf.length - i]) return true
-  return false
 }
 
 /** 강제 줄바꿈 문단: 마크다운 줄을 "\n" 으로 이은 평문끼리 diff 해 줄바꿈 요소를 지키며 고친다. 줄바꿈을 늘리고 줄여도 된다 */

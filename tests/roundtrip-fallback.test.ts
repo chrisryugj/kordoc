@@ -166,6 +166,20 @@ describe("붙인 글의 서식은 마크다운대로", () => {
     assert.ok((await markdownOf(r.data!)).includes(want), await markdownOf(r.data!))
   })
 
+  const PAIRS = join(import.meta.dirname, "..", "bench", "corpus", "pairs")
+  const p01 = existsSync(PAIRS) ? readdirSync(PAIRS).find(f => f.startsWith("pair01-") && f.endsWith(".hwpx")) : undefined
+  it("HTML 표 칸에 쓴 강조 표지는 글자로 박히지 않고 굵은 글자 모양으로 (코퍼스)", { skip: !p01 }, async () => {
+    const src = new Uint8Array(readFileSync(join(PAIRS, p01!)))
+    const md = await markdownOf(src)
+    const cell = "<td>본인 확인, 자문위원 연임 확인, 범죄경력 조회</td>"
+    assert.ok(md.includes(cell), "코퍼스 문서 꼴이 바뀜")
+    const r = await patchHwpx(src, md.replace(cell, "<td>본인 확인, **강조** 자문위원 연임 확인, 범죄경력 조회</td>"))
+    assert.equal(r.applied, 1)
+    const xml = await sectionXml(r.data!)
+    assert.ok(!xml.includes("**강조**"), "표지가 글자로 박힘")
+    assert.match(xml, /<hp:run charPrIDRef="\d+"><hp:t>강조<\/hp:t><\/hp:run>/)
+  })
+
   const SUP = join(import.meta.dirname, "..", "bench", "corpus", "korea-kr")
   const supFile = existsSync(SUP) ? readdirSync(SUP).find(f => f.startsWith("156765974_") && f.endsWith(".hwpx")) : undefined
   it("위첨자 끝에 붙인 글은 위첨자가 되지 않는다 (코퍼스)", { skip: !supFile }, async () => {

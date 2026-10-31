@@ -28,7 +28,7 @@ import {
 } from "../hwp5/record.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, restyledKept, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
+  buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
 } from "./patcher.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
@@ -38,10 +38,10 @@ import {
   stripHeadMarker, stripShownHeadMarker, noScriptTags, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
 } from "./markdown-units.js"
-import { stripCellTokens, extractCellTokens, extractImgTags } from "./table-patch.js"
+import { stripCellTokens, extractCellTokens, extractImgTags, cellStyledLines, cellEmphasisMissed, EMPHASIS_NOTE } from "./table-patch.js"
 import { hwpCharBook, cellLineStyles, type HwpCharBook, type HwpInsertStyle } from "./hwp5-char-shape.js"
 import { replaceOleStream } from "./ole-surgeon.js"
-import { parseEmphasis, styledInline, flagsPerChar } from "./inline-edit.js"
+import { parseEmphasis, styledInline, flagsPerChar, restyledKept } from "./inline-edit.js"
 import { stageParaPatch } from "./hwp5-para-stage.js"
 
 export { splitParaText } from "./hwp5-para-stage.js"
@@ -791,7 +791,7 @@ function patchParagraph(
   const n = stageParaPatch(ctx.scans[mapping.para.sectionIndex], mapping.para, newPlain, skip, ctx.keepLineseg, origMd, style)
   // 맞는 글자 모양을 못 구했거나, 바뀐 자리 밖 글의 강조를 바꾼 편집(그 글자 모양은 안 고친다) — HWPX 와 같다
   if (n && (style?.missed || (style && restyledKept(origStyled, editedStyled, origStyled.plain, editedStyled.plain)))) {
-    ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
+    ctx.skipped.push({ reason: EMPHASIS_NOTE, before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
   }
   return n
 }
@@ -937,9 +937,9 @@ function patchHtmlCells5Raw(
           }
         }
       }
-      // 텍스트 라인 변경 (중첩표/이미지 제외분)
+      // 텍스트 라인 변경 (중첩표/이미지 제외분) — 강조 표지는 걷는다(글자로 박히지 않게, 서식은 applyCellEdit5 가 줄마다 맞춘다)
       if (origContent.lines.join("\n") !== editedContent.lines.join("\n")) {
-        const newLines = editedContent.lines.map(l => unescapeGfm(l))
+        const newLines = editedContent.lines.map(l => styledInline(l).plain)
         applied += applyCellEdit5(table, scanTable, oc.gridR!, oc.gridC!, newLines, ctx, oc.inner, ec.inner, origContent.lines.length)
       }
     }
@@ -1054,12 +1054,17 @@ function applyCellEdit5(
   }
   // 바뀐 자리만 고친다(칸 안 굵은 조각 등 글자 모양 run 유지) — 새 글은 그 줄 마크다운 서식대로
   const styleFor = cellLineStyles(before, after, ctx.charBook)
-  let staged = 0
+  const beforeStyled = cellStyledLines(before), afterStyled = cellStyledLines(after)
+  let staged = 0, emphMissed = false
   for (let i = 0; i < targets.length; i++) {
     if (assigned[i] === targets[i].rawText || normForMatch(assigned[i]) === normForMatch(targets[i].rawText)) continue
-    staged += stageParaPatch(ctx.scans[targets[i].sectionIndex], targets[i], assigned[i], skip, ctx.keepLineseg,
-      normForMatch(targets[i].rawText), styleFor(i, assigned[i]))
+    const style = styleFor(i, assigned[i])
+    const n = stageParaPatch(ctx.scans[targets[i].sectionIndex], targets[i], assigned[i], skip, ctx.keepLineseg,
+      normForMatch(targets[i].rawText), style)
+    staged += n
+    if (n && cellEmphasisMissed(beforeStyled[i], afterStyled[i], style, true)) emphMissed = true
   }
+  if (staged && emphMissed) ctx.skipped.push({ reason: EMPHASIS_NOTE, before: summarize(before), after: summarize(after), partial: true })
   return staged > 0 ? 1 : 0
 }
 

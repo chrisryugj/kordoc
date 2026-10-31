@@ -166,6 +166,15 @@ export function commonEnds(a: string, b: string): { p: number; s: number } {
   return { p, s }
 }
 
+/** 바뀐 자리 밖(공통 앞·뒤) 글의 강조가 달라졌는가 — 그 강조 추가·삭제는 글자 모양을 못 바꿔 부분 적용으로 알린다 */
+export function restyledKept(o: { segs: string[]; flags: number[] }, n: { segs: string[]; flags: number[] }, oPlain: string, nPlain: string): boolean {
+  const of = flagsPerChar(o.segs, o.flags), nf = flagsPerChar(n.segs, n.flags)
+  const { p, s } = commonEnds(oPlain, nPlain)
+  for (let i = 0; i < p; i++) if (of[i] !== nf[i]) return true
+  for (let i = 1; i <= s; i++) if (of[of.length - i] !== nf[nf.length - i]) return true
+  return false
+}
+
 /**
  * 낱말 LCS 로 나눈 diff 덩어리 — a 좌표 범위 [s, e) 와 b 의 글(b 의 t 자리부터). 덩어리마다 글자 단위로 앞뒤 공통을 깎는다: tailFirst 면
  * 꼬리부터(낱말을 덧붙인 덩어리 " " → " 고침 " 이 앞 낱말 끝에 붙게 — 문단 묶음 글 찾기), 아니면 앞부터(commonEnds 와 같은 자리)

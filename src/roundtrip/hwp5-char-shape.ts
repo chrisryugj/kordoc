@@ -7,8 +7,8 @@
 
 import { TAG_DOC_CHAR_SHAPE } from "../hwp5/record.js"
 import { hasRealStrike, hasRealUnderline } from "../hwp5/body.js"
-import { EMPH_BOLD, EMPH_ITALIC, EMPH_STRIKE, EMPH_UNDERLINE, EMPH_SUP, EMPH_SUB, styledInline, flagsPerChar } from "./inline-edit.js"
-import { stripCellTokens } from "./table-patch.js"
+import { EMPH_BOLD, EMPH_ITALIC, EMPH_STRIKE, EMPH_UNDERLINE, EMPH_SUP, EMPH_SUB, flagsPerChar } from "./inline-edit.js"
+import { cellStyledLines } from "./table-patch.js"
 
 /** CHAR_SHAPE 속성 u32 위치 (글꼴 id 7×2 · 장평·자간·상대 크기·위치 7×1 씩 · 기준 크기 4 뒤) */
 const ATTR = 46
@@ -143,8 +143,7 @@ export function restyleInserted(
  */
 export function cellLineStyles(before: string, after: string, book: HwpCharBook | undefined): (i: number, text: string) => HwpInsertStyle | undefined {
   if (!book) return () => undefined
-  const lines = (md: string) => md.split(/\n|(?<!\\)<br\s*\/?>/i).map(l => styledInline(stripCellTokens(l))).filter(l => l.plain.trim())
-  const a = lines(after), b = lines(before)
+  const a = cellStyledLines(after), b = cellStyledLines(before)
   return (i, text) => {
     const st = a[i]
     if (!st || !b[i] || st.plain.trim() !== text) return undefined

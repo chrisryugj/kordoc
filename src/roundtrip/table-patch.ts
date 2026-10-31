@@ -22,7 +22,7 @@ import {
 } from "./markdown-units.js"
 import { patchTableRows, type InsertCell } from "./table-rows.js"
 import { buildEmbeddedLineSplices } from "./embedded-line-patch.js"
-import { minimalTextSplices, parseEmphasis, styledInline, flagsPerChar, type InsertStyle } from "./inline-edit.js"
+import { minimalTextSplices, styledInline, flagsPerChar, restyledKept, type InsertStyle } from "./inline-edit.js"
 import type { CharPrBook } from "./char-pr.js"
 import { isDatePlaceholder } from "../form/recognize.js"
 import { hasInlineCellBlocks } from "../table/builder.js"
@@ -92,9 +92,6 @@ function patchGfmRowPair(
     const newLines = gfmCellLines(editedRows[er][c])
     const origLines = gfmCellLines(origRows[r][c])
     const n = applyCellEdit(table, scanTable, gridR, gridC, newLines, ctx, origRows[r][c], editedRows[er][c], origLines.length)
-    if (n > 0 && gfmCellMarks(origRows[r][c]) !== gfmCellMarks(editedRows[er][c])) {
-      ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(origRows[r][c]), after: summarize(editedRows[er][c]), partial: true })
-    }
     if (n > 0 && origTokens) {
       ctx.skipped.push({
         reason: "셀 내 이미지·텍스트 혼재 — 텍스트만 적용 (이미지 인접 배치는 <br> 분리로 재현됨)",
@@ -112,10 +109,21 @@ function gfmCellLines(md: string): string[] {
   return stripCellTokens(md).split(/(?<!\\)<br\s*\/?>/i).map(l => styledInline(l).plain.trim()).filter(Boolean)
 }
 
-/** GFM 칸의 강조 조각 수 — 편집 전후가 다르면 강조를 더하거나 뺀 것 */
-function gfmCellMarks(md: string): number {
-  return stripCellTokens(md).split(/(?<!\\)<br\s*\/?>/i).reduce((n, l) => n + parseEmphasis(l).marks.filter(Boolean).length, 0)
+/** 칸 마크다운 → 줄(<br>·줄바꿈)마다 강조 표지·첨자 태그를 걷은 평문과 서식 비트 (빈 줄 제외) — 새 글 서식과 강조 변경 알림의 줄 단위 */
+export function cellStyledLines(md: string): Array<{ plain: string; segs: string[]; flags: number[] }> {
+  return md.split(/\n|(?<!\\)<br\s*\/?>/i).map(l => styledInline(stripCellTokens(l))).filter(l => l.plain.trim())
 }
+
+/** 칸 줄의 강조가 바뀌었는데 새 글 서식을 못 맞췄거나(좌표·글자 모양) 바뀐 자리 밖 글의 강조를 바꿨는가 — 부분 적용으로 알린다 */
+export function cellEmphasisMissed(
+  b: { plain: string; segs: string[]; flags: number[] } | undefined, a: { plain: string; segs: string[]; flags: number[] } | undefined,
+  style: { missed?: number } | undefined, applied: boolean,
+): boolean {
+  if (!b || !a || b.segs.length === a.segs.length && b.flags.every((f, k) => f === a.flags[k])) return false
+  return !applied || !style || !!style.missed || restyledKept(b, a, b.plain, a.plain)
+}
+
+export const EMPHASIS_NOTE = "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지"
 
 /** GFM 표 행 추가/삭제 — table-rows 엔진에 GFM 도메인을 연결 */
 function patchGfmTableRows(
@@ -246,9 +254,9 @@ function patchHtmlRowPair(
         applied += patchNestedTables(table, scanTable, oc, origTables, editedTables, ctx, skip, depth)
       }
     }
-    // 텍스트 라인 변경 (중첩표/이미지 제외분)
+    // 텍스트 라인 변경 (중첩표/이미지 제외분) — 강조 표지는 걷는다(글자로 박히지 않게, 서식은 applyCellEdit 가 줄마다 맞춘다)
     if (origContent.lines.join("\n") !== editedContent.lines.join("\n")) {
-      const newLines = editedContent.lines.map(l => unescapeGfm(l))
+      const newLines = editedContent.lines.map(l => styledInline(l).plain)
       applied += applyCellEdit(table, scanTable, oc.gridR!, oc.gridC!, newLines, ctx, oc.inner, ec.inner, origContent.lines.length)
     }
   }
@@ -452,9 +460,11 @@ export function applyCellEdit(
     if (done !== null) return done
   }
 
+  let emphMissed = false
   if (nonEmpty.length === 0) {
-    // 빈 셀에 텍스트 채우기 — 첫 문단에 삽입
+    // 빈 셀에 텍스트 채우기 — 첫 문단에 삽입 (새 글 서식은 맞추지 못한다 — 강조를 썼으면 알린다)
     if (newLines.length === 0) return 0
+    emphMissed = cellStyledLines(after).some(l => l.flags.some(Boolean))
     const target = cell.paragraphs[0]
     if (!target) return skip("빈 셀에 문단이 없어 텍스트 삽입 불가")
     const value = newLines.join(" ")
@@ -487,9 +497,8 @@ export function applyCellEdit(
   } else {
     // 새 글을 마크다운 서식대로 — 편집 칸 줄마다 서식 비트(강조·첨자). 줄이 문단 글과 같을 때만 (본문 문단과 같은 InsertStyle)
     const book = ctx.charBook
-    const linesOf = (md: string) => md.split(/\n|(?<!\\)<br\s*\/?>/i).map(l => styledInline(stripCellTokens(l))).filter(l => l.plain.trim())
-    const afterStyled = book ? linesOf(after) : []
-    const beforeStyled = book ? linesOf(before) : []
+    const afterStyled = cellStyledLines(after)
+    const beforeStyled = cellStyledLines(before)
     // 보이는 서식 비트는 그 줄(문단) 것만 — 칸 문단은 통째 굵으면 표지를 숨긴다(혼합 가드). 칸 전체로 모으면 옆 줄의 굵게 때문에
     // 표지 없는 굵은 줄에 붙인 글을 굵게 빼 버렸다
     const styleFor = (i: number, text: string): InsertStyle | undefined => {
@@ -524,10 +533,12 @@ export function applyCellEdit(
       // 날짜 자리표시 칸("     년   월 -     년   월")의 앞뒤·사이 공백은 값이 들어갈 빈칸이라 남기지 않고 글 전체를 바꾼다 (#151)
       const xml = ctx.scans[nonEmpty[i].sectionIndex]?.xml
       const placeholderRaw = xml && isDatePlaceholder(nonEmpty[i].text) ? paraTText(nonEmpty[i], xml) : null
+      const style = styleFor(i, assigned[i])
+      const minimal = placeholderRaw === null && xml ? minimalTextSplices(nonEmpty[i], xml, normForMatch(nonEmpty[i].text), assigned[i], undefined, undefined, style) : null
       const sp = (placeholderRaw !== null ? buildRangeSplices(nonEmpty[i], xml!, 0, placeholderRaw.length, assigned[i]) : null)
-        ?? (xml ? minimalTextSplices(nonEmpty[i], xml, normForMatch(nonEmpty[i].text), assigned[i], undefined, undefined, styleFor(i, assigned[i])) : null)
-        ?? buildParagraphSplices(nonEmpty[i], assigned[i], xml)
+        ?? minimal ?? buildParagraphSplices(nonEmpty[i], assigned[i], xml)
       if (sp === null) return skip("셀 문단에 텍스트 노드를 만들 수 없음")
+      if (cellEmphasisMissed(beforeStyled[i], afterStyled[i], style, !!minimal)) emphMissed = true
       splices.push(...sp)
       sectionIndex = nonEmpty[i].sectionIndex
     }
@@ -535,5 +546,6 @@ export function applyCellEdit(
 
   if (splices.length === 0) return 0
   ctx.sectionSplices[sectionIndex].push(...splices)
+  if (emphMissed) ctx.skipped.push({ reason: EMPHASIS_NOTE, before: summarize(before), after: summarize(after), partial: true })
   return 1
 }
