@@ -927,7 +927,11 @@ export function removeHeaderFooterBlocks(
     // tables: 괘선 상자로 찍은 머리말(시험지 "2 | 홀수형", 교재 짝수 쪽 장 제목)만 — 빈 칸을 뺀 칸 글로 같은 반복 규칙을 탄다.
     // 띠 안에 통째로 들어야 하므로(아래 영역 판정) 쪽을 넘는 본문 표·표 머리 행은 걸리지 않는다. 쪽 넘김 표 병합 뒤에 따로 부른다 —
     // 먼저 지우면 상자 쪽번호("- | 1 -")가 갈라 두던 이웃 쪽 카드뉴스 표 둘이 한 표로 이어진다(의료방사선 보도자료)
-    const text = !tables ? b.text?.trim() : b.type === "table" && b.table ? b.table.cells.flat().map(c => c.text.trim()).filter(Boolean).join(" | ") : undefined
+    // 한 줄 머리말 상자(칸 넷 이하·쪽 높이 5% 이하)는 칸 순서를 맞대지 않는다 — 짝·홀 쪽 머리 상자는 칸이 좌우로 뒤집힌다
+    // ("2 | (화법과 작문) | 홀수형" · "홀수형 | (화법과 작문) | 3", 같은 꼴이 쪽마다 둘 이하로 갈려 되풀이로 안 잡혔다)
+    const cellTexts = b.type === "table" && b.table ? b.table.cells.flat().map(c => c.text.trim()).filter(Boolean) : []
+    const headBox = cellTexts.length <= 4 && !!b.bbox && b.bbox.height <= (pageHeights.get(b.bbox.page) ?? Infinity) * 0.05
+    const text = !tables ? b.text?.trim() : cellTexts.length ? (headBox ? [...cellTexts].sort() : cellTexts).join(" | ") : undefined
     if (!b.bbox || !b.pageNumber || !text) continue
     const ph = pageHeights.get(b.bbox.page) || pageHeights.get(b.pageNumber)
     if (!ph) continue

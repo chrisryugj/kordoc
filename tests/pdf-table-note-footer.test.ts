@@ -51,6 +51,9 @@ it("쪽 머리 띠에 통째로 든 작은 표가 되풀이되면 러닝 헤더�
   // 표 상자는 쪽 넘김 표 병합 뒤 따로 거른다(tables=true) — 글 차례에선 건드리지 않는다
   assert.deepEqual(removeHeaderFooterBlocks(blocks, hs, []), [])
   assert.deepEqual(removeHeaderFooterBlocks(blocks, hs, [], undefined, true), [0, 1, 2, 3, 4, 5, 6])
+  // 선택 과목 쪽 머리("2 | (화법과 작문) | 홀수형" · "홀수형 | (화법과 작문) | 3")는 짝·홀 쪽에서 칸 순서가 뒤집혀 같은 꼴이 셋에 못 미쳤다
+  const elective = [14, 15, 16].map(p => box(p, p % 2 ? ["홀수형", "(화법과 작문)", String(p)] : [String(p), "(화법과 작문)", "홀수형"]))
+  assert.deepEqual(removeHeaderFooterBlocks(elective, new Map([14, 15, 16].map(p => [p, 841] as [number, number])), [], undefined, true), [0, 1, 2])
   // 머리 띠를 벗어난 본문 표는 되풀이돼도 그대로
   const body = pages.map(p => ({ ...box(p, ["구분", "내용"]), bbox: { page: p, x: 62, y: 400, width: 471, height: 34 } }))
   assert.deepEqual(removeHeaderFooterBlocks(body, hs, [], undefined, true), [])
