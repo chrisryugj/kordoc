@@ -32,6 +32,34 @@ async function build(body: string): Promise<ArrayBuffer> {
 }
 const parse = async (body: string) => parseHwpxDocument(await build(body))
 
+describe("HWPX 누름틀이 든 문단의 강조 표지", () => {
+  const HEAD = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList>` +
+    `<hh:charProperties itemCnt="2"><hh:charPr id="0" height="1000"></hh:charPr><hh:charPr id="1" height="1000"><hh:bold/></hh:charPr></hh:charProperties>` +
+    `</hh:refList></hh:head>`
+  const withHeader = async (body: string): Promise<ArrayBuffer> => {
+    const zip = await JSZip.loadAsync(await build(body))
+    zip.file("Contents/header.xml", HEAD)
+    return zip.generateAsync({ type: "arraybuffer" })
+  }
+  const field = (runs: string, dirty: "0" | "1") => `<hp:ctrl><hp:fieldBegin id="7" type="CLICK_HERE" name="f" editable="1" dirty="${dirty}" zorder="-1" fieldid="9">` +
+    `<hp:parameters cnt="3" name=""><hp:integerParam name="Prop">9</hp:integerParam>` +
+    `<hp:stringParam name="Command" xml:space="preserve">Clickhere:set:48:Direction:wstring:7:본문 입력하기 HelpState:wstring:0:  </hp:stringParam>` +
+    `<hp:stringParam name="Direction">본문 입력하기</hp:stringParam></hp:parameters></hp:fieldBegin></hp:ctrl></hp:run>` +
+    runs + `<hp:run charPrIDRef="0"><hp:ctrl><hp:fieldEnd beginIDRef="7" fieldid="9"/></hp:ctrl>`
+
+  it("채운 누름틀(보도자료 본문 칸) 안 굵은 글도 표지를 낸다 — 필드 매개변수는 보이는 글이 아니다", async () => {
+    const runs = `<hp:run charPrIDRef="0"><hp:t>△</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>한우</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t>는 사료를 충분히 공급한다.</hp:t></hp:run>`
+    const r = await parseHwpxDocument(await withHeader(para(field(runs, "1"))))
+    assert.ok(r.markdown.includes("△**한우**는 사료를 충분히 공급한다."), r.markdown)
+  })
+
+  it("덜 채운 누름틀(안내문)이 든 문단은 종전대로 — 안내문은 인쇄 안 되는 글로 뺀다", async () => {
+    const runs = `<hp:run charPrIDRef="1"><hp:t>본문 입력하기</hp:t></hp:run>`
+    const r = await parseHwpxDocument(await withHeader(para(`<hp:t>머리 </hp:t>` + field(runs, "0"))))
+    assert.ok(!r.markdown.includes("본문 입력하기"), r.markdown)
+  })
+})
+
 describe("HWPX 미기입 누름틀 안내문 — IR 에 표시, 마크다운에서 뺀다", () => {
   it("dirty=0 + 값이 안내문 그대로: 블록 글엔 남고 마크다운에는 없다", async () => {
     const r = await parse(para(`<hp:t>성명: </hp:t>${clickHere("여기에 입력", "여기에 입력", "0")}<hp:t> (서명)</hp:t>`))

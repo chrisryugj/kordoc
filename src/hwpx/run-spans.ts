@@ -8,6 +8,7 @@ import { extractTextFromNode, type WalkCtx } from "./parser-shared.js"
 import { escapeLiteralDollar } from "../table/builder.js"
 import { escapeLiteralTags } from "../script-tags.js"
 import { wrapScript, tidyScriptTags } from "../script-tags.js"
+import { clickHereGuide } from "./section-nodes.js"
 
 /** kordoc 생성 default 레이아웃의 인라인 코드 charPr id (gen-ids CHAR_CODE와 동기) */
 const KORDOC_CHAR_CODE = "4"
@@ -38,6 +39,21 @@ export function spanModeOf(layout: string | null | undefined): SpanMode | null {
  * requireMixed: 무서식 span과 서식 span이 공존할 때만 인정 — 전체가 서식인 문단은
  * 구조적 서식(gongmun 1단계 볼드, 표 헤더행 볼드 등)일 개연성이 높아 마커를 억제한다.
  */
+/** ctrl 의 자식이 필드 머리·끝뿐인가 — 덜 채운 누름틀(안내문)은 아니다: 안내문은 평문 경로가 인쇄 안 되는 글로 따로 다룬다 */
+function fieldMarksOnly(ctrl: Element): boolean {
+  const kids = ctrl.childNodes
+  let any = false
+  for (let i = 0; i < (kids?.length ?? 0); i++) {
+    const k = kids![i] as Element
+    if (k.nodeType !== 1) continue
+    const tag = (k.tagName || k.localName || "").replace(/^[^:]+:/, "")
+    if (tag !== "fieldBegin" && tag !== "fieldEnd") return false
+    if (tag === "fieldBegin" && clickHereGuide(k) !== undefined) return false
+    any = true
+  }
+  return any
+}
+
 export function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, requireMixed: boolean): IRSpan[] | null {
   const styleMap = ctx.styleMap
   if (!styleMap) return null
@@ -73,7 +89,8 @@ export function extractRunSpans(para: Element, ctx: WalkCtx, mode: SpanMode, req
       } else if (rtag === "secPr" || rtag === "colPr") {
         // 첫 run이 나르는 섹션 속성 — 텍스트 무관
       } else if (rtag === "ctrl") {
-        if (extractTextFromNode(rc)) return null
+        // 필드 머리·끝(누름틀·하이퍼링크 등)은 매개변수만 담는다 — 보이는 글은 run 의 hp:t 에 있다(보도자료 본문 누름틀)
+        if (!fieldMarksOnly(rc) && extractTextFromNode(rc)) return null
       } else {
         return null // 표·이미지·수식 등 개체 동반 문단
       }
