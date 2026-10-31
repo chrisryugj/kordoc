@@ -29,7 +29,7 @@ import { WrapLexicon, joinPageBreakWraps, splitPageBreakWraps } from "./line-wra
 import { mergeCrossPageTables } from "./table-parts.js"
 import { splitPageTables } from "./table-pages.js"
 import { mergeContinuedCells } from "./cell-continuation.js"
-import { restoreUnmappedGlyphs } from "./symbol-glyphs.js"
+import { restoreUnmappedGlyphs, spaceMappedDots } from "./symbol-glyphs.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { selectionContextPages, marginContextBlocks } from "./selection-context.js"
 import { restoreImageBullets } from "./image-bullets.js"
@@ -273,6 +273,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // pdfjs 가 글자 틈으로 만든 공백 아이템 표시 — 균등배분 판정이 진짜 공백 글리프에서만 끊도록
         markSyntheticSpaces(rawItems, rawOps.fnArray, rawOps.argsArray)
         restoreSoftHyphens()
+        // 공백으로 적힌 글머리 점 — 글리프 흐름을 맞대는 위 단계들이 끝난 뒤에 덧붙인다
+        rawItems.push(...spaceMappedDots(rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as { data?: Uint8Array } | null | undefined))
         const items = normalizeItems(occluded.size ? rawItems.filter(it => !occluded.has(it)) : rawItems)
 
         // hidden text 필터링 + 경고 수집

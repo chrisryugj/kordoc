@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PDF 글머리 "·" 빠짐: 한컴 PDF 가 표 칸 머리 "·" 글머리를 기호 글꼴의 사설 영역 작은 네모로 찍으면서 ToUnicode 를 공백(nbsp)으로 적어 텍스트층에서 사라졌다(재정운용전략협의회 안건 표 칸 43곳). 공백으로 적힌 사설 영역 글리프 중 윤곽이 가운데 높이의 작은 정사각 하나뿐이면 그 자리에 "·" 를 둔다. PDF 표 칸 내용 거리 .98896 → **.98902**·칸 완전 일치 .99221 → **.99264**, PDF 글 재현율 .99883 → **.99885**·순서 .99356 → **.99359**(4문서 오름, 내림 0), 별표·ODL·OCR 그대로.
+
 ## [4.24.33] - 2026-11-01
 
 ### Fixed

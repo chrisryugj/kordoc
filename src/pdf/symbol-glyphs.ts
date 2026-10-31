@@ -213,3 +213,55 @@ export function restoreUnmappedGlyphs(items: PdfTextItem[], fnArray: ArrayLike<n
     for (const it of list) it.str = it.str.replace(//g, () => q[k++])
   }
 }
+
+/**
+ * 공백으로 적힌 글머리 점 — 한컴 PDF 는 HWPX "·" 글머리를 Wingdings 사설 영역 글리프(작은 네모)로 찍으면서 ToUnicode 를 공백(nbsp)으로 적어
+ * 텍스트층에서 사라졌다(재정운용전략협의회 안건 표 칸 머리 "·" 43곳). 공백으로 적힌 사설 영역 글리프 중 윤곽이 가운데 높이의 작은 네모
+ * 하나뿐이면 그 자리에 "·" 아이템을 만든다. 글리프 위치는 글 행렬(setTextMatrix) 바로 뒤 첫 글리프만 — 한컴은 런마다 행렬을 새로 둔다
+ */
+export function spaceMappedDots(fnArray: ArrayLike<number>, argsArray: ArrayLike<unknown>,
+  fontObj: (loadedName: string) => FontObj | null | undefined): PdfTextItem[] {
+  const out: PdfTextItem[] = []
+  const cache = new Map<string, boolean>()
+  let ctm = [1, 0, 0, 1, 0, 0], tm: number[] | null = null, font = "", size = 0
+  const stack: Array<{ ctm: number[]; font: string; size: number }> = []
+  const mul = (m: number[], t: number[]) => [m[0] * t[0] + m[2] * t[1], m[1] * t[0] + m[3] * t[1], m[0] * t[2] + m[2] * t[3], m[1] * t[2] + m[3] * t[3],
+    m[0] * t[4] + m[2] * t[5] + m[4], m[1] * t[4] + m[3] * t[5] + m[5]]
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i], args = (argsArray as unknown[][])[i]
+    if (fn === OPS.save) stack.push({ ctm: ctm.slice(), font, size })
+    else if (fn === OPS.restore) { const s = stack.pop(); if (s) ({ ctm, font, size } = s) }
+    else if (fn === OPS.transform) ctm = mul(ctm, args as number[])
+    else if (fn === OPS.setFont) { font = String(args[0]); size = Number(args[1]) || 0 }
+    else if (fn === OPS.setTextMatrix) tm = (args as number[]).slice(0, 6)
+    else if (fn === OPS.beginText) tm = [1, 0, 0, 1, 0, 0]
+    else if (fn === OPS.showText) {
+      const g = ((args[0] as unknown[])[0] ?? null) as { unicode?: unknown; fontChar?: unknown; width?: unknown } | null
+      const at = tm
+      tm = null
+      if (!at || !g || (g.unicode !== " " && g.unicode !== "\u00a0") || typeof g.fontChar !== "string") continue
+      const code = g.fontChar.codePointAt(0) ?? 0
+      if (code < 0xe000 || code > 0xf8ff) continue
+      const key = font + "\u0000" + code
+      if (!cache.has(key)) {
+        let dot = false
+        try {
+          const data = fontObj(font)?.data
+          const ol = data ? readOutline(data, code) : null
+          if (ol && ol.contours.length === 1 && ol.contours[0].length === 4 && ol.contours[0].every(p => p[2])) {
+            const b = boxOf(ol.contours[0]), u = ol.upm
+            const w = (b.x2 - b.x1) / u, h = (b.y2 - b.y1) / u, mid = (b.y1 + b.y2) / 2 / u
+            dot = w <= 0.25 && h <= 0.25 && Math.abs(w - h) <= 0.05 && mid >= 0.2 && mid <= 0.5
+          }
+        } catch { /* 깨진 글꼴 */ }
+        cache.set(key, dot)
+      }
+      if (!cache.get(key)) continue
+      const m = mul(ctm, at)
+      const fs = size * Math.hypot(m[2], m[3])
+      // 글꼴 이름은 달지 않는다 — Wingdings 글꼴 아이템은 기호 글꼴 표로 다시 읽힌다
+      out.push({ str: "·", transform: [fs, 0, 0, fs, m[4], m[5]], width: (Number(g.width) || 0) / 1000 * fs, height: fs })
+    }
+  }
+  return out
+}

@@ -5,7 +5,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
-import { classifyOutline, readOutline, restoreUnmappedGlyphs } from "../src/pdf/symbol-glyphs.js"
+import { classifyOutline, readOutline, restoreUnmappedGlyphs, spaceMappedDots } from "../src/pdf/symbol-glyphs.js"
 import type { PdfTextItem } from "../src/pdf/text-line.js"
 
 type P = [number, number, boolean]
@@ -107,5 +107,26 @@ describe("restoreUnmappedGlyphs — 글리프 흐름의 F000 을 아이템 글�
     const { fnArray, argsArray } = ops(1)
     restoreUnmappedGlyphs(items, fnArray, argsArray, () => ({}))
     assert.equal(items[0].str, "청년")
+  })
+})
+
+describe("spaceMappedDots — 공백으로 적힌 사설 영역 작은 네모는 · 글머리(재정운용전략협의회 안건 표 칸 머리)", () => {
+  const run = (font: Uint8Array, unicode = "\u00a0") => spaceMappedDots(
+    [OPS.save, OPS.transform, OPS.beginText, OPS.setFont, OPS.setTextMatrix, OPS.showText, OPS.endText, OPS.restore],
+    [null, [0.12, 0, 0, -0.12, 0, 841], null, ["f9", 92], [1, 0, 0, -1, 661, 1841], [[{ unicode, fontChar: "\ue000", width: 312 }, 7.7, { unicode: " ", fontChar: "\u0003", width: 1000 }]], null, null],
+    () => ({ data: font }))
+  it("가운데 높이 작은 네모 하나면 그 자리에 · 아이템", () => {
+    const out = run(tinyFont([[85, 290], [85, 434], [229, 434], [229, 290]]))
+    assert.equal(out.length, 1)
+    assert.equal(out[0].str, "·")
+    assert.equal(out[0].fontName, undefined)
+    assert.ok(Math.abs(out[0].transform[4] - 79.32) < 0.01 && Math.abs(out[0].transform[5] - 620.08) < 0.01)
+    assert.ok(Math.abs(out[0].height - 11.04) < 0.01)
+    assert.equal(run(tinyFont([[85, 290], [85, 434], [229, 434], [229, 290]]), " ").length, 1)
+  })
+  it("큰 네모·밑에 붙은 네모·글자 유니코드가 있는 글리프는 두지 않는다", () => {
+    assert.equal(run(tinyFont([[100, 0], [100, 800], [900, 800], [900, 0]])).length, 0)
+    assert.equal(run(tinyFont([[85, -60], [85, 84], [229, 84], [229, -60]])).length, 0)
+    assert.equal(run(tinyFont([[85, 290], [85, 434], [229, 434], [229, 290]]), "·").length, 0)
   })
 })
