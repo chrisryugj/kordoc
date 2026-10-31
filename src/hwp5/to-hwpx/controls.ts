@@ -12,6 +12,8 @@ import { otherControlXml } from "./notes.js"
 export interface ConvertContext {
   /** DocInfo 메모 모양 수 — 구역 정의 memoShapeIDRef */
   memoShapes: number
+  /** 문단 모양 번호 → paraPr id(같은 문단 모양을 합친 번호) */
+  paraIds: number[]
   /** 열린 필드 — 필드 끝 컨트롤이 짝을 찾는다 */
   fields: FieldState
   /** 바탕쪽 파트(masterpageN.xml 내용) — 구역 정의를 만나는 차례로 쌓는다 */
@@ -26,8 +28,8 @@ export interface ConvertContext {
   chartOf(binId: number): string | null
   /** 그림 BinData 참조 이름 */
   binRef(binId: number): string
-  /** OLE BinData 참조 이름 — 차트는 oleN, 그 밖은 imageN */
-  oleRef(binId: number, chart: boolean): string
+  /** OLE BinData 참조 이름(oleN) */
+  oleRef(binId: number): string
 }
 
 /** obj: run 안에서 뒤에 글 자리(hp:t)를 여는 개체, def: 구역·단 정의(뒤 내용은 새 run) */

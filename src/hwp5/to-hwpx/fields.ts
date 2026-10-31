@@ -44,13 +44,14 @@ function params(type: string, prop: number, command: string): string {
   const preserve = /^\s|\s$/.test(command)
   if (type === "BOOKMARK") return `<hp:parameters cnt="1" name="">${items[0]}</hp:parameters>`
   items.push(str("Command", command, preserve))
+  // 명령에 없는 안내문(Direction)·빈 경로(Path)는 한글이 매개변수째 뺀다
   if (type === "CLICK_HERE") {
-    items.push(str("Direction", wstringValue(command, "Direction")))
+    if (/Direction:wstring:/.test(command)) items.push(str("Direction", wstringValue(command, "Direction")))
     const help = wstringValue(command, "HelpState")
     if (help) items.push(str("HelpState", help))
   } else if (type === "HYPERLINK") {
     const parts = command.split(/(?<!\\);/)
-    items.push(str("Path", parts[0].replace(/\\(.)/g, "$1")))
+    if (parts[0]) items.push(str("Path", parts[0].replace(/\\(.)/g, "$1")))
     items.push(str("Category", LINK_CATEGORIES[Number(parts[1])] ?? LINK_CATEGORIES[1]))
     items.push(str("TargetType", LINK_TARGETS[Number(parts[2])] ?? LINK_TARGETS[0]))
     items.push(str("DocOpenType", LINK_OPENS[Number(parts[3])] ?? LINK_OPENS[0]))

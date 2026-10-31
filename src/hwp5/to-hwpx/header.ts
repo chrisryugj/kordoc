@@ -157,13 +157,14 @@ function borderFill(r: Rec, id: number, ref: BinRef): string {
   const left = side(), right = side(), top = side(), bottom = side()
   const dType = c.u8(), dWidth = c.u8(), dColor = c.u32()
   const slash = bits(a, 2, 3), back = bits(a, 5, 3)
-  let inner = el("hh:slash", [["type", pick(SLASH_TYPES, slash)], ["Crooked", bits(a, 8, 2) ? 1 : 0], ["isCounter", bit(a, 11)]])
-    + el("hh:backSlash", [["type", pick(SLASH_TYPES, back)], ["Crooked", bit(a, 10)], ["isCounter", bit(a, 12)]])
+  // 꺾은선은 / 대각선만 두 비트 값 그대로 — 비트 10 은 한글이 셀 나눔선(breakCellSeparateLine)으로 쓰고 \ 대각선 꺾은선은 0 으로 적는다
+  let inner = el("hh:slash", [["type", pick(SLASH_TYPES, slash)], ["Crooked", bits(a, 8, 2)], ["isCounter", bit(a, 11)]])
+    + el("hh:backSlash", [["type", pick(SLASH_TYPES, back)], ["Crooked", 0], ["isCounter", bit(a, 12)]])
     + el("hh:leftBorder", left) + el("hh:rightBorder", right) + el("hh:topBorder", top) + el("hh:bottomBorder", bottom)
   if (dType) inner += el("hh:diagonal", [["type", pick(BORDER_TYPES, dType)], ["width", pick(BORDER_WIDTHS, dWidth)], ["color", color(dColor)]])
   inner += fillBrushXml(c, ref)
   return el("hh:borderFill", [["id", id], ["threeD", bit(a, 0)], ["shadow", bit(a, 1)], ["centerLine", bit(a, 13) ? "VERTICAL" : "NONE"],
-    ["breakCellSeparateLine", bit(a, 14)]], inner)
+    ["breakCellSeparateLine", bit(a, 10)]], inner)
 }
 
 function charPr(r: Rec, id: number): string {
@@ -180,13 +181,13 @@ function charPr(r: Rec, id: number): string {
   const textColor = c.u32(), underColor = c.u32(), shadeColor = c.u32(), shadowColor = c.u32()
   const borderFillId = r.data.length >= 70 ? c.u16() : 0
   const strikeColor = r.data.length >= 74 ? c.u32() : 0
-  // 밑줄 종류 2(가운데)는 한글이 취소선으로 다뤄 밑줄 없음·실선으로 쓴다. 취소선 비트가 서면 저장된 모양을 그대로 쓴다
+  // 밑줄 종류 2(가운데)는 한글이 취소선으로 다뤄 밑줄 없음·실선·검정으로 쓴다. 취소선 비트가 서면 저장된 모양을 그대로 쓴다
   const underType = bits(a, 2, 2)
   let inner = el("hh:fontRef", fontRef) + el("hh:ratio", ratio) + el("hh:spacing", spacing) + el("hh:relSz", relSz) + el("hh:offset", offset)
   if (bit(a, 0)) inner += "<hh:italic/>"
   if (bit(a, 1)) inner += "<hh:bold/>"
   inner += el("hh:underline", [["type", underType === 2 ? "NONE" : pick(UNDERLINE_TYPES, underType)],
-    ["shape", underType === 2 ? "SOLID" : pick(LINE_SHAPES, bits(a, 4, 4))], ["color", color(underColor)]])
+    ["shape", underType === 2 ? "SOLID" : pick(LINE_SHAPES, bits(a, 4, 4))], ["color", underType === 2 ? "#000000" : color(underColor)]])
   inner += el("hh:strikeout", [["shape", bits(a, 18, 3) ? pick(LINE_SHAPES, bits(a, 26, 4)) : "NONE"], ["color", color(strikeColor)]])
   inner += el("hh:outline", [["type", pick(OUTLINE_TYPES, bits(a, 8, 3))]])
   inner += el("hh:shadow", [["type", pick(SHADOW_TYPES, bits(a, 11, 2))], ["color", color(shadowColor)], ["offsetX", shadowX], ["offsetY", shadowY]])
@@ -207,7 +208,7 @@ function tabPr(r: Rec, id: number): string {
     const pos = c.i32(), type = c.u8(), leader = c.u8()
     c.skip(2)
     const common: Array<[string, string | number]> = [["type", pick(TAB_TYPES, type)], ["leader", pick(BORDER_TYPES, leader)]]
-    inner += unitSwitch(el("hh:tabItem", [["pos", Math.trunc(pos / 2)], ...common, ["unit", "HWPUNIT"]]), el("hh:tabItem", [["pos", pos], ...common]))
+    inner += unitSwitch(el("hh:tabItem", [["pos", Math.trunc(pos / 2)], ...common, ["unit", pos % 2 ? "CHAR" : "HWPUNIT"]]), el("hh:tabItem", [["pos", pos], ...common]))
   }
   return el("hh:tabPr", [["id", id], ["autoTabLeft", bit(a, 0)], ["autoTabRight", bit(a, 1)]], inner || undefined)
 }
@@ -243,13 +244,12 @@ function bullet(r: Rec, id: number): string {
   const head = paraHeadAttrs(c)
   const ch = String.fromCharCode(c.u16())
   const imageId = c.i32()
-  const imgStart = c.o
-  c.skip(4)
-  const checked = c.rest >= 2 ? c.u16() : 0
+  // 체크 글자는 기록 끝 두 바이트 — 그림 글머리 정보가 4바이트인 24바이트 기록과 5바이트인 25바이트 기록이 있다
+  const checked = r.data.length >= 24 ? r.data.readUInt16LE(r.data.length - 2) : 0
   let inner = el("hh:paraHead", [["level", 0], ...head])
   if (imageId) inner = el("hc:img", []) + inner
-  void imgStart
-  return el("hh:bullet", [["id", id], ["char", ch], ...(checked ? [["checkedChar", String.fromCharCode(checked)] as [string, string]] : []),
+  // 체크 글자가 비었거나 공백이면 한글은 checkedChar 를 쓰지 않는다
+  return el("hh:bullet", [["id", id], ["char", ch], ...(checked > 0x20 ? [["checkedChar", String.fromCharCode(checked)] as [string, string]] : []),
     ["useImage", imageId ? 1 : 0]], inner)
 }
 
@@ -272,11 +272,10 @@ function paraPr(r: Rec, id: number): string {
     ? `<hp:switch><hp:case hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/paragraph">${el("hh:heading", [["type", headType], ["idRef", headId], ["level", level]])}</hp:case>`
       + `<hp:default>${el("hh:heading", [["type", "NONE"], ["idRef", 0], ["level", 0]])}</hp:default></hp:switch>`
     : el("hh:heading", [["type", headType], ["idRef", headId], ["level", level]])
-  const margins = (div: number, unit: boolean): string => {
-    const u: Array<[string, string]> = unit ? [["unit", "HWPUNIT"]] : [["unit", "HWPUNIT"]]
-    const v = (x: number): number => (div === 1 ? x : Math.trunc(x / div))
-    return "<hh:margin>" + el("hc:intent", [["value", v(indent)], ...u]) + el("hc:left", [["value", v(left)], ...u])
-      + el("hc:right", [["value", v(right)], ...u]) + el("hc:prev", [["value", v(prev)], ...u]) + el("hc:next", [["value", v(next)], ...u]) + "</hh:margin>"
+  // HwpUnitChar 갈래는 값의 절반 — 반으로 안 나뉘는 홀수 값은 한글이 글자 단위(CHAR)로 적는다
+  const margins = (div: number): string => {
+    const m = (tag: string, x: number): string => el(tag, [["value", div === 1 ? x : Math.trunc(x / div)], ["unit", div !== 1 && x % 2 ? "CHAR" : "HWPUNIT"]])
+    return "<hh:margin>" + m("hc:intent", indent) + m("hc:left", left) + m("hc:right", right) + m("hc:prev", prev) + m("hc:next", next) + "</hh:margin>"
   }
   const lineSpacing = (div: number): string => el("hh:lineSpacing", [["type", pick(LINE_SPACINGS, spType)],
     ["value", spType === 0 || div === 1 ? spacing : Math.trunc(spacing / div)], ["unit", "HWPUNIT"]])
@@ -286,19 +285,20 @@ function paraPr(r: Rec, id: number): string {
       ["widowOrphan", bit(a1, 16)], ["keepWithNext", bit(a1, 17)], ["keepLines", bit(a1, 18)], ["pageBreakBefore", bit(a1, 19)],
       ["lineWrap", pick(LINE_WRAPS, bits(a2, 0, 2))]])
     + el("hh:autoSpacing", [["eAsianEng", bit(a2, 4)], ["eAsianNum", bit(a2, 5)]])
-    + unitSwitch(margins(2, true) + lineSpacing(2), margins(1, true) + lineSpacing(1))
+    + unitSwitch(margins(2) + lineSpacing(2), margins(1) + lineSpacing(1))
     + el("hh:border", [["borderFillIDRef", borderFillId], ["offsetLeft", off[0]], ["offsetRight", off[1]], ["offsetTop", off[2]],
       ["offsetBottom", off[3]], ["connect", bit(a1, 28)], ["ignoreMargin", bit(a1, 29)]])
+  // 글 방향은 한글 2024 꼴로 적는다 — 속성2 비트 3 이 켜진 문단 모양은 LTR, 나머지는 AUTO(한글 2022 는 이 속성을 쓰지 않는다)
   return el("hh:paraPr", [["id", id], ["tabPrIDRef", tabDef], ["condense", bits(a1, 9, 7)], ["fontLineHeight", bit(a1, 22)],
-    ["snapToGrid", bit(a1, 8)], ["suppressLineNumbers", bit(a2, 2)], ["checked", 0]], inner)
+    ["snapToGrid", bit(a1, 8)], ["suppressLineNumbers", bit(a2, 2)], ["checked", 0], ["textDir", bit(a2, 3) ? "LTR" : "AUTO"]], inner)
 }
 
-function style(r: Rec, id: number): string {
+function style(r: Rec, id: number, paraIds: number[]): string {
   const c = new Cur(r.data)
   const name = c.str(), engName = c.str()
   const a = c.u8(), nextId = c.u8(), langId = c.i16(), paraShape = c.u16(), charShape = c.u16()
   return el("hh:style", [["id", id], ["type", bits(a, 0, 2) === 1 ? "CHAR" : "PARA"], ["name", name], ["engName", engName],
-    ["paraPrIDRef", paraShape], ["charPrIDRef", charShape], ["nextStyleIDRef", nextId], ["langID", langId], ["lockForm", bit(a, 2)]])
+    ["paraPrIDRef", paraIds[paraShape] ?? paraShape], ["charPrIDRef", charShape], ["nextStyleIDRef", nextId], ["langID", langId], ["lockForm", bit(a, 2)]])
 }
 
 function memoPr(r: Rec, id: number): string {
@@ -319,20 +319,40 @@ export function docProps(recs: Rec[]): DocProps {
   return { secCnt, begin, caret: [c.u32(), c.u32(), c.u32()] }
 }
 
-/** DocInfo 레코드 → header.xml. secCnt 는 실제로 쓰는 구역 수(다르면 한글이 열기를 거부한다) */
-export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: number; footnoteInherit: number }, ref: BinRef, secCnt: number): string {
-  const props = docProps(recs)
+/** ID_MAPPINGS 의 목록별 개수 칸 */
+const SLOT: Record<number, number> = { [TAG.BORDER_FILL]: 8, [TAG.CHAR_SHAPE]: 9, [TAG.TAB_DEF]: 10, [TAG.NUMBERING]: 11, [TAG.BULLET]: 12,
+  [TAG.PARA_SHAPE]: 13, [TAG.STYLE]: 14, [TAG.MEMO_SHAPE]: 15 }
+
+function idCounts(recs: Rec[]): number[] {
   const idm = new Cur(recs.find(r => r.tagId === TAG.ID_MAPPINGS)?.data ?? Buffer.alloc(0))
   const counts: number[] = []
   while (idm.rest >= 4) counts.push(idm.i32())
-  // 목록 길이는 ID_MAPPINGS 가 정한다 — 그 뒤에 남은 레코드는 쓰지 않는다
-  const SLOT: Record<number, number> = { [TAG.BORDER_FILL]: 8, [TAG.CHAR_SHAPE]: 9, [TAG.TAB_DEF]: 10, [TAG.NUMBERING]: 11, [TAG.BULLET]: 12,
-    [TAG.PARA_SHAPE]: 13, [TAG.STYLE]: 14, [TAG.MEMO_SHAPE]: 15 }
-  const of = (tag: number): Rec[] => {
-    const all = recs.filter(r => r.tagId === tag)
-    const n = counts[SLOT[tag] ?? -1]
-    return n !== undefined && n >= 0 ? all.slice(0, n) : all
-  }
+  return counts
+}
+
+/** DocInfo 목록 하나 — 길이는 ID_MAPPINGS 가 정한다(그 뒤에 남은 레코드는 쓰지 않는다) */
+function recordsOf(recs: Rec[], counts: number[], tag: number): Rec[] {
+  const all = recs.filter(r => r.tagId === tag)
+  const n = counts[SLOT[tag] ?? -1]
+  return n !== undefined && n >= 0 ? all.slice(0, n) : all
+}
+
+/** 문단 모양 번호 → paraPr id. 기록 바이트가 같은 문단 모양은 한글처럼 처음 것 하나로 합친다(글자 모양·테두리는 합치지 않는다) */
+export function paraShapeIds(recs: Rec[]): number[] {
+  const seen = new Map<string, number>()
+  return recordsOf(recs, idCounts(recs), TAG.PARA_SHAPE).map(r => {
+    const k = r.data.toString("hex")
+    if (!seen.has(k)) seen.set(k, seen.size)
+    return seen.get(k)!
+  })
+}
+
+/** DocInfo 레코드 → header.xml. secCnt 는 실제로 쓰는 구역 수(다르면 한글이 열기를 거부한다) */
+export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: number; footnoteInherit: number }, ref: BinRef, secCnt: number): string {
+  const props = docProps(recs)
+  const counts = idCounts(recs)
+  const of = (tag: number): Rec[] => recordsOf(recs, counts, tag)
+  const paraIds = paraShapeIds(recs)
   const list = (name: string, items: string[]): string => (items.length ? el(name, [["itemCnt", items.length]], items.join("")) : "")
 
   const [bPage, bFoot, bEnd, bPic, bTbl, bEq] = props.begin
@@ -342,8 +362,8 @@ export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: nu
   refList += list("hh:tabProperties", of(TAG.TAB_DEF).map((r, i) => tabPr(r, i)))
   refList += list("hh:numberings", of(TAG.NUMBERING).map((r, i) => numbering(r, i + 1)))
   refList += list("hh:bullets", of(TAG.BULLET).map((r, i) => bullet(r, i + 1)))
-  refList += list("hh:paraProperties", of(TAG.PARA_SHAPE).map((r, i) => paraPr(r, i)))
-  refList += list("hh:styles", of(TAG.STYLE).map((r, i) => style(r, i)))
+  refList += list("hh:paraProperties", of(TAG.PARA_SHAPE).flatMap((r, i) => (paraIds.indexOf(paraIds[i]) === i ? [paraPr(r, paraIds[i])] : [])))
+  refList += list("hh:styles", of(TAG.STYLE).map((r, i) => style(r, i, paraIds)))
   refList += list("hh:memoProperties", of(TAG.MEMO_SHAPE).map((r, i) => memoPr(r, i + 1)))
 
   const compat = new Cur(recs.find(r => r.tagId === TAG.COMPATIBLE_DOCUMENT)?.data ?? Buffer.alloc(0)).u32()

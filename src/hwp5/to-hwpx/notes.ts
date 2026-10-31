@@ -56,10 +56,12 @@ export function otherControlXml(id: string, node: RecNode, ctx: ConvertContext):
     case "fn  ":
     case "en  ": {
       const c = data(node)
-      const number = c.u32() & 0xffff, prefix = c.u16(), suffix = c.u16()
-      c.u32()
+      // 번호 칸 위 16비트는 사용자 기호, 장식 문자 뒤 u32 는 한글이 flag 로 옮긴다 — 둘 다 0 이면 쓰지 않는다
+      const num = c.u32(), prefix = c.u16(), suffix = c.u16()
+      const flag = c.u32()
       const instId = c.u32()
-      const attrs: Array<[string, string | number]> = [["number", number]]
+      const attrs: Array<[string, string | number]> = [...(flag ? [["flag", flag] as [string, number]] : []), ["number", num & 0xffff]]
+      if (num >>> 16) attrs.push(["userChar", num >>> 16])
       if (id === "en  " || prefix) attrs.push(["prefixChar", prefix])
       attrs.push(["suffixChar", suffix], ["instId", instId])
       return ctrl(el(id === "fn  " ? "hp:footNote" : "hp:endNote", attrs, subListXml(node, ctx, false)))

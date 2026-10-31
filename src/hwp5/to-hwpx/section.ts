@@ -83,7 +83,7 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
     }
     body += `<hp:linesegarray>${segs}</hp:linesegarray>`
   }
-  return el("hp:p", [["id", instanceId], ["paraPrIDRef", paraShape], ["styleIDRef", styleId], ["pageBreak", bit(breaks, 2)],
+  return el("hp:p", [["id", instanceId], ["paraPrIDRef", ctx.paraIds[paraShape] ?? paraShape], ["styleIDRef", styleId], ["pageBreak", bit(breaks, 2)],
     ["columnBreak", bit(breaks, 3)], ["merged", merged]], body)
 }
 
@@ -292,9 +292,11 @@ export function secPrXml(node: RecNode, ctx: ConvertContext): string {
     }
   }
   const data = node.kids.find(k => k.rec.tagId === TAG.CTRL_DATA)
+  // 메모 모양 번호는 구역 정의 34바이트 자리(u32). 그보다 짧은 옛 판은 메모 모양이 있으면 1
+  const memoShape = node.rec.data.length >= 38 ? node.rec.data.readUInt32LE(34) : ctx.memoShapes ? 1 : 0
   return el("hp:secPr", [["id", ""], ["textDirection", bits(a, 16, 3) ? "VERTICAL" : "HORIZONTAL"], ["spaceColumns", spaceColumns],
-    ["tabStop", tabStop], ["tabStopVal", Math.trunc(tabStop / 2)], ["tabStopUnit", "HWPUNIT"], ["outlineShapeIDRef", outline],
-    ["memoShapeIDRef", ctx.memoShapes ? 1 : 0], ["textVerticalWidthHead", 0], ["masterPageCnt", masters.length]],
+    ["tabStop", tabStop], ["tabStopVal", Math.trunc(tabStop / 2)], ["tabStopUnit", tabStop % 2 ? "CHAR" : "HWPUNIT"], ["outlineShapeIDRef", outline],
+    ["memoShapeIDRef", memoShape], ["textVerticalWidthHead", 0], ["masterPageCnt", masters.length]],
     inner + masters.join("") + (data ? presentationXml(data.rec.data) : ""))
 }
 

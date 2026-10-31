@@ -10,9 +10,9 @@
 import JSZip from "jszip"
 import { createRequire } from "module"
 import { openHwp5Container, readHwp5DocInfoRecords, readHwp5SectionStreams, readHwp5SectionRecords, readHwp5BinData } from "../parser.js"
-import { decompressStream } from "../record.js"
+import { decompressStream, readRecords } from "../record.js"
 import { recordTree, Cur, el, esc, type Rec } from "./util.js"
-import { headerXml, docProps, XML_DECL, NS } from "./header.js"
+import { headerXml, docProps, paraShapeIds, XML_DECL, NS } from "./header.js"
 import { sectionXml } from "./section.js"
 import type { ConvertContext } from "./controls.js"
 import { VERSION, KordocError } from "../../utils.js"
@@ -71,6 +71,18 @@ function scriptParts(data: Buffer | null): [Buffer, Buffer] | null {
   return [parts[0], parts[1]]
 }
 
+/** 메모 확장(MemoExtended 스트림의 0x65 기록: 개수 u32 + 메모 id·부모 id u32 쌍) → Contents/memoExtended.xml, 없으면 null */
+function memoExtendedXml(raw: Buffer | null, compressed: boolean): string | null {
+  if (!raw) return null
+  let rec: Rec | undefined
+  try { rec = readRecords(compressed ? decompressStream(raw) : raw).find(r => r.tagId === 0x65) } catch { return null }
+  if (!rec || rec.data.length < 4) return null
+  const c = new Cur(rec.data)
+  const memos: string[] = []
+  for (let n = c.u32(); n > 0 && c.rest >= 8; n--) memos.push(el("he:memo", [["id", c.u32()], ["parentId", c.u32()]]))
+  return memos.length ? XML_DECL + `<he:memosEx xmlns:he="http://www.hancom.co.kr/hwpml/2021/extended">${memos.join("")}</he:memosEx>` : null
+}
+
 const V13_DEFAULT_SCRIPT = "function OnDocument_New()\r\n{\r\n\t//todo : \r\n}\r\n\r\n"
 
 export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpToHwpxOptions): Promise<Uint8Array> {
@@ -94,15 +106,16 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
   const items = binItems(docInfo)
   const charts: Array<{ name: string; xml: Buffer }> = []
   const chartByBin = new Map<number, string | null>()
-  // BinData 이름 — 한글처럼 처음 참조한 차례로 번호를 매긴다(header 의 그림 채우기 → 본문). 차트 OLE 는 oleN, 그 밖은 imageN
-  const refs = new Map<number, { id: string; kind: "image" | "chart" | "ole" }>()
-  const refer = (binId: number, kind: "image" | "chart" | "ole"): string => {
+  // BinData 이름 — 한글처럼 처음 참조한 차례로 번호를 매긴다(header 의 그림 채우기 → 본문). OLE 스토리지는 차트든 아니든 oleN, 그 밖은 imageN
+  const refs = new Map<number, { id: string; kind: "image" | "ole" }>()
+  const refer = (binId: number, kind: "image" | "ole"): string => {
     let r = refs.get(binId)
-    if (!r) refs.set(binId, (r = { id: `${kind === "chart" ? "ole" : "image"}${refs.size + 1}`, kind }))
+    if (!r) refs.set(binId, (r = { id: `${kind}${refs.size + 1}`, kind }))
     return r.id
   }
   const ctx: ConvertContext = {
     memoShapes: docInfo.filter(r => r.tagId === TAG_MEMO_SHAPE).length,
+    paraIds: paraShapeIds(docInfo),
     fields: { stack: [] },
     masterPages: [],
     tailMasters: [],
@@ -118,7 +131,7 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
       return name
     },
     binRef: binId => refer(binId, "image"),
-    oleRef: (binId, chart) => refer(binId, chart ? "chart" : "ole"),
+    oleRef: binId => refer(binId, "ole"),
   }
 
   const zip = new JSZip()
@@ -145,16 +158,20 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
   // 참조 차례로 BinData — 확장자는 스토리지 이름(BIN0001.jpg)을 따른다. 참조 없는 항목은 뒤에 붙인다
   for (const b of items) if (!refs.has(b.index)) refer(b.index, b.ole ? "ole" : "image")
   const manifest: string[] = [el("opf:item", [["id", "header"], ["href", "Contents/header.xml"], ["media-type", "application/xml"]])]
+  const memoEx = memoExtendedXml(c.findStream("/MemoExtended"), c.compressed)
+  if (memoEx) {
+    zip.file("Contents/memoExtended.xml", memoEx)
+    manifest.push(el("opf:item", [["id", "memoextended"], ["href", "Contents/memoExtended.xml"], ["media-type", "application/xml"]]))
+  }
   for (const [binId, r] of refs) {
     const b = items.find(x => x.index === binId)
     const data = b && bins.get(b.storageId)
     if (!b || !data) continue
-    const ext = r.kind === "chart" ? "ole" : r.kind === "ole" ? "OLE" : (/\.([^.]+)$/.exec(data.name)?.[1] ?? b.ext)
+    const ext = r.kind === "ole" ? "ole" : (/\.([^.]+)$/.exec(data.name)?.[1] ?? b.ext)
     const name = `BinData/${r.id}.${ext}`
     zip.file(name, data.data, /^(png|jpe?g|gif)$/i.test(ext) ? { compression: "STORE" } : undefined)
     manifest.push(el("opf:item", [["id", r.id], ["href", name],
-      ["media-type", r.kind === "chart" ? "application/ole" : r.kind === "ole" ? "application/octet-stream" : `image/${ext.toLowerCase()}`],
-      ["isEmbeded", r.kind === "chart" ? 0 : 1]]))
+      ["media-type", r.kind === "ole" ? "application/ole" : `image/${ext.toLowerCase()}`], ["isEmbeded", r.kind === "ole" ? 0 : 1]]))
   }
   manifest.push(...sectionItems)
   for (const ch of charts) zip.file(ch.name, ch.xml)

@@ -115,7 +115,8 @@ const pt = (name: string, c: Cur): string => el(name, [["x", c.i32()], ["y", c.i
 function shapeHref(comp: RecNode): string {
   const cd = comp.kids.find(x => x.rec.tagId === TAG_CTRL_DATA)
   const v = cd ? subSet(readParamSet(cd.rec.data, { o: 0 }), 0x26f)?.[0x265] : undefined
-  return typeof v === "string" ? v : ""
+  // HWP 하이퍼링크 문자열의 \: 이스케이프는 한글이 HWPX href 에 풀어 쓴다
+  return typeof v === "string" ? v.replace(/\\:/g, ":") : ""
 }
 
 /** 개체 하나 — 개체 공통 속성(o)이 없으면 묶음 안 자식 */
@@ -125,7 +126,8 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
   const head: Array<[string, string | number]> = o ? objHeadAttrs(o)
     : [["id", 0], ["zOrder", 0], ["numberingType", "NONE"], ["textWrap", "TOP_AND_BOTTOM"], ["textFlow", "BOTH_SIDES"], ["lock", 0], ["dropcapstyle", "None"]]
   const comment = o && description ? `<hp:shapeComment>${escText(description)}</hp:shapeComment>` : ""
-  const tail = (o ? objPlacementXml(o) + caption : "") + comment
+  // 개체 설명은 캡션 앞에 둔다(한글 순서)
+  const tail = o ? objPlacementXml(o) + comment + caption : comment
   const common = componentHeadXml(k)
   const href = shapeHref(comp)
 
@@ -242,6 +244,7 @@ function oleXml(comp: RecNode, k: Component, head: Array<[string, string | numbe
   const r = new Cur(comp.kids.find(x => x.rec.tagId === TAG_SHAPE.OLE)?.rec.data ?? Buffer.alloc(0))
   const a = r.u32(), ex = r.i32(), ey = r.i32(), binId = r.u16()
   const lineColor = r.u32(), lineWidth = r.i32(), la = r.u32()
+  const instId = r.rest >= 4 ? r.u32() : 0
   const line = el("hp:lineShape", [["color", color(lineColor)], ["width", lineWidth], ["style", pick(BORDER_TYPES, bits(la, 0, 6))],
     ["endCap", pick(END_CAPS, bits(la, 6, 4))], ["headStyle", pick(ARROW_STYLES, bits(la, 10, 6))], ["tailStyle", pick(ARROW_STYLES, bits(la, 16, 6))],
     ["headfill", bit(la, 30)], ["tailfill", bit(la, 31)], ["headSz", pick(ARROW_SIZES, bits(la, 22, 4))], ["tailSz", pick(ARROW_SIZES, bits(la, 26, 4))],
@@ -249,8 +252,8 @@ function oleXml(comp: RecNode, k: Component, head: Array<[string, string | numbe
   const chart = o ? ctx.chartOf(binId) : null
   // 차트의 OLE 기본 갈래는 조판 전 꼴로 쓴다 — 캡션 마지막 줄 폭 0xFFFFFFFF, 줄 나눔 정보 없음. 조판된 캡션은 차트 갈래에 둔다
   const oleCaption = chart ? caption.replace(/ lastWidth="\d+"/, ' lastWidth="4294967295"').replace(/<hp:linesegarray>[\s\S]*?<\/hp:linesegarray>/g, "") : caption
-  const ole = el("hp:ole", [...head, ["href", shapeHref(comp)], ["groupLevel", k.groupLevel], ["instid", 0], ["objectType", pick(OLE_TYPES, bits(a, 16, 6))],
-    ["binaryItemIDRef", ctx.oleRef(binId, !!chart)], ["hasMoniker", bit(a, 8)], ["drawAspect", OLE_ASPECTS[bits(a, 0, 8)] ?? "CONTENT"],
+  const ole = el("hp:ole", [...head, ["href", shapeHref(comp)], ["groupLevel", k.groupLevel], ["instid", instId], ["objectType", pick(OLE_TYPES, bits(a, 16, 6))],
+    ["binaryItemIDRef", ctx.oleRef(binId)], ["hasMoniker", bit(a, 8)], ["drawAspect", OLE_ASPECTS[bits(a, 0, 8)] ?? "CONTENT"],
     ["eqBaseLine", bits(a, 9, 7)]],
   common + el("hc:extent", [["x", ex], ["y", ey]]) + line + (o ? objPlacementXml(o) + oleCaption : "") + comment)
   if (!chart) return ole

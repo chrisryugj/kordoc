@@ -28,9 +28,10 @@ const rec = (tagId: number, level: number, data: Buffer): Buffer => {
 const utf16 = (s: string): Buffer => Buffer.from(s, "utf16le")
 
 /** 문단 — runs: [글자 위치, 글자 모양 id] */
-function paragraph(text: string, runs: Array<[number, number]> = [[0, 0]], level = 0, instanceId = 0): Buffer {
+function paragraph(text: string, runs: Array<[number, number]> = [[0, 0]], level = 0, instanceId = 0, paraShape = 0): Buffer {
   const header = Buffer.alloc(24)
   header.writeUInt32LE(text.length + 1, 0)
+  header.writeUInt16LE(paraShape, 8)
   header.writeUInt16LE(runs.length, 12)
   header.writeUInt16LE(1, 16)
   header.writeUInt32LE(instanceId, 18)
@@ -81,15 +82,26 @@ function table2x2(cells: string[][]): Buffer {
   return Buffer.concat(parts)
 }
 
-function buildHwp(section: Buffer): Uint8Array {
+/** 문단 모양 기록(58바이트) — 왼쪽 여백·속성2 */
+function paraShapeRec(left: number, attr2 = 0): Buffer {
+  const d = Buffer.alloc(58)
+  d.writeInt32LE(left, 4)
+  d.writeInt32LE(160, 24)
+  d.writeUInt32LE(attr2, 42)
+  d.writeUInt32LE(160, 50)
+  return rec(0x19, 0, d)
+}
+
+function buildHwp(section: Buffer, docInfo = Buffer.alloc(0), extra: Record<string, Buffer> = {}): Uint8Array {
   const fileHeader = Buffer.alloc(256)
   fileHeader.write("HWP Document File", 0, "ascii")
   fileHeader.writeUInt32LE(0x05010100, 32)
   const cfb = CFB.utils.cfb_new()
   CFB.utils.cfb_add(cfb, "/FileHeader", fileHeader)
-  CFB.utils.cfb_add(cfb, "/DocInfo", Buffer.alloc(0))
+  CFB.utils.cfb_add(cfb, "/DocInfo", docInfo)
   CFB.utils.cfb_add(cfb, "/BodyText/Section0", section)
   CFB.utils.cfb_add(cfb, "/PrvText", utf16("미리보기"))
+  for (const [path, data] of Object.entries(extra)) CFB.utils.cfb_add(cfb, path, data)
   return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
 }
 
@@ -116,6 +128,28 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.match(xml, /<\/hp:tbl><hp:t\/><\/hp:run>/)
     const md = (await parse(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer)).markdown
     for (const s of ["표 앞", "가", "나", "다", "라"]) assert.ok(md.includes(s), md)
+  })
+
+  it("기록이 같은 문단 모양은 하나로 합쳐 참조를 다시 매기고, 홀수 여백은 HwpUnitChar 갈래에 CHAR, 글 방향은 속성2 비트 3", async () => {
+    const docInfo = Buffer.concat([paraShapeRec(0), paraShapeRec(1, 1 << 3), paraShapeRec(0)])
+    const hwp = buildHwp(Buffer.concat([paragraph("첫", [[0, 0]], 0, 0, 2), paragraph("둘", [[0, 0]], 0, 0, 1)]), docInfo)
+    const zip = await JSZip.loadAsync(await hwpToHwpx(hwp))
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    assert.match(header, /<hh:paraProperties itemCnt="2">/)
+    assert.match(header, /<hh:paraPr id="0"[^>]* textDir="AUTO">/)
+    assert.match(header, /<hh:paraPr id="1"[^>]* textDir="LTR">[\s\S]*?HwpUnitChar"><hh:margin><hc:intent value="0" unit="HWPUNIT"\/><hc:left value="0" unit="CHAR"\/>/)
+    assert.match(header, /<hp:default><hh:margin><hc:intent value="0" unit="HWPUNIT"\/><hc:left value="1" unit="HWPUNIT"\/>/)
+    assert.deepEqual([...(await sectionOf(await zip.generateAsync({ type: "uint8array" }))).matchAll(/<hp:p [^>]*paraPrIDRef="(\d+)"/g)].map(m => m[1]), ["0", "1"])
+  })
+
+  it("MemoExtended 스트림(메모 id·부모 id 쌍)을 Contents/memoExtended.xml 로 옮긴다", async () => {
+    const data = Buffer.alloc(20)
+    data.writeUInt32LE(2, 0)
+    ;[11, 21, 12, 22].forEach((v, i) => data.writeUInt32LE(v, 4 + i * 4))
+    const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), Buffer.alloc(0), { "/MemoExtended": rec(0x65, 0, data) })))
+    assert.match(await zip.file("Contents/memoExtended.xml")!.async("string"),
+      /<he:memosEx xmlns:he="http:\/\/www\.hancom\.co\.kr\/hwpml\/2021\/extended"><he:memo id="11" parentId="21"\/><he:memo id="12" parentId="22"\/><\/he:memosEx>$/)
+    assert.match(await zip.file("Contents/content.hpf")!.async("string"), /<opf:item id="memoextended" href="Contents\/memoExtended\.xml" media-type="application\/xml"\/>/)
   })
 
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
