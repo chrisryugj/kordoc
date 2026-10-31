@@ -65,6 +65,7 @@ npx kordoc 문서.pdf --format json --pages 1-3
 npx kordoc 스캔본.pdf --ocr -o 스캔본.md
 npx kordoc generate 보고서.md --preset 보고서 -o 보고서.hwpx
 npx kordoc to-hwpx 문서.hwp -o 문서.hwpx
+npx kordoc to-hwpx ./옛문서   # 폴더째(하위 폴더까지) — 각 파일 옆에 .hwpx, 이미 있으면 건너뜀
 npx kordoc pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack   # 기관팩 (docs/agency-pack.md)
 npx kordoc generate 새보고서.md --pack 광양시.kpack -o 새보고서.hwpx
 npx kordoc fill --template gian -j 값.json -o 기안문.hwpx

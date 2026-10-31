@@ -65,6 +65,7 @@ npx kordoc document.pdf --format json --pages 1-3
 npx kordoc scan.pdf --ocr -o scan.md
 npx kordoc generate report.md --preset report -o report.hwpx
 npx kordoc to-hwpx document.hwp -o document.hwpx
+npx kordoc to-hwpx ./old-docs   # whole folder (subfolders too) — .hwpx next to each file, existing ones skipped
 npx kordoc fill --template gian -j values.json -o draft.hwpx
 npx kordoc lint report.hwpx --gate --preset report
 ```

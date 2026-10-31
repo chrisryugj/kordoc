@@ -7,7 +7,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { createRequire } from "module"
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -215,6 +215,28 @@ describe("convertToHwpx·CLI·MCP — 저장 경로", () => {
     assert.equal(b.status, 2)
     assert.match(b.stderr, /이미 있습니다/)
     assert.equal(readFileSync(join(dir, "보고.hwpx"), "utf8"), "한글 저장본")
+  })
+
+  it("CLI: 폴더를 주면 하위 폴더까지 바꿔 각 파일 옆에 두고, 이미 있는 .hwpx 는 건너뛴다", () => {
+    const root = join(dir, "일괄")
+    mkdirSync(join(root, "하위"), { recursive: true })
+    mkdirSync(join(root, ".숨김"))
+    writeFileSync(join(root, "가.hwp"), buildHwp(paragraph("가 본문")))
+    writeFileSync(join(root, "하위", "나.HWP"), buildHwp(paragraph("나 본문")))
+    writeFileSync(join(root, "하위", "다.hwp"), buildHwp(paragraph("다 본문")))
+    writeFileSync(join(root, "하위", "다.hwpx"), "한글 저장본")
+    writeFileSync(join(root, ".숨김", "라.hwp"), buildHwp(paragraph("라 본문")))
+    writeFileSync(join(root, "깨짐.hwp"), "HWP 아님")
+    const r = run(["to-hwpx", root, "--json"])
+    assert.equal(r.status, 1, "깨진 파일 하나가 실패로 남는다")
+    const sum = JSON.parse(r.stdout)
+    assert.deepEqual([sum.converted, sum.skipped, sum.failed], [2, 1, 1])
+    assert.ok(existsSync(join(root, "가.hwpx")) && existsSync(join(root, "하위", "나.hwpx")))
+    assert.equal(readFileSync(join(root, "하위", "다.hwpx"), "utf8"), "한글 저장본")
+    assert.ok(!existsSync(join(root, ".숨김", "라.hwpx")))
+    const o = run(["to-hwpx", root, "-o", join(dir, "x.hwpx")])
+    assert.equal(o.status, 2)
+    assert.match(o.stderr, /파일 하나를 바꿀 때만/)
   })
 
   it("MCP convert_to_hwpx: 같은 규칙으로 저장하고 결과를 알린다", async () => {
