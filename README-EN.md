@@ -108,14 +108,14 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables and statute annexes: 4.24.24 · 2026-10-30; OCR: 4.24.30 · 2026-10-31; HWP → HWPX conversion: 4.24.29 · 2026-10-31). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF text and PDF tables: 4.24.31 · 2026-10-31; OCR: 4.24.30 · 2026-10-31; HWP → HWPX conversion: 4.24.29 · 2026-10-31). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
 | HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.21%** · exact **69/232** · text **264/264** · 80 documents checked side by side in Hangul |
-| PDF text | 744 pairs | Character recall **99.883%** · precision **99.678%** · reading order **99.312%** · word-boundary F1 **99.067%** |
+| PDF text | 744 pairs | Character recall **99.883%** · precision **99.680%** · reading order **99.348%** · word-boundary F1 **99.069%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
@@ -129,15 +129,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.30](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.30)** · 2026-10-31
+Latest release: **[4.24.31](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.31)** · 2026-10-31
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.31 | PDF reading order: picture-heavy 2-up pages · side-by-side tables in approval-document heads (document number → approval box) · PDF false tables: body text under a notice head "○○고시 제 호" · fixed-width word lines in HWP 3 manuals | PDF text reading order 99.312% → **99.348%** · precision 99.678% → **99.680%** · reordered tables 5 → **2** · other benchmark metrics unchanged |
 | 4.24.30 | Parsers: bold and underline markers in paragraphs that contain a filled click-here field or a hyperlink (emphasis in press-release bodies inside a click-here field was lost, HWPX and HWP) · PDF tables: Hancom clips on only a few cells no longer take those cells away from the ruled table · to-hwpx: drawing line transparency | OCR table reference loses a phantom table, 34/67 → **34/66** · CER 0.0244 → **0.0237** · patch residual for inserting a bold word, HWPX 80 → **60**/489 · benchmark metrics unchanged |
 | 4.24.29 | to-hwpx: written the way Hangul saves — paragraph text direction (textDir), identical paragraph shapes merged, odd margin and tab values in character units, OLE item names, the memo extension part, border fill 0 in older HWP files and more · patch: emphasis marked on new text is applied even when the original paragraph lacked it, text between several edits in one paragraph keeps its formatting, emphasis markers in HTML table cells were written as literal text, HWP cells of tables nested in cells · HWP parser: emphasis in bold paragraphs that contain superscripts | Conversion attribute match 0.99194 → **0.99214** · exact matches 14 → **69**/232 · patch residual for inserting a bold word, HWPX 241 → **121**/265 · HWP cell appends 83 → **93**/93 · HWP vs HWPX parse differing units 118 → **98** · benchmark metrics unchanged |
 | 4.24.28 | Memos: read and attach (`memos`, `kordoc memo`, MCP `add_memo`, #180) · patch: text appended after bold or superscript no longer inherits that formatting (HWP and HWPX), bulleted paragraphs (#179), HWPX paragraphs with tabs/entities/PUA symbols plus HWP paragraphs with PUA symbols or forced line breaks and HWP table cells edited where they changed · to-hwpx: circled and boxed composed numbers (#178) · HWP parser: bold, italic, strikethrough and underline markers | patch residuals HWPX 45 → **3**/540 · HWP 24 → **4**/140 and 37 → **0**/605 (after the parser emits emphasis) · HWP rewrites in the original formatting 90 → **94**/98 · HWP vs HWPX parse differing units 390 → **118** · benchmark metrics unchanged |
 | 4.24.27 | Form filling and seals (`fill_form`, `place_seal`): HWP 5.x forms keep their original formatting too · patch: HWP rewrites in the original's formatting (edits applied to the HWPX converted with formatting intact), values written beside an unfilled click-here field go into the field (HWP and HWPX), GFM tables with bold cells, one-column tables with multi-line cells, pairing repeated paragraphs | patch edits applied HWPX 539 → **540**/540 · table cells 465 → **467**/467 · HWP 132 → **140**/140 · HWP rewrites in the original's formatting 0 → **90**/98 · benchmark metrics unchanged |
-| 4.24.26 | HWP → HWPX conversion (`kordoc to-hwpx`, MCP `convert_to_hwpx`): HWP 5.x with formatting preserved — master pages, tables, pictures, shapes, linked text boxes, equations, fields, memos, form controls and charts · patch (HWP): paragraphs with tabs or fields edited character by character · Markdown: list markers at the start of list items escaped | Conversion attribute match **0.992** · text **264/264** (pairs saved by Hangul) · 80 documents checked in Hangul · patch HWP 123 → **132**/140 · benchmark metrics unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

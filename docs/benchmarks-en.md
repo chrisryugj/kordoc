@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.31: PDF reading order · false tables · 2026-10-31
+
+PDF text benchmark (744 pairs): reading order .99312 → **.99348**, precision .99678 → **.99680**, word F1 .99067 → **.99069**, recall .99883 unchanged. PDF tables: reordered 5 → **2**, otherwise unchanged per document. Statute annexes, ODL 200 documents and OCR unchanged per document.
+
+- 2-up page order (156775933 and 156776126 order 0.93 → 1), side-by-side tables in approval-document heads (3 documents 0.84–0.91 → 1), notice-draft false tables (3 documents), HWP 3 manual false tables (hwp3-sample11 .9937 → .9960).
+- hwp3-sample11 word F1 .99663 → .99661: cell text freed from a false table joins "문자⏎로" as a particle (the source spaces it after a forced line break; the PDF cannot tell).
+
 ## 4.24.30: emphasis in click-here paragraphs · PDF clip fragment tables · 2026-10-31
 
 Benchmark metrics are the same as 4.24.29 (every `bench:gate` stage passes — PDF tables, PDF text, statute annexes, round trip and formats unchanged per document; PDF text coverage .99801 → .99802).
