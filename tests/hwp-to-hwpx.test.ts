@@ -142,6 +142,15 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.deepEqual([...(await sectionOf(await zip.generateAsync({ type: "uint8array" }))).matchAll(/<hp:p [^>]*paraPrIDRef="(\d+)"/g)].map(m => m[1]), ["0", "1"])
   })
 
+  it("없는 테두리 0번 참조(옛 판의 '테두리 없음')는 한글처럼 빈 테두리를 1번에 끼우고 번호를 민다", async () => {
+    const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(table2x2([["가", "나"], ["다", "라"]]))))
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    assert.match(header, /<hh:borderFills itemCnt="1"><hh:borderFill id="1" [^>]*><hh:slash type="NONE"[^>]*\/><hh:backSlash type="NONE"[^>]*\/><hh:leftBorder type="NONE" width="0.1 mm"/)
+    const xml = await sectionOf(await zip.generateAsync({ type: "uint8array" }))
+    assert.doesNotMatch(xml, /borderFillIDRef="0"/)
+    assert.equal((xml.match(/<hp:tc [^>]*borderFillIDRef="1"/g) ?? []).length, 4)
+  })
+
   it("MemoExtended 스트림(메모 id·부모 id 쌍)을 Contents/memoExtended.xml 로 옮긴다", async () => {
     const data = Buffer.alloc(20)
     data.writeUInt32LE(2, 0)

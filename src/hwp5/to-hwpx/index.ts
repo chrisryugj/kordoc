@@ -83,6 +83,32 @@ function memoExtendedXml(raw: Buffer | null, compressed: boolean): string | null
   return memos.length ? XML_DECL + `<he:memosEx xmlns:he="http://www.hancom.co.kr/hwpml/2021/extended">${memos.join("")}</he:memosEx>` : null
 }
 
+/** 한글이 테두리 0번 참조를 메우려고 1번에 끼우는 빈 테두리 */
+const EMPTY_BORDER_FILL = '<hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">'
+  + '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
+  + ["left", "right", "top", "bottom"].map(s => `<hh:${s}Border type="NONE" width="0.1 mm" color="#000000"/>`).join("")
+  + '<hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill>'
+
+/**
+ * 없는 테두리 0번(테두리는 1번부터)을 가리키는 문서 — 한글이 아닌 도구로 쓴 HWP 다. 한글처럼 빈 테두리를 1번에 끼우고 기존 번호와
+ * 모든 참조를 하나씩 민다(0 → 1)
+ */
+function shiftZeroBorderFill(parts: Map<string, string>): Map<string, string> {
+  if (![...parts.values()].some(x => x.includes('borderFillIDRef="0"'))) return parts
+  const out = new Map<string, string>()
+  for (const [name, xml] of parts) {
+    let x = xml.replace(/borderFillIDRef="(\d+)"/g, (_, n: string) => `borderFillIDRef="${Number(n) + 1}"`)
+    if (name === "Contents/header.xml") {
+      x = x.replace(/<hh:borderFill id="(\d+)"/g, (_, n: string) => `<hh:borderFill id="${Number(n) + 1}"`)
+      x = x.includes("<hh:borderFills ")
+        ? x.replace(/<hh:borderFills itemCnt="(\d+)">/, (_, n: string) => `<hh:borderFills itemCnt="${Number(n) + 1}">${EMPTY_BORDER_FILL}`)
+        : x.replace("</hh:fontfaces>", `</hh:fontfaces><hh:borderFills itemCnt="1">${EMPTY_BORDER_FILL}</hh:borderFills>`)
+    }
+    out.set(name, x)
+  }
+  return out
+}
+
 const V13_DEFAULT_SCRIPT = "function OnDocument_New()\r\n{\r\n\t//todo : \r\n}\r\n\r\n"
 
 export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpToHwpxOptions): Promise<Uint8Array> {
@@ -139,22 +165,23 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
   zip.file("version.xml", XML_DECL + el("hv:HCFVersion", [["xmlns:hv", "http://www.hancom.co.kr/hwpml/2011/version"], ["tagetApplication", "WORDPROCESSOR"],
     ["major", 5], ["minor", 1], ["micro", 1], ["buildNumber", 0], ["os", 1], ["xmlVersion", "1.5"], ["application", "kordoc"], ["appVersion", VERSION]]),
   { compression: "STORE" })
-  zip.file("Contents/header.xml", headerXml(docInfo, link, ctx.binRef, sections.length))
+  const parts = new Map<string, string>([["Contents/header.xml", headerXml(docInfo, link, ctx.binRef, sections.length)]])
 
   const sectionNames: string[] = []
   const sectionItems: string[] = []
   sections.forEach((recs, i) => {
     const name = `Contents/section${i}.xml`
     const mp0 = ctx.masterPages.length
-    zip.file(name, sectionXml(recordTree((recs ?? []) as Rec[]), ctx))
+    parts.set(name, sectionXml(recordTree((recs ?? []) as Rec[]), ctx))
     // 구역의 바탕쪽은 매니페스트에서 그 구역 앞에 둔다(한글 저장 꼴)
     for (let k = mp0; k < ctx.masterPages.length; k++) {
-      zip.file(`Contents/masterpage${k}.xml`, ctx.masterPages[k])
+      parts.set(`Contents/masterpage${k}.xml`, ctx.masterPages[k])
       sectionItems.push(el("opf:item", [["id", `masterpage${k}`], ["href", `Contents/masterpage${k}.xml`], ["media-type", "application/xml"]]))
     }
     sectionNames.push(name)
     sectionItems.push(el("opf:item", [["id", `section${i}`], ["href", name], ["media-type", "application/xml"]]))
   })
+  for (const [name, xml] of shiftZeroBorderFill(parts)) zip.file(name, xml)
   // 참조 차례로 BinData — 확장자는 스토리지 이름(BIN0001.jpg)을 따른다. 참조 없는 항목은 뒤에 붙인다
   for (const b of items) if (!refs.has(b.index)) refer(b.index, b.ole ? "ole" : "image")
   const manifest: string[] = [el("opf:item", [["id", "header"], ["href", "Contents/header.xml"], ["media-type", "application/xml"]])]
