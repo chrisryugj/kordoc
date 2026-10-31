@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PDF 표 모아찍기 단 넘김: 왼쪽 쪽 바닥까지 찬 클립 표의 넓은 끝 칸이 오른쪽 쪽 머리의 획 상자(1×1, 클립 없음)로 이어지면 따로 나왔다 — 채용 공고 "채용 결격사유" 칸의 6의4 가.~③ 이 칸 밖 상자 글이 됐다. 단 거리만큼 옮긴 상자 좌우가 머리 있는 표 끝 행의 넓은 칸(표 폭 80% 이상)과 맞으면 그 칸 글로 잇는다(클립 조각 잇기는 두 조각 모두 클립이어야 했다). PDF 표 칸 내용 거리 .98794 → **.98843**(pair06 .872 → 1), PDF 글·별표·ODL·OCR 문서별 그대로.
+
 ## [4.24.32] - 2026-11-01
 
 ### Fixed

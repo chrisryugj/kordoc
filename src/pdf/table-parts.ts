@@ -909,6 +909,29 @@ function mergeColumnFlow(blocks: IRBlock[], pageHeights?: Map<number, number>, l
     const R = blocks[k]
     if (Math.abs(R.bbox!.width - L.bbox.width) > Math.max(R.bbox!.width, L.bbox.width) * NEIGHBOR_TABLE_EPSILON) continue
     if (!looksContinued(L, R) || restartsTable(blocks, i, R.table!, pageHeights)) continue
+    // 오른쪽 단 첫머리 조각이 획으로 그린 1×1 상자이고(클립 없음) 단 거리만큼 옮기면 왼쪽 표(머리 있는 여러 행) 마지막 행의 넓은 칸과
+    // 좌우가 맞으면 그 칸이 단을 넘어 이어진 것이다 — 모아찍기 채용 공고 "채용 결격사유" 칸(결격사유 6의4 가.~③)이 오른쪽 쪽 머리
+    // 상자로 갈려 따로 나왔다. 클립 조각 잇기(joinClipParts)는 두 조각 모두 클립이어야 한다
+    const rt = R.table!
+    if (rt.rows === 1 && rt.cols === 1 && !CLIP_TABLES.has(rt) && L.table.rows >= 2) {
+      const px = TABLE_COLXS.get(L.table), lb = L.bbox
+      const dx = (lb.x + lb.width) - (R.bbox!.x + R.bbox!.width)
+      const last = L.table.cells[L.table.rows - 1]
+      let col = 0
+      const target = px && last.find(c => {
+        const x1 = px[col], x2 = px[Math.min(px.length - 1, col + c.colSpan)]
+        col += c.colSpan
+        return c.rowSpan === 1 && x2 - x1 >= lb.width * 0.8 && Math.abs(x1 - (R.bbox!.x + dx)) <= 3 && Math.abs(x2 - (R.bbox!.x + R.bbox!.width + dx)) <= 3
+      })
+      if (target && target.text.trim() && rt.cells[0][0].text.trim()) {
+        appendCell(target, rt.cells[0][0])
+        const top = L.bbox.y + L.bbox.height
+        blocks[Math.min(i, k)] = { ...L, bbox: { ...L.bbox, y: R.bbox!.y, height: Math.max(0, top - R.bbox!.y) } }
+        blocks.splice(Math.max(i, k), 1)
+        i = Math.min(i, k) - 1
+        continue
+      }
+    }
     const joined = joinClipParts(L, R, pageHeights, lex)
     if (!joined) continue
     const top = L.bbox.y + L.bbox.height
