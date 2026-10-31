@@ -2,6 +2,41 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.29: HWP → HWPX conversion accuracy · patch emphasis · 2026-10-31
+
+Benchmark metrics are the same as 4.24.28 (every `bench:gate` stage passes). HWP → HWPX conversion (`node bench/hwp2hwpx.mjs`, same reference set and scoring as 4.24.26):
+
+| Metric | 4.24.28 | 4.24.29 |
+| --- | --- | --- |
+| Attribute match (232 pairs) | 0.99194 | **0.99214** |
+| Exact matches | 14/232 | **69/232** |
+| Part match (names of BinData and other parts, 264 pairs) | 0.82197 | **0.84091** |
+| Text match (264 pairs) | 264/264 | 264/264 |
+
+Forms that differed from the files Hangul saved were traced to fields in the HWP records and fixed: Hangul 2024's paragraph text direction (textDir, bit 3 of the paragraph shape's second attribute), merging paragraph shapes whose records are byte-identical, character units (CHAR) for odd margin and tab values, OLE BinData names, the memo extension part, border fill 0 references in older HWP files and more. The 95 reference files saved by Hangul 2022 have no textDir, which adds units there, but 55 reference files saved by Hangul 2024 differed only in it and so missed an exact match. The 10 documents affected by the changed forms were opened again in Hangul (Mac) next to the original HWP; page 1, the status bar and the multi-page view match.
+
+The remaining 0.786% (41,309 units) is information the HWP does not hold. Counted by cause:
+
+| Cause | Units |
+| --- | --- |
+| Fonts on the computer that saved the reference — localized font names (English↔Korean), substitutes for missing fonts, font type info | 13,107 |
+| 34 reference HWPX files written by a tool other than Hangul (the rhwp editing engine) — their XML declaration and compression differ from Hangul's | 9,094 |
+| Changes between saving the two files — char shape lists rebuilt, duplicated borders from pasted tables, edits | 8,986 |
+| The Hangul version that saved the reference — Hangul 2022 writes no textDir (plus 2 files from early Hangul 2024 builds) | 6,791 |
+| Values Hangul laid out again — paragraphs whose line layout was dropped, equation sizes, original image sizes filled only for images shown on screen | 2,975 |
+| Meta tags from the saving session, object numbers Hangul assigned anew, change-tracking marks, a strikeout form found in one document only, and the like | 356 |
+
+patch now applies emphasis marked on new text even when the original paragraph lacked that formatting, and keeps the formatting of text between several edits in one paragraph. Edit-kind experiment (one kind of edit on three text units per document, residual compared after parsing again, formatting included):
+
+| Experiment | 4.24.28 | 4.24.29 |
+| --- | --- | --- |
+| HWPX inserting a bold word (117 documents · 265 edits) residual | 241 | **121** |
+| HWPX two edits in one paragraph (227 edits) residual | 1 | **0** |
+| HWP 5.x inserting a bold word (30 documents · 64 edits) residual | 115,442 (includes one stress-test document whose units were misaligned as a whole) | **14** |
+| HWP 5.x two edits in one paragraph (54 edits) applied · residual | 52 · 4 | **54 · 0** |
+| HWP 5.x table cell edits (24 documents, two cells each) append · replace a word · two edits | 83/93 · 58/75 · 36/61 | **93/93 · 74/75 · 59/61** |
+| Same document parsed from HWP and HWPX (37 pairs) differing units | 118 | **98** |
+
 ## 4.24.28: formatting of appended text in patch · memos · 2026-10-31
 
 Benchmark metrics are the same as 4.24.27 (every `bench:gate` stage passes). In the patch edit experiment (same method as 4.24.25) the number of applied edits is unchanged, and the verification residual — units that differ when the patched file is parsed again, formatting included — went down:

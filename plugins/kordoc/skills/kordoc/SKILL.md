@@ -20,14 +20,14 @@ kordoc(npm)은 관공서 문서 파이프라인 도구다. HWP 3.x/5.x·HWPX·HW
 설치 없이 npx 로 실행한다 (정확한 버전 고정, 릴리스 때 `scripts/sync-meta.mjs` 가 맞춘다):
 
 ```bash
-npx -y kordoc@4.24.28 <command> ...
+npx -y kordoc@4.24.29 <command> ...
 ```
 
 네트워크가 제한된 linux/x64 에서 PNG 렌더·이미지 OCR 이 `MISSING_DEPENDENCY`(sharp) 로 실패하면 onnxruntime-node 의 CUDA
-다운로드 실패로 sharp 까지 빠진 것이다 — `ONNXRUNTIME_NODE_INSTALL=skip npx -y kordoc@4.24.28 …` 로 다시 설치한다.
+다운로드 실패로 sharp 까지 빠진 것이다 — `ONNXRUNTIME_NODE_INSTALL=skip npx -y kordoc@4.24.29 …` 로 다시 설치한다.
 
 첫 호출만 패키지 다운로드로 느리고 이후는 캐시. 상시 사용 환경이면 MCP 서버로 붙일 수도 있다
-(사용자가 터미널에서 직접 `npx -y kordoc@4.24.28 setup` 을 실행한다. 설치된 모든 편집기에 등록하는 대화형 마법사라 에이전트가 대신 실행하지 않는다).
+(사용자가 터미널에서 직접 `npx -y kordoc@4.24.29 setup` 을 실행한다. 설치된 모든 편집기에 등록하는 대화형 마법사라 에이전트가 대신 실행하지 않는다).
 MCP 도구 21종: `parse_document`, `parse_table`, `parse_pages`, `parse_metadata`, `parse_chunks`, `parse_form`,
 `fill_form`, `place_seal`, `patch_document`, `generate_document`, `lint_document`, `compare_documents`, `detect_format`,
 `render_document`, `crop_regions`, `extract_tables`, `extract_profile`, `redact_document`, `build_agency_pack`, `agency_pack_info`,
@@ -37,21 +37,21 @@ MCP 도구 21종: `parse_document`, `parse_table`, `parse_pages`, `parse_metadat
 
 | 작업 | 명령 |
 |---|---|
-| 문서 → Markdown | `npx -y kordoc@4.24.28 문서.hwpx -o 문서.md` |
-| 일괄 변환 | `npx -y kordoc@4.24.28 *.pdf -d ./변환결과/` |
+| 문서 → Markdown | `npx -y kordoc@4.24.29 문서.hwpx -o 문서.md` |
+| 일괄 변환 | `npx -y kordoc@4.24.29 *.pdf -d ./변환결과/` |
 | 페이지/섹션 범위 | `-p 1-3` 또는 `-p 1,3,5` |
 | 구조화 JSON (blocks+metadata) | `--format json` |
-| 서식 필드 목록만 보기 | `npx -y kordoc@4.24.28 fill 서식.hwpx --dry-run` |
-| 서식 채우기 | `npx -y kordoc@4.24.28 fill 서식.hwpx -j 값.json -o 결과.hwpx` |
-| 공문서 생성 | `npx -y kordoc@4.24.28 generate 초안.md -o 결과.hwpx --preset 보고서` |
-| HWP → HWPX (서식 그대로) | `npx -y kordoc@4.24.28 to-hwpx 문서.hwp -o 문서.hwpx` |
-| 편집 왕복 패치 | `npx -y kordoc@4.24.28 patch 원본.hwpx 편집.md -o 결과.hwpx` |
+| 서식 필드 목록만 보기 | `npx -y kordoc@4.24.29 fill 서식.hwpx --dry-run` |
+| 서식 채우기 | `npx -y kordoc@4.24.29 fill 서식.hwpx -j 값.json -o 결과.hwpx` |
+| 공문서 생성 | `npx -y kordoc@4.24.29 generate 초안.md -o 결과.hwpx --preset 보고서` |
+| HWP → HWPX (서식 그대로) | `npx -y kordoc@4.24.29 to-hwpx 문서.hwp -o 문서.hwpx` |
+| 편집 왕복 패치 | `npx -y kordoc@4.24.29 patch 원본.hwpx 편집.md -o 결과.hwpx` |
 | 서식 베끼기 (견본 서식으로 새 문서) | 견본을 `--keep-layout-tables` 로 읽어 내용만 새로 쓴 뒤 `patch 견본.hwpx 새문서.md -o 새문서.hwpx` (아래 4-1) |
-| 기관팩 만들기 (우리 기관 문서 여러 건) | `npx -y kordoc@4.24.28 pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack` (아래 4-2) |
-| 기관팩으로 새 문서 | `npx -y kordoc@4.24.28 pack info 광양시.kpack --guide` → 요령대로 원고 → `generate 원고.md --pack 광양시.kpack -o 결과.hwpx` |
-| HWPX 구조 검증 | `npx -y kordoc@4.24.28 validate 결과.hwpx` |
-| 조판 SVG 렌더 | `npx -y kordoc@4.24.28 render 문서.hwpx -o 미리보기.svg` |
-| 도장/서명 배치 | `npx -y kordoc@4.24.28 seal 문서.hwpx --image 도장.png --anchor "(인)" -o 결과.hwpx` |
+| 기관팩 만들기 (우리 기관 문서 여러 건) | `npx -y kordoc@4.24.29 pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack` (아래 4-2) |
+| 기관팩으로 새 문서 | `npx -y kordoc@4.24.29 pack info 광양시.kpack --guide` → 요령대로 원고 → `generate 원고.md --pack 광양시.kpack -o 결과.hwpx` |
+| HWPX 구조 검증 | `npx -y kordoc@4.24.29 validate 결과.hwpx` |
+| 조판 SVG 렌더 | `npx -y kordoc@4.24.29 render 문서.hwpx -o 미리보기.svg` |
+| 도장/서명 배치 | `npx -y kordoc@4.24.29 seal 문서.hwpx --image 도장.png --anchor "(인)" -o 결과.hwpx` |
 
 > **도장 위치 한계**: 중첩표·글상자·탭/줄바꿈 문단·복잡 rowSpan 그리드는 근사 배치이며 결과 `warnings` 에 고지된다 — 한컴에서 확인 후 `--dx`/`--dy`(MCP `dx_mm`/`dy_mm`)로 보정한다.
 
@@ -60,7 +60,7 @@ MCP 도구 21종: `parse_document`, `parse_table`, `parse_pages`, `parse_metadat
 ### 1) 읽기 — 어떤 문서든 Markdown 으로
 
 ```bash
-npx -y kordoc@4.24.28 사업계획서.hwp -o 사업계획서.md
+npx -y kordoc@4.24.29 사업계획서.hwp -o 사업계획서.md
 ```
 
 - 병합·중첩 표는 GFM 으로 표현이 안 되므로 HTML `<table>`(colspan/rowspan)로 나온다 — 그대로 다루면 된다.
@@ -74,7 +74,7 @@ npx -y kordoc@4.24.28 사업계획서.hwp -o 사업계획서.md
 ### 2) 공문서 생성 — Markdown 규약
 
 ```bash
-npx -y kordoc@4.24.28 generate 보고서.md -o 보고서.hwpx --preset 보고서
+npx -y kordoc@4.24.29 generate 보고서.md -o 보고서.hwpx --preset 보고서
 ```
 
 - 프리셋: `기안문`(official) · `보고서`(report) · `계획서`(plan) · `통지`(notice) · `회의록`(minutes) ·
@@ -151,9 +151,9 @@ npx -y kordoc@4.24.28 generate 보고서.md -o 보고서.hwpx --preset 보고서
 ### 4) 기존 문서 편집 (patch)
 
 ```bash
-npx -y kordoc@4.24.28 원본.hwpx -o 편집.md     # ① 파싱
+npx -y kordoc@4.24.29 원본.hwpx -o 편집.md     # ① 파싱
 # ② 편집.md 를 수정 (내용만 — 구조 이동/삭제 최소화)
-npx -y kordoc@4.24.28 patch 원본.hwpx 편집.md -o 수정본.hwpx   # ③ 서식 보존 반영
+npx -y kordoc@4.24.29 patch 원본.hwpx 편집.md -o 수정본.hwpx   # ③ 서식 보존 반영
 ```
 
 - 원본의 글꼴·표·개체·조판을 보존한 채 글 변경을 in-place 반영한다. HWPX 는 문단 추가·삭제도 반영한다(새 문단은 같은 항목 부호 원본 문단의 서식 복제, `--no-structure` 로 끔). HWP 5.x 는 문단 추가·삭제를 원본을 서식 그대로 HWPX 로 바꾼 대체본(`<출력>.rewrite.hwpx`)에 반영한다.
@@ -169,10 +169,10 @@ npx -y kordoc@4.24.28 patch 원본.hwpx 편집.md -o 수정본.hwpx   # ③ 서�
 같은 기관 서식으로 계속 쓸 거면 4-2 기관팩.
 
 ```bash
-npx -y kordoc@4.24.28 견본.hwpx --keep-layout-tables -o 견본.md     # ① 견본 읽기 (MCP: parse_document keep_layout_tables: true)
+npx -y kordoc@4.24.29 견본.hwpx --keep-layout-tables -o 견본.md     # ① 견본 읽기 (MCP: parse_document keep_layout_tables: true)
 # ② 견본.md 를 복사해 내용만 새로 쓴다 — 골격은 그대로
-npx -y kordoc@4.24.28 patch 견본.hwpx 새문서.md -o 새문서.hwpx        # ③ 견본 서식으로 반영 (MCP: patch_document)
-npx -y kordoc@4.24.28 render 새문서.hwpx --format png -d ./미리보기   # ④ 쪽마다 눈으로 확인
+npx -y kordoc@4.24.29 patch 견본.hwpx 새문서.md -o 새문서.hwpx        # ③ 견본 서식으로 반영 (MCP: patch_document)
+npx -y kordoc@4.24.29 render 새문서.hwpx --format png -d ./미리보기   # ④ 쪽마다 눈으로 확인
 ```
 
 ②에서 지킬 것:
@@ -191,10 +191,10 @@ kordoc 에 없는 기관(지자체·공공기관) 서식으로 **앞으로 계�
 견본 한 건으로 한 문서만 쓰는 일은 4-1(patch) 또는 `generate --template` 이다.
 
 ```bash
-npx -y kordoc@4.24.28 pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack   # ① 같은 종류 3~10건 (MCP: build_agency_pack)
-npx -y kordoc@4.24.28 pack info 광양시.kpack --guide                                          # ② 작성 요령 읽기 (MCP: agency_pack_info)
-npx -y kordoc@4.24.28 generate 새보고서.md --pack 광양시.kpack -o 새보고서.hwpx                 # ③ 요령의 원고 예 꼴로 쓴 원고 (MCP: generate_document pack_path)
-npx -y kordoc@4.24.28 render 새보고서.hwpx --format png -d ./미리보기                           # ④ 눈으로 확인
+npx -y kordoc@4.24.29 pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack   # ① 같은 종류 3~10건 (MCP: build_agency_pack)
+npx -y kordoc@4.24.29 pack info 광양시.kpack --guide                                          # ② 작성 요령 읽기 (MCP: agency_pack_info)
+npx -y kordoc@4.24.29 generate 새보고서.md --pack 광양시.kpack -o 새보고서.hwpx                 # ③ 요령의 원고 예 꼴로 쓴 원고 (MCP: generate_document pack_path)
+npx -y kordoc@4.24.29 render 새보고서.hwpx --format png -d ./미리보기                           # ④ 눈으로 확인
 ```
 
 지킬 것:
@@ -210,7 +210,7 @@ npx -y kordoc@4.24.28 render 새보고서.hwpx --format png -d ./미리보기   
 ### 5) 도장/서명 배치 (seal)
 
 ```bash
-npx -y kordoc@4.24.28 seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 신청서_날인.hwpx
+npx -y kordoc@4.24.29 seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 신청서_날인.hwpx
 ```
 
 - 앵커 문구("(인)"·"서명 또는 인" 등) 위/옆에 이미지를 **글 앞 부유**로 얹는다 — 표·페이지가
