@@ -18,6 +18,14 @@ describe("orderTwoUpPage", () => {
     assert.deepEqual(orderTwoUpPage(blocks, W, H).map(name), ["L제목", "L표", "R표", "－ 373 －"])
   })
 
+  it("keeps blocks without a box with their neighbour and needs only one sheet to fill half the page", () => {
+    // 오른쪽 쪽이 그림 위주인 보도자료 2-up — 그림·합친 문단은 자리가 없고, 오른쪽 자리 블록은 머리 표 하나뿐이다
+    const img: IRBlock = { type: "image", text: "image_001.png", pageNumber: 1 }
+    const merged: IRBlock = { type: "paragraph", text: "L본문", pageNumber: 1 }
+    const blocks = [b("R머리", 400, 470, 330, 25, true), b("L머리", 30, 470, 330, 25, true), merged, b("L끝", 30, 60, 330, 40), img]
+    assert.deepEqual(orderTwoUpPage(blocks, W, H).map(x => x.text ?? name(x)), ["L머리", "L본문", "L끝", "image_001.png", "R머리"])
+  })
+
   it("leaves portrait pages and pages with content across the middle alone", () => {
     const blocks = [b("R", 400, 300, 300, 100), b("L", 30, 200, 300, 100)]
     assert.deepEqual(orderTwoUpPage(blocks, 595, 842).map(name), ["R", "L"])

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PDF: 가로 쪽 두 쪽 모아찍기(2-up)를 왼쪽 쪽 → 오른쪽 쪽으로 다시 세우는 판정이 자리(bbox) 없는 블록(그림·합친 문단)이 하나라도 있거나 오른쪽 쪽이 그림 위주라 자리 있는 글이 짧으면 꺼졌다 — 오른쪽 쪽 머리 표가 왼쪽 본문보다 먼저 나왔다(보도자료 2-up). 자리 없는 블록은 앞 블록과 같은 쪽에 두고, 한쪽이라도 쪽 높이 절반 넘게 차면 다시 선다. PDF 글 순서 .99312 → **.99318**(156775933·156776126 0.93 → 1), PDF 표·별표·ODL·OCR 문서별 그대로.
+
 ## [4.24.30] - 2026-10-31
 
 ### Fixed
