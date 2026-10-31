@@ -133,6 +133,41 @@ describe("hp:t 안 탭 요소·엔티티·PUA 기호가 든 문단 수정", () =
   })
 })
 
+describe("글머리표 문단 수정 (#179)", () => {
+  // 문단 모양 0 을 글머리표 1번(PUA U+F09F)으로 — 파서는 IR 글 앞에 PUA 그대로 붙이고 마크다운엔 표시값 "•" 로 낸다
+  async function bulleted(): Promise<Uint8Array> {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("첫 문단\n\n구축된 A 기반\n\n끝 문단"))
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    const withBullet = header
+      .replace(/(<hh:paraPr\b[^>]*\bid="0"[\s\S]*?)<hh:heading\b[^>]*\/>/, '$1<hh:heading type="BULLET" idRef="1" level="0"/>')
+      .replace("</hh:refList>", '<hh:bullets itemCnt="1"><hh:bullet id="1" char="\uF09F" useImage="0"/></hh:bullets></hh:refList>')
+    assert.notEqual(withBullet, header)
+    zip.file("Contents/header.xml", withBullet)
+    return zip.generateAsync({ type: "uint8array" })
+  }
+
+  it("마크다운의 글머리표(표시값)는 떼고 글만 고친다 — 글머리표가 두 번 나오지 않는다", async () => {
+    const src = await bulleted()
+    const md = await markdownOf(src)
+    assert.ok(md.includes("• 구축된 A 기반"), md)
+    const r = await patchHwpx(src, md.replace("• 구축된 A 기반", "• 구축된 A 기반 B"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    const out = await markdownOf(r.data!)
+    assert.ok(out.includes("• 구축된 A 기반 B") && !out.includes("• •"), out)
+  })
+
+  it("글머리표 앞에 넣은 글은 글머리표 뒤에 넣고 알린다", async () => {
+    const src = await bulleted()
+    const md = await markdownOf(src)
+    const r = await patchHwpx(src, md.replace("• 구축된 A 기반", "[표시] • 구축된 A 기반"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(r.skipped.length > 0 && r.skipped.every(s => s.partial && s.reason.includes("앞에 넣은 글")), JSON.stringify(r.skipped))
+    const out = await markdownOf(r.data!)
+    assert.ok(out.includes("• [표시] 구축된 A 기반") && !out.includes("• •"), out)
+  })
+})
+
 describe("새로쓰기 대체본 (rewrite-fallback)", () => {
   it("글을 반영 못 한 건너뜀이 있을 때만 대체본이 필요하다", () => {
     assert.equal(needsRewrite({ success: true, data: new Uint8Array(1), applied: 1, skipped: [] }), false)

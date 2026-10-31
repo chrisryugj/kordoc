@@ -275,6 +275,44 @@ describe("patchHwp — 문단 텍스트 교체", () => {
   })
 })
 
+describe("patchHwp — 글머리표 문단 (#179)", () => {
+  // 문단 모양 0 보통 · 1 글머리표 1번. 글머리표 글자는 PUA(U+F09F) — 파서는 IR 글 앞에 그대로 붙이고 마크다운엔 표시값 "•" 로 낸다
+  const paraShape = (headType: number, numberingId: number): Buffer => {
+    const b = Buffer.alloc(54); b.writeUInt32LE((headType << 23) >>> 0, 0); b.writeUInt16LE(numberingId, 30); return b
+  }
+  const bulletRec = Buffer.alloc(20); bulletRec.writeUInt16LE(0xf09f, 12)
+  const docInfo = Buffer.concat([rec(0x19, 0, paraShape(0, 0)), rec(0x19, 0, paraShape(3, 1)), rec(0x18, 0, bulletRec)])
+  const bulleted = (text: string): Buffer => { const p = paragraph(text); p.writeUInt16LE(1, 4 + 8); return p } // PARA_HEADER paraShapeId
+  const hwp = buildHwp([paragraph("첫 문단"), bulleted("구축된 A 기반"), paragraph("끝 문단")], 0, docInfo)
+  const md = parseHwp5Document(Buffer.from(hwp)).markdown
+  const reread = (data: Uint8Array): string => parseHwp5Document(Buffer.from(data)).markdown
+
+  it("마크다운의 글머리표(표시값)는 떼고 글만 고친다 — 글머리표가 두 번 나오지 않는다", async () => {
+    assert.ok(md.includes("• 구축된 A 기반"), md)
+    const r = await patchHwp(hwp, md.replace("• 구축된 A 기반", "• 구축된 A 기반 B"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    const out = reread(r.data!)
+    assert.ok(out.includes("• 구축된 A 기반 B"), out)
+    assert.ok(!out.includes("• •"), out)
+  })
+
+  it("글머리표 앞에 넣은 글은 글머리표 뒤에 넣고 알린다 — 기호는 문단 모양", async () => {
+    const r = await patchHwp(hwp, md.replace("• 구축된 A 기반", "[표시] • 구축된 A 기반"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(r.skipped.length > 0 && r.skipped.every(s => s.partial && s.reason.includes("앞에 넣은 글")), JSON.stringify(r.skipped))
+    const out = reread(r.data!)
+    assert.ok(out.includes("• [표시] 구축된 A 기반") && !out.includes("• •"), out)
+  })
+
+  it("글머리표를 지운 줄은 글만 적용하고 알린다 — 글머리표는 문단 모양이라 남는다", async () => {
+    const r = await patchHwp(hwp, md.replace("• 구축된 A 기반", "구축된 A 기반 C"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(r.skipped.every(s => s.partial), JSON.stringify(r.skipped))
+    assert.ok(reread(r.data!).includes("• 구축된 A 기반 C"))
+  })
+})
+
 describe("patchHwp — 굵은 조각이 있는 표 칸", () => {
   const charShape = (attr: number): Buffer => { const b = Buffer.alloc(74); b.writeUInt32LE(100, 42); b.writeUInt32LE(attr, 46); return b }
   const docInfo = Buffer.concat([rec(0x15, 0, charShape(0)), rec(0x15, 0, charShape(0x02))]) // 글자 모양 0 보통 · 1 굵게

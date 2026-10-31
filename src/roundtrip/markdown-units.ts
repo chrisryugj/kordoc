@@ -455,6 +455,31 @@ export function parseHtmlTable(raw: string): HtmlRowInfo[] | null {
 export const AUTONUM_PREFIX_RE =
   /^(?:[0-9０-９a-zA-Z가-힣]{1,6}[.)\]:]|[([][0-9０-９a-zA-Z가-힣]{1,6}[)\]][.:]?|[ⅰ-ⅹⅠ-Ⅹ①-⑮][.)\]:]?)$/u
 
+/**
+ * 편집 글에서 문단 머리 기호(자동 번호·글머리표 — 원문 글에 없고 파서가 IR 글 앞에 붙인 것)를 뗀다. 기호는 마크다운에 보이는 꼴
+ * (PUA 글머리표는 표시값)로 맞댄다 — 원문 꼴로만 맞대면 표시값 "•" 를 못 알아봐 기호가 본문 글로 들어가 두 번 찍혔다(#179).
+ * note 는 글만 적용하고 알릴 것. 기호는 문단 모양이라 바꾸거나 지울 수 없고, 기호 앞에 넣은 글은 기호 뒤로 간다. 마크다운에 안
+ * 보이는 기호(표시값 없는 PUA)면 편집 글 그대로. patcher·hwp5-patch·session 이 같이 쓴다
+ */
+export function stripHeadMarker(blockText: string, edited: string): { text: string; note?: string } {
+  const raw = blockText.split(" ", 1)[0]
+  const shown = sanitizeText(raw)
+  if (!shown) return { text: edited }
+  const toks = edited.split(" ")
+  if (toks[0] === shown || toks[0] === raw) return { text: toks.slice(1).join(" ") }
+  // 기호 앞에 글을 넣은 줄("[표시] • 본문") — 번호 꼴 판정보다 먼저 ("[표시]" 도 번호 꼴이다)
+  const k = toks.findIndex(t => t === shown || t === raw)
+  if (k > 0) return { text: [...toks.slice(0, k), ...toks.slice(k + 1)].join(" "), note: "문단 머리 기호(글머리표·자동 번호) 앞에 넣은 글은 기호 뒤에 넣음 — 기호는 문단 모양" }
+  if (AUTONUM_PREFIX_RE.test(toks[0])) return { text: toks.slice(1).join(" "), note: "자동 번호는 문단 모양이라 바꾼 번호는 반영하지 않음 — 글만 적용" }
+  return { text: edited, note: "문단 머리 기호(글머리표·자동 번호)는 문단 모양이라 지우지 않음 — 글만 적용" }
+}
+
+/** 원본 단위 평문(마크다운 꼴)에서 문단 머리 기호를 뗀다 — 편집 글과 같은 꼴로 바뀐 자리를 잡게 (stripHeadMarker 짝) */
+export function stripShownHeadMarker(blockText: string, plain: string): string {
+  const shown = sanitizeText(blockText.split(" ", 1)[0])
+  return shown && plain.startsWith(shown + " ") ? plain.slice(shown.length + 1) : plain
+}
+
 /** HTML 셀 inner → 평문 라인 — <br> 분리, <img>/중첩표 토큰 제외, 엔티티 복원(builder escapeHtmlCellText 의 역) */
 export function htmlCellInnerToLines(inner: string): { lines: string[]; hadNonText: boolean; imgSrcs: string[] } {
   let hadNonText = false

@@ -35,7 +35,7 @@ import { detectFormat } from "../detect.js"
 import {
   splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
-  AUTONUM_PREFIX_RE, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
+  stripHeadMarker, stripShownHeadMarker, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
 } from "./markdown-units.js"
 import { stripCellTokens, extractCellTokens, extractImgTags } from "./table-patch.js"
@@ -704,16 +704,11 @@ function patchParagraph(
     }
   }
 
-  // 자동번호 접두 — 레코드에 없는 텍스트이므로 떼고 기록
+  // 자동번호·글머리표 접두 — 레코드에 없는 텍스트이므로 떼고 기록
   if (mapping.prefixStripped) {
-    const origPrefix = block.text!.split(" ", 1)[0]
-    const sp = newPlain.indexOf(" ")
-    const newFirst = sp > 0 ? newPlain.slice(0, sp) : newPlain
-    if (newFirst === origPrefix || AUTONUM_PREFIX_RE.test(newFirst)) {
-      newPlain = sp > 0 ? newPlain.slice(sp + 1) : ""
-    } else {
-      ctx.skipped.push({ reason: "자동번호 접두 식별 실패 — 번호 포함 텍스트로 적용 (뷰어에서 중복 표시 가능)", after: summarize(newPlain) })
-    }
+    const head = stripHeadMarker(block.text!, newPlain)
+    newPlain = head.text
+    if (head.note) ctx.skipped.push({ reason: head.note, after: summarize(newPlain), partial: true })
   }
 
   // 원본 비교는 block.text(강제 줄바꿈 \n 보존) 기준 — textUnitToPlain 은 \n 을 공백으로
@@ -728,10 +723,7 @@ function patchParagraph(
   // 바뀐 자리 계산용 원문 평문: 편집본과 같은 마크다운 경로(공백 접힘·표지 걷기)를 거쳐야 diff 가 고친 자리만 잡는다
   let origMd = restoreBr(textUnitToPlain(orig.raw, block))
   if (block.footnoteText) origMd = origMd.replace(/\s*\(주: [\s\S]*\)$/, "")
-  if (mapping.prefixStripped) {
-    const origPrefix = block.text!.split(" ", 1)[0]
-    if (origMd.startsWith(origPrefix + " ")) origMd = origMd.slice(origPrefix.length + 1)
-  }
+  if (mapping.prefixStripped) origMd = stripShownHeadMarker(block.text!, origMd)
   return stageParaPatch(ctx.scans[mapping.para.sectionIndex], mapping.para, newPlain, skip, ctx.keepLineseg, origMd)
 }
 

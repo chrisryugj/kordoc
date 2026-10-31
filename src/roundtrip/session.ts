@@ -29,7 +29,7 @@ import {
   type ParaMapping,
 } from "./patcher.js"
 import { applyCellEdit, stripCellTokens, extractCellTokens } from "./table-patch.js"
-import { splitMarkdownUnits, normForMatch, sanitizeText, summarize, AUTONUM_PREFIX_RE } from "./markdown-units.js"
+import { splitMarkdownUnits, normForMatch, sanitizeText, summarize, stripHeadMarker } from "./markdown-units.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
 
 // ─── 공개 타입 ───────────────────────────────────────
@@ -426,16 +426,11 @@ export class HwpxSession {
       if (r.missing.length) skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
     }
 
-    // 자동번호 접두 — XML에 없는 텍스트이므로 떼고 기록 (patcher와 동일 규칙)
+    // 자동번호·글머리표 접두 — XML에 없는 텍스트이므로 떼고 기록 (patcher와 동일 규칙)
     if (mapping.prefixStripped) {
-      const origPrefix = block.text!.split(" ", 1)[0]
-      const sp = newPlain.indexOf(" ")
-      const newFirst = sp > 0 ? newPlain.slice(0, sp) : newPlain
-      if (newFirst === origPrefix || AUTONUM_PREFIX_RE.test(newFirst)) {
-        newPlain = sp > 0 ? newPlain.slice(sp + 1) : ""
-      } else {
-        skipped.push({ reason: "자동번호 접두 식별 실패 — 번호 포함 텍스트로 적용 (뷰어에서 중복 표시 가능)", after: summarize(newPlain) })
-      }
+      const head = stripHeadMarker(block.text!, newPlain)
+      newPlain = head.text
+      if (head.note) skipped.push({ reason: head.note, after: summarize(newPlain), partial: true })
     }
 
     // 빈 문자열 비우기 — 재파싱 시 블록이 사라져 핸들이 영구 소실되고,

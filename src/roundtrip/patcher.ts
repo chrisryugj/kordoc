@@ -26,7 +26,7 @@ import {
 import { noteFormatFrom, noteRefMark, type NoteNumberFormat } from "../hwpx/notes.js"
 import { patchZipEntries } from "./zip-patch.js"
 import { checkPatchIntegrity } from "./integrity.js"
-import { AUTONUM_PREFIX_RE,
+import { stripHeadMarker, stripShownHeadMarker,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable, parseHtmlTable, htmlCellInnerToLines,
   alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
@@ -697,18 +697,12 @@ function patchParagraphUnit(
     if (r.missing.length) ctx.skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
   }
 
-  // 자동번호 접두 — XML에 없는 텍스트이므로 떼고 기록
+  // 자동번호·글머리표 접두 — XML에 없는 텍스트이므로 떼고 기록
   if (mapping.prefixStripped) {
-    const origPrefix = block.text!.split(" ", 1)[0]
-    if (origPlain.startsWith(origPrefix + " ")) origPlain = origPlain.slice(origPrefix.length + 1)
-    const sp = newPlain.indexOf(" ")
-    const newFirst = sp > 0 ? newPlain.slice(0, sp) : newPlain
-    // 번호 형식: 끝 구두점 필수("1." "가)" "(2)") 또는 단일 원문자/로마자 — 맨 단어 오인 방지
-    if (newFirst === origPrefix || AUTONUM_PREFIX_RE.test(newFirst)) {
-      newPlain = sp > 0 ? newPlain.slice(sp + 1) : ""
-    } else {
-      ctx.skipped.push({ reason: "자동번호 접두 식별 실패 — 번호 포함 텍스트로 적용 (뷰어에서 중복 표시 가능)", after: summarize(newPlain) })
-    }
+    origPlain = stripShownHeadMarker(block.text!, origPlain)
+    const head = stripHeadMarker(block.text!, newPlain)
+    newPlain = head.text
+    if (head.note) ctx.skipped.push({ reason: head.note, after: summarize(newPlain), partial: true })
   }
 
   if (newPlain === origPlain) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
