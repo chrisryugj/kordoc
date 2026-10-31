@@ -340,6 +340,17 @@ describe("결함 8 — 사이 본문을 건너뛴 리스트 중첩 순서 재배
     assert.equal(blocks.length, 2)
     assert.equal(blocks[0].children?.length, 2)
   })
+
+  it("옆 단 머리(앞 항목 오른끝 너머·위)의 번호 문항은 앞 선지 아래로 넣지 않는다", () => {
+    // 두 단 시험지: 왼쪽 단 끝 선지 ①~⑤ 뒤 오른쪽 단 첫 문항 "26." — 중첩되면 "  1. 26\." 으로 번호가 하나 더 붙었다
+    const at = (text: string, x: number, y: number): IRBlock => ({ type: "paragraph", text, pageNumber: 9, bbox: { page: 9, x, y, width: 217, height: 21 } })
+    // 25. 문항 뒤 <보기> 표가 목록 흐름을 끊어 선지 ①② 가 맨 위 단계가 된 뒤 오른쪽 단 "26." 이 온다
+    const box: IRBlock = { type: "table", pageNumber: 9, table: { rows: 1, cols: 1, cells: [[{ text: "보기", colSpan: 1, rowSpan: 1 }]] } }
+    const blocks: IRBlock[] = [at("25. 앞 문항", 62, 395), box, at("① 첫째", 70, 194), at("② 둘째", 70, 155), at("26. 다음 문항", 309, 722), at("① 셋째", 317, 690), at("② 넷째", 317, 664)]
+    detectKoreanListBlocks(blocks)
+    assert.ok(blocks.some(b => b.text === "26. 다음 문항" && b.type === "list"), JSON.stringify(blocks.map(b => b.text)))
+    assert.ok(!blocks.some(b => b.children?.some(c => c.text === "26. 다음 문항")))
+  })
 })
 
 // ─── 9. 그룹 vertex 자기 선 재계산 — 벤치 회귀로 롤백 ──

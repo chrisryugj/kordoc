@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PDF·OCR 두 단 판정: 좌우 단 줄이 같은 줄 격자에 서는 두 단(속기록·시험지)이 "좌우 같은 높이 행이 많으면 예산서 이름표|값 짝" 가드에 걸려 단을 섞어 읽었다 — 양 단 줄 머리 들여쓰기 자리(2pt 안 묶음, 두 줄 이상)가 서로 맞고 단 폭이 거의 같으면 단으로 본다. 쪽 위·아래 띠 거터 지속성 검사도, 두 자리가 10pt 넘게 떨어져도 그 띠에서 사이를 지나는 글 상자가 없으면 같은 빈 띠로 본다(OCR 회의록 단 사이 22pt). 함께, 왼쪽 단 끝 선지 ⑤ 뒤 오른쪽 단 첫 문항 "26." 을 들여쓰기 하위 목록으로 넣어 "1. 26\." 처럼 번호가 하나 더 붙던 것도(앞 항목 오른끝 너머·위에서 시작하면 새 목록). PDF 글 순서 .99348 → **.99356**(exam_kor .9776 → .992), 정밀도 .99680 → .99681, PDF 표·별표·ODL 200문서 문서별 그대로. issue2019(신·구 대비표 합성 서식) 순서 .871 → .864 — 같은 줄 나란한 현행|개정안을 이제 단으로 읽는다(재현율·정밀도는 오름).
+
+### 측정 참고
+
+- OCR 정답은 같은 PDF 텍스트층을 kordoc 이 읽은 결과라 이 고침으로 정답이 바뀐다(채점 방식은 그대로): assembly-minutes-1231 1쪽 아래 두 단을 정답·OCR 모두 섞어 읽어 CER 이 낮게 나왔다 — 이제 둘 다 좌단 → 우단으로 읽고, 바로잡힌 정답 대비 CER .018 → .0249. 전체 CER .02373 → .0239(strict .05516 → .05532), 그 밖 문서 그대로.
+
 ## [4.24.31] - 2026-10-31
 
 ### Fixed

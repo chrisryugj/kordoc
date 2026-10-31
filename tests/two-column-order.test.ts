@@ -141,6 +141,20 @@ describe("detectColumnGutter", () => {
     assert.equal(detectColumnGutter(rects), null)
   })
 
+  it("같은 줄 격자에 맞춘 두 단 산문(양 단 문단 첫 줄 들여쓰기 꼴이 같다) → 거터", () => {
+    // 속기록·시험지: 좌우 단 줄이 같은 높이에 서서 행 짝 가드에 걸렸다 — 문단 첫 줄은 10pt 들여 쓴다
+    const rects: ColRect[] = []
+    for (let i = 0; i < 24; i++) {
+      const indent = i % 6 === 0 ? 10 : 0
+      rects.push(rect(50 + indent, 900 - i * 16, 237 - indent, 11))
+      rects.push(rect(309 + (i % 6 === 3 ? 10 : 0), 900 - i * 16, 237 - (i % 6 === 3 ? 10 : 0), 11))
+    }
+    const gx = detectColumnGutter(rects)
+    assert.ok(gx !== null && gx > 287 && gx < 309, String(gx))
+    // 단 사이 빈 띠가 넓어 띠마다 고른 거터 자리가 10pt 넘게 달라도 같은 거터다
+    assert.notEqual(detectPersistentColumnGutter(rects), null)
+  })
+
   it("우측 상단 작은 사이드바(서명란류) → null", () => {
     const rects: ColRect[] = []
     for (let i = 0; i < 14; i++) rects.push(rect(60, 900 - i * 40, 300, 12)) // 본문 좌측

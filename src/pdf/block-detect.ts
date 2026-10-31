@@ -680,7 +680,12 @@ export function detectKoreanListBlocks(blocks: IRBlock[]): void {
     const listType: "ordered" | "unordered" = label.family === "arabicDot" ? "ordered" : "unordered"
     const listBlock: IRBlock = { ...b, type: "list", listType }
 
-    if (depth === 0) {
+    // 하위 family 라도 앞 항목 오른끝 너머·위에서 시작하면 들여쓰기가 아니라 옆 단 머리다(두 단 시험지: 왼쪽 단 끝 선지 ⑤ 뒤 오른쪽 단
+    // 첫 문항 "26.") — 중첩하지 않고 그 family 로 새 목록을 연다
+    const pb = lastTopLevelList?.bbox, cb = b.bbox
+    const notIndented = depth > 0 && !!pb && !!cb && pb.page === cb.page && cb.x >= pb.x + pb.width && cb.y >= pb.y + pb.height
+    if (notIndented) familyStack = [label.family]
+    if (depth === 0 || notIndented) {
       blocks[i] = listBlock
       lastTopLevelList = listBlock
     } else if (lastTopLevelList && i === prevListIdx + 1) {

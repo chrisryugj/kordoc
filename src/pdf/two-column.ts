@@ -140,19 +140,20 @@ export function detectColumnGutter(rects: ColRect[]): number | null {
   const lText = textRects(left)
   const rText = textRects(right)
   if (lText.length + rText.length >= BLOCK_DOMINANT_TEXT_RECTS) {
-    interface RowEdge { lEnd: number; rStart: number }
+    interface RowEdge { lStart: number; lEnd: number; rStart: number }
     const rows = new Map<number, RowEdge>()
     const rowKey = (y: number) => Math.round(y / ROW_Y_TOL)
     for (const r of lText) {
       const k = rowKey(r.y)
-      const e = rows.get(k) ?? { lEnd: -Infinity, rStart: Infinity }
+      const e = rows.get(k) ?? { lStart: Infinity, lEnd: -Infinity, rStart: Infinity }
+      if (r.x < e.lStart) e.lStart = r.x
       if (r.x + r.w > e.lEnd) e.lEnd = r.x + r.w
       rows.set(k, e)
     }
     const lRowCount = rows.size
     for (const r of rText) {
       const k = rowKey(r.y)
-      const e = rows.get(k) ?? { lEnd: -Infinity, rStart: Infinity }
+      const e = rows.get(k) ?? { lStart: Infinity, lEnd: -Infinity, rStart: Infinity }
       if (r.x < e.rStart) e.rStart = r.x
       rows.set(k, e)
     }
@@ -168,7 +169,7 @@ export function detectColumnGutter(rects: ColRect[]): number | null {
     }
     if (lRowCount < SIDE_MIN_TEXT_ROWS || rRowCount < SIDE_MIN_TEXT_ROWS) return null
     if (tinyGapRows > MAX_TINY_GAP_ROWS) return null
-    if (bothRows / Math.min(lRowCount, rRowCount) > MAX_BOTH_SIDE_ROW_RATIO) return null
+    if (bothRows / Math.min(lRowCount, rRowCount) > MAX_BOTH_SIDE_ROW_RATIO && !sameIndentColumns(rows, L, R)) return null
     // (c) 거터를 가로지르는 전폭 글줄이 적은 쪽 단의 줄 수만큼 있으면 한 단 본문이다 — 전폭 줄을 빼고 남은 낱말 조각(작은 대문자·글꼴이
     //     바뀐 낱말)만으로 거터가 보였다(ODL 003: 38줄 중 26줄이 가로질러 3pt 낱말 틈에서 한 줄이 찢겼다). ODL 의 나머지 거터 검출은
     //     전폭 줄(제목·캡션·표 머리)이 7줄 이하로 적은 쪽 단 줄 수의 0.6 미만
@@ -179,6 +180,30 @@ export function detectColumnGutter(rects: ColRect[]): number | null {
   }
 
   return gutterX
+}
+
+/**
+ * 같은 줄 격자에 맞춘 두 단(시험지: 문항 머리 0pt · 선지 8pt 들여쓰기가 양 단에 같다) — 양 단 줄 머리 들여쓰기 자리(2pt 안 줄 머리를
+ * 한 자리로 묶어 두 줄 이상 쓰인 자리, 가장 왼쪽 자리 기준, 6곳 이하)가 적은 쪽 2곳 이상 모두 다른 쪽 자리와 2pt 안으로 맞고 단 폭이
+ * 거의 같으면 좌우 동시 행이 많아도 단이다(문항 머리 줄이 둘뿐인 단은 0pt 자리가 빠진다, OCR 줄 머리는 1pt 씩 흔들린다).
+ * 예산서·이름표|값 짝은 오른쪽 값의 시작이 들쭉날쭉하거나 왼쪽 이름표와 꼴이 달라 걸리지 않는다
+ */
+function sameIndentColumns(rows: Map<number, { lStart: number; rStart: number }>, L: { width: number }, R: { width: number }): boolean {
+  if (Math.min(L.width, R.width) / Math.max(L.width, R.width) < 0.9) return false
+  const stops = (starts: number[]) => {
+    const xs = starts.filter(Number.isFinite).sort((a, b) => a - b)
+    const groups: number[][] = []
+    for (const x of xs) {
+      const g = groups[groups.length - 1]
+      if (g && x - g[g.length - 1] <= 2) g.push(x)
+      else groups.push([x])
+    }
+    const kept = groups.filter(g => g.length >= 2).map(g => g.reduce((a, b) => a + b, 0) / g.length)
+    return kept.map(x => x - kept[0])
+  }
+  const l = stops([...rows.values()].map(e => e.lStart)), r = stops([...rows.values()].map(e => e.rStart))
+  const [few, many] = l.length <= r.length ? [l, r] : [r, l]
+  return few.length >= 2 && many.length <= 6 && few.every(o => many.some(m => Math.abs(o - m) <= 2))
 }
 
 /**
@@ -196,16 +221,22 @@ export function detectPersistentColumnGutter(rects: ColRect[]): number | null {
   }
   const span = maxY - minY
   if (!Number.isFinite(span) || span < 200) return null
-  const upper80 = detectColumnGutter(rects.filter(r => r.y >= minY + span * 0.2))
-  const upper60 = upper80 === null ? null : detectColumnGutter(rects.filter(r => r.y >= minY + span * 0.4))
-  if (upper80 !== null && upper60 !== null && Math.abs(upper80 - upper60) <= 10) return (upper80 + upper60) / 2
+  // 두 띠 거터가 10pt 넘게 떨어져도 좁은 띠 안에서 그 사이를 지나는 글 상자가 없으면 같은 빈 띠 안이다 — 넓은 단 사이(OCR 회의록 22pt)
+  // 에서 스캔이 고르는 자리만 다르다
+  const same = (a: number, b: number, band: ColRect[]) => Math.abs(a - b) <= 10 ||
+    !band.some(r => r.x < Math.max(a, b) && r.x + r.w > Math.min(a, b))
+  const up80 = rects.filter(r => r.y >= minY + span * 0.2), up60 = rects.filter(r => r.y >= minY + span * 0.4)
+  const upper80 = detectColumnGutter(up80)
+  const upper60 = upper80 === null ? null : detectColumnGutter(up60)
+  if (upper80 !== null && upper60 !== null && same(upper80, upper60, up60)) return (upper80 + upper60) / 2
 
   // A full-width title and author band can mask the gutter in the upper
   // slices even when two independent prose columns persist below it.
-  const lower80 = detectColumnGutter(rects.filter(r => r.y <= maxY - span * 0.2))
+  const low80 = rects.filter(r => r.y <= maxY - span * 0.2), low60 = rects.filter(r => r.y <= maxY - span * 0.4)
+  const lower80 = detectColumnGutter(low80)
   if (lower80 === null) return null
-  const lower60 = detectColumnGutter(rects.filter(r => r.y <= maxY - span * 0.4))
-  return lower60 !== null && Math.abs(lower80 - lower60) <= 10 ? (lower80 + lower60) / 2 : null
+  const lower60 = detectColumnGutter(low60)
+  return lower60 !== null && same(lower80, lower60, low60) ? (lower80 + lower60) / 2 : null
 }
 
 /**
