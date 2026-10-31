@@ -9,12 +9,12 @@ Benchmark metrics are the same as 4.24.27 (every `bench:gate` stage passes). In 
 | Experiment | 4.24.27 | 4.24.28 |
 | --- | --- | --- |
 | HWPX text edits (117 documents · 540 edits) residual | 45 | **3** |
-| HWP 5.x text edits (30 documents · 140 edits) residual | 8 (24 once the parser emits emphasis) | **5** |
-| Wider HWP sample (138 documents · 605 edits) residual | 2 (37 once the parser emits emphasis) | **6** |
+| HWP 5.x text edits (30 documents · 140 edits) residual | 8 (24 once the parser emits emphasis) | **4** |
+| Wider HWP sample (138 documents · 605 edits) residual | 2 (37 once the parser emits emphasis) | **0** |
 | HWP rewrites in the original formatting (98 rewrites) | 90 | **94** |
 | Same document parsed from HWP and HWPX (37 pairs), differing units | 390 | **118** |
 
-The residual dropped because text appended after a bold or superscript run no longer inherits that formatting — it is inserted with the formatting its Markdown shows. The low 4.24.27 HWP residuals came from the HWP parser not emitting bold, which hid formatting differences; with emphasis now emitted they read 24 and 37, and this release brings them down to 5 and 6. Most of what remains is a word appended to evenly spaced text ("동 작 소 방 서") that the parser reads back joined (the document itself changes as intended).
+The residual dropped because text appended after a bold or superscript run no longer inherits that formatting — it is inserted with the formatting its Markdown shows. The low 4.24.27 HWP residuals came from the HWP parser not emitting bold, which hid formatting differences; with emphasis now emitted they read 24 and 37, and this release brings them down to 4 and 0. Of the 7 that remain, 5 (2 HWPX, 3 HWP) are a word appended to a short title written with even letter spacing ("재 무 상 태 표"), which the parser reads back joined as evenly spaced text; 1 HWPX residual is a table caption (captions are edited by finding the original text, without matching formatting); and 1 HWP residual is a stress-test document repeating the same paragraphs 110,000 times, which hits the 500,000-record reader limit and reads one more trailing paragraph after the edit. Except for the caption, the document changes as intended.
 
 ## 4.24.27: patch edit coverage · HWP form filling · 2026-10-31
 
