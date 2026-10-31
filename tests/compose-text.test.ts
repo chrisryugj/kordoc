@@ -10,7 +10,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { createRequire } from "node:module"
 import JSZip from "jszip"
-import { parse } from "../src/index.js"
+import { hwpToHwpx, parse } from "../src/index.js"
 import { charShape, ctrlIdBytes, paraHeader, paraText, rec } from "./fixtures/hwp5-records.js"
 import type { HwpRecord } from "../src/hwp5/record.js"
 
@@ -62,5 +62,22 @@ describe("글자 겹치기 — 겹친 글을 낸다", () => {
   it("HWP5: 글자 겹침 컨트롤도 같은 글", async () => {
     assert.ok((await markdown(hwp5("\u{F0289}\u{F0298}", 0), "a.hwp")).includes("잔존기간 ⑯견고"))
     assert.ok((await markdown(hwp5("12", 1), "a.hwp")).includes("잔존기간 ⑫견고"))
+  })
+})
+
+describe("글자 겹치기 — HWP → HWPX 변환 (#178)", () => {
+  const composeOf = async (buf: Buffer): Promise<string> => {
+    const xml = await (await JSZip.loadAsync(await hwpToHwpx(new Uint8Array(buf)))).file("Contents/section0.xml")!.async("string")
+    return /<hp:compose\b[^>]*\bcomposeText="([^"]*)"/.exec(xml)?.[1] ?? "(없음)"
+  }
+  it("도형 겹치기의 원 숫자·두 자리 번호 조각은 맨 숫자로 쓴다 — 한글 HWPX 저장본과 같다", async () => {
+    // 네모(테두리 3) 안 두 자리 번호 10 = 왼쪽 1 네모 조각 + 일의 자리 0 — 조각 그대로면 한글이 펼쳐 놓아 0 이 네모 밖으로 밀렸다
+    assert.equal(await composeOf(hwp5("\u{F02BA}\u{F02C3}", 3)), "10")
+    assert.equal(await composeOf(hwp5("②", 1)), "2")
+    assert.ok((await markdown(Buffer.from(await hwpToHwpx(new Uint8Array(hwp5("\u{F02BA}\u{F02C3}", 3)))), "a.hwpx")).includes("잔존기간 ⑩견고"))
+  })
+  it("도형 없이 겹친 글(테두리 0)과 숫자 아닌 글은 그대로 쓴다", async () => {
+    assert.equal(await composeOf(hwp5("\u{F02BA}\u{F02C3}", 0)), "\u{F02BA}\u{F02C3}")
+    assert.equal(await composeOf(hwp5("◯인", 1)), "◯인")
   })
 })

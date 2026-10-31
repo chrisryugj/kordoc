@@ -150,6 +150,25 @@ function numberGlyph(code: number): string | undefined {
   return u === undefined ? undefined : String(u)
 }
 
+/**
+ * 글자 겹치기 도형 안 글 → 맨 숫자. HWP 는 원·네모 겹치기 글을 원 숫자(②)나 위 PUA 번호 조각(원·네모 안 숫자, 두 자리 번호의 십·일의
+ * 자리)으로 담고, 한글이 HWPX 로 저장할 때는 맨 숫자로 담는다 — 도형은 circleType 이 그린다(한글 저장 짝: ② + 원 → "2"). 조각을
+ * 그대로 옮기면 한글이 펼쳐 놓아 뒤 조각이 네모 밖으로 밀렸다(#178). 글이 전부 숫자 글리프일 때만 바꾸고 아니면 그대로
+ */
+export function composeDigits(text: string): string {
+  let out = ""
+  for (const c of text) {
+    const code = c.codePointAt(0)!
+    const d = code >= 0x2460 && code <= 0x2473 ? code - 0x245f
+      : code === 0x24ea ? 0
+      : code >= 0xf02b0 && code <= 0xf02b9 ? code - 0xf02b0
+      : tensDigit(code) ?? unitsDigit(code)
+    if (d === undefined) return text
+    out += String(d)
+  }
+  return out || text
+}
+
 /** 이어진 두 글자가 두 자리 번호의 십의 자리 조각 + 일의 자리 숫자면 그 번호(원 숫자) */
 export function pairedNumber(a: string, b: string): string | undefined {
   const t = tensDigit(a.codePointAt(0) ?? 0), u = unitsDigit(b.codePointAt(0) ?? 0)

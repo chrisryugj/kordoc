@@ -9,6 +9,7 @@
 
 import { Cur, type RecNode, el, escText, color, pick, bit, bits, readParamSet, NUM_FORMATS } from "./util.js"
 import { paragraphsXml } from "./section.js"
+import { composeDigits } from "../../shared/pua.js"
 import { type ConvertContext, type CtrlXml, readObjCommon, objHeadAttrs, objPlacementXml, subListAttrs, listGroups, captionXml } from "./controls.js"
 
 const NUM_TYPES = ["PAGE", "FOOTNOTE", "ENDNOTE", "PICTURE", "TABLE", "EQUATION", "TOTAL_PAGE"] as const
@@ -106,8 +107,9 @@ export function otherControlXml(id: string, node: RecNode, ctx: ConvertContext):
       const circle = c.u8(), size = c.i8(), expansion = c.u8(), n = c.u8()
       const ids: number[] = []
       for (let i = 0; i < n && c.rest >= 4; i++) ids.push(c.u32())
+      // 도형(원·네모 …) 겹치기의 원 숫자·번호 조각은 HWPX 에선 맨 숫자 (composeDigits, #178)
       return { obj: false, xml: el("hp:compose", [["circleType", pick(COMPOSE_CIRCLES, circle)], ["charSz", size],
-        ["composeType", expansion ? "OVERLAP" : "SPREAD"], ["charPrCnt", ids.length], ["composeText", text]],
+        ["composeType", expansion ? "OVERLAP" : "SPREAD"], ["charPrCnt", ids.length], ["composeText", circle ? composeDigits(text) : text]],
       ids.map(i => el("hp:charPr", [["prIDRef", i]])).join("")) }
     }
     case "tdut": {
