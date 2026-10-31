@@ -359,6 +359,73 @@ describe("patchHwp — 굵은 조각이 있는 표 칸", () => {
     const out = parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown
     assert.ok(out.includes("성명 **김철수**"), out)
   })
+
+  it("칸 굵은 조각 끝 표지 밖에 붙인 글은 굵게를 물려받지 않는다", async () => {
+    const hwp = buildHwp([table([[styled("구분", [[0, 0]]), styled("성명 홍길동", [[0, 0], [3, 1]])], [styled("가", [[0, 0]]), styled("나", [[0, 0]])]])], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    const r = await patchHwp(hwp, md.replace("성명 **홍길동**", "성명 **홍길동** 귀하"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown.includes("성명 **홍길동** 귀하"))
+  })
+})
+
+describe("patchHwp — 붙인 글의 서식은 마크다운대로", () => {
+  const charShape = (attr: number): Buffer => { const b = Buffer.alloc(74); b.writeUInt32LE(100, 42); b.writeUInt32LE(attr, 46); return b }
+  // 글자 모양 0 보통 · 1 굵게 · 2 위첨자
+  const docInfo = Buffer.concat([rec(0x15, 0, charShape(0)), rec(0x15, 0, charShape(0x02)), rec(0x15, 0, charShape(1 << 15))])
+  function styled(text: string, runs: Array<[number, number]>): Buffer {
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(text.length + 1, 0)
+    header.writeUInt16LE(runs.length, 12)
+    header.writeUInt16LE(1, 16)
+    const cs = Buffer.alloc(runs.length * 8)
+    runs.forEach(([p, id], k) => { cs.writeUInt32LE(p, k * 8); cs.writeUInt32LE(id, k * 8 + 4) })
+    return Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, Buffer.concat([utf16(text), Buffer.from([0x0d, 0x00])])), rec(0x44, 1, cs), rec(0x45, 1, lineSeg36())])
+  }
+  const reread = (data: Uint8Array): string => parseHwp5Document(Buffer.from(data)).markdown
+
+  it("굵은 문단 끝 표지 밖에 붙인 글은 굵게를 물려받지 않는다 — 표지 안이면 굵게", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목입니다", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**굵은 제목입니다**"), md)
+    const r = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "**굵은 제목입니다** 붙인 글"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**굵은 제목입니다** 붙인 글"), reread(r.data!))
+    const r2 = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "**굵은 제목입니다 안쪽**"))
+    assert.ok(reread(r2.data!).includes("**굵은 제목입니다 안쪽**"))
+  })
+
+  it("굵게만 뺀 짝 글자 모양이 없으면 DocInfo 에 만들어 붙이고 ID_MAPPINGS 개수를 올린다", async () => {
+    // 글자 모양 0 굵게(크기 100) · 1 보통(크기 200) — 0 의 굵게 뺀 짝이 없다
+    const big = (attr: number): Buffer => { const b = charShape(attr); b.writeUInt32LE(200, 42); return b }
+    const idMappings = Buffer.alloc(72); idMappings.writeInt32LE(2, 36)
+    const di = Buffer.concat([rec(0x11, 0, idMappings), rec(0x15, 0, charShape(0x02)), rec(0x15, 0, big(0)), rec(0x19, 0, Buffer.alloc(54))])
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목입니다", [[0, 0]]), paragraph("끝 문단")], 0, di)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**굵은 제목입니다**"), md)
+    const r = await patchHwp(hwp, md.replace("**굵은 제목입니다**", "**굵은 제목입니다** 붙인 글"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**굵은 제목입니다** 붙인 글"), reread(r.data!))
+    const out = CFB.read(Buffer.from(r.data!), { type: "buffer" })
+    const recs = readRecords(Buffer.from(CFB.find(out, "/DocInfo").content))
+    assert.equal(recs.filter(x => x.tagId === 0x15).length, 3)
+    assert.equal(recs.find(x => x.tagId === 0x11)!.data.readInt32LE(36), 3)
+    assert.equal(recs[3].tagId, 0x15) // 마지막 CHAR_SHAPE 바로 뒤
+    assert.equal(recs[3].data.readUInt32LE(46), 0) // 굵게 뺀 사본
+  })
+
+  it("문단 끝 표시만 위첨자인 문단 끝에 붙인 글은 마지막 글자 모양을 받는다", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("보통 글자 문단입니다", [[0, 0], [11, 2]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("보통 글자 문단입니다") && !md.includes("<sup>"), md)
+    const r = await patchHwp(hwp, md.replace("보통 글자 문단입니다", "보통 글자 문단입니다 수정"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const out = reread(r.data!)
+    assert.ok(out.includes("보통 글자 문단입니다 수정") && !out.includes("<sup>"), out)
+  })
 })
 
 describe("patchHwp — 1열 표 여러 줄 칸", () => {

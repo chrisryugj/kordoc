@@ -22,25 +22,26 @@ import { createRequire } from "module"
 import { parseHwp5Document } from "../hwp5/parser.js"
 import { unfilledClickHereGuide, isClickHereGuideText } from "../hwp5/body.js"
 import {
-  decompressStream, parseFileHeader, createParaTextState, appendParaText, isExtendedOnlyCtrlChar,
-  TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE, TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE,
+  decompressStream, parseFileHeader, createParaTextState, appendParaText, isExtendedOnlyCtrlChar, readRecords,
+  TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE, TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE, TAG_ID_MAPPINGS, TAG_DOC_CHAR_SHAPE,
   FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_DISTRIBUTION, FLAG_DRM, FLAG_TRACK_CHANGES,
 } from "../hwp5/record.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  buildOrigUnits, alignUnits, diffUnitLists, textUnitToPlain, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
+  buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
 } from "./patcher.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
   splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
-  stripHeadMarker, stripShownHeadMarker, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
+  stripHeadMarker, stripShownHeadMarker, noScriptTags, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
 } from "./markdown-units.js"
 import { stripCellTokens, extractCellTokens, extractImgTags } from "./table-patch.js"
+import { hwpCharBook, restyleInserted, cellLineStyles, type HwpCharBook, type HwpInsertStyle } from "./hwp5-char-shape.js"
 import { replaceOleStream } from "./ole-surgeon.js"
-import { alignedTextEdits, parseEmphasis } from "./inline-edit.js"
+import { alignedTextEdits, parseEmphasis, styledInline, flagsPerChar } from "./inline-edit.js"
 
 const require = createRequire(import.meta.url)
 const CFB: CfbModule = require("cfb")
@@ -314,6 +315,23 @@ export async function patchHwp(
     return fail("암호화/배포용/DRM 문서는 패치를 지원하지 않습니다")
   }
   const compressed = (flags & FLAG_COMPRESSED) !== 0
+  // 글자 모양 책 — 새 글을 마크다운 서식대로 넣을 짝 글자 모양 (DocInfo 를 못 읽으면 없음: 서식은 들어갈 run 그대로). 짝이 없을 때
+  // 새로 만드는 건 DocInfo 를 바이트 그대로 다시 쓸 수 있고 ID_MAPPINGS 글자 모양 개수가 레코드 수와 맞을 때만
+  let charBook: HwpCharBook | undefined
+  let docInfoRecs: RawRecord[] | undefined
+  try {
+    const di = CFB.find(cfb, "/DocInfo")?.content
+    if (di) {
+      const stream = compressed ? decompressStream(Buffer.from(di)) : Buffer.from(di)
+      const recs = readRecordsStrict(stream)
+      const idm = recs?.find(r => r.tagId === TAG_ID_MAPPINGS)
+      const writable = !!recs && !!idm && idm.data.length >= 40 && serializeRecords(recs).equals(stream)
+        && idm.data.readInt32LE(36) === recs.filter(r => r.tagId === TAG_DOC_CHAR_SHAPE).length
+        && recs.map(r => r.tagId).lastIndexOf(TAG_DOC_CHAR_SHAPE) < recs.length - 1
+      charBook = hwpCharBook(recs ?? readRecords(stream), writable)
+      if (writable) docInfoRecs = recs!
+    }
+  } catch { /* 책 없이 — 서식은 run 그대로 */ }
 
   // 2) 원본 파싱 (기존 파서 그대로 — IR 블록 확보)
   //    원본 표 서수로 위치를 찾으므로 틀 표를 풀지 않은 keep 출력이 기준 — 편집본이 기본(visual) 출력이면 분명히 알린다
@@ -367,7 +385,7 @@ export async function patchHwp(
   const tableMap = resolveTableMappings(origBlocks, scans.flatMap(s => s.tables))
 
   // 5) 변경 적용 (스테이징)
-  const ctx: PatchCtx5 = { origBlocks, paraMap, scans, tableMap, skipped, keepLineseg: options?.keepLineseg === true }
+  const ctx: PatchCtx5 = { origBlocks, paraMap, scans, tableMap, skipped, keepLineseg: options?.keepLineseg === true, charBook }
   const unitKeys = origUnits.map(u => (u.kind === "text" ? fallbackPlain(u.raw, origBlocks[u.blockIdx]).replace(/\s+/g, "") : ""))
   for (const [oi, ei] of pairs) {
     if (oi !== null && ei !== null) {
@@ -397,6 +415,17 @@ export async function patchHwp(
         const newStream = serializeRecords(scans[i].records, scans[i].repl, scans[i].inserts)
         const content = compressed ? compressWithTail(newStream) : newStream
         out = replaceOleStream(out, sectionPaths[i], content)
+      }
+      // 새로 만든 글자 모양(붙인 글을 마크다운 서식대로) — CHAR_SHAPE 끝에 덧붙이고 ID_MAPPINGS 개수를 올린다
+      const added = charBook?.added() ?? []
+      if (added.length && docInfoRecs) {
+        const last = docInfoRecs.map(r => r.tagId).lastIndexOf(TAG_DOC_CHAR_SHAPE)
+        const idm = docInfoRecs.findIndex(r => r.tagId === TAG_ID_MAPPINGS)
+        const counts = Buffer.from(docInfoRecs[idm].data)
+        counts.writeInt32LE(counts.readInt32LE(36) + added.length, 36)
+        const stream = serializeRecords(docInfoRecs, new Map([[idm, counts]]),
+          new Map([[last + 1, added.map(data => ({ tagId: TAG_DOC_CHAR_SHAPE, level: docInfoRecs![last].level, data }))]]))
+        out = replaceOleStream(out, "/DocInfo", compressed ? compressWithTail(stream) : stream)
       }
       // 변경 추적 문서는 한컴이 ViewText(고치기 전 사본)를 그려 고친 글이 화면에 안 나온다 — 추적 표시를 끄면 BodyText 를 그린다
       // (한컴 맥 실측: 표시를 끈 패치본은 고친 글이 보이고 글자 수가 추적 기록을 뺀 지금 내용만큼으로 준다)
@@ -483,13 +512,15 @@ function resolveParaMappings(blocks: IRBlock[], scans: SectionScan5[]): Map<numb
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i]
     if ((b.type !== "paragraph" && b.type !== "heading") || !b.text) continue
-    let key = normForMatch(b.text)
+    // 첨자 태그는 파서 표기(원문 PARA_TEXT 엔 없다)라 떼고 맞댄다 (HWPX resolveParagraphMappings 와 같다)
+    const text = noScriptTags(b.text)
+    let key = normForMatch(text)
     let prefixStripped = false
     if (!buckets.has(key)) {
       // 자동번호/글머리 접두 제거 후 재시도 (파서가 붙인 headMarker)
-      const sp = b.text.indexOf(" ")
+      const sp = text.indexOf(" ")
       if (sp > 0) {
-        const alt = normForMatch(b.text.slice(sp + 1))
+        const alt = normForMatch(text.slice(sp + 1))
         if (alt && buckets.has(alt)) { key = alt; prefixStripped = true }
       }
     }
@@ -564,6 +595,8 @@ interface PatchCtx5 {
   tableMap: Map<number, ScanTable5>
   skipped: PatchSkip[]
   keepLineseg: boolean
+  /** DocInfo 글자 모양 책 — 새 글을 마크다운 서식대로 (hwp5-char-shape) */
+  charBook?: HwpCharBook
 }
 
 function handleModified(orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5): number {
@@ -684,7 +717,10 @@ function patchParagraph(
   // 연속 <br> 는 단일 \n 으로 접는다 — <br><br>(빈 줄)이 \n\n 으로 기록되면 재파싱 시
   // 한 문단이 둘로 분열돼 이후 영구 수정불가(fragment)가 되는 것을 방지 (hwp5-4)
   const restoreBr = (s: string): string => s.replace(/(?:\s*<br\s*\/?\s*>\s*)+/gi, "\n")
-  let newPlain = restoreBr(textUnitToPlain(edited.raw, block))
+  // 강조 표지·첨자 태그는 걷는다(원문 PARA_TEXT 엔 없다) — 서식 비트는 새 글을 마크다운 서식대로 넣는 데 쓴다
+  const editedStyled = textUnitStyled(edited.raw, block)
+  const origStyled = textUnitStyled(orig.raw, block)
+  let newPlain = restoreBr(editedStyled.plain)
   // 원본이 다중줄인데 새 값에 줄바꿈 표기가 없으면 — soft-wrap 접힘과 줄바꿈 제거 의도를
   // 구분할 수 없어 줄바꿈 위치 보존 불가 (기존 v1 전면 가드의 정밀화)
   if (block.text && block.text.includes("\n") && !newPlain.includes("\n")) {
@@ -714,17 +750,26 @@ function patchParagraph(
   // 원본 비교는 block.text(강제 줄바꿈 \n 보존) 기준 — textUnitToPlain 은 \n 을 공백으로
   // 접어 <br>→\n 복원본과 절대 같아질 수 없어, 표기만 바꾼(\n↔<br>) no-op 편집을 수정으로
   // 오판하고 문단을 재기록해 중간 서식(CHAR_SHAPE 다중 런)을 파괴했다 (hwp5-1)
-  const origPlain = block.text != null ? block.text : restoreBr(textUnitToPlain(orig.raw, block))
+  const origPlain = block.text != null ? noScriptTags(block.text) : restoreBr(origStyled.plain)
   if (newPlain === origPlain) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
   if (sanitizeText(newPlain) !== newPlain) {
     return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
   }
 
   // 바뀐 자리 계산용 원문 평문: 편집본과 같은 마크다운 경로(공백 접힘·표지 걷기)를 거쳐야 diff 가 고친 자리만 잡는다
-  let origMd = restoreBr(textUnitToPlain(orig.raw, block))
+  let origMd = restoreBr(origStyled.plain)
   if (block.footnoteText) origMd = origMd.replace(/\s*\(주: [\s\S]*\)$/, "")
   if (mapping.prefixStripped) origMd = stripShownHeadMarker(block.text!, origMd)
-  return stageParaPatch(ctx.scans[mapping.para.sectionIndex], mapping.para, newPlain, skip, ctx.keepLineseg, origMd)
+  // 서식 비트는 평문 좌표를 맞댈 수 있을 때만 — 앞의 머리 기호만 뗀 글은 그만큼 민다(줄바꿈·각주를 걷은 문단은 끈다)
+  const off = editedStyled.plain.length - newPlain.length
+  const style: HwpInsertStyle | undefined = ctx.charBook && off >= 0 && editedStyled.plain.endsWith(newPlain) && origStyled.plain.endsWith(origMd)
+    ? { flags: flagsPerChar(editedStyled.segs, editedStyled.flags).slice(off), known: origStyled.flags.reduce((a, b) => a | b, 0), book: ctx.charBook }
+    : undefined
+  const n = stageParaPatch(ctx.scans[mapping.para.sectionIndex], mapping.para, newPlain, skip, ctx.keepLineseg, origMd, style)
+  if (n && style?.missed) {
+    ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
+  }
+  return n
 }
 
 // ── GFM 표 셀 ──
@@ -766,7 +811,8 @@ function patchGfmCells(
         const para = cell.paras[0]
         if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); continue }
         if (afterEach.some(l => sanitizeText(l!) !== l)) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); continue }
-        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before) // 바뀐 자리만 — 굵은 조각 등 run 유지
+        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
+          cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(0, after))
         continue
       }
       if (beforeParts.length !== cell.paras.length || afterParts.length !== cell.paras.length) {
@@ -781,7 +827,8 @@ function patchGfmCells(
         const para = cell.paras[k]
         if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); break }
         if (sanitizeText(after) !== after) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); break }
-        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before) // 바뀐 자리만 — 굵은 조각 등 run 유지
+        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
+          cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(k, after))
       }
     }
   }
@@ -892,7 +939,7 @@ function patchTextChunk5(
         skip("셀 내 이미지 변경은 미지원")
         continue
       }
-      const newLines = after.map(l => parseEmphasis(stripCellTokens(l)).plain.trim()).filter(Boolean)
+      const newLines = after.map(l => styledInline(stripCellTokens(l)).plain.trim()).filter(Boolean)
       applied += applyCellEdit5(table, scanTable, r, 0, newLines, ctx, before.join("<br>"), after.join("<br>"), before.length)
     }
     return applied
@@ -920,10 +967,10 @@ function applyCellEdit5(
   // 셀 콘텐츠 검증 — 스캔 문단 합산과 IR 셀 텍스트의 정규화 일치
   const irCell = table.cells[gridR]?.[gridC]
   const scanJoined = cell.paras.map(p => p.rawText).filter(t => normForMatch(t)).join("\n")
-  if (irCell && normForMatch(scanJoined) !== normForMatch(stripCellTokens(irCell.text))) {
+  if (irCell && normForMatch(scanJoined) !== normForMatch(noScriptTags(stripCellTokens(irCell.text)))) {
     if (normForMatch(irCell.text) !== "" || normForMatch(scanJoined) !== "") {
       const flatBlocks = (irCell.blocks ?? []).filter(b => b.type === "paragraph" || b.type === "heading")
-      const flatJoined = flatBlocks.map(b => b.text ?? "").join("\n")
+      const flatJoined = noScriptTags(flatBlocks.map(b => b.text ?? "").join("\n"))
       if (normForMatch(scanJoined) !== normForMatch(flatJoined)) {
         return skip("셀 콘텐츠 구조 복잡 (중첩표/글상자) — 매핑 신뢰 불가")
       }
@@ -957,10 +1004,13 @@ function applyCellEdit5(
   } else if (newLines.length < nonEmpty.length && nonEmpty.length > 1) {
     ctx.skipped.push({ reason: "셀 내 줄 삭제는 문단 제거 미지원 — 빈 문단 잔존(뷰어에 빈 줄 표시 가능)", before: summarize(before), after: summarize(after), partial: true })
   }
+  // 바뀐 자리만 고친다(칸 안 굵은 조각 등 글자 모양 run 유지) — 새 글은 그 줄 마크다운 서식대로
+  const styleFor = cellLineStyles(before, after, ctx.charBook)
   let staged = 0
   for (let i = 0; i < targets.length; i++) {
     if (assigned[i] === targets[i].rawText || normForMatch(assigned[i]) === normForMatch(targets[i].rawText)) continue
-    staged += stageParaPatch(ctx.scans[targets[i].sectionIndex], targets[i], assigned[i], skip, ctx.keepLineseg)
+    staged += stageParaPatch(ctx.scans[targets[i].sectionIndex], targets[i], assigned[i], skip, ctx.keepLineseg,
+      normForMatch(targets[i].rawText), styleFor(i, assigned[i]))
   }
   return staged > 0 ? 1 : 0
 }
@@ -973,7 +1023,7 @@ function gfmCellToPlain(md: string): string | null {
   // 통계표의 부등호 셀("<0.01", "≤5") 등 평문 '<'는 허용. ('<br>'은 줄바꿈 셀로 별도 게이트가 처리)
   if (/<(?!br\s*\/?>|\/?u>)[a-zA-Z/]/i.test(t)) return null
   // 강조 표지(파서가 칸 글자 모양으로 단 ** · * · ~~ · <u>)는 걷고 역이스케이프한다 — PARA_TEXT 에 없는 표기
-  return t.split(/(?<!\\)<br\s*\/?>/i).map(l => parseEmphasis(l).plain).join("\n")
+  return t.split(/(?<!\\)<br\s*\/?>/i).map(l => styledInline(l).plain).join("\n")
 }
 
 // ─── 바이너리 패치 스테이징 ──────────────────────────
@@ -1210,6 +1260,8 @@ function stageParaPatch(
   keepLineseg: boolean,
   /** 문단의 IR 평문: 주면 바뀐 자리만 고친다(원문 균등 띄어쓰기·글자 모양 run 유지). 못 맞대면 코어 통째 교체 */
   origPlain?: string,
+  /** 바뀐 자리 새 글을 마크다운 서식대로 (글자 모양 구간을 서식만 다른 짝으로) */
+  style?: HwpInsertStyle,
 ): number {
   if (!scan.safe) return skip("섹션 레코드 재직렬화 불일치 — 안전을 위해 이 섹션은 미지원")
   if (para.textIdx === -2) return skip("복수 PARA_TEXT 레코드 문단 — 미지원 (v1)")
@@ -1252,7 +1304,7 @@ function stageParaPatch(
 
   // 미기입 누름틀 안내문이 든 문단 — 안내문을 뺀 보이는 글로 맞대 바뀐 자리만 고치고, 누름틀 자리에 쓴 값은 누름틀에 채운다
   if (para.guides.length) {
-    return stageInlineEdit(scan, para, newPlain, origPlain ?? para.rawText.trim(), keepLineseg)
+    return stageInlineEdit(scan, para, newPlain, origPlain ?? para.rawText.trim(), keepLineseg, style)
       ? 1 : skip("미기입 누름틀 문단 — 편집이 누름틀·제어 문자에 걸쳐 미지원")
   }
 
@@ -1261,7 +1313,7 @@ function stageParaPatch(
   // PARA_TEXT를 [선두 control][텍스트 코어][말미 control/문단끝]로 분해
   const seg = splitParaText(textRec.data)
   if (!seg) {
-    if (origPlain !== undefined && stageInlineEdit(scan, para, newPlain, origPlain, keepLineseg)) return 1
+    if (origPlain !== undefined && stageInlineEdit(scan, para, newPlain, origPlain, keepLineseg, style)) return 1
     return skip(para.ctrlMask !== 0
       ? "컨트롤 문자(탭/필드/특수공백 등 텍스트 중간) 포함 문단 — 미지원 (v1)"
       : "PARA_TEXT 재구성 불일치 — 원문 보존 불가로 미지원")
@@ -1289,9 +1341,14 @@ function stageParaPatch(
   newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
 
   // CHAR_SHAPE: 부분 수정이면 run 위치만 민다, 통째 교체면 선두 control run 보존 + 코어는 첫 글자 서식으로 단일화
-  const cs = edit
+  let cs = edit
     ? shiftCharShape(charShapeRec.data, seg.prefixUnits + edit.start, seg.prefixUnits + edit.end, edit.text.length)
     : rebuildCharShape(charShapeRec.data, seg.prefixUnits)
+  // 새 글 글자 모양 — 문단 끝에 붙인 글은 끝 표시 말고 마지막 글자 것을 받고(끝 표시만 위첨자인 문단), 마크다운 서식이 다르면 서식만 다른 짝으로
+  if (edit && edit.text) {
+    const landing = edit.start === edit.end && edit.start === para.rawText.length && edit.start > 0 ? edit.start - 1 : edit.start
+    cs = restyleInserted(cs.buf, seg.prefixUnits + edit.start, edit.text, edit.at ?? 0, style, seg.prefixUnits + landing) ?? cs
+  }
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)
 
@@ -1305,7 +1362,7 @@ function stageParaPatch(
  * 글 가운데 탭·필드·특수 공백 같은 제어 문자가 든 문단 — 바뀐 자리가 일반 글자만 덮으면 그 바이트만 바꾼다. 제어 문자는 바이트째
  * 그대로 두고, CHAR_SHAPE run 은 위치만 민다. 편집이 제어 문자에 걸치거나 원문과 못 맞대면 false
  */
-function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, origPlain: string, keepLineseg: boolean): boolean {
+function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, origPlain: string, keepLineseg: boolean, style?: HwpInsertStyle): boolean {
   if (origPlain.includes("\n") || newPlain.includes("\n")) return false
   const data = scan.records[para.textIdx].data
   const toks = tokenizeParaText(data)
@@ -1350,10 +1407,13 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
     return stageTextBytes(scan, para, at.byteStart, at.byteEnd, value, text.slice(0, at.vis) + value + text.slice(at.vis), keepLineseg, true)
   }
   let byteStart: number, byteEnd: number
+  let landing: number | undefined
   if (e.start === e.end) {
     const at = spans.find(x => x.from === e.start && x.to > x.from) ?? spans.find(x => x.to === e.start && x.to > x.from)
     if (!at) return false
     byteStart = byteEnd = at.from === e.start ? at.tok.start : at.tok.end
+    // 뒤에 글자가 없는 자리(문단 끝)에 넣은 글은 앞 글자 모양 — 끝 표시 모양을 받지 않게
+    if (at.from !== e.start) landing = byteStart / 2 - 1
   } else {
     const hit = spans.filter(x => x.from < e.end && x.to > e.start)
     if (!hit.length || hit.some(x => !x.tok.plain || x.from < e.start || x.to > e.end)) return false
@@ -1363,7 +1423,8 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
     if (toks.some(t => t.start >= byteStart && t.end <= byteEnd && !t.plain)) return false
     if (spans.some(x => x.hidden && x.tok.start >= byteStart && x.tok.end <= byteEnd)) return false
   }
-  return stageTextBytes(scan, para, byteStart, byteEnd, e.text, text.slice(0, e.start) + e.text + text.slice(e.end), keepLineseg)
+  return stageTextBytes(scan, para, byteStart, byteEnd, e.text, text.slice(0, e.start) + e.text + text.slice(e.end), keepLineseg, false,
+    { style, at: e.at ?? 0, landing })
 }
 
 /**
@@ -1373,6 +1434,8 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
 function stageTextBytes(
   scan: SectionScan5, para: ScanPara5, byteStart: number, byteEnd: number, newText: string, newVisible: string, keepLineseg: boolean,
   restyle = false,
+  /** 새 글을 마크다운 서식대로 (restyleInserted — at 은 새 평문 좌표, landing 은 새 글이 받을 글자 자리) */
+  insert?: { style?: HwpInsertStyle; at: number; landing?: number },
 ): boolean {
   const data = scan.records[para.textIdx].data
   const rep = Buffer.from(newText, "utf16le")
@@ -1382,6 +1445,7 @@ function stageTextBytes(
   newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
   let cs = shiftCharShape(records[para.charShapeIdx].data, byteStart / 2, byteEnd / 2, rep.length / 2)
   if (restyle) cs = restyleSpan(cs.buf, byteStart / 2, (byteStart + rep.length) / 2)
+  else if (insert && newText) cs = restyleInserted(cs.buf, byteStart / 2, newText, insert.at, insert.style, insert.landing ?? byteStart / 2) ?? cs
   scan.repl.set(para.textIdx, Buffer.concat([data.subarray(0, byteStart), rep, data.subarray(byteEnd)]))
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)
