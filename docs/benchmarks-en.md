@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.30: emphasis in click-here paragraphs · PDF clip fragment tables · 2026-10-31
+
+Benchmark metrics are the same as 4.24.29 (every `bench:gate` stage passes — PDF tables, PDF text, statute annexes, round trip and formats unchanged per document; PDF text coverage .99801 → .99802).
+
+- PDF tables: when a Hancom PDF clips only a few cells (the "합계" row of the Yeosu staffing table), those cells became a small clip table that took the ruled table's cells, and the values came out as a separate 1×4 table. The OCR table reference is kordoc's reading of the same PDF text layer, so it changes too (scoring unchanged): the phantom table drops out, tables 67 → 66, table structure 34/67 → **34/66** (50.7% → 51.5%), CER 0.02442 → **0.02373** (yeosu 13.6% → 7.0%).
+- Parsers: paragraphs with a filled click-here field or a hyperlink now carry emphasis markers. In the patch edit-kind experiment (same method as 4.24.29) the HWPX residual for inserting a bold word went 80 → **60**/489 — the documents were already patched correctly; the emphasis was just not visible when parsed again.
+
 ## 4.24.29: HWP → HWPX conversion accuracy · patch emphasis · 2026-10-31
 
 Benchmark metrics are the same as 4.24.28 (every `bench:gate` stage passes). HWP → HWPX conversion (`node bench/hwp2hwpx.mjs`, same reference set and scoring as 4.24.26):
