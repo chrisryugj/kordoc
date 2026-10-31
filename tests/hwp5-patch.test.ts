@@ -417,6 +417,55 @@ describe("patchHwp — 붙인 글의 서식은 마크다운대로", () => {
     assert.equal(recs[3].data.readUInt32LE(46), 0) // 굵게 뺀 사본
   })
 
+  const pairsOf = (data: Uint8Array, startsWith: string): number[][] => {
+    const recs = readRecords(Buffer.from(CFB.find(CFB.read(Buffer.from(data), { type: "buffer" }), "/BodyText/Section0").content))
+    const ti = recs.findIndex(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").startsWith(startsWith))
+    const cs = recs[ti + 1].data
+    const out: number[][] = []
+    for (let o = 0; o + 8 <= cs.length; o += 8) out.push([cs.readUInt32LE(o), cs.readUInt32LE(o + 4)])
+    return out
+  }
+
+  it("문단 끝에 붙인 글의 글자 모양은 끝 표시까지 덮는다 — 끝 표시만 남은 run 을 두지 않는다", async () => {
+    // 끝 표시만 남은 run 이 생기면 run 수가 늘어 파서의 대표 글자 모양(run 최빈값)이 바뀌고 제목 판정이 뒤집혔다
+    const hwp = buildHwp([paragraph("첫 문단"), styled("굵은 제목", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("**굵은 제목**", "**굵은 제목** 붙인 글"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**굵은 제목** 붙인 글"), reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "굵은 제목"), [[0, 1], [5, 0]])
+  })
+
+  it("한컴 PUA 기호가 든 문단도 바뀐 자리만 고친다 — 기호는 원문 그대로, 굵은 기호 뒤에 붙인 글은 보통", async () => {
+    // U+F02B1 은 IR 에 "①" 로 보인다 — 종전엔 원문과 맞대지 못해 문단을 통째 다시 써 기호가 "①" 로 바뀌고 문단 전체가 굵어졌다
+    const hwp = buildHwp([paragraph("첫 문단"), styled("\u{F02B1} 대금 지급기한 단축", [[0, 1], [2, 0]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**①** 대금 지급기한 단축"), md)
+    const r = await patchHwp(hwp, md.replace("**①** 대금 지급기한 단축", "**①** 대금 지급기한 단축 수정"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**①** 대금 지급기한 단축 수정"), reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "\u{F02B1}"), [[0, 1], [2, 0]])
+  })
+
+  it("강제 줄바꿈 굵은 문단 끝에 붙인 글 — 마크다운 맨 줄바꿈을 줄바꿈으로 맞대 굵게를 물려받지 않는다", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("붙임 1. 지침\n2. 질의응답", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**붙임 1. 지침\n2. 질의응답**"), md)
+    const r = await patchHwp(hwp, md.replace("**붙임 1. 지침\n2. 질의응답**", "**붙임 1. 지침\n2. 질의응답** 수정"))
+    assert.deepEqual(r.skipped, [])
+    assert.equal(r.verification?.stats.modified, 0, reread(r.data!))
+    assert.deepEqual(pairsOf(r.data!, "붙임"), [[0, 1], [16, 0]])
+  })
+
+  it("이중 공백이 마크다운에 그대로 보이는 문단도 고친다 — 원문 띄어쓰기는 그대로", async () => {
+    const hwp = buildHwp([paragraph("첫 문단"), styled("Ι  세금포인트 혜택  Ι", [[0, 1]]), paragraph("끝 문단")], 0, docInfo)
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("**Ι  세금포인트 혜택  Ι**"), md)
+    const r = await patchHwp(hwp, md.replace("**Ι  세금포인트 혜택  Ι**", "**Ι  세금포인트 혜택  Ι** 수정"))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(reread(r.data!).includes("**Ι  세금포인트 혜택  Ι** 수정"), reread(r.data!))
+  })
+
   it("문단 끝 표시만 위첨자인 문단 끝에 붙인 글은 마지막 글자 모양을 받는다", async () => {
     const hwp = buildHwp([paragraph("첫 문단"), styled("보통 글자 문단입니다", [[0, 0], [11, 2]]), paragraph("끝 문단")], 0, docInfo)
     const md = parseHwp5Document(Buffer.from(hwp)).markdown

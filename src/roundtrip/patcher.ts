@@ -784,9 +784,9 @@ export function textUnitToPlain(raw: string, block: IRBlock): string {
   return parseEmphasis(textUnitInline(raw, block)).plain
 }
 
-/** 텍스트 유닛 마크다운 → 강조 표지·첨자 태그를 걷은 평문과 조각마다 서식 비트 (styledInline) */
-export function textUnitStyled(raw: string, block: IRBlock): { plain: string; segs: string[]; flags: number[] } {
-  return styledInline(textUnitInline(raw, block))
+/** 텍스트 유닛 마크다운 → 강조 표지·첨자 태그를 걷은 평문과 조각마다 서식 비트 (styledInline). sep 은 마크다운 줄 잇기 */
+export function textUnitStyled(raw: string, block: IRBlock, sep = " "): { plain: string; segs: string[]; flags: number[] } {
+  return styledInline(textUnitInline(raw, block, sep))
 }
 
 /** 텍스트 유닛 마크다운 → 강조 표지가 남은 인라인 글 (헤딩 접두·링크·관련 이탤릭만 벗김) */

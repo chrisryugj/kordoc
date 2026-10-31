@@ -717,9 +717,11 @@ function patchParagraph(
   // 연속 <br> 는 단일 \n 으로 접는다 — <br><br>(빈 줄)이 \n\n 으로 기록되면 재파싱 시
   // 한 문단이 둘로 분열돼 이후 영구 수정불가(fragment)가 되는 것을 방지 (hwp5-4)
   const restoreBr = (s: string): string => s.replace(/(?:\s*<br\s*\/?\s*>\s*)+/gi, "\n")
-  // 강조 표지·첨자 태그는 걷는다(원문 PARA_TEXT 엔 없다) — 서식 비트는 새 글을 마크다운 서식대로 넣는 데 쓴다
-  const editedStyled = textUnitStyled(edited.raw, block)
-  const origStyled = textUnitStyled(orig.raw, block)
+  // 강조 표지·첨자 태그는 걷는다(원문 PARA_TEXT 엔 없다) — 서식 비트는 새 글을 마크다운 서식대로 넣는 데 쓴다.
+  // 강제 줄바꿈 문단은 마크다운이 줄바꿈을 맨 줄바꿈으로 내므로 줄을 "\n" 으로 잇는다 (HWPX patchLineBreakParagraph 와 같다)
+  const sep = block.text?.includes("\n") ? "\n" : " "
+  const editedStyled = textUnitStyled(edited.raw, block, sep)
+  const origStyled = textUnitStyled(orig.raw, block, sep)
   let newPlain = restoreBr(editedStyled.plain)
   // 원본이 다중줄인데 새 값에 줄바꿈 표기가 없으면 — soft-wrap 접힘과 줄바꿈 제거 의도를
   // 구분할 수 없어 줄바꿈 위치 보존 불가 (기존 v1 전면 가드의 정밀화)
@@ -752,7 +754,9 @@ function patchParagraph(
   // 오판하고 문단을 재기록해 중간 서식(CHAR_SHAPE 다중 런)을 파괴했다 (hwp5-1)
   const origPlain = block.text != null ? noScriptTags(block.text) : restoreBr(origStyled.plain)
   if (newPlain === origPlain) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
-  if (sanitizeText(newPlain) !== newPlain) {
+  // 재파싱 정리에서 바뀌는 글(이중 공백 등)은 미지원 — 단 원문 문단이 이미 그 꼴(마크다운에 이중 공백이 그대로 보이는 문단)이면
+  // 같은 렌더 경로라 허용한다: 바뀐 자리만 고쳐 원문 띄어쓰기는 그대로 남는다 (HWPX patcher 와 같다)
+  if (sanitizeText(newPlain) !== newPlain && sanitizeText(origPlain) === origPlain) {
     return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
   }
 
@@ -1322,9 +1326,9 @@ function stageParaPatch(
   if (seg.core !== para.rawText) return skip("PARA_TEXT 재구성 불일치 — 원문 보존 불가로 미지원")
 
   // 바뀐 자리만 고친다: IR 평문은 공백을 접어 보이므로("대    상" → "대 상") 통째 교체는 균등 띄어쓰기를 접고
-  // 글자 모양을 첫 글자 하나로 합친다. 원문 코어와 IR 평문을 맞대어 diff 범위만 바꾸고 CHAR_SHAPE run 은 위치만 민다
-  const edit = origPlain !== undefined && !origPlain.includes("\n") && !newPlain.includes("\n")
-    ? alignedTextEdits(para.rawText, origPlain, newPlain)?.[0] : undefined
+  // 글자 모양을 첫 글자 하나로 합친다. 원문 코어와 IR 평문을 맞대어 diff 범위만 바꾸고 CHAR_SHAPE run 은 위치만 민다.
+  // 강제 줄바꿈(0x000a)은 코어와 IR 양쪽에 "\n" 한 글자라 그대로 맞댄다
+  const edit = origPlain !== undefined ? alignedTextEdits(para.rawText, origPlain, newPlain)?.[0] : undefined
   // 원문 leading/trailing 공백 보존 (IR은 트림된 텍스트)
   const lead = para.rawText.match(/^\s*/)![0]
   const trail = para.rawText.match(/\s*$/)![0]
@@ -1347,7 +1351,8 @@ function stageParaPatch(
   // 새 글 글자 모양 — 문단 끝에 붙인 글은 끝 표시 말고 마지막 글자 것을 받고(끝 표시만 위첨자인 문단), 마크다운 서식이 다르면 서식만 다른 짝으로
   if (edit && edit.text) {
     const landing = edit.start === edit.end && edit.start === para.rawText.length && edit.start > 0 ? edit.start - 1 : edit.start
-    cs = restyleInserted(cs.buf, seg.prefixUnits + edit.start, edit.text, edit.at ?? 0, style, seg.prefixUnits + landing) ?? cs
+    const toEnd = edit.end === para.rawText.length && seg.suffix.length === 2 && seg.suffix.readUInt16LE(0) === 0x0d
+    cs = restyleInserted(cs.buf, seg.prefixUnits + edit.start, edit.text, edit.at ?? 0, style, seg.prefixUnits + landing, toEnd) ?? cs
   }
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)
@@ -1445,7 +1450,10 @@ function stageTextBytes(
   newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
   let cs = shiftCharShape(records[para.charShapeIdx].data, byteStart / 2, byteEnd / 2, rep.length / 2)
   if (restyle) cs = restyleSpan(cs.buf, byteStart / 2, (byteStart + rep.length) / 2)
-  else if (insert && newText) cs = restyleInserted(cs.buf, byteStart / 2, newText, insert.at, insert.style, insert.landing ?? byteStart / 2) ?? cs
+  else if (insert && newText) {
+    const toEnd = data.length - byteEnd === 2 && data.readUInt16LE(byteEnd) === 0x0d
+    cs = restyleInserted(cs.buf, byteStart / 2, newText, insert.at, insert.style, insert.landing ?? byteStart / 2, toEnd) ?? cs
+  }
   scan.repl.set(para.textIdx, Buffer.concat([data.subarray(0, byteStart), rep, data.subarray(byteEnd)]))
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)

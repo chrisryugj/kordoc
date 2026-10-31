@@ -775,23 +775,30 @@ export function paraTCharMap(para: ScanParagraph, xml: string): TCharMap {
     for (let i = last; i < raw.length; i++) add(raw[i], k, t.contentStart + i, t.contentStart + i + 1)
   })
   if (!PUA_RE.test(m.text)) return m
-  // 코드포인트마다 표시값 — mapPuaText 처럼 두 자리 번호 조각 둘은 한 글자로(같은 hp:t 안일 때만, 아니면 맞대기가 실패해 호출자 폴백)
-  const d: TCharMap = { text: "", seg: [], from: [], to: [] }
+  // 두 자리 번호 조각 둘은 같은 hp:t 안일 때만 한 글자로 (아니면 맞대기가 실패해 호출자 폴백)
+  const p = puaShownMap(m.text, (i, j) => m.seg[i] === m.seg[j])
+  return { text: p.text, seg: p.from.map(i => m.seg[i]), from: p.from.map(i => m.from[i]), to: p.to.map(j => m.to[j - 1]) }
+}
+
+/**
+ * 글을 IR 표시값으로 편다 — sanitizePua 처럼 코드포인트마다 mapPuaText, 두 자리 번호 조각 둘은 한 글자(pairable 인 자리만), 남은 보조
+ * PUA 는 지움. 표시 글자마다 원래 글 범위 [from, to) (UTF-16 위치)
+ */
+export function puaShownMap(text: string, pairable: (i: number, j: number) => boolean = () => true): { text: string; from: number[]; to: number[] } {
+  const d = { text: "", from: [] as number[], to: [] as number[] }
   const cps: Array<{ s: string; i: number }> = []
-  for (let i = 0; i < m.text.length;) {
-    const n = m.text.codePointAt(i)! > 0xffff ? 2 : 1
-    cps.push({ s: m.text.slice(i, i + n), i })
+  for (let i = 0; i < text.length;) {
+    const n = text.codePointAt(i)! > 0xffff ? 2 : 1
+    cps.push({ s: text.slice(i, i + n), i })
     i += n
   }
   for (let k = 0; k < cps.length; k++) {
     const a = cps[k]
-    const b = k + 1 < cps.length && m.seg[cps[k + 1].i] === m.seg[a.i] ? cps[k + 1] : undefined
+    const b = k + 1 < cps.length && pairable(a.i, cps[k + 1].i) ? cps[k + 1] : undefined
     const pair = b ? pairedNumber(a.s, b.s) : undefined
     const last = pair !== undefined ? cps[++k] : a
     const out = (pair ?? mapPuaText(a.s)).replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
-    for (const c of out.split("")) {
-      d.text += c; d.seg.push(m.seg[a.i]); d.from.push(m.from[a.i]); d.to.push(m.to[last.i + last.s.length - 1])
-    }
+    for (const c of out.split("")) { d.text += c; d.from.push(a.i); d.to.push(last.i + last.s.length) }
   }
   return d
 }

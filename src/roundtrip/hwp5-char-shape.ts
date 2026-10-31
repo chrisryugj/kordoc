@@ -87,10 +87,12 @@ export interface HwpInsertStyle {
 /**
  * CHAR_SHAPE 쌍 목록에서 새 글 [at, at + text.length)(문단 글자 위치)를 조각마다 바라는 글자 모양으로 덮는다 — 조각 뒤 글은 원래
  * 모양 그대로. 새 글이 받을 run 은 landing 자리 글자 모양(문단 끝에 붙인 글은 끝 표시 말고 마지막 글자 것 — 호출자가 준다).
- * newAt 은 새 평문에서 text 가 시작하는 자리(style.flags 좌표). style 이 없으면 run 만 맞춘다. 다를 게 없으면 null
+ * toEnd 면 새 글 바로 뒤가 문단 끝 표시뿐이다 — 끝 표시가 새 글이 받은 run 과 같은 모양이면 마지막 조각 모양이 끝 표시까지 덮는다
+ * (한글에서 문단 끝에 친 글처럼. 끝 표시만 남은 run 을 따로 두면 run 수가 늘어 파서의 대표 글자 모양 최빈값이 바뀌어 제목 판정이
+ * 뒤집힌다). newAt 은 새 평문에서 text 가 시작하는 자리(style.flags 좌표). style 이 없으면 run 만 맞춘다. 다를 게 없으면 null
  */
 export function restyleInserted(
-  csData: Buffer, at: number, text: string, newAt: number, style: HwpInsertStyle | undefined, landing = at,
+  csData: Buffer, at: number, text: string, newAt: number, style: HwpInsertStyle | undefined, landing = at, toEnd = false,
 ): { buf: Buffer; count: number } | null {
   let pairs: Array<[number, number]> = []
   for (let o = 0; o + 8 <= csData.length; o += 8) pairs.push([csData.readUInt32LE(o), csData.readUInt32LE(o + 4)])
@@ -109,7 +111,8 @@ export function restyleInserted(
     if (id !== idAt(at + k)) {
       const a = at + k, b = at + e, after = idAt(b)
       pairs = pairs.filter(([p]) => p < a || p > b)
-      pairs.push([a, id], [b, after])
+      pairs.push([a, id])
+      if (!(toEnd && e === text.length && after === runId)) pairs.push([b, after])
       pairs.sort((x, y) => x[0] - y[0])
       changed = true
     }

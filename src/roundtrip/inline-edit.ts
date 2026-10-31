@@ -8,7 +8,7 @@
  *    균등 띄어쓰기·run 경계·글자 모양은 그대로 남는다.
  */
 
-import { paraTText, buildRangeSplices, paraTCharMap, buildMappedRangeSplices, hasPua, escapeXmlText, type ScanParagraph, type SpliceEdit } from "./source-map.js"
+import { paraTText, buildRangeSplices, paraTCharMap, buildMappedRangeSplices, hasPua, puaShownMap, escapeXmlText, type ScanParagraph, type SpliceEdit } from "./source-map.js"
 
 interface Tok {
   kind: "text" | "u-open" | "u-close" | "strike" | "star"
@@ -174,6 +174,20 @@ export interface RawEdit { start: number; end: number; text: string; at?: number
  * 조각마다 따로 diff 해 각 run 이 제 글을 받는다. raw 와 origNorm 을 못 맞추면 null (호출자가 문단 통째 쓰기로).
  */
 export function alignedTextEdits(raw: string, origNorm: string, newNorm: string, origSegs?: string[], newSegs?: string[]): RawEdit[] | null {
+  // 한컴 PUA 기호가 든 원문(HWP PARA_TEXT)은 IR 처럼 표시값으로 펴서 맞대고 좌표만 원문으로 되돌린다. 번호 조각 둘을 합친
+  // 표시 글자 가운데서 끊기는 편집은 못 옮긴다
+  const shown = hasPua(raw) ? puaShownMap(raw) : null
+  if (!shown || shown.text === raw) return alignedShownEdits(raw, origNorm, newNorm, origSegs, newSegs)
+  const edits = alignedShownEdits(shown.text, origNorm, newNorm, origSegs, newSegs)
+  if (!edits) return null
+  const n = shown.text.length
+  const inside = (s: number): boolean => s > 0 && s < n && shown.from[s] === shown.from[s - 1]
+  if (edits.some(e => inside(e.start) || inside(e.end))) return null
+  const at = (s: number): number => (s < n ? shown.from[s] : n ? shown.to[n - 1] : raw.length)
+  return edits.map(e => ({ ...e, start: at(e.start), end: e.end > e.start ? shown.to[e.end - 1] : at(e.start) }))
+}
+
+function alignedShownEdits(raw: string, origNorm: string, newNorm: string, origSegs?: string[], newSegs?: string[]): RawEdit[] | null {
   if (!origNorm) return null
   const pos = alignToRaw(raw, origNorm)
   if (!pos) return null
