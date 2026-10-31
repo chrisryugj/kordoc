@@ -137,7 +137,11 @@ export interface ScanPara5 {
   guides: Array<{ start: number; end: number; ctrl: number }>
 }
 
-interface ScanCell5 { paras: ScanPara5[] }
+interface ScanCell5 {
+  paras: ScanPara5[]
+  /** 칸 문단에 앵커된 중첩 표 (레코드 순서 — IR 칸 blocks 의 표 순서와 같다) */
+  tables: ScanTable5[]
+}
 
 interface ScanTable5 {
   sectionIndex: number
@@ -235,10 +239,8 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
     parasByHeader.set(i, para)
   }
 
-  // 최상위 표 수집 (다른 tbl 내부에 중첩된 표 제외 — IR 최상위 표 서수와 정렬)
-  const tables: ScanTable5[] = []
-  for (let i = 0; i < records.length; i++) {
-    if (!isCtrl(records[i], CTRL_TBL) || ancestorCtrl(i, CTRL_TBL)) continue
+  /** 표 CTRL_HEADER(i) → 소스맵 표. 칸마다 칸 문단에 앵커된 중첩 표도 모은다 (깊이 8 — 파서 중첩 상한과 같은 폭) */
+  const scanTable = (i: number, depth: number): ScanTable5 | null => {
     const ctrlLevel = records[i].level
     let rows = 0, cols = 0, tableIdx = -1
     for (let j = i + 1; j < records.length && records[j].level > ctrlLevel; j++) {
@@ -249,7 +251,7 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
         break
       }
     }
-    if (tableIdx < 0 || rows === 0 || cols === 0) continue
+    if (tableIdx < 0 || rows === 0 || cols === 0) return null
     // 셀 문단은 LIST_HEADER와 같은 레벨의 후속 형제 — parser.ts parseCell과 동일 경계
     const cells = new Map<string, ScanCell5>()
     let j = tableIdx + 1
@@ -258,6 +260,7 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
       const lh = records[j]
       const cellLevel = lh.level
       const cellParas: ScanPara5[] = []
+      const cellTables: ScanTable5[] = []
       let k = j + 1
       while (k < records.length) {
         const r = records[k]
@@ -267,14 +270,27 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
           const cp = parasByHeader.get(k)
           if (cp) { cp.kind = "cell"; cellParas.push(cp) }
         }
+        // 칸 문단 직속 표 컨트롤 = 칸 안 중첩 표
+        if (r.level === cellLevel + 1 && depth < 8 && isCtrl(r, CTRL_TBL) && records[parent[k]]?.tagId === TAG_PARA_HEADER) {
+          const nested = scanTable(k, depth + 1)
+          if (nested) cellTables.push(nested)
+        }
         k++
       }
       if (lh.data.length >= 16) {
-        cells.set(`${lh.data.readUInt16LE(10)},${lh.data.readUInt16LE(8)}`, { paras: cellParas })
+        cells.set(`${lh.data.readUInt16LE(10)},${lh.data.readUInt16LE(8)}`, { paras: cellParas, tables: cellTables })
       }
       j = k
     }
-    tables.push({ sectionIndex, rows, cols, cells })
+    return { sectionIndex, rows, cols, cells }
+  }
+
+  // 최상위 표 수집 (다른 tbl 내부에 중첩된 표 제외 — IR 최상위 표 서수와 정렬). 중첩 표는 칸의 tables 로
+  const tables: ScanTable5[] = []
+  for (let i = 0; i < records.length; i++) {
+    if (!isCtrl(records[i], CTRL_TBL) || ancestorCtrl(i, CTRL_TBL)) continue
+    const t = scanTable(i, 0)
+    if (t) tables.push(t)
   }
 
   return { records, safe, paras, tables, compressed, repl: new Map(), inserts: new Map() }
@@ -855,18 +871,27 @@ function patchHtmlCells5(
   table: IRTable, scanTable: ScanTable5, orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5,
   skip: (reason: string) => number,
 ): number {
+  return patchHtmlCells5Raw(table, scanTable, orig.raw, edited.raw, ctx, skip, 0)
+}
+
+/** HTML 표 칸 패치 본체 — 칸 안 중첩 표는 소스맵 칸의 표와 짝지어 재귀 (HWPX patchHtmlTableRaw 와 같다) */
+function patchHtmlCells5Raw(
+  table: IRTable, scanTable: ScanTable5, origRaw: string, editedRaw: string, ctx: PatchCtx5,
+  skip: (reason: string) => number, depth: number,
+): number {
+  if (depth > 8) return skip("중첩표 깊이 초과")
   // 자기검증 — builder 렌더와 동일해야 좌표 신뢰 가능
-  if (replicateTableToHtml(table) !== orig.raw) return skip("표 좌표 재현 불일치 — 매핑 신뢰 불가")
+  if (replicateTableToHtml(table) !== origRaw) return skip("표 좌표 재현 불일치 — 매핑 신뢰 불가")
   const replica = replicateHtmlTable(table)
   // 되읽기 대칭 검증 — 셀 텍스트에 리터럴 '</td>' 등이 있으면 셀 경계가 어긋나 미편집 셀이
   // 잘려 저장될 수 있음. 원문을 되읽어 replica와 대조한다.
-  const origRows = parseHtmlTable(orig.raw)
+  const origRows = parseHtmlTable(origRaw)
   if (!origRows || origRows.length !== replica.length
     || origRows.some((r, i) => r.cells.length !== replica[i].cells.length
       || r.cells.some((c, j) => c.inner !== replica[i].cells[j].inner))) {
     return skip("셀 경계 모호 (리터럴 태그 의심) — 매핑 신뢰 불가")
   }
-  const editedRows = parseHtmlTable(edited.raw)
+  const editedRows = parseHtmlTable(editedRaw)
   if (!editedRows) return skip("편집된 HTML 표 파싱 실패")
   if (editedRows.length !== replica.length) return skip("표 행 추가/삭제는 미지원 (표 구조 변경)")
 
@@ -892,9 +917,24 @@ function patchHtmlCells5(
           skip("셀 내 이미지 변경은 미지원")
           continue
         }
-        if (extractTopLevelTables(oc.inner).join("\n") !== extractTopLevelTables(ec.inner).join("\n")) {
-          skip("셀 내 중첩표 수정은 HWP5 미지원 (v1)")
+        // 중첩 표 변경 → IR 칸의 표 블록·소스맵 칸의 표와 짝지어 재귀
+        const origTables = extractTopLevelTables(oc.inner)
+        const editedTables = extractTopLevelTables(ec.inner)
+        if (origTables.length !== editedTables.length) {
+          skip("셀 내 중첩표 추가/삭제는 미지원")
           continue
+        }
+        if (origTables.join("\n") !== editedTables.join("\n")) {
+          const nestedIRs = (table.cells[oc.gridR!]?.[oc.gridC!]?.blocks ?? []).filter(b => b.type === "table" && b.table).map(b => b.table!)
+          const scanCell = scanTable.cells.get(`${oc.gridR},${oc.gridC}`)
+          if (!scanCell || nestedIRs.length !== origTables.length || scanCell.tables.length !== origTables.length) {
+            skip("중첩표 소스맵 매핑 실패")
+          } else {
+            for (let k = 0; k < origTables.length; k++) {
+              if (origTables[k] === editedTables[k]) continue
+              applied += patchHtmlCells5Raw(nestedIRs[k], scanCell.tables[k], origTables[k], editedTables[k], ctx, skip, depth + 1)
+            }
+          }
         }
       }
       // 텍스트 라인 변경 (중첩표/이미지 제외분)

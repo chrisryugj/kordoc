@@ -567,6 +567,21 @@ describe("patchHwp — 1열 표 여러 줄 칸(실문서)", { skip: !licDoc }, (
   })
 })
 
+const PAIRS = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "pairs")
+const p05 = existsSync(PAIRS) ? readdirSync(PAIRS).find(f => f.startsWith("pair05-") && f.endsWith(".hwp")) : undefined
+describe("patchHwp — 칸 안 중첩 표(실문서)", { skip: !p05 }, () => {
+  it("응시원서 칸 안 표의 칸 글을 고친다 — 소스맵 칸의 중첩 표로 재귀 (종전 \"셀 내 중첩표 수정은 HWP5 미지원\")", async () => {
+    const hwp = new Uint8Array(readFileSync(join(PAIRS, p05!)))
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    const cell = "<th>해외통계포털 업무지원</th>"
+    assert.ok(md.includes(cell), "코퍼스 문서 꼴이 바뀜")
+    const r = await patchHwp(hwp, md.replace(cell, "<th>해외통계포털 업무지원 수정</th>"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped.filter(s => !s.partial), [])
+    assert.ok(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown.includes("<th>해외통계포털 업무지원 수정</th>"))
+  })
+})
+
 describe("patchHwp — 같은 글 문단", () => {
   it("같은 글이 본문과 표 칸에 함께 있어도 본문끼리 등장 순서로 짝짓는다 (칸은 표 경로 몫)", async () => {
     const hwp = buildHwp([paragraph("연구소장 귀하"), table2x2([["연구소장 귀하", "가"], ["나", "다"]]), paragraph("연구소장 귀하")])
