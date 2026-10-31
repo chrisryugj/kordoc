@@ -57,11 +57,11 @@ const FIELD_HLK = cid("%hlk")   // 필드: 하이퍼링크
 const FIELD_CLK = cid("%clk")   // 필드: 누름틀
 const FIELD_UNK = cid("%unk")   // 필드: 그 밖(메모 "MEMO/…" 명령)
 /**
- * HWPX run-spans 가 강조를 내지 않는 문단의 컨트롤 — run 자식이 되는 개체(표·그리기·수식·양식·OLE·글자 겹침·덧말)와 글을 담은 ctrl
- * (각주·미주·머리말·꼬리말·숨은 설명·찾아보기 표식). 필드('%' 로 시작 — 매개변수 글을 담는다)도 같다
+ * HWPX run-spans 가 강조를 내지 않는 문단의 컨트롤 — run 자식이 되는 개체(표·그리기·수식·양식·OLE·글자 겹침·덧말)와 글을 담은 ctrl:
+ * 찾아보기 표식·필드('%' 로 시작)는 열쇠·매개변수 글을 늘 담고, 각주·미주·머리말·꼬리말·숨은 설명은 안쪽 문단에 글이 있을 때만
  */
-const NO_SPAN_CTRLS = new Set([cid("tbl "), cid("gso "), cid("eqed"), cid("form"), cid("ole "), cid("tcps"), cid("tdut"),
-  cid("fn  "), cid("en  "), cid("head"), cid("foot"), cid("tcmt"), cid("idxm")])
+const NO_SPAN_CTRLS = new Set([cid("tbl "), cid("gso "), cid("eqed"), cid("form"), cid("ole "), cid("tcps"), cid("tdut"), cid("idxm")])
+const TEXT_CTRLS = new Set([cid("fn  "), cid("en  "), cid("head"), cid("foot"), cid("tcmt")])
 const isFieldCtrl = (id: number): boolean => id >>> 24 === 0x25
 
 const KNOWN_CTRL_IDS = new Set([
@@ -156,6 +156,8 @@ interface Hwp5Ctx {
   topOrdinal: number
   /** 표 CTRL_HEADER 레코드 인덱스 → sourceId (table-ids.ts 프리패스, 렌더 region 조인 키 #76) */
   tableIds?: Map<number, string>
+  /** 글상자 바로 안 문단 — HWPX drawText 문단처럼 강조 span 없이 평문 (글상자 안 표 칸은 칸 경로라 다시 끈다) */
+  plainText?: boolean
 }
 
 /** 섹션 레코드 → IRBlock[] (테스트에서 직접 사용 가능하도록 export) */
@@ -372,7 +374,17 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
   text = toc.text
   // 인라인 강조 span — HWPX run-spans 와 같은 문단만: 개체·글 담은 컨트롤(필드·각주 등)·강제 줄바꿈이 든 문단은 평문 경로(HWPX 는
   // 그런 문단에서 강조를 내지 않는다), 링크·누름틀 안내문·목차 문단은 글 위치가 어긋나 평문 경로
-  const noSpan = inlined || fieldsApplied || toc.tocEntry || text.includes("\n") || ctrls.some(c => NO_SPAN_CTRLS.has(c.id) || isFieldCtrl(c.id))
+  const holdsText = (c: ParsedCtrl): boolean => {
+    for (let k = c.childStart; k < c.childEnd; k++) {
+      if (records[k].tagId !== TAG_PARA_TEXT) continue
+      const st = createParaTextState()
+      appendParaText(st, records[k].data)
+      if (st.text.trim()) return true
+    }
+    return false
+  }
+  const noSpan = ctx.plainText || inlined || fieldsApplied || toc.tocEntry || text.includes("\n")
+    || ctrls.some(c => NO_SPAN_CTRLS.has(c.id) || isFieldCtrl(c.id) || (TEXT_CTRLS.has(c.id) && holdsText(c)))
   const spans = !noSpan ? emphasisSpans(state, text) : undefined
   if (memoAnchors.length) {
     const plain = (t: string): string => resolveLiteralLt(t.replaceAll(LITERAL_DOLLAR_MARK, "$")).replace(/\\</g, "<").replace(/[ \t]+/g, " ").trim()
@@ -796,7 +808,7 @@ function parseCell(records: HwpRecord[], lhIdx: number, end: number, ctx: Hwp5Ct
   }
 
   const blocks = ctx.depth < MAX_NEST_DEPTH
-    ? parseParagraphList(records, lhIdx + 1, end, { ...ctx, depth: ctx.depth + 1 })
+    ? parseParagraphList(records, lhIdx + 1, end, { ...ctx, depth: ctx.depth + 1, plainText: false })
     : []
 
   // 하위 호환 텍스트: 문단 평탄화 + 이미지 sentinel + 중첩표 평문 (각주는 문단 글에 접힌다)
@@ -893,7 +905,7 @@ function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
   }
 
   if (textListIdx >= 0) {
-    blocks.push(...parseParagraphList(records, textListIdx + 1, childEnd, { ...ctx, depth: ctx.depth + 1 }))
+    blocks.push(...parseParagraphList(records, textListIdx + 1, childEnd, { ...ctx, depth: ctx.depth + 1, plainText: true }))
   }
 
   return blocks

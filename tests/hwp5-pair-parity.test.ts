@@ -15,6 +15,9 @@ import {
 import { detectImageMime, extractHwp5Images } from "../src/hwp5/images.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 import type { IRBlock, ParseWarning } from "../src/types.js"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import { parseHwp5Document } from "../src/hwp5/parser.js"
 
 // ─── 합성 레코드 빌더 ────────────────────────────────
 
@@ -369,6 +372,25 @@ describe("인라인 강조 span — HWPX run-spans 와 같은 판정 (글자 모
     const blocks = parseWith(para("밑줄 문단", [[0, 2]]))
     assert.equal(blocks[0].text, "밑줄 문단")
     assert.equal(blocksToMarkdown(blocks).trim(), "<u>밑줄 문단</u>")
+  })
+
+  it("머리말 컨트롤이 붙은 문단 — 머리말이 비었으면 강조를 내고, 글이 있으면 평문 (HWPX 는 글 담은 ctrl 문단만 강조를 막는다)", () => {
+    const withHeader = (inner: Buffer[]): Buffer[] => {
+      const cs = Buffer.alloc(8); cs.writeUInt32LE(0, 0); cs.writeUInt32LE(1, 4)
+      return [rec(TAG_PARA_HEADER, 0, paraHeaderData()), rec(TAG_PARA_TEXT, 1, Buffer.concat([extCtrlChar(0x10, "daeh"), utf16("굵은 글")])),
+        rec(0x44, 1, cs), rec(TAG_CTRL_HEADER, 1, Buffer.from("daeh", "ascii")), rec(TAG_LIST_HEADER, 2, Buffer.alloc(8)), ...inner]
+    }
+    const empty = parseWith(withHeader([rec(TAG_PARA_HEADER, 2, paraHeaderData())]))
+    assert.deepEqual(empty[0].spans, [{ text: "굵은 글", bold: true }])
+    const filled = parseWith(withHeader([rec(TAG_PARA_HEADER, 2, paraHeaderData()), rec(TAG_PARA_TEXT, 3, utf16("머리말 글"))]))
+    assert.equal(filled.find(b => b.text?.includes("굵은 글"))?.spans, undefined)
+  })
+
+  const P04 = join(import.meta.dirname, "..", "bench", "corpus", "pairs")
+  const p04 = existsSync(P04) ? readdirSync(P04).find(f => f.startsWith("pair04-") && f.endsWith(".hwp")) : undefined
+  it("글상자 바로 안 문단은 강조 없이 평문 — HWPX drawText 문단과 같다 (코퍼스)", { skip: !p04 }, () => {
+    const md = parseHwp5Document(readFileSync(join(P04, p04!))).markdown
+    assert.ok(/(^|\n)55(\n|$)/.test(md) && !md.includes("*55*"), "글상자 \"55\" 문단")
   })
 
   it("강조 없는 문단은 span 없이 평문", () => {
