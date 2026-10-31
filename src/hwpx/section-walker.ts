@@ -3,7 +3,7 @@
  *
  * walkSection ↔ walkParagraphChildren ↔ extractParagraphInfo ↔ handleShape ↔
  * extractDrawTextBlocks가 상호재귀하는 클러스터라 한 파일로 유지한다 —
- * 더 쪼개면 인위적 경계에 순환 import만 생김.
+ * 더 쪼개면 인위적 경계에 순환 import만 생김. 클러스터를 다시 부르지 않는 말단 판독 도우미만 section-nodes.ts 에 둔다.
  */
 
 import { collectImageRefs, DELETABLE_OBJECT_TAGS, extractImageRef, findDescendant, findTopLevelTbls, inIndependentDeletionStory, markDeletedObjects, userShapeComment } from "./section-shape.js"
@@ -24,6 +24,7 @@ import {
   type TableState,
   type WalkCtx,
 } from "./parser-shared.js"
+import { findKordocMarkedCell, hasPageAutoNum, hasObjectDescendant, isInlineTbl, formButtonText, PH_OPEN, PH_CLOSE, clickHereGuide, extractHyperlinkHref, isInDeletedRange, runHasOnlyText, withPrefixSpan, stripPlaceholderMarks } from "./section-nodes.js"
 import type { HwpxStyleMap } from "./styles.js"
 import { resolveParaHeading } from "./para-heading.js"
 import { takeTocLeaders, TOC_ENTRY_BLOCKS, TOC_LEADER } from "../toc-entry.js"
@@ -451,42 +452,6 @@ function kordocTableChannel(tblEl: Element, ctx: WalkCtx): KordocTableChannel | 
   return { kind: "heading", level: Number(m[1]), text }
 }
 
-/** tbl 하위에서 __kordoc_ 마커 셀 탐색 (중첩표 안까지는 내려가지 않음) */
-function findKordocMarkedCell(el: Node, depth: number): { cell: Element; name: string } | null {
-  if (depth > 6) return null
-  const children = el.childNodes
-  if (!children) return null
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag === "tc") {
-      const name = ch.getAttribute("name") || ""
-      if (name.startsWith("__kordoc_")) return { cell: ch, name }
-      continue // 셀 내부(중첩표)는 탐색하지 않음 — 최상위 표의 셀만
-    }
-    if (tag === "tbl" && depth > 0) continue // 중첩표 진입 금지
-    const found = findKordocMarkedCell(ch, depth + 1)
-    if (found) return found
-  }
-  return null
-}
-
-/** 머리말/꼬리말 subList에 페이지 번호 autoNum(numType=PAGE)이 있는지 검사 */
-function hasPageAutoNum(el: Node, depth = 0): boolean {
-  if (depth > 10) return false
-  const children = el.childNodes
-  if (!children) return false
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag === "autoNum" && ch.getAttribute?.("numType") === "PAGE") return true
-    if (hasPageAutoNum(ch, depth + 1)) return true
-  }
-  return false
-}
-
 /** subList 내부 수집 결과 — 평탄화 텍스트와 구조 블록을 병행 제공 (#55) */
 interface SubListContent {
   text: string
@@ -705,45 +670,6 @@ function walkParagraphChildren(
   return tableCtx
 }
 
-/** 개체 요소 태그 — 빈 문단 보존(#57) 제외 판정용. walkParagraphChildren이 별도 방출하는 것들 */
-const OBJECT_TAGS = new Set(["tbl", "pic", "shape", "drawingObject", "drawText"])
-
-/** 문단 하위에 표·그림·글상자 등 개체가 있는지 — 있으면 "빈 문단"이 아니라 개체 문단 (#57) */
-function hasObjectDescendant(node: Node, depth = 0): boolean {
-  if (depth > MAX_XML_DEPTH) return false
-  const kids = node.childNodes
-  if (!kids) return false
-  for (let i = 0; i < kids.length; i++) {
-    const ch = kids[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (OBJECT_TAGS.has(tag)) return true
-    if (hasObjectDescendant(ch, depth + 1)) return true
-  }
-  return false
-}
-
-/**
- * 글자취급(treatAsChar) 인라인 표 여부 — <hp:pos treatAsChar="1"> (#49/#50).
- * inline 표만 같은 줄 텍스트와 문서 순서로 읽는다 (reflow 개체 흐름 모델과 동일 구분)
- */
-function isInlineTbl(tbl: Element): boolean {
-  return findChildByLocalName(tbl, "pos")?.getAttribute("treatAsChar") === "1"
-}
-
-/** 양식 단추 캡션을 그리는 최소 개체 폭 (HWPUNIT) — 상자(≈1,300)에 글자 한 자 이상이 들어갈 때만 한컴이 캡션을 인쇄한다.
- *  폭 1,297 인 선택 상자는 기본 캡션 "선택 상자"가 PDF 에 안 나온다(rhwp issue2470), 폭 4,000 이상은 캡션이 나온다(form-002·서울 결재) */
-const FORM_CAPTION_MIN_WIDTH = 2300
-
-/** 양식 선택 상자(☐/☑)·라디오 단추(○/●)의 보이는 글 — bench/ref/hwpx-ref.mjs 와 같은 규칙 */
-function formButtonText(el: Element, radio: boolean): string {
-  const checked = el.getAttribute("value") === "CHECKED"
-  const mark = radio ? (checked ? "●" : "○") : (checked ? "☑" : "☐")
-  const width = Number(findChildByLocalName(el, "sz")?.getAttribute("width") ?? 0)
-  const caption = (el.getAttribute("caption") ?? "").trim()
-  return caption && width >= FORM_CAPTION_MIN_WIDTH ? `${mark} ${caption}` : mark
-}
-
 /** drawText(글상자) 내부의 <p> 요소들에서 텍스트를 추출하여 paragraph 블록 생성 */
 function extractDrawTextBlocks(drawTextNode: Node, blocks: IRBlock[], ctx: WalkCtx): void {
   inIndependentDeletionStory(ctx.shared.track, () => extractDrawTextStory(drawTextNode, blocks, ctx))
@@ -801,59 +727,6 @@ interface ParagraphInfo {
   tocEntry?: boolean
 }
 
-/** 누름틀 안내문 구간 표지 — 문단 글 정리(공백 붕괴·링크 삽입·절단)를 거친 뒤 span 으로 가른다 */
-const PH_OPEN = "\x1C"
-const PH_CLOSE = "\x1D"
-
-/**
- * 미기입 누름틀의 안내문 — CLICK_HERE 이고 수정 안 됨(dirty≠1)일 때만. 이런 필드의 값 자리 글이 안내문과
- * 같으면 한컴은 화면에만 흐리게 보이고 인쇄하지 않는다(한컴 PDF 실측, HWP5 body.ts 수정 비트 규칙과 같은 판정).
- * 안내문은 stringParam Direction, 없으면 Command 의 "Direction:wstring:<N>:" 뒤 N자.
- */
-function clickHereGuide(fieldBegin: Element): string | undefined {
-  if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "CLICK_HERE") return undefined
-  if (fieldBegin.getAttribute("dirty") === "1") return undefined
-  const children = findChildByLocalName(fieldBegin, "parameters")?.childNodes
-  if (!children) return undefined
-  let fromCommand: string | undefined
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag !== "stringParam") continue
-    const name = ch.getAttribute("name")
-    if (name === "Direction") return ch.textContent || undefined
-    if (name === "Command") {
-      const cmd = ch.textContent || ""
-      const m = /Direction:wstring:(\d+):/.exec(cmd)
-      if (m) fromCommand = cmd.slice(m.index + m[0].length, m.index + m[0].length + Number(m[1])) || undefined
-    }
-  }
-  return fromCommand
-}
-
-/** fieldBegin이 HYPERLINK면 stringParam name="Path"에서 URL 추출 (살균 포함) */
-function extractHyperlinkHref(fieldBegin: Element): string | undefined {
-  if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "HYPERLINK") return undefined
-  const params = findChildByLocalName(fieldBegin, "parameters")
-  if (!params) return undefined
-  const children = params.childNodes
-  if (!children) return undefined
-  for (let i = 0; i < children.length; i++) {
-    const ch = children[i] as Element
-    if (ch.nodeType !== 1) continue
-    const tag = (ch.tagName || ch.localName || "").replace(/^[^:]+:/, "")
-    if (tag !== "stringParam" || ch.getAttribute("name") !== "Path") continue
-    let url = (ch.textContent || "").trim()
-    if (!url) continue
-    // 한컴이 중복 스킴을 저장하는 경우 정리 ("http://https://..." → "https://...")
-    url = url.replace(/^https?:\/\/(?=https?:\/\/)/i, "")
-    const safe = sanitizeHref(url)
-    if (safe) return safe
-  }
-  return undefined
-}
-
 /** fieldBegin 이 메모(type MEMO)면 작성자·시각·번호와 메모 글(안쪽 subList 문단) — 붙은 글·문단은 fieldEnd 에서 (#180) */
 function memoOf(fieldBegin: Element, ctx: WalkCtx): Pick<MemoNote, "text" | "author" | "createdAt" | "number"> | undefined {
   if ((fieldBegin.getAttribute("type") || "").toUpperCase() !== "MEMO") return undefined
@@ -878,23 +751,6 @@ function memoOf(fieldBegin: Element, ctx: WalkCtx): Pick<MemoNote, "text" | "aut
   if (params.CreateDateTime) memo.createdAt = params.CreateDateTime
   if (params.Number !== undefined && Number.isFinite(num)) memo.number = num
   return memo
-}
-
-/** 변경추적 삭제 구간 내부 여부 */
-function isInDeletedRange(ctx?: WalkCtx): boolean {
-  return (ctx?.shared.track.deleteDepth ?? 0) > 0
-}
-
-/** run 의 자식이 글(hp:t)·조판 캐시뿐인지 — 첨자 감싸기 대상 */
-function runHasOnlyText(run: Element): boolean {
-  const kids = run.childNodes
-  for (let i = 0; i < (kids?.length ?? 0); i++) {
-    const k = kids![i] as Element
-    if (k.nodeType !== 1) continue
-    const t = (k.tagName || k.localName || "").replace(/^[^:]+:/, "")
-    if (t !== "t" && t !== "linesegarray") return false
-  }
-  return true
 }
 
 function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: WalkCtx): ParagraphInfo {
@@ -1279,13 +1135,4 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
   }
 
   return { text: cleanText, href, footnote, footnoteBlocks: noteHasTable ? noteBlocks : undefined, style, segments, placeholderSpans, ...(tocEntry ? { tocEntry } : {}) }
-}
-
-/** 자동번호 접두가 붙은 문단이면 접두를 평문 span 으로 앞에 — span 을 이으면 블록 글과 같다 */
-function withPrefixSpan(spans: IRSpan[], prefix?: string): IRSpan[] {
-  return prefix ? [{ text: prefix + " " }, ...spans] : spans
-}
-
-function stripPlaceholderMarks(s: string): string {
-  return s.includes(PH_OPEN) || s.includes(PH_CLOSE) ? s.replace(/[\x1C\x1D]/g, "") : s
 }
