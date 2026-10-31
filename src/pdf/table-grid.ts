@@ -402,6 +402,34 @@ export function dropShadingClipGrids(clipGrids: TableGrid[], lineGrids: TableGri
   })
 }
 
+/**
+ * 선 표 조각 클립 격자 버리기 — 한컴 PDF 가 글이 칸을 채우는 몇 칸에만 클립을 걸면(여수 업무계획 정원표 "합계" 행 6~9급 네 칸) 그 칸들이
+ * 작은 클립 표가 되어 먼저 글을 가져가고, 괘선으로 온전한 선 표는 그 칸이 빈 채 남고 값은 따로 1×4 표로 나갔다. 클립 격자의 행·열 경계가
+ * 모두 품는 선 격자의 괘선 자리이고 안쪽 칸 경계마다 세로 괘선이 그어졌으며, 선 표 안 클립 격자를 다 합쳐도 선 표 면적의 절반 이하이면
+ * (선 표 대부분에 클립이 없음) 선 표의 칸이지 따로 선 표가 아니다 — 선 표가 맡는다
+ */
+export function dropRuledFragmentClipGrids(clipGrids: TableGrid[], lineGrids: TableGrid[], verticals: LineSegment[], pageWidth: number, pageHeight: number): TableGrid[] {
+  // 쪽 테두리 틀이 이어 붙인 선 격자(쪽을 거의 다 덮음)는 표가 아니다 — 그 안 클립 표들은 진짜 표다(hwp3 쪽 테두리 안 표)
+  lineGrids = lineGrids.filter(l => l.bbox.x2 - l.bbox.x1 < pageWidth * 0.85 || l.bbox.y2 - l.bbox.y1 < pageHeight * 0.85)
+  if (clipGrids.length === 0 || lineGrids.length === 0) return clipGrids
+  const near = (a: number, b: number) => Math.abs(a - b) <= SHADE_CLIP_TOL
+  const area = (b: TableGrid["bbox"]) => Math.max(0, b.x2 - b.x1) * Math.max(0, b.y2 - b.y1)
+  const inter = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => area({ x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1), x2: Math.min(a.x2, b.x2), y2: Math.min(a.y2, b.y2) })
+  return clipGrids.filter(c => {
+    if (!c.cells?.length || c.clipParent || c.cells.some(cell => cell.filler) || c.cells.length < 2) return true
+    const ruled = c.cells.every(cell => cell.bbox.x2 >= c.bbox.x2 - SHADE_CLIP_TOL || verticals.some(v =>
+      Math.abs(v.x1 - cell.bbox.x2) <= SHADE_CLIP_TOL * 2
+      && Math.min(v.y2, cell.bbox.y2) - Math.max(v.y1, cell.bbox.y1) >= (cell.bbox.y2 - cell.bbox.y1) * 0.75))
+    if (!ruled) return true
+    const hit = lineGrids.find(l =>
+      c.bbox.x1 >= l.bbox.x1 - SHADE_CLIP_TOL && c.bbox.x2 <= l.bbox.x2 + SHADE_CLIP_TOL
+      && c.bbox.y1 >= l.bbox.y1 - SHADE_CLIP_TOL && c.bbox.y2 <= l.bbox.y2 + SHADE_CLIP_TOL
+      && c.colXs.every(x => l.colXs.some(lx => near(lx, x))) && c.rowYs.every(y => l.rowYs.some(ly => near(ly, y)))
+      && clipGrids.reduce((sum, o) => sum + inter(o.bbox, l.bbox), 0) <= area(l.bbox) * SHADE_CLIP_MAX_AREA)
+    return !hit
+  })
+}
+
 /** 여백 클립 판정: 클립 격자 위·아래 변이 선 격자 행 괘선에서 떨어진 최소 거리 (pt) — Word 칸 위·아래 여백 5~6pt 실측 */
 const INSET_CLIP_MIN = 2
 

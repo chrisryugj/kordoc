@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PDF 표: 한컴 PDF 가 글이 칸을 채우는 몇 칸에만 클립을 걸면(여수 업무계획 정원표 "합계" 행 6~9급 네 칸) 그 칸들이 작은 클립 표가 되어 먼저 글을 가져가, 괘선으로 온전한 표는 그 칸이 빈 채 남고 값은 따로 1×4 표로 나갔다. 클립 격자의 행·열 경계가 모두 품는 선 표의 괘선 자리이고 안쪽 칸 경계마다 세로 괘선이 그어졌으며 선 표 대부분에 클립이 없으면 선 표의 칸으로 본다(쪽 테두리 틀이 이은 선 격자는 제외). PDF 표·글·별표 벤치와 licbyl HWP↔PDF 셀 대조는 문서별로 그대로.
+
+### 측정 참고
+
+- OCR 표 정답은 같은 PDF 텍스트층을 kordoc 이 읽은 결과라 이 고침으로 정답이 바뀐다(채점 방식은 그대로): yeosu-plan2026 가짜 1×4 표가 빠져 표 모수 67 → 66, 표 일치 34/67 → **34/66**(50.7% → 51.5%)·매칭 .791 → **.803**·칸 F1 .5904 → **.5999**, CER .02442 → **.02373**(yeosu 13.6% → 7.0%, 정답 읽기 순서가 바로잡힘). PDF 글 커버리지 .99801 → .99802.
+
 ## [4.24.29] - 2026-10-31
 
 ### Changed
