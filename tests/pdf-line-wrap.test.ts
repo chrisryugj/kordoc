@@ -21,6 +21,10 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("법률」 제7조의9", "에 따라 아래와 같이"), "")
     assert.equal(wrapJoiner("‘제1종 전문박물관’", "으로 정식 등록되었으며"), "")
     assert.equal(wrapJoiner("하였", "다. 이에 따라"), "")
+    // 글자 단위 줄 나눔(대규모유통업법 행정예고) — 어절 첫머리에 오지 않는 어미·겹조사
+    assert.equal(wrapJoiner("곱한 금액으로 산정되", "는데, 부과기준율이"), "")
+    assert.equal(wrapJoiner("부과기준율도 필요해", "졌다. 이에 따라"), "")
+    assert.equal(wrapJoiner("제1호부터 제11호", "까지와 같다"), "")
   })
 
   it("한글 없는 중·일문 꺾임은 붙인다 — 띄어쓰기가 없는 글 (kpipa 계약서 중문·일문, LibreOffice)", () => {
