@@ -2,7 +2,7 @@
 
 import { it } from "node:test"
 import assert from "node:assert/strict"
-import { ocrGutterVerticals, splitItemsAtGutters } from "../src/pdf/ocr-gutter-columns.js"
+import { ocrGutterVerticals, splitItemsAcrossColumns, splitItemsAtGutters } from "../src/pdf/ocr-gutter-columns.js"
 import { rememberOcrTextGaps } from "../src/ocr/text-gaps.js"
 import type { TableGrid } from "../src/pdf/line-types.js"
 import type { NormItem } from "../src/pdf/text-line.js"
@@ -40,4 +40,12 @@ it("skips a frame grid that holds another grid (쪽 테두리 상자)", () => {
   const out = ocrGutterVerticals([frame, inner], items)
   assert.equal(out.has(frame), false)
   assert.equal(out.has(inner), true)
+})
+
+it("splits an OCR box spanning grid columns into one value per column (\"0.50.71.0\", \"7.4 10.3\")", () => {
+  const g: TableGrid = { colXs: [0, 50, 100, 150], rowYs: [100, 0], bbox: { x1: 0, y1: 0, x2: 150, y2: 100 }, vertexRadius: 1 }
+  const out = splitItemsAcrossColumns([item("0.50.71.0", 10, 50, 130), item("7.4 10.3", 60, 20, 80), item("합계 비율", 10, 80, 130)], [g])
+  assert.deepEqual(out.map(it => it.text), ["0.5", "0.7", "1.0", "7.4", "10.3", "합계 비율"])
+  // 값마다 그 열 안에 놓인다
+  assert.deepEqual(out.slice(0, 3).map(it => Math.floor((it.x + it.w / 2) / 50)), [0, 1, 2])
 })

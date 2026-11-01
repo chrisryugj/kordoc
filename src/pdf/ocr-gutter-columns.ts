@@ -168,3 +168,43 @@ function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b)
   return s[Math.floor(s.length / 2)] ?? 0
 }
+
+/**
+ * 격자 열 여럿에 걸친 OCR 상자 쪼개기 — 검출기가 이웃 칸 수를 한 상자로 묶고 인식기가 공백까지 빠뜨려 "0.50.71.0"·"7.4 10.3" 이 한 칸에
+ * 들어가고 이웃 칸이 비었다(통계표 성·연령별 비율). 상자가 가로지르는 열 경계 수 + 1 = k 이고 글이 값 k 개로 정확히 갈리면 —
+ * 공백으로, 또는 소수 자릿수가 같은 수가 이어 붙은 꼴로 — 값마다 그 열 가운데에 놓는다
+ */
+export function splitItemsAcrossColumns(items: NormItem[], grids: TableGrid[]): NormItem[] {
+  if (!grids.length) return items
+  return items.flatMap(it => {
+    if (it.fontName !== "ocr") return [it]
+    const cx = it.x + it.w / 2, cy = it.y + it.h / 2
+    const grid = grids.find(g => !g.cells && cx > g.bbox.x1 && cx < g.bbox.x2 && cy > g.bbox.y1 && cy < g.bbox.y2)
+    if (!grid) return [it]
+    const tol = Math.max(1, it.h * 0.2)
+    const inside = grid.colXs.filter(x => x > it.x + tol && x < it.x + it.w - tol)
+    if (!inside.length) return [it]
+    const k = inside.length + 1
+    const tokens = valueTokens(it.text.trim(), k)
+    if (!tokens) return [it]
+    const first = grid.colXs.findIndex(x => x === inside[0]) - 1
+    return tokens.map((text, i) => {
+      const l = grid.colXs[first + i], r = grid.colXs[first + i + 1]
+      const w = Math.min(it.w / k, (r - l) * 0.8)
+      return { ...it, text, x: (l + r) / 2 - w / 2, w, ...(i > 0 ? { hasSpaceBefore: true } : {}) }
+    })
+  })
+}
+
+/** 글을 값 k 개로 — 공백으로 갈린 값 토큰, 아니면 소수 자릿수 d(1·2) 가 같은 수 k 개가 이어 붙은 꼴 */
+function valueTokens(text: string, k: number): string[] | null {
+  const parts = text.split(/\s+/)
+  if (parts.length === k && parts.every(p => VALUE_TOKEN.test(p))) return parts
+  for (const d of [1, 2]) {
+    const one = `[-−]?\\d{1,3}(?:,\\d{3})*\\.\\d{${d}}`
+    const m = new RegExp(`^(?:${one}){${k}}$`).test(text.replace(/\s+/g, ""))
+    if (m) return text.replace(/\s+/g, "").match(new RegExp(one, "g"))
+  }
+  return null
+}
+

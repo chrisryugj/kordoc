@@ -30,3 +30,11 @@ describe("표의 독립 글머리 칸", () => {
     assert.deepEqual(mapped([glyph("․", 92), glyph("가나", 103, 22)], a, b), ["", "․가나"])
   })
 })
+
+describe("따로 검출된 OCR 값 상자", () => {
+  const ocr = (text: string, x: number, w: number): TextItem => ({ text, x, y: 104, w, h: 11, fontSize: 11, fontName: "ocr" })
+  it("칸 경계를 조금 넘쳐도 이웃 칸 값과 한 낱말로 잇지 않는다 (연도별 비율 표 \"18.43.55.27.5\")", () => {
+    const a = cell(0, 292, 317), b = cell(1, 317, 341)
+    assert.deepEqual(mapped([ocr("18.4", 296, 24), ocr("3.5", 320.5, 19)], a, b), ["18.4", "3.5"])
+  })
+})

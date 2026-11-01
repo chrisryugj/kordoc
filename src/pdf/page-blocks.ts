@@ -6,7 +6,7 @@
  * 페이지 걸친 표 병합까지 담당한다.
  */
 
-import { GRID_GUTTERS, ocrGutterVerticals, splitItemsAtGutters } from "./ocr-gutter-columns.js"
+import { GRID_GUTTERS, ocrGutterVerticals, splitItemsAcrossColumns, splitItemsAtGutters } from "./ocr-gutter-columns.js"
 import type { IRBlock, IRTable, IRCell, BoundingBox, InlineStyle } from "../types.js"
 import { safeMin, safeMax } from "../utils.js"
 import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells.js"
@@ -191,6 +191,7 @@ export function extractPageBlocksWithLines(
       lineGrids = lineGrids.map(g => g === grid ? next : g)
       items = splitItemsAtGutters(items, gutters)
     }
+    items = splitItemsAcrossColumns(items, lineGrids)
   }
   if (shadedEdges) nestRestoredShadedGrids(lineGrids, shadedEdges.restored, horizontals, verticals)
   // 배경 칠한 칸에만 클립을 거는 제작기(cairo·한컴 구버전)의 음영 조각 격자는 버리고 온전한 선 표에 맡긴다 (dropShadingClipGrids)
