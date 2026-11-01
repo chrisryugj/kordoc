@@ -252,6 +252,9 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const group = left.match(/\d,(\d{1,2})$/)
   if (group && new RegExp(`^\\d{${3 - group[1].length}}(?!\\d)`).test(right)) return ""
   if (/\(\d+\.\d*$/.test(left) && /^\d/.test(right) && !/^\d+\.$/.test(right)) return ""
+  // 네 자리 연도가 갈린 줄 — "20⏎25년까지"(공공재정 부정수급 보도자료)
+  const yearHead = left.match(/(?:^|[^\d])((?:19|20)\d{0,1})$/), yearTail = right.match(/^(\d{1,2})년/)
+  if (yearHead && yearTail && yearHead[1].length + yearTail[1].length === 4) return ""
   if (particleContinues(left, right)) return ""
   if (endsAsWord(left)) return " "
   // Latin line-end hyphens can be typesetting breaks. Preserve the token boundary

@@ -36,6 +36,9 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("공모전’(4.1", "6.~5.16.) 심사 결과"), "")
     assert.equal(startsNewItem("공모전’(4.1", "6.~5.16.) 심사 결과"), false)
     assert.equal(startsNewItem("다음과 같다.", "6. 기타"), true)
+    // 네 자리 연도가 갈린 줄 (공공재정 부정수급 "2023년부터 20⏎25년까지")
+    assert.equal(wrapJoiner("2023년부터 20", "25년까지 공공기관"), "")
+    assert.equal(wrapJoiner("총 30", "25년 동안"), " ")
   })
 
   it("한글 없는 중·일문 꺾임은 붙인다 — 띄어쓰기가 없는 글 (kpipa 계약서 중문·일문, LibreOffice)", () => {
