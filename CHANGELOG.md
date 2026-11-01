@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.37] - 2026-11-02
+
 ### Added
 
 - OCR `ocrRec: "auto"`(CLI `--ocr-rec auto`, MCP `ocr_rec: "auto"`, parse-worker·Python SDK 같은 값): 쪽마다 기본 rec 로 읽고, 글자 확신도 평균이 0.9 미만인 쪽만 손글씨 rec 로 다시 읽어 평균이 0.06 이상 오를 때 그 쪽을 바꾼다. 인쇄·손글씨가 섞인 묶음용 — 인쇄 쪽은 기본 rec 결과 그대로. 기본값은 바꾸지 않는다(손글씨 rec 는 첫 사용 시 받는 선택 모델). 자동 OCR(`ocr` 미지정)은 두 rec 가 모두 캐시에 있을 때만
@@ -26,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 측정 참고 (외부 벤치)
 
-- KoOCR-Bench v2.0c 공개 877쪽(schift-io/koocr-bench-v2, 공식 채점기 v1.3r·총점 v3): 4.24.36 0.742 → 기본 설정 **0.807**(표 묶음 .700 → .825 — 통계표 kostat_wide .474 → .808, 표 tables .664 → .732, 관보 CER .146 → .1455, 시험지 suneung CER .448 → .411), `ocrRec: "auto"` **0.828**(손글씨 .759 → .864 — 손글씨 CER rw11 .266 → .129·owner20 .217 → .143, 시험지 CER .411 → .419). kordoc 자체 OCR·ODL·PDF 벤치 문서별 그대로, OCR robust 변형별 ±0.003
+- KoOCR-Bench v2.0c 공개 877쪽(schift-io/koocr-bench-v2, 공식 채점기 v1.3r·총점 v3): 4.24.36 0.742 → 기본 설정 **0.807**(표 묶음 .700 → .825 — 통계표 kostat_wide .474 → .808, 표 tables .664 → .732, 관보 CER .146 → .1455, 시험지 suneung CER .448 → .411), `ocrRec: "auto"` **0.828**(손글씨 .759 → .864 — 손글씨 CER rw11 .266 → .129·owner20 .217 → .143, 시험지 CER .411 → .419). kordoc 자체 OCR·ODL·ODL-OCR·OCR robust·PDF 표·글 벤치 문서별 그대로
 
 ## [4.24.36] - 2026-11-01
 

@@ -123,6 +123,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 66 tables | CER **0.0239** · character recall **99.32%** · table structure **34/66** |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.807** by default · `ocrRec: "auto"` **0.828** (4.24.37) |
 | opendataloader-bench | 200 PDF documents | Overall **0.964** with defaults · **0.939** with OCR off |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -130,15 +131,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.36](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.36)** · 2026-11-01
+Latest release: **[4.24.37](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.37)** · 2026-11-02
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.37 | OCR tables: blank-separated columns inside ruled column groups · body rows without rules expanded · rows split under row spans · neighbouring values no longer piled into one cell · shaded header band and shaded first column edges · tables with a header row no longer read as charts · exam question boxes unframed · `ocrRec: "auto"` (handwriting model only on handwritten pages) | KoOCR-Bench v2.0c public 877 pages total 0.742 → **0.807** (`ocrRec: "auto"` **0.828**) · in-house benchmarks unchanged per document |
 | 4.24.36 | PDF word spacing (Hancom PDFs): spaces hidden by condensed tracking are restored · a comma overprinted on a space glyph stays attached ("55만원,") · dotted dates keep their spaces · four-digit years split across lines are joined | PDF text word-boundary F1 99.076 → **99.103%** · other metrics unchanged |
 | 4.24.35 | PDF: two equal digits of a condensed number ("129.9") are kept · superscript lines drawn one glyph at a time join their line · numbers split across lines ("1,2⏎96", "(4.1⏎6.~5.16.)") and decimals split in cells are joined · lone vertical spine text on cover pages | PDF table exact cells 0.99264 → **0.99267** · cell content 0.98902 → **0.98905** · PDF text order 99.359 → **99.360%** · word-boundary F1 99.073 → **99.076%** · other metrics unchanged |
 | 4.24.34 | to-hwpx: several files or whole folders at once (subfolders, existing .hwpx skipped) · PDF: "·" bullets drawn as a small square in a symbol font and mapped to a space are restored · line-initial endings ("는데", "졌다") and compound particles in character-wrapped text join the previous line | PDF table exact cells 0.99221 → **0.99264** · cell content 0.98896 → **0.98902** · PDF text recall 99.883 → **99.885%** · order 99.356 → **99.359%** · word-boundary F1 99.071 → **99.073%** · other metrics unchanged |
 | 4.24.33 | PDF tables: in 2-up pages, cell text that continues into a box at the top of the right page is joined to the cell · a 1×1 clip laid over a cell (statistics number cells) is read as the cell text, not a nested table | PDF table cell content 0.98794 → **0.98896** · exact cells 0.99153 → **0.99221** · other benchmark metrics unchanged |
-| 4.24.32 | PDF and OCR two columns: two columns typeset on one line grid (minutes, exams) are now read as columns · a question heading the next column no longer becomes a sub-item of the previous options · running header boxes whose cells swap order on even and odd pages are removed | PDF text reading order 99.348% → **99.356%** · precision 99.680% → **99.682%** · word F1 99.069% → **99.071%** · the OCR reference (text layer) now reads the minutes' two columns correctly, CER 0.0237 → 0.0239 (reference change, scoring unchanged) |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

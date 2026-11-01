@@ -2,6 +2,23 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.37: OCR table structure · KoOCR-Bench · 2026-11-02
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer v1.3r and total v3 unchanged; the 193 private pages are not available): total 0.742 → **0.807**, `ocrRec: "auto"` **0.828**. In-house OCR, ODL-OCR, OCR robustness, PDF table and text benchmarks are unchanged per document.
+
+| Group | 4.24.36 | 4.24.37 | `ocrRec: "auto"` |
+| --- | --- | --- | --- |
+| Tables (stats, tables, gazette, accounting; weight .5) | .700 | **.825** | .825 |
+| Statistics tables kostat_wide | .474 | **.808** | |
+| tables | .664 | **.732** | |
+| Text (weight .2) | — | .792 | .790 |
+| Handwriting (weight .2) | .759 | .759 | **.864** |
+| Reading order (weight .1) | — | .842 | .840 |
+
+- Blank-separated columns inside ruled column groups (virtual column lines), numeric bodies without row rules expanded into rows, rows split under row spans, neighbouring values no longer piled into one cell, shaded header band and shaded first-column edges.
+- Tables with a header row are no longer read as chart text; exam question boxes are unframed (exam CER .448 → .411).
+- `ocrRec: "auto"` re-reads only pages with mean confidence below 0.9 with the handwriting model and switches when the mean rises by 0.06 or more (handwriting CER .266 → .129, .217 → .143).
+
 ## 4.24.36: Hancom PDF word spacing · 2026-11-01
 
 PDF text (744 pairs): word-boundary F1 .99076 → **.99103** (57 documents up, 3 slightly down — real spaces in heavily condensed lines, a spaced cell label, one line-wrap lexicon side effect); recall, precision and order unchanged. PDF tables, statute annexes, ODL 200 documents and OCR unchanged per document.
