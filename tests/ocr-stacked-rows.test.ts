@@ -26,6 +26,19 @@ it("leaves wrapped prose cells and single stacked cells alone", () => {
   assert.equal(one.table!.rows, 2)
 })
 
+it("splits rows covered by a row span from above and grows that span (주택 소유 통계 연도 열)", () => {
+  const year = c("2023", 1, 3)
+  const b = table([
+    [year, c("구분"), c("합계"), c("비중")],
+    [c(""), c("연제구\n수영구"), c("74,454\n68,769"), c("(71.1)\n(66.1)")],
+    [c(""), c("대구"), c("785,607"), c("(78.2)")],
+  ])
+  splitStackedOcrRows([b])
+  assert.equal(b.table!.rows, 4)
+  assert.equal(b.table!.cells[0][0].rowSpan, 4)
+  assert.deepEqual(b.table!.cells.slice(1).map(r => r.slice(1).map(x => x.text)), [["연제구", "74,454", "(71.1)"], ["수영구", "68,769", "(66.1)"], ["대구", "785,607", "(78.2)"]])
+})
+
 const box = (b: IRBlock, height: number): IRBlock => ({ ...b, pageNumber: 1, bbox: { page: 1, x: 80, y: 120, width: 660, height } })
 
 it("unframes a page-tall exam layout grid column by column (수능 한국사 문항 상자)", () => {

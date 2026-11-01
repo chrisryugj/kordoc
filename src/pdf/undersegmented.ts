@@ -115,6 +115,7 @@ function alignedSubRows(itemsByCol: TextItem[][]): string[][] | null {
  * @param originalCells 기존 셀 행렬 (품질 비교용)
  * @param colXs 그리드 열 경계
  * @param items 표 영역 내 텍스트 아이템
+ * @param maxRows 다룰 격자 행 수 상한 (기본 5 — OCR 숫자 표는 묶음마다 격자 행이 있어 더 받는다)
  * @param kept 행 3개 이상 표에서 펼치지 않고 그대로 둔 행 — 새 행 번호 → 원래 행 번호 (호출측이 그 행의 칸 합침을 잇는다)
  */
 export function normalizeUndersegmentedTable(
@@ -123,10 +124,11 @@ export function normalizeUndersegmentedTable(
   items: TextItem[],
   rowYs?: number[],
   kept?: Map<number, number>,
+  maxRows = MAX_UNDERSEGMENTED_ROWS,
 ): string[][] | null {
   const numRows = originalCells.length
   const numCols = colXs.length - 1
-  if (numRows > MAX_UNDERSEGMENTED_ROWS || numCols < MIN_UNDERSEGMENTED_COLUMNS) return null
+  if (numRows > maxRows || numCols < MIN_UNDERSEGMENTED_COLUMNS) return null
   if (items.length === 0) return null
   if (numRows >= 3) {
     if (rowYs?.length !== numRows + 1) return null

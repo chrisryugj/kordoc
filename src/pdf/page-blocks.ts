@@ -346,6 +346,9 @@ function rotatedGridBlocks(
  * 선 기반 그리드가 감지된 경우: 테이블 영역의 텍스트는 셀에 매핑,
  * 나머지는 일반 텍스트 블록으로 처리.
  */
+/** OCR 숫자 표 행 펼치기의 격자 행 수 상한 */
+const OCR_NUMERIC_MAX_ROWS = 12
+
 function extractBlocksWithGrids(
   items: NormItem[],
   pageNum: number,
@@ -526,9 +529,21 @@ function extractBlocksWithGrids(
     let finalRows = numRows
     let rebuiltUsed = false
     const unitLine = !grid.cells && numRows >= 3 && numRows <= 5 && numCols >= 3 ? rebuildUnitLine(items, grid) : []
-    if (!grid.cells && numRows <= 5 && numCols >= 3 && !nestedAttached && (numRows <= 2 || unitLine.length > 0)) {
+    // OCR 숫자 표는 단위 줄이 없어도 본문을 글줄로 펼친다 — 행 사이 괘선 없는 통계표 본문이 한 행에 27줄씩 쌓였다(국가·권역별 무역액).
+    // 칸 글줄 절반 이상이 숫자일 때만: 긴 글 칸 표(관보 당초·변경)는 펼치면 두 칸 글이 줄마다 섞인다
+    const numericBody = ocrPage && numRows >= 3 && (() => {
+      const ls = irGrid.slice(1).flat().flatMap(c => c.text.split("\n")).map(t => t.trim()).filter(Boolean)
+      // 숫자 글줄 = 공백 뺀 글자의 85% 이상이 숫자·소수점·부호 — 이웃 열 수가 붙어 읽힌 줄("-5.4−0.9−0.5")도 숫자 줄이다
+      const numericLine = (t: string) => { const cs = t.replace(/\s+/g, ""); return cs.length > 0 && (cs.match(/[\d.,%()+\-−–—△▲▽▼]/g)?.length ?? 0) >= cs.length * 0.85 }
+      // 글머리(○·□·"- 글", 음수 "-5.4"·빈 값 "-" 아님) 줄이 둘 넘는 칸은 칸 하나에 담긴 목록이다(세입예산 사업명세서 "○자활근로사업…" 칸) — 행으로 펼치지 않는다
+      const bulletList = irGrid.slice(1).flat().some(c => c.text.split("\n").filter(t => /^\s*(?:[○◦•□■▪]|-\s*[^\d\s.,−-])/.test(t)).length >= 2)
+      return !bulletList && ls.length > 0 && ls.filter(numericLine).length >= ls.length * 0.5
+    })()
+    // OCR 숫자 표는 연도 묶음마다 격자 행이 있어(시도별 이동자 수 2024·2025·2026 묶음) 행 상한을 늘린다
+    const maxRows = numericBody ? OCR_NUMERIC_MAX_ROWS : 5
+    if (!grid.cells && numRows <= maxRows && numCols >= 3 && !nestedAttached && (numRows <= 2 || unitLine.length > 0 || numericBody)) {
       const kept = new Map<number, number>()
-      const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs, kept)
+      const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs, kept, maxRows)
       if (rebuilt) {
         rebuiltUsed = true
         // OCR 쪽은 그대로 둔 행(머리 행)의 칸 합침을 잇는다 — 다 1 로 풀면 묶음 제목("중위 추계" 3칸)이 첫 칸에만 남았다.

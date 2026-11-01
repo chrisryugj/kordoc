@@ -10,14 +10,13 @@ const NUMERIC = /^[-+−△▲▽▼]?[\d.,]+[%p]?$|^[-–—·∼~]$|^\([-+−�
 
 const blank = (): IRCell => ({ text: "", colSpan: 1, rowSpan: 1 })
 
-/** 행 r 의 칸 자리마다 [앵커 열, 앵커 칸] — 위 행에서 내려온 rowSpan 이 걸치면 null */
-function rowAnchors(t: IRTable, r: number, coveredFromAbove: boolean[]): Array<{ c: number; cell: IRCell }> | null {
-  if (coveredFromAbove.some(Boolean)) return null
+/** 행 r 의 칸 자리마다 [앵커 열, 앵커 칸] — 위 행에서 내려온 rowSpan 이 덮는 자리는 건너뛴다(가르면 덮는 칸을 늘린다) */
+function rowAnchors(t: IRTable, r: number, coveredFromAbove: Array<IRCell | null>): Array<{ c: number; cell: IRCell }> {
   const out: Array<{ c: number; cell: IRCell }> = []
   const row = t.cells[r] ?? []
   for (let c = 0; c < row.length;) {
+    if (coveredFromAbove[c]) { c++; continue }
     const cell = row[c]
-    if ((cell.rowSpan ?? 1) > 1) return null
     out.push({ c, cell })
     c += Math.max(1, cell.colSpan ?? 1)
   }
@@ -26,19 +25,19 @@ function rowAnchors(t: IRTable, r: number, coveredFromAbove: boolean[]): Array<{
 
 function splitTable(t: IRTable): boolean {
   let changed = false
-  // 위 행 rowSpan 이 덮는 자리
-  const cover: boolean[][] = Array.from({ length: t.rows }, () => Array(t.cols).fill(false))
+  // 위 행 rowSpan 이 덮는 자리 → 덮는 칸
+  const cover: Array<Array<IRCell | null>> = Array.from({ length: t.rows }, () => Array(t.cols).fill(null))
   for (let r = 0; r < t.rows; r++) for (let c = 0; c < (t.cells[r] ?? []).length; c++) {
     const cell = t.cells[r][c], rs = Math.max(1, cell.rowSpan ?? 1), cs = Math.max(1, cell.colSpan ?? 1)
     if (cover[r][c]) continue
-    for (let i = r + 1; i < Math.min(t.rows, r + rs); i++) for (let j = c; j < Math.min(t.cols, c + cs); j++) cover[i][j] = true
+    for (let i = r + 1; i < Math.min(t.rows, r + rs); i++) for (let j = c; j < Math.min(t.cols, c + cs); j++) cover[i][j] = cell
     // 같은 행 colSpan 이 덮는 자리는 rowAnchors 가 건너뛴다
   }
   const newRows: IRCell[][] = []
   for (let r = 0; r < t.rows; r++) {
     const row = t.cells[r] ?? []
     const anchors = rowAnchors(t, r, cover[r])
-    const lines = anchors?.map(a => a.cell.text.split("\n").map(s => s.trim()).filter(Boolean)) ?? []
+    const lines = anchors.map(a => a.cell.text.split("\n").map(s => s.trim()).filter(Boolean))
     const counts = new Map<number, number>()
     for (const ls of lines) if (ls.length >= 2) counts.set(ls.length, (counts.get(ls.length) ?? 0) + 1)
     const [k, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [0, 0]
@@ -48,14 +47,19 @@ function splitTable(t: IRTable): boolean {
     const stacked = lines.filter(near)
     const flat = stacked.flat()
     const numericShare = flat.length ? flat.filter(s => NUMERIC.test(s.replace(/\s+/g, ""))).length / flat.length : 0
-    const ok = anchors && k >= 2 && n >= 2 && stacked.length * 2 >= nonEmpty && lines.every(ls => ls.length <= 1 || near(ls)) && numericShare >= 0.6
+    // 아래로 걸친 칸(행 합침)은 한 줄 이하일 때만 — 늘어난 행만큼 더 걸친다
+    const spanOk = anchors.every((a, i) => (a.cell.rowSpan ?? 1) === 1 || lines[i].length <= 1)
+    const ok = spanOk && k >= 2 && n >= 2 && stacked.length * 2 >= nonEmpty && lines.every(ls => ls.length <= 1 || near(ls)) && numericShare >= 0.6
     if (!ok) { newRows.push(row); continue }
     const sub: IRCell[][] = Array.from({ length: k }, () => Array.from({ length: row.length }, blank))
-    anchors!.forEach(({ c, cell }, idx) => {
+    anchors.forEach(({ c, cell }, idx) => {
       const ls = lines[idx], cs = Math.max(1, cell.colSpan ?? 1)
       if (ls.length >= 2) for (let i = 0; i < k; i++) sub[i][c] = { ...cell, text: ls[i] ?? "", colSpan: cs, rowSpan: 1 }
-      else sub[0][c] = { ...cell, rowSpan: k }
+      // 칸 자체를 늘린다 — 아래 행들이 같은 칸을 덮는 칸으로 보고 더 늘린다
+      else { cell.rowSpan = (cell.rowSpan ?? 1) + k - 1; sub[0][c] = cell }
     })
+    // 위에서 내려와 이 행을 덮는 칸(첫 열 "연도" 등)은 늘어난 행만큼 더 걸친다
+    for (const owner of new Set(cover[r].filter((x): x is IRCell => !!x))) owner.rowSpan = (owner.rowSpan ?? 1) + k - 1
     newRows.push(...sub)
     changed = true
   }
