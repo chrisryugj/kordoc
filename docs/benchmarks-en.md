@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.36: Hancom PDF word spacing · 2026-11-01
+
+PDF text (744 pairs): word-boundary F1 .99076 → **.99103** (57 documents up, 3 slightly down — real spaces in heavily condensed lines, a spaced cell label, one line-wrap lexicon side effect); recall, precision and order unchanged. PDF tables, statute annexes, ODL 200 documents and OCR unchanged per document.
+
+- Tracking-aware spaces (unrounded coordinates, Hancom PDFs): "20만원 수준" and 18 more documents.
+- Space-hint gaps on unrounded coordinates (Hancom PDFs): "55만원 ," → "55만원," in 31 documents.
+- Dotted dates keep their spaces: release headers "2026. 8. 28.(" in 8 documents.
+- Split years: a public subsidy release .99204 → .99469.
+
 ## 4.24.35: digits, superscripts, split numbers, spine text · 2026-11-01
 
 PDF table benchmark (708 pairs): exact cells .99264 → **.99267**, cell content NED .98902 → **.98905**; detection, structure and cell F1 unchanged. PDF text (744 pairs): order .99359 → **.99360**, word-boundary F1 .99073 → **.99076** (8 documents up, none down). Statute annexes, ODL 200 documents and OCR unchanged per document.

@@ -109,14 +109,14 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF text and tables: 4.24.35 · 2026-11-01; OCR: 4.24.32 · 2026-11-01; HWP → HWPX conversion: 4.24.29 · 2026-10-31). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF text: 4.24.36 · 2026-11-01; PDF tables: 4.24.35 · 2026-11-01; OCR: 4.24.32 · 2026-11-01; HWP → HWPX conversion: 4.24.29 · 2026-10-31). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
 | HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.21%** · exact **69/232** · text **264/264** · 80 documents checked side by side in Hangul |
-| PDF text | 744 pairs | Character recall **99.885%** · precision **99.682%** · reading order **99.360%** · word-boundary F1 **99.076%** |
+| PDF text | 744 pairs | Character recall **99.885%** · precision **99.682%** · reading order **99.360%** · word-boundary F1 **99.103%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.35](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.35)** · 2026-11-01
+Latest release: **[4.24.36](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.36)** · 2026-11-01
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.36 | PDF word spacing (Hancom PDFs): spaces hidden by condensed tracking are restored · a comma overprinted on a space glyph stays attached ("55만원,") · dotted dates keep their spaces · four-digit years split across lines are joined | PDF text word-boundary F1 99.076 → **99.103%** · other metrics unchanged |
 | 4.24.35 | PDF: two equal digits of a condensed number ("129.9") are kept · superscript lines drawn one glyph at a time join their line · numbers split across lines ("1,2⏎96", "(4.1⏎6.~5.16.)") and decimals split in cells are joined · lone vertical spine text on cover pages | PDF table exact cells 0.99264 → **0.99267** · cell content 0.98902 → **0.98905** · PDF text order 99.359 → **99.360%** · word-boundary F1 99.073 → **99.076%** · other metrics unchanged |
 | 4.24.34 | to-hwpx: several files or whole folders at once (subfolders, existing .hwpx skipped) · PDF: "·" bullets drawn as a small square in a symbol font and mapped to a space are restored · line-initial endings ("는데", "졌다") and compound particles in character-wrapped text join the previous line | PDF table exact cells 0.99221 → **0.99264** · cell content 0.98896 → **0.98902** · PDF text recall 99.883 → **99.885%** · order 99.356 → **99.359%** · word-boundary F1 99.071 → **99.073%** · other metrics unchanged |
 | 4.24.33 | PDF tables: in 2-up pages, cell text that continues into a box at the top of the right page is joined to the cell · a 1×1 clip laid over a cell (statistics number cells) is read as the cell text, not a nested table | PDF table cell content 0.98794 → **0.98896** · exact cells 0.99153 → **0.99221** · other benchmark metrics unchanged |
 | 4.24.32 | PDF and OCR two columns: two columns typeset on one line grid (minutes, exams) are now read as columns · a question heading the next column no longer becomes a sub-item of the previous options · running header boxes whose cells swap order on even and odd pages are removed | PDF text reading order 99.348% → **99.356%** · precision 99.680% → **99.682%** · word F1 99.069% → **99.071%** · the OCR reference (text layer) now reads the minutes' two columns correctly, CER 0.0237 → 0.0239 (reference change, scoring unchanged) |
-| 4.24.31 | PDF reading order: picture-heavy 2-up pages · side-by-side tables in approval-document heads (document number → approval box) · PDF false tables: body text under a notice head "○○고시 제 호" · fixed-width word lines in HWP 3 manuals | PDF text reading order 99.312% → **99.348%** · precision 99.678% → **99.680%** · reordered tables 5 → **2** · other benchmark metrics unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
