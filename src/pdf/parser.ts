@@ -210,6 +210,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const pageImageBlocks = new Map<number, IRBlock[]>()
     // 쪽을 넘는 칸 — 앞 쪽 마지막 칸을 다음 쪽 클립 판정에 넘긴다 (clip-cells continues, 문서 단계 mergeContinuedCells)
     const carry: PageCarry = {}
+    // 반올림 전 좌표(NormItem.fx·fw)로 공백을 가리는 규칙(자간 보정·공백 힌트 틈)은 한컴 PDF 실측 — 다른 제작기 PDF(ODL)는 반올림 좌표 그대로
+    const preciseGaps = await isHancomPdf(doc)
     // OCR 로 갈 벡터 글자 쪽의 그래픽(글자 경로·클립 뺀 연산자 목록) — OCR 글자에 이 쪽의 실제 괘선을 붙인다
     const vectorPageOps = new Map<number, { fnArray: number[]; argsArray: unknown[][] }>()
     // 줄 꺾임 이음의 문서 어휘 증거 — 쪽을 처리할 때마다 그 쪽 줄 글이 더해진다 (line-wrap.ts)
@@ -276,6 +278,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 공백으로 적힌 글머리 점 — 글리프 흐름을 맞대는 위 단계들이 끝난 뒤에 덧붙인다
         rawItems.push(...spaceMappedDots(rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as { data?: Uint8Array } | null | undefined))
         const items = normalizeItems(occluded.size ? rawItems.filter(it => !occluded.has(it)) : rawItems)
+        if (!preciseGaps) for (const it of items) { delete it.fx; delete it.fw }
 
         // hidden text 필터링 + 경고 수집
         const filtered = filterHiddenText(items, pageW, pageH, viewX1, viewY1)

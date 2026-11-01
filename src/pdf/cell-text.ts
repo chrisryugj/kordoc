@@ -9,7 +9,7 @@
  */
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
-import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing, isAttachedScripts, isFragmentLine, trackedSpaces } from "./text-line.js"
+import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing, isAttachedScripts, isFragmentLine, trackedSpaces, exactGap } from "./text-line.js"
 import { tagScripts } from "./script-items.js"
 
 /** 시도·전국 이름표 — 두 음절 배분 칸을 문서 어휘 증거 없이도 붙이는 닫힌 목록. "전 체"·"구 분" 같은 표 머리글은 원고에서 띄어 쓰기도
@@ -259,7 +259,7 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
       // pdfjs 공백 아이템 힌트 — 단어 경계 확정 (Type3 폰트 글자 분리 셀 텍스트 복원)
       if (isCjkLatinAutospace(s[j - 1].text, s[j].text, gap, avgFs, hangulLine)) {
         result += s[j].text
-      } else if (s[j].hasSpaceBefore && gap >= avgFs * 0.05) {
+      } else if (s[j].hasSpaceBefore && exactGap(s[j - 1], s[j], gap) >= avgFs * 0.05) {
         result += " " + s[j].text
       } else if (gap > spaceGapThreshold(avgFs) || tracked?.[j]) {
         result += " " + s[j].text

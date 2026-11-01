@@ -549,6 +549,12 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
 type Tracked = { text: string; x: number; w: number; fontSize: number; fx?: number; fw?: number }
 const precise = (i: Tracked) => i.fx !== undefined && i.fw !== undefined && Math.round(i.fx) === i.x && Math.abs(Math.round(i.fw) - i.w) <= 1
 
+/** 공백 힌트 자리의 틈 — 둘 다 반올림 전 좌표가 있으면 그것으로 잰다. 공백 글리프 위에 덧찍은 쉼표가 반올림으로 1pt 떨어져 보였다
+ *  ("55만원 ,", 실제 −0.06pt, 청년 종합투자 보도자료). 보도자료 42문서 어절 F1 오름 — 자간을 크게 줄인 줄의 진짜 공백 둘은 잃는다("5,514명 발생") */
+export function exactGap(a: Tracked, b: Tracked, rounded: number): number {
+  return precise(a) && precise(b) ? b.fx! - (a.fx! + a.fw!) : rounded
+}
+
 /**
  * 자간을 줄인 줄의 공백 — 한컴은 자간 음수 글을 글자마다 따로 찍어(아이템 폭은 글리프 본래 폭) 이웃 글자가 같은 만큼 겹치고, 낱말 사이
  * 공백도 그만큼 줄어 문턱 밑으로 사라졌다(노인일자리 표 칸 "65세 이상": 글자 폭 11.04·간격 7.8 → 겹침 3.24, "세"·"이" 틈 0.6 = 공백 3.84 − 3.24).
@@ -623,8 +629,9 @@ export function mergeLineSimple(items: TextItem[]): string {
       result += sorted[i].text
       continue
     }
-    // pdfjs 공백 아이템이 있었으면 단어 경계 — 갭 크기 무관하게 공백 삽입
-    if (sorted[i].hasSpaceBefore && gap >= avgFs * 0.05) {
+    // pdfjs 공백 아이템이 있었으면 단어 경계 — 갭 크기 무관하게 공백 삽입. 틈은 반올림 전 좌표로 — 공백 글리프 위에 덧찍은 쉼표가
+    // 반올림으로 1pt 떨어져 보여 "55만원 ," 가 됐다(실제 −0.06pt, 청년 종합투자 보도자료)
+    if (sorted[i].hasSpaceBefore && exactGap(sorted[i - 1], sorted[i], gap) >= avgFs * 0.05) {
       result += " "
       result += sorted[i].text
       continue

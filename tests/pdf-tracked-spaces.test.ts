@@ -19,3 +19,10 @@ it("adds nothing without consistent overlap, and never after brackets or before 
   const line = [g("(", 335.52, 3.18), g("일", 337.8, 11.04), g("부", 345.6, 11.04), g("이", 356.16, 11.04), g("상", 363.96, 11.04), g("6", 372, 5)]
   assert.equal(mergeLineSimple(line.map(i => ({ ...i, fontSize: 11 })) as never).startsWith("(일부"), true)
 })
+
+it("measures a space hint against exact coordinates — a comma overprinted on the space glyph stays attached (\"55만원,\")", () => {
+  const w = (text: string, fx: number, fw: number, hasSpaceBefore = false) => ({ text, x: Math.round(fx), y: 759, w: Math.round(fw), h: 13, fontSize: 13, fontName: "F", fx, fw, ...(hasSpaceBefore ? { hasSpaceBefore } : {}) })
+  assert.equal(mergeLineSimple([w("55", 331.25, 14.13), w("만원", 345.44, 25.27), w(",", 370.65, 4.15, true)] as never), "55만원,")
+  // 반올림 전 좌표가 없으면 종전대로 반올림 틈(1pt)으로 띄운다
+  assert.equal(mergeLineSimple([{ text: "만원", x: 345, y: 759, w: 25, h: 13, fontSize: 13, fontName: "F" }, { text: ",", x: 371, y: 759, w: 4, h: 13, fontSize: 13, fontName: "F", hasSpaceBefore: true }] as never), "만원 ,")
+})
