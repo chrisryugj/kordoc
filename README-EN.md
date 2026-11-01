@@ -109,14 +109,14 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF text and OCR: 4.24.32 · 2026-11-01; PDF tables: 4.24.31 · 2026-10-31; HWP → HWPX conversion: 4.24.29 · 2026-10-31). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF text and tables: 4.24.34 · 2026-11-01; OCR: 4.24.32 · 2026-11-01; HWP → HWPX conversion: 4.24.29 · 2026-10-31). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
 | HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.21%** · exact **69/232** · text **264/264** · 80 documents checked side by side in Hangul |
-| PDF text | 744 pairs | Character recall **99.883%** · precision **99.682%** · reading order **99.356%** · word-boundary F1 **99.071%** |
+| PDF text | 744 pairs | Character recall **99.885%** · precision **99.682%** · reading order **99.359%** · word-boundary F1 **99.073%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.33](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.33)** · 2026-11-01
+Latest release: **[4.24.34](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.34)** · 2026-11-01
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.34 | to-hwpx: several files or whole folders at once (subfolders, existing .hwpx skipped) · PDF: "·" bullets drawn as a small square in a symbol font and mapped to a space are restored · line-initial endings ("는데", "졌다") and compound particles in character-wrapped text join the previous line | PDF table exact cells 0.99221 → **0.99264** · cell content 0.98896 → **0.98902** · PDF text recall 99.883 → **99.885%** · order 99.356 → **99.359%** · word-boundary F1 99.071 → **99.073%** · other metrics unchanged |
 | 4.24.33 | PDF tables: in 2-up pages, cell text that continues into a box at the top of the right page is joined to the cell · a 1×1 clip laid over a cell (statistics number cells) is read as the cell text, not a nested table | PDF table cell content 0.98794 → **0.98896** · exact cells 0.99153 → **0.99221** · other benchmark metrics unchanged |
 | 4.24.32 | PDF and OCR two columns: two columns typeset on one line grid (minutes, exams) are now read as columns · a question heading the next column no longer becomes a sub-item of the previous options · running header boxes whose cells swap order on even and odd pages are removed | PDF text reading order 99.348% → **99.356%** · precision 99.680% → **99.682%** · word F1 99.069% → **99.071%** · the OCR reference (text layer) now reads the minutes' two columns correctly, CER 0.0237 → 0.0239 (reference change, scoring unchanged) |
 | 4.24.31 | PDF reading order: picture-heavy 2-up pages · side-by-side tables in approval-document heads (document number → approval box) · PDF false tables: body text under a notice head "○○고시 제 호" · fixed-width word lines in HWP 3 manuals | PDF text reading order 99.312% → **99.348%** · precision 99.678% → **99.680%** · reordered tables 5 → **2** · other benchmark metrics unchanged |
 | 4.24.30 | Parsers: bold and underline markers in paragraphs that contain a filled click-here field or a hyperlink (emphasis in press-release bodies inside a click-here field was lost, HWPX and HWP) · PDF tables: Hancom clips on only a few cells no longer take those cells away from the ruled table · to-hwpx: drawing line transparency | OCR table reference loses a phantom table, 34/67 → **34/66** · CER 0.0244 → **0.0237** · patch residual for inserting a bold word, HWPX 80 → **60**/489 · benchmark metrics unchanged |
-| 4.24.29 | to-hwpx: written the way Hangul saves — paragraph text direction (textDir), identical paragraph shapes merged, odd margin and tab values in character units, OLE item names, the memo extension part, border fill 0 in older HWP files and more · patch: emphasis marked on new text is applied even when the original paragraph lacked it, text between several edits in one paragraph keeps its formatting, emphasis markers in HTML table cells were written as literal text, HWP cells of tables nested in cells · HWP parser: emphasis in bold paragraphs that contain superscripts | Conversion attribute match 0.99194 → **0.99214** · exact matches 14 → **69**/232 · patch residual for inserting a bold word, HWPX 241 → **121**/265 · HWP cell appends 83 → **93**/93 · HWP vs HWPX parse differing units 118 → **98** · benchmark metrics unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

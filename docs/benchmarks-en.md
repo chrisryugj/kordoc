@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.34: "·" bullets · line-initial endings · 2026-11-01
+
+PDF table benchmark (708 pairs): exact cells .99221 → **.99264**, cell content NED .98896 → **.98902**; detection, structure and cell F1 unchanged. PDF text (744 pairs): recall .99883 → **.99885**, order .99356 → **.99359**, word-boundary F1 .99071 → **.99073** (5 documents up, none down). Statute annexes, ODL 200 documents and OCR unchanged per document.
+
+- "·" bullets drawn as a small square in a symbol font with a nbsp ToUnicode: a fiscal strategy council agenda table .991 → 1.
+- Line-initial endings and compound particles in character-wrapped text: word-boundary F1 up on a retail act notice.
+
 ## 4.24.33: 2-up cell continuation · 1×1 clips over cells · 2026-11-01
 
 PDF table benchmark (708 pairs): cell content NED .98794 → **.98896**, exact cells .99153 → **.99221**; detection, structure and cell F1 unchanged. PDF text, statute annexes and ODL 200 documents unchanged per document; OCR reference (text layer) skipped tables 36 → 35 (matching and exact unchanged).
