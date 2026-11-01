@@ -22,7 +22,7 @@ export function cliOcrEngineOptions(opts: OptionValues): Pick<ParseOptions, "ocr
   }
   // 숫자가 아니면 받은 글 그대로 넘겨 parse() 가 그 값을 들어 거부한다
   if (opts.ocrDetLongSide !== undefined) out.ocrDetLongSide = /^\d+$/.test(String(opts.ocrDetLongSide)) ? Number(opts.ocrDetLongSide) : opts.ocrDetLongSide as number
-  if (opts.ocrRec !== undefined) out.ocrRec = opts.ocrRec === "handwriting" ? opts.ocrRec : file(String(opts.ocrRec), opts.ocrRecSha256)
+  if (opts.ocrRec !== undefined) out.ocrRec = opts.ocrRec === "handwriting" || opts.ocrRec === "auto" ? opts.ocrRec : file(String(opts.ocrRec), opts.ocrRecSha256)
   if (opts.ocrRecDict !== undefined) out.ocrRecDict = file(String(opts.ocrRecDict), opts.ocrRecDictSha256)
   return out
 }

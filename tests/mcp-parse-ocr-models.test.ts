@@ -28,6 +28,7 @@ describe("parse_document OCR 모델 인수 (#165)", () => {
   it("프리셋 이름만 받는다 — 로컬 모델 경로·모르는 이름·범위 밖 해상도는 거부", () => {
     const { schema } = parseDocument()
     assert.ok(schema.safeParse({ file_path: "/a.png", ocr_rec: "handwriting", ocr_det: "server", ocr_det_long_side: 2048 }).success)
+    assert.ok(schema.safeParse({ file_path: "/a.png", ocr_rec: "auto" }).success)
     assert.ok(schema.safeParse({ file_path: "/a.png", ocr_det: "medium" }).success)
     assert.ok(schema.safeParse({ file_path: "/a.png", ocr_det: "mobile", ocr_det_long_side: 32 }).success)
     for (const bad of [{ ocr_rec: "/m/rec.onnx" }, { ocr_rec: "Handwriting" }, { ocr_det: "large" }, { ocr_det_long_side: 16 }, { ocr_det_long_side: 5000 }, { ocr_det_long_side: 960.5 }])

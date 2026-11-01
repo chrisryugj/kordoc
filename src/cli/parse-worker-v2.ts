@@ -58,7 +58,7 @@ const optionsSchema = z.object({
   ocrLines: z.union([z.boolean(), z.literal("all")]),
   ocrDet: z.union([z.enum(["mobile", "server", "medium"]), modelFileSchema]),
   ocrDetLongSide: z.number().int(),
-  ocrRec: z.union([z.literal("handwriting"), modelFileSchema]),
+  ocrRec: z.union([z.literal("handwriting"), z.literal("auto"), modelFileSchema]),
   ocrRecDict: modelFileSchema,
   formulaOcr: z.boolean(),
   password: z.string(),

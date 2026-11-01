@@ -15,7 +15,7 @@ import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import { getOcrEngine, type OcrPageStats } from "./engine.js"
 import { ensureOcrModelsFor } from "./models.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
-import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, reportModelDownload } from "./pdf-ocr.js"
+import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
 import { deskewPage } from "./deskew.js"
 
 /** 좌표 환산 기본 스케일 (px/pt) — PDF OCR 렌더(216dpi)와 동일 기준 */
@@ -72,12 +72,13 @@ export async function parseImageDocument(
 
   const config = builtinOcrConfig(options)
   await ensureOcrModelsFor(config.models, reportModelDownload)
+  if (config.handwriting) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = await getOcrEngine(config.models)
   const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
   // 괘선을 먼저 찾아 검출 상자를 표 칸·행 경계에서 가른다 — PDF OCR(ocrOnePage)과 같은 순서. 인식 뒤에 찾으면 이웃 칸 글이 한 상자로
   // 묶여 인식됐다(통계 보도자료 표 "2023 2024p ’23년대비" → "20232024p’23")
   const ruling = detectRulingLines(data, width, height, scale)
-  const items = await engine.recognizePage(data, width, height, stats, config.tuning,
+  const items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
     [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
   const lines = config.lines ? pageLines(1, width, height, scale, angle, items, stats.dropped) : undefined
   if (stats.droppedLowConf > 0) {

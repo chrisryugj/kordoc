@@ -57,7 +57,7 @@ import "./polyfill.js"
 import { getDocument, GlobalWorkerOptions, OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
-import { ocrModelsCached, resolveOcrModels } from "../ocr/models.js"
+import { handwritingFallbackModels, ocrModelsCached, resolveOcrModels } from "../ocr/models.js"
 import { validateOcrOptions } from "../ocr/options.js"
 import { splitContactTables } from "./contact-table.js"
 
@@ -161,7 +161,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
   // 모델을 골랐으면(ocrDet·ocrRec·ocrRecDict) 자동 OCR 은 고른 모델 파일이 있을 때만
   const ocrOptionError = validateOcrOptions(options)
   if (ocrOptionError) throw new KordocError(ocrOptionError)
-  const autoOcr = options?.ocr === undefined && await ocrModelsCached(resolveOcrModels(options))
+  const autoOcr = options?.ocr === undefined && await ocrModelsCached(resolveOcrModels(options)) &&
+    (options?.ocrRec !== "auto" || await ocrModelsCached(handwritingFallbackModels(resolveOcrModels(options))))
   const ocrBuffer: ArrayBuffer | null = options?.ocr || autoOcr ? buffer : null
   const doc = await loadPdfWithTimeout(buffer)
 

@@ -32,7 +32,7 @@ import {
   ALL_OCR_MODELS, DEFAULT_OCR_MODELS, OCR_DET_MODEL, OCR_HANDWRITING_REC_MODEL, OCR_REC_DICT, OCR_REC_MODEL, OCR_SERVER_DET_MODEL, OCR_V6_MEDIUM_DET_MODEL,
   getOcrModelStatus, ocrModelPath, ocrSelectionKey, parseCharacterDict, resolveOcrModels,
 } from "../src/ocr/models.js"
-import { DEFAULT_BUILTIN_OCR, builtinOcrConfig, pageLines } from "../src/ocr/pdf-ocr.js"
+import { DEFAULT_BUILTIN_OCR, builtinOcrConfig, pageLines, recognizeOcrPage } from "../src/ocr/pdf-ocr.js"
 import { DEFAULT_OCR_TUNING } from "../src/ocr/engine.js"
 import { rotateRgba } from "../src/ocr/deskew.js"
 import type { ParseOptions } from "../src/types.js"
@@ -45,7 +45,7 @@ describe("OCR 엔진 옵션 검증", () => {
     for (const ok of [
       undefined, {}, { ocrLines: true }, { ocrLines: false }, { ocrLines: "all" }, { ocrDet: "mobile" }, { ocrDet: "server" },
       { ocrDetLongSide: 32 }, { ocrDetLongSide: 4096 }, { ocrDet: { path: "/m/det.onnx", sha256: HEX.toUpperCase() } },
-      { ocrRec: { path: "/m/rec.onnx", sha256: HEX }, ocrRecDict: { path: "/m/rec.yml", sha256: HEX } }, { ocrRec: "handwriting" },
+      { ocrRec: { path: "/m/rec.onnx", sha256: HEX }, ocrRecDict: { path: "/m/rec.yml", sha256: HEX } }, { ocrRec: "handwriting" }, { ocrRec: "auto" },
     ] as ParseOptions[]) assert.equal(validateOcrOptions(ok), null, JSON.stringify(ok))
   })
 
@@ -55,7 +55,7 @@ describe("OCR 엔진 옵션 검증", () => {
       [{ ocrDetLongSide: 31 }, /ocrDetLongSide/], [{ ocrDetLongSide: 4097 }, /ocrDetLongSide/], [{ ocrDetLongSide: 960.5 }, /ocrDetLongSide/],
       [{ ocrDetLongSide: "960" }, /ocrDetLongSide/], [{ ocrRec: { path: "rec.onnx", sha256: HEX } }, /ocrRec\.path/],
       [{ ocrRec: { path: "/m/rec.onnx", sha256: "abc" } }, /ocrRec\.sha256/], [{ ocrRecDict: { path: "/m/d.yml" } }, /ocrRecDict\.sha256/],
-      [{ ocrRec: "/m/rec.onnx" }, /ocrRec/], [{ ocrRec: "Handwriting" }, /ocrRec/], [{ ocrRecDict: "handwriting" }, /ocrRecDict/], [{ ocrDet: { path: "/m/d.onnx", sha256: HEX, url: "x" } }, /url/],
+      [{ ocrRec: "/m/rec.onnx" }, /ocrRec/], [{ ocrRec: "Handwriting" }, /ocrRec/], [{ ocrRec: "Auto" }, /ocrRec/], [{ ocrRecDict: "handwriting" }, /ocrRecDict/], [{ ocrDet: { path: "/m/d.onnx", sha256: HEX, url: "x" } }, /url/],
     ]
     for (const [bad, re] of cases) assert.match(validateOcrOptions(bad as ParseOptions) ?? "", re, JSON.stringify(bad))
   })
@@ -119,6 +119,15 @@ describe("모델 선택·기본 설정", () => {
     // 명시한 로컬 사전은 그대로 쓴다
     const dict = resolveOcrModels({ ocrRec: "handwriting", ocrRecDict: { path: "/m/d.yml", sha256: HEX } })
     assert.deepEqual(dict.dict, { file: { path: "/m/d.yml", sha256: HEX } })
+  })
+
+  it("ocrRec: \"auto\" → 기본 rec 로 읽고, 다시 읽을 손글씨 rec 는 같은 det·사전", () => {
+    const c = builtinOcrConfig({ ocrRec: "auto" })
+    assert.equal(c.models.rec, DEFAULT_OCR_MODELS.rec)
+    assert.equal(c.handwriting && "spec" in c.handwriting.rec && c.handwriting.rec.spec, OCR_HANDWRITING_REC_MODEL)
+    assert.equal(c.handwriting?.det, c.models.det)
+    assert.equal(c.handwriting?.dict, c.models.dict)
+    assert.equal(builtinOcrConfig({ ocrRec: "handwriting" }).handwriting, undefined)
   })
 
   it("ocrDet: \"medium\" → PP-OCRv6 medium det(고정 SHA-256), 튜닝·rec 는 기본 그대로, 기본 묶음에 들지 않는다", async () => {
@@ -281,6 +290,23 @@ describe("손글씨 rec 프리셋 E2E (손글씨 rec 가 캐시에 있을 때만
     assert.deepEqual(toWire(pdf), toWire(await parse(f.pdf, { ...local, ocr: true, ocrLines: "all" })))
     // 자동 OCR 도 캐시에 있으니 돈다
     assert.deepEqual(toWire(await parse(f.pdf, { ocrRec: "handwriting" })), toWire(await parse(f.pdf, local)))
+  })
+
+  it("ocrRec: \"auto\" — 확신도 높은 인쇄 쪽은 기본 rec 결과 그대로, 낮은 쪽만 손글씨 rec 로 바꾼다", async (t) => {
+    const f = await fixtures(t)
+    if (!f) return
+    try { readFileSync(ocrModelPath(OCR_HANDWRITING_REC_MODEL)) } catch { t.skip("손글씨 rec 미설치"); return }
+    assert.deepEqual(toWire(await parse(f.png, { ocrRec: "auto", ocrLines: "all" })), toWire(await parse(f.png, { ocrLines: "all" })))
+    assert.deepEqual(toWire(await parse(f.pdf, { ocr: true, ocrRec: "auto" })), toWire(await parse(f.pdf, { ocr: true })))
+    // 기본 엔진이 확신 없이 읽은 쪽(가짜 엔진 .5)은 손글씨 rec 로 다시 읽는다 — 확신하는 쪽(.99)은 다시 읽지 않는다
+    const { decodeToRgba } = await import("../src/ocr/image-ocr.js")
+    const { data, width, height } = await decodeToRgba(f.png.buffer.slice(f.png.byteOffset, f.png.byteOffset + f.png.byteLength) as ArrayBuffer)
+    const config = builtinOcrConfig({ ocrRec: "auto" })
+    const fake = (confidence: number) => ({ recognizePage: async () => [{ text: "가짜", x: 0, y: 0, w: 10, h: 10, confidence }] }) as never
+    const low = await recognizeOcrPage(fake(0.5), config, config.tuning, data, width, height, { droppedLowConf: 0 })
+    assert.match(low.map(it => it.text).join(""), /대한민국/)
+    const high = await recognizeOcrPage(fake(0.99), config, config.tuning, data, width, height, { droppedLowConf: 0 })
+    assert.deepEqual(high.map(it => it.text), ["가짜"])
   })
 })
 
@@ -574,6 +600,7 @@ describe("CLI 플래그 매핑 (cliOcrEngineOptions)", () => {
     assert.deepEqual(cliOcrEngineOptions({ ocrRec: "/m/rec.onnx" }), { ocrRec: { path: "/m/rec.onnx", sha256: "" } })
     // 프리셋 이름은 경로로 바꾸지 않는다(같은 이름의 파일은 ./handwriting 으로)
     assert.deepEqual(cliOcrEngineOptions({ ocrRec: "handwriting", ocrRecSha256: HEX }), { ocrRec: "handwriting" })
+    assert.deepEqual(cliOcrEngineOptions({ ocrRec: "auto" }), { ocrRec: "auto" })
     assert.deepEqual(cliOcrEngineOptions({ ocrRec: "./handwriting", ocrRecSha256: HEX }), { ocrRec: { path: resolve("handwriting"), sha256: HEX } })
     assert.deepEqual(cliOcrEngineOptions({ ocrRecDict: "d.yml", ocrRecDictSha256: HEX }), { ocrRecDict: { path: resolve("d.yml"), sha256: HEX } })
     const bad = cliOcrEngineOptions({ ocrDetLongSide: "abc" })

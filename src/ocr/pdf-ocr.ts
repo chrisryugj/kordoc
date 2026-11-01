@@ -22,7 +22,7 @@ import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
 import { deskewPage } from "./deskew.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
-import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, resolveOcrModels, type OcrModelSelection } from "./models.js"
+import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, resolveOcrModels, type OcrModelSelection } from "./models.js"
 import { validateOcrOptions } from "./options.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
@@ -45,6 +45,8 @@ export interface BuiltinOcrConfig {
   tuning: Readonly<OcrTuning>
   /** 줄 내보내기 — undefined 면 끔(종전과 같은 일만 한다) */
   lines?: "kept" | "all"
+  /** `ocrRec: "auto"` — 확신도 낮은 쪽을 다시 읽을 손글씨 rec 모델 */
+  handwriting?: OcrModelSelection
 }
 
 export const DEFAULT_BUILTIN_OCR: Readonly<BuiltinOcrConfig> = Object.freeze({ models: DEFAULT_OCR_MODELS, tuning: DEFAULT_OCR_TUNING })
@@ -54,11 +56,35 @@ export function builtinOcrConfig(o: ParseOptions | undefined): Readonly<BuiltinO
   if (!o || (o.ocrDet === undefined && o.ocrDetLongSide === undefined && o.ocrRec === undefined && o.ocrRecDict === undefined && !o.ocrLines)) return DEFAULT_BUILTIN_OCR
   const bad = validateOcrOptions(o)
   if (bad) throw new KordocError(bad)
+  const models = resolveOcrModels(o)
   return {
-    models: resolveOcrModels(o),
+    models,
+    ...(o.ocrRec === "auto" ? { handwriting: handwritingFallbackModels(models) } : {}),
     tuning: o.ocrDetLongSide === undefined ? DEFAULT_OCR_TUNING : { ...DEFAULT_OCR_TUNING, detLongSide: o.ocrDetLongSide },
     lines: o.ocrLines === "all" ? "all" : o.ocrLines ? "kept" : undefined,
   }
+}
+
+/** `ocrRec: "auto"` 문턱 — 쪽 평균 확신도(글자 수 가중)가 이보다 낮은 쪽만 손글씨 rec 로 다시 읽고, 평균이 GAIN 이상 오를 때만 바꾼다.
+ *  KoOCR-Bench 손글씨 쪽은 기본 rec .74~.90 → 손글씨 rec +.07~.22, 인쇄 쪽은 .87~.98 에 대개 +.05 이하였다 */
+const AUTO_REC_PAGE_CONF = 0.9
+const AUTO_REC_GAIN = 0.06
+
+/** 쪽 인식 — `ocrRec: "auto"` 면 확신도 낮은 쪽을 손글씨 rec 로 다시 읽어 더 확신하는 쪽을 쓴다(stats 도 고른 쪽 것으로) */
+export async function recognizeOcrPage(
+  engine: Awaited<ReturnType<typeof getOcrEngine>>, config: Readonly<BuiltinOcrConfig>, tuning: Readonly<OcrTuning>,
+  rgba: Uint8Array, width: number, height: number, stats: OcrPageStats,
+  cellRules?: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>, rowRules?: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>,
+): Promise<OcrItem[]> {
+  const items = await engine.recognizePage(rgba, width, height, stats, tuning, cellRules, rowRules)
+  if (!config.handwriting) return items
+  const base = meanConfidence(items)
+  if (base >= AUTO_REC_PAGE_CONF) return items
+  const altStats: OcrPageStats = { droppedLowConf: 0, ...(stats.dropped ? { dropped: [] } : {}) }
+  const alt = await (await getOcrEngine(config.handwriting)).recognizePage(rgba, width, height, altStats, tuning, cellRules, rowRules)
+  if (meanConfidence(alt) - base < AUTO_REC_GAIN) return items
+  Object.assign(stats, altStats)
+  return alt
 }
 
 /** 다운로드를 알린 모델 — 진행 콜백은 받은 조각마다 오고 첫 콜백도 downloaded > 0 이라, 종전 조건(downloaded === 0)으로는 안내가 나가지 않았다 */
@@ -128,6 +154,7 @@ export async function runPdfOcr(
     () => import("@hyzyla/pdfium"),
   )
   if (mode === "builtin") await ensureOcrModelsFor(config.models, reportModelDownload)
+  if (mode === "builtin" && config.handwriting) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = mode === "builtin" ? await getOcrEngine(config.models) : null
 
   const pdfium = await pdfiumMod.PDFiumLibrary.init()
@@ -204,7 +231,7 @@ export async function ocrOnePage(
     // 검출기가 이웃 칸 글을 한 줄로 묶었다(검정고시 계획 과목 표). 칸 경계 = 위아래 끝이 모두 가로 괘선에 닿는 세로선 — 끝이 떠 있는
     // 여백선·단 구분선은 글줄을 가르면 안 된다(속기록 2단)
     // 위아래 두 행을 한 박스로 묶은 검출도 그 사이 행 경계(양끝이 세로 괘선에 닿는 가로선)에서 가른다
-    const items = await engine!.recognizePage(upright, rw, rh, stats, tuning, ruling ? [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)] : undefined,
+    const items = await recognizeOcrPage(engine!, config, tuning, upright, rw, rh, stats, ruling ? [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)] : undefined,
       ruling ? cellEdgeHorizontals(ruling) : undefined)
     if (stats.droppedLowConf > 0) {
       warnings.push({

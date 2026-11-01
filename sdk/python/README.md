@@ -68,7 +68,7 @@ asyncio.run(main())
 `table_format`(`"gfm"`) · `html_tables` · `layout_tables`(`"visual"`·`"keep"`) · `classify_tables` · `tables` · `plain` · `script_tags` ·
 `remove_header_footer` · `dedupe_running_headers` · `keep_trailing_empty_cols` · `keep_empty_paragraphs` · `include_field_placeholders` ·
 `pages`(`"1-3"` 또는 `[1, 3]`) · `images` · `inline_images` · `ocr`(`True`·`False`·`"force"`) · `formula_ocr` · `password` ·
-`ocr_lines`(`True`·`"all"`) · `ocr_det`(`"mobile"`·`"server"`·`OcrModelFile`) · `ocr_det_long_side` · `ocr_rec`(`"handwriting"`·`OcrModelFile`) · `ocr_rec_dict`(`OcrModelFile`)
+`ocr_lines`(`True`·`"all"`) · `ocr_det`(`"mobile"`·`"server"`·`OcrModelFile`) · `ocr_det_long_side` · `ocr_rec`(`"handwriting"`·`"auto"`·`OcrModelFile`) · `ocr_rec_dict`(`OcrModelFile`)
 
 ```python
 from kordoc import KordocClient, OcrModelFile

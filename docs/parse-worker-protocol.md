@@ -50,7 +50,7 @@ stdout 이 닫히면(EPIPE) 남은 요청을 버리고, stdin EOF 를 기다리�
 | 텍스트·서식 | `plain`, `scriptTags`, `removeHeaderFooter`, `dedupeRunningHeaders` |
 | 빈 내용·입력란 | `keepTrailingEmptyCols`, `keepEmptyParagraphs`, `includeFieldPlaceholders` |
 | 범위·이미지 | `pages`(문자열 또는 양의 정수 배열), `images`, `inlineImages` |
-| OCR·암호 | `ocr`(`true`·`false`·`"force"`), `ocrLines`(`true`·`false`·`"all"`), `ocrDet`(`"mobile"`·`"server"`·`"medium"`·`{path, sha256}`), `ocrDetLongSide`(32~4096 정수), `ocrRec`(`"handwriting"`·`{path, sha256}`), `ocrRecDict`(`{path, sha256}`), `formulaOcr`, `password` |
+| OCR·암호 | `ocr`(`true`·`false`·`"force"`), `ocrLines`(`true`·`false`·`"all"`), `ocrDet`(`"mobile"`·`"server"`·`"medium"`·`{path, sha256}`), `ocrDetLongSide`(32~4096 정수), `ocrRec`(`"handwriting"`·`"auto"`·`{path, sha256}`), `ocrRecDict`(`{path, sha256}`), `formulaOcr`, `password` |
 
 - 키를 빼면 엔진 기본값입니다. `false` 를 주면 실제로 `false` 를 넘깁니다(예: `ocr: false` 는 OCR 끔).
 - 목록에 없는 키, 잘못된 타입, `htmlTables` 와 `tableFormat` 동시 지정은 `INVALID_OPTIONS` 입니다.
