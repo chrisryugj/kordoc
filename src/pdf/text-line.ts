@@ -191,6 +191,8 @@ export function dominantStyle(items: NormItem[]): { fontSize: number; fontName?:
 
 export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
   const items: NormItem[] = []
+  /** 반올림 전 x·폭 — 가짜 볼드 판정용(자간을 줄인 "129.9" 의 두 "9" 는 3.72pt 떨어졌는데 반올림하면 3 이 되어 덧찍기로 지워졌다, 해외직접투자 보도자료) */
+  const rawX = new Map<NormItem, [number, number]>()
   // pdfjs 공백 아이템 위치 수집 — 단어 경계 힌트로 활용
   const spacePositions: { x: number; y: number; synthetic?: boolean }[] = []
 
@@ -251,6 +253,7 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
       const rx = rotated && i.transform[1] > 0 ? x - rw : x
       items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq, ...(spaceAfter !== undefined ? { spaceAfter } : {}),
         ...(rotated ? { rotated: Math.max(1, w), ...(i.transform[1] < 0 ? { rotatedDown: true as const } : {}) } : {}) })
+      if (!rotated) rawX.set(items[items.length - 1], [i.transform[4], i.width])
     }
   }
 
@@ -268,8 +271,12 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
       // x 허용치는 글리프 폭 비례 — 고정 ±3px는 좁은 글리프(괄호 w≈3)에서 나란히
       // 놓인 진짜 두 글자("경북))")까지 삼킨다. 가짜 볼드 오프셋은 폭의 절반 미만.
       const xTol = Math.min(3, Math.max(0.5, sorted[i].w * 0.5))
+      // 숫자 한 글자는 반올림 전 자리로 — 자간을 줄인 수치("129.9")의 같은 숫자 둘이 반올림으로 3 안에 들었다. 도해 이름표 그림자
+      // (LibreOffice 표준안 "마"·"=" 를 2~3pt 밀어 두 번 찍음)는 종전대로 반올림 자리로 지운다
+      const ra = /^\d$/.test(prev.text) ? rawX.get(prev) : undefined, rb = ra ? rawX.get(sorted[i]) : undefined
+      const dx = ra && rb ? Math.abs(ra[0] - rb[0]) : Math.abs(prev.x - sorted[i].x)
       if (Math.abs(prev.y - sorted[i].y) <= 3 &&
-          prev.text === sorted[i].text && Math.abs(prev.x - sorted[i].x) <= xTol) {
+          prev.text === sorted[i].text && dx <= xTol) {
         isDup = true
         break
       }

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PDF 숫자 빠짐: 자간을 줄인 수치의 같은 숫자 둘("129.9" 의 두 "9", 3.72pt 떨어짐)을 좌표 반올림 뒤 가짜 볼드 덧찍기로 보고 지웠다("(△129.)"). 숫자 한 글자는 반올림 전 자리로 덧찍기를 가린다(도해 이름표 그림자는 종전대로). PDF 표 칸 완전 일치 .99264 → **.99265**, PDF 글 해외직접투자 보도자료 재현율·어절 F1 오름, 내림 0, 별표·ODL·OCR 그대로.
+
 ## [4.24.34] - 2026-11-01
 
 ### Added
