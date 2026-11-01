@@ -243,6 +243,18 @@ describe("detectRulingLines — 채움 경계", () => {
     assert.ok(!verticals.some(v => Math.abs(v.x1 - 300) <= 3), JSON.stringify(verticals))
   })
 
+  it("진한 머리 띠 아랫변이 회색 첫 열에서 끊겨도 표 폭 가로선으로, 회색 첫 열 오른쪽 변은 열 경계로 낸다 (비법인 지목별 토지 표)", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 800, 75, 90) // 진한 머리 띠
+    fillRect(rgba, w, 100, 76, 180, 330, 220) // 회색 첫 열 — 띠 아래 왼쪽 끝을 가린다
+    for (let r = 1; r <= 4; r++) drawHLine(rgba, w, 100, 800, 90 + r * 60)
+    for (const x of [450, 600]) drawVLine(rgba, w, x, 76, 330)
+    const { horizontals, verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(horizontals.some(l => Math.abs(l.y1 - 76) <= 3 && l.x1 <= 103 && l.x2 >= 797), JSON.stringify(horizontals))
+    assert.ok(verticals.some(v => Math.abs(v.x1 - 181) <= 3 && v.y2 - v.y1 > 200), JSON.stringify(verticals))
+  })
+
   it("크림색 바탕 쪽(휘도 242)의 흰 상자는 채움이 아니다 — 바탕은 최빈 휘도", () => {
     const w = 900, h = 400
     const rgba = makeCanvas(w, h)

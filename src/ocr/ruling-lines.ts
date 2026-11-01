@@ -181,6 +181,17 @@ export function detectRulingLines(
       if (lo - p.x1 <= chainEnd && p.x2 - hi <= chainEnd && cover >= (p.x2 - p.x1) * 0.5) fillH.push({ ...inside[0], x1: p.x1, x2: p.x2 })
     }
   }
+  // 머리 띠 아랫변이 왼쪽 회색 열(색이 다른 칠)에서 끊겨 한쪽 끝만 표 괘선 끝에 닿는 것도 그 괘선 폭의 변이다 — 한 끝이 맞고
+  // 폭의 70% 이상을 덮고, 안 맞는 끝이 칠한 열의 세로변(그 끝에서 아래로 내려가는 채움 세로변)에 닿을 때(비법인 지목별 토지 표: 진한 머리 띠
+  // 아래 262–1498, 회색 첫 열 변 x=259 — 안 받아 머리 행과 첫 행이 한 칸이 됐다). 서식 칸 음영 변을 이어 칸을 쪼개지 않게 끝을 따진다
+  for (const a of fill.horizontals) {
+    if (fillH.some(f => f === a || Math.abs(f.y1 - a.y1) <= tol && f.x1 <= a.x1 + tol && f.x2 >= a.x2 - tol)) continue
+    const p = ruleH.find(p => (Math.abs(p.x1 - a.x1) <= tol || Math.abs(p.x2 - a.x2) <= tol) && a.x1 >= p.x1 - tol && a.x2 <= p.x2 + tol && a.x2 - a.x1 >= (p.x2 - p.x1) * 0.7)
+    if (!p || ruleH.some(q => Math.abs(q.y1 - a.y1) <= tol)) continue
+    const loose = Math.abs(p.x1 - a.x1) <= tol ? a.x2 : a.x1
+    const depthPx = Math.round(FILL_MIN_DEPTH_PT * scale)
+    if (fill.verticals.some(v => Math.abs(v.x1 - loose) <= tol * 2 && Math.abs(v.y1 - a.y1) <= tol * 2 && v.y2 - v.y1 >= depthPx * 4)) fillH.push({ ...a, x1: p.x1, x2: p.x2 })
+  }
   horizontals.push(...fillH)
   const edgeH = [...ruleH, ...fillH]
   const depth = Math.round(FILL_MIN_DEPTH_PT * scale)
@@ -193,6 +204,10 @@ export function detectRulingLines(
       const top = edgeH.filter(h => h.x1 <= a.x1 + tol && h.x2 >= a.x1 - tol && h.y1 < a.y1 && h.y1 >= a.y1 - depth)
       verticals.push({ ...a, y1: top.length ? Math.min(...top.map(h => h.y1)) : a.y1 })
     } else if (edgeH.some(p => (Math.abs(p.x1 - a.x1) <= tol || Math.abs(p.x2 - a.x1) <= tol) && p.y1 >= a.y1 - tol && p.y1 <= a.y2 + tol)) verticals.push(a)
+    // 칠한 열(회색 첫 열)의 오른쪽 변 — 위끝·아래끝이 둘 다 받은 표 가로선 안에 닿고, 그 사이 표 괘선을 하나 넘게 가로질러
+    // 여러 행에 걸치면 열 경계다. 머리 띠 한 행 안의 밝은 줄(본문 세로 괘선과 x 가 안 맞는)은 아니다
+    else if ([a.y1, a.y2].every(y => edgeH.some(p => Math.abs(p.y1 - y) <= tol * 2 && p.x1 < a.x1 - tol && p.x2 > a.x1 + tol)) &&
+      ruleH.some(p => p.y1 > a.y1 + tol * 2 && p.y1 < a.y2 - tol * 2 && p.x1 < a.x1 - tol && p.x2 > a.x1 + tol)) verticals.push(a)
   }
   // 머리 띠 안의 짧은 칸 구분선 — 띠 아래 겹줄 틈에서 아래 세로 괘선과 끊겨 최소 길이에 못 미쳤다. 위끝·아래끝이 가로 괘선에 닿고 바로 아래에서
   // 같은 x 의 세로 괘선이 시작하면 그 열 경계다(검정고시 계획 과목 표: 노란 머리 행의 회색 구분선 15pt — 안 받으면 머리 글이 한 칸에 몰렸다)
