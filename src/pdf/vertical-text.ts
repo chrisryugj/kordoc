@@ -96,7 +96,7 @@ const LONE = /^[ㄱ-ㆎ가-힣一-鿿0-9․·.]$/
 
 /**
  * 홀로 선 세로 기둥 — 표지 책등("제9차 의료혁신위원회 안건 / 2026․8 / 의료혁신추진단")처럼 쪽 가장자리에 한 자씩 쌓은 기둥 하나.
- * 기둥이 둘 이상이어야 하는 세로쓰기 글상자 규칙에 안 걸려 한 글자씩 문단이 됐고 숫자 조각("9")은 쪽 번호로 빠졌다. 같은 x(1pt 안)에
+ * 기둥이 둘 이상이어야 하는 세로쓰기 글상자 규칙에 안 걸려 한 글자씩 문단이 됐고 숫자 조각("9")은 쪽 번호로 빠졌다. 같은 x(글자 높이 0.3배·1.5pt 안)에
  * 한 글자 여섯 이상이 쌓이고 쪽의 다른 글이 모두 기둥 한쪽에 글자 높이 다섯 배 넘게 떨어져 있으며 기둥 글자와 같은 높이에 다른 글이 없을 때만,
  * 글자 높이 네 배 넘게 벌어진 자리에서 나눠 구간마다
  * 한 줄로 잇는다. 구간 간격 중앙값의 1.2배 넘게 벌어진 자리는 띄어쓰기다
@@ -106,7 +106,8 @@ function joinLoneColumns(items: NormItem[]): NormItem[] {
   if (singles.length < 6) return items
   const cols: Column[] = []
   for (const it of [...singles].sort((a, b) => a.x - b.x)) {
-    const c = cols.find(col => Math.abs(col.x - it.x) <= 1)
+    // 좁은 숫자·점은 한글 칸 가운데로 비켜 찍힌다(책등 "2"@591.5·"․"@592.1, 한글 591.0)
+    const c = cols.find(col => Math.abs(col.x - it.x) <= Math.max(1.5, it.fontSize * 0.3))
     if (c) c.items.push(it)
     else cols.push({ x: it.x, items: [it] })
   }
