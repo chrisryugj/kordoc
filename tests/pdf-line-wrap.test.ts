@@ -32,6 +32,10 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("시·도교육청(23.", "7개월), 중앙"), "")
     assert.equal(wrapJoiner("총 1,2", "960억"), " ")
     assert.equal(wrapJoiner("다음과 같다(1.", "2. 이하"), " ")
+    // 괄호 안 날짜에서 꺾여 다음 줄이 "6." 으로 시작해도 항목 번호가 아니다 (생활안전 공모전 "(4.1⏎6.~5.16.)")
+    assert.equal(wrapJoiner("공모전’(4.1", "6.~5.16.) 심사 결과"), "")
+    assert.equal(startsNewItem("공모전’(4.1", "6.~5.16.) 심사 결과"), false)
+    assert.equal(startsNewItem("다음과 같다.", "6. 기타"), true)
   })
 
   it("한글 없는 중·일문 꺾임은 붙인다 — 띄어쓰기가 없는 글 (kpipa 계약서 중문·일문, LibreOffice)", () => {

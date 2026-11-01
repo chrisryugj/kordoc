@@ -229,7 +229,9 @@ function particleContinues(left: string, rightWord: string): boolean {
 const ITEM_HEAD = /^(?:[□■◆◇○●◎◦▪▫•※▶▷►❍❏❑✓✔➢➤☞]|[①-⑳]|[-–·∙ㆍ*](?=\s)|\(?\d{1,2}[.)](?!\d)|\(?[가-하][.)]|\([가-하\d]{1,2}\)|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|제\d+[조항호장절])/
 export function startsNewItem(prevText: string, nextText: string): boolean {
   const t = nextText.replace(MARKUP, "").trimStart()
-  return ITEM_HEAD.test(t) && !(/^다\./.test(t) && /[가-힣]$/.test(prevText.replace(MARKUP, "").trimEnd()))
+  const prev = prevText.replace(MARKUP, "").trimEnd()
+  // 괄호 안 수에서 꺾인 줄("공모전’(4.1⏎6.~5.16.)")의 "6." 은 항목 번호가 아니라 수의 뒷자리다
+  return ITEM_HEAD.test(t) && !(/^다\./.test(t) && /[가-힣]$/.test(prev)) && !(/\(\d+\.\d*$/.test(prev) && /^\d/.test(t))
 }
 
 /**
@@ -246,10 +248,10 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   let s = prev.length
   while (s > 0 && !/\s/.test(prev[s - 1])) s--
   const left = prev.slice(s), right = next.match(/^\S+/)![0]
-  // 수 가운데서 꺾인 줄 — 천 단위 묶음이 모자란 "1,2⏎96억" 과 괄호 안 소수 "(23.⏎7개월)" 은 한 수다(글자 단위 줄 나눔 보도자료)
+  // 수 가운데서 꺾인 줄 — 천 단위 묶음이 모자란 "1,2⏎96억" 과 괄호 안 소수 "(23.⏎7개월)"·날짜 "(4.1⏎6.~5.16.)" 은 한 수다(글자 단위 줄 나눔 보도자료)
   const group = left.match(/\d,(\d{1,2})$/)
   if (group && new RegExp(`^\\d{${3 - group[1].length}}(?!\\d)`).test(right)) return ""
-  if (/\(\d+\.$/.test(left) && /^\d/.test(right) && !/^\d+\.$/.test(right)) return ""
+  if (/\(\d+\.\d*$/.test(left) && /^\d/.test(right) && !/^\d+\.$/.test(right)) return ""
   if (particleContinues(left, right)) return ""
   if (endsAsWord(left)) return " "
   // Latin line-end hyphens can be typesetting breaks. Preserve the token boundary
