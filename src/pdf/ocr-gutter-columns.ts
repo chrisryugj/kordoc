@@ -1,0 +1,170 @@
+/**
+ * OCR 괘선 표의 빈칸 열 — 통계표는 열 묶음 경계에만 세로선을 긋고 묶음 안 열(합계출산율·기대수명·국내순이동)은 빈칸으로만 가른다.
+ * 격자 칸 하나에 세 열 값이 "0.64 84.8 -107" 로 붙어 열이 모자랐다(시도별 장래인구추계 가정치 22열 → 8열).
+ *
+ * 격자 열마다 숫자 값이 픽셀 빈 구간(ocrTextGaps)이나 따로 읽힌 상자로 갈린 글줄을 모아, 서로 다른 글줄 둘 이상이 같이 비운 x 를 찾는다.
+ * 그 x 를 가로지르는 글(묶음 제목 "중위 추계" 등)이 없는 격자 행 범위에만 가상 세로선을 긋는다 — 묶음 제목은 위 칸에서 칸 합침으로 남는다.
+ */
+
+import type { LineSegment, TableGrid } from "./line-types.js"
+import type { NormItem } from "./text-line.js"
+import { ocrTextGaps } from "../ocr/text-gaps.js"
+import { OCR_GROUPED_NUMBER } from "./ocr-column-cuts.js"
+
+/** 값 토큰 — 수(쉼표·소수점·백분율·부호)와 빈 값 표지(-) */
+const VALUE_TOKEN = /^(?:[+-]?\d+(?:[,.]\d+)*%?|[-–—])$/
+
+interface Span { left: number; right: number; text: string; estimated?: true }
+
+/** 상자 하나를 픽셀 빈 구간에서 가른 토큰 구간 */
+function itemSpans(it: NormItem): Span[] {
+  const gaps = ocrTextGaps(it).filter(g => g.left > it.x && g.right < it.x + it.w).sort((a, b) => a.at - b.at)
+  const spans: Span[] = []
+  let at = 0, left = it.x
+  for (const g of gaps) {
+    spans.push({ left, right: g.left, text: it.text.slice(at, g.at).trim() })
+    at = g.at; left = g.right
+  }
+  spans.push({ left, right: it.x + it.w, text: it.text.slice(at).trim() })
+  return spans
+}
+
+/** 격자의 가상 세로선 — 그 격자의 칸 뽑기(칸 합침)에만 쓴다. 쪽 전역 세로선에 넣으면 틀·프로즈 상자 판정이 흔들린다 */
+export const GRID_GUTTERS = new WeakMap<TableGrid, LineSegment[]>()
+
+/** 격자마다 그을 가상 세로선 (없는 격자는 빠진다) */
+export function ocrGutterVerticals(grids: TableGrid[], items: NormItem[]): Map<TableGrid, LineSegment[]> {
+  const out = new Map<TableGrid, LineSegment[]>()
+  const inside = (a: TableGrid["bbox"], b: TableGrid["bbox"]) => a !== b && b.x1 >= a.x1 - 1 && b.x2 <= a.x2 + 1 && b.y1 >= a.y1 - 1 && b.y2 <= a.y2 + 1
+  for (const grid of grids) {
+    // 다른 격자를 품은 틀(쪽 테두리 상자)은 표가 아니다 — 안쪽 격자가 맡는다
+    if (grid.cells || grid.rowYs.length < 2 || grids.some(g => inside(grid.bbox, g.bbox))) continue
+    for (let c = 0; c + 1 < grid.colXs.length; c++) {
+      const x0 = grid.colXs[c], x1 = grid.colXs[c + 1]
+      const inCol = items.filter(it => it.fontName === "ocr" && it.x + it.w / 2 > x0 && it.x + it.w / 2 < x1 &&
+        it.y + it.h / 2 > grid.bbox.y1 && it.y + it.h / 2 < grid.bbox.y2)
+      if (inCol.length < 2) continue
+      const size = median(inCol.map(it => it.h))
+      // 글줄 — 기준선이 글 높이 절반 안
+      // spans: 빈 구간 근거로 가른 토큰(지지에 쓴다), cover: 근거 없는 상자는 어림으로 가른 구간(막힘에만 쓴다)
+      const lines: Array<{ y: number; spans: Span[]; cover: Span[] }> = []
+      for (const it of [...inCol].sort((a, b) => b.y - a.y)) {
+        const line = lines.find(l => Math.abs(l.y - it.y) <= size * 0.5)
+        const whole = [{ left: it.x, right: it.x + it.w, text: it.text.trim() }]
+        const spans = OCR_GROUPED_NUMBER.test(it.text.trim()) ? whole : itemSpans(it)
+        const cover = spans.length > 1 || OCR_GROUPED_NUMBER.test(it.text.trim()) ? spans : estimatedSpans(it, size)
+        if (line) { line.spans.push(...spans); line.cover.push(...cover) } else lines.push({ y: it.y, spans, cover })
+      }
+      // 값 토큰 둘 사이 빈 구간 (글자 높이 0.3 이상)
+      const gaps: Array<{ left: number; right: number; line: number }> = []
+      // 칸 토큰이 모두 값인 글줄만 — "15 - 29세" 같은 구간 표지는 값 둘이 아니다
+      lines.forEach((line, li) => {
+        const s = line.spans.filter(sp => sp.text).sort((a, b) => a.left - b.left)
+        if (!s.every(sp => VALUE_TOKEN.test(sp.text))) return
+        for (let k = 1; k < s.length; k++) {
+          // 천 단위 묶음이 틈으로 갈린 것("34,875,1 12,751")은 열 틈이 아니다
+          if (s[k].left - s[k - 1].right >= size * 0.3 && VALUE_TOKEN.test(s[k - 1].text) && VALUE_TOKEN.test(s[k].text) && !/,\d{1,2}$/.test(s[k - 1].text)) {
+            gaps.push({ left: s[k - 1].right, right: s[k].left, line: li })
+          }
+        }
+      })
+      const valueLines = lines.filter(l => l.spans.some(sp => VALUE_TOKEN.test(sp.text))).length
+      const margin = size * 0.3
+      while (gaps.length >= 2) {
+        // 서로 다른 글줄 빈 구간이 가장 많이 겹치는 x
+        const events = gaps.flatMap(g => [{ x: g.left, d: 1 }, { x: g.right, d: -1 }]).sort((a, b) => a.x - b.x || a.d - b.d)
+        let active = 0, best = 1, cut: number | undefined
+        for (let i = 0; i < events.length;) {
+          const x = events[i].x
+          while (i < events.length && events[i].x === x) active += events[i++].d
+          const width = i < events.length ? events[i].x - x : 0
+          if (active > best && width > 0) { best = active; cut = x + width / 2 }
+        }
+        if (cut === undefined) break
+        const x = cut
+        const support = gaps.filter(g => g.left <= x && g.right >= x)
+        for (const g of support) gaps.splice(gaps.indexOf(g), 1)
+        if (x - x0 < margin || x1 - x < margin) continue
+        const supportLines = new Set(support.map(g => lines[g.line].y))
+        // 값 글줄 셋 이상·40% 이상이 같은 틈을 비워야 열이다 — 몇 줄만 우연히 맞은 틈(묶음 숫자 OCR 틈)은 아니다
+        if (supportLines.size < Math.max(3, valueLines * 0.4)) continue
+        // 격자 행마다 x 를 가로지르는 글줄이 그 행 지지 글줄의 1/4 을 넘으면 막힌 행 — 지지 없는 머리 행(묶음 제목)은 한 줄로 막힌다.
+        // 본문이 괘선 없이 한 격자 행이면 빈 구간 근거를 못 얻은 상자 한둘이 행 전체를 막지 않게 한다
+        const rows = grid.rowYs.length - 1
+        const supportIn = (r: number) => [...supportLines].filter(y => y < grid.rowYs[r] && y > grid.rowYs[r + 1]).length
+        const blocked = Array.from({ length: rows }, (_, r) => lines.filter(l => l.y < grid.rowYs[r] && l.y > grid.rowYs[r + 1] &&
+          l.cover.some(sp => sp.estimated ? x - sp.left > size * 0.6 && sp.right - x > size * 0.6 : sp.left < x - 0.5 && sp.right > x + 0.5)).length > supportIn(r) * 0.25)
+        // 막히지 않은 연속 행 가운데 지지 글줄이 가장 많은 구간
+        let bestRun: [number, number] | undefined, bestCount = 0
+        for (let r = 0; r < rows;) {
+          if (blocked[r]) { r++; continue }
+          let e = r, n = 0
+          while (e < rows && !blocked[e]) n += supportIn(e++)
+          if (n > bestCount) { bestCount = n; bestRun = [r, e] }
+          r = e
+        }
+        if (!bestRun || bestCount < 3) continue
+        const list = out.get(grid) ?? []
+        list.push({ x1: x, y1: grid.rowYs[bestRun[1]], x2: x, y2: grid.rowYs[bestRun[0]], lineWidth: 0.5 })
+        out.set(grid, list)
+      }
+    }
+  }
+  return out
+}
+
+/** 가상 세로선이 지나는 상자를 그 빈 틈에서 쪼갠다 — 빈 구간 근거가 있으면 그 자리, 없으면 어림한 공백 자리가 선에서 글자 높이 0.6 안일 때만 */
+export function splitItemsAtGutters(items: NormItem[], cuts: LineSegment[]): NormItem[] {
+  if (!cuts.length) return items
+  return items.flatMap(it => {
+    if (it.fontName !== "ocr") return [it]
+    const cy = it.y + it.h / 2
+    const xs = cuts.filter(l => cy > l.y1 && cy < l.y2 && l.x1 > it.x && l.x1 < it.x + it.w).map(l => l.x1).sort((a, b) => a - b)
+    if (!xs.length) return [it]
+    const evidence = itemSpans(it)
+    const spans = evidence.length > 1 ? evidence : estimatedSpans(it, it.h)
+    if (spans.length < 2) return [it]
+    // 선마다 그 선을 사이에 둔 이웃 토큰 경계를 찾아 조각 경계로
+    const breaks = new Set<number>()
+    for (const x of xs) {
+      const k = spans.findIndex((sp, i) => i > 0 && spans[i - 1].right <= x + it.h * 0.6 && sp.left >= x - it.h * 0.6)
+      if (k > 0) breaks.add(k)
+    }
+    if (!breaks.size) return [it]
+    const parts: NormItem[] = []
+    let from = 0
+    for (const k of [...breaks].sort((a, b) => a - b).concat(spans.length)) {
+      const group = spans.slice(from, k)
+      if (!group.length) continue
+      const left = group[0].left, right = group[group.length - 1].right
+      parts.push({ ...it, text: group.map(g => g.text).join(" "), x: left, w: Math.max(1, right - left), ...(from > 0 ? { hasSpaceBefore: true } : {}) })
+      from = k
+    }
+    return parts
+  })
+}
+
+/** 빈 구간 증거 없는 상자의 낱말 구간 어림 — 글자 폭(한글 1·숫자·로마자 0.55·기호 0.35·공백 0.3 em) 비례. 막힘 판정에만 쓴다 */
+function estimatedSpans(it: NormItem, size: number): Span[] {
+  const parts = it.text.split(/(\s+)/)
+  const unit = (ch: string) => /[가-힣ㄱ-ㆎ一-鿿]/.test(ch) ? 1 : /[\p{L}\p{N}]/u.test(ch) ? 0.55 : /\s/.test(ch) ? 0.3 : 0.35
+  const total = [...it.text].reduce((n, ch) => n + unit(ch), 0)
+  if (parts.length < 3 || total <= 0) return [{ left: it.x, right: it.x + it.w, text: it.text.trim() }]
+  // 토큰 경계 = 어림한 공백 가운데 (어림 오차는 쓰는 쪽이 글자 높이 0.6 만큼 봐준다)
+  const k = it.w / total
+  const spans: Span[] = []
+  let x = it.x
+  for (const p of parts) {
+    const w = [...p].reduce((n, ch) => n + unit(ch), 0) * k
+    if (p.trim()) spans.push({ left: x, right: x + w, text: p, estimated: true })
+    else if (spans.length) spans[spans.length - 1].right = x + w / 2
+    x += w
+    if (!p.trim() && spans.length) x -= w / 2
+  }
+  return spans
+}
+
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b)
+  return s[Math.floor(s.length / 2)] ?? 0
+}

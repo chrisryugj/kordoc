@@ -6,6 +6,7 @@
  * 페이지 걸친 표 병합까지 담당한다.
  */
 
+import { GRID_GUTTERS, ocrGutterVerticals, splitItemsAtGutters } from "./ocr-gutter-columns.js"
 import type { IRBlock, IRTable, IRCell, BoundingBox, InlineStyle } from "../types.js"
 import { safeMin, safeMax } from "../utils.js"
 import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells.js"
@@ -174,7 +175,23 @@ export function extractPageBlocksWithLines(
   if (shadedEdges) ({ horizontals, verticals } = shadedEdges)
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
-  const lineGrids = detectTables ? buildTableGrids(horizontals, verticals, !(items.length > 0 && items.every(it => it.fontName === "ocr"))) : []
+  const ocrItems = items.length > 0 && items.every(it => it.fontName === "ocr")
+  let lineGrids = detectTables ? buildTableGrids(horizontals, verticals, !ocrItems) : []
+  // OCR 통계표의 묶음 안 빈칸 열 — 숫자 값 빈 구간이 줄마다 맞으면 가상 세로선 (ocr-gutter-columns)
+  // 가상선을 받은 격자만 그 영역 안 선으로 다시 짠다 — 전역으로 다시 짜면 바깥 틀 격자가 가상선을 먹고 쪽 전체 표가 된다
+  if (ocrItems && lineGrids.length) {
+    for (const [grid, gutters] of ocrGutterVerticals(lineGrids, items)) {
+      const { x1, y1, x2, y2 } = grid.bbox, tol = 1.5
+      const within = (l: LineSegment) => Math.min(l.x1, l.x2) >= x1 - tol && Math.max(l.x1, l.x2) <= x2 + tol && Math.min(l.y1, l.y2) >= y1 - tol && Math.max(l.y1, l.y2) <= y2 + tol
+      const rebuilt = buildTableGrids(horizontals.filter(within), verticals.filter(within).concat(gutters), false)
+      if (rebuilt.length !== 1) continue
+      // 칸 안 중첩표 표지(lineNested)는 원래 격자 것을 잇는다
+      const next: TableGrid = { ...rebuilt[0], ...(grid.lineNested ? { lineNested: true as const } : {}) }
+      GRID_GUTTERS.set(next, gutters)
+      lineGrids = lineGrids.map(g => g === grid ? next : g)
+      items = splitItemsAtGutters(items, gutters)
+    }
+  }
   if (shadedEdges) nestRestoredShadedGrids(lineGrids, shadedEdges.restored, horizontals, verticals)
   // 배경 칠한 칸에만 클립을 거는 제작기(cairo·한컴 구버전)의 음영 조각 격자는 버리고 온전한 선 표에 맡긴다 (dropShadingClipGrids)
   // Word 칸 여백 클립(칸 테두리 안쪽 글 영역)의 행 조각 격자도 선 표에 맡긴다 (dropInsetClipGrids)
@@ -416,7 +433,8 @@ function extractBlocksWithGrids(
     }
 
     // 셀 추출 — 클립 그리드는 셀이 확정돼 있다
-    const cells = grid.cells ?? extractCells(grid, horizontals, verticals)
+    const gutters = GRID_GUTTERS.get(grid)
+    const cells = grid.cells ?? extractCells(grid, horizontals, gutters ? verticals.concat(gutters) : verticals)
     if (cells.length === 0) continue
 
     // 텍스트→셀 매핑 (hasSpaceBefore 전파 — 셀 텍스트 단어 공백 복원)
@@ -509,10 +527,25 @@ function extractBlocksWithGrids(
     let rebuiltUsed = false
     const unitLine = !grid.cells && numRows >= 3 && numRows <= 5 && numCols >= 3 ? rebuildUnitLine(items, grid) : []
     if (!grid.cells && numRows <= 5 && numCols >= 3 && !nestedAttached && (numRows <= 2 || unitLine.length > 0)) {
-      const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs)
+      const kept = new Map<number, number>()
+      const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs, kept)
       if (rebuilt) {
         rebuiltUsed = true
-        finalGrid = rebuilt.map(row => row.map(rawText => ({ text: cleanCellText(rawText), colSpan: 1, rowSpan: 1 })))
+        // OCR 쪽은 그대로 둔 행(머리 행)의 칸 합침을 잇는다 — 다 1 로 풀면 묶음 제목("중위 추계" 3칸)이 첫 칸에만 남았다.
+        // 행 합침은 덮는 행이 모두 그대로 둔 이웃 행일 때만. 글 PDF 는 종전대로(벼·고추 재배면적 표 머리가 HWPX 원본과 더 어긋났다)
+        if (!ocrPage) kept.clear()
+        const newRow = new Map([...kept].map(([n, o]) => [o, n]))
+        const spanRows = (r: number, span: number) => {
+          for (let k = 1; k < span; k++) if (newRow.get(r + k) !== (newRow.get(r) ?? -9) + k) return 1
+          return span
+        }
+        finalGrid = rebuilt.map((row, i) => {
+          const o = kept.get(i)
+          return row.map((rawText, c) => {
+            const src = o === undefined ? undefined : irGrid[o]?.[c]
+            return { text: cleanCellText(rawText), colSpan: src?.colSpan ?? 1, rowSpan: src ? spanRows(o!, src.rowSpan) : 1 }
+          })
+        })
         finalRows = finalGrid.length
       }
     }

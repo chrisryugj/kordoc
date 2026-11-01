@@ -20,8 +20,11 @@ describe("PDF 표의 긴 본문 행 복원", () => {
       item(String(i + 1), 110, 140 - i * 15),
       item(String(i + 11), 210, 140 - i * 15),
     ]).flat()
-    const result = normalizeUndersegmentedTable(original, columns, body, [200, 180, 160, 20])
+    const kept = new Map<number, number>()
+    const result = normalizeUndersegmentedTable(original, columns, body, [200, 180, 160, 20], kept)
     assert.equal(result?.length, 10)
+    // 그대로 둔 행만 새 행 번호 → 원래 행 번호로 알린다(호출측이 칸 합침을 잇는다)
+    assert.deepEqual([...kept], [[0, 0], [1, 1]])
     assert.deepEqual(result?.slice(0, 2), original.slice(0, 2).map(row => row.map(cell => cell.text)))
     assert.deepEqual(result?.[2], ["지역0", "1", "11"])
     assert.deepEqual(result?.[9], ["지역7", "8", "18"])
