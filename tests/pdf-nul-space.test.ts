@@ -15,3 +15,9 @@ it("maps Kangxi radical code points to unified ideographs (\u2F83 → 自)", () 
   const items = normalizeItems([{ str: "자성(\u2F83性)", transform: [10, 0, 0, 10, 100, 500], width: 60, height: 10, fontName: "F" }] as never)
   assert.equal(items[0].text, "자성(自性)")
 })
+
+it("keeps the spaces of a dotted date but still joins spaced phone digits (보도자료 머리 \"2026. 8. 28.(\")", () => {
+  const one = (str: string) => normalizeItems([{ str, transform: [10, 0, 0, 10, 100, 500], width: 60, height: 10, fontName: "F" }] as never)[0].text
+  assert.equal(one("2026. 8. 28.("), "2026. 8. 28.(")
+  assert.equal(one("02 123 4567"), "021234567")
+})
