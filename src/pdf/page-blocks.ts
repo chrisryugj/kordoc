@@ -424,7 +424,7 @@ function extractBlocksWithGrids(
     const owners: NormItem[] = []
     const textItems: TextItem[] = tableItems.flatMap(i => splitAcrossCells({
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
-      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter, seq: i.seq,
+      fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter, seq: i.seq, fx: i.fx, fw: i.fw,
     }, cells).map(t => { owners.push(i); return t }))
     const cellTextMap = mapTextToCells(textItems, cells)
 
@@ -553,7 +553,7 @@ function extractBlocksWithGrids(
       const head = headerLineAbove(items.filter(it => !usedItems.has(it)), grid.colXs, grid.bbox.y2)
       if (head) {
         finalGrid.unshift(head.map(col => ({ text: cleanCellText(cellTextToString(col.map(i => ({
-          text: i.text, x: i.x, y: i.y, w: i.w, h: i.h, fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter, seq: i.seq,
+          text: i.text, x: i.x, y: i.y, w: i.w, h: i.h, fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter, seq: i.seq, fx: i.fx, fw: i.fw,
         })))), colSpan: 1, rowSpan: 1 })))
         finalRows++
         for (const col of head) for (const it of col) usedItems.add(it)

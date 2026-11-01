@@ -40,6 +40,9 @@ export interface NormItem {
   strike?: boolean
   /** 밑줄이 그어진 텍스트 (개정문 추가·변경 표시, 제목 강조 등) */
   underline?: boolean
+  /** 반올림 전 x·폭 — 자간 보정 공백 판정(trackedGaps)만 쓴다. 뒤에서 x·폭을 바꾼 아이템은 반올림 값이 어긋나 무시된다 */
+  fx?: number
+  fw?: number
   /** 콘텐츠 스트림 순번 — 좌표가 겹친 글자의 순서를 되살리는 데만 쓴다 (sortLineByX) */
   seq?: number
   /** 세로로 돌린 글 (글자 진행 방향이 y)의 세로 길이 — 쪽 여백 도장("arXiv:… [cs.CL]") 가르기용 */
@@ -253,7 +256,7 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
       const rx = rotated && i.transform[1] > 0 ? x - rw : x
       items.push({ text, x: rx, y, w: rw, h, fontSize, fontName: i.fontName || "", isHidden, seq, ...(spaceAfter !== undefined ? { spaceAfter } : {}),
         ...(rotated ? { rotated: Math.max(1, w), ...(i.transform[1] < 0 ? { rotatedDown: true as const } : {}) } : {}) })
-      if (!rotated) rawX.set(items[items.length - 1], [i.transform[4], i.width])
+      if (!rotated) { rawX.set(items[items.length - 1], [i.transform[4], i.width]); items[items.length - 1].fx = i.transform[4]; items[items.length - 1].fw = i.width }
     }
   }
 
@@ -542,9 +545,51 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   return result
 }
 
+type Tracked = { text: string; x: number; w: number; fontSize: number; fx?: number; fw?: number }
+const precise = (i: Tracked) => i.fx !== undefined && i.fw !== undefined && Math.round(i.fx) === i.x && Math.abs(Math.round(i.fw) - i.w) <= 1
+
+/**
+ * 자간을 줄인 줄의 공백 — 한컴은 자간 음수 글을 글자마다 따로 찍어(아이템 폭은 글리프 본래 폭) 이웃 글자가 같은 만큼 겹치고, 낱말 사이
+ * 공백도 그만큼 줄어 문턱 밑으로 사라졌다(노인일자리 표 칸 "65세 이상": 글자 폭 11.04·간격 7.8 → 겹침 3.24, "세"·"이" 틈 0.6 = 공백 3.84 − 3.24).
+ * 반올림 전 좌표로 같은 글자 크기 한글 이웃의 겹침이 셋 이상 고르면(글자 크기 5% 안) 그 겹침을 글자 간격 기준으로 보고, 이웃 사이 틈에
+ * 더해 공백 문턱과 견준다. 정수 좌표로는 9pt 글에서 오차(±1)가 공백 여유보다 커 "1 만원" 같은 거짓 공백이 났다. 공백을 더하기만 한다
+ */
+export function trackingShift(lines: Tracked[][]): number | null {
+  const ds: number[] = []
+  let fs = 0
+  for (const sorted of lines) for (let k = 1; k < sorted.length; k++) {
+    const a = sorted[k - 1], b = sorted[k]
+    if (!precise(a) || !precise(b) || Math.abs(a.fontSize - b.fontSize) > 0.5 || !/^[가-힣]$/.test(a.text) || !/^[가-힣]$/.test(b.text)) continue
+    const d = b.fx! - (a.fx! + a.fw!)
+    if (d < -0.05 * a.fontSize && d > -0.45 * a.fontSize) { ds.push(d); fs = a.fontSize }
+  }
+  if (ds.length < 3) return null
+  ds.sort((x, y) => x - y)
+  const med = ds[ds.length >> 1]
+  return ds.filter(d => Math.abs(d - med) <= 0.05 * fs).length >= 3 ? med : null
+}
+
+/** 줄 아이템마다 자간 보정으로 공백을 더할 자리 — 겹침 기준(med)은 줄(본문) 또는 칸 전체(칸 글)에서 잰다 */
+export function trackedSpaces(sorted: Tracked[], med: number | null = trackingShift([sorted])): boolean[] | null {
+  if (med === null) return null
+  return sorted.map((b, k) => {
+    if (!k) return false
+    const a = sorted[k - 1]
+    if (!precise(a) || !precise(b) || Math.abs(a.fontSize - b.fontSize) > 0.5) return false
+    // 좁은 괄호·문장부호는 겹침이 글자 폭을 넘어 고르지 않다 — 여는 괄호 뒤·닫는 부호 앞은 보정하지 않는다("( 일부" 거짓 공백)
+    if (/[(\[{〈《「『‘“]$/.test(a.text) || /^[)\]}〉》」』’”,.·]/.test(b.text)) return false
+    // 글자마다 따로 찍은 아이템끼리만 — 여러 글자 아이템 폭에는 자간이 이미 들어 있다("달성 하고자" 거짓 공백)
+    if ([...a.text].length !== 1 || [...b.text].length > 2) return false
+    // 한글·한자끼리만 — 가운뎃점 이음("연계·활용")은 띄우지 않고, 숫자는 한글과 겹침이 달라 거짓 공백이 났다("2 차", "8 0%")
+    if (!/^[가-힣一-鿿]$/.test(a.text) || !/^[가-힣一-鿿]/.test(b.text)) return false
+    return b.fx! - (a.fx! + a.fw!) - med > spaceGapThreshold((a.fontSize + b.fontSize) / 2)
+  })
+}
+
 export function mergeLineSimple(items: TextItem[]): string {
   if (items.length <= 1) return items[0]?.text || ""
   const sorted = sortLineByX([...items])
+  const tracked = trackedSpaces(sorted)
 
   // 좌표 기반 균등배분 감지 (ODL TextLineProcessor 방식)
   const isEvenSpaced = detectEvenSpacedItems(sorted)
@@ -590,7 +635,7 @@ export function mergeLineSimple(items: TextItem[]): string {
       continue
     }
     // 폰트 크기 비례 공백 임계값 — 고정 px 기준은 Type3/대형 폰트에서 공백 소실·과다 유발
-    if (gap > spaceGapThreshold(avgFs)) result += " "
+    if (gap > spaceGapThreshold(avgFs) || tracked?.[i]) result += " "
     result += sorted[i].text
   }
   return result

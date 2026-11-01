@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- PDF 자간을 줄인 글의 공백: 한컴은 자간 음수 글을 글자마다 따로 찍어(아이템 폭은 글리프 본래 폭) 이웃 글자가 같은 만큼 겹치고, 낱말 사이 공백도 그만큼 줄어 문턱 밑으로 사라졌다("20만원수준"). 반올림 전 좌표로 한 줄에서 글자마다 찍힌 한글 이웃 셋 이상의 겹침이 고르면 그 겹침을 글자 간격 기준으로 보고, 한글·한자 이웃 사이 틈에 더해 공백을 판정한다(공백을 더하기만, 괄호·가운뎃점·숫자 곁은 제외, 본문·칸 글 공통). PDF 글 어절 F1 .99076 → **.99084**(19문서 오름, 1문서 소폭 내림 — 줄 잇기 어휘 부작용), 표·별표·ODL·OCR 그대로.
+
 ## [4.24.35] - 2026-11-01
 
 ### Fixed

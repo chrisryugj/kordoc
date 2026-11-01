@@ -56,6 +56,9 @@ export interface TextItem {
   spaceAfter?: boolean
   /** 콘텐츠 스트림 순번 (NormItem.seq 전파 — 겹친 글자 순서 복원) */
   seq?: number
+  /** 반올림 전 x·폭 (NormItem.fx·fw 전파 — 자간 보정 공백 trackedSpaces) */
+  fx?: number
+  fw?: number
 }
 
 /** Vertex 기반 좌표 병합 시 radius 배수 — ODL: VERTEX_TABLE_FACTOR */

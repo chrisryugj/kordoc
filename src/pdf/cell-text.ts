@@ -9,7 +9,7 @@
  */
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
-import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing, isAttachedScripts, isFragmentLine } from "./text-line.js"
+import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing, isAttachedScripts, isFragmentLine, trackedSpaces } from "./text-line.js"
 import { tagScripts } from "./script-items.js"
 
 /** 시도·전국 이름표 — 두 음절 배분 칸을 문서 어휘 증거 없이도 붙이는 닫힌 목록. "전 체"·"구 분" 같은 표 머리글은 원고에서 띄어 쓰기도
@@ -243,6 +243,7 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
 
     // 균등배분 구간 감지 (좌표 기반)
     const evenSpaced = detectEvenSpacedItems(s, true)
+    const tracked = trackedSpaces(s)
     const hangulLine = s.some(it => /[가-힣]/.test(it.text))
 
     let result = s[0].text
@@ -260,7 +261,7 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
         result += s[j].text
       } else if (s[j].hasSpaceBefore && gap >= avgFs * 0.05) {
         result += " " + s[j].text
-      } else if (gap > spaceGapThreshold(avgFs)) {
+      } else if (gap > spaceGapThreshold(avgFs) || tracked?.[j]) {
         result += " " + s[j].text
       } else {
         result += s[j].text
