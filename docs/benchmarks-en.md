@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.35: digits, superscripts, split numbers, spine text · 2026-11-01
+
+PDF table benchmark (708 pairs): exact cells .99264 → **.99267**, cell content NED .98902 → **.98905**; detection, structure and cell F1 unchanged. PDF text (744 pairs): order .99359 → **.99360**, word-boundary F1 .99073 → **.99076** (8 documents up, none down). Statute annexes, ODL 200 documents and OCR unchanged per document.
+
+- The second 9 of a condensed "129.9": an overseas investment table cell → 1.
+- Superscript lines drawn one glyph at a time: a growth fund table in 2 documents → 1.
+- Numbers split across lines: a public subsidy release word-boundary F1 .98676 → .99204, a safety contest release .99241 → .99392.
+- Lone spine column on a cover: a medical reform agenda order .99778 → 1.
+
 ## 4.24.34: "·" bullets · line-initial endings · 2026-11-01
 
 PDF table benchmark (708 pairs): exact cells .99221 → **.99264**, cell content NED .98896 → **.98902**; detection, structure and cell F1 unchanged. PDF text (744 pairs): recall .99883 → **.99885**, order .99356 → **.99359**, word-boundary F1 .99071 → **.99073** (5 documents up, none down). Statute annexes, ODL 200 documents and OCR unchanged per document.
