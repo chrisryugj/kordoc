@@ -465,6 +465,10 @@ function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?
       && !(/(?:^|\s)\d{1,7}$/.test(prev) && /^\d{1,7}$/.test(curr.trim()) && !numberWrapped(i - 1))) {
       merged[merged.length - 1] = prev + curr.trim()
     }
+    // 소수점에서 꺾인 괄호 수 — 줄 전체가 "(△12,428." 이고 다음 줄이 "3)" 이면 한 수다(해외직접투자 보도자료 증감률 칸)
+    else if (/^\([△▲▽-]?[\d,]*\d\.$/.test(prev.trim()) && /^\d+\)$/.test(curr.trim())) {
+      merged[merged.length - 1] = prev.trimEnd() + curr.trim()
+    }
     // 글이 든 줄이 쉼표로 끝나고 다음 줄이 숫자뿐이면 낱말 사이 꺾임이다 — 칸을 다 채운 줄이 아니라 숫자 이음은 아니고(종전엔 숫자째 붙여
     // "April 30,2022"), 줄바꿈으로 두면 날짜가 갈린다. 공백으로 잇는다(정답 "April 30, 2022", ODL 180 판 이력 표). 글 없는 "3,4" 첨자 줄은 그대로
     else if (wrap && /[A-Za-z가-힣]/.test(prev) && /,$/.test(prev.trim()) && /^[\d,]+[)\]]?$/.test(curr.trim()) && curr.trim().length <= 10) {
