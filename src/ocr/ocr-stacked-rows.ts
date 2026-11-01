@@ -68,3 +68,38 @@ export function splitStackedOcrRows(blocks: IRBlock[]): IRBlock[] {
   for (const b of blocks) if (b.type === "table" && b.table) splitTable(b.table)
   return blocks
 }
+
+/**
+ * OCR 배치 틀 표 풀기 — 시험지는 문항 상자·단 구분선이 격자가 되어 쪽 전체가 큰 표로 읽힌다(수능 한국사 1쪽 13×3:
+ * 왼쪽 문항과 오른쪽 문항이 행마다 섞임). 쪽 높이 절반 넘는 표 가운데 열이 넷 이하이고 채운 칸 글이 대부분 긴 글(숫자 칸 30% 미만,
+ * 평균 15자 이상)이고 선택지 부호(①~⑤)가 든 칸이 둘 이상이면 칸 글을 열 우선(왼쪽 단 위→아래, 다음 단)으로 문단으로 푼다. 칸 안 중첩 표는 그 자리에 둔다.
+ * 선택지 부호 없는 긴 글 칸은 서식이다(대리인선임허가신청서 안내문 칸 — 표로 남아야 한다)
+ */
+export function unframeOcrLayoutTables(blocks: IRBlock[], pageHeight: number): IRBlock[] {
+  const out: IRBlock[] = []
+  for (const b of blocks) {
+    const t = b.table
+    if (b.type !== "table" || !t || !b.bbox || b.bbox.height < pageHeight * 0.5 || t.cols > 4) { out.push(b); continue }
+    const anchors: Array<{ r: number; c: number; cell: IRCell }> = []
+    const covered = Array.from({ length: t.rows }, () => new Set<number>())
+    for (let r = 0; r < t.rows; r++) for (let c = 0; c < (t.cells[r] ?? []).length; c++) {
+      if (covered[r].has(c)) continue
+      const cell = t.cells[r][c]
+      const rs = Math.max(1, cell.rowSpan ?? 1), cs = Math.max(1, cell.colSpan ?? 1)
+      for (let i = r; i < Math.min(t.rows, r + rs); i++) for (let j = c; j < c + cs; j++) if (i !== r || j !== c) covered[i].add(j)
+      anchors.push({ r, c, cell })
+    }
+    const texts = anchors.map(a => a.cell.text.trim()).filter(Boolean)
+    if (!texts.length) { out.push(b); continue }
+    const numeric = texts.filter(s => NUMERIC.test(s.replace(/\s+/g, ""))).length
+    const avg = texts.reduce((n, s) => n + s.length, 0) / texts.length
+    if (numeric >= texts.length * 0.3 || avg < 15 || texts.filter(s => /[①-⑤]/.test(s)).length < 2) { out.push(b); continue }
+    anchors.sort((a, b2) => a.c - b2.c || a.r - b2.r)
+    for (const { cell } of anchors) {
+      if (cell.blocks?.length) { out.push(...cell.blocks); continue }
+      const text = cell.text.trim()
+      if (text) out.push({ type: "paragraph", text, pageNumber: b.pageNumber, bbox: b.bbox })
+    }
+  }
+  return out
+}

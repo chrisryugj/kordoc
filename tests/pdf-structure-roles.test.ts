@@ -50,6 +50,12 @@ describe("PDF table roles", () => {
     ])), false)
   })
 
+  it("keeps an OCR grid with a Hangul header row as a table even when a year column looks like an axis (공정위 피심인 일반현황)", () => {
+    const years = ["2024", "2023", "2022", "2021"]
+    const rows = [["사업자명", "연도", "자본금", "매출액"], ...years.map((y, i) => [i === 0 ? "대성" : "", y, "251", String(174115 - i * 1000)])]
+    assert.equal(isChartTable(table(rows), true), false)
+  })
+
   it("recognizes a value axis or a sparse grid of quantities as a chart", () => {
     assert.equal(isChartTable(table([["90\n80\n70\n60\n50", "81"], ["", "56"], ["", "47"]])), true)
     assert.equal(isChartTable(table([["2.5%", "", ""], ["", "-3.1%", ""], ["", "", "-6.4%"]])), true)

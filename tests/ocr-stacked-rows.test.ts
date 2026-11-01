@@ -2,7 +2,7 @@
 
 import { it } from "node:test"
 import assert from "node:assert/strict"
-import { splitStackedOcrRows } from "../src/ocr/ocr-stacked-rows.js"
+import { splitStackedOcrRows, unframeOcrLayoutTables } from "../src/ocr/ocr-stacked-rows.js"
 import type { IRBlock, IRCell } from "../src/types.js"
 
 const c = (text: string, colSpan = 1, rowSpan = 1): IRCell => ({ text, colSpan, rowSpan })
@@ -24,4 +24,26 @@ it("leaves wrapped prose cells and single stacked cells alone", () => {
   const one = table([[c("구분"), c("값")], [c("가"), c("1.0\n2.0")]])
   splitStackedOcrRows([one])
   assert.equal(one.table!.rows, 2)
+})
+
+const box = (b: IRBlock, height: number): IRBlock => ({ ...b, pageNumber: 1, bbox: { page: 1, x: 80, y: 120, width: 660, height } })
+
+it("unframes a page-tall exam layout grid column by column (수능 한국사 문항 상자)", () => {
+  const exam = box(table([
+    [c("1. (가) 시대에 대한 설명으로 옳은 것은?"), c("3. 밑줄 친 왕에 대한 설명으로 옳은 것은?")],
+    [c("①비파형 동검을 제작하였다. ②석굴암을 만들었다."), c("①고려를 건국하였다. ②대가야를 정복하였다.")],
+  ]), 900)
+  const out = unframeOcrLayoutTables([exam], 1100)
+  assert.deepEqual(out.map(b => b.type), ["paragraph", "paragraph", "paragraph", "paragraph"])
+  // 왼쪽 단 위→아래 다음 오른쪽 단
+  assert.match(out[1].text!, /^①비파형/)
+  assert.match(out[2].text!, /^3\./)
+})
+
+it("keeps forms, short tables and number grids framed", () => {
+  // 선택지 부호 없는 긴 글 칸 서식(신청서 안내문)
+  const form = box(table([[c("신청인"), c("성명 및 주소를 적고 대리인 선임 사유를 구체적으로 기재합니다")], [c("유의사항"), c("허가 신청은 처분청에 제출하며 처리기간은 7일입니다")]]), 900)
+  // 쪽 높이 절반 못 미치는 문항 표
+  const small = box(table([[c("①비파형 동검을 제작하였다. 다음 중 옳은 것은"), c("②석굴암 본존불상을 만들었다. 다음 중 옳은 것은")]]), 300)
+  for (const b of [form, small]) assert.equal(unframeOcrLayoutTables([b], 1100)[0].type, "table")
 })

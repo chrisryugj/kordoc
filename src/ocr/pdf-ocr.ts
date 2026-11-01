@@ -12,7 +12,7 @@
  * - 페이지 단위 실패는 본문 오염 대신 warnings(OCR_FAILED) 로 기록하고 계속.
  */
 
-import { splitStackedOcrRows } from "./ocr-stacked-rows.js"
+import { splitStackedOcrRows, unframeOcrLayoutTables } from "./ocr-stacked-rows.js"
 import type { IRBlock, OcrLine, OcrPageLines, OcrProvider, ParseOptions, ParseWarning } from "../types.js"
 import type { NormItem } from "../pdf/text-line.js"
 import type { LineSegment } from "../pdf/line-types.js"
@@ -446,7 +446,7 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   })
-  return splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))
+  return unframeOcrLayoutTables(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)), pdfH)
 }
 
 async function tryImport<T>(name: string, loader: () => Promise<T>): Promise<T> {
