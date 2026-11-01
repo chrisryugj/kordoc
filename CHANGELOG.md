@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- 이미지 OCR 표: 괘선을 인식 뒤에 찾아 검출 상자를 표 칸·행 경계에서 가르지 못했다(PDF OCR 은 먼저 찾아 가른다) — 이웃 칸 글이 한 상자로 묶여 "2023 2024p ’23년대비" → "20232024p’23". PDF OCR 과 같은 순서로 바꾼다
+- OCR 표 쌓인 행: 행 사이에 괘선 없이 빈 틈만 둔 통계표는 여러 행 숫자가 한 칸에 줄바꿈으로 쌓였다("3.1\n0.1\n0.2"). 숫자 꼴 칸 여럿이 같은 줄 수(다수의 80% 이상)로 쌓인 행을 그 줄 수만큼 가른다(OCR 전용, 글이 꺾인 칸은 그대로)
+
+### 측정 참고 (외부 벤치)
+
+- KoOCR-Bench v2.0c 공개 877쪽(schift-io/koocr-bench-v2, 공식 채점기 v1.3r·총점 v3): 4.24.36 0.742 → **0.775**(표 묶음 .700 → .765 — 통계표 kostat_wide .474 → .656, 표 tables .664 → .689). kordoc 자체 OCR·ODL·PDF 벤치 문서별 그대로, OCR robust 변형별 ±0.003
+
 ## [4.24.36] - 2026-11-01
 
 ### Fixed
