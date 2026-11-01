@@ -96,4 +96,13 @@ describe("칸 글 첨자 행", () => {
     const text = cellTextToString([...labels, ...line], { box: { x1: 130, x2: 520 } }).replace(/<\/?sup>/g, "")
     assert.equal(text, "∘지그재그 운전 □예 □아니오 ∘야간 전조등 미점등 □예 □아니오 ∘도주 □예 □아니오")
   })
+  it("글자마다 따로 찍은 첨자 열 자(아이템 열 개)도 붙은 덩어리 둘이면 조각 줄이다 (국민성장펀드 표 칸 \"근우,인프라 삼동,미래형운송수단\")", () => {
+    const t = (text: string, x: number, y: number, w: number, fontSize: number) => ({ text, x, y, w, h: fontSize, fontSize, fontName: "F" })
+    const line = [t("근", 385.8, 168.88, 11.04, 11.04), t("우", 393.84, 168.88, 11.04, 11.04), t(",", 401.88, 168.88, 2.41, 11.04),
+      t("삼", 421.32, 168.88, 11.04, 11.04), t("동", 429.6, 168.88, 11.04, 11.04), t(",", 437.88, 168.88, 2.88, 11.04)]
+    const sup = [..."인프라"].map((c, k) => t(c, [403.68, 408.96, 414.12][k], 173.68, 7.08, 7.08))
+      .concat([..."미래형운송수단"].map((c, k) => t(c, 439.68 + k * 5.28, 173.68, 7.08, 7.08)))
+    const text = cellTextToString([...sup, ...line], { box: { x1: 380, x2: 520 } }).replace(/<\/?sup>/g, "").replace(/\s+/g, "")
+    assert.equal(text, "근우,인프라삼동,미래형운송수단")
+  })
 })

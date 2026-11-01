@@ -496,6 +496,18 @@ export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number;
     })
   })
 }
+/** 첨자 조각 줄 — 덩어리 ≤8개·글자 ≤10자. 덩어리는 글자 크기 0.3배 안으로 붙은 아이템 무리다 — 한컴이 첨자를 글자마다 따로 찍은 줄
+ *  ("근우,인프라 삼동,미래형운송수단" 의 첨자 10자가 아이템 10개)이 아이템 수 상한에 걸려 따로 남아 본문 줄 위로 올라갔다(국민성장펀드 표 칸).
+ *  본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
+export function isFragmentLine(line: ReadonlyArray<{ text: string; x: number; w: number; fontSize: number }>): boolean {
+  let total = 0
+  for (const i of line) total += i.text.trim().length
+  if (total === 0 || total > 10) return false
+  const byX = [...line].sort((a, b) => a.x - b.x)
+  let runs = 1
+  for (let k = 1; k < byX.length; k++) if (byX[k].x - (byX[k - 1].x + byX[k - 1].w) > byX[k].fontSize * 0.3) runs++
+  return runs <= 8
+}
 export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   if (lines.length <= 1) return lines
   const band = (line: NormItem[]) => {
@@ -509,12 +521,7 @@ export function mergeSuperscriptLines(lines: NormItem[][]): NormItem[][] {
   }
   // 조각 판정 — 글자 단위로 흩어진 소형 라벨("과기정통부" 1자×5)도 흡수하도록
   // 아이템 수 대신 총 글자수로 제한 (높이비·수직겹침 가드가 과병합을 막는다)
-  const isFrag = (line: NormItem[]) => {
-    if (line.length > 8) return false
-    let total = 0
-    for (const i of line) total += i.text.trim().length
-    return total > 0 && total <= 10
-  }
+  const isFrag = isFragmentLine
   const isMarkers = isAttachedScripts
 
   const result: NormItem[][] = [lines[0]]

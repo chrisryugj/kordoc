@@ -9,7 +9,7 @@
  */
 
 import type { ExtractedCell, TextItem } from "./line-types.js"
-import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing, isAttachedScripts } from "./text-line.js"
+import { sortLineByX, isCjkLatinAutospace, collapseEvenSpacing, isAttachedScripts, isFragmentLine } from "./text-line.js"
 import { tagScripts } from "./script-items.js"
 
 /** 시도·전국 이름표 — 두 음절 배분 칸을 문서 어휘 증거 없이도 붙이는 닫힌 목록. "전 체"·"구 분" 같은 표 머리글은 원고에서 띄어 쓰기도
@@ -310,12 +310,7 @@ function mergeSuperscriptRows(lines: TextItem[][]): TextItem[][] {
     }
     return { bottom, top, height: top - bottom }
   }
-  const isFrag = (line: TextItem[]) => {
-    if (line.length > 8) return false
-    let total = 0
-    for (const i of line) total += i.text.trim().length
-    return total > 0 && total <= 10
-  }
+  const isFrag = isFragmentLine
 
   const result: TextItem[][] = [lines[0]]
   for (let i = 1; i < lines.length; i++) {
