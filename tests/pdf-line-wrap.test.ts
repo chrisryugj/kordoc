@@ -27,6 +27,13 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("제1호부터 제11호", "까지와 같다"), "")
   })
 
+  it("수 가운데서 꺾인 줄은 붙인다 — 모자란 천 단위 묶음·괄호 안 소수 (공공재정 부정수급 보도자료 \"1,2⏎96억\", \"(23.⏎7개월)\")", () => {
+    assert.equal(wrapJoiner("2025년 1,2", "96억 원으로"), "")
+    assert.equal(wrapJoiner("시·도교육청(23.", "7개월), 중앙"), "")
+    assert.equal(wrapJoiner("총 1,2", "960억"), " ")
+    assert.equal(wrapJoiner("다음과 같다(1.", "2. 이하"), " ")
+  })
+
   it("한글 없는 중·일문 꺾임은 붙인다 — 띄어쓰기가 없는 글 (kpipa 계약서 중문·일문, LibreOffice)", () => {
     assert.equal(wrapJoiner("和海外出版社或海外著作权代理商（代", "理中介商）之间有用。"), "")
     assert.equal(wrapJoiner("有很多种类，", "因此很难提出一个模式"), "")

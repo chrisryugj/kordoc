@@ -246,6 +246,10 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   let s = prev.length
   while (s > 0 && !/\s/.test(prev[s - 1])) s--
   const left = prev.slice(s), right = next.match(/^\S+/)![0]
+  // 수 가운데서 꺾인 줄 — 천 단위 묶음이 모자란 "1,2⏎96억" 과 괄호 안 소수 "(23.⏎7개월)" 은 한 수다(글자 단위 줄 나눔 보도자료)
+  const group = left.match(/\d,(\d{1,2})$/)
+  if (group && new RegExp(`^\\d{${3 - group[1].length}}(?!\\d)`).test(right)) return ""
+  if (/\(\d+\.$/.test(left) && /^\d/.test(right) && !/^\d+\.$/.test(right)) return ""
   if (particleContinues(left, right)) return ""
   if (endsAsWord(left)) return " "
   // Latin line-end hyphens can be typesetting breaks. Preserve the token boundary
