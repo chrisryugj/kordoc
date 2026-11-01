@@ -14,7 +14,7 @@ interface Column { x: number; items: NormItem[] }
 
 export function joinVerticalColumns(items: NormItem[]): NormItem[] {
   const singles = items.filter(i => !i.rotated && CJK.test(i.text) && i.fontSize > 0)
-  if (singles.length < 8) return items
+  if (singles.length < 8) return joinLoneColumns(items)
   // 같은 x(글자 폭의 0.15배 안)의 한 글자들 → 기둥 후보
   const cols: Column[] = []
   for (const it of [...singles].sort((a, b) => a.x - b.x)) {
@@ -33,7 +33,7 @@ export function joinVerticalColumns(items: NormItem[]): NormItem[] {
     }
     return true
   }).sort((a, b) => b.x - a.x)
-  if (columns.length < 2) return items
+  if (columns.length < 2) return joinLoneColumns(items)
 
   // 오른쪽부터 이웃 기둥끼리 묶음: 간격이 글자 폭 1.2~4배(연 사이 빈 기둥 하나), 윗머리가 한 글자 안
   const groups: Column[][] = []
@@ -86,6 +86,58 @@ export function joinVerticalColumns(items: NormItem[]): NormItem[] {
       // 폭은 글자 수의 반 — 글상자 틀(1칸 표) 안에서 칸 폭을 채우고 꺾인 줄로 읽혀 다음 기둥에 이어 붙지 않게
       add.push({ ...col.items[0], text, x: x1, y: top - fs * 0.2 - k * lineH, w: [...text].length * fs * 0.5, h: fs })
     })
+    for (const m of members) drop.add(m)
+  }
+  const out = drop.size ? [...items.filter(i => !drop.has(i)), ...add] : items
+  return joinLoneColumns(out)
+}
+
+const LONE = /^[ㄱ-ㆎ가-힣一-鿿0-9․·.]$/
+
+/**
+ * 홀로 선 세로 기둥 — 표지 책등("제9차 의료혁신위원회 안건 / 2026․8 / 의료혁신추진단")처럼 쪽 가장자리에 한 자씩 쌓은 기둥 하나.
+ * 기둥이 둘 이상이어야 하는 세로쓰기 글상자 규칙에 안 걸려 한 글자씩 문단이 됐고 숫자 조각("9")은 쪽 번호로 빠졌다. 같은 x(1pt 안)에
+ * 한 글자 여섯 이상이 쌓이고 쪽의 다른 글이 모두 기둥 한쪽에 글자 높이 다섯 배 넘게 떨어져 있으며 기둥 글자와 같은 높이에 다른 글이 없을 때만,
+ * 글자 높이 네 배 넘게 벌어진 자리에서 나눠 구간마다
+ * 한 줄로 잇는다. 구간 간격 중앙값의 1.2배 넘게 벌어진 자리는 띄어쓰기다
+ */
+function joinLoneColumns(items: NormItem[]): NormItem[] {
+  const singles = items.filter(i => !i.rotated && LONE.test(i.text) && i.fontSize > 0)
+  if (singles.length < 6) return items
+  const cols: Column[] = []
+  for (const it of [...singles].sort((a, b) => a.x - b.x)) {
+    const c = cols.find(col => Math.abs(col.x - it.x) <= 1)
+    if (c) c.items.push(it)
+    else cols.push({ x: it.x, items: [it] })
+  }
+  const drop = new Set<NormItem>()
+  const add: NormItem[] = []
+  for (const col of cols) {
+    if (col.items.length < 6) continue
+    col.items.sort((a, b) => b.y - a.y)
+    const fs = col.items[0].fontSize
+    if (col.items.some(it => Math.abs(it.fontSize - fs) > 1)) continue
+    const members = new Set(col.items)
+    // 쪽 글 바깥 — 다른 글이 모두 기둥 한쪽에 글자 높이 다섯 배 넘게 떨어져 있다(책등은 쪽 가장자리). 표 번호 열처럼 글 사이에 선 기둥은 아니다
+    const others = items.filter(i => !members.has(i))
+    const colR = Math.max(...col.items.map(it => it.x + it.w))
+    if (!(others.every(i => i.x + i.w <= col.x - fs * 5) || others.every(i => i.x >= colR + fs * 5))) continue
+    // 기둥 글자는 제 높이에 홀로 선다 — 표 번호 열은 행마다 같은 높이에 칸 글이 있다
+    if (col.items.some(m => others.some(i => Math.abs(i.y - m.y) <= fs * 0.5))) continue
+    // 구간: 글자 높이 네 배 넘게 벌어진 자리에서 나눈다. 구간 안 간격이 글자 높이 0.8배보다 좁으면 겹친 줄이지 기둥이 아니다
+    const segs: NormItem[][] = [[col.items[0]]]
+    for (let k = 1; k < col.items.length; k++) {
+      if (col.items[k - 1].y - col.items[k].y > fs * 4) segs.push([col.items[k]])
+      else segs[segs.length - 1].push(col.items[k])
+    }
+    if (segs.some(g => g.slice(1).some((it, k) => g[k].y - it.y < fs * 0.8))) continue
+    for (const g of segs) {
+      const steps = g.slice(1).map((it, k) => g[k].y - it.y).sort((a, b) => a - b)
+      const med = steps[steps.length >> 1] ?? 0
+      let text = ""
+      g.forEach((it, k) => { if (k && g[k - 1].y - it.y > med * 1.2) text += " "; text += it.text })
+      add.push({ ...g[0], text, x: col.x, w: [...text].length * fs * 0.5, h: fs })
+    }
     for (const m of members) drop.add(m)
   }
   return drop.size ? [...items.filter(i => !drop.has(i)), ...add] : items

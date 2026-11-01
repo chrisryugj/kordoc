@@ -34,4 +34,16 @@ describe("joinVerticalColumns", () => {
     const items = rows.flatMap((t, r) => [...t].map((c, k) => ch(c, 400 + k * 12, 700 - r * 22)))
     assert.equal(joinVerticalColumns(items), items)
   })
+
+  it("joins a lone spine column at the page edge, split at wide gaps (표지 책등 \"제9차 의료혁신위원회 안건\")", () => {
+    const spine = [...column("제9차 의료혁신", 585), ...[..."2026․8"].map((c, k) => ch(c, 585, 300 - k * 10))]
+    const out = joinVerticalColumns(spine).map(i => i.text).sort()
+    assert.deepEqual(out, ["2026․8", "제9차 의료혁신"])
+  })
+
+  it("leaves a stacked number column between other text (표 번호 열)", () => {
+    const nums = [..."123456"].map((c, k) => ch(c, 60, 700 - k * 14))
+    const rows = nums.map(n => ({ ...ch("내용", 120, n.y), w: 20 }))
+    assert.equal(joinVerticalColumns([...nums, ...rows]).length, 12)
+  })
 })
