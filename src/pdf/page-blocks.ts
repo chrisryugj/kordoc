@@ -218,6 +218,27 @@ export function extractPageBlocksWithLines(
   // 두 단을 먼저 가른다. 상자 글은 본문 글로 읽힌다
   // 쪽 전체 OCR 만(글이 쪽 높이 절반 넘게 퍼짐) — 그림 영역 OCR 의 차트 조각 순서는 그대로 둔다(ODL 099)
   const ocrSpan = ocrItems ? Math.max(...items.map(it => it.y + it.h)) - Math.min(...items.map(it => it.y)) : 0
+  // 쪽 전체 OCR 에서 다른 격자를 품은 큰 1칸 틀(쪽 넓이 절반 넘음)은 쪽 테두리다 — 품은 표 때문에 쪽 틀 판정을 건너뛰어 쪽 전체가
+  // 1칸 표가 되고 안쪽 표가 그 칸 글로 뭉개졌다(관보 공고 쪽 테두리 안 검진단가 표)
+  if (ocrItems && ocrSpan >= pageHeight * 0.5) {
+    for (let i = grids.length - 1; i >= 0; i--) {
+      const g = grids[i]
+      if (g.rowYs.length !== 2 || g.colXs.length !== 2 || g.cells ||
+          (g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.5) continue
+      const inner = grids.filter(o => o !== g && o.bbox.x1 >= g.bbox.x1 - 2 && o.bbox.x2 <= g.bbox.x2 + 2 && o.bbox.y1 >= g.bbox.y1 - 2 && o.bbox.y2 <= g.bbox.y2 + 2)
+      if (inner.length === 0) continue
+      grids.splice(i, 1)
+      // 표 바깥 세로변이 테두리 세로선에 합쳐져(몇 pt 차) 첫 열·끝 열이 빠진 안쪽 표 — 표 위·아래 가로선이 테두리 변까지 뻗으면 그 변을 표 변으로
+      for (const o of inner) {
+        const spans = (x: number, toX: number) => [o.bbox.y1, o.bbox.y2].every(y => horizontals.some(h => Math.abs(h.y1 - y) < 3 &&
+          Math.min(h.x1, h.x2) <= Math.min(x, toX) + 4 && Math.max(h.x1, h.x2) >= Math.max(x, toX) - 4))
+        let colXs = o.colXs
+        if (o.bbox.x1 - g.bbox.x1 > 20 && spans(g.bbox.x1, o.bbox.x2)) colXs = [g.bbox.x1, ...colXs]
+        if (g.bbox.x2 - o.bbox.x2 > 20 && spans(o.bbox.x1, g.bbox.x2)) colXs = [...colXs, g.bbox.x2]
+        if (colXs !== o.colXs) grids[grids.indexOf(o)] = { ...o, colXs, bbox: { ...o.bbox, x1: colXs[0], x2: colXs[colXs.length - 1] } }
+      }
+    }
+  }
   // 한 단 안에 든 1칸 틀(<보기> 상자, 쪽 폭 55% 미만)도 같다 — 틀 하나가 격자 경로를 끌면 두 단 줄을 이어 붙였다(수능 국어 6쪽)
   if (ocrItems && ocrSpan >= pageHeight * 0.5 && grids.length > 0 && grids.every(g => g.rowYs.length === 2 && g.colXs.length === 2 && !g.cells &&
       ((g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.02 || g.bbox.x2 - g.bbox.x1 < pageWidth * 0.55))) {
