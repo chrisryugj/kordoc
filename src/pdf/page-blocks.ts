@@ -180,6 +180,7 @@ export function extractPageBlocksWithLines(
   // OCR 통계표의 묶음 안 빈칸 열 — 숫자 값 빈 구간이 줄마다 맞으면 가상 세로선 (ocr-gutter-columns)
   // 가상선을 받은 격자만 그 영역 안 선으로 다시 짠다 — 전역으로 다시 짜면 바깥 틀 격자가 가상선을 먹고 쪽 전체 표가 된다
   if (ocrItems && lineGrids.length) {
+    lineGrids = lineGrids.map(g => openSideColumns(g, horizontals, verticals, items, lineGrids))
     for (const [grid, gutters] of ocrGutterVerticals(lineGrids, items)) {
       const { x1, y1, x2, y2 } = grid.bbox, tol = 1.5
       const within = (l: LineSegment) => Math.min(l.x1, l.x2) >= x1 - tol && Math.max(l.x1, l.x2) <= x2 + tol && Math.min(l.y1, l.y2) >= y1 - tol && Math.max(l.y1, l.y2) <= y2 + tol
@@ -379,6 +380,39 @@ function rotatedGridBlocks(
  * 선 기반 그리드가 감지된 경우: 테이블 영역의 텍스트는 셀에 매핑,
  * 나머지는 일반 텍스트 블록으로 처리.
  */
+/**
+ * 열린 표(바깥 세로 테두리 없음)의 바깥 이름표 열 — 격자는 첫·끝 세로선에서 끝나 그 바깥 이름표 열("계"·"19세 이하"…)이 표에서 빠졌다
+ * (혼인 통계 연령별 표). 위·아래 가로 괘선이 둘 다 세로선 바깥까지(15pt 넘게) 뻗고 그 사이에 글이 있으면, 괘선 끝(짧은 쪽)에 가상 세로선을
+ * 세우고 열을 더한다. 가로 괘선 증거가 없는 바깥 글(본문 여백 글)은 건드리지 않는다. 격자 안 글이 절반 넘게 숫자인 통계표만, 넓힐 자리에
+ * 다른 격자가 없을 때만 — 서식(신청서)은 이웃 칸 격자가 붙어 괘선이 바깥까지 뻗는다
+ */
+export function openSideColumns(g: TableGrid, horizontals: LineSegment[], verticals: LineSegment[], items: NormItem[], grids: TableGrid[] = []): TableGrid {
+  // 열 셋 이상 격자만 — 세로선 두 줄뿐인 좁은 쪽 번호 칸(개정 이력 표 "22·33·45")을 넓히면 옆 표 행을 삼켰다
+  if (g.cells || g.colXs.length < 4) return g
+  const { x1, x2, y1, y2 } = g.bbox
+  const inside = items.filter(it => it.text.trim() && it.x >= x1 - 2 && it.x + it.w <= x2 + 2 && it.y >= y1 && it.y + it.h <= y2)
+  if (!inside.length || inside.filter(it => /^[\d.,%()+\-−–△▲▽▼\s]+$/.test(it.text.trim())).length < inside.length * 0.5) return g
+  const free = (a: number, b: number) => !grids.some(o => o !== g && o.bbox.x1 < b - 2 && o.bbox.x2 > a + 2 && o.bbox.y1 < y2 - 2 && o.bbox.y2 > y1 + 2)
+  const reach = (y: number, side: -1 | 1): number | null => {
+    const ends = horizontals.filter(h => Math.abs(h.y1 - y) <= 3).map(h => [Math.min(h.x1, h.x2), Math.max(h.x1, h.x2)])
+      .filter(([a, b]) => side < 0 ? a <= x1 - 15 && b >= x1 - 3 : b >= x2 + 15 && a <= x2 + 3).map(([a, b]) => side < 0 ? a : b)
+    return ends.length ? (side < 0 ? Math.min(...ends) : Math.max(...ends)) : null
+  }
+  const textBetween = (a: number, b: number) => free(a, b) && items.some(it => it.text.trim() && it.x >= a - 2 && it.x + it.w <= b + 2 && it.y >= y1 && it.y + it.h <= y2)
+  let colXs = g.colXs
+  const lt = reach(y2, -1), lb = reach(y1, -1)
+  if (lt !== null && lb !== null) {
+    const left = Math.max(lt, lb)
+    if (textBetween(left, x1)) { colXs = [left, ...colXs]; verticals.push({ x1: left, y1, x2: left, y2, lineWidth: 1 }) }
+  }
+  const rt = reach(y2, 1), rb = reach(y1, 1)
+  if (rt !== null && rb !== null) {
+    const right = Math.min(rt, rb)
+    if (textBetween(x2, right)) { colXs = [...colXs, right]; verticals.push({ x1: right, y1, x2: right, y2, lineWidth: 1 }) }
+  }
+  return colXs === g.colXs ? g : { ...g, colXs, bbox: { ...g.bbox, x1: colXs[0], x2: colXs[colXs.length - 1] } }
+}
+
 /** OCR 숫자 표 행 펼치기의 격자 행 수 상한 — 점선 행마다 격자 행이 있는 관보 계속비 표는 26행. 전폭 긴 글 칸이 있는 격자는 12 */
 const OCR_NUMERIC_MAX_ROWS = 40
 const OCR_NUMERIC_MAX_ROWS_FRAMED = 12
