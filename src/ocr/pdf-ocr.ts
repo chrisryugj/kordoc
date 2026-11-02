@@ -438,6 +438,9 @@ export function ocrItemsToBlocks(
   // 줄마다 아래 끝을 중앙값으로 맞추고, 겹친 이웃 박스는 겹친 구간 가운데서 갈라 낱말 경계(따로 검출된 상자)를 공백으로 남긴다
   const bottoms = items.map(it => it.y + it.h)
   const xs = items.map(it => ({ x: it.x, r: it.x + it.w, space: false }))
+  // 겹친 검출 상자가 이음매 글자를 두 번 읽은 것("너와조금" + "금은" → "조금금은", 손글씨) — 오른쪽 상자 앞 글자가 왼쪽 상자 끝
+  // 글자와 같고 겹친 폭이 그 글자 폭의 절반을 넘으면 오른쪽에서 지운다(다 지워지면 상자를 뺀다)
+  const texts = items.map(it => it.text)
   for (const line of groupOcrLines(items, figureRegion)) {
     if (line.length < 2) continue
     const sorted = line.map(j => items[j].y + items[j].h).sort((a, b) => a - b)
@@ -446,6 +449,10 @@ export function ocrItemsToBlocks(
     for (let k = 1; k < byX.length; k++) {
       const L = xs[byX[k - 1]], R = xs[byX[k]]
       if (R.x >= L.r) continue
+      const lt = [...texts[byX[k - 1]]], rt = [...texts[byX[k]]], per = items[byX[k]].w / Math.max(1, rt.length)
+      for (let n = Math.min(3, rt.length, lt.length); n >= 1; n--) {
+        if (lt.slice(-n).join("") === rt.slice(0, n).join("") && /[가-힣]/.test(rt[0]) && L.r - R.x >= per * n * 0.5) { texts[byX[k]] = rt.slice(n).join(""); break }
+      }
       const mid = (R.x + L.r) / 2, half = Math.min(items[byX[k - 1]].h, items[byX[k]].h) * 0.15
       L.r = Math.max(L.x + 1, mid - half)
       R.x = Math.min(R.r - 1, mid + half)
@@ -458,7 +465,7 @@ export function ocrItemsToBlocks(
     // 글자 크기는 원래 박스 높이로 잰다
     const h = (figureRegion ? Math.max(1, bottoms[i] - it.y) : it.h) / scale
     const normalized: NormItem = {
-      text: it.text,
+      text: texts[i],
       x: Math.round(xs[i].x / scale),
       // NormItem.y 는 pdfjs transform[5] = 베이스라인 (bottom-up) — 잉크 하단으로 근사
       y: Math.round(pdfH - bottoms[i] / scale),
@@ -472,7 +479,7 @@ export function ocrItemsToBlocks(
     }
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
-  })
+  }).filter(it => it.text)
   return unframeOcrLayoutTables(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)), pdfH)
 }
 
