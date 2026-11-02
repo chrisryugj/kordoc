@@ -177,6 +177,16 @@ export function isChartTable(table: IRTable, ocr = false): boolean {
   return cells - texts.length >= cells * 0.55 && values >= texts.length * 0.8 && (ocr || !hasAlignedRows(table))
 }
 
+/** OCR 글줄이 우연히 열을 이룬 가짜 표 — 손글씨 편지·본문 줄이 군집 표가 되어 문장 조각이 칸마다 흩어졌다("모 실 이 아버지 가 아닌 것" |
+ *  "한 달전에싸움을을 하고"). 표 칸 이름표·값은 명사·숫자로 끝나는데, 채운 칸 대부분(70%+)이 한글 글이고 30% 이상이 조사·어미·문장부호로
+ *  끝나면 문장 조각이다(KoOCR 표 묶음 진짜 표 58개는 .21 이하) */
+export function isProseFragmentTable(table: IRTable): boolean {
+  const texts = table.cells.flat().map(cell => cell.text.trim()).filter(Boolean)
+  if (texts.length < 4) return false
+  if (texts.filter(text => (text.match(/[가-힣]/g)?.length ?? 0) >= 2).length < texts.length * 0.7) return false
+  return texts.filter(text => /(?:[다요고서는을를에게지며면어아야니까던]|[.,?!])$/.test(text)).length >= texts.length * 0.3
+}
+
 /** Display math laid out on several baselines (fraction bars, limits, "d/dx") looks like a sparse grid of short cells.
  * Evidence: a relation sign in some cell and most filled cells being math tokens — a lone variable or an operator-bearing term. */
 export function isFormulaTable(table: IRTable): boolean {

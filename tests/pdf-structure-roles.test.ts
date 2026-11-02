@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { isChartTable, isProseTable, isTableOfContents, tocBlock, TOC_BLOCKS } from "../src/pdf/table-roles.js"
+import { isChartTable, isProseFragmentTable, isProseTable, isTableOfContents, tocBlock, TOC_BLOCKS } from "../src/pdf/table-roles.js"
 import { demoteNonHeadingRoles } from "../src/pdf/heading-demote.js"
 import { xyCutOrder } from "../src/pdf/xy-cut.js"
 import { splitSingleCellTables } from "../src/pdf/text-clean.js"
@@ -48,6 +48,11 @@ describe("PDF table roles", () => {
     assert.equal(isProseTable(table([
       ["procs", sentence], ["memory", sentence], ["page", sentence], ["disk", "short"],
     ])), false)
+  })
+
+  it("treats sentence fragments scattered over OCR columns as prose, not label/value cells (손글씨 편지)", () => {
+    assert.equal(isProseFragmentTable(table([["한 달 전에 싸움을", "하고 집을 나간"], ["아버지는 이젠 몽실이", "아버지가 아닌 것일까?"], ["정말 돌아오지", "않는 것일까?"]])), true)
+    assert.equal(isProseFragmentTable(table([["구분", "사업명", "예산액"], ["복지", "자활근로사업", "679,330"], ["보건", "결핵검진 지원", "1,550"]])), false)
   })
 
   it("keeps an OCR grid with a Hangul header row as a table even when a year column looks like an axis (공정위 피심인 일반현황)", () => {

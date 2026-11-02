@@ -17,7 +17,7 @@
 
 import type { IRTable, IRCell, BoundingBox } from "../types.js"
 import { PREFIX_SCRIPT } from "./text-line.js"
-import { isProseTable } from "./table-roles.js"
+import { isProseFragmentTable, isProseTable } from "./table-roles.js"
 import { clusterCellLines, joinClusterCellLines, type ClusterCellLine } from "./cluster-cell-text.js"
 import type { WrapLexicon } from "./line-wrap.js"
 import { ocrTextGaps } from "../ocr/text-gaps.js"
@@ -167,7 +167,8 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
   //    XY-Cut(단 분리) 경로로 흘러가 올바른 읽기 순서로 복원된다.
   // 산문 역할의 후보도 표가 아니다 (table-roles.ts). 목차·차트는 호출 측이 그 영역의 글로 바꾼다
   return results.filter(r => {
-    const prose = isTwoColumnProse(r) || isProseTable(r.table)
+    const prose = isTwoColumnProse(r) || isProseTable(r.table) ||
+      [...r.usedItems].every(it => it.fontName === "ocr") && isProseFragmentTable(r.table)
     if (prose && rejected) rejected.prose++
     return !prose
   })
