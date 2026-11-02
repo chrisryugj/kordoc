@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OCR 시험지 두 단 읽기 순서(2): 한 단 안에 든 1칸 틀(<보기> 상자, 쪽 폭 55% 미만)이 격자 경로를 끌어 두 단 줄을 이어 붙였다(수능 국어 6쪽 — server 검출에서 남던 경우). 쪽 전체 OCR 에서 격자가 이런 1칸 틀·작은 상자뿐이면 본문 경로로 읽는다
+
+### 측정 참고 (외부 벤치)
+
+- KoOCR-Bench v2.0c 시험지(suneung 580영역) 순서 .774 → **.801**, CER .428 → .416. 자체 OCR·OCR robust·ODL-OCR·PDF 표 문서별 하락 0
+
 ## [4.24.38] - 2026-11-02
 
 ### Added

@@ -218,8 +218,9 @@ export function extractPageBlocksWithLines(
   // 두 단을 먼저 가른다. 상자 글은 본문 글로 읽힌다
   // 쪽 전체 OCR 만(글이 쪽 높이 절반 넘게 퍼짐) — 그림 영역 OCR 의 차트 조각 순서는 그대로 둔다(ODL 099)
   const ocrSpan = ocrItems ? Math.max(...items.map(it => it.y + it.h)) - Math.min(...items.map(it => it.y)) : 0
+  // 한 단 안에 든 1칸 틀(<보기> 상자, 쪽 폭 55% 미만)도 같다 — 틀 하나가 격자 경로를 끌면 두 단 줄을 이어 붙였다(수능 국어 6쪽)
   if (ocrItems && ocrSpan >= pageHeight * 0.5 && grids.length > 0 && grids.every(g => g.rowYs.length === 2 && g.colXs.length === 2 && !g.cells &&
-      (g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.02)) {
+      ((g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.02 || g.bbox.x2 - g.bbox.x1 < pageWidth * 0.55))) {
     return extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
   }
 
