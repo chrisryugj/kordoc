@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.38] - 2026-11-02
+
 ### Added
 
 - HWP → HWPX 한/글 자체 저장 엔진: `to-hwpx --engine hancom|auto`, `convertToHwpx(…, { engine })`, MCP `convert_to_hwpx` `engine`. Windows 에 한/글이 있으면 한/글로 열어 HWPX 로 저장한다 — 결과가 한/글 저장본과 같고 HWP 3.x·HWPML 도 서식 그대로. 팝업 없이 돈다: 원본을 사용자 임시 폴더로 복사해 열고 저장도 임시 폴더에 해 접근 승인 창을 피하고(보안 모듈 등록도 함께), 확인 창 자동 응답·암호 창 대신 실패·버전 경고 끄기·창 숨김. 경로는 환경 변수로만 넘긴다. 기본(`kordoc`)은 그대로 — 어디서나 같은 결과. `auto` 는 한/글이 있으면 hancom, 없거나 열기 암호를 주면 kordoc
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 측정 참고 (외부 벤치)
 
+- KoOCR-Bench v2.0c 공개 877쪽 종합: 기본 0.807 → **0.810**(읽기 순서 .842 → .868 — 시험지 순서 .720 → .774), `ocrRec: "auto"` 0.828 → **0.831**. 제목 재현율(KDI, 총점 밖) 0 → **.798**. 자체 OCR·OCR robust·ODL-OCR·PDF 표 문서별 그대로
 - 이음매 고침: KoOCR-Bench v2.0c 손글씨(server det·auto) CER owner20 .1368 → .1355, 자체 OCR 함평 계획 3·11쪽 CER .0140 → .0129(robust clean .0421 → .0383)
 - KoOCR-Bench v2.0c 손글씨(server det·auto) CER rw11 .101 → .095, 사용자 실문서 .369 → .363(8쪽 오름·2쪽 내림), 표 묶음 그대로
 - KoOCR-Bench v2.0c 시험지(suneung 580영역) `ocrRec: "auto"` + `formulaOcr`: CER .419 → **.371**(수학 .727 → .599, 영어·국어·한국사 ±.005). 같은 벤치 `ocrDet: "server"` + `ocrRec: "auto"` 종합 **0.836**(기본 det .828 — 손글씨 .864 → .884, 표 .825 → .832, 약품 설명서 CER .100 → .112)

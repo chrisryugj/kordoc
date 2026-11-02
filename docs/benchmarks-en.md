@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.38: OCR headings and reading order · 2026-11-02
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.807 → **0.810**, `ocrRec: "auto"` 0.828 → **0.831**. Reading order .842 → **.868** (exam pages .720 → .774), heading recall (KDI reports, not in the total) 0 → **.798**, KDI CER .024 → .017. In-house OCR, OCR robustness, ODL-OCR and PDF table benchmarks are unchanged per document.
+
+- Headings on scanned and image pages: short single-line text at 1.3× the page body size or more; stacked chapter-number and title lines are joined.
+- Exam pages whose only grid is a small one-cell label box are read through the body path that splits the two columns first.
+- Formula OCR for image input (`formulaOcr`): exam CER .419 → .371 (math pages). Keep it off for documents without formulas (turning it on everywhere gives .833 < .836).
+- The option combination `ocrDet: "server"` + `ocrRec: "auto"` scores 0.836 (handwriting .884) but drug-label CER rises from .100 to .112, so it is not the default.
+
 ## 4.24.37: OCR table structure · KoOCR-Bench · 2026-11-02
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer v1.3r and total v3 unchanged; the 193 private pages are not available): total 0.742 → **0.807**, `ocrRec: "auto"` **0.828**. In-house OCR, ODL-OCR, OCR robustness, PDF table and text benchmarks are unchanged per document.
