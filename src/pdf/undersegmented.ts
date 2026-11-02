@@ -92,12 +92,12 @@ const ALIGNED_LINE_TOL = 0.5 // 줄 높이 가운데값 배수 — OCR 숫자 �
  * (예산표 "예산지출(a) / ⋅일반회계 / ⋅특별회계" 와 금액 열마다 세 줄, OCR 은 래스터 괘선만 보아 한 행으로 묶었다). 긴 글이 한 칸에서
  * 꺾인 행은 다른 열 줄 수·높이가 맞지 않아 걸리지 않는다
  */
-function alignedSubRows(itemsByCol: TextItem[][]): string[][] | null {
+function alignedSubRows(itemsByCol: TextItem[][], minLines = MIN_ALIGNED_LINES): string[][] | null {
   const byCol = itemsByCol.map(groupItemsToVisualLines)
   const cols = byCol.filter(lines => lines.length)
   if (cols.length < MIN_ALIGNED_COLUMNS) return null
   const k = cols[0].length
-  if (k < MIN_ALIGNED_LINES || cols.some(lines => lines.length !== k)) return null
+  if (k < minLines || cols.some(lines => lines.length !== k)) return null
   const cy = (line: TextItem[]) => line.reduce((s, it) => s + itemCenterY(it), 0) / line.length
   for (let i = 0; i < k; i++) {
     const ys = cols.map(lines => cy(lines[i]))
@@ -119,12 +119,14 @@ function alignedSubRows(itemsByCol: TextItem[][]): string[][] | null {
  * @param kept 행 3개 이상 표에서 펼치지 않고 그대로 둔 행 — 새 행 번호 → 원래 행 번호 (호출측이 그 행의 칸 합침을 잇는다)
  */
 export function normalizeUndersegmentedTable(
-  originalCells: { text: string }[][],
+  originalCells: { text: string; rowSpan?: number }[][],
   colXs: number[],
   items: TextItem[],
   rowYs?: number[],
   kept?: Map<number, number>,
   maxRows = MAX_UNDERSEGMENTED_ROWS,
+  /** 줄 맞춘 하위 행 최소 줄 수 — 유령 경계로 갈린 묶음(행 합침 칸이 덮은 빈 행)은 그 경계가 행 증거라 두 줄도 가른다 */
+  minAlignedLines = MIN_ALIGNED_LINES,
 ): string[][] | null {
   const numRows = originalCells.length
   const numCols = colXs.length - 1
@@ -137,9 +139,13 @@ export function normalizeUndersegmentedTable(
     for (let r = 0; r < numRows; r++) {
       const row = originalCells[r].map(cell => cell.text)
       if (r === 0 || (numRows === 3 && r === 1)) { kept?.set(rebuilt.length, r); rebuilt.push(row); continue }
-      const rowItems = items.filter(item => itemCenterY(item) <= rowYs[r] + 1 && itemCenterY(item) >= rowYs[r + 1] - 1)
-      const body = normalizeUndersegmentedTable([originalCells[r]], colXs, rowItems)
-      if (body) { rebuilt.push(...body); expanded++ }
+      // 행 합침 칸이 아래 빈 행들을 덮는 묶음(유령 경계로 갈린 한 행)은 묶음 높이 전체의 글로 펼친다 — 첫 하위 행 글만 보면
+      // "2020 예산 / 2021 예산" 두 줄이 한 칸에 남았다(관보 계속비)
+      const span = Math.min(numRows - r, Math.max(1, ...originalCells[r].map(cell => cell.rowSpan ?? 1)))
+      const band = span > 1 && originalCells.slice(r + 1, r + span).every(cells => cells.every(cell => !cell.text.trim())) ? span : 1
+      const rowItems = items.filter(item => itemCenterY(item) <= rowYs[r] + 1 && itemCenterY(item) >= rowYs[r + band] - 1)
+      const body = normalizeUndersegmentedTable([originalCells[r]], colXs, rowItems, undefined, undefined, undefined, band > 1 ? 2 : MIN_ALIGNED_LINES)
+      if (body) { rebuilt.push(...body); expanded++; r += band - 1 }
       else { kept?.set(rebuilt.length, r); rebuilt.push(row) }
     }
     return expanded ? rebuilt : null
@@ -155,7 +161,7 @@ export function normalizeUndersegmentedTable(
   for (const colItems of itemsByCol) {
     if (groupItemsToVisualLines(colItems).length >= MIN_UNDERSEGMENTED_TEXT_LINES) denseColumns++
   }
-  if (denseColumns < 2) return numRows === 1 ? alignedSubRows(itemsByCol) : null
+  if (denseColumns < 2) return numRows === 1 ? alignedSubRows(itemsByCol, minAlignedLines) : null
 
   // 2) 전체 줄에서 row band 유도 — centerY 근접(epsilon) 또는 수직 겹침이면 같은 band
   const allLines = groupItemsToVisualLines(items.filter(i => i.text.trim()))

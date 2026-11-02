@@ -379,8 +379,9 @@ function rotatedGridBlocks(
  * 선 기반 그리드가 감지된 경우: 테이블 영역의 텍스트는 셀에 매핑,
  * 나머지는 일반 텍스트 블록으로 처리.
  */
-/** OCR 숫자 표 행 펼치기의 격자 행 수 상한 */
-const OCR_NUMERIC_MAX_ROWS = 12
+/** OCR 숫자 표 행 펼치기의 격자 행 수 상한 — 점선 행마다 격자 행이 있는 관보 계속비 표는 26행. 전폭 긴 글 칸이 있는 격자는 12 */
+const OCR_NUMERIC_MAX_ROWS = 40
+const OCR_NUMERIC_MAX_ROWS_FRAMED = 12
 
 function extractBlocksWithGrids(
   items: NormItem[],
@@ -561,6 +562,7 @@ function extractBlocksWithGrids(
     let finalGrid = irGrid
     let finalRows = numRows
     let rebuiltUsed = false
+    let keptRows: Set<number> | null = null
     const unitLine = !grid.cells && numRows >= 3 && numRows <= 5 && numCols >= 3 ? rebuildUnitLine(items, grid) : []
     // OCR 숫자 표는 단위 줄이 없어도 본문을 글줄로 펼친다 — 행 사이 괘선 없는 통계표 본문이 한 행에 27줄씩 쌓였다(국가·권역별 무역액).
     // 칸 글줄 절반 이상이 숫자일 때만: 긴 글 칸 표(관보 당초·변경)는 펼치면 두 칸 글이 줄마다 섞인다
@@ -572,13 +574,16 @@ function extractBlocksWithGrids(
       const bulletList = irGrid.slice(1).flat().some(c => c.text.split("\n").filter(t => /^\s*(?:[○◦•□■▪]|-\s*[^\d\s.,−-])/.test(t)).length >= 2)
       return !bulletList && ls.length > 0 && ls.filter(numericLine).length >= ls.length * 0.5
     })()
-    // OCR 숫자 표는 연도 묶음마다 격자 행이 있어(시도별 이동자 수 2024·2025·2026 묶음) 행 상한을 늘린다
-    const maxRows = numericBody ? OCR_NUMERIC_MAX_ROWS : 5
+    // OCR 숫자 표는 연도 묶음마다 격자 행이 있어(시도별 이동자 수 2024·2025·2026 묶음) 행 상한을 늘린다.
+    // 12행 넘는 격자는 전폭 긴 글 칸(쪽 레이아웃 틀 — 설명 글 아래 표들)이 없을 때만 — 틀까지 글줄로 펼치면 쪽 전체가 한 표가 된다
+    const layoutProse = irGrid.some(row => row.some(c => c.colSpan >= numCols - 1 && c.text.length > 60))
+    const maxRows = numericBody ? (layoutProse ? OCR_NUMERIC_MAX_ROWS_FRAMED : OCR_NUMERIC_MAX_ROWS) : 5
     if (!grid.cells && numRows <= maxRows && numCols >= 3 && !nestedAttached && (numRows <= 2 || unitLine.length > 0 || numericBody)) {
       const kept = new Map<number, number>()
       const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs, kept, maxRows)
       if (rebuilt) {
         rebuiltUsed = true
+        if (ocrPage && numRows >= 3) keptRows = new Set(kept.values())
         // OCR 쪽은 그대로 둔 행(머리 행)의 칸 합침을 잇는다 — 다 1 로 풀면 묶음 제목("중위 추계" 3칸)이 첫 칸에만 남았다.
         // 행 합침은 덮는 행이 모두 그대로 둔 이웃 행일 때만. 글 PDF 는 종전대로(벼·고추 재배면적 표 머리가 HWPX 원본과 더 어긋났다)
         if (!ocrPage) kept.clear()
@@ -602,6 +607,17 @@ function extractBlocksWithGrids(
     if (!rebuiltUsed) {
       for (let ti = 0; ti < textItems.length; ti++) {
         if (!assignedItems.has(textItems[ti])) usedItems.delete(owners[ti])
+      }
+    } else if (keptRows) {
+      // OCR 3행 이상 재구축은 펼친 행의 띠 안 글만 다시 담는다 — 칸에 못 든 글이 그대로 둔 행·격자 밖(표 위 "항:216 이자수입"·
+      // "(단위:천원)")에 있으면 버려졌다(무증상 유실). 그 글은 본문으로 돌려보낸다
+      const inExpanded = (it: (typeof textItems)[number]) => {
+        const cy = it.y + (it.h > 0 ? it.h : it.fontSize) / 2
+        for (let r = 1; r < numRows; r++) if (!keptRows!.has(r) && cy <= grid.rowYs[r] + 1 && cy >= grid.rowYs[r + 1] - 1) return true
+        return false
+      }
+      for (let ti = 0; ti < textItems.length; ti++) {
+        if (!assignedItems.has(textItems[ti]) && !inExpanded(textItems[ti])) usedItems.delete(owners[ti])
       }
     }
     if (unitLine.length > 0 && rebuiltUsed && !/^\s*\(\s*단위\s*[:：]/.test(finalGrid[0]?.[0]?.text ?? "")) {

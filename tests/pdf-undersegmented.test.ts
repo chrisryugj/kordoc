@@ -69,3 +69,21 @@ describe("가로선 없이 쌓은 하위 행", () => {
     assert.equal(normalizeUndersegmentedTable([[{ text: "" }, { text: "" }, { text: "" }, { text: "" }]], cols, items), null)
   })
 })
+
+describe("행 합침 칸이 덮은 유령 행 묶음", () => {
+  const ocr = (text: string, x: number, y: number): TextItem => ({ text, x, y, w: 35, h: 10, fontSize: 10, fontName: "ocr" })
+  const cols = [0, 100, 200, 300]
+  // 머리 행 아래 묶음 하나가 격자 행 셋(유령 경계)에 걸친 행 합침 칸 — 두 줄("2020 예산"·"2021 예산")이 칸마다 쌓였다(관보 계속비)
+  const original = [
+    [{ text: "사업" }, { text: "총액" }, { text: "2020" }],
+    [{ text: "2020 예산\n2021 예산", rowSpan: 3 }, { text: "2,480\n2,483", rowSpan: 3 }, { text: "96\n97", rowSpan: 3 }],
+    [{ text: "" }, { text: "" }, { text: "" }],
+    [{ text: "" }, { text: "" }, { text: "" }],
+  ]
+  const items = [["2020 예산", "2,480", "96"], ["2021 예산", "2,483", "97"]].flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 5, 150 - i * 30)))
+
+  it("묶음 높이 전체의 글로 두 줄도 행으로 나눈다", () => {
+    const rebuilt = normalizeUndersegmentedTable(original, cols, items, [200, 180, 140, 120, 100])
+    assert.deepEqual(rebuilt, [["사업", "총액", "2020"], ["2020 예산", "2,480", "96"], ["2021 예산", "2,483", "97"]])
+  })
+})
