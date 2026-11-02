@@ -1305,8 +1305,13 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     const regions = splitTrailingColumnRegion(items)
     if (regions) return regions.flatMap(region => extractPageBlocksFallback(region, pageNum, false, detectTables, lex))
   }
-  const rejected = { prose: 0 }
+  const rejected: { prose: number; cutX?: number } = { prose: 0 }
   const clusterResults = detectTables ? detectClusterTables(clusterItems, pageNum, rejected, lex) : []
+  // 두 단 본문으로 걸러낸 OCR 군집의 단 경계 — 단마다 다시 읽는다(단 안 진짜 표는 다시 잡힌다). 경계 줄 글은 splitTwoColumnProse 가 띠로 둔다
+  if (rejected.cutX !== undefined) {
+    const groups = splitTwoColumnProse(items, rejected.cutX)
+    if (groups.length > 1 && groups.every(g => g.length < items.length)) return groups.flatMap(g => extractPageBlocksFallback(g, pageNum, false, detectTables, lex))
+  }
 
   if (clusterResults.length > 0) {
     const ciToIdx = new Map<ClusterItem, number>()

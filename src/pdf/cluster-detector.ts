@@ -81,7 +81,7 @@ export interface ClusterTableResult {
 /**
  * 클러스터 기반 테이블 감지. 선이 없는 PDF의 fallback 경로에서 호출.
  */
-export function detectClusterTables(items: ClusterItem[], pageNum: number, rejected?: { prose: number }, lex?: WrapLexicon): ClusterTableResult[] {
+export function detectClusterTables(items: ClusterItem[], pageNum: number, rejected?: { prose: number; cutX?: number }, lex?: WrapLexicon): ClusterTableResult[] {
   // 쪽 옆 세로 색인 탭 글자는 표 열 후보가 아니다 — 빠진 글자는 usedItems 밖이라 호출 측이 본문 글로 낸다
   const tab = sideTabGlyphs(items)
   if (tab.size) items = items.filter(i => !tab.has(i))
@@ -167,9 +167,23 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
   //    XY-Cut(단 분리) 경로로 흘러가 올바른 읽기 순서로 복원된다.
   // 산문 역할의 후보도 표가 아니다 (table-roles.ts). 목차·차트는 호출 측이 그 영역의 글로 바꾼다
   return results.filter(r => {
-    const prose = isTwoColumnProse(r) || isProseTable(r.table) ||
+    const twoColumns = isTwoColumnProse(r)
+    const prose = twoColumns || isProseTable(r.table) ||
       [...r.usedItems].every(it => it.fontName === "ocr") && isProseFragmentTable(r.table)
     if (prose && rejected) rejected.prose++
+    // OCR 두 단 본문은 단 경계(군집 상자들 사이 빈 x 띠 가운데 양쪽 글이 고른 가장 넓은 것)를 알린다 — 호출 측이 글 판정으로 못 찾은
+    // 단을 가른다. 한쪽 글이 25% 미만인 틈은 문단 번호 열("[0221]" | 본문, 특허 명세서)이라 단이 아니다
+    if (twoColumns && rejected && [...r.usedItems].every(it => it.fontName === "ocr")) {
+      const used = [...r.usedItems].sort((a, b) => a.x - b.x)
+      const total = used.reduce((n, it) => n + it.text.length, 0)
+      let reach = used[0].x + used[0].w, chars = used[0].text.length, best = 0
+      for (const it of used.slice(1)) {
+        const gap = it.x - reach, share = chars / total
+        if (gap >= 8 && gap > best && share >= 0.25 && share <= 0.75) { best = gap; rejected.cutX = (it.x + reach) / 2 }
+        reach = Math.max(reach, it.x + it.w)
+        chars += it.text.length
+      }
+    }
     return !prose
   })
 }
@@ -424,7 +438,10 @@ function detectSparseTwoColumnTables(rows: RowGroup[], pageNum: number): Cluster
  */
 function isTwoColumnProse(r: ClusterTableResult): boolean {
   const t = r.table
-  if (t.rows < 8) return false
+  // OCR 군집은 단 틈 글 판정(findTwoColumnProseCutX) 없이 받는다 — 오른쪽 단에 그림 글("진행방향"·"파장")이 끼면 그 판정이
+  // 무너져 두 단 강의 자료가 "왼쪽 글 | 빈칸 | 빈칸 | 오른쪽 글" 표가 됐다. 대신 두 실질 열 평균 15자 이상·6행 이상
+  const ocr = [...r.usedItems].every(it => it.fontName === "ocr")
+  if (t.rows < (ocr ? 6 : 8)) return false
 
   // 실질 열: 채움률 30%+ 인 열이 정확히 2개 (유령 열은 무시)
   const dense: number[] = []
@@ -438,10 +455,10 @@ function isTwoColumnProse(r: ClusterTableResult): boolean {
   for (const c of dense) {
     const lens = t.cells.map(row => row[c]?.text.replace(/\s+/g, "").length ?? 0).filter(n => n > 0)
     const avg = lens.reduce((s, v) => s + v, 0) / (lens.length || 1)
-    if (avg < 12) return false
+    if (avg < (ocr ? 15 : 12)) return false
   }
 
-  return findTwoColumnProseCutX([...r.usedItems]) !== null
+  return ocr || findTwoColumnProseCutX([...r.usedItems]) !== null
 }
 
 /**

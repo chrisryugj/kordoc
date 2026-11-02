@@ -257,3 +257,4 @@ describe("detectClusterTables — 글머리 ◎ 목차 (OCR)", () => {
     assert.deepEqual(texts().slice(3), ["◎ 총무과 59", "◎ 민원봉사과 79", "◎ 재무과 99"])
   })
 })
+
