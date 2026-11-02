@@ -213,6 +213,16 @@ export function extractPageBlocksWithLines(
     return extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
   }
 
+  // OCR 쪽의 격자가 작은 1칸 상자뿐이면(시험지 "짝수형" 표지, 쪽 넓이 2% 미만) 본문 경로로 — 상자 하나 때문에 격자 경로로 가면 상자 밖
+  // 글을 띠마다 한 단으로 읽어 오른쪽 단이 머리글·왼쪽 단보다 먼저 나오거나(수능 국어 화법과 작문) 두 단 줄을 붙였다. 본문 경로는 쪽
+  // 두 단을 먼저 가른다. 상자 글은 본문 글로 읽힌다
+  // 쪽 전체 OCR 만(글이 쪽 높이 절반 넘게 퍼짐) — 그림 영역 OCR 의 차트 조각 순서는 그대로 둔다(ODL 099)
+  const ocrSpan = ocrItems ? Math.max(...items.map(it => it.y + it.h)) - Math.min(...items.map(it => it.y)) : 0
+  if (ocrItems && ocrSpan >= pageHeight * 0.5 && grids.length > 0 && grids.every(g => g.rowYs.length === 2 && g.colXs.length === 2 && !g.cells &&
+      (g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.02)) {
+    return extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+  }
+
   // 가로 괘선만 있는 표(booktabs)는 표를 먼저 세우고 나머지 글은 격자 경로의 두 단·밴드 순서를 따른다
   const ruled = detectTables && clipGrids.length === 0 ? detectRuledBandTables(horizontals, verticals, items, pageNum) : []
   // 괘선을 그림에 구운 슬라이드 표는 보이지 않는 글상자 틀이 칸이다 (text-box-table)

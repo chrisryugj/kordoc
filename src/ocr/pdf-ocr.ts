@@ -480,7 +480,34 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   }).filter(it => it.text)
-  return unframeOcrLayoutTables(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)), pdfH)
+  const blocks = unframeOcrLayoutTables(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)), pdfH)
+  if (!figureRegion) markOcrHeadings(blocks)
+  return blocks
+}
+
+/**
+ * OCR 쪽 제목 — 텍스트층 쪽은 글자 크기 빈도로 제목을 가리는데(detectHeadings), 스캔·이미지 쪽은 그 빈도가 없어 제목이 하나도 안
+ * 나왔다(보고서 "제4장 실증분석" 이 문단). OCR 글자 크기는 줄마다 흔들려 더 엄격하게: 쪽 본문 크기(문단 글자 수 가중 중앙값)의
+ * 1.3배 이상인 한 줄짜리 짧은 글(2~40자, 문장 끝 부호 없음)만. 1.5배 이상은 1수준
+ */
+export function markOcrHeadings(blocks: IRBlock[]): void {
+  const sized = blocks.filter(b => b.type === "paragraph" && b.text && b.style?.fontSize)
+  const weights: Array<[number, number]> = sized.map(b => [b.style!.fontSize!, b.text!.length])
+  const total = weights.reduce((n, [, w]) => n + w, 0)
+  if (total < 100) return
+  weights.sort((a, b) => a[0] - b[0])
+  let acc = 0, body = 0
+  for (const [size, w] of weights) { acc += w; if (acc >= total / 2) { body = size; break } }
+  if (!body) return
+  for (const b of sized) {
+    const text = b.text!.trim(), size = b.style!.fontSize!
+    if (text.length < 2 || text.length > 40 || /[.!?。]$|다\.?$/.test(text) || /^[\d\s.,%·-]+$/.test(text)) continue
+    if (b.bbox && b.bbox.height > size * 1.6) continue
+    const ratio = size / body
+    if (ratio < 1.3) continue
+    b.type = "heading"
+    b.level = ratio >= 1.5 ? 1 : 2
+  }
 }
 
 async function tryImport<T>(name: string, loader: () => Promise<T>): Promise<T> {
