@@ -20,7 +20,7 @@ import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
 import { UNRULED_REGION_TABLES } from "../pdf/ocr-region-merge.js"
 import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-lines.js"
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
-import { deskewPage } from "./deskew.js"
+import { deskewPage, rotateQuarter } from "./deskew.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
 import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, resolveOcrModels, type OcrModelSelection } from "./models.js"
 import { validateOcrOptions } from "./options.js"
@@ -77,7 +77,7 @@ export async function recognizeOcrPage(
   cellRules?: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>, rowRules?: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>,
 ): Promise<OcrItem[]> {
   const items = await engine.recognizePage(rgba, width, height, stats, tuning, cellRules, rowRules)
-  if (!config.handwriting) return items
+  if (!config.handwriting || stats.pageRotation) return items
   const base = meanConfidence(items)
   if (base >= AUTO_REC_PAGE_CONF) return items
   const altStats: OcrPageStats = { droppedLowConf: 0, ...(stats.dropped ? { dropped: [] } : {}) }
@@ -202,7 +202,7 @@ export async function ocrOnePage(
   regions?: Array<{ x1: number; y1: number; x2: number; y2: number }>,
   config: Readonly<BuiltinOcrConfig> = DEFAULT_BUILTIN_OCR,
 ): Promise<{ blocks: IRBlock[]; lines?: OcrPageLines }> {
-  const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
+  let { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
   const renderScale = Math.min(OCR_RENDER_SCALE, Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH)))
   if (renderScale < OCR_RENDER_SCALE) {
     warnings.push({ page: pageNo, code: "PARTIAL_PARSE", message: `OCR 래스터 픽셀 상한으로 렌더 해상도를 축소했습니다 (작은 글자 인식 결손 가능)` })
@@ -215,7 +215,7 @@ export async function ocrOnePage(
     render: async ({ data }) => data,
   })
   const hiRgba = closer ? bgraToRgba(rendered.data) : null
-  const { rgba, width: rw, height: rh } = hiRgba
+  let { rgba, width: rw, height: rh } = hiRgba
     ? halve(hiRgba, rendered.width, rendered.height)
     : { rgba: bgraToRgba(rendered.data), width: rendered.width, height: rendered.height }
 
@@ -223,16 +223,26 @@ export async function ocrOnePage(
     // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정.
     // 벡터 글자·그림 영역 쪽은 PDF 원본 좌표를 유지한다. 회전하면 벡터 괘선·영역 경계 및
     // 원본 래스터를 잘라 읽는 closerReads와 좌표계가 달라져 줄 선택·병합이 어긋난다.
-    const { rgba: upright, angle } = vectorOps || regions ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
+    let { rgba: upright, angle } = vectorOps || regions ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
     const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
-    const ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
-    const tuning = regions ? regionTuning(config.tuning) : config.tuning
+    let ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
+    // 눕힌 쪽 판정은 쪽 래스터 전체를 읽을 때만 — 벡터 글자 쪽은 벡터 괘선, 그림 영역은 PDF 좌표를 그대로 써야 한다
+    const tuning = regions ? regionTuning(config.tuning) : vectorOps ? { ...config.tuning, orientPage: false } : config.tuning
     // 검출 박스가 표 칸 경계를 가로지르면 그 선에서 가른다 — 연한 칸 구분선(cellDividers)만이 아니라 진한 칸 경계도. 촘촘한 표에서
     // 검출기가 이웃 칸 글을 한 줄로 묶었다(검정고시 계획 과목 표). 칸 경계 = 위아래 끝이 모두 가로 괘선에 닿는 세로선 — 끝이 떠 있는
     // 여백선·단 구분선은 글줄을 가르면 안 된다(속기록 2단)
     // 위아래 두 행을 한 박스로 묶은 검출도 그 사이 행 경계(양끝이 세로 괘선에 닿는 가로선)에서 가른다
-    const items = await recognizeOcrPage(engine!, config, tuning, upright, rw, rh, stats, ruling ? [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)] : undefined,
+    let items = await recognizeOcrPage(engine!, config, tuning, upright, rw, rh, stats, ruling ? [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)] : undefined,
       ruling ? cellEdgeHorizontals(ruling) : undefined)
+    // 가로 표를 눕혀 찍은 쪽 — 래스터를 세워 괘선부터 다시 읽는다. 쪽 가로·세로도 바꿔 블록 상자는 세운 쪽 기준이다
+    if (stats.pageRotation) {
+      ({ rgba: upright, width: rw, height: rh } = rotateQuarter(upright, rw, rh, stats.pageRotation));
+      [pdfW, pdfH] = [pdfH, pdfW]
+      delete stats.pageRotation
+      ruling = detectRulingLines(upright, rw, rh, rh / pdfH)
+      items = await recognizeOcrPage(engine!, config, { ...tuning, orientPage: false }, upright, rw, rh, stats,
+        [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+    }
     if (stats.droppedLowConf > 0) {
       warnings.push({
         page: pageNo,
@@ -320,8 +330,8 @@ function halve(src: Uint8Array, w: number, h: number): { rgba: Uint8Array; width
 }
 
 /** 그림 영역만 읽을 때 — 끝자락 지우기를 끈다 (engine OcrTuning.trimEdges 주석) */
-const REGION_TUNING: Readonly<OcrTuning> = Object.freeze({ ...DEFAULT_OCR_TUNING, trimEdges: false })
-const regionTuning = (t: Readonly<OcrTuning>): Readonly<OcrTuning> => t === DEFAULT_OCR_TUNING ? REGION_TUNING : { ...t, trimEdges: false }
+const REGION_TUNING: Readonly<OcrTuning> = Object.freeze({ ...DEFAULT_OCR_TUNING, trimEdges: false, orientPage: false })
+const regionTuning = (t: Readonly<OcrTuning>): Readonly<OcrTuning> => t === DEFAULT_OCR_TUNING ? REGION_TUNING : { ...t, trimEdges: false, orientPage: false }
 
 function meanConfidence(items: OcrItem[]): number {
   let n = 0, sum = 0

@@ -17,7 +17,7 @@ import { ensureOcrModelsFor } from "./models.js"
 import { applyImageFormulas } from "./image-formula.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
-import { deskewPage } from "./deskew.js"
+import { deskewPage, rotateQuarter } from "./deskew.js"
 
 /** 좌표 환산 기본 스케일 (px/pt) — PDF OCR 렌더(216dpi)와 동일 기준 */
 const IMAGE_SCALE = 3
@@ -64,12 +64,15 @@ export async function parseImageDocument(
     return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: 1 }], warnings }
   }
 
-  const { data: decoded, width, height, density, shrink } = await decodeToRgba(buffer)
+  const { data: decoded, width: decodedW, height: decodedH, density, shrink } = await decodeToRgba(buffer)
+  let width = decodedW, height = decodedH
   if (shrink < 1) warnings.push({ page: 1, code: "PARTIAL_PARSE", message: "OCR 래스터 픽셀 상한으로 이미지 해상도를 축소했습니다 (작은 글자 인식 결손 가능)" })
   // 픽셀 상한으로 줄인 이미지는 같은 지면을 낮은 해상도로 본 것 — px/pt 도 같은 비율로
   const scale = imageScale(width / shrink, height / shrink, density) * shrink
   // 스캔·사진 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다
-  const { rgba: data, angle } = deskewPage(decoded, width, height)
+  const deskewed = deskewPage(decoded, width, height)
+  let data = deskewed.rgba
+  const angle = deskewed.angle
 
   const config = builtinOcrConfig(options)
   await ensureOcrModelsFor(config.models, reportModelDownload)
@@ -78,9 +81,17 @@ export async function parseImageDocument(
   const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
   // 괘선을 먼저 찾아 검출 상자를 표 칸·행 경계에서 가른다 — PDF OCR(ocrOnePage)과 같은 순서. 인식 뒤에 찾으면 이웃 칸 글이 한 상자로
   // 묶여 인식됐다(통계 보도자료 표 "2023 2024p ’23년대비" → "20232024p’23")
-  const ruling = detectRulingLines(data, width, height, scale)
+  let ruling = detectRulingLines(data, width, height, scale)
   let items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
     [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+  // 가로 표를 눕혀 찍은 쪽 — 래스터를 세워 괘선부터 다시 읽는다(좌표·블록 상자는 세운 쪽 기준)
+  if (stats.pageRotation) {
+    ({ rgba: data, width, height } = rotateQuarter(data, width, height, stats.pageRotation))
+    delete stats.pageRotation
+    ruling = detectRulingLines(data, width, height, scale)
+    items = await recognizeOcrPage(engine, config, { ...config.tuning, orientPage: false }, data, width, height, stats,
+      [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+  }
   // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
   if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
   const lines = config.lines ? pageLines(1, width, height, scale, angle, items, stats.dropped) : undefined

@@ -77,6 +77,22 @@ export function deskewPage(rgba: Uint8Array, width: number, height: number): { r
 }
 
 /**
+ * 쪽을 4분의 1 바퀴 돌린 래스터 — 가로·세로가 바뀐다. 각은 인식 crop(lineCrop)과 같은 뜻(90 = 반시계, 270 = 시계)
+ */
+export function rotateQuarter(rgba: Uint8Array, width: number, height: number, rot: 90 | 270): { rgba: Uint8Array; width: number; height: number } {
+  const out = new Uint8Array(rgba.length)
+  // 새 래스터는 폭 height·높이 width. (u, v) 는 옛 래스터 (width-1-v, u)(90) 또는 (v, height-1-u)(270)
+  for (let v = 0; v < width; v++) {
+    for (let u = 0; u < height; u++) {
+      const px = rot === 90 ? width - 1 - v : v, py = rot === 90 ? u : height - 1 - u
+      const o = (v * height + u) * 4, i = (py * width + px) * 4
+      out[o] = rgba[i]; out[o + 1] = rgba[i + 1]; out[o + 2] = rgba[i + 2]; out[o + 3] = rgba[i + 3]
+    }
+  }
+  return { rgba: out, width: height, height: width }
+}
+
+/**
  * 중심 기준 회전 (deg, 양수 = 화면상 반시계), 같은 캔버스 크기, bilinear, 바깥 흰색.
  * 출력 픽셀 (x,y) 는 입력의 역회전 위치에서 표본.
  */

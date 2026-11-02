@@ -61,6 +61,8 @@ export interface OcrPageStats {
   truncatedBoxes?: number
   /** 주면 저신뢰로 버린 줄을 여기에 모은다 (ocrLines "all") — 없으면 세기만 */
   dropped?: OcrItem[]
+  /** 가로 표를 눕혀 찍은 쪽으로 보여 인식하지 않고 돌릴 각만 적었다(orientPage) — 호출측이 래스터를 돌려(rotateQuarter) 다시 부른다 */
+  pageRotation?: 90 | 270
 }
 
 /**
@@ -92,6 +94,8 @@ export interface OcrTuning {
   tightBoxes: boolean
   /** 목차 리더 점 무리를 빼고 앞뒤를 따로 인식 (line-split.ts leaderRuns) */
   splitLeaders: boolean
+  /** 눕혀 찍은 쪽 판정 — 검출 상자 대부분이 세로로 길면 돌릴 각을 stats.pageRotation 에 적고 인식을 건너뛴다 */
+  orientPage: boolean
 }
 
 export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
@@ -107,6 +111,7 @@ export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
   postprocess: true,
   tightBoxes: true,
   splitLeaders: true,
+  orientPage: true,
 })
 
 const DET_MIN_SIZE = 3
@@ -118,6 +123,14 @@ const REC_BATCH_MAX_PIXELS = 48 * 16000
 const TALL_RATIO = 1.5
 /** 밴드로 갈라지지 않는 키 큰 박스 중 이 비율 이상은 90° 회전 글자 후보 */
 const ROTATE_RATIO = 3
+/** 눕힌 쪽 판정 — 검출 상자가 이만큼 이상이고 그 가운데 키 큰(TALL_RATIO) 상자가 이 비율 이상일 때만 본다 */
+const ORIENT_MIN_BOXES = 20
+const ORIENT_TALL_SHARE = 0.6
+/** 방향을 가릴 표본 상자 수 — 키 큰 순 */
+const ORIENT_SAMPLE = 12
+/** 돌려 읽은 표본 평균 신뢰도 하한, 그대로 읽은 것보다 앞서야 할 차 */
+const ORIENT_MIN_CONF = 0.7
+const ORIENT_GAIN = 0.1
 /** 이웃 줄 끝자락을 지운 crop 이 원본 crop 을 이기려면 넘어야 할 신뢰도 차 (recognizePage 주석) */
 const KEEP_MARGIN = 0.06
 /** 두 줄로 갈라 다시 읽은 줄(recognizePage 재시도)을 받을 신뢰도 하한 */
@@ -591,6 +604,23 @@ export class OcrEngine {
   ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
     const detected = await this.detect(rgba, width, height, tuning, stats)
+    // 가로 표를 90° 눕혀 찍은 쪽(통계 간행물 가로 표) — 글줄 상자 대부분이 세로로 길다. 키 큰 상자 몇 개를 그대로·90°·270° 로 읽어
+    // 돌린 쪽이 확실히 더 잘 읽히면 그 각을 적고 돌아간다. 상자 하나씩 돌려 읽으면(ROTATE_RATIO) 글은 나와도 표 행·열이 뒤바뀐다
+    if (tuning.orientPage && stats && detected.length >= ORIENT_MIN_BOXES) {
+      const tall = detected.filter(b => b.h >= b.w * TALL_RATIO)
+      if (tall.length >= detected.length * ORIENT_TALL_SHARE) {
+        const sample = [...tall].sort((a, b) => b.h - a.h).slice(0, ORIENT_SAMPLE)
+        const rots = [0, 90, 270] as const
+        const probe = await this.recognizeJobs(rgba, width, sample.flatMap((box, group) => rots.map(rot => ({ box, rot, group }))), tuning.recBatch)
+        const mean = (k: number) => sample.reduce((sum, _, i) => sum + (probe[i * rots.length + k]?.confidence ?? 0), 0) / sample.length
+        const [m0, m90, m270] = rots.map((_, k) => mean(k))
+        const best = Math.max(m90, m270)
+        if (best >= ORIENT_MIN_CONF && best >= m0 + ORIENT_GAIN) {
+          stats.pageRotation = m90 >= m270 ? 90 : 270
+          return []
+        }
+      }
+    }
     const rows = rowRules.length ? detected.flatMap(b => splitBoxAtRowRules(b, rowRules)) : detected
     const boxes = cellRules.length ? rows.flatMap(b => splitBoxAtCellRules(b, cellRules)) : rows
     const footer = tuning.postprocess ? footerInkBox(rgba, width, height, boxes) : null

@@ -9,7 +9,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { estimateSkew, deskewPage, rotateRgba } from "../src/ocr/deskew.js"
+import { estimateSkew, deskewPage, rotateRgba, rotateQuarter } from "../src/ocr/deskew.js"
 
 /** 흰 페이지에 "글줄"(짧은 검은 막대 열) 여러 줄 */
 function textPage(w = 600, h = 800): Uint8Array {
@@ -54,4 +54,16 @@ describe("estimateSkew / deskewPage", () => {
     const again = estimateSkew(r.rgba, w, h)
     assert.ok(Math.abs(again.angle) <= 0.1, `residual=${again.angle}`)
   })
+})
+
+it("rotateQuarter turns the page a quarter like the rec crop (90 = counter-clockwise) and swaps width and height", () => {
+  // 2×1 래스터: 왼쪽 검정(0), 오른쪽 흰색(255)
+  const px = (v: number) => [v, v, v, 255]
+  const src = new Uint8Array([...px(0), ...px(255)])
+  const ccw = rotateQuarter(src, 2, 1, 90)
+  assert.deepEqual([ccw.width, ccw.height], [1, 2])
+  // 반시계로 돌리면 오른쪽(흰색)이 위로 간다
+  assert.deepEqual([ccw.rgba[0], ccw.rgba[4]], [255, 0])
+  const cw = rotateQuarter(src, 2, 1, 270)
+  assert.deepEqual([cw.rgba[0], cw.rgba[4]], [0, 255])
 })
