@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- HWP → HWPX 한/글 자체 저장 엔진: `to-hwpx --engine hancom|auto`, `convertToHwpx(…, { engine })`, MCP `convert_to_hwpx` `engine`. Windows 에 한/글이 있으면 한/글로 열어 HWPX 로 저장한다 — 결과가 한/글 저장본과 같고 HWP 3.x·HWPML 도 서식 그대로. 팝업 없이 돈다: 원본을 사용자 임시 폴더로 복사해 열고 저장도 임시 폴더에 해 접근 승인 창을 피하고(보안 모듈 등록도 함께), 확인 창 자동 응답·암호 창 대신 실패·버전 경고 끄기·창 숨김. 경로는 환경 변수로만 넘긴다. 기본(`kordoc`)은 그대로 — 어디서나 같은 결과. `auto` 는 한/글이 있으면 hancom, 없거나 열기 암호를 주면 kordoc
+
 - 이미지 입력 `formulaOcr`: 지금까지 PDF 에만 걸리고 이미지에선 조용히 무시됐다. 같은 수식 모델로 래스터의 수식 영역을 찾아 그 자리 OCR 글상자를 `$LaTeX$` 상자로 바꾼다(글 인식기가 수식을 "y =$x{+3"·"1og,b= 3" 조각으로 읽던 것). 수식 구조(분수·첨자·근호·등호 등)가 있고 장식 상자(`\fbox`)·잡음 기호가 없으며 덮은 글이 한글 위주가 아닌 영역만 — 문항 번호 상자·그림 속 글·영어 본문을 수식으로 바꾸지 않는다. 글줄 안 인라인 수식은 덮인 x 구간만 잘라 낸다
 
 ### Fixed

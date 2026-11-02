@@ -410,3 +410,30 @@ describe("hwpToHwpx — 한글 저장 짝(코퍼스)", { skip: !existsSync(CORPU
     assert.ok(n > 0)
   })
 })
+
+describe("convertToHwpx engine — 한/글 자체 저장", () => {
+  it("hancom: Windows 가 아니면 이유를 알리고, auto 는 kordoc 으로 바꾼다", async () => {
+    const hwp = buildHwp(paragraph("본문"))
+    if (process.platform !== "win32") {
+      await assert.rejects(convertToHwpx(hwp, { engine: "hancom" }), /Windows \+ 한\/글/)
+      const r = await convertToHwpx(hwp, { engine: "auto" })
+      assert.equal(r.engine, "kordoc")
+      assert.equal(r.mode, "preserve")
+    }
+    await assert.rejects(convertToHwpx(hwp, { engine: "hancom", password: "pw" }), /열기 암호|Windows/)
+    assert.equal((await convertToHwpx(hwp)).engine, "kordoc")
+  })
+
+  it("팝업 없이: 경로는 환경 변수로만, 임시 폴더에서 열고 저장, 메시지·암호·버전 창 차단, 창 숨김", async () => {
+    const { hancomSaveInvocation } = await import("../src/hwp5/to-hwpx/hancom.js")
+    const evil = "C:\\문서\\a'; Remove-Item C:\\ -Recurse; '.hwp"
+    const { args, env } = hancomSaveInvocation(evil, "C:\\out\\b.hwpx")
+    const script = args.at(-1)!
+    assert.ok(!script.includes(evil) && !script.includes("b.hwpx"))
+    assert.equal(env.KORDOC_COM_SRC, evil)
+    assert.equal(env.KORDOC_COM_OUT, "C:\\out\\b.hwpx")
+    for (const must of ["$env:TEMP", "SetMessageBoxMode(0x2FFF1)", "suspendpassword:TRUE", "versionwarning:FALSE", "RegisterModule('FilePathCheckDLL'", "Visible = $false", "SaveAs($tmpOut, 'HWPX'"]) {
+      assert.ok(script.includes(must), must)
+    }
+  })
+})

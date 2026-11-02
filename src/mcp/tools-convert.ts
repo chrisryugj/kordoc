@@ -17,8 +17,10 @@ export function registerConvertTools(server: McpServer): void {
       file_path: z.string().min(1).describe("변환할 HWP 파일의 절대 경로"),
       output_path: z.string().min(1).optional().describe("저장할 .hwpx 경로 (기본: 입력과 같은 폴더·같은 이름의 .hwpx — 그 파일이 이미 있으면 덮어쓰지 않고 실패하니 그때는 경로를 지정)"),
       password: z.string().optional().describe("암호로 보호된 HWP 의 열기 암호"),
+      engine: z.enum(["kordoc", "hancom", "auto"]).optional()
+        .describe("변환 엔진 — \"kordoc\"(기본, 어디서나) | \"hancom\"(Windows 한/글 자체 저장, 팝업 없이 — HWP 3.x 도 서식 그대로) | \"auto\"(한/글이 있으면 hancom)"),
     },
-    async ({ file_path, output_path, password }) => {
+    async ({ file_path, output_path, password, engine }) => {
       try {
         const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, new Set([".hwp", ".hml"]))
         const outPath = safeOutputPath(output_path ?? resolved.replace(/\.(hwp|hml)$/i, "") + ".hwpx", new Set([".hwpx"]))
@@ -28,12 +30,12 @@ export function registerConvertTools(server: McpServer): void {
           throw new KordocError(`${outPath} 이(가) 이미 있습니다 — 덮어쓰려면 output_path 로 경로를 직접 지정하세요`)
         }
         const { convertToHwpx, validateHwpx } = await import("../index.js")
-        const result = await convertToHwpx(buffer, { password })
+        const result = await convertToHwpx(buffer, { password, engine })
         const check = await validateHwpx(result.data)
         await mkdir(dirname(outPath), { recursive: true })
         await writeOutputFile(outPath, result.data)
         const lines = [
-          `${result.mode === "preserve" ? "서식 그대로" : "글·표만"} HWPX 로 변환했습니다: ${outPath} (${result.data.length.toLocaleString()} 바이트)`,
+          `${result.mode === "preserve" ? "서식 그대로" : "글·표만"} HWPX 로 변환했습니다${result.engine === "hancom" ? "(한/글 저장)" : ""}: ${outPath} (${result.data.length.toLocaleString()} 바이트)`,
           ...result.warnings.map(w => `⚠️ ${w}`),
           ...(check.ok ? [] : check.issues.map(i => `✗ 구조 문제 ${i.path ? `${i.path}: ` : ""}${i.message}`)),
         ]

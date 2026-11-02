@@ -12,6 +12,7 @@ export function registerConvertCommands(program: Command): void {
       "폴더를 주면 하위 폴더까지 .hwp·.hml 을 모두 바꿔 각 파일 옆에 둔다")
     .option("-o, --output <path>", "저장 경로 — 파일 하나일 때만 (기본: 입력과 같은 이름의 .hwpx — 그 파일이 이미 있으면 덮어쓰지 않고 멈춘다)")
     .option("--password <pw>", "암호로 보호된 HWP 의 열기 암호")
+    .option("--engine <name>", "변환 엔진: kordoc(기본, 어디서나) | hancom(Windows 한/글 자체 저장 — 팝업 없이, HWP 3.x 도 서식 그대로) | auto(한/글 있으면 hancom)", "kordoc")
     .option("--json", "결과 요약을 JSON 으로 stdout 에 출력")
     .action(async (paths: string[], opts) => {
       // 루트 커맨드의 동명 옵션(-o/--password)이 서브커맨드 옵션을 가로채는 commander 동작 보완
@@ -25,6 +26,7 @@ export function registerConvertCommands(program: Command): void {
           if (statSync(p).isDirectory()) { batch = true; files.push(...hwpFilesIn(p)) } else files.push(p)
         }
         if (batch && output) throw new KordocError("-o 는 파일 하나를 바꿀 때만 씁니다 — 여러 파일·폴더는 각 파일 옆에 .hwpx 로 저장합니다")
+        if (!["kordoc", "hancom", "auto"].includes(opts.engine)) throw new KordocError(`--engine 은 kordoc·hancom·auto 입니다 (받은 값: ${opts.engine})`)
       } catch (err) {
         process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)
         process.exit(2)
@@ -44,13 +46,13 @@ export function registerConvertCommands(program: Command): void {
             if (!opts.json) process.stderr.write(`[kordoc] 건너뜀(이미 있음): ${out}\n`)
             continue
           }
-          const result = await convertToHwpx(new Uint8Array(readFileSync(input)), { password })
+          const result = await convertToHwpx(new Uint8Array(readFileSync(input)), { password, engine: opts.engine })
           const check = await validateHwpx(result.data)
           mkdirSync(dirname(out), { recursive: true })
           writeFileSync(out, result.data)
-          results.push({ ...(batch ? { input } : {}), output: out, mode: result.mode, bytes: result.data.length, valid: check.ok, warnings: result.warnings })
+          results.push({ ...(batch ? { input } : {}), output: out, mode: result.mode, engine: result.engine, bytes: result.data.length, valid: check.ok, warnings: result.warnings })
           if (!opts.json) {
-            process.stderr.write(`[kordoc] ${result.mode === "preserve" ? "서식 그대로" : "글·표만"} 변환: ${out} (${result.data.length.toLocaleString()} 바이트)\n`)
+            process.stderr.write(`[kordoc] ${result.mode === "preserve" ? "서식 그대로" : "글·표만"} 변환${result.engine === "hancom" ? "(한/글 저장)" : ""}: ${out} (${result.data.length.toLocaleString()} 바이트)\n`)
             for (const w of result.warnings) process.stderr.write(`[kordoc] ⚠️ ${w}\n`)
             if (!check.ok) for (const i of check.issues) process.stderr.write(`[kordoc] ✗ ${i.path ? `${i.path}: ` : ""}${i.message}\n`)
           }
