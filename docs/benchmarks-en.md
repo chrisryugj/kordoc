@@ -2,6 +2,24 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.39: OCR page layout (columns, sideways pages) and statistics tables · 2026-11-03
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.810 → **0.830**, `ocrRec: "auto"` 0.831 → **0.851**. Tables .825 → .844, text .793 → .829, reading order .868 → .903. In-house OCR, OCR robustness, ODL, ODL-OCR and PDF table benchmarks: no per-document drops.
+
+| Group | 4.24.38 | 4.24.39 |
+| --- | --- | --- |
+| Exam CER (lower is better) | .416 | **.302** |
+| Exam reading order | .774 | **.844** |
+| Statistics tables | .808 | **.831** |
+| Tables | .732 | **.745** |
+| Gazette CER | .146 | **.116** |
+| User documents CER | .356 | **.301** |
+
+- Pages scanned sideways (a landscape table printed on its side) are turned upright before reading.
+- Two columns are split by a long middle column rule, or by the column boundary of a cluster rejected as two-column prose.
+- Outer label columns of open statistics tables; row expansion of large numeric tables (text outside the bands goes back to the body).
+- `ocrRec: "auto"` stays opt-in: printed scanned contents and cover pages overlap handwriting pages in confidence, and seven in-house robustness documents dropped.
+
 ## 4.24.38: OCR headings and reading order · 2026-11-02
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.807 → **0.810**, `ocrRec: "auto"` 0.828 → **0.831**. Reading order .842 → **.868** (exam pages .720 → .774), heading recall (KDI reports, not in the total) 0 → **.798**, KDI CER .024 → .017. In-house OCR, OCR robustness, ODL-OCR and PDF table benchmarks are unchanged per document.
