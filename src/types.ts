@@ -295,7 +295,8 @@ export interface ParseOptions {
   /** 원본 파일 경로 (DRM COM fallback에 필요, 내부 전용) */
   filePath?: string
   /**
-   * PDF 수식 OCR 활성화 (기본 false).
+   * PDF·이미지 수식 OCR 활성화 (기본 false). 이미지 입력은 같은 모델로 래스터의 수식 영역을 찾아 그 자리 OCR 글상자를
+   * `$...$` 로 바꾼다(수식 구조가 있고 덮은 글이 한글 위주가 아닌 영역만 — src/ocr/image-formula.ts).
    *
    * 활성화 시 각 PDF 페이지를 이미지로 렌더링 → YOLOv8 기반 수식 영역 검출 →
    * TrOCR 기반 LaTeX 인식. 감지된 수식은 `$...$` (inline) / `$$...$$` (display) 로

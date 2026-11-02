@@ -14,6 +14,7 @@ import type { IRBlock, OcrPageLines, ParseOptions, ParseWarning } from "../types
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import { getOcrEngine, type OcrPageStats } from "./engine.js"
 import { ensureOcrModelsFor } from "./models.js"
+import { applyImageFormulas } from "./image-formula.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
 import { deskewPage } from "./deskew.js"
@@ -78,8 +79,10 @@ export async function parseImageDocument(
   // 괘선을 먼저 찾아 검출 상자를 표 칸·행 경계에서 가른다 — PDF OCR(ocrOnePage)과 같은 순서. 인식 뒤에 찾으면 이웃 칸 글이 한 상자로
   // 묶여 인식됐다(통계 보도자료 표 "2023 2024p ’23년대비" → "20232024p’23")
   const ruling = detectRulingLines(data, width, height, scale)
-  const items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
+  let items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
     [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
+  // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
+  if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
   const lines = config.lines ? pageLines(1, width, height, scale, angle, items, stats.dropped) : undefined
   if (stats.droppedLowConf > 0) {
     warnings.push({

@@ -84,7 +84,7 @@ if (result.success) {
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | 내장 OCR 이 읽은 줄(상자·신뢰도)을 결과 `ocrLines` 로(PDF·이미지). `"all"` 은 저신뢰로 버린 줄도 `dropped: true` 로 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
 | `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | 글줄 검출 모델 `"mobile"`(기본)·`"server"`(~88MB, 첫 사용 시 다운로드)·`"medium"`(PP-OCRv6, ~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔 입력용)·로컬 파일 `{path, sha256}`, 검출 입력 긴 변(32~4096, 기본 960) |
 | `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 `"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·`"auto"`(기본 rec 로 읽고 확신도 낮은 손글씨 쪽만 손글씨 rec 로 다시 읽음)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
-| `formulaOcr` | `--formula-ocr` | PDF 수식 OCR(MFD+MFR, 모델 ~155MB) — 감지한 수식을 `$…$`·`$$…$$` 로 |
+| `formulaOcr` | `--formula-ocr` | PDF·이미지 수식 OCR(MFD+MFR, 모델 ~155MB) — 감지한 수식을 `$…$`·`$$…$$` 로(이미지는 그 자리 OCR 글을 수식으로 바꾼다) |
 | `scriptTags` | `--script-tags` · `--no-script-tags` | 위·아래첨자를 `<sup>`·`<sub>` 로("10⁴ m²" 가 "104 m2" 로 펴지지 않게). 기본: HWPX·HWP·DOCX 켬, PDF 끔(논문·수식 PDF 는 `true` 권장) |
 | `images` | `--no-images` | `false` 면 이미지 바이트를 싣지 않음(그림 자리 표시는 남김, PDF 는 PNG 인코딩 생략) |
 | `plain` | `--plain` | 그림 자리 표시·링크 URL·밑줄·굵게 없이 글 위주 Markdown(제목·목록·표 구조 유지, `blocks` 는 그대로). 첨자 `<sup>`·`<sub>` 는 `10^4`·`H_2O` 로 |

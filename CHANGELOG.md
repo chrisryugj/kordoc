@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 이미지 입력 `formulaOcr`: 지금까지 PDF 에만 걸리고 이미지에선 조용히 무시됐다. 같은 수식 모델로 래스터의 수식 영역을 찾아 그 자리 OCR 글상자를 `$LaTeX$` 상자로 바꾼다(글 인식기가 수식을 "y =$x{+3"·"1og,b= 3" 조각으로 읽던 것). 수식 구조(분수·첨자·근호·등호 등)가 있고 장식 상자(`\fbox`)·잡음 기호가 없으며 덮은 글이 한글 위주가 아닌 영역만 — 문항 번호 상자·그림 속 글·영어 본문을 수식으로 바꾸지 않는다. 글줄 안 인라인 수식은 덮인 x 구간만 잘라 낸다
+
+### 측정 참고 (외부 벤치)
+
+- KoOCR-Bench v2.0c 시험지(suneung 580영역) `ocrRec: "auto"` + `formulaOcr`: CER .419 → **.371**(수학 .727 → .599, 영어·국어·한국사 ±.005). 같은 벤치 `ocrDet: "server"` + `ocrRec: "auto"` 종합 **0.836**(기본 det .828 — 손글씨 .864 → .884, 표 .825 → .832, 약품 설명서 CER .100 → .112)
+
 ## [4.24.37] - 2026-11-02
 
 ### Added

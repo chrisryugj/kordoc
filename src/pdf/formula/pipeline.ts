@@ -244,7 +244,6 @@ export class FormulaPipeline {
   ): Promise<PageFormulaResult | null> {
     const { originalWidth: pdfWidth, originalHeight: pdfHeight } = page.getOriginalSize()
 
-    const sharpCtor = this.sharp
     const rendered = await page.render({
       scale: this.opts.scale,
       render: async ({ data, width, height }) => {
@@ -256,13 +255,24 @@ export class FormulaPipeline {
     const { data: bgra, width: rw, height: rh } = rendered
     const rgba = bgraToRgba(bgra)
 
-    const pageFrame: PixelFrame = { width: rw, height: rh, data: rgba }
+    const regions = await this.recognizeFrame({ width: rw, height: rh, data: rgba }, pageNumber)
+    return {
+      pageNumber,
+      renderedWidth: rw,
+      renderedHeight: rh,
+      pdfWidth,
+      pdfHeight,
+      regions,
+    }
+  }
 
+  /** 래스터 한 장(RGBA)의 수식 영역을 검출·인식한다 — PDF 쪽 렌더와 이미지 OCR 이 같이 쓴다. 좌표는 입력 픽셀 */
+  async recognizeFrame(pageFrame: PixelFrame, pageNumber = 1): Promise<FormulaRegion[]> {
+    const { width: rw, height: rh, data: rgba } = pageFrame
+    const sharpCtor = this.sharp
     // 1) 수식 영역 검출
     const regions0 = await detectFormulaRegions(this.mfd, pageFrame, this.ort)
-    if (regions0.length === 0) {
-      return { pageNumber, renderedWidth: rw, renderedHeight: rh, pdfWidth, pdfHeight, regions: [] }
-    }
+    if (regions0.length === 0) return []
 
     const capped = capFormulaRegions(regions0, this.opts.maxRegionsPerPage)
     const regions: FormulaRegion[] = []
@@ -307,15 +317,7 @@ export class FormulaPipeline {
 
       regions.push({ ...r, latex })
     }
-
-    return {
-      pageNumber,
-      renderedWidth: rw,
-      renderedHeight: rh,
-      pdfWidth,
-      pdfHeight,
-      regions,
-    }
+    return regions
   }
 }
 
