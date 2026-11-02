@@ -243,7 +243,8 @@ export function extractPageBlocksWithLines(
   // 한 단 안에 든 1칸 틀(<보기> 상자, 쪽 폭 55% 미만)도 같다 — 틀 하나가 격자 경로를 끌면 두 단 줄을 이어 붙였다(수능 국어 6쪽)
   if (ocrItems && ocrSpan >= pageHeight * 0.5 && grids.length > 0 && grids.every(g => g.rowYs.length === 2 && g.colXs.length === 2 && !g.cells &&
       ((g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.02 || g.bbox.x2 - g.bbox.x1 < pageWidth * 0.55))) {
-    return extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+    return ruledColumnBlocks(items, horizontals, verticals, pageWidth, pageHeight, pageNum, detectTables, lex)
+      ?? extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
   }
 
   // 가로 괘선만 있는 표(booktabs)는 표를 먼저 세우고 나머지 글은 격자 경로의 두 단·밴드 순서를 따른다
@@ -277,7 +278,31 @@ export function extractPageBlocksWithLines(
   }
 
   // Fallback: 기존 휴리스틱 (선이 없는 PDF). 단 안의 그림은 글이 없는 자리라 거터 판정에 점유 사각형으로 넘긴다
-  return extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+  return (ocrItems ? ruledColumnBlocks(items, horizontals, verticals, pageWidth, pageHeight, pageNum, detectTables, lex) : null)
+    ?? extractPageBlocksFallback(items, pageNum, true, detectTables, lex, figures())
+}
+
+/**
+ * OCR 쪽의 단 구분선 — 쪽 가운데(폭 40~60%)를 쪽 높이 45% 넘게 내리긋는 세로 괘선을 가로지르는 가로선이 없으면 두 단을 가르는 선이다.
+ * 글이 적은 시험지 쪽(수학 "23. …" | "24. …")은 글만으로 단 틈을 못 찾아 두 단 줄을 이어 읽었다. 선 위(머리글)·두 단·선 아래(꼬리) 차례로
+ * 읽는다. 선 양쪽에 글이 셋 이상씩 있을 때만
+ */
+function ruledColumnBlocks(items: NormItem[], horizontals: LineSegment[], verticals: LineSegment[], pageWidth: number, pageHeight: number,
+  pageNum: number, detectTables: boolean, lex?: WrapLexicon): IRBlock[] | null {
+  const rule = verticals.find(v => {
+    const x = v.x1, top = Math.max(v.y1, v.y2), bottom = Math.min(v.y1, v.y2)
+    if (x < pageWidth * 0.4 || x > pageWidth * 0.6 || top - bottom < pageHeight * 0.45) return false
+    return !horizontals.some(h => Math.min(h.x1, h.x2) < x - 5 && Math.max(h.x1, h.x2) > x + 5 && h.y1 > bottom + 5 && h.y1 < top - 5)
+  })
+  if (!rule) return null
+  const x = rule.x1, top = Math.max(rule.y1, rule.y2), bottom = Math.min(rule.y1, rule.y2)
+  const mid = (it: NormItem) => it.y + it.h / 2
+  const head = items.filter(it => mid(it) > top), foot = items.filter(it => mid(it) < bottom)
+  const body = items.filter(it => mid(it) <= top && mid(it) >= bottom)
+  const left = body.filter(it => it.x + it.w <= x + 2), right = body.filter(it => it.x >= x - 2)
+  if (left.length < 3 || right.length < 3 || left.length + right.length < body.length) return null
+  const read = (group: NormItem[], full: boolean) => group.length ? extractPageBlocksFallback(group, pageNum, full, detectTables, lex) : []
+  return [...read(head, false), ...read(left, false), ...read(right, false), ...read(foot, false)]
 }
 
 // ─── 취소선 감지 (ODL StrikethroughProcessor 포팅) ─────
