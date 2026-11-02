@@ -61,6 +61,14 @@ describe("PDF table roles", () => {
     assert.equal(isChartTable(table(rows), true), false)
   })
 
+  it("finds the Hangul header row below a single group title (장래가구추계 고령자 가구)", () => {
+    // 구성비 열이 9.2 → 8.8 로 고르게 내려가 값 축처럼 보인다
+    const years = ["2025", "2026", "2027", "2028", "2029"]
+    const rows = [["", "고령자 가구 유형 및 구성비", "", ""], ["총가구", "고령자 가구", "부부+미혼자녀", "구성비"],
+      ...years.map((y, i) => [y, String(22389 + i * 200), String(567 + i * 25), (9.2 - i / 10).toFixed(1)])]
+    assert.equal(isChartTable(table(rows), true), false)
+  })
+
   it("recognizes a value axis or a sparse grid of quantities as a chart", () => {
     assert.equal(isChartTable(table([["90\n80\n70\n60\n50", "81"], ["", "56"], ["", "47"]])), true)
     assert.equal(isChartTable(table([["2.5%", "", ""], ["", "-3.1%", ""], ["", "", "-6.4%"]])), true)

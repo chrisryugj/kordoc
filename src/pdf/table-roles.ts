@@ -165,8 +165,9 @@ export function isChartTable(table: IRTable, ocr = false): boolean {
   const numeric = texts.filter(text => NUMERIC_CELL.test(text)).length
   if (numeric < texts.length * 0.5) return false
   // OCR 격자 첫 행에 한글 이름표가 둘 넘으면 머리 행 있는 표다 — 연도 열(2024·2023·2022·2021)의 고른 간격이 값 축 눈금으로 보여
-  // 37×7 실적표가 차트 글로 풀렸다(공정위 보도자료 피심인 일반현황). 차트 이름표는 격자 밖 축에 붙는다
-  if (ocr && table.cols >= 3 && (table.cells[0] ?? []).filter(cell => /[가-힣]{2}/.test(cell.text)).length >= 2) return false
+  // 37×7 실적표가 차트 글로 풀렸다(공정위 보도자료 피심인 일반현황). 차트 이름표는 격자 밖 축에 붙는다.
+  // 머리가 여러 행이면 첫 행은 묶음 제목 한 칸뿐일 수 있어 첫 세 행을 본다(장래가구추계 "고령자 가구 유형 및 구성비" 아래 "총가구 | 고령자 가구 | …")
+  if (ocr && table.cols >= 3 && table.cells.slice(0, 3).some(row => row.filter(cell => /[가-힣]{2}/.test(cell.text)).length >= 2)) return false
   for (let c = 0; c < table.cols; c++) {
     if (!ocr ? isValueAxisColumn(table, c)
       : hasValueAxis(table.cells.flatMap(row => (row[c]?.text ?? "").split(/\s+/)).filter(t => TICK.test(t)).map(t => Number(t.replace(/[,%]/g, ""))))) return true
