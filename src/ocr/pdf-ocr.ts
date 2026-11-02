@@ -488,7 +488,7 @@ export function ocrItemsToBlocks(
 /**
  * OCR 쪽 제목 — 텍스트층 쪽은 글자 크기 빈도로 제목을 가리는데(detectHeadings), 스캔·이미지 쪽은 그 빈도가 없어 제목이 하나도 안
  * 나왔다(보고서 "제4장 실증분석" 이 문단). OCR 글자 크기는 줄마다 흔들려 더 엄격하게: 쪽 본문 크기(문단 글자 수 가중 중앙값)의
- * 1.3배 이상인 한 줄짜리 짧은 글(2~40자, 문장 끝 부호 없음)만. 1.5배 이상은 1수준
+ * 1.3배 이상인 한 줄짜리 짧은 글(2~40자, 문장 끝 부호 없음)만(1.5배 넘으면 두 줄·60자까지). 1.5배 이상은 1수준
  */
 export function markOcrHeadings(blocks: IRBlock[]): void {
   const sized = blocks.filter(b => b.type === "paragraph" && b.text && b.style?.fontSize)
@@ -501,12 +501,32 @@ export function markOcrHeadings(blocks: IRBlock[]): void {
   if (!body) return
   for (const b of sized) {
     const text = b.text!.trim(), size = b.style!.fontSize!
-    if (text.length < 2 || text.length > 40 || /[.!?。]$|다\.?$/.test(text) || /^[\d\s.,%·-]+$/.test(text)) continue
-    if (b.bbox && b.bbox.height > size * 1.6) continue
     const ratio = size / body
     if (ratio < 1.3) continue
+    if (text.length < 2 || text.length > (ratio >= 1.5 ? 60 : 40) || /[.!?。]$|다\.?$/.test(text) || /^[\d\s.,%·-]+$/.test(text)) continue
+    // 한 줄만 — 1.5배 넘게 큰 짧은 글은 두 줄로 꺾인 장 제목까지
+    if (b.bbox && b.bbox.height > size * (ratio >= 1.5 ? 3.2 : 1.6)) continue
     b.type = "heading"
     b.level = ratio >= 1.5 ? 1 : 2
+  }
+  // 위아래로 쌓인 한 제목 — "제4장" 줄 아래 "실증분석", 두 줄로 꺾인 장 제목. 같은 수준 제목이 줄 간격 안(글자 크기 1.2배)으로 바로
+  // 아래에 놓이고 가로로 겹치면 잇는다. 같은 줄에 나란한 조각은 잇지 않는다(로고 글 "동행매력"·"서울관광재단" 순서가 바뀌었다)
+  for (let i = blocks.length - 1; i > 0; i--) {
+    const a = blocks[i - 1], b = blocks[i]
+    if (a.type !== "heading" || b.type !== "heading" || !a.bbox || !b.bbox) continue
+    // 장 번호 줄("제4장"·"CHAPTER 3")은 제목 줄과 떨어져 놓여도(글자 크기 3배 안) 한 제목이다
+    const marker = /^(?:제\s*\d+\s*[장절편부]|chapter\s*\d+|part\s*\d+)$/i.test(a.text!.trim())
+    // 크기가 크게 다른 두 제목은 따로다("10 THINGS YOU SHOULD KNOW ABOUT" 66 | "COPYRIGHT" 190, ODL 141)
+    const sa = a.style?.fontSize ?? 0, sb = b.style?.fontSize ?? 0
+    if (!marker && (a.level !== b.level || Math.max(sa, sb) > Math.min(sa, sb) * 1.3)) continue
+    const gap = a.bbox.y - (b.bbox.y + b.bbox.height), size = Math.max(a.style?.fontSize ?? 0, b.style?.fontSize ?? 0)
+    const across = Math.min(a.bbox.x + a.bbox.width, b.bbox.x + b.bbox.width) - Math.max(a.bbox.x, b.bbox.x)
+    if (gap < 0 || gap > size * (marker ? 3 : 1.2) || across <= 0) continue
+    a.level = Math.min(a.level ?? 2, b.level ?? 2)
+    a.text = `${a.text!.trim()} ${b.text!.trim()}`
+    const x = Math.min(a.bbox.x, b.bbox.x)
+    a.bbox = { ...a.bbox, x, y: b.bbox.y, width: Math.max(a.bbox.x + a.bbox.width, b.bbox.x + b.bbox.width) - x, height: a.bbox.y + a.bbox.height - b.bbox.y }
+    blocks.splice(i, 1)
   }
 }
 
