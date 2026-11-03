@@ -317,3 +317,14 @@ it("splits a line at recovered cell boundaries but preserves a merged header", a
   assert.ok(parts[1].x > rule.x1)
   assert.deepEqual(splitBoxAtCellRules(b, [{ ...rule, y1: 45 }]), [b])
 })
+
+it("cuts off a single next-cell glyph read across a cell boundary", async () => {
+  const { splitBoxAtCellRules } = await import("../src/ocr/crop.js")
+  // "6,796몽" — 이웃 칸 첫 글자 하나(높이보다 좁다)만 세로선 너머에 있다
+  const b = { x: 10, y: 20, w: 100, h: 20 }
+  const parts = splitBoxAtCellRules(b, [{ x1: 95, y1: 10, y2: 100, thicknessPx: 1 }])
+  assert.equal(parts.length, 2)
+  assert.ok(parts[1].x > 95 && parts[1].x + parts[1].w === 110)
+  // 상자 끝 바로 앞 선(글자 한 획 폭)은 가르지 않는다
+  assert.deepEqual(splitBoxAtCellRules(b, [{ x1: 105, y1: 10, y2: 100, thicknessPx: 1 }]), [b])
+})

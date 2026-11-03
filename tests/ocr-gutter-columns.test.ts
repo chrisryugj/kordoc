@@ -49,3 +49,12 @@ it("splits an OCR box spanning grid columns into one value per column (\"0.50.71
   // 값마다 그 열 안에 놓인다
   assert.deepEqual(out.slice(0, 3).map(it => Math.floor((it.x + it.w / 2) / 50)), [0, 1, 2])
 })
+
+it("cuts a value from its bracketed share beside it (\"3,193 (1.7)\" — 구성비·증감률 열)", () => {
+  const g = grid()
+  const share = (y: number) => item("3,193 (1.7)", 20, y, 260, [[5, 120, 170]])
+  const items = [share(150), share(120), share(90)]
+  const lines = ocrGutterVerticals([g], items).get(g) ?? []
+  assert.equal(lines.length, 1)
+  assert.deepEqual(splitItemsAtGutters([share(150)], lines).map(it => it.text), ["3,193", "(1.7)"])
+})

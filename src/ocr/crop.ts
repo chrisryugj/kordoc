@@ -82,16 +82,20 @@ export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 
 }
 
 
+/** 칸 경계 세로선이 상자 끝에서 이만큼(상자 높이 배수) 안쪽이어야 가른다 — 이웃 칸 글자 하나("6,796몽")는 높이보다 좁다 */
+const CELL_RULE_MARGIN = 0.7
+
 /** Split a detected line at ruled cell boundaries before recognizing its text. */
 export function splitBoxAtCellRules(b: Box, rules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>): Box[] {
-  const cuts = rules.filter(r => r.x1 > b.x + b.h && r.x1 < b.x + b.w - b.h
+  const m = b.h * CELL_RULE_MARGIN
+  const cuts = rules.filter(r => r.x1 > b.x + m && r.x1 < b.x + b.w - m
     && r.y1 <= b.y + b.h * 0.25 && r.y2 >= b.y + b.h * 0.75).sort((a, c) => a.x1 - c.x1)
   if (!cuts.length) return [b]
   const out: Box[] = []
   let left = b.x
   for (const r of cuts) {
     const edge = Math.floor(r.x1 - r.thicknessPx / 2 - 1)
-    if (edge - left < b.h) continue
+    if (edge - left < m) continue
     out.push({ ...b, x: left, w: edge - left })
     left = Math.ceil(r.x1 + r.thicknessPx / 2 + 1)
   }

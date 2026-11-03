@@ -11,8 +11,8 @@ import type { NormItem } from "./text-line.js"
 import { ocrTextGaps } from "../ocr/text-gaps.js"
 import { OCR_GROUPED_NUMBER } from "./ocr-column-cuts.js"
 
-/** 값 토큰 — 수(쉼표·소수점·백분율·부호)와 빈 값 표지(-) */
-const VALUE_TOKEN = /^(?:[+-]?\d+(?:[,.]\d+)*%?|[-–—])$/
+/** 값 토큰 — 수(쉼표·소수점·백분율·부호), 괄호 친 수(구성비·증감률 "(1.7)"), 빈 값 표지(-) */
+const VALUE_TOKEN = /^(?:\(?[+-]?\d+(?:[,.]\d+)*%?\)?|[-–—])$/
 
 interface Span { left: number; right: number; text: string; estimated?: true }
 
