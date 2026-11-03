@@ -36,10 +36,11 @@ export function paragraphsXml(nodes: RecNode[], ctx: ConvertContext): string {
 
 /**
  * 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제). cs 는 글자 스타일(영역 태그 종류 1) — 같은 run 안에서도 hp:t 를 따로 연다.
- * track 은 변경 추적 구간 표시(개체 앞뒤에서도 hp:t 안), fresh 는 앞 hp:t 를 닫고 새로 여는 빈 글(개체 뒤 글 자리)
+ * track 은 변경 추적 구간 표시(개체 앞뒤에서도 hp:t 안), end 는 앞 run 으로 옮긴 구간 끝의 본래 자리, fresh 는 앞 hp:t 를 닫고 새로 여는 빈 글
+ * (개체 뒤 글 자리)
  */
 type Tok = { pos: number; t: "text"; s: string; cs?: number; fresh?: boolean }
-  | { pos: number; t: "inline"; xml: string; mark?: boolean; track?: boolean; cs?: number }
+  | { pos: number; t: "inline"; xml: string; mark?: boolean; track?: boolean; end?: number; cs?: number }
   | { pos: number; t: "ctrl"; xml: string; obj: boolean; def?: boolean }
 
 /** 변경 추적 구간의 시작·끝 표시 — 번호(Id)는 쓰는 차례로 문서 전체에서 매긴다 */
@@ -76,8 +77,8 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
   for (let i = 0; i < runs.length; i++) {
     const from = runs[i][0], to = i + 1 < runs.length ? runs[i + 1][0] : Math.max(units, nChars)
     let seg = toks.filter(t => t.pos >= from && t.pos < to)
-    // 문단 끝(CR)만 담은 run — 문단에 개체·컨트롤이 있으면 빈 글 마디를 둔다(없으면 빈 run)
-    if (!seg.length && i > 0 && from >= crPos && hasCtrl) seg = [{ pos: from, t: "text", s: "" }]
+    // 문단 끝(CR)만 담은 run — 문단에 개체·컨트롤이 있거나 구간 끝이 이 run 자리에서 닫혔으면(앞 run 으로 옮김) 빈 글 마디를 둔다(없으면 빈 run)
+    if (!seg.length && i > 0 && from >= crPos && (hasCtrl || toks.some(k => k.t === "inline" && (k.end ?? -1) >= from))) seg = [{ pos: from, t: "text", s: "" }]
     body += runXml(runs[i][1], seg, ranges.charTc.find(r => from >= r[0] && from < r[1])?.[2])
   }
 
@@ -128,21 +129,23 @@ function rangeTags(node: RecNode | undefined, crPos: number): {
     }
     if (kind !== 2) continue
     add(start, el("hp:markpenBegin", [["color", color(data)]]), false)
-    add(end, "<hp:markpenEnd/>", true) // 같은 자리에서는 앞 영역을 닫고 연다
+    add(end, MARKPEN_END, true) // 같은 자리에서는 앞 영역을 닫고 연다
   }
   return { marks, styles, charTc, paraTc }
 }
 
+const MARKPEN_END = "<hp:markpenEnd/>"
+
 /**
- * 영역 표시 → 토큰. 변경 추적 구간은 시작을 쓰는 차례로 번호를 매긴다(구간 안 표·글상자 속 구간이 그 뒤 번호). 구간 끝은 끝 앞 글자의
- * run 에 둔다 — 끝이 다음 글자 모양 구간의 시작이어도 한글은 지운 글과 같은 hp:t 에 닫는다
+ * 영역 표시 → 토큰. 변경 추적 구간은 시작을 쓰는 차례로 번호를 매긴다(구간 안 표·글상자 속 구간이 그 뒤 번호). 구간 끝(형광펜·변경 추적)은
+ * 끝 앞 글자의 run 에 둔다 — 끝이 다음 글자 모양 구간의 시작이어도 한글은 구간 안 글과 같은 hp:t 에 닫는다
  */
 function markTok(pos: number, m: string | TrackMark, ctx: ConvertContext): Tok {
-  if (typeof m === "string") return { pos, t: "inline", xml: m, mark: true }
+  if (typeof m === "string") return m === MARKPEN_END ? { pos: pos - 1, t: "inline", xml: m, mark: true, end: pos } : { pos, t: "inline", xml: m, mark: true }
   const r = m.range
   if (m.begin) r.id = ++ctx.trackMarks
   const xml = m.begin ? el(`hp:${r.name}Begin`, [["Id", r.id], ["TcId", r.tc]]) : el(`hp:${r.name}End`, [["Id", r.id], ["TcId", r.tc], ["paraend", r.paraend]])
-  return { pos: m.begin ? pos : pos - 1, t: "inline", xml, track: true }
+  return m.begin ? { pos, t: "inline", xml, track: true } : { pos: pos - 1, t: "inline", xml, track: true, end: pos }
 }
 
 const isTrack = (k: Tok | undefined): boolean => k?.t === "inline" && !!k.track
@@ -202,7 +205,7 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
   }
   flush()
   // 글 끝 너머에서 닫히는 영역은 마지막 글자 자리에서 닫는다(짝이 깨지지 않게)
-  for (const [pos, list] of marks) if (pos >= n) for (const m of list) toks.push(markTok(typeof m === "string" ? Math.max(0, n - 1) : n, m, ctx))
+  for (const [pos, list] of marks) if (pos >= n) for (const m of list) toks.push(markTok(n, m, ctx))
   // 컨트롤 뒤 글 자리 — 바로 뒤(8 WCHAR 다음)에 아무것도 없으면(문단 끝) 빈 글을 둔다. 그 자리가 다음 글자 모양 구간이면 빈 hp:t 도
   // 다음 run 에 든다. 개체가 잇달아 오면(수식 둘) 사이에 빈 글이 없다. 바로 뒤가 변경 추적 표시뿐이면 표시 뒤에 따로 빈 글을 둔다
   // (한글: <hp:t><hp:deleteEnd/></hp:t><hp:t/>)

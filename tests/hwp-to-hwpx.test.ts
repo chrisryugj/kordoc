@@ -327,6 +327,19 @@ describe("hwpToHwpx — 합성 문서", () => {
       + '<hh:trackChangeAuthors itemCnt="1"><hh:trackChangeAuthor name="user" mark="1" id="1"/></hh:trackChangeAuthors></hh:refList>'), header)
   })
 
+  it("형광펜 끝은 끝 앞 글자의 run 에서 닫고, 문단 끝 run 에서 닫힌 것이면 그 run 에 빈 글 마디를 둔다", async () => {
+    const pen = (s: number, e: number): Buffer => {
+      const d = Buffer.alloc(12)
+      d.writeUInt32LE(s, 0); d.writeUInt32LE(e, 4); d.writeUInt32LE(((2 << 24) | 0xffff00) >>> 0, 8)
+      return rec(0x46, 1, d)
+    }
+    const runs: Array<[number, number]> = [[0, 0], [2, 1], [5, 2]]
+    const xml = await sectionOf(await hwpToHwpx(buildHwp(Buffer.concat([paragraph("가나다라마", runs), pen(0, 2), paragraph("가나다라마", runs), pen(2, 5)]))))
+    const begin = '<hp:markpenBegin color="#00FFFF"/>'
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0"><hp:t>${begin}가나<hp:markpenEnd/></hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>다라마</hp:t></hp:run><hp:run charPrIDRef="2"/>`), xml)
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>${begin}다라마<hp:markpenEnd/></hp:t></hp:run><hp:run charPrIDRef="2"><hp:t/></hp:run>`), xml)
+  })
+
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
     const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
     for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",
