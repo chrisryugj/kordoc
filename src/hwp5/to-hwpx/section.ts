@@ -116,6 +116,7 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
   const n = text.length / 2
   let ci = 0
   let buf = "", bufPos = 0
+  const pageNums = new Set<string>()
   const flush = (): void => { if (buf) toks.push({ pos: bufPos, t: "text", s: buf }); buf = "" }
   for (let i = 0; i < n;) {
     const c = text.readUInt16LE(i * 2)
@@ -155,7 +156,10 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
     const node = ctrls[ci++]
     if (node) {
       const r = controlXml(node, ctx)
-      if (r) toks.push({ pos: i, t: "ctrl", obj: r.obj, xml: r.xml, def: r.def })
+      // 같은 문단에 똑같은 쪽 번호 위치가 또 있으면 한글은 하나만 쓴다 — 빈 토큰으로 자리(8 WCHAR)만 남겨 뒤 글 자리는 그대로
+      const dup = r !== null && ctrlId(node) === "pgnp" && pageNums.has(r.xml)
+      if (r && ctrlId(node) === "pgnp") pageNums.add(r.xml)
+      if (r) toks.push({ pos: i, t: "ctrl", obj: r.obj, xml: dup ? "" : r.xml, def: r.def })
     }
     i += 8
   }

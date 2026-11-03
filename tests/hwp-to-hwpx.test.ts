@@ -262,6 +262,30 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.equal(await config(rec(0x20, 0, track)), "60")
   })
 
+  it("같은 문단에 똑같은 쪽 번호 위치가 둘이면 한글처럼 하나만 쓴다", async () => {
+    /** 쪽 번호 위치 컨트롤(아래 가운데, 줄표) n 개 뒤 글 */
+    const pageNumPara = (n: number, tail: string): Buffer => {
+      const ch = Buffer.alloc(16)
+      ch.writeUInt16LE(0x15, 0)
+      ch.write("pngp", 2, "latin1")
+      ch.writeUInt16LE(0x15, 14)
+      const text = Buffer.concat([...Array(n).fill(ch), utf16(tail), Buffer.from([0x0d, 0])])
+      const header = Buffer.alloc(24)
+      header.writeUInt32LE(text.length / 2, 0)
+      header.writeUInt16LE(1, 12)
+      const ctrl = Buffer.alloc(16)
+      ctrl.write("pngp", 0, "latin1")
+      ctrl.writeUInt32LE(5 << 8, 4)
+      ctrl.writeUInt16LE(0x2d, 14)
+      return Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, text), rec(0x44, 1, Buffer.alloc(8)), ...Array(n).fill(rec(0x47, 1, ctrl))])
+    }
+    const xml = await sectionOf(await hwpToHwpx(buildHwp(Buffer.concat([pageNumPara(2, "첫 문단"), pageNumPara(1, "둘째 문단")]))))
+    const pageNum = '<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl>'
+    assert.equal(xml.split(pageNum).length - 1, 2)
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0">${pageNum}<hp:t>첫 문단</hp:t></hp:run>`), xml)
+    assert.ok(xml.includes(`<hp:run charPrIDRef="0">${pageNum}<hp:t>둘째 문단</hp:t></hp:run>`), xml)
+  })
+
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
     const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
     for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",
