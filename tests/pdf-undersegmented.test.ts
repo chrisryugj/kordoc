@@ -105,3 +105,91 @@ describe("줄 수가 다른 열의 하위 행 (OCR)", () => {
     assert.equal(normalizeUndersegmentedTable([[{ text: "" }, { text: "" }, { text: "" }]], cols, text), null)
   })
 })
+
+describe("세로쓰기 이름표와 값·증감률 두 줄 열 (OCR)", () => {
+  const ocr = (text: string, x: number, y: number, h = 10): TextItem => ({ text, x, y, w: text.length > 1 ? 40 : 10, h, fontSize: h, fontName: "ocr" })
+  const cols = [0, 40, 140, 240, 340]
+  // 가축 마릿수: 세로쓰기 "산/란/계"(줄이 행과 안 맞음) | 하위 이름표 셋 | 값 셋 | 증감·(증감률) 여섯 줄
+  const labels = ["3개월미만", "3~6개월미만", "6개월이상"], values = ["10,786", "9,473", "52,353"]
+  const items = [
+    ...["산", "란", "계"].map((t, i) => ocr(t, 15, 140 - i * 22)),
+    ...labels.map((t, i) => ocr(t, 45, 150 - i * 30)),
+    ...values.map((t, i) => ocr(t, 145, 150 - i * 30)),
+    ...["1,216", "(11.6)", "1,000", "(12.3)", "-2,487", "(-4.2)"].map((t, i) => ocr(t, 245, 150 - i * 15)),
+  ]
+  const row = (first: string) => [[{ text: first }, { text: labels.join("\n") }, { text: values.join("\n") }, { text: "…" }]]
+
+  it("splits rows on the value lines and puts the vertical label on the first", () => {
+    assert.deepEqual(normalizeUndersegmentedTable(row("산란계"), cols, items), [
+      ["산란계", "3개월미만", "10,786", "1,216"], ["", "", "", "(11.6)"],
+      ["", "3~6개월미만", "9,473", "1,000"], ["", "", "", "(12.3)"],
+      ["", "6개월이상", "52,353", "-2,487"], ["", "", "", "(-4.2)"],
+    ])
+  })
+
+  it("leaves the vertical label to the spanning cell above when its own cell was empty", () => {
+    assert.equal(normalizeUndersegmentedTable(row(""), cols, items)?.[0][0], "")
+  })
+})
+
+describe("한 열만 가로선 조각으로 갈린 묶음 (OCR)", () => {
+  const ocr = (text: string, x: number, y: number): TextItem => ({ text, x, y, w: 35, h: 10, fontSize: 10, fontName: "ocr" })
+  const cols = [0, 100, 200, 300]
+  // 본문 넉 줄 — 0·1열은 두 격자 행에 걸친 칸, 2열만 가로선 조각에 둘로 갈렸다(연령별 혼인건수 2015 열)
+  const lines = [["19세 이하", "0.9", "1.0"], ["20-24세", "9.4", "9.6"], ["25-29세", "78.5", "67.1"], ["30-34세", "132.5", "121.2"]]
+  const items = lines.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 5, 170 - i * 20)))
+  const original = [
+    [{ text: "연령" }, { text: "2013" }, { text: "2015" }],
+    [{ text: "계" }, { text: "322.8" }, { text: "302.8" }],
+    [{ text: lines.map(r => r[0]).join("\n"), rowSpan: 2 }, { text: lines.map(r => r[1]).join("\n"), rowSpan: 2 }, { text: "1.0\n9.6\n67.1" }],
+    [{ text: "" }, { text: "" }, { text: "121.2" }],
+  ]
+
+  it("rebuilds the whole band line by line", () => {
+    const rebuilt = normalizeUndersegmentedTable(original, cols, items, [220, 200, 185, 115, 90], undefined, 40)
+    assert.deepEqual(rebuilt?.slice(2), lines)
+  })
+})
+
+describe("두 줄 숫자 하위 행 (OCR)", () => {
+  const ocr = (text: string, x: number, y: number, font = "ocr"): TextItem => ({ text, x, y, w: 40, h: 10, fontSize: 10, fontName: font })
+  const cols = [0, 100, 200, 300]
+  const rows = [["’00-’10년", "1.1", "1.3 -1.0"], ["’10-’21년", "0.7", "0.7 -0.1"]]
+  const items = rows.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 5, 150 - i * 16)))
+  const cell = [[{ text: "’00-’10년\n’10-’21년" }, { text: "1.1\n0.7" }, { text: "1.3 -1.0\n0.7 -0.1" }]]
+
+  it("splits two stacked lines when every column after the label holds numbers", () => {
+    assert.deepEqual(normalizeUndersegmentedTable(cell, cols, items), rows)
+  })
+
+  it("keeps two stacked text lines together", () => {
+    const words = [["정원", "현원", "비고"], ["기획", "운영", "기타"]].flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 5, 150 - i * 16)))
+    assert.equal(normalizeUndersegmentedTable(cell, cols, words), null)
+  })
+})
+
+describe("펼친 행의 한 자리 수 열과 걸친 칸 글 (OCR)", () => {
+  const ocr = (text: string, x: number, y: number): TextItem => ({ text, x, y, w: text.length * 8, h: 10, fontSize: 10, fontName: "ocr" })
+  const cols = [0, 100, 200, 300, 400]
+
+  it("keeps a column of single digits as values, not a vertical label", () => {
+    const rows = [["계", "174", "7", "5"], ["남자", "81", "5", "5"]]
+    const items = rows.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 5, 150 - i * 16)))
+    const cell = [[{ text: "계\n남자" }, { text: "174\n81" }, { text: "7\n5" }, { text: "5\n5" }]]
+    assert.deepEqual(normalizeUndersegmentedTable(cell, cols, items), rows)
+  })
+
+  it("keeps the text of a cell spanning more rows than the rebuilt band", () => {
+    // "2023년" 이 여섯 행에 걸쳐 글 중심이 이 행 띠 밖에 있다
+    const lines = [["60~64세", "1,773", "73"], ["(구성비)", "(100.0)", "(4.1)"]]
+    const items = lines.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c + 1] + 5, 150 - i * 16)))
+    const original = [
+      [{ text: "연도" }, { text: "연령" }, { text: "계" }, { text: "기초" }],
+      [{ text: "2023년", rowSpan: 6 }, { text: "60~64세\n(구성비)" }, { text: "1,773\n(100.0)" }, { text: "73\n(4.1)" }],
+      [{ text: "" }, { text: "" }, { text: "" }, { text: "" }],
+      [{ text: "" }, { text: "" }, { text: "" }, { text: "" }],
+    ]
+    const rebuilt = normalizeUndersegmentedTable(original, cols, items, [200, 170, 140, 120, 100], undefined, 40)
+    assert.deepEqual(rebuilt?.slice(1, 3), [["2023년", ...lines[0]], ["", ...lines[1]]])
+  })
+})

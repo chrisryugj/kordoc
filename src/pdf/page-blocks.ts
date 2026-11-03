@@ -629,10 +629,17 @@ function extractBlocksWithGrids(
       const ls = irGrid.slice(1).flat().flatMap(c => c.text.split("\n")).map(t => t.trim()).filter(Boolean)
       // 숫자 글줄 = 공백 뺀 글자의 85% 이상이 숫자·소수점·부호 — 이웃 열 수가 붙어 읽힌 줄("-5.4−0.9−0.5")도 숫자 줄이다
       const numericLine = (t: string) => { const cs = t.replace(/\s+/g, ""); return cs.length > 0 && (cs.match(/[\d.,%()+\-−–—△▲▽▼]/g)?.length ?? 0) >= cs.length * 0.85 }
+      // 이름·값이 한 상자로 읽힌 줄("중국64,822"·"인도네 7,827시아" — 국적별 순위표처럼 이름 열과 값 열 사이 세로선이 없다)도 숫자 줄이다.
+      // 이름이 짧고(한글 6자까지) 값이 천 단위 쉼표 수일 때만 — 긴 글 줄은 숫자가 섞여도 글이고, 지번("광암리528-2답일원")은 값이 아니다
+      const labelValueLine = (t: string) => { const hangul = t.match(/[가-힣]/g)?.length ?? 0; return hangul > 0 && hangul <= 6 && /\d,\d{3}/.test(t) && numericLine(t.replace(/[가-힣()]/g, "")) }
       // 글머리(○·□·"- 글", 음수 "-5.4"·빈 값 "-" 아님) 줄이 둘 넘는 칸은 칸 하나에 담긴 목록이다(세입예산 사업명세서 "○자활근로사업…" 칸) — 행으로 펼치지 않는다
-      const bulletList = irGrid.slice(1).flat().some(c => c.text.split("\n").filter(t => /^\s*(?:[○◦•□■▪]|-\s*[^\d\s.,−-])/.test(t)).length >= 2)
+      // 짧은 대시 이름표("- 산 란 계"·"- 육 용 계", 가구당 마릿수 아래 하위 행)는 목록이 아니라 행 이름이다
+      const bulletLine = (t: string) => /^\s*[○◦•□■▪]/.test(t) || (/^\s*-\s*[^\d\s.,−-]/.test(t) && t.replace(/\s+/g, "").length > 7)
+      const bulletList = irGrid.slice(1).flat().some(c => c.text.split("\n").filter(bulletLine).length >= 2)
       if (bulletList || !ls.length) return false
-      const share = ls.filter(numericLine).length / ls.length
+      // 이름·값 줄은 한 칸짜리 칸에서만 — 여러 칸에 걸친 틀 칸(대차대조표 두 단 "1.화폐발행 27,163,663")은 펼치면 두 단 글이 줄마다 섞인다
+      const lvLines = new Set(irGrid.slice(1).flat().filter(c => c.colSpan === 1).flatMap(c => c.text.split("\n")).map(t => t.trim()).filter(labelValueLine))
+      const share = ls.filter(t => numericLine(t) || lvLines.has(t)).length / ls.length
       if (share >= 0.5) return true
       // 이름표·값 표(대차대조표 "Ⅱ.비유동자산 / 1.투자자산 / …" | 금액) — 이름표 줄이 많아 숫자 줄이 반에 못 미쳐도, 열마다 숫자 열(80%+)이거나
       // 이름표 열(20%-)로 깔끔히 갈리면 숫자 표다. 긴 글 칸 표는 글이 여러 열에 걸쳐 숫자 줄이 적다

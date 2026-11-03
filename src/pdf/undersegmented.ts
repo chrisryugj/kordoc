@@ -85,6 +85,8 @@ function groupItemsToVisualLines(items: TextItem[]): TextItem[][] {
 /** 줄 맞춘 하위 행 판정 — 글 든 열 수 하한 · 줄 수 하한 · 같은 줄로 볼 높이 차(글자 크기 배수) */
 const MIN_ALIGNED_COLUMNS = 3
 const MIN_ALIGNED_LINES = 3
+/** 숫자 줄 — 수·부호·괄호·백분율만(이웃 값이 한 줄로 붙은 "1.3 -1.0" 포함) */
+const NUMERIC_LINE = /^[-−–+(]?\d[\d.,%()\s+\-−–]*$/
 const ALIGNED_LINE_TOL = 0.5 // 줄 높이 가운데값 배수 — OCR 숫자 상자 높이가 7~18 로 흔들린다
 
 /**
@@ -92,12 +94,16 @@ const ALIGNED_LINE_TOL = 0.5 // 줄 높이 가운데값 배수 — OCR 숫자 �
  * (예산표 "예산지출(a) / ⋅일반회계 / ⋅특별회계" 와 금액 열마다 세 줄, OCR 은 래스터 괘선만 보아 한 행으로 묶었다). 긴 글이 한 칸에서
  * 꺾인 행은 다른 열 줄 수·높이가 맞지 않아 걸리지 않는다
  */
-function alignedSubRows(itemsByCol: TextItem[][], minLines = MIN_ALIGNED_LINES): string[][] | null {
+function alignedSubRows(itemsByCol: TextItem[][], minLines = MIN_ALIGNED_LINES, covered: boolean[] = []): string[][] | null {
   const byCol = itemsByCol.map(groupItemsToVisualLines)
   const cols = byCol.filter(lines => lines.length)
-  if (cols.length < MIN_ALIGNED_COLUMNS) return anchoredSubRows(byCol, minLines)
+  if (cols.length < MIN_ALIGNED_COLUMNS) return anchoredSubRows(byCol, minLines, covered)
   const k = cols[0].length
-  if (k < minLines || cols.some(lines => lines.length !== k)) return anchoredSubRows(byCol, minLines)
+  // 두 줄 묶음도 이름표 열 뒤 열이 모두 숫자 줄이면 행 둘이다(OCR, "’00-’10년 / ’10-’21년" | "1.1 / 0.7") — 걸친 이름표("본부" | "정원 / 현원")는
+  // 이름표가 한 줄이라 줄 수가 갈려 걸리지 않는다
+  const numericPair = k === 2 && cols.every(lines => lines.every(line => line.every(it => it.fontName === "ocr"))) &&
+    cols.slice(1).every(lines => lines.every(line => NUMERIC_LINE.test(cellTextToString(line).trim())))
+  if ((k < minLines && !numericPair) || cols.some(lines => lines.length !== k)) return anchoredSubRows(byCol, minLines, covered)
   const cy = (line: TextItem[]) => line.reduce((s, it) => s + itemCenterY(it), 0) / line.length
   for (let i = 0; i < k; i++) {
     const ys = cols.map(lines => cy(lines[i]))
@@ -113,9 +119,13 @@ function alignedSubRows(itemsByCol: TextItem[][], minLines = MIN_ALIGNED_LINES):
  * 1.투자자산 / …" | "9,174,154 / 445,324 / …"). 줄이 가장 많은 열(셋 이상)을 기준으로, 다른 열의 줄마다 높이가 맞는(줄 높이 0.5배 안)
  * 기준 줄이 하나씩 따로 있으면 그 줄의 행에 넣는다. 맞는 기준 줄이 없거나 두 줄이 한 기준 줄에 몰리면 펼치지 않는다
  */
-function anchoredSubRows(byCol: TextItem[][][], minLines: number): string[][] | null {
+function anchoredSubRows(byCol: TextItem[][][], minLines: number, covered: boolean[]): string[][] | null {
   if (!byCol.every(lines => lines.every(line => line.every(it => it.fontName === "ocr")))) return null
-  const a = byCol.reduce((best, lines, c) => lines.length > byCol[best].length ? c : best, 0)
+  // 세로쓰기 이름표("산/란/계"·"규/모/별/가/구/수") — 한글 한 글자 줄만 쌓인 열은(한 자리 수 "7/5" 열은 값이다) 줄이 행과 맞지 않는다. 기준·맞추기에서 빼고 첫 하위 행에 잇는다.
+  // 원래 칸이 비었으면(위 행 걸친 칸이 덮어 그 글을 이미 가졌다) 다시 넣지 않는다
+  const vertical = byCol.map(lines => lines.length >= 1 && lines.every(line => /^[가-힣]$/.test(cellTextToString(line).replace(/\s+/g, ""))))
+  const a = byCol.reduce((best, lines, c) => !vertical[c] && (vertical[best] || lines.length > byCol[best].length) ? c : best, 0)
+  if (vertical[a]) return null
   const anchor = byCol[a], k = anchor.length
   // 다른 열에도 두 줄 이상 — 다른 열이 한 줄뿐이면 한 칸에서 꺾인 긴 글이다
   // 기준 줄 셋 이상 — 두 줄 묶음은 가운데 놓인 걸친 이름표("본부" | "정원 / 현원")를 한 행에 붙인다
@@ -125,6 +135,7 @@ function anchoredSubRows(byCol: TextItem[][][], minLines: number): string[][] | 
   const hs = anchor.map(line => itemHeight(line[0])).sort((x, y) => x - y), h = hs[hs.length >> 1]
   const rows = Array.from({ length: k }, () => byCol.map(() => ""))
   for (let c = 0; c < byCol.length; c++) {
+    if (vertical[c]) { if (!covered[c]) rows[0][c] = byCol[c].map(line => cellTextToString(line).trim()).join(""); continue }
     const used = new Set<number>()
     for (const line of byCol[c]) {
       const y = cy(line)
@@ -168,16 +179,27 @@ export function normalizeUndersegmentedTable(
     if (rowYs?.length !== numRows + 1) return null
     const rebuilt: string[][] = []
     let expanded = 0
+    const ocr = items.every(it => it.fontName === "ocr")
     for (let r = 0; r < numRows; r++) {
       const row = originalCells[r].map(cell => cell.text)
       if (r === 0 || (numRows === 3 && r === 1)) { kept?.set(rebuilt.length, r); rebuilt.push(row); continue }
       // 행 합침 칸이 아래 빈 행들을 덮는 묶음(유령 경계로 갈린 한 행)은 묶음 높이 전체의 글로 펼친다 — 첫 하위 행 글만 보면
       // "2020 예산 / 2021 예산" 두 줄이 한 칸에 남았다(관보 계속비)
       const span = Math.min(numRows - r, Math.max(1, ...originalCells[r].map(cell => cell.rowSpan ?? 1)))
-      const band = span > 1 && originalCells.slice(r + 1, r + span).every(cells => cells.every(cell => !cell.text.trim())) ? span : 1
+      // 글 든 칸 대부분이 묶음 끝까지 걸치면, 아래 행 글이 걸치지 않은 열에만 있어도 한 묶음이다 — 한 열에만 낀 가로선 조각이
+      // 그 열만 둘로 갈랐다(연령별 혼인건수 2015 열 "0.9/9.6/67.1" | "121.2/…", 나머지 열은 10줄 걸친 칸)
+      const filled = originalCells[r].filter(cell => cell.text.trim())
+      const spanning = filled.filter(cell => (cell.rowSpan ?? 1) >= span)
+      const loose = ocr && filled.length >= MIN_UNDERSEGMENTED_COLUMNS && spanning.length * 2 > filled.length &&
+        originalCells.slice(r + 1, r + span).every(cells => cells.every((cell, c) => !cell.text.trim() || (originalCells[r][c]?.rowSpan ?? 1) === 1))
+      const band = span > 1 && (loose || originalCells.slice(r + 1, r + span).every(cells => cells.every(cell => !cell.text.trim()))) ? span : 1
       const rowItems = items.filter(item => itemCenterY(item) <= rowYs[r] + 1 && itemCenterY(item) >= rowYs[r + band] - 1)
       const body = normalizeUndersegmentedTable([originalCells[r]], colXs, rowItems, undefined, undefined, undefined, band > 1 ? 2 : MIN_ALIGNED_LINES)
-      if (body) { rebuilt.push(...body); expanded++; r += band - 1 }
+      if (body) {
+        // 행 여럿에 걸친 칸 글("2023년", 6행 걸침)은 글 중심이 이 행 띠 밖이라 펼친 행에서 빠진다 — 그 열이 통째로 비면 원래 글을 첫 하위 행에 둔다
+        originalCells[r].forEach((cell, c) => { if (cell.text.trim() && body.every(cells => !cells[c]?.trim())) body[0][c] = cell.text })
+        rebuilt.push(...body); expanded++; r += band - 1
+      }
       else { kept?.set(rebuilt.length, r); rebuilt.push(row) }
     }
     return expanded ? rebuilt : null
@@ -193,7 +215,7 @@ export function normalizeUndersegmentedTable(
   for (const colItems of itemsByCol) {
     if (groupItemsToVisualLines(colItems).length >= MIN_UNDERSEGMENTED_TEXT_LINES) denseColumns++
   }
-  if (denseColumns < 2) return numRows === 1 ? alignedSubRows(itemsByCol, minAlignedLines) : null
+  if (denseColumns < 2) return numRows === 1 ? alignedSubRows(itemsByCol, minAlignedLines, originalCells[0].map(cell => !cell.text.trim())) : null
 
   // 2) 전체 줄에서 row band 유도 — centerY 근접(epsilon) 또는 수직 겹침이면 같은 band
   const allLines = groupItemsToVisualLines(items.filter(i => i.text.trim()))
