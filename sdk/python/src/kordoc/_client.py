@@ -27,11 +27,12 @@ class _Slot:
     starting 은 띄우는 중인 교체 워커, want 는 지금 받는 요청이 바라는 워밍업 문서(None 이면 등록된 문서),
     warmed 는 교체 워커가 요청을 받기 전에 치른 워밍업 (문서, 결과)."""
 
-    __slots__ = ("worker", "starting", "want", "warmed")
+    __slots__ = ("worker", "starting", "retiring", "want", "warmed")
 
     def __init__(self, worker: Worker | None) -> None:
         self.worker = worker
         self.starting: asyncio.Task[Worker] | None = None
+        self.retiring: asyncio.Task[None] | None = None
         self.want: tuple[str, dict[str, Any]] | None = None
         self.warmed: tuple[tuple[str, dict[str, Any]], WorkerWarmup | None] | None = None
 
@@ -116,6 +117,7 @@ class AsyncKordocClient:
 
     async def _start(self) -> None:
         workers = [Worker(self.config) for _ in range(self.config.max_workers)]
+        self._workers.update(workers)
         try:
             results = await asyncio.gather(*(w.start() for w in workers), return_exceptions=True)
             failed = next((r for r in results if isinstance(r, BaseException)), None)
@@ -124,7 +126,8 @@ class AsyncKordocClient:
             if self._closed:
                 raise KordocClosed("시작하는 동안 클라이언트가 닫혔습니다")
         except BaseException as e:
-            await asyncio.shield(asyncio.gather(*(w.kill() for w in workers), return_exceptions=True))
+            await asyncio.shield(asyncio.gather(*(_task(self._retire(w, False), self._retiring)
+                                                  for w in workers), return_exceptions=True))
             if isinstance(e, asyncio.CancelledError) and self._closed:
                 raise KordocClosed("시작하는 동안 클라이언트가 닫혔습니다") from None
             raise
@@ -292,25 +295,51 @@ class AsyncKordocClient:
         async with self._warmup_lock:
             # 자리를 하나씩 받으며 try 안에서 — 두 번째 자리를 기다리다 취소·QueueFull 이 나도 받은 자리를 돌려준다
             slots: list[_Slot] = []
+            jobs: list[asyncio.Task[WorkerWarmup | None]] = []
             try:
                 for _ in range(self.config.max_workers):
                     slots.append(await self._acquire(spec))  # 빈 자리는 이 문서로 워밍업하며 띄운다
-                reports: list[WorkerWarmup | None] = []
-                for s in slots:
+
+                async def warm_slot(s: _Slot) -> WorkerWarmup | None:
                     if s.warmed is not None and s.warmed[0] == spec:
-                        reports.append(s.warmed[1])  # 교체 워커가 요청을 받기 전에 이미 이 문서로 워밍업했다 — 한 번만
-                    else:
-                        await self._warm(s.worker, spec)  # type: ignore[arg-type]
-                        reports.append(s.worker.warmup)  # type: ignore[union-attr]
+                        return s.warmed[1]  # 교체 워커가 이미 이 문서로 워밍업했다 — 한 번만
+                    await self._warm(s.worker, spec)  # type: ignore[arg-type]
+                    return s.worker.warmup  # type: ignore[union-attr]
+
+                jobs = [_task(warm_slot(s)) for s in slots]
+                batch = asyncio.gather(*jobs)
+                batch.add_done_callback(_consume)
+                reports = await asyncio.shield(batch)  # 반복 취소를 자식에게 되풀이해 전달하지 않는다
                 warms = [r for r in reports if r is not None]
                 # 교체 워커는 한 곳이라도 성공한 문서만 되풀이한다 — 워커를 죽이는 문서로 이후 요청을 모두 막지 않게
                 self._warmup = spec if any(w.success for w in warms) else None
             finally:
+                for job in jobs:
+                    if not job.done():
+                        job.cancel()
+                settled = asyncio.gather(*jobs, return_exceptions=True)
+                while not settled.done():
+                    try:
+                        await asyncio.shield(settled)
+                    except asyncio.CancelledError:
+                        pass  # 반복 취소도 실행·워커 종료가 끝나기 전에 슬롯을 반환하지 않는다
                 for s in slots:
                     self._release(s)
         return WarmupReport(warms)
 
     async def _warm(self, worker: Worker, spec: tuple[str, dict[str, Any]]) -> None:
+        async def kill() -> None:
+            task = _task(worker.kill(), self._retiring)
+            interrupted = False
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    interrupted = True
+            task.result()
+            if interrupted:
+                raise asyncio.CancelledError
+
         path, options = spec
         msg = parse_request(next(self._ids), path, options)
         line = encode_request(msg, self.config.max_request_bytes)
@@ -322,14 +351,14 @@ class AsyncKordocClient:
             worker.warmup = WorkerWarmup(worker.pid or 0, False, [], str(e))
         except TimeoutError:
             worker.warmup = WorkerWarmup(worker.pid or 0, False, [], f"워밍업 제한 시간({self.config.warmup_timeout}초) 초과")
-            await worker.kill()
+            await kill()
         except KordocError as e:
             # 워커 장애도 결과로 (문서·Java 와 같은 계약) — 이 워커는 더 쓰지 않는다
             worker.warmup = WorkerWarmup(worker.pid or 0, False, [], str(e))
-            await asyncio.shield(worker.kill())
+            await kill()
         except BaseException:
             # 취소 — 워밍업 요청이 걸린 워커를 반납하면 늦게 온 응답을 다음 요청이 읽는다
-            await asyncio.shield(worker.kill())
+            await kill()
             raise
 
     # ─── 풀 ─────────────────────────────────────────────
@@ -363,6 +392,9 @@ class AsyncKordocClient:
     async def _replace(self, slot: _Slot, spec: tuple[str, dict[str, Any]] | None) -> None:
         """빈 자리에 교체 워커를 붙인다. 띄우기는 자리에 붙은 별도 작업이라, 기다리던 요청이 제한 시간·취소로 빠져도 끊기지 않는다
         (끊으면 시작·워밍업보다 짧은 제한 시간에서 교체가 영원히 끝나지 않는다). 끊는 것은 aclose 뿐이다."""
+        if slot.retiring is not None:
+            await asyncio.shield(slot.retiring)
+            slot.retiring = None
         if slot.worker is not None:
             self._workers.discard(slot.worker)  # 죽은 워커 객체를 쌓아 두지 않는다
             slot.worker = None
@@ -411,17 +443,30 @@ class AsyncKordocClient:
         except BaseException as e:
             # 워밍업 중 취소·실패 — 어느 자리에도 붙지 않은 워커를 남기지 않는다 (종전: max_workers=1 에서 0→1→2→3→4)
             if w is not None:
-                self._workers.discard(w)
-                await asyncio.shield(w.kill())
+                await asyncio.shield(_task(self._retire(w, False), self._retiring))
             if isinstance(e, asyncio.CancelledError) and self._closed:
                 raise KordocClosed("클라이언트가 닫혔습니다") from None
             raise
 
     async def _start_worker(self) -> Worker:
         w = Worker(self.config)
-        await w.start()  # 실패·취소되면 Worker.start 가 띄운 프로세스를 정리한다
         self._workers.add(w)
+        try:
+            await w.start()  # ready 전에도 살아 있는 소유 워커는 관측한다
+        except BaseException:
+            await asyncio.shield(_task(self._retire(w, False), self._retiring))
+            raise
         return w
+
+    async def _retire(self, w: Worker, graceful: bool) -> None:
+        try:
+            if graceful:
+                await w.quit(self.config.close_timeout)
+            else:
+                await w.kill()
+        finally:
+            if not w.alive:
+                self._workers.discard(w)
 
     def _release(self, slot: _Slot) -> None:
         assert self._slots is not None
@@ -432,18 +477,17 @@ class AsyncKordocClient:
         limit = self.config.max_worker_rss_bytes
         if w is not None and (self._closed or (limit is not None and (w.last_rss or 0) > limit)):
             # 작업 사이에서만 교체 — 다음 요청이 이 자리에서 새 워커를 띄운다
-            self._workers.discard(w)
             slot.worker = None
-            _task(w.quit(self.config.close_timeout), self._retiring)
+            slot.retiring = _task(self._retire(w, True), self._retiring)
         self._slots.put_nowait(slot)
 
     async def _discard(self, slot: _Slot) -> None:
         w = slot.worker
         slot.worker = None
         if w is not None:
-            self._workers.discard(w)
             self._busy.discard(w)
-            await asyncio.shield(_task(w.kill(), self._retiring))
+            slot.retiring = _task(self._retire(w, False), self._retiring)
+            await asyncio.shield(slot.retiring)
 
     async def _run(self, msg: dict[str, Any], line: bytes) -> dict[str, Any]:
         slot = await self._acquire()
@@ -490,18 +534,29 @@ class KordocClient:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()  # 루프 참조 — 만들기·넘겨주기·떼어 내기
         self._lifecycle = threading.RLock()  # 닫기·루프 멈추기는 한 번에 하나 — 겹친 close 는 앞선 정리가 끝날 때까지 기다린다
+        self._loop_owner: object | None = None
+        self._starting: set[object] = set()
 
     def start(self) -> "KordocClient":
+        owner = object()
         with self._lock:  # 두 스레드가 동시에 start 해도 루프 스레드는 하나
             if self._loop is None:
                 self._loop = asyncio.new_event_loop()
                 self._thread = threading.Thread(target=self._loop.run_forever, name="kordoc-sdk", daemon=True)
                 self._thread.start()
+            self._starting.add(owner)
         try:
-            self._call(self._client.start())
+            self._call(self._client.start(), _owner=owner)
         except BaseException:
-            self._stop_loop()
+            with self._lock:
+                self._starting.discard(owner)
+                if self._loop_owner is owner and self._starting:
+                    self._loop_owner = next(iter(self._starting))
+            self._stop_loop(owner)
             raise
+        finally:
+            with self._lock:
+                self._starting.discard(owner)
         return self
 
     def __enter__(self) -> "KordocClient":
@@ -510,12 +565,14 @@ class KordocClient:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def _call(self, coro: Coroutine[Any, Any, T]) -> T:
+    def _call(self, coro: Coroutine[Any, Any, T], *, _owner: object | None = None, _claim: bool = True) -> T:
         with self._lock:  # 루프를 떼어 낸 뒤에는 넘기지 않는다 — 멈춘 루프에 남아 영원히 끝나지 않는 요청이 없게
             loop = self._loop
             if loop is None:
                 coro.close()
                 raise KordocClosed("시작하지 않았거나 닫힌 클라이언트입니다")
+            if _claim:
+                self._loop_owner = _owner if _owner is not None else object()
             fut = asyncio.run_coroutine_threadsafe(coro, loop)
         try:
             return fut.result()
@@ -547,7 +604,7 @@ class KordocClient:
 
     def _read(self, fn: Any) -> Any:
         try:
-            return self._call(_on_loop(fn))
+            return self._call(_on_loop(fn), _claim=False)
         except KordocClosed:
             return []
 
@@ -560,9 +617,13 @@ class KordocClient:
             finally:
                 self._stop_loop()
 
-    def _stop_loop(self) -> None:
+    def _stop_loop(self, owner: object | None = None) -> None:
         with self._lifecycle:
             with self._lock:
+                # 실패한 start 는 마지막 제출의 소유자일 때만 정리한다. 다른 start 를
+                # 기다리거나 이후 호출이 루프를 넘겨받았다면 그 실행기를 멈추지 않는다.
+                if owner is not None and (self._loop_owner is not owner or self._starting):
+                    return
                 loop, thread = self._loop, self._thread
                 self._loop = self._thread = None
             if loop is None:

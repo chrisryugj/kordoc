@@ -975,3 +975,313 @@ def test_circular_option_error_is_not_reported_as_nan(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="NaN"):
             client.parse(tmp_path / "a.docx", pages=[float("nan")])
         assert client.worker_pids() == pid
+
+
+def test_failed_sync_start_cleanup_cannot_stop_successful_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ready = tmp_path / "ready"
+    ready.touch()
+    client = KordocClient(start_timeout=0.2, **fault("ok", KORDOC_FAULT_READY_STATE=str(ready),
+                                                   KORDOC_FAULT_READY_DELAY_MS="2000"))
+    cleaning, resume = threading.Event(), threading.Event()
+    original = client._stop_loop
+    errors = []
+
+    def stop(*args, **kwargs):
+        cleaning.set()
+        assert resume.wait(5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(client, "_stop_loop", stop)
+
+    def first():
+        try:
+            client.start()
+        except BaseException as e:
+            errors.append(e)
+
+    thread = threading.Thread(target=first, daemon=True)
+    thread.start()
+    try:
+        assert cleaning.wait(5)
+        ready.unlink()
+        client.start()
+        assert client.parse(tmp_path / "a.docx").success
+        resume.set()
+        thread.join(5)
+        assert not thread.is_alive() and isinstance(errors[0], KordocStartError)
+        assert client.parse(tmp_path / "b.docx").success
+    finally:
+        resume.set()
+        thread.join(5)
+        client.close()
+
+
+def test_rss_retirement_keeps_live_worker_visible_and_holds_replacement_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spawned: list,
+) -> None:
+    async def main() -> None:
+        retiring, finish = asyncio.Event(), asyncio.Event()
+        replacing = asyncio.Event()
+        original_quit = worker_mod.Worker.quit
+        client = await AsyncKordocClient(max_workers=1, max_worker_rss_bytes=1, close_timeout=0.2,
+                                        **fault("no-quit")).start()
+        original_replace = client._replace
+
+        async def quit(worker, timeout):
+            retiring.set()
+            await finish.wait()
+            await original_quit(worker, timeout)
+
+        async def replace(slot, spec):
+            replacing.set()
+            await original_replace(slot, spec)
+
+        monkeypatch.setattr(worker_mod.Worker, "quit", quit)
+        monkeypatch.setattr(client, "_replace", replace)
+        pending = None
+        pid = client.worker_pids()[0]
+        try:
+            assert (await client.parse(tmp_path / "a.docx")).success
+            await asyncio.wait_for(retiring.wait(), 5)
+            assert alive(pid)
+            assert client.worker_pids() == [pid]
+            assert [w["pid"] for w in client.worker_info()] == [pid]
+            assert client.worker_info()[0]["rss"] > 1
+
+            pending = asyncio.create_task(client.parse(tmp_path / "b.docx", timeout=0.1))
+            await asyncio.wait_for(replacing.wait(), 5)
+            with pytest.raises(KordocTimeout):
+                await pending
+            assert len(spawned) == 1 and alive(pid)
+            assert client.worker_pids() == [pid]
+
+            # A timed-out waiter must leave retirement and its slot available to the next request.
+            finish.set()
+            result = await asyncio.wait_for(client.parse(tmp_path / "c.docx"), 5)
+            assert result.success and result.raw["pid"] != pid
+            assert not alive(pid)
+            assert len(spawned) == 2
+        finally:
+            finish.set()
+            if pending is not None:
+                await asyncio.gather(pending, return_exceptions=True)
+            await client.aclose()
+        assert not live(spawned)
+
+    asyncio.run(main())
+
+
+def test_warmup_workers_overlap_and_reports_keep_slot_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def main() -> None:
+        both_entered, release = asyncio.Event(), asyncio.Event()
+        entered = []
+        original = worker_mod.Worker.request
+        client = await AsyncKordocClient(max_workers=2, **fault("slow", KORDOC_FAULT_DELAY_MS="10")).start()
+        order = [slot.worker.pid for slot in client._slots._queue]
+
+        async def request(worker, msg, line):
+            entered.append(worker.pid)
+            if len(entered) == 2:
+                both_entered.set()
+            await release.wait()
+            return await original(worker, msg, line)
+
+        monkeypatch.setattr(worker_mod.Worker, "request", request)
+        warming = asyncio.create_task(client.warmup(tmp_path / "warm.docx"))
+        try:
+            try:
+                await asyncio.wait_for(both_entered.wait(), 3)
+            except TimeoutError:
+                pass
+            assert both_entered.is_set(), "all acquired workers must enter warmup before either finishes"
+            assert len(entered) == len(set(entered)) == 2
+            assert not warming.done()
+            release.set()
+            report = await asyncio.wait_for(warming, 5)
+            assert report.ok
+            assert [worker.pid for worker in report.workers] == order
+        finally:
+            release.set()
+            if not warming.done():
+                warming.cancel()
+            await asyncio.gather(warming, return_exceptions=True)
+            await client.aclose()
+
+    asyncio.run(main())
+
+
+@pytest.mark.parametrize("failure", ["cancel", "exception"])
+def test_parallel_warmup_settles_all_workers_before_returning_slots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str,
+) -> None:
+    """Acceptance coverage: sibling failures and repeated cancellation cannot release active slots."""
+    async def main() -> None:
+        entered, killing, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        requests, kills = set(), set()
+        original_request, original_kill = worker_mod.Worker.request, worker_mod.Worker.kill
+        client = await AsyncKordocClient(max_workers=2, **fault("by-file", KORDOC_FAULT_DELAY_MS="5000")).start()
+        pids = client.worker_pids()
+
+        async def request(worker, msg, line):
+            if Path(msg["file"]).name != "warm-slow.docx":
+                return await original_request(worker, msg, line)
+            running = asyncio.create_task(original_request(worker, msg, line))
+            try:
+                await asyncio.sleep(0)  # original has written the request and is waiting for its response
+                requests.add(worker.pid)
+                if len(requests) == 2:
+                    entered.set()
+                await entered.wait()
+                if failure == "exception" and worker.pid == pids[0]:
+                    raise RuntimeError("warmup acceptance failure")
+                return await running
+            finally:
+                if not running.done():
+                    running.cancel()
+                await asyncio.gather(running, return_exceptions=True)
+
+        async def kill(worker):
+            if worker.pid in pids:
+                if failure == "exception" and worker.pid == pids[0]:
+                    await original_kill(worker)
+                    return  # 실패를 부모에게 전달한 뒤 형제 워커 종료를 기다린다
+                kills.add(worker.pid)
+                if failure == "exception" or len(kills) == 2:
+                    killing.set()
+                await release.wait()
+            await original_kill(worker)
+
+        monkeypatch.setattr(worker_mod.Worker, "request", request)
+        monkeypatch.setattr(worker_mod.Worker, "kill", kill)
+        warming = asyncio.create_task(client.warmup(tmp_path / "warm-slow.docx"))
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+            if failure == "cancel":
+                warming.cancel()
+            await asyncio.wait_for(killing.wait(), 5)
+            if failure == "cancel":
+                warming.cancel()
+            await asyncio.sleep(0)
+            assert not warming.done()
+            assert free_slots(client) == 0
+            if failure == "cancel":
+                assert all(alive(pid) for pid in pids)
+            else:
+                assert not alive(pids[0]) and alive(pids[1])
+            release.set()
+            with pytest.raises(asyncio.CancelledError if failure == "cancel" else RuntimeError):
+                await asyncio.wait_for(warming, 5)
+            assert free_slots(client) == 2
+            assert not any(alive(pid) for pid in pids)
+            files = [tmp_path / "after-a.docx", tmp_path / "after-b.docx"]
+            results = await asyncio.wait_for(asyncio.gather(*(client.parse(file) for file in files)), 5)
+            assert [r.markdown for r in results] == [f"ok:{file}" for file in files]
+            assert len({r.raw["pid"] for r in results}) == 2
+        finally:
+            release.set()
+            if not warming.done():
+                warming.cancel()
+            await asyncio.gather(warming, return_exceptions=True)
+            remaining = client.worker_pids()
+            await client.aclose()
+            assert not any(alive(pid) for pid in remaining + pids)
+
+    asyncio.run(main())
+
+
+@pytest.mark.parametrize("observation", ["worker_pids", "worker_info"])
+def test_failed_sync_start_observation_does_not_keep_loop_alive(
+    monkeypatch: pytest.MonkeyPatch, observation: str,
+) -> None:
+    client = KordocClient(start_timeout=0.15, **fault("no-ready"))
+    cleaning, release = threading.Event(), threading.Event()
+    errors = []
+    original = client._stop_loop
+
+    def stop(*args, **kwargs):
+        cleaning.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+
+    def start():
+        try:
+            client.start()
+        except BaseException as e:
+            errors.append(e)
+
+    monkeypatch.setattr(client, "_stop_loop", stop)
+    caller = threading.Thread(target=start, daemon=True)
+    caller.start()
+    try:
+        assert cleaning.wait(5)
+        loop_thread = client._thread
+        assert getattr(client, observation)() == []
+        release.set()
+        caller.join(5)
+        assert not caller.is_alive()
+        assert len(errors) == 1 and isinstance(errors[0], KordocStartError)
+        assert client._loop is None
+        assert loop_thread is not None and not loop_thread.is_alive()
+    finally:
+        release.set()
+        caller.join(5)
+        client.close()
+
+
+def test_all_concurrent_failed_sync_starts_stop_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = KordocClient(start_timeout=0.15, **fault("no-ready"))
+    both_submitted, last_cleaned = threading.Event(), threading.Event()
+    submitters, errors = [], []
+    original_submit = asyncio.run_coroutine_threadsafe
+    original_call, original_stop = client._call, client._stop_loop
+
+    def submit(coro, loop):
+        future = original_submit(coro, loop)
+        if coro.cr_code.co_name == "start":
+            submitters.append(threading.get_ident())  # _call holds the real submission lock
+            if len(submitters) == 2:
+                both_submitted.set()
+        return future
+
+    def call(coro, **kwargs):
+        try:
+            return original_call(coro, **kwargs)
+        except KordocStartError:
+            assert both_submitted.wait(5)
+            if threading.get_ident() == submitters[0]:
+                assert last_cleaned.wait(5)
+            raise
+
+    def stop(*args, **kwargs):
+        try:
+            return original_stop(*args, **kwargs)
+        finally:
+            if submitters and threading.get_ident() == submitters[-1]:
+                last_cleaned.set()
+
+    def start():
+        try:
+            client.start()
+        except BaseException as e:
+            errors.append(e)
+
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", submit)
+    monkeypatch.setattr(client, "_call", call)
+    monkeypatch.setattr(client, "_stop_loop", stop)
+    callers = [threading.Thread(target=start, daemon=True) for _ in range(2)]
+    try:
+        for caller in callers:
+            caller.start()
+        assert both_submitted.wait(5)
+        loop_thread = client._thread
+        for caller in callers:
+            caller.join(5)
+        assert not any(caller.is_alive() for caller in callers)
+        assert len(errors) == 2 and all(isinstance(e, KordocStartError) for e in errors)
+        assert client._loop is None
+        assert loop_thread is not None and not loop_thread.is_alive()
+    finally:
+        last_cleaned.set()
+        for caller in callers:
+            caller.join(5)
+        client.close()
