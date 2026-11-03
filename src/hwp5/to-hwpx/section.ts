@@ -6,7 +6,7 @@
  * 하이픈)은 hp:t 안 요소, 개체(표·그림·도형·수식)는 hp:t 와 같은 run 의 형제다. 줄 나눔 정보(PARA_LINE_SEG)는 hp:linesegarray.
  */
 
-import { Cur, type RecNode, el, escText, color, bit, bits, pick, readParamSet, subSet, type Param, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
+import { Cur, type RecNode, el, attrs, escText, color, bit, bits, pick, readParamSet, subSet, type Param, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
 import { XML_DECL, NS, GRADATIONS } from "./header.js"
 import { controlXml, listGroups, subListAttrs, type ConvertContext } from "./controls.js"
 import { fieldEndXml } from "./fields.js"
@@ -34,9 +34,16 @@ export function paragraphsXml(nodes: RecNode[], ctx: ConvertContext): string {
   return out
 }
 
-/** 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제). cs 는 글자 스타일(영역 태그 종류 1) — 같은 run 안에서도 hp:t 를 따로 연다 */
-type Tok = { pos: number; t: "text"; s: string; cs?: number } | { pos: number; t: "inline"; xml: string; mark?: boolean; cs?: number }
+/**
+ * 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제). cs 는 글자 스타일(영역 태그 종류 1) — 같은 run 안에서도 hp:t 를 따로 연다.
+ * track 은 변경 추적 구간 표시(개체 앞뒤에서도 hp:t 안), fresh 는 앞 hp:t 를 닫고 새로 여는 빈 글(개체 뒤 글 자리)
+ */
+type Tok = { pos: number; t: "text"; s: string; cs?: number; fresh?: boolean }
+  | { pos: number; t: "inline"; xml: string; mark?: boolean; track?: boolean; cs?: number }
   | { pos: number; t: "ctrl"; xml: string; obj: boolean; def?: boolean }
+
+/** 변경 추적 구간의 시작·끝 표시 — 번호(Id)는 쓰는 차례로 문서 전체에서 매긴다 */
+interface TrackMark { range: { name: string; tc: number; paraend: number; id: number }; begin: boolean }
 
 function paragraphXml(p: RecNode, ctx: ConvertContext): string {
   const h = new Cur(p.rec.data)
@@ -59,7 +66,7 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
   }
   if (!runs.length) runs.push([0, 0])
   const ctrls = p.kids.filter(k => k.rec.tagId === TAG.CTRL_HEADER)
-  const ranges = rangeTags(p.kids.find(k => k.rec.tagId === TAG.PARA_RANGE_TAG))
+  const ranges = rangeTags(p.kids.find(k => k.rec.tagId === TAG.PARA_RANGE_TAG), crPos)
   const toks = tokenize(text, ctrls, ctx, new Set([...runs.map(r => r[0]), ...ranges.styles.flatMap(r => [r[0], r[1]])]), ranges.marks)
   for (const k of toks) if (k.t !== "ctrl") k.cs = ranges.styles.find(r => k.pos >= r[0] && k.pos < r[1])?.[2]
 
@@ -71,7 +78,7 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
     let seg = toks.filter(t => t.pos >= from && t.pos < to)
     // 문단 끝(CR)만 담은 run — 문단에 개체·컨트롤이 있으면 빈 글 마디를 둔다(없으면 빈 run)
     if (!seg.length && i > 0 && from >= crPos && hasCtrl) seg = [{ pos: from, t: "text", s: "" }]
-    body += runXml(runs[i][1], seg)
+    body += runXml(runs[i][1], seg, ranges.charTc.find(r => from >= r[0] && from < r[1])?.[2])
   }
 
   const ls = p.kids.find(k => k.rec.tagId === TAG.PARA_LINE_SEG)
@@ -84,17 +91,25 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
     body += `<hp:linesegarray>${segs}</hp:linesegarray>`
   }
   return el("hp:p", [["id", instanceId], ["paraPrIDRef", ctx.paraIds[paraShape] ?? paraShape], ["styleIDRef", styleId], ["pageBreak", bit(breaks, 2)],
-    ["columnBreak", bit(breaks, 3)], ["merged", merged]], body)
+    ["columnBreak", bit(breaks, 3)], ["merged", merged], ...(ranges.paraTc ? [["paraTcId", ranges.paraTc] as [string, number]] : [])], body)
 }
+
+/** 변경 추적 영역 태그 종류 → 구간 요소 이름 (변경 추적 문서의 ViewText 에서 한글 저장본과 맞춘 값: 0x11 지움, 0x12 글자 모양, 0x13 문단 모양) */
+const TRACK_RANGES: Record<number, string> = { 0x11: "delete" }
+const TRACK_CHAR_SHAPE = 0x12, TRACK_PARA_SHAPE = 0x13
 
 /**
  * 영역 태그(PARA_RANGE_TAG: 시작·끝 위치, 종류 상위 8비트·데이터 하위 24비트) — 형광펜(종류 2, 데이터는 색)은 글자 위치마다 그 글자
- * 앞에 둘 인라인 요소로, 글자 스타일(종류 1, 데이터는 스타일 번호)은 [시작, 끝, 번호] 로
+ * 앞에 둘 인라인 요소로, 글자 스타일(종류 1, 데이터는 스타일 번호)은 [시작, 끝, 번호] 로. 변경 추적(데이터는 변경 번호)은 지운 구간을
+ * 시작·끝 표시로(문단 끝까지 지웠으면 paraend 1), 글자 모양 바꿈은 run 의 charTcId, 문단 모양 바꿈은 문단의 paraTcId 로
  */
-function rangeTags(node: RecNode | undefined): { marks: Map<number, string[]>; styles: Array<[number, number, number]> } {
-  const marks = new Map<number, string[]>(), styles: Array<[number, number, number]> = []
-  if (!node) return { marks, styles }
-  const add = (pos: number, xml: string, first: boolean): void => {
+function rangeTags(node: RecNode | undefined, crPos: number): {
+  marks: Map<number, Array<string | TrackMark>>; styles: Array<[number, number, number]>; charTc: Array<[number, number, number]>; paraTc: number
+} {
+  const marks = new Map<number, Array<string | TrackMark>>(), styles: Array<[number, number, number]> = [], charTc: Array<[number, number, number]> = []
+  let paraTc = 0
+  if (!node) return { marks, styles, charTc, paraTc }
+  const add = (pos: number, xml: string | TrackMark, first: boolean): void => {
     const list = marks.get(pos) ?? []
     if (first) list.unshift(xml); else list.push(xml)
     marks.set(pos, list)
@@ -102,16 +117,38 @@ function rangeTags(node: RecNode | undefined): { marks: Map<number, string[]>; s
   for (const c = new Cur(node.rec.data); c.rest >= 12;) {
     const start = c.u32(), end = c.u32(), tag = c.u32()
     if (end <= start) continue
-    if (tag >>> 24 === 1) styles.push([start, end, tag & 0xffffff])
-    if (tag >>> 24 !== 2) continue
-    add(start, el("hp:markpenBegin", [["color", color(tag & 0xffffff)]]), false)
+    const kind = tag >>> 24, data = tag & 0xffffff
+    if (kind === 1) styles.push([start, end, data])
+    if (kind === TRACK_CHAR_SHAPE) charTc.push([start, end, data])
+    if (kind === TRACK_PARA_SHAPE) paraTc = data
+    if (TRACK_RANGES[kind]) {
+      const range = { name: TRACK_RANGES[kind], tc: data, paraend: end > crPos ? 1 : 0, id: 0 }
+      add(start, { range, begin: true }, false)
+      add(end, { range, begin: false }, true)
+    }
+    if (kind !== 2) continue
+    add(start, el("hp:markpenBegin", [["color", color(data)]]), false)
     add(end, "<hp:markpenEnd/>", true) // 같은 자리에서는 앞 영역을 닫고 연다
   }
-  return { marks, styles }
+  return { marks, styles, charTc, paraTc }
 }
 
+/**
+ * 영역 표시 → 토큰. 변경 추적 구간은 시작을 쓰는 차례로 번호를 매긴다(구간 안 표·글상자 속 구간이 그 뒤 번호). 구간 끝은 끝 앞 글자의
+ * run 에 둔다 — 끝이 다음 글자 모양 구간의 시작이어도 한글은 지운 글과 같은 hp:t 에 닫는다
+ */
+function markTok(pos: number, m: string | TrackMark, ctx: ConvertContext): Tok {
+  if (typeof m === "string") return { pos, t: "inline", xml: m, mark: true }
+  const r = m.range
+  if (m.begin) r.id = ++ctx.trackMarks
+  const xml = m.begin ? el(`hp:${r.name}Begin`, [["Id", r.id], ["TcId", r.tc]]) : el(`hp:${r.name}End`, [["Id", r.id], ["TcId", r.tc], ["paraend", r.paraend]])
+  return { pos: m.begin ? pos : pos - 1, t: "inline", xml, track: true }
+}
+
+const isTrack = (k: Tok | undefined): boolean => k?.t === "inline" && !!k.track
+
 /** 글 → 토큰. 글은 글자 모양 구간 경계(cuts)에서 끊는다 */
-function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set<number>, marks: Map<number, string[]>): Tok[] {
+function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set<number>, marks: Map<number, Array<string | TrackMark>>): Tok[] {
   const toks: Tok[] = []
   const n = text.length / 2
   let ci = 0
@@ -122,7 +159,7 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
     const c = text.readUInt16LE(i * 2)
     if (cuts.has(i)) flush()
     const mk = marks.get(i)
-    if (mk) { flush(); for (const xml of mk) toks.push({ pos: i, t: "inline", xml, mark: true }) }
+    if (mk) { flush(); for (const m of mk) toks.push(markTok(i, m, ctx)) }
     if (c >= 32) {
       if (!buf) bufPos = i
       buf += String.fromCharCode(c)
@@ -165,12 +202,16 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
   }
   flush()
   // 글 끝 너머에서 닫히는 영역은 마지막 글자 자리에서 닫는다(짝이 깨지지 않게)
-  for (const [pos, list] of marks) if (pos >= n) for (const xml of list) toks.push({ pos: Math.max(0, n - 1), t: "inline", xml, mark: true })
+  for (const [pos, list] of marks) if (pos >= n) for (const m of list) toks.push(markTok(typeof m === "string" ? Math.max(0, n - 1) : n, m, ctx))
   // 컨트롤 뒤 글 자리 — 바로 뒤(8 WCHAR 다음)에 아무것도 없으면(문단 끝) 빈 글을 둔다. 그 자리가 다음 글자 모양 구간이면 빈 hp:t 도
-  // 다음 run 에 든다. 개체가 잇달아 오면(수식 둘) 사이에 빈 글이 없다
+  // 다음 run 에 든다. 개체가 잇달아 오면(수식 둘) 사이에 빈 글이 없다. 바로 뒤가 변경 추적 표시뿐이면 표시 뒤에 따로 빈 글을 둔다
+  // (한글: <hp:t><hp:deleteEnd/></hp:t><hp:t/>)
   for (let k = toks.length - 1; k >= 0; k--) {
     const o = toks[k]
-    if (o.t === "ctrl" && toks[k + 1]?.pos !== o.pos + 8) toks.splice(k + 1, 0, { pos: o.pos + 8, t: "text", s: "" })
+    if (o.t !== "ctrl") continue
+    let j = k + 1
+    while (isTrack(toks[j]) && toks[j].pos <= o.pos + 8) j++
+    if (toks[j]?.pos !== o.pos + 8) toks.splice(j, 0, { pos: o.pos + 8, t: "text", s: "", fresh: j > k + 1 })
   }
   return toks
 }
@@ -179,15 +220,17 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
  * run 하나 — 글·인라인 요소는 hp:t 로 묶는다(개체 뒤 빈 글은 tokenize 가 넣는다). 구역·단 정의는 제 run 에 두고
  * 뒤따르는 내용은 같은 글자 모양의 새 run 에서 시작한다(한글 2022 이상 저장 꼴)
  */
-function runXml(charShape: number, toks: Tok[]): string {
-  const open = `<hp:run charPrIDRef="${charShape}">`
-  if (!toks.length) return el("hp:run", [["charPrIDRef", charShape]])
+function runXml(charShape: number, toks: Tok[], tcId?: number): string {
+  const runAttrs: Array<[string, number]> = [["charPrIDRef", charShape], ...(tcId ? [["charTcId", tcId] as [string, number]] : [])]
+  const open = `<hp:run${attrs(runAttrs)}>`
+  if (!toks.length) return el("hp:run", runAttrs)
   let out = "", t: string | null = null, tcs: number | undefined
   const closeT = (): void => {
     if (t !== null) { const a = tcs === undefined ? "" : ` charStyleIDRef="${tcs}"`; out += t ? `<hp:t${a}>${t}</hp:t>` : `<hp:t${a}/>` }
     t = null
   }
   toks.forEach((k, i) => {
+    if (k.t === "text" && k.fresh) closeT()
     if (k.t !== "ctrl" && t !== null && k.cs !== tcs) closeT()
     if (k.t !== "ctrl" && t === null) tcs = k.cs
     if (k.t === "text") t = (t ?? "") + escText(k.s)
@@ -203,7 +246,7 @@ function runXml(charShape: number, toks: Tok[]): string {
   })
   closeT()
   // 정의 뒤 내용이 없으면 같은 글자 모양의 빈 run 이 남는다
-  return (open + out + "</hp:run>").replace(`${open}</hp:run>`, el("hp:run", [["charPrIDRef", charShape]]))
+  return (open + out + "</hp:run>").replace(`${open}</hp:run>`, el("hp:run", runAttrs))
 }
 
 /** 섹션 레코드 트리 → sectionN.xml */

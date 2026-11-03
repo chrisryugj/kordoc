@@ -286,6 +286,47 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.ok(xml.includes(`<hp:run charPrIDRef="0">${pageNum}<hp:t>둘째 문단</hp:t></hp:run>`), xml)
   })
 
+  it("변경 추적 문서는 ViewText 를 옮겨 지운 글·표를 deleteBegin·deleteEnd 로 남기고 변경 목록·작성자를 header 에 쓴다", async () => {
+    const range = (...tags: Array<[number, number, number, number]>): Buffer => {
+      const d = Buffer.alloc(12 * tags.length)
+      tags.forEach(([s, e, kind, v], i) => { d.writeUInt32LE(s, i * 12); d.writeUInt32LE(e, i * 12 + 4); d.writeUInt32LE(((kind << 24) | v) >>> 0, i * 12 + 8) })
+      return rec(0x46, 1, d)
+    }
+    // 지금 내용(BodyText)에는 지운 글·표가 없다. ViewText: "지운 글"(0~4, 지움 1·글자 모양 바꿈 3) + "남은 글", 지운 표 문단
+    const body = paragraph("남은 글", [[0, 1]], 0, 61)
+    const view = Buffer.concat([paragraph("지운 글남은 글", [[0, 0], [4, 1]], 0, 61), range([0, 4, 0x11, 1], [0, 4, 0x12, 3], [0, 8, 0x13, 2]),
+      table2x2([["가", "나"], ["다", "라"]]), range([0, 8, 0x11, 1])])
+    const change = (type: number, minute: number, extra: number[], hide: number): Buffer => {
+      const d = Buffer.alloc(14 + 8 + 4 * extra.length + 4)
+      d.writeUInt32LE(type, 0)
+      ;[2026, 6, 5, 18, minute].forEach((v, i) => d.writeUInt16LE(v, 4 + 2 * i))
+      d.writeUInt32LE(1, 14)
+      d.writeUInt32LE(4 * extra.length, 18)
+      extra.forEach((v, i) => d.writeUInt32LE(v, 22 + 4 * i))
+      d.writeUInt32LE(hide, 22 + 4 * extra.length)
+      return rec(0x60, 0, d)
+    }
+    const author = Buffer.concat([Buffer.from([4, 0, 0, 0]), utf16("user"), Buffer.from([1, 0, 0, 0, 0x1b, 0xc3, 0x70, 0x5b])])
+    const docInfo = Buffer.concat([rec(0x61, 0, author), change(0x11, 32, [], 1), change(0x13, 36, [0], 0), change(0x12, 36, [0], 0)])
+    const cfb = CFB.read(Buffer.from(buildHwp(body, docInfo, { "/ViewText/Section0": view })), { type: "buffer" })
+    const fh = CFB.find(cfb, "/FileHeader")
+    const hdr = Buffer.from(fh.content)
+    hdr.writeUInt32LE(hdr.readUInt32LE(36) | (1 << 14), 36)
+    fh.content = hdr
+    const zip = await JSZip.loadAsync(await hwpToHwpx(new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)))
+    const xml = await zip.file("Contents/section0.xml")!.async("string")
+    assert.match(xml, /<hp:p id="61" [^>]* merged="0" paraTcId="2"><hp:run charPrIDRef="0" charTcId="3"><hp:t><hp:deleteBegin Id="1" TcId="1"\/>지운 글<hp:deleteEnd Id="1" TcId="1" paraend="0"\/><\/hp:t><\/hp:run><hp:run charPrIDRef="1"><hp:t>남은 글<\/hp:t><\/hp:run>/)
+    assert.match(xml, /<hp:t><hp:deleteBegin Id="2" TcId="1"\/><\/hp:t><hp:tbl [\s\S]*<\/hp:tbl><hp:t><hp:deleteEnd Id="2" TcId="1" paraend="0"\/><\/hp:t><hp:t\/><\/hp:run>/)
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    // 한글처럼 지역 시각을 이 컴퓨터 시간대로 UTC 로
+    const utc = (m: number): string => new Date(2026, 5, 5, 18, m).toISOString().replace(/\.\d+Z$/, "Z")
+    assert.ok(header.includes('<hh:trackChanges itemCnt="3">'
+      + `<hh:trackChange type="Delete" date="${utc(32)}" authorID="1" hide="1" id="1"/>`
+      + `<hh:trackChange type="ParaShape" date="${utc(36)}" authorID="1" hide="0" id="2" parashapeID="0"/>`
+      + `<hh:trackChange type="CharShape" date="${utc(36)}" authorID="1" hide="0" id="3" charshapeID="0"/></hh:trackChanges>`
+      + '<hh:trackChangeAuthors itemCnt="1"><hh:trackChangeAuthor name="user" mark="1" id="1"/></hh:trackChangeAuthors></hh:refList>'), header)
+  })
+
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
     const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
     for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",

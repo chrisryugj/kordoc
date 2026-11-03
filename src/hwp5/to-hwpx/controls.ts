@@ -24,6 +24,8 @@ export interface ConvertContext {
   linkedParas: Map<number, RecNode[]>
   /** 지금 구역의 메모 글(구역 끝 MEMO_LIST 번호 → LIST_HEADER 묶음) — 메모 필드가 제 번호 글을 subList 로 쓴다 */
   memos: Map<number, { head: RecNode; paras: RecNode[] }>
+  /** 지금까지 쓴 변경 추적 구간 수 — 구간 표시 Id */
+  trackMarks: number
   /** 차트 OLE(BIN_DATA 순번) → 차트 파트 경로, 차트가 아니면 null */
   chartOf(binId: number): string | null
   /** 그림 BinData 참조 이름 */

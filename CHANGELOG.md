@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Added
+
+- HWP → HWPX 변경 내용 추적: 변경 추적 문서(FileHeader 비트 14)는 지운 내용을 뺀 BodyText 를 옮겨 지운 구간 안의 표·글이 빠지고 변경 추적 정보가 사라졌다(설문지 표 52개 중 1개). 한/글처럼 지운 내용과 변경 추적 영역 태그를 담은 ViewText 를 옮긴다 — 지운 구간은 `deleteBegin`·`deleteEnd`(구간 번호·변경 번호, 끝은 지운 글과 같은 글 마디), 글자·문단 모양 바꿈은 run `charTcId`·문단 `paraTcId`, header 에 변경 목록(`trackChanges`: 종류·시각·작성자·숨김·모양 번호)과 작성자(`trackChangeAuthors`). 영역 태그 종류(0x11 지움·0x12 글자 모양·0x13 문단 모양)와 기록 배치는 한/글 저장본과 맞춘 값이다. 넣은 구간(insert)은 표본이 없어 아직 옮기지 않는다
 
 - HWP → HWPX 변환(`hwpToHwpx`·`convertToHwpx`·CLI `to-hwpx`·MCP `convert_to_hwpx`): 배포용 문서도 바꾼다. 종전엔 거부했다. 파서가 이미 복호하는 ViewText 본문으로 보통 HWPX 를 쓴다(한/글은 배포용 문서를 HWPX 로 저장하지 않아 정답 짝이 없다 — 서울 정보소통광장 배포용 결재문서 4건은 한/글에서 열리고, kordoc 이 원본에서 읽은 글과 바꾼 판에서 읽은 글이 제목·굵게 표지를 빼면 같다). HWP 를 HWPX 로 바꿔 쓰는 기능(서식 채우기 `hwpx-preserve`·도장·메모·patch 대체본)도 배포용 문서를 받는다
 

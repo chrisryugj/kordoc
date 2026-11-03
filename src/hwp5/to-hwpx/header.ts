@@ -308,6 +308,34 @@ function memoPr(r: Rec, id: number): string {
     ["lineColor", color(lineColor)], ["fillColor", color(fillColor)], ["activeColor", color(activeColor)], ["memoType", pick(MEMO_TYPES, type)]])
 }
 
+const TRACK_TYPES: Record<number, string> = { 0x11: "Delete", 0x12: "CharShape", 0x13: "ParaShape" }
+
+/**
+ * 변경 추적 기록(TRACK_CHANGE) — 종류 u32 · 지역 시각(연·월·일·시·분 WORD) · 작성자 번호 u32 · 덧붙은 값 길이 u32 와 값(글자·문단 모양
+ * 번호) · 숨김 u32. 한글 저장본과 맞춘 배치다. 시각은 한글처럼 이 컴퓨터의 시간대로 UTC 로 바꿔 쓴다
+ */
+function trackChange(r: Rec, id: number, paraIds: number[]): string {
+  const c = new Cur(r.data)
+  const type = c.u32(), y = c.u16(), mo = c.u16(), d = c.u16(), h = c.u16(), mi = c.u16()
+  const author = c.u32(), n = c.u32()
+  const shape = n >= 4 ? c.u32() : 0
+  c.skip(Math.max(0, n - 4))
+  const hide = c.u32()
+  const name = TRACK_TYPES[type] ?? "UnKnown"
+  return el("hh:trackChange", [["type", name], ["date", new Date(y, mo - 1, d, h, mi).toISOString().replace(/\.\d+Z$/, "Z")], ["authorID", author],
+    ["hide", hide], ["id", id], ...(name === "CharShape" ? [["charshapeID", shape] as [string, number]] : []),
+    ...(name === "ParaShape" ? [["parashapeID", paraIds[shape] ?? shape] as [string, number]] : [])])
+}
+
+/** 변경 추적 작성자(TRACK_CHANGE_AUTHOR) — 이름 길이 u32 · 이름 · 표시 u32 (뒤 u32 색은 한글이 HWPX 에 쓰지 않는다) */
+function trackChangeAuthor(r: Rec, id: number): string {
+  const c = new Cur(r.data)
+  const n = c.u32()
+  const name = r.data.toString("utf16le", Math.min(c.o, r.data.length), Math.min(r.data.length, c.o + n * 2))
+  c.skip(n * 2)
+  return el("hh:trackChangeAuthor", [["name", name], ["mark", c.u32()], ["id", id]])
+}
+
 /** 문서 속성(구역 수·시작 번호·캐럿 위치) */
 export interface DocProps { secCnt: number; begin: number[]; caret: [number, number, number] }
 
@@ -365,6 +393,8 @@ export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: nu
   refList += list("hh:paraProperties", of(TAG.PARA_SHAPE).flatMap((r, i) => (paraIds.indexOf(paraIds[i]) === i ? [paraPr(r, paraIds[i])] : [])))
   refList += list("hh:styles", of(TAG.STYLE).map((r, i) => style(r, i, paraIds)))
   refList += list("hh:memoProperties", of(TAG.MEMO_SHAPE).map((r, i) => memoPr(r, i + 1)))
+  refList += list("hh:trackChanges", recs.filter(r => r.tagId === TAG.TRACK_CHANGE).map((r, i) => trackChange(r, i + 1, paraIds)))
+  refList += list("hh:trackChangeAuthors", recs.filter(r => r.tagId === TAG.TRACK_CHANGE_AUTHOR).map((r, i) => trackChangeAuthor(r, i + 1)))
 
   const compat = new Cur(recs.find(r => r.tagId === TAG.COMPATIBLE_DOCUMENT)?.data ?? Buffer.alloc(0)).u32()
   // 변경 추적 설정 기록이 없는 문서는 한글이 기본값 56 으로 쓴다(한글 저장본의 기록 있는 문서도 거의 다 56)
