@@ -123,7 +123,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 66 tables | CER **0.0239** · character recall **99.32%** · table structure **34/66** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.830** by default · `ocrRec: "auto"` **0.851** · heading recall 0.798 (4.24.39) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.835** by default · `ocrRec: "auto"` **0.856** · heading recall 0.798 (4.24.40) |
 | opendataloader-bench | 200 PDF documents | Overall **0.964** with defaults · **0.939** with OCR off |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -131,15 +131,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.39](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.39)** · 2026-11-03
+Latest release: **[4.24.40](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.40)** · 2026-11-03
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.40 | OCR: repeated digits merged by condensed number fonts ("37,369,00") are re-read on a horizontally stretched crop · stacked rows of label–value tables (balance sheets) are expanded along the label lines | KoOCR-Bench total 0.830 → **0.835** (`auto` **0.856**) · gazette CER .116 → .094 · in-house benchmarks no per-document drops |
 | 4.24.39 | OCR: pages scanned sideways are turned upright · two columns split by a middle column rule or by two-column prose · outer label column of open statistics tables · row expansion of large numeric tables (text outside the bands no longer dropped) · page border frames holding a table · multi-row headers no longer read as charts | KoOCR-Bench total 0.810 → **0.830** (`auto` **0.851**) · exam CER .416 → .302 · in-house benchmarks no per-document drops |
 | 4.24.38 | OCR: headings on scanned and image pages (stacked chapter titles joined) · two-column reading order on pages whose only grid is a small label box · fake tables from sentence fragments · seam characters read twice by overlapping boxes · image formula OCR (`formulaOcr`) · to-hwpx engine that saves with Hancom Office itself (`--engine hancom`, no pop-ups) | KoOCR-Bench total 0.807 → **0.810** (`auto` **0.831**) · heading recall 0 → .798 · in-house benchmarks unchanged per document |
 | 4.24.37 | OCR tables: blank-separated columns inside ruled column groups · body rows without rules expanded · rows split under row spans · neighbouring values no longer piled into one cell · shaded header band and shaded first column edges · tables with a header row no longer read as charts · exam question boxes unframed · `ocrRec: "auto"` (handwriting model only on handwritten pages) | KoOCR-Bench v2.0c public 877 pages total 0.742 → **0.807** (`ocrRec: "auto"` **0.828**) · in-house benchmarks unchanged per document |
 | 4.24.36 | PDF word spacing (Hancom PDFs): spaces hidden by condensed tracking are restored · a comma overprinted on a space glyph stays attached ("55만원,") · dotted dates keep their spaces · four-digit years split across lines are joined | PDF text word-boundary F1 99.076 → **99.103%** · other metrics unchanged |
-| 4.24.35 | PDF: two equal digits of a condensed number ("129.9") are kept · superscript lines drawn one glyph at a time join their line · numbers split across lines ("1,2⏎96", "(4.1⏎6.~5.16.)") and decimals split in cells are joined · lone vertical spine text on cover pages | PDF table exact cells 0.99264 → **0.99267** · cell content 0.98902 → **0.98905** · PDF text order 99.359 → **99.360%** · word-boundary F1 99.073 → **99.076%** · other metrics unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

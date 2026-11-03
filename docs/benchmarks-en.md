@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.40: OCR digit groups and label–value tables · 2026-11-03
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.830 → **0.835**, `ocrRec: "auto"` 0.851 → **0.856**. Gazette CER .116 → **.094**, statistics tables .831 → **.839**. In-house OCR, OCR robustness, ODL-OCR and PDF table benchmarks: no per-document drops (in-house OCR budget book CER .0040 → .0033, three robustness documents up).
+
+- When a condensed number font makes the recognizer merge repeated digits ("37,369,00"), a box holding only one number with broken thousands groups is re-read on a crop stretched 1.6× or 2.2×.
+- Stacked rows where label and amount columns have different line counts (balance sheets) are expanded along the label lines.
+
 ## 4.24.39: OCR page layout (columns, sideways pages) and statistics tables · 2026-11-03
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.810 → **0.830**, `ocrRec: "auto"` 0.831 → **0.851**. Tables .825 → .844, text .793 → .829, reading order .868 → .903. In-house OCR, OCR robustness, ODL, ODL-OCR and PDF table benchmarks: no per-document drops.
