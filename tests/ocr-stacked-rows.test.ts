@@ -60,3 +60,14 @@ it("keeps forms, short tables and number grids framed", () => {
   const small = box(table([[c("①비파형 동검을 제작하였다. 다음 중 옳은 것은"), c("②석굴암 본존불상을 만들었다. 다음 중 옳은 것은")]]), 300)
   for (const b of [form, small]) assert.equal(unframeOcrLayoutTables([b], 1100)[0].type, "table")
 })
+
+it("splits a value over its bracketed share into two rows, even when few columns carry shares (구성비 \"539,940 / (17.3)\")", () => {
+  const pct = table([[c("연도"), c("전체"), c("확보")], [c("2018년"), c("1,315\n(100.0%)"), c("241\n(18.3%)")]])
+  splitStackedOcrRows([pct])
+  assert.deepEqual(pct.table!.cells.slice(1).map(r => r.map(x => x.text)), [["2018년", "1,315", "241"], ["", "(100.0%)", "(18.3%)"]])
+  // 구성비 없는 열이 더 많아도 — 그 칸은 한 줄로 두 행에 걸친다
+  const few = table([[c("구분"), c("2023"), c("2024"), c("2025"), c("인원"), c("세액")], [c("합계"), c("412,316"), c("408,276"), c("460,277"), c("539,940\n(17.3)"), c("17,134\n(6.3)")]])
+  splitStackedOcrRows([few])
+  assert.deepEqual(few.table!.cells.slice(1).map(r => r.map(x => x.text)), [["합계", "412,316", "408,276", "460,277", "539,940", "17,134"], ["", "", "", "", "(17.3)", "(6.3)"]])
+  assert.equal(few.table!.cells[1][1].rowSpan, 2)
+})

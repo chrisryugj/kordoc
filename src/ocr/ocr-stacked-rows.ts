@@ -6,7 +6,7 @@
  */
 import type { IRBlock, IRCell, IRTable } from "../types.js"
 
-const NUMERIC = /^[-+−△▲▽▼]?[\d.,]+[%p]?$|^[-–—·∼~]$|^\([-+−△▲▽▼]?[\d.,]+\)$/
+const NUMERIC = /^[-+−△▲▽▼]?[\d.,]+[%p]?$|^[-–—·∼~]$|^\([-+−△▲▽▼]?[\d.,]+%?\)$/
 
 const blank = (): IRCell => ({ text: "", colSpan: 1, rowSpan: 1 })
 
@@ -49,7 +49,9 @@ function splitTable(t: IRTable): boolean {
     const numericShare = flat.length ? flat.filter(s => NUMERIC.test(s.replace(/\s+/g, ""))).length / flat.length : 0
     // 아래로 걸친 칸(행 합침)은 한 줄 이하일 때만 — 늘어난 행만큼 더 걸친다
     const spanOk = anchors.every((a, i) => (a.cell.rowSpan ?? 1) === 1 || lines[i].length <= 1)
-    const ok = spanOk && k >= 2 && n >= 2 && stacked.length * 2 >= nonEmpty && lines.every(ls => ls.length <= 1 || near(ls)) && numericShare >= 0.6
+    // 값 아래 괄호 친 구성비("539,940 / (17.3)")만 쌓인 칸은 절반이 못 돼도 쌓인 행이다 — 구성비 없는 열은 한 줄로 두 행에 걸친다
+    const shares = k === 2 && stacked.length >= 2 && stacked.every(ls => NUMERIC.test(ls[0].replace(/\s+/g, "")) && /^\(.*\)$/.test(ls[1]))
+    const ok = spanOk && k >= 2 && n >= 2 && (stacked.length * 2 >= nonEmpty || shares) && lines.every(ls => ls.length <= 1 || near(ls)) && numericShare >= 0.6
     if (!ok) { newRows.push(row); continue }
     const sub: IRCell[][] = Array.from({ length: k }, () => Array.from({ length: row.length }, blank))
     anchors.forEach(({ c, cell }, idx) => {
