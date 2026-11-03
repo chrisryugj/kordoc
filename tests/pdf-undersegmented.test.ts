@@ -214,3 +214,14 @@ describe("부푼 OCR 상자의 행 띠 (OCR)", () => {
     assert.deepEqual(rebuilt?.at(-1), ["러시아\n(연방)", "6,492", "7,120"])
   })
 })
+
+describe("줄 간격이 넓은 표에서 비켜 앉은 OCR 값", () => {
+  it("assigns a value set off by more than half a glyph when lines are far apart", () => {
+    const ocr = (text: string, x: number, y: number): TextItem => ({ text, x, y, w: 40, h: 9, fontSize: 9, fontName: "ocr" })
+    const labels = ["25만원미만", "25~50만원", "50~100만원", "100~200만원", "200만원이상"], values = ["9.2", "76.6", "14.2", "0.0", "-"]
+    // 줄 간격 18, 글자 9 — "14.2" 만 5.5 비켜 앉았다
+    const items = [...labels.map((t, i) => ocr(t, 5, 200 - i * 18)), ...values.map((t, i) => ocr(t, 105, 200 - i * 18 - (i === 2 ? 5.5 : 0))), ocr("구", 205, 190), ocr("성", 205, 170)]
+    const rebuilt = normalizeUndersegmentedTable([[{ text: "" }, { text: "" }, { text: "" }]], [0, 100, 200, 300], items)
+    assert.deepEqual(rebuilt?.map(r => r[1]), values)
+  })
+})

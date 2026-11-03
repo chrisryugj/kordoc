@@ -133,6 +133,11 @@ function anchoredSubRows(byCol: TextItem[][][], minLines: number, covered: boole
   const cy = (line: TextItem[]) => line.reduce((s, it) => s + itemCenterY(it), 0) / line.length
   const ys = anchor.map(cy)
   const hs = anchor.map(line => itemHeight(line[0])).sort((x, y) => x - y), h = hs[hs.length >> 1]
+  // 값 열이 숫자뿐이면 허용치는 기준 줄 간격도 본다 — 줄 간격이 글자보다 훨씬 넓은 표에서 OCR 상자 하나가 글자 높이 반 넘게 비켜 앉는다
+  // (구성비 "14.2" 5.5px, 글자 9). 글 머리 행("변동액 / 증가액 / (실거래가격)")은 종전 허용치로 둔다
+  const pitches = ys.slice(1).map((y, i) => Math.abs(ys[i] - y)).sort((x, y) => x - y), pitch = pitches[pitches.length >> 1] ?? 0
+  const numericCols = byCol.every((lines, c) => c === a || vertical[c] || lines.every(line => NUMERIC_LINE.test(cellTextToString(line).trim()) || /^[-–—]$/.test(cellTextToString(line).trim())))
+  const tol = numericCols ? Math.max(h * ALIGNED_LINE_TOL, pitch * 0.4) : h * ALIGNED_LINE_TOL
   const rows = Array.from({ length: k }, () => byCol.map(() => ""))
   for (let c = 0; c < byCol.length; c++) {
     if (vertical[c]) { if (!covered[c]) rows[0][c] = byCol[c].map(line => cellTextToString(line).trim()).join(""); continue }
@@ -141,7 +146,7 @@ function anchoredSubRows(byCol: TextItem[][][], minLines: number, covered: boole
       const y = cy(line)
       let j = 0
       for (let i = 1; i < k; i++) if (Math.abs(ys[i] - y) < Math.abs(ys[j] - y)) j = i
-      if (Math.abs(ys[j] - y) > h * ALIGNED_LINE_TOL || used.has(j)) return null
+      if (Math.abs(ys[j] - y) > tol || used.has(j)) return null
       used.add(j)
       rows[j][c] = cellTextToString(line)
       // 두 줄이 한 줄로 묶인 것(기울어진 스캔 "765 / 2,191")은 어느 기준 줄 것인지 모른다
