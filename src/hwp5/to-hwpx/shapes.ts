@@ -80,7 +80,7 @@ function lineShapeXml(lineColor: number, width: number, a: number, outline: numb
 }
 
 /** 그리기 개체 공통 — 선(lineShape) · 채우기(fillBrush) · 그림자(shadow), 그 뒤 인스턴스 id · 선 투명도 · 그림자 투명도 */
-function drawingStyle(k: Component, ctx: ConvertContext): { xml: string; instId: number } {
+function drawingStyle(k: Component, ctx: ConvertContext): { xml: string; instId: number; shadow: [number, number, number] } {
   const c = k.rest
   const lineColor = c.u32(), width = c.i32(), a = c.u32(), outline = c.u8()
   const fill = fillBrushXml(c, ctx.binRef)
@@ -89,7 +89,20 @@ function drawingStyle(k: Component, ctx: ConvertContext): { xml: string; instId:
   const lineAlpha = c.u8(), sAlpha = c.u8()
   const line = lineShapeXml(lineColor, width, a, outline, lineAlpha)
   const shadow = el("hp:shadow", [["type", pick(SHADOW_TYPES, sType)], ["color", color(sColor)], ["offsetX", sx], ["offsetY", sy], ["alpha", sAlpha]])
-  return { xml: line + fill + shadow, instId }
+  return { xml: line + fill + shadow, instId, shadow: [sType, sx, sy] }
+}
+
+/**
+ * 평행 그림자(종류 1~4)가 있는 그리기 개체 — HWP 의 바깥 여백은 그림자가 개체 밖으로 나간 만큼을 품고 HWPX 는 품지 않는다.
+ * 그림자 자리는 가로 오프셋 ± 600(오른쪽 종류 +), 세로 오프셋 ± 600(아래쪽 종류 +)이고 나간 쪽 여백에서 그만큼 뺀다(한/글 2024 가
+ * 공개 HWP 의 사각형에 그림자 종류·오프셋을 바꿔 가며 저장한 HWPX 16벌로 맞춘 값, 음수는 부호 없는 32비트로 쓴다). 기울인 그림자(5~)는
+ * 개체 크기에 따라 달라 그대로 둔다
+ */
+function shadowMargin(m: ObjCommon["margin"], [type, sx, sy]: [number, number, number]): ObjCommon["margin"] {
+  if (type < 1 || type > 4) return m
+  const h = sx + (type === 2 || type === 4 ? 600 : -600), v = sy + (type >= 3 ? 600 : -600)
+  const cut = (x: number, d: number): number => (d > 0 ? (x - d) >>> 0 : x)
+  return [cut(m[0], -h), cut(m[1], h), cut(m[2], -v), cut(m[3], v)]
 }
 
 /** 글상자 — SHAPE_COMPONENT 자식 LIST_HEADER(목록 머리·글 여백·마지막 줄 폭·이름) 와 뒤따르는 문단 */
@@ -126,7 +139,7 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
     : [["id", 0], ["zOrder", 0], ["numberingType", "NONE"], ["textWrap", "TOP_AND_BOTTOM"], ["textFlow", "BOTH_SIDES"], ["lock", 0], ["dropcapstyle", "None"]]
   const comment = o && description ? `<hp:shapeComment>${escText(description)}</hp:shapeComment>` : ""
   // 개체 설명은 캡션 앞에 둔다(한글 순서)
-  const tail = o ? objPlacementXml(o) + comment + caption : comment
+  let tail = o ? objPlacementXml(o) + comment + caption : comment
   const common = componentHeadXml(k)
   const href = shapeHref(comp)
 
@@ -165,6 +178,7 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
   }
 
   const s = drawingStyle(k, ctx)
+  if (o) tail = objPlacementXml({ ...o, margin: shadowMargin(o.margin, s.shadow) }) + comment + caption
   const text = drawTextXml(comp, ctx)
   const ref: Array<[string, string | number]> = [["href", href], ["groupLevel", k.groupLevel], ["instid", s.instId]]
   switch (k.kind) {

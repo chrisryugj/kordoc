@@ -84,6 +84,41 @@ function table2x2(cells: string[][]): Buffer {
   return Buffer.concat(parts)
 }
 
+/** 글자처럼 취급한 사각형 앵커 문단 — 바깥 여백(왼·오·위·아래)·그림자(종류·x·y) */
+function rectGso(margin: number[], shadow: [number, number, number], instanceId = 555): Buffer {
+  const anchor = Buffer.alloc(16)
+  anchor.writeUInt16LE(0x0b, 0)
+  anchor.write(" osg", 2, "ascii")
+  anchor.writeUInt16LE(0x0b, 14)
+  const text = Buffer.concat([anchor, Buffer.from([0x0d, 0])])
+  const header = Buffer.alloc(24)
+  header.writeUInt32LE(text.length / 2, 0)
+  header.writeUInt32LE(1 << 11, 4)
+  header.writeUInt16LE(1, 12)
+  const ctrl = Buffer.alloc(46)
+  ctrl.write(" osg", 0, "ascii")
+  ctrl.writeUInt32LE(1, 4) // 글자처럼 취급
+  ctrl.writeUInt32LE(10000, 16)
+  ctrl.writeUInt32LE(3000, 20)
+  margin.forEach((v, i) => ctrl.writeInt16LE(v, 28 + 2 * i))
+  ctrl.writeUInt32LE(instanceId, 36)
+  const comp = Buffer.alloc(8 + 44 + 48 + 13 + 8 + 16 + 6)
+  comp.write("cer$cer$", 0, "latin1")
+  comp.writeUInt32LE(10000, 20)
+  comp.writeUInt32LE(3000, 24)
+  comp.writeUInt32LE(10000, 28)
+  comp.writeUInt32LE(3000, 32)
+  comp.writeDoubleLE(1, 52) // 변환 행렬
+  comp.writeDoubleLE(1, 52 + 32)
+  const s = 52 + 48 + 13 + 8 // 선(13) · 채우기 없음(종류 0·추가 길이 0) 뒤 그림자
+  comp.writeUInt32LE(shadow[0], s)
+  comp.writeUInt32LE(0xb2b2b2, s + 4)
+  comp.writeInt32LE(shadow[1], s + 8)
+  comp.writeInt32LE(shadow[2], s + 12)
+  return Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, text), rec(0x44, 1, Buffer.alloc(8)), rec(0x47, 1, ctrl),
+    rec(0x4c, 2, comp), rec(0x4f, 3, Buffer.alloc(33))])
+}
+
 /** 문단 모양 기록(58바이트) — 왼쪽 여백·속성2 */
 function paraShapeRec(left: number, attr2 = 0): Buffer {
   const d = Buffer.alloc(58)
@@ -194,6 +229,19 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.equal(await sectionOf(await hwpToHwpx(buildHwp(section))), xml)
     const md = (await parse(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer)).markdown
     for (const t of ["배포용 본문", "가", "나", "다", "라"]) assert.ok(md.includes(t), md)
+  })
+
+  it("평행 그림자가 개체 밖으로 나간 만큼을 바깥 여백에서 뺀다 (HWP 여백은 그림자를 품는다)", async () => {
+    const xml = await sectionOf(await hwpToHwpx(buildHwp(Buffer.concat([
+      rectGso([0, 883, 0, 883], [4, 283, 283], 1), // 오른쪽 아래 283 → 오른쪽·아래 883
+      rectGso([101, 202, 303, 404], [1, 300, 700], 2), // 왼쪽 위 (300 − 600, 700 − 600) → 왼쪽 300 · 아래 100
+      rectGso([101, 202, 303, 404], [0, 300, 700], 3), // 그림자 없음
+      rectGso([101, 202, 303, 404], [5, 250, 250], 4), // 기울인 그림자는 그대로
+    ]))))
+    const margins = [...xml.matchAll(/<hp:outMargin ([^>]*)\/>/g)].map(m => m[1])
+    assert.deepEqual(margins, ['left="0" right="0" top="0" bottom="0"', 'left="4294967097" right="202" top="303" bottom="304"',
+      'left="101" right="202" top="303" bottom="404"', 'left="101" right="202" top="303" bottom="404"'])
+    assert.match(xml, /<hp:rect id="1"[\s\S]*?<hp:shadow type="PARELLEL_RIGHTBOTTOM" color="#B2B2B2" offsetX="283" offsetY="283"/)
   })
 
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
