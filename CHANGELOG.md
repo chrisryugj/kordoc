@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- HWP → HWPX 변환(`hwpToHwpx`·`convertToHwpx`·CLI `to-hwpx`·MCP `convert_to_hwpx`): 배포용 문서도 바꾼다. 종전엔 거부했다. 파서가 이미 복호하는 ViewText 본문으로 보통 HWPX 를 쓴다(한/글은 배포용 문서를 HWPX 로 저장하지 않아 정답 짝이 없다 — 서울 정보소통광장 배포용 결재문서 4건은 한/글에서 열리고, kordoc 이 원본에서 읽은 글과 바꾼 판에서 읽은 글이 제목·굵게 표지를 빼면 같다). HWP 를 HWPX 로 바꿔 쓰는 기능(서식 채우기 `hwpx-preserve`·도장·메모·patch 대체본)도 배포용 문서를 받는다
+
 ## [4.24.40] - 2026-11-03
 
 ### Fixed

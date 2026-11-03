@@ -12,7 +12,7 @@ export function registerConvertTools(server: McpServer): void {
     "convert_to_hwpx",
     "HWP 문서를 HWPX 로 변환해 저장합니다. HWP 5.x 는 서식 그대로 옮깁니다 — 글꼴·글자/문단 모양·스타일·번호, 표(병합·테두리), 그림·도형·글상자, " +
     "수식, 머리말·꼬리말, 각주·미주, 쪽 번호, 누름틀·하이퍼링크, 차트. HWP 3.x 는 서식 보존 변환이 없어 글·표만 옮깁니다(결과에 알림). " +
-    "\"hwp 를 hwpx 로 바꿔 줘\" 같은 요청에 쓰고, 바꾼 뒤 render_document 로 결과를 확인할 수 있습니다. 배포용(읽기 전용) 문서는 변환하지 않습니다.",
+    "\"hwp 를 hwpx 로 바꿔 줘\" 같은 요청에 쓰고, 바꾼 뒤 render_document 로 결과를 확인할 수 있습니다. 배포용 문서도 복호한 본문으로 바꿉니다.",
     {
       file_path: z.string().min(1).describe("변환할 HWP 파일의 절대 경로"),
       output_path: z.string().min(1).optional().describe("저장할 .hwpx 경로 (기본: 입력과 같은 폴더·같은 이름의 .hwpx — 그 파일이 이미 있으면 덮어쓰지 않고 실패하니 그때는 경로를 지정)"),

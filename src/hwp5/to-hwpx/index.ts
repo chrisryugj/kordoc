@@ -3,8 +3,8 @@
  *
  * 문서 모델이 같은 두 직렬화(이진 레코드 ↔ OWPML XML)라 값을 1:1 로 옮긴다: DocInfo → header.xml, BodyText 섹션 → sectionN.xml,
  * BinData 스토리지 → BinData/imageN.확장자, 요약 정보·미리보기 글 → content.hpf·Preview. 한글이 같은 문서를 .hwpx 로 저장한 짝을
- * 정답으로 속성 단위 일치를 잰다(bench/hwp2hwpx.mjs). 암호 문서는 password 로 연다. 배포용 문서(작성자가 복사·편집을 막은 문서)는
- * 변환하지 않는다.
+ * 정답으로 속성 단위 일치를 잰다(bench/hwp2hwpx.mjs). 암호 문서는 password 로 연다. 배포용 문서는 복호한 ViewText 본문으로
+ * 보통 HWPX 를 쓴다.
  */
 
 import JSZip from "jszip"
@@ -117,8 +117,7 @@ const V13_DEFAULT_SCRIPT = "function OnDocument_New()\r\n{\r\n\t//todo : \r\n}\r
 export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpToHwpxOptions): Promise<Uint8Array> {
   const buffer = Buffer.from(input instanceof ArrayBuffer ? new Uint8Array(input) : input)
   const c = openHwp5Container(buffer, options)
-  // 배포용 문서는 작성자가 복사·편집을 막은 문서다 — 편집 가능한 HWPX 로 풀어 주지 않는다
-  if (c.distribution) throw new KordocError("배포용(읽기 전용) HWP 문서는 HWPX 로 변환하지 않습니다 — 작성자가 복사·편집을 막은 문서입니다")
+  // 배포용 문서는 본문이 ViewText 에 암호화돼 있다 — readHwp5SectionStreams 가 복호한 섹션을 주므로 보통 문서와 같은 길로 옮긴다
   const docInfo = (readHwp5DocInfoRecords(c) ?? []) as Rec[]
   const sections = readHwp5SectionRecords(c, readHwp5SectionStreams(c), c.warnings)
   const bins = readHwp5BinData(c)

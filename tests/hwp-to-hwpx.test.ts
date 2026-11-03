@@ -16,6 +16,8 @@ import { hwpToHwpx, convertToHwpx, parse, patchHwp, fillForm } from "../src/inde
 import { registerConvertTools } from "../src/mcp/tools-convert.js"
 import { registerFormTools } from "../src/mcp/tools-form.js"
 import { needsRewrite, rewriteEdited } from "../src/roundtrip/rewrite-fallback.js"
+import { _decryptDistributePayload, _extractAesKey } from "../src/hwp5/crypto.js"
+import { createCipheriv } from "node:crypto"
 
 const require = createRequire(import.meta.url)
 const CFB = require("cfb")
@@ -105,6 +107,25 @@ function buildHwp(section: Buffer, docInfo = Buffer.alloc(0), extra: Record<stri
   return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
 }
 
+/**
+ * 배포용 문서 — 본문을 ViewText/Section0 에 DISTRIBUTE_DOC_DATA(256바이트 payload) + AES-128 ECB 로 넣고 BodyText 에는 안내 문구만,
+ * FileHeader 속성 비트 2 를 세운다. AES 키는 payload 를 복호한 값에서 꺼낸다(공개 HWP 5.0 배포용 문서 구조)
+ */
+function distributionHwp(section: Buffer): Uint8Array {
+  const payload = Buffer.alloc(256)
+  for (let i = 0; i < 256; i++) payload[i] = (i * 37 + 11) & 0xff
+  const key = _extractAesKey(_decryptDistributePayload(payload))
+  const body = Buffer.concat([section, Buffer.alloc((16 - (section.length % 16)) % 16)])
+  const aes = createCipheriv("aes-128-ecb", key, null).setAutoPadding(false)
+  const viewText = Buffer.concat([rec(0x1c, 0, payload), aes.update(body), aes.final()])
+  const cfb = CFB.read(Buffer.from(buildHwp(paragraph("이 문서는 상위 버전의 배포용 문서입니다."), Buffer.alloc(0), { "/ViewText/Section0": viewText })), { type: "buffer" })
+  const fh = CFB.find(cfb, "/FileHeader")
+  const hdr = Buffer.from(fh.content)
+  hdr.writeUInt32LE(hdr.readUInt32LE(36) | 4, 36)
+  fh.content = hdr
+  return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
+}
+
 async function sectionOf(hwpx: Uint8Array): Promise<string> {
   return (await JSZip.loadAsync(hwpx)).file("Contents/section0.xml")!.async("string")
 }
@@ -159,6 +180,20 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.match(await zip.file("Contents/memoExtended.xml")!.async("string"),
       /<he:memosEx xmlns:he="http:\/\/www\.hancom\.co\.kr\/hwpml\/2021\/extended"><he:memo id="11" parentId="21"\/><he:memo id="12" parentId="22"\/><\/he:memosEx>$/)
     assert.match(await zip.file("Contents/content.hpf")!.async("string"), /<opf:item id="memoextended" href="Contents\/memoExtended\.xml" media-type="application\/xml"\/>/)
+  })
+
+  it("배포용 문서는 복호한 ViewText 본문으로 보통 HWPX 를 쓴다", async () => {
+    const section = Buffer.concat([paragraph("배포용 본문", [[0, 0]], 0, 41), table2x2([["가", "나"], ["다", "라"]])])
+    const dist = distributionHwp(section)
+    const out = await hwpToHwpx(dist)
+    const xml = await sectionOf(out)
+    assert.match(xml, /<hp:p id="41"[^>]*><hp:run charPrIDRef="0"><hp:t>배포용 본문<\/hp:t>/)
+    assert.match(xml, /<hp:tbl id="777"/)
+    assert.doesNotMatch(xml, /상위 버전의 배포용/)
+    // 같은 본문을 보통 문서로 둔 것과 섹션이 같다
+    assert.equal(await sectionOf(await hwpToHwpx(buildHwp(section))), xml)
+    const md = (await parse(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer)).markdown
+    for (const t of ["배포용 본문", "가", "나", "다", "라"]) assert.ok(md.includes(t), md)
   })
 
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {

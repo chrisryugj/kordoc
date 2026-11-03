@@ -5,7 +5,7 @@
  * 안 되는 편집은 건너뛴다. 그때 "미적용"만 돌려주면 받는 쪽(사람·에이전트)이 칸을 비우거나 체크리스트로 미루게 된다.
  * 그래서 편집 내용을 다 담은 판을 같이 만든다: HWPX 원본은 그 문서를 견본으로(글꼴·문단·표 서식·쪽 설정 — generate
  * template 과 같은 경로). HWP 5.x 원본은 서식 그대로 HWPX 로 바꾼 판에 HWPX patch(문단 추가·삭제 포함)를 하고, 거기서도
- * 남는 편집이 있으면 바꾼 판을 견본으로 쓴다. 바꿀 수 없는 HWP(배포용 등)만 kordoc 기본 서식 HWPX 로.
+ * 남는 편집이 있으면 바꾼 판을 견본으로 쓴다. 바꿀 수 없는 HWP(암호·DRM 등)만 kordoc 기본 서식 HWPX 로.
  */
 
 import { markdownToHwpx } from "../hwpx/generator.js"
@@ -44,7 +44,7 @@ export async function rewriteEdited(
       const done = await patchConverted(original, template, markdown)
       if (done) return { ...done, how: "patch" }
     } catch {
-      // 바꿀 수 없는 HWP(배포용 등)는 아래 기본 서식으로, 바꾼 판에 patch 가 던지면 바꾼 판을 견본으로
+      // 바꿀 수 없는 HWP(암호·DRM 등)는 아래 기본 서식으로, 바꾼 판에 patch 가 던지면 바꾼 판을 견본으로
     }
   }
   if (!template && !plainOk) return null
