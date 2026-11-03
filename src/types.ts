@@ -240,11 +240,12 @@ export interface ParseOptions {
   ocrDet?: "mobile" | "server" | "medium" | OcrModelFile
   /** 글줄 검출 입력 긴 변(px, 32~4096 정수). 기본 960 (PP-OCRv5 공식 resize_long) — 키우면 작은 글자를 더 잡고 느려진다 */
   ocrDetLongSide?: number
-  /** 내장 OCR 글자 인식 모델. 기본은 PP-OCRv5 korean rec. `"handwriting"`: 손글씨·공문서 데이터로 추가 학습한 한국어 rec(~15MB,
-   *  첫 사용 시 다운로드 — 수기 서류용, 내장 사전 그대로). 객체: 로컬 ONNX 파일(미세조정 rec 등) — `path` 절대 경로 + `sha256` 필수.
-   *  출력 클래스 수가 사전 + 2 여야 한다. `"auto"`: 기본 rec 로 읽고, 쪽 평균 확신도가 낮으면(손글씨 쪽) 손글씨 rec 로 다시 읽어
-   *  확신도가 뚜렷이 오를 때만 그 쪽을 바꾼다(손글씨 rec 도 첫 사용 시 다운로드). 인쇄 쪽은 기본 rec 그대로 */
-  ocrRec?: "handwriting" | "auto" | OcrModelFile
+  /** 내장 OCR 글자 인식 모델. 기본은 PP-OCRv5 korean rec 로 읽고, 쪽 평균 확신도가 .85 아래인 쪽(손글씨 쪽)만 손글씨 rec 로 다시 읽어
+   *  확신도가 .10 넘게 오를 때 그 쪽을 바꾼다(손글씨 rec ~15MB 는 그런 쪽을 처음 만났을 때 받고, 받지 못하면 기본 rec 결과 그대로).
+   *  `"printed"`: 기본 rec 만(손글씨 rec 를 받지도 쓰지도 않는다). `"handwriting"`: 손글씨·공문서 데이터로 추가 학습한 한국어 rec
+   *  (수기 서류용, 내장 사전 그대로). `"auto"`: 기본보다 너그러운 문턱(.90 아래·.06 상승)으로 손글씨 쪽을 바꾸고 모델을 미리 받는다.
+   *  객체: 로컬 ONNX 파일(미세조정 rec 등) — `path` 절대 경로 + `sha256` 필수. 출력 클래스 수가 사전 + 2 여야 한다 */
+  ocrRec?: "handwriting" | "auto" | "printed" | OcrModelFile
   /** 글자 인식 사전(PaddleOCR inference.yml 의 `PostProcess.character_dict`)을 로컬 파일로 — `path` 절대 경로 + `sha256` 필수.
    *  지정 안 하면 내장 한국어 사전(11,945자) */
   ocrRecDict?: OcrModelFile

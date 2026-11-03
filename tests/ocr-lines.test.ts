@@ -86,9 +86,24 @@ describe("사전·직접 호출", () => {
 describe("모델 선택·기본 설정", () => {
   it("옵션이 없으면 기본 설정 객체 그대로 — 엔진은 종전과 같은 모델·튜닝", () => {
     assert.equal(builtinOcrConfig(undefined), DEFAULT_BUILTIN_OCR)
-    assert.equal(builtinOcrConfig({ ocr: true, ocrLines: false }), DEFAULT_BUILTIN_OCR)
     assert.equal(DEFAULT_BUILTIN_OCR.tuning, DEFAULT_OCR_TUNING)
     assert.equal(DEFAULT_BUILTIN_OCR.lines, undefined)
+    // OCR 을 켜면 같은 모델·튜닝에 손글씨 rec 받기만 허용한다
+    const on = builtinOcrConfig({ ocr: true, ocrLines: false })
+    assert.equal(on.models, DEFAULT_BUILTIN_OCR.models)
+    assert.equal(on.tuning, DEFAULT_OCR_TUNING)
+    assert.equal(on.autoRec?.fetch, true)
+    assert.equal(DEFAULT_BUILTIN_OCR.autoRec?.fetch, undefined)
+  })
+
+  it("기본은 뚜렷한 손글씨 쪽만 손글씨 rec 로(.85 아래·.10 상승, 미리 받지 않음) — auto 는 너그러운 문턱, printed 는 끔", () => {
+    assert.deepEqual(DEFAULT_BUILTIN_OCR.autoRec, { pageConf: 0.85, gain: 0.1, lazy: true })
+    assert.ok(DEFAULT_BUILTIN_OCR.handwriting)
+    assert.deepEqual(builtinOcrConfig({ ocrRec: "auto" }).autoRec, { pageConf: 0.9, gain: 0.06 })
+    const printed = builtinOcrConfig({ ocrRec: "printed" })
+    assert.equal(printed.handwriting, undefined)
+    assert.equal(printed.models.rec, DEFAULT_OCR_MODELS.rec)
+    assert.equal(builtinOcrConfig({ ocrRec: "handwriting" }).handwriting, undefined)
   })
 
   it("ocrDet·ocrDetLongSide·로컬 파일 → 선택·튜닝·캐시 키", () => {

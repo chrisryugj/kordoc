@@ -34,7 +34,7 @@ program
   .option("--ocr-det <model>", "OCR 글줄 검출 모델: mobile (기본) | server (~88MB 첫 사용 시 다운로드) | medium (PP-OCRv6 ~62MB, 기울임·흐림·스캔 입력용) | 로컬 ONNX 경로 (--ocr-det-sha256 필수)")
   .option("--ocr-det-sha256 <hex>", "--ocr-det 로컬 파일의 SHA-256 — 다르면 로드 거부")
   .option("--ocr-det-long-side <px>", "OCR 글줄 검출 입력 긴 변 (32~4096, 기본 960) — 키우면 작은 글자를 더 잡고 느려진다")
-  .option("--ocr-rec <model>", "OCR 글자 인식 모델: handwriting (수기 서류용 한국어 손글씨 rec, ~15MB 첫 사용 시 다운로드) | auto (확신도 낮은 손글씨 쪽만 손글씨 rec 로 다시 읽음) | 로컬 ONNX 경로 (--ocr-rec-sha256 필수)")
+  .option("--ocr-rec <model>", "OCR 글자 인식 모델: handwriting (수기 서류용 한국어 손글씨 rec, ~15MB 첫 사용 시 다운로드) | auto (기본보다 너그러운 문턱으로 손글씨 쪽을 손글씨 rec 로 다시 읽음 — 기본도 뚜렷한 손글씨 쪽은 바꾼다) | printed (기본 rec 만) | 로컬 ONNX 경로 (--ocr-rec-sha256 필수)")
   .option("--ocr-rec-sha256 <hex>", "--ocr-rec 파일의 SHA-256")
   .option("--ocr-rec-dict <path>", "OCR 글자 인식 사전을 로컬 inference.yml 로 (--ocr-rec-dict-sha256 필수, 기본 내장 한국어 사전)")
   .option("--ocr-rec-dict-sha256 <hex>", "--ocr-rec-dict 파일의 SHA-256")

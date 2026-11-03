@@ -21,8 +21,8 @@ export function validateOcrOptions(o: Pick<ParseOptions, "ocrLines" | "ocrDet" |
     return `ocrDetLongSide 는 32~4096 정수입니다 (받은 값: ${JSON.stringify(side)})`
   }
   const rec = o.ocrRec
-  if (rec !== undefined && rec !== "handwriting" && rec !== "auto") {
-    if (typeof rec === "string") return `ocrRec 은 "handwriting"·"auto" 또는 {path, sha256} 입니다 (받은 값: ${JSON.stringify(rec)})`
+  if (rec !== undefined && rec !== "handwriting" && rec !== "auto" && rec !== "printed") {
+    if (typeof rec === "string") return `ocrRec 은 "handwriting"·"auto"·"printed" 또는 {path, sha256} 입니다 (받은 값: ${JSON.stringify(rec)})`
     const bad = modelFileError("ocrRec", rec)
     if (bad) return bad
   }

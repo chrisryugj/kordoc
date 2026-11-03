@@ -22,7 +22,7 @@ import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
 import { deskewPage, rotateQuarter } from "./deskew.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
-import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, resolveOcrModels, type OcrModelSelection } from "./models.js"
+import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrModelsCached, resolveOcrModels, type OcrModelSelection } from "./models.js"
 import { validateOcrOptions } from "./options.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
@@ -45,32 +45,42 @@ export interface BuiltinOcrConfig {
   tuning: Readonly<OcrTuning>
   /** 줄 내보내기 — undefined 면 끔(종전과 같은 일만 한다) */
   lines?: "kept" | "all"
-  /** `ocrRec: "auto"` — 확신도 낮은 쪽을 다시 읽을 손글씨 rec 모델 */
+  /** 확신도 낮은 쪽을 다시 읽을 손글씨 rec 모델 — 기본 설정·`ocrRec: "auto"` */
   handwriting?: OcrModelSelection
+  /** 손글씨 rec 로 바꿀 문턱 — 쪽 평균 확신도 상한·확신도 상승 하한. lazy 면 모델을 미리 받지 않고 받기·인식 실패는 기본 rec 결과로 둔다.
+   *  fetch 가 없으면(OCR 을 따로 켜지 않은 자동 OCR) 캐시에 있을 때만 쓴다 — 자동 OCR 은 내려받지 않는다 */
+  autoRec?: { pageConf: number; gain: number; lazy?: true; fetch?: true }
 }
 
-export const DEFAULT_BUILTIN_OCR: Readonly<BuiltinOcrConfig> = Object.freeze({ models: DEFAULT_OCR_MODELS, tuning: DEFAULT_OCR_TUNING })
+/** `ocrRec: "auto"` 문턱 — 쪽 평균 확신도(글자 수 가중)가 이보다 낮은 쪽만 손글씨 rec 로 다시 읽고, 평균이 gain 이상 오를 때만 바꾼다.
+ *  KoOCR-Bench 손글씨 쪽은 기본 rec .74~.90 → 손글씨 rec +.07~.22, 인쇄 쪽은 .87~.98 에 대개 +.05 이하였다 */
+const AUTO_REC = { pageConf: 0.9, gain: 0.06 }
+/** 기본 설정 문턱 — 인쇄 스캔(목차·표지·계획서 쪽 기본 확신도 .82~.90, 손글씨 rec 상승 .06~.10)은 넘지 않는다.
+ *  KoOCR-Bench 손글씨 쪽은 대부분 .85 아래에서 +.10 넘게 오른다(auto 문턱 이득의 93%) */
+const DEFAULT_AUTO_REC = { pageConf: 0.85, gain: 0.1, lazy: true as const }
+
+export const DEFAULT_BUILTIN_OCR: Readonly<BuiltinOcrConfig> = Object.freeze({
+  models: DEFAULT_OCR_MODELS, tuning: DEFAULT_OCR_TUNING, handwriting: handwritingFallbackModels(DEFAULT_OCR_MODELS), autoRec: DEFAULT_AUTO_REC,
+})
+/** OCR 을 켠(`ocr: true`·`"force"`) 기본 설정 — 손글씨 쪽을 처음 만나면 손글씨 rec 를 받는다 */
+const DEFAULT_BUILTIN_OCR_FETCH: Readonly<BuiltinOcrConfig> = Object.freeze({ ...DEFAULT_BUILTIN_OCR, autoRec: { ...DEFAULT_AUTO_REC, fetch: true as const } })
 
 /** ParseOptions → 내장 엔진 설정. 옵션이 없으면 기본 설정 객체 그대로. 잘못된 옵션은 throw — parse() 는 먼저 걸러 실패 결과로 낸다 */
 export function builtinOcrConfig(o: ParseOptions | undefined): Readonly<BuiltinOcrConfig> {
-  if (!o || (o.ocrDet === undefined && o.ocrDetLongSide === undefined && o.ocrRec === undefined && o.ocrRecDict === undefined && !o.ocrLines)) return DEFAULT_BUILTIN_OCR
+  if (!o || (o.ocrDet === undefined && o.ocrDetLongSide === undefined && o.ocrRec === undefined && o.ocrRecDict === undefined && !o.ocrLines)) return o?.ocr ? DEFAULT_BUILTIN_OCR_FETCH : DEFAULT_BUILTIN_OCR
   const bad = validateOcrOptions(o)
   if (bad) throw new KordocError(bad)
   const models = resolveOcrModels(o)
   return {
     models,
-    ...(o.ocrRec === "auto" ? { handwriting: handwritingFallbackModels(models) } : {}),
+    ...(o.ocrRec === "auto" ? { handwriting: handwritingFallbackModels(models), autoRec: AUTO_REC }
+      : o.ocrRec === undefined ? { handwriting: handwritingFallbackModels(models), autoRec: o.ocr ? { ...DEFAULT_AUTO_REC, fetch: true as const } : DEFAULT_AUTO_REC } : {}),
     tuning: o.ocrDetLongSide === undefined ? DEFAULT_OCR_TUNING : { ...DEFAULT_OCR_TUNING, detLongSide: o.ocrDetLongSide },
     lines: o.ocrLines === "all" ? "all" : o.ocrLines ? "kept" : undefined,
   }
 }
 
-/** `ocrRec: "auto"` 문턱 — 쪽 평균 확신도(글자 수 가중)가 이보다 낮은 쪽만 손글씨 rec 로 다시 읽고, 평균이 GAIN 이상 오를 때만 바꾼다.
- *  KoOCR-Bench 손글씨 쪽은 기본 rec .74~.90 → 손글씨 rec +.07~.22, 인쇄 쪽은 .87~.98 에 대개 +.05 이하였다 */
-const AUTO_REC_PAGE_CONF = 0.9
-const AUTO_REC_GAIN = 0.06
-
-/** 쪽 인식 — `ocrRec: "auto"` 면 확신도 낮은 쪽을 손글씨 rec 로 다시 읽어 더 확신하는 쪽을 쓴다(stats 도 고른 쪽 것으로) */
+/** 쪽 인식 — 손글씨 rec 가 있으면(기본·`ocrRec: "auto"`) 확신도 낮은 쪽을 손글씨 rec 로 다시 읽어 더 확신하는 쪽을 쓴다(stats 도 고른 쪽 것으로) */
 export async function recognizeOcrPage(
   engine: Awaited<ReturnType<typeof getOcrEngine>>, config: Readonly<BuiltinOcrConfig>, tuning: Readonly<OcrTuning>,
   rgba: Uint8Array, width: number, height: number, stats: OcrPageStats,
@@ -78,11 +88,21 @@ export async function recognizeOcrPage(
 ): Promise<OcrItem[]> {
   const items = await engine.recognizePage(rgba, width, height, stats, tuning, cellRules, rowRules)
   if (!config.handwriting || stats.pageRotation) return items
+  const auto: NonNullable<BuiltinOcrConfig["autoRec"]> = config.autoRec ?? AUTO_REC
   const base = meanConfidence(items)
-  if (base >= AUTO_REC_PAGE_CONF) return items
+  if (base >= auto.pageConf) return items
   const altStats: OcrPageStats = { droppedLowConf: 0, ...(stats.dropped ? { dropped: [] } : {}) }
-  const alt = await (await getOcrEngine(config.handwriting)).recognizePage(rgba, width, height, altStats, tuning, cellRules, rowRules)
-  if (meanConfidence(alt) - base < AUTO_REC_GAIN) return items
+  let alt: OcrItem[]
+  try {
+    if (auto.lazy && !auto.fetch && !await ocrModelsCached(config.handwriting)) return items
+    if (auto.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
+    alt = await (await getOcrEngine(config.handwriting)).recognizePage(rgba, width, height, altStats, tuning, cellRules, rowRules)
+  } catch (e) {
+    // 기본 설정은 손글씨 rec 를 고르지 않았다 — 받기(오프라인)·인식 실패는 기본 rec 결과로 둔다
+    if (!auto.lazy) throw e
+    return items
+  }
+  if (meanConfidence(alt) - base < auto.gain) return items
   Object.assign(stats, altStats)
   return alt
 }
@@ -154,7 +174,7 @@ export async function runPdfOcr(
     () => import("@hyzyla/pdfium"),
   )
   if (mode === "builtin") await ensureOcrModelsFor(config.models, reportModelDownload)
-  if (mode === "builtin" && config.handwriting) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
+  if (mode === "builtin" && config.handwriting && !config.autoRec?.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = mode === "builtin" ? await getOcrEngine(config.models) : null
 
   const pdfium = await pdfiumMod.PDFiumLibrary.init()

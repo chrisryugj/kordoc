@@ -410,7 +410,7 @@ describe("toParseOptions — 허용 목록과 false·미지정 구분", () => {
       // OCR 엔진 옵션 — 모르는 모델 이름·범위 밖 긴 변·상대 경로·해시 꼴·남는 키
       { ocrDet: "large" }, { ocrLines: "dropped" }, { ocrDetLongSide: 10000 }, { ocrDetLongSide: 960.5 },
       { ocrRec: { path: "rel/rec.onnx", sha256: "a".repeat(64) } }, { ocrRec: { path: "/m/rec.onnx", sha256: "xyz" } },
-      { ocrRec: { path: "/m/rec.onnx" } }, { ocrRec: "printed" }, { ocrRec: "/m/rec.onnx" }, { ocrRecDict: "handwriting" }, { ocrRecDict: { path: "/m/d.yml", sha256: "a".repeat(64), url: "http://x" } }]) {
+      { ocrRec: { path: "/m/rec.onnx" } }, { ocrRec: "typewriter" }, { ocrRec: "/m/rec.onnx" }, { ocrRecDict: "handwriting" }, { ocrRecDict: { path: "/m/d.yml", sha256: "a".repeat(64), url: "http://x" } }]) {
       assert.throws(() => toParseOptions(bad, "/x"), (e: unknown) => e instanceof WorkerProtocolError && e.code === "INVALID_OPTIONS", JSON.stringify(bad))
     }
   })

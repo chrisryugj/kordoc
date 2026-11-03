@@ -121,7 +121,7 @@ export function resolveOcrModels(o: Pick<ParseOptions, "ocrDet" | "ocrRec" | "oc
   const det = o?.ocrDet
   return {
     det: det === undefined || det === "mobile" ? DEFAULT_OCR_MODELS.det : det === "server" ? { spec: OCR_SERVER_DET_MODEL } : det === "medium" ? { spec: OCR_V6_MEDIUM_DET_MODEL } : file(det),
-    rec: o?.ocrRec === "handwriting" ? { spec: OCR_HANDWRITING_REC_MODEL } : o?.ocrRec && o.ocrRec !== "auto" ? file(o.ocrRec) : DEFAULT_OCR_MODELS.rec,
+    rec: o?.ocrRec === "handwriting" ? { spec: OCR_HANDWRITING_REC_MODEL } : o?.ocrRec && o.ocrRec !== "auto" && o.ocrRec !== "printed" ? file(o.ocrRec) : DEFAULT_OCR_MODELS.rec,
     dict: o?.ocrRecDict ? file(o.ocrRecDict) : DEFAULT_OCR_MODELS.dict,
   }
 }

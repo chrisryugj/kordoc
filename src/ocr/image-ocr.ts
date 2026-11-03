@@ -76,7 +76,7 @@ export async function parseImageDocument(
 
   const config = builtinOcrConfig(options)
   await ensureOcrModelsFor(config.models, reportModelDownload)
-  if (config.handwriting) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
+  if (config.handwriting && !config.autoRec?.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = await getOcrEngine(config.models)
   const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
   // 괘선을 먼저 찾아 검출 상자를 표 칸·행 경계에서 가른다 — PDF OCR(ocrOnePage)과 같은 순서. 인식 뒤에 찾으면 이웃 칸 글이 한 상자로
