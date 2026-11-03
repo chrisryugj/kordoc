@@ -20,7 +20,7 @@
  * 사용: node bench/hwp2hwpx.mjs [--doc=부분문자열] [--limit=N] [--show=N(문서별 첫 불일치 N개)] [--top=N(불일치 종류 상위 N)] [--gate]
  * 산출: bench/out/hwp2hwpx.json
  */
-import { readFileSync, readdirSync, writeFileSync, existsSync, statSync } from "node:fs"
+import { readFileSync, readdirSync, writeFileSync, existsSync, statSync, mkdirSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import JSZip from "jszip"
@@ -225,6 +225,7 @@ console.log(`HWP→HWPX ${pairs.length}짝(xml1.5 ${xml15}) · 실패 ${failed} 
 console.log(`  속성 일치 ${summary.attrMatch} (header ${summary.headerMatch} · section ${summary.sectionMatch}) · 글 일치 ${summary.textMatch} · 항목 ${summary.partsMatch} · 완전 일치 ${exact}/${xml15}`)
 for (const t of top) console.log(`  ${String(t.units).padStart(8)} ${String(t.docs).padStart(4)}문서  ${t.kind}  예) ${JSON.stringify(t.examples[0]).slice(0, 220)}`)
 if (showN) for (const r of rows) if (r.first || r.error) console.log(`\n# ${r.pair} ${r.error ?? ""}\n` + (r.first ?? []).map(f => `  ${f.kind} want=${JSON.stringify(f.want)?.slice(0, 120)} got=${JSON.stringify(f.got)?.slice(0, 120)} @${f.path ?? ""}`).join("\n"))
+mkdirSync(join(root, "out"), { recursive: true })
 writeFileSync(join(root, "out", "hwp2hwpx.json"), JSON.stringify({ generatedAt: new Date().toISOString(), summary, top, rows }, null, 1))
 
 if (gateMode) {
