@@ -340,6 +340,15 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.ok(xml.includes(`<hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>${begin}다라마<hp:markpenEnd/></hp:t></hp:run><hp:run charPrIDRef="2"><hp:t/></hp:run>`), xml)
   })
 
+  it("메모 모양은 선 종류가 굵기보다 앞이다", async () => {
+    const memo = Buffer.alloc(22)
+    memo.writeUInt32LE(15591, 0)
+    memo[4] = 1 // 선 종류(실선)
+    memo[5] = 3 // 선 굵기
+    const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), rec(0x5c, 0, memo))))
+    assert.match(await zip.file("Contents/header.xml")!.async("string"), /<hh:memoPr id="1" width="15591" lineWidth="3" lineType="SOLID"/)
+  })
+
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
     const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
     for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",

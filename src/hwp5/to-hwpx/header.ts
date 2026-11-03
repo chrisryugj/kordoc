@@ -303,7 +303,8 @@ function style(r: Rec, id: number, paraIds: number[]): string {
 
 function memoPr(r: Rec, id: number): string {
   const c = new Cur(r.data)
-  const width = c.u32(), lineWidth = c.u8(), lineType = c.u8(), lineColor = c.u32(), fillColor = c.u32(), activeColor = c.u32(), type = c.u16()
+  // 선 종류가 굵기보다 앞이다(한글 저장본: 기록 01 03 → lineType SOLID · lineWidth 3)
+  const width = c.u32(), lineType = c.u8(), lineWidth = c.u8(), lineColor = c.u32(), fillColor = c.u32(), activeColor = c.u32(), type = c.u16()
   return el("hh:memoPr", [["id", id], ["width", width], ["lineWidth", lineWidth], ["lineType", pick(BORDER_TYPES, lineType)],
     ["lineColor", color(lineColor)], ["fillColor", color(fillColor)], ["activeColor", color(activeColor)], ["memoType", pick(MEMO_TYPES, type)]])
 }
