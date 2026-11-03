@@ -631,7 +631,16 @@ function extractBlocksWithGrids(
       const numericLine = (t: string) => { const cs = t.replace(/\s+/g, ""); return cs.length > 0 && (cs.match(/[\d.,%()+\-−–—△▲▽▼]/g)?.length ?? 0) >= cs.length * 0.85 }
       // 글머리(○·□·"- 글", 음수 "-5.4"·빈 값 "-" 아님) 줄이 둘 넘는 칸은 칸 하나에 담긴 목록이다(세입예산 사업명세서 "○자활근로사업…" 칸) — 행으로 펼치지 않는다
       const bulletList = irGrid.slice(1).flat().some(c => c.text.split("\n").filter(t => /^\s*(?:[○◦•□■▪]|-\s*[^\d\s.,−-])/.test(t)).length >= 2)
-      return !bulletList && ls.length > 0 && ls.filter(numericLine).length >= ls.length * 0.5
+      if (bulletList || !ls.length) return false
+      const share = ls.filter(numericLine).length / ls.length
+      if (share >= 0.5) return true
+      // 이름표·값 표(대차대조표 "Ⅱ.비유동자산 / 1.투자자산 / …" | 금액) — 이름표 줄이 많아 숫자 줄이 반에 못 미쳐도, 열마다 숫자 열(80%+)이거나
+      // 이름표 열(20%-)로 깔끔히 갈리면 숫자 표다. 긴 글 칸 표는 글이 여러 열에 걸쳐 숫자 줄이 적다
+      const colShares = Array.from({ length: numCols }, (_, c) => {
+        const cl = irGrid.slice(1).flatMap(row => (row[c]?.text ?? "").split("\n")).map(t => t.trim()).filter(Boolean)
+        return cl.length ? cl.filter(numericLine).length / cl.length : null
+      }).filter((v): v is number => v !== null)
+      return share >= 0.35 && colShares.some(v => v >= 0.8) && colShares.every(v => v >= 0.8 || v <= 0.2)
     })()
     // OCR 숫자 표는 연도 묶음마다 격자 행이 있어(시도별 이동자 수 2024·2025·2026 묶음) 행 상한을 늘린다.
     // 12행 넘는 격자는 전폭 긴 글 칸(쪽 레이아웃 틀 — 설명 글 아래 표들)이 없을 때만 — 틀까지 글줄로 펼치면 쪽 전체가 한 표가 된다

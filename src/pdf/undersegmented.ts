@@ -95,9 +95,9 @@ const ALIGNED_LINE_TOL = 0.5 // 줄 높이 가운데값 배수 — OCR 숫자 �
 function alignedSubRows(itemsByCol: TextItem[][], minLines = MIN_ALIGNED_LINES): string[][] | null {
   const byCol = itemsByCol.map(groupItemsToVisualLines)
   const cols = byCol.filter(lines => lines.length)
-  if (cols.length < MIN_ALIGNED_COLUMNS) return null
+  if (cols.length < MIN_ALIGNED_COLUMNS) return anchoredSubRows(byCol, minLines)
   const k = cols[0].length
-  if (k < minLines || cols.some(lines => lines.length !== k)) return null
+  if (k < minLines || cols.some(lines => lines.length !== k)) return anchoredSubRows(byCol, minLines)
   const cy = (line: TextItem[]) => line.reduce((s, it) => s + itemCenterY(it), 0) / line.length
   for (let i = 0; i < k; i++) {
     const ys = cols.map(lines => cy(lines[i]))
@@ -106,6 +106,38 @@ function alignedSubRows(itemsByCol: TextItem[][], minLines = MIN_ALIGNED_LINES):
   }
   // 줄 상자가 줄 간격보다 커(OCR) 띠 묶기는 겹친 줄을 한 띠로 합친다 — 맞춘 k 번째 줄끼리 바로 행으로
   return Array.from({ length: k }, (_, i) => byCol.map(lines => lines.length ? cellTextToString(lines[i]) : ""))
+}
+
+/**
+ * 줄 수가 다른 열의 하위 행 (OCR) — 대차대조표처럼 이름표 열은 줄마다 항목이 있고 금액 열은 일부 줄에만 값이 있다("Ⅱ.비유동자산 /
+ * 1.투자자산 / …" | "9,174,154 / 445,324 / …"). 줄이 가장 많은 열(셋 이상)을 기준으로, 다른 열의 줄마다 높이가 맞는(줄 높이 0.5배 안)
+ * 기준 줄이 하나씩 따로 있으면 그 줄의 행에 넣는다. 맞는 기준 줄이 없거나 두 줄이 한 기준 줄에 몰리면 펼치지 않는다
+ */
+function anchoredSubRows(byCol: TextItem[][][], minLines: number): string[][] | null {
+  if (!byCol.every(lines => lines.every(line => line.every(it => it.fontName === "ocr")))) return null
+  const a = byCol.reduce((best, lines, c) => lines.length > byCol[best].length ? c : best, 0)
+  const anchor = byCol[a], k = anchor.length
+  // 다른 열에도 두 줄 이상 — 다른 열이 한 줄뿐이면 한 칸에서 꺾인 긴 글이다
+  // 기준 줄 셋 이상 — 두 줄 묶음은 가운데 놓인 걸친 이름표("본부" | "정원 / 현원")를 한 행에 붙인다
+  if (k < Math.max(3, minLines) || !byCol.some((lines, c) => c !== a && lines.length >= 2)) return null
+  const cy = (line: TextItem[]) => line.reduce((s, it) => s + itemCenterY(it), 0) / line.length
+  const ys = anchor.map(cy)
+  const hs = anchor.map(line => itemHeight(line[0])).sort((x, y) => x - y), h = hs[hs.length >> 1]
+  const rows = Array.from({ length: k }, () => byCol.map(() => ""))
+  for (let c = 0; c < byCol.length; c++) {
+    const used = new Set<number>()
+    for (const line of byCol[c]) {
+      const y = cy(line)
+      let j = 0
+      for (let i = 1; i < k; i++) if (Math.abs(ys[i] - y) < Math.abs(ys[j] - y)) j = i
+      if (Math.abs(ys[j] - y) > h * ALIGNED_LINE_TOL || used.has(j)) return null
+      used.add(j)
+      rows[j][c] = cellTextToString(line)
+      // 두 줄이 한 줄로 묶인 것(기울어진 스캔 "765 / 2,191")은 어느 기준 줄 것인지 모른다
+      if (rows[j][c].includes("\n")) return null
+    }
+  }
+  return rows
 }
 
 /**

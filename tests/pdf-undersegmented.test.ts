@@ -87,3 +87,21 @@ describe("행 합침 칸이 덮은 유령 행 묶음", () => {
     assert.deepEqual(rebuilt, [["사업", "총액", "2020"], ["2020 예산", "2,480", "96"], ["2021 예산", "2,483", "97"]])
   })
 })
+
+describe("줄 수가 다른 열의 하위 행 (OCR)", () => {
+  const ocr = (text: string, x: number, y: number): TextItem => ({ text, x, y, w: 60, h: 10, fontSize: 10, fontName: "ocr" })
+  const cols = [0, 150, 250, 350]
+  // 대차대조표: 이름표 열은 다섯 줄, 금액 열은 그 가운데 네 줄에만 값
+  const labels = ["Ⅱ.비유동자산", "1.투자자산", "2.유형자산", "3.무형자산", "4.기타자산"]
+  const items = [...labels.map((t, i) => ocr(t, 5, 150 - i * 14)), ...["9,174,154", "445,324", "12,866", "6,604"].map((t, i) => ocr(t, 155, 150 - (i + 1) * 14))]
+
+  it("puts each value on the label line it stands beside", () => {
+    const rebuilt = normalizeUndersegmentedTable([[{ text: "" }, { text: "" }, { text: "" }]], cols, items)
+    assert.deepEqual(rebuilt, [["Ⅱ.비유동자산", "", ""], ["1.투자자산", "9,174,154", ""], ["2.유형자산", "445,324", ""], ["3.무형자산", "12,866", ""], ["4.기타자산", "6,604", ""]])
+  })
+
+  it("does not apply to text-layer items", () => {
+    const text = items.map(it => ({ ...it, fontName: "Batang" }))
+    assert.equal(normalizeUndersegmentedTable([[{ text: "" }, { text: "" }, { text: "" }]], cols, text), null)
+  })
+})
