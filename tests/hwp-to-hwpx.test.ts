@@ -253,6 +253,15 @@ describe("hwpToHwpx — 합성 문서", () => {
       ["#A10FCA0", "#FF000000", "#10000000", "#123456"])
   })
 
+  it("변경 추적 설정 기록이 없으면 한글 기본값 56, 있으면 기록 값", async () => {
+    const config = async (docInfo: Buffer): Promise<string | undefined> => (await (await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), docInfo))))
+      .file("Contents/header.xml")!.async("string")).match(/<hh:trackchageConfig flags="(\d+)"\/>/)?.[1]
+    const track = Buffer.alloc(1032)
+    track.writeUInt32LE(60, 0)
+    assert.equal(await config(Buffer.alloc(0)), "56")
+    assert.equal(await config(rec(0x20, 0, track)), "60")
+  })
+
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
     const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
     for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",

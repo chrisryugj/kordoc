@@ -367,7 +367,9 @@ export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: nu
   refList += list("hh:memoProperties", of(TAG.MEMO_SHAPE).map((r, i) => memoPr(r, i + 1)))
 
   const compat = new Cur(recs.find(r => r.tagId === TAG.COMPATIBLE_DOCUMENT)?.data ?? Buffer.alloc(0)).u32()
-  const track = new Cur(recs.find(r => r.tagId === TAG.TRACKCHANGE)?.data ?? Buffer.alloc(0)).u32()
+  // 변경 추적 설정 기록이 없는 문서는 한글이 기본값 56 으로 쓴다(한글 저장본의 기록 있는 문서도 거의 다 56)
+  const trackRec = recs.find(r => r.tagId === TAG.TRACKCHANGE)
+  const track = trackRec ? new Cur(trackRec.data).u32() : 56
   return XML_DECL + `<hh:head ${NS} version="1.5" secCnt="${secCnt}">`
     + el("hh:beginNum", [["page", bPage], ["footnote", bFoot], ["endnote", bEnd], ["pic", bPic], ["tbl", bTbl], ["equation", bEq]])
     + `<hh:refList>${refList}</hh:refList>`
