@@ -193,3 +193,24 @@ describe("펼친 행의 한 자리 수 열과 걸친 칸 글 (OCR)", () => {
     assert.deepEqual(rebuilt?.slice(1, 3), [["2023년", ...lines[0]], ["", ...lines[1]]])
   })
 })
+
+describe("부푼 OCR 상자의 행 띠 (OCR)", () => {
+  // 지역 열 상자가 잉크 둘레 여백으로 부풀어(글자 10, 상자 30 — 값과 같은 글줄) 이웃 행 상자와 겹친다 — 겹침으로 띠를 묶으면 "서울부산…" 한 띠가 됐다
+  const regions = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기"]
+  const box = (text: string, x: number, y: number, h: number): TextItem => ({ text, x, y, w: 30, h, fontSize: 10, fontName: "ocr" })
+  const items = regions.flatMap((t, i) => [box(t, 5, 300 - i * 16, 30), box(String(4000 + i), 105, 300 - i * 16, 10), box(String(5000 + i), 205, 300 - i * 16, 10)])
+  const cell = [[{ text: "" }, { text: "" }, { text: "" }]]
+
+  it("bands OCR rows by line centers, not by inflated box overlap", () => {
+    const rebuilt = normalizeUndersegmentedTable(cell, [0, 100, 200, 300], items)
+    assert.deepEqual(rebuilt?.map(r => r[0]), regions)
+  })
+
+  it("still joins a wrapped name line without numbers to its value line", () => {
+    // "러시아" / "(연방) 6,492" — 꺾인 이름 윗줄은 수가 없어 겹침으로 값 줄과 한 띠다
+    const y = 300 - 10 * 16
+    const wrapped = [...items, box("러시아", 5, y + 7, 18), box("(연방)", 5, y - 5, 18), box("6,492", 105, y - 5, 10), box("7,120", 205, y - 5, 10)]
+    const rebuilt = normalizeUndersegmentedTable(cell, [0, 100, 200, 300], wrapped)
+    assert.deepEqual(rebuilt?.at(-1), ["러시아\n(연방)", "6,492", "7,120"])
+  })
+})

@@ -221,6 +221,7 @@ export function normalizeUndersegmentedTable(
   const allLines = groupItemsToVisualLines(items.filter(i => i.text.trim()))
   const bands: RowBand[] = []
   for (const line of allLines) {
+    const ocrLine = line.every(it => it.fontName === "ocr"), lineHasDigit = line.some(it => /\d/.test(it.text))
     let cy = 0, h = 0
     for (const it of line) { cy += itemCenterY(it); h += itemHeight(it) }
     cy /= line.length
@@ -231,8 +232,13 @@ export function normalizeUndersegmentedTable(
     let matched: RowBand | null = null
     for (const band of bands) {
       const epsilon = Math.max(MIN_ROW_BAND_EPSILON, Math.min(band.avgHeight, h) * ROW_BAND_EPSILON_RATIO)
+      // OCR 상자는 잉크 둘레 여백으로 부풀어(글자 26px 에 상자 40~65px) 이웃 행 상자와 겹친다 — 겹침으로 묶으면 행 괘선 없는 지역 열
+      // "서울/부산/…/대전" 이 한 띠가 된다. OCR 은 두 줄 다 수가 있고 같은 열에 부딪치면 겹쳐도 다른 행이다(꺾인 이름 "러시아 / (연방) 6,492"·
+      // 비켜 앉은 값 하나는 묶는다)
+      const rowClash = ocrLine && lineHasDigit && band.itemsByCol.some(col => col.some(it => /\d/.test(it.text))) &&
+        line.some(it => band.itemsByCol[findColumnIndex(it, colXs)].length > 0)
       if (Math.abs(band.centerY - cy) <= epsilon ||
-          (bottom <= band.topY && top >= band.bottomY)) {
+          (!rowClash && bottom <= band.topY && top >= band.bottomY)) {
         matched = band
         break
       }
