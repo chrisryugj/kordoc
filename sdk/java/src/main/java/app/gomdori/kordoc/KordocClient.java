@@ -26,7 +26,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.Stream;
 
 /**
  * kordoc 상주 워커 클라이언트. 워커는 {@link #start(KordocConfig)} 에서 띄우고 {@link #close()} 까지 재사용한다(요청마다 프로세스를 만들지 않는다).
@@ -221,7 +220,7 @@ public final class KordocClient implements AutoCloseable {
      * 대표 문서를 모든 워커에서 실제로 파싱한다. 한 워커에서라도 성공하면 교체 워커도 요청을 받기 전에 같은 문서로 워밍업한다.
      * 교체 워커의 워밍업이 워커를 끝내면 그 요청은 워밍업 없는 새 워커가 받는다.
      * 처리 경로를 한 번 지나게 할 뿐 JIT 최적화 완료를 보장하지 않는다. 문서 파싱 실패도 예외 대신 결과로 돌려준다.
-     * 부른 스레드가 interrupt 되면 응답을 기다리던 워커만 종료하고 {@link KordocException} 을 던진다(워밍업 문서는 등록하지 않는다).
+     * 부른 스레드가 interrupt 되면 시작한 워밍업 작업을 모두 중단·정리하고 {@link KordocException} 을 던진다(워밍업 문서는 등록하지 않는다).
      */
     public WarmupReport warmup(Path file, ParseOptions options) {
         checkOpen();
@@ -229,37 +228,100 @@ public final class KordocClient implements AutoCloseable {
         if (request(spec.file, spec.options).line.length > config.maxRequestBytes) {  // 검증만 — parseAsync 와 같은 경계(개행 제외)
             throw new KordocProtocolException("REQUEST_TOO_LARGE", "요청이 상한(" + config.maxRequestBytes + "바이트)을 넘습니다");
         }
-        List<WarmupReport.Worker> out = new ArrayList<>();
-        for (Slot s : slots) {
-            try {
-                s.lock.lockInterruptibly();
-            } catch (InterruptedException e) {
+        if (Thread.currentThread().isInterrupted()) throw new KordocException("워밍업을 기다리다 중단됐습니다");
+        List<WarmupReport.Worker> out;
+        if (slots.length == 1) {
+            out = List.of(warmSlot(slots[0], spec));
+        } else {
+            WarmupReport.Worker[] results = new WarmupReport.Worker[slots.length];
+            java.util.concurrent.atomic.AtomicReference<RuntimeException> failure = new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            List<Thread> children = new ArrayList<>();
+            for (int i = 0; i < slots.length; i++) {
+                final int index = i;
+                Thread child = new Thread(() -> {
+                    try {
+                        start.await();
+                        results[index] = warmSlot(slots[index], spec);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        failure.compareAndSet(null, new KordocException("워밍업을 기다리다 중단됐습니다", e));
+                    } catch (RuntimeException e) {
+                        failure.compareAndSet(null, e);
+                    } finally {
+                        if (failure.get() != null) for (Thread sibling : children) {
+                            if (sibling != Thread.currentThread()) sibling.interrupt();
+                        }
+                    }
+                }, "kordoc-sdk-warmup-" + i);
+                child.setDaemon(true);
+                children.add(child);
+            }
+            for (Thread child : children) child.start();
+            start.countDown();
+            boolean interrupted = false;
+            for (Thread child : children) {
+                while (child.isAlive()) {
+                    try {
+                        child.join(); // Future 취소 표시가 아니라 실제 작업·정리 종료를 기다린다
+                    } catch (InterruptedException e) {
+                        interrupted = true;
+                        for (Thread sibling : children) sibling.interrupt();
+                    }
+                }
+            }
+            if (interrupted) {
                 Thread.currentThread().interrupt();
-                throw new KordocException("워밍업을 기다리다 중단됐습니다", e);
+                throw new KordocException("워밍업을 기다리다 중단됐습니다");
             }
-            try {
-                WorkerProcess w = s.worker;
-                if (w == null || !w.alive()) w = spawn(s, false);
-                out.add(warm(w, spec));
-            } finally {
-                s.lock.unlock();
-            }
-            // 응답 대기 중 interrupt 는 warm 이 그 워커를 종료하고 결과로 바꾼다 — 마지막 자리여도 보고·등록 대신 던진다
-            if (Thread.currentThread().isInterrupted()) throw new KordocException("워밍업을 기다리다 중단됐습니다");
+            if (failure.get() != null) throw failure.get();
+            out = List.of(results);
         }
         warmupSpec = out.stream().anyMatch(WarmupReport.Worker::success) ? spec : null;
         return new WarmupReport(List.copyOf(out));
     }
 
-    /** 살아 있는 소유 워커의 PID */
-    public List<Long> workerPids() {
-        return Stream.of(slots).map(s -> s.worker).filter(w -> w != null && w.alive()).map(WorkerProcess::pid)
-                .sorted(Comparator.naturalOrder()).toList();
+    private WarmupReport.Worker warmSlot(Slot s, Warmup spec) {
+        try {
+            s.lock.lockInterruptibly();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new KordocException("워밍업을 기다리다 중단됐습니다", e);
+        }
+        try {
+            checkOpen();
+            WorkerProcess w = s.worker;
+            if (w == null || !w.alive()) w = spawn(s, false);
+            WarmupReport.Worker result = warm(w, spec);
+            if (Thread.currentThread().isInterrupted()) throw new KordocException("워밍업을 기다리다 중단됐습니다");
+            return result;
+        } finally {
+            s.lock.unlock();
+        }
     }
 
-    /** 워커별 마지막 rss(바이트). 풀 메모리는 합으로 본다 */
+    private List<WorkerProcess> ownedWorkers() {
+        synchronized (lock) {
+            java.util.Set<WorkerProcess> workers = new java.util.LinkedHashSet<>();
+            for (Slot s : slots) {
+                if (s.worker != null) workers.add(s.worker);
+                if (s.starting != null) workers.add(s.starting);
+            }
+            synchronized (retiring) {
+                workers.addAll(retiring);
+            }
+            return workers.stream().filter(WorkerProcess::alive).toList();
+        }
+    }
+
+    /** 살아 있는 소유 워커의 PID (기동·종료 대기 포함) */
+    public List<Long> workerPids() {
+        return ownedWorkers().stream().map(WorkerProcess::pid).distinct().sorted(Comparator.naturalOrder()).toList();
+    }
+
+    /** 살아 있는 소유 워커별 마지막 rss(바이트). 측정 전 값은 포함하지 않는다 */
     public List<Long> workerRss() {
-        return Stream.of(slots).map(s -> s.worker).filter(w -> w != null && w.alive() && w.lastRss != null).map(w -> w.lastRss).toList();
+        return ownedWorkers().stream().map(w -> w.lastRss).filter(java.util.Objects::nonNull).toList();
     }
 
     /**
@@ -351,6 +413,17 @@ public final class KordocClient implements AutoCloseable {
                 }
             }
         }
+        for (Slot s : slots) {
+            Thread t = s.retireThread;
+            if (t == null) continue;
+            while (t.isAlive()) {
+                try {
+                    t.join();
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        }
         timer.shutdownNow();
         completer.shutdown(); // 이미 넘긴 완료는 마저 돌고, 돌아오기 전에 끝나게 기다린다
         // 완료 콜백 안에서 부른 close 면 자기 완료는 빼고 센다 — 자기를 기다리면 closeTimeout 내내 멈춘다
@@ -422,6 +495,10 @@ public final class KordocClient implements AutoCloseable {
     private Runnable run(Slot slot, Job job) {
         WorkerProcess w = slot.worker;
         try {
+            awaitRetirement(slot);
+            synchronized (job) {
+                if (job.abandoned) return () -> {};
+            }
             if (w == null || !w.alive()) w = spawn(slot, true);
         } catch (RuntimeException e) {
             slot.worker = null; // 자리는 남겨 다음 요청이 다시 띄운다
@@ -458,14 +535,19 @@ public final class KordocClient implements AutoCloseable {
 
     private void retire(Slot slot) {
         WorkerProcess old = slot.worker;
-        slot.worker = null;
-        synchronized (retiring) {
-            retiring.add(old);
-        }
-        daemon("kordoc-sdk-retire", () -> {
-            old.quit(config.closeTimeout.toMillis());
+        synchronized (lock) {
             synchronized (retiring) {
-                retiring.remove(old);
+                retiring.add(old);
+            }
+            slot.worker = null;
+        }
+        slot.retireThread = daemon("kordoc-sdk-retire", () -> {
+            try {
+                old.quit(config.closeTimeout.toMillis());
+            } finally {
+                synchronized (retiring) {
+                    retiring.remove(old);
+                }
             }
         });
     }
@@ -475,6 +557,7 @@ public final class KordocClient implements AutoCloseable {
      * 워밍업 없는 새 워커로 바꾼다 — 워밍업 실패로 요청을 막지 않는다. 닫혔으면 넣지 않고 죽인 뒤 KordocClosedException 을 던진다.
      */
     private WorkerProcess spawn(Slot slot, boolean warm) {
+        awaitRetirement(slot);
         WorkerProcess w = newWorker(slot);
         try {
             w.start();
@@ -497,6 +580,25 @@ public final class KordocClient implements AutoCloseable {
                 isClosed = closed;
             }
             throw isClosed && !(e instanceof KordocClosedException) ? new KordocClosedException("클라이언트가 닫혀 워커 시작을 멈췄습니다", e) : e;
+        }
+    }
+
+    /** 종료 작업은 요청 취소와 독립적으로 소유하며 실제 스레드 종료까지 기다린다. */
+    private void awaitRetirement(Slot slot) {
+        Thread retiringThread = slot.retireThread;
+        if (retiringThread == null) return;
+        boolean interrupted = false;
+        while (retiringThread.isAlive()) {
+            try {
+                retiringThread.join();
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+        }
+        slot.retireThread = null;
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+            throw new KordocException("워커 종료를 기다리다 중단됐습니다");
         }
     }
 
@@ -643,6 +745,7 @@ public final class KordocClient implements AutoCloseable {
         volatile WorkerProcess worker;
         /** 띄우는 중이라 아직 worker 가 아닌 워커 — close 가 죽인다 */
         volatile WorkerProcess starting;
+        volatile Thread retireThread;
     }
 
     /** 요청 한 줄 — 크기를 보내기 전에 잰다 */
