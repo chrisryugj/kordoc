@@ -149,6 +149,19 @@ const RETRY_SCORE = 0.9
 const LEADER_MIN_DOTS = 4
 /** 리더 앞 조각 crop 을 리더 안쪽으로 더 무는 폭 (박스 높이 배수, recognizePage 주석) */
 const LEADER_CONTEXT = 0.5
+/** det 입력 짧은 변 하한·그때 긴 변 상한 (detInputSize) */
+const DET_MIN_SHORT_SIDE = 80
+const DET_MAX_LONG_SIDE = 4096
+
+/**
+ * det 입력 크기 — 긴 변을 longSide 에 맞추고 32 배수로. 아주 납작한 띠(한 줄 손글씨 3685×183)는 긴 변을 맞추면 짧은 변이 48px 로 줄어
+ * 글자가 검출 크기 밑으로 사라졌다(띠 하나에 상자 여섯) — 짧은 변을 DET_MIN_SHORT_SIDE 아래로 줄이지 않는다(긴 변은 4096 까지)
+ */
+export function detInputSize(width: number, height: number, longSide: number): { dw: number; dh: number } {
+  let ratio = longSide / Math.max(width, height)
+  if (Math.min(width, height) * ratio < DET_MIN_SHORT_SIDE) ratio = Math.min(DET_MIN_SHORT_SIDE / Math.min(width, height), DET_MAX_LONG_SIDE / Math.max(width, height))
+  return { dw: Math.max(32, Math.round((width * ratio) / 32) * 32), dh: Math.max(32, Math.round((height * ratio) / 32) * 32) }
+}
 /** 박스 잉크 비율 하한 (engine recognizePage 주석) */
 const MIN_INK_RATIO = 0.01
 /** 로컬 모델 파일 크기 상한 — PP-OCRv5 server det 가 88MB, 가장 큰 rec 도 수십 MB */
@@ -907,9 +920,7 @@ export class OcrEngine {
     tuning: Readonly<OcrTuning>,
     stats?: OcrPageStats,
   ): Promise<Box[]> {
-    const ratio = tuning.detLongSide / Math.max(width, height)
-    const dw = Math.max(32, Math.round((width * ratio) / 32) * 32)
-    const dh = Math.max(32, Math.round((height * ratio) / 32) * 32)
+    const { dw, dh } = detInputSize(width, height, tuning.detLongSide)
 
     const rgb = await this.sharp(rgba, { raw: { width, height, channels: 4 } })
       .resize(dw, dh, { fit: "fill" })
