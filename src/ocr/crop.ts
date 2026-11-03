@@ -37,10 +37,11 @@ export function bandBoxes(b: Box, bands: Array<{ y0: number; y1: number; x0: num
  * — 공식 전처리(cv2.resize 기본)와 같은 보간.
  */
 /** keep: 박스 로컬 [x0, x1)×[y0, y1) 밖은 배경 휘도 bg 로 칠한다 (rot 0 만 — 박스 끝에 걸린 이웃 줄 조각·상자 테두리 지우기) */
-export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 | 270, keep?: { x0: number; x1: number; y0: number; y1: number; bg: number }): { rgb: Uint8Array; w: number } {
+export function lineCrop(rgba: Uint8Array, pageW: number, box: Box, rot: 0 | 90 | 270, keep?: { x0: number; x1: number; y0: number; y1: number; bg: number }, stretch = 1): { rgb: Uint8Array; w: number } {
   const srcW = rot === 0 ? box.w : box.h
   const srcH = rot === 0 ? box.h : box.w
-  const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round((srcW * REC_HEIGHT) / srcH)))
+  // stretch: 가로로 늘려 읽기 — 자간 좁은 글꼴의 같은 숫자 연속("000")을 CTC 가 한 자로 합치지 않게 (engine 숫자 자릿수 재인식)
+  const rw = Math.min(REC_MAX_WIDTH, Math.max(16, Math.round((srcW * REC_HEIGHT * stretch) / srcH)))
   const rgb = new Uint8Array(rw * REC_HEIGHT * 3)
   // 회전 좌표 → 페이지 픽셀
   const at = (u: number, v: number): number => {

@@ -115,6 +115,16 @@ export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
 })
 
 const DET_MIN_SIZE = 3
+/** 숫자 자릿수 재인식의 가로 배율 — 앞 배율로 안 바로 서면 다음 배율로 */
+const NUMBER_STRETCH = [1.6, 2.2]
+/** 천 단위 쉼표로 묶인 수 가운데 자릿수가 어긋난 것이 있는가 — 첫 묶음 1~3자리, 쉼표 뒤 3자리 ("1,234" 바름, "37,369,00"·"302543,00"·"102,260,,00" 틀림) */
+export function badThousands(text: string): boolean {
+  for (const m of text.matchAll(/(?<![\d.,])\d+(?:,\d*)*,\d+(?![\d,])/g)) {
+    const [head, ...rest] = m[0].split(",")
+    if (head.length > 3 || rest.some(g => g.length !== 3)) return true
+  }
+  return false
+}
 const DET_MAX_BOXES = 3000
 const REC_MIN_WIDTH = 320
 /** 배치 텐서 폭 합 상한 — 긴 줄 여러 개를 한 텐서로 묶어 메모리가 튀지 않게 */
@@ -161,7 +171,7 @@ interface SharpChain {
 /** 인식 대상 한 줄 — rot 는 crop 회전(90=반시계, 270=시계). join: 리더로 가른 박스 번호, dotsBefore: 앞에 리더가 있었는지,
  *  trimDots: crop 이 뒤 리더 점을 물었는지(결과 끝 점을 지운다) */
 /** keep: 인식 crop 에서 남길 박스 로컬 구간 — 밖(이웃 줄 끝자락·상자 테두리)은 배경으로 칠한다 (edgeTrim) */
-interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
+interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; stretch?: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
 
 /**
  * 검출기가 놓친 줄 머리 대시 — 목차 하위 항목 "–  영농지원과" 의 짧은 가로 막대는 상자 밖에 홀로 남아 빠졌다(함평 목차). 한글이 두 자
@@ -708,6 +718,8 @@ export class OcrEngine {
     })
 
     let items: OcrItem[] = []
+    /** 아이템을 읽은 검출 상자 (그대로 읽은 줄만) — 숫자 자릿수 재인식(아래)이 같은 상자를 다시 읽는다 */
+    const boxOf = new Map<OcrItem, Box>()
     /** 신뢰도에 걸려 버린 상자 — 줄 띠가 둘 이상이면 띠마다 다시 읽는다(아래) */
     const retry: Box[] = []
     for (const r of best.values()) {
@@ -782,7 +794,24 @@ export class OcrEngine {
       }
       const item = { text, ...this.itemBox(rgba, width, job.box, tuning), confidence }
       if (job.rot === 0) rememberOcrTextGaps(item, findOcrTextGaps(rgba, width, job.box, read, text, steps, stepPx))
+      if (job.rot === 0 && job.keep === undefined) boxOf.set(item, job.box)
       items.push(item)
+    }
+    // 천 단위 쉼표 뒤 자릿수가 3 이 아닌 수("37,369,00"·"2,618,631,00,000") — 자간 좁은 숫자 글꼴에서 같은 숫자 연속을 CTC 가 한 자로
+    // 합쳤다(관보 계속비). 그 상자만 가로로 늘려 다시 읽어, 자릿수가 바로 서고 숫자 밖 글은 같으면 바꾼다
+    for (const stretch of tuning.postprocess ? NUMBER_STRETCH : []) {
+      // 수 하나만 든 상자만 — 여러 값이 붙은 상자("7,3022,6071,364…")를 다시 읽으면 틈 정보가 바뀌어 칸 가르기가 흔들렸다(통계표)
+      const fix = items.filter(it => boxOf.has(it) && /^[-−(△▲]?\d[\d,]*\)?$/.test(it.text.trim()) && badThousands(it.text))
+      if (!fix.length) break
+      const res = await this.recognizeJobs(rgba, width, fix.map((it, k) => ({ box: boxOf.get(it)!, rot: 0 as const, group: k, stretch })), tuning.recBatch)
+      const skeleton = (t: string) => t.replace(/[\d,\s]/g, "")
+      fix.forEach((it, k) => {
+        const r = res[k]
+        // 다시 읽어도 수 하나여야 — 공백 없이 붙은 여러 값("6,8052,2951…")이 띄어 읽히면 그 줄만 모양이 달라져 행 펼치기가 깨졌다
+        if (!r || /\s/.test(r.text.trim()) || badThousands(r.text) || r.confidence < it.confidence - 0.05 || skeleton(r.text) !== skeleton(it.text)) return
+        it.text = restoreSymbols(r.text.trim())
+        rememberOcrTextGaps(it, findOcrTextGaps(rgba, width, boxOf.get(it)!, r.text, it.text, r.steps, r.stepPx))
+      })
     }
     // 두 줄을 한 상자로 잡아 인식이 무너진 표 칸 — 상자가 넓어 세로로 긴 상자 가르기(splitTall)에 안 걸린다(여수 인원표 "산 단 환 경 /
     // 관 리 과" 가 "살다까" 로 읽혀 버려짐). 버려질 상자만 가운데 빈 행에서 두 줄로 갈라 다시 읽어 신뢰도를 넘는 줄을 받는다
@@ -933,7 +962,7 @@ export class OcrEngine {
     jobs: LineJob[],
     batchSize: number,
   ): Promise<Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null>> {
-    const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot, j.keep))
+    const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot, j.keep, j.stretch))
     const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w)
     const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null> = new Array(jobs.length).fill(null)
     const plane = REC_HEIGHT
