@@ -68,12 +68,15 @@ export function el(name: string, list: Array<[string, string | number]>, inner?:
 }
 
 const hex2 = (n: number): string => n.toString(16).toUpperCase().padStart(2, "0")
-/** COLORREF(0xAABBGGRR) → "#RRGGBB" (투명도 바이트가 있으면 "#AARRGGBB"), 0xFFFFFFFF → "none" */
+/**
+ * COLORREF(0xAABBGGRR) → "#RRGGBB", 0xFFFFFFFF → "none". 투명도 바이트가 있으면 한글처럼 그 바이트를 앞자리 0 없이 붙인다
+ * ("#FF000000"·"#10000000", 0x0A 는 "#A10FCA0" — 한글 저장본의 테두리·무늬·선·각주 구분선 색)
+ */
 export function color(c: number): string {
   c >>>= 0
   if (c === 0xffffffff) return "none"
   const a = c >>> 24
-  return "#" + (a ? hex2(a) : "") + hex2(c & 0xff) + hex2((c >>> 8) & 0xff) + hex2((c >>> 16) & 0xff)
+  return "#" + (a ? a.toString(16).toUpperCase() : "") + hex2(c & 0xff) + hex2((c >>> 8) & 0xff) + hex2((c >>> 16) & 0xff)
 }
 
 /** 0/1 플래그 */

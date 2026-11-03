@@ -244,6 +244,15 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.match(xml, /<hp:rect id="1"[\s\S]*?<hp:shadow type="PARELLEL_RIGHTBOTTOM" color="#B2B2B2" offsetX="283" offsetY="283"/)
   })
 
+  it("투명도 바이트가 있는 색은 한글처럼 그 바이트를 앞자리 0 없이 붙인다", async () => {
+    const bf = Buffer.alloc(2 + 6 * 5 + 8)
+    ;[0x0aa0fc10, 0xff000000, 0x10000000, 0x00563412].forEach((c, i) => { bf[2 + 6 * i] = 1; bf.writeUInt32LE(c, 2 + 6 * i + 2) })
+    const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), rec(0x14, 0, bf))))
+    const header = await zip.file("Contents/header.xml")!.async("string")
+    assert.deepEqual([...header.matchAll(/<hh:(left|right|top|bottom)Border [^>]*color="([^"]+)"/g)].map(m => m[2]),
+      ["#A10FCA0", "#FF000000", "#10000000", "#123456"])
+  })
+
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
     const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
     for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",
