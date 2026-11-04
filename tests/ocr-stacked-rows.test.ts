@@ -71,3 +71,13 @@ it("splits a value over its bracketed share into two rows, even when few columns
   assert.deepEqual(few.table!.cells.slice(1).map(r => r.map(x => x.text)), [["합계", "412,316", "408,276", "460,277", "539,940", "17,134"], ["", "", "", "", "(17.3)", "(6.3)"]])
   assert.equal(few.table!.cells[1][1].rowSpan, 2)
 })
+
+it("keeps a spanning text label whole and grows its span (2024년 / (구성비) 6행 걸침, 값 아래 구성비)", () => {
+  const label = c("2024년\n(구성비)", 1, 2)
+  const b = table([[label, c("▪ 정부기관"), c("218.7\n(100.0)"), c("30.1\n(100.0)")], [c(""), c("공무원"), c("147.1"), c("23.6")]])
+  splitStackedOcrRows([b])
+  assert.equal(b.table!.rows, 3)
+  assert.equal(label.text, "2024년\n(구성비)")
+  assert.equal(label.rowSpan, 3)
+  assert.deepEqual(b.table!.cells.map(r => r.slice(2).map(x => x.text)), [["218.7", "30.1"], ["(100.0)", "(100.0)"], ["147.1", "23.6"]])
+})

@@ -37,7 +37,11 @@ function splitTable(t: IRTable): boolean {
   for (let r = 0; r < t.rows; r++) {
     const row = t.cells[r] ?? []
     const anchors = rowAnchors(t, r, cover[r])
-    const lines = anchors.map(a => a.cell.text.split("\n").map(s => s.trim()).filter(Boolean))
+    // 아래로 걸친 글 이름표("2024년\n(구성비)", 6행 걸침)는 한 덩이로 본다 — 첫 행에 두고 늘어난 행만큼 더 걸친다
+    const lines = anchors.map(a => {
+      const ls = a.cell.text.split("\n").map(s => s.trim()).filter(Boolean)
+      return (a.cell.rowSpan ?? 1) > 1 && ls.length > 1 && ls.every(l => !NUMERIC.test(l.replace(/\s+/g, ""))) ? [ls.join("\n")] : ls
+    })
     const counts = new Map<number, number>()
     for (const ls of lines) if (ls.length >= 2) counts.set(ls.length, (counts.get(ls.length) ?? 0) + 1)
     const [k, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [0, 0]
