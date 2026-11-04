@@ -853,7 +853,7 @@ function extractBlocksWithGrids(
   for (const p of pendingNested) blocks.push(p.block)
 
   // 테이블에 속하지 않은 나머지 텍스트 → 일반 블록
-  let remaining = items.filter(i => !usedItems.has(i))
+  let remaining = attachParagraphNumbers(items.filter(i => !usedItems.has(i)))
   const groupSizes: number[] = []
   let finalTextBlocks: IRBlock[] = []
   let gutterX: number | null = null
@@ -1081,6 +1081,30 @@ export function isProseBesidePanel(unit: IRBlock[], box: { x: number; y: number;
 const SIDEBAR_ITEMS = new WeakMap<IRBlock, NormItem[]>()
 
 /** 무괘선 표 후보를 역할대로 낸다 — 목차는 "항목 쪽번호" 줄, 차트는 영역 안 위→아래 줄 글, 나머지는 표 */
+/**
+ * 특허 명세서 문단 번호 — 왼쪽 여백의 "[0230]" 은 같은 줄 오른쪽 문단 첫 줄에 붙인다. 따로 두면 번호 열이 군집 표의 첫 열이 되거나(KoOCR 특허
+ * 85쪽 중 21쪽이 "[0230] | 문단" 표) 단 나누기에서 한 단으로 떨어져 번호가 문단 뒤에 몰렸다. 같은 줄(기준선 글자 크기 절반 안)·틈 글자 크기 6배 안만(특허 공보 번호 열 틈 3.5배)
+ */
+export function attachParagraphNumbers(items: NormItem[]): NormItem[] {
+  const nums = items.filter(it => /^\[\d{3,5}\]$/.test(it.text.trim()))
+  if (!nums.length) return items
+  const drop = new Set<NormItem>()
+  for (const n of nums) {
+    let next: NormItem | null = null
+    for (const it of items) {
+      if (it === n || drop.has(it) || Math.abs(it.y - n.y) > n.fontSize * 0.5 || it.x < n.x + n.w) continue
+      if (it.x - (n.x + n.w) > n.fontSize * 6) continue
+      if (!next || it.x < next.x) next = it
+    }
+    if (!next || nums.includes(next)) continue
+    next.text = n.text.trim() + " " + next.text
+    next.w = next.x + next.w - n.x
+    next.x = n.x
+    drop.add(n)
+  }
+  return drop.size ? items.filter(it => !drop.has(it)) : items
+}
+
 function clusterTableBlock(cr: ClusterTableResult, source: NormItem[], pageNum: number, horizontals: LineSegment[] = []): IRBlock {
   // 목차 역할은 괘선 증거가 없는 후보에만 — 폭 대부분을 가로지르는 괘선이 행을 가르는 목차는 원문에서도 표다(한컴 목차 표를 OCR 로 읽은 쪽).
   // 라벨 밑 짧은 밑줄은 증거가 아니다. 괘선이 행 절반도 못 가르면 장 제목 밑줄이다(교육청 학교 매뉴얼 목차: 장마다 제목 밑 색 괘선 하나 —
