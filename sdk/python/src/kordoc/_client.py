@@ -24,15 +24,15 @@ _DEFAULT: Any = object()
 
 class _Slot:
     """풀의 자리 하나. worker 가 None 이면 다음에 이 자리를 받는 요청이 새 워커를 띄운다(교체·시작 실패 뒤).
-    starting 은 띄우는 중인 교체 워커, want 는 지금 받는 요청이 바라는 워밍업 문서(None 이면 등록된 문서),
-    warmed 는 교체 워커가 요청을 받기 전에 치른 워밍업 (문서, 결과)."""
+    starting 은 띄우는 중인 교체 워커, retiring 은 이 자리에서 내린 이전 워커와 그 회수 작업,
+    want 는 지금 받는 요청이 바라는 워밍업 문서(None 이면 등록된 문서), warmed 는 교체 워커가 요청을 받기 전에 치른 워밍업 (문서, 결과)."""
 
     __slots__ = ("worker", "starting", "retiring", "want", "warmed")
 
     def __init__(self, worker: Worker | None) -> None:
         self.worker = worker
         self.starting: asyncio.Task[Worker] | None = None
-        self.retiring: asyncio.Task[None] | None = None
+        self.retiring: tuple[Worker, asyncio.Task[None]] | None = None
         self.want: tuple[str, dict[str, Any]] | None = None
         self.warmed: tuple[tuple[str, dict[str, Any]], WorkerWarmup | None] | None = None
 
@@ -169,8 +169,9 @@ class AsyncKordocClient:
             await asyncio.gather(*(w.quit(max(0.1, deadline - loop.time())) for w in list(self._workers)),
                                  return_exceptions=True)
             for jobs in (self._retiring, self._temp_jobs):
-                while jobs:
-                    await asyncio.gather(*list(jobs), return_exceptions=True)
+                # 끝나지 않은 작업만 기다린다 — 3.12+ 의 gather 는 끝난 작업만 받으면 양보 없이 끝나, 집합에서 빼는 완료 콜백이 돌 틈 없이 되풀이한다
+                while pending := [t for t in jobs if not t.done()]:
+                    await asyncio.gather(*pending, return_exceptions=True)
             self._workers.clear()
             await asyncio.to_thread(self._remove_temp_root)
         except BaseException:
@@ -392,9 +393,11 @@ class AsyncKordocClient:
     async def _replace(self, slot: _Slot, spec: tuple[str, dict[str, Any]] | None) -> None:
         """빈 자리에 교체 워커를 붙인다. 띄우기는 자리에 붙은 별도 작업이라, 기다리던 요청이 제한 시간·취소로 빠져도 끊기지 않는다
         (끊으면 시작·워밍업보다 짧은 제한 시간에서 교체가 영원히 끝나지 않는다). 끊는 것은 aclose 뿐이다."""
-        if slot.retiring is not None:
-            await asyncio.shield(slot.retiring)
-            slot.retiring = None
+        while slot.retiring is not None:
+            old, retiring = slot.retiring
+            await asyncio.wait({retiring})  # 이 요청의 취소만 전파한다 — 끝난 회수의 예외·취소를 다음 요청마다 다시 던지지 않는다
+            # 회수가 예외·취소로 끝나 이전 워커가 살아 있으면 다시 끝낸다 — 끝나기 전에는 교체 워커를 띄우지 않는다(생존 상한)
+            slot.retiring = (old, _task(self._retire(old, False), self._retiring)) if old.alive else None
         if slot.worker is not None:
             self._workers.discard(slot.worker)  # 죽은 워커 객체를 쌓아 두지 않는다
             slot.worker = None
@@ -478,7 +481,7 @@ class AsyncKordocClient:
         if w is not None and (self._closed or (limit is not None and (w.last_rss or 0) > limit)):
             # 작업 사이에서만 교체 — 다음 요청이 이 자리에서 새 워커를 띄운다
             slot.worker = None
-            slot.retiring = _task(self._retire(w, True), self._retiring)
+            slot.retiring = (w, _task(self._retire(w, True), self._retiring))
         self._slots.put_nowait(slot)
 
     async def _discard(self, slot: _Slot) -> None:
@@ -486,8 +489,9 @@ class AsyncKordocClient:
         slot.worker = None
         if w is not None:
             self._busy.discard(w)
-            slot.retiring = _task(self._retire(w, False), self._retiring)
-            await asyncio.shield(slot.retiring)
+            retiring = _task(self._retire(w, False), self._retiring)
+            slot.retiring = (w, retiring)
+            await asyncio.wait({retiring})  # 회수 실패는 다음 _replace 가 거둔다 — 이 요청의 원래 오류를 가리지 않는다
 
     async def _run(self, msg: dict[str, Any], line: bytes) -> dict[str, Any]:
         slot = await self._acquire()
@@ -534,29 +538,10 @@ class KordocClient:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()  # 루프 참조 — 만들기·넘겨주기·떼어 내기
         self._lifecycle = threading.RLock()  # 닫기·루프 멈추기는 한 번에 하나 — 겹친 close 는 앞선 정리가 끝날 때까지 기다린다
-        self._loop_owner: object | None = None
-        self._starting: set[object] = set()
+        self._calls = 0  # 루프에 넘긴 진행 중 호출 수(관측 제외) — 시작하지 못한 루프는 마지막으로 끝난 호출이 멈춘다
 
     def start(self) -> "KordocClient":
-        owner = object()
-        with self._lock:  # 두 스레드가 동시에 start 해도 루프 스레드는 하나
-            if self._loop is None:
-                self._loop = asyncio.new_event_loop()
-                self._thread = threading.Thread(target=self._loop.run_forever, name="kordoc-sdk", daemon=True)
-                self._thread.start()
-            self._starting.add(owner)
-        try:
-            self._call(self._client.start(), _owner=owner)
-        except BaseException:
-            with self._lock:
-                self._starting.discard(owner)
-                if self._loop_owner is owner and self._starting:
-                    self._loop_owner = next(iter(self._starting))
-            self._stop_loop(owner)
-            raise
-        finally:
-            with self._lock:
-                self._starting.discard(owner)
+        self._call(self._client.start(), _start=True)  # 실패하면 마지막으로 끝난 호출이 루프를 멈춘다
         return self
 
     def __enter__(self) -> "KordocClient":
@@ -565,15 +550,19 @@ class KordocClient:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def _call(self, coro: Coroutine[Any, Any, T], *, _owner: object | None = None, _claim: bool = True) -> T:
+    def _call(self, coro: Coroutine[Any, Any, T], *, _start: bool = False, _count: bool = True) -> T:
         with self._lock:  # 루프를 떼어 낸 뒤에는 넘기지 않는다 — 멈춘 루프에 남아 영원히 끝나지 않는 요청이 없게
+            if _start and self._loop is None:  # 두 스레드가 동시에 start 해도 루프 스레드는 하나
+                self._loop = asyncio.new_event_loop()
+                self._thread = threading.Thread(target=self._loop.run_forever, name="kordoc-sdk", daemon=True)
+                self._thread.start()
             loop = self._loop
             if loop is None:
                 coro.close()
                 raise KordocClosed("시작하지 않았거나 닫힌 클라이언트입니다")
-            if _claim:
-                self._loop_owner = _owner if _owner is not None else object()
             fut = asyncio.run_coroutine_threadsafe(coro, loop)
+            if _count:
+                self._calls += 1
         try:
             return fut.result()
         except concurrent.futures.CancelledError:
@@ -582,6 +571,18 @@ class KordocClient:
         except BaseException:
             fut.cancel()  # Ctrl-C 등 — 실행 중이면 담당 워커를 종료한다
             raise
+        finally:
+            if _count:
+                with self._lock:
+                    self._calls -= 1
+                    idle = self._idle(loop)
+                if idle:
+                    self._stop_loop(loop)
+
+    def _idle(self, loop: asyncio.AbstractEventLoop) -> bool:
+        # 진행 중 호출이 없고, 시작하지 못했거나 닫혀 다시 쓸 수 없는 루프 — _lock 안에서 본다
+        c = self._client
+        return self._calls == 0 and self._loop is loop and (c._closed or not c._started)
 
     def parse(self, file: str | os.PathLike[str], **kwargs: Any) -> ParseResult:
         return self._call(self._client.parse(file, **kwargs))
@@ -604,7 +605,7 @@ class KordocClient:
 
     def _read(self, fn: Any) -> Any:
         try:
-            return self._call(_on_loop(fn), _claim=False)
+            return self._call(_on_loop(fn), _count=False)  # 관측은 루프 정리 책임을 갖지 않는다
         except KordocClosed:
             return []
 
@@ -617,12 +618,11 @@ class KordocClient:
             finally:
                 self._stop_loop()
 
-    def _stop_loop(self, owner: object | None = None) -> None:
+    def _stop_loop(self, idle: asyncio.AbstractEventLoop | None = None) -> None:
         with self._lifecycle:
             with self._lock:
-                # 실패한 start 는 마지막 제출의 소유자일 때만 정리한다. 다른 start 를
-                # 기다리거나 이후 호출이 루프를 넘겨받았다면 그 실행기를 멈추지 않는다.
-                if owner is not None and (self._loop_owner is not owner or self._starting):
+                # 쉬는 루프 정리는 그사이 새 호출이 넘어오거나 다시 시작한 루프가 아닐 때만 — 다른 호출의 실행기를 멈추지 않는다
+                if idle is not None and not self._idle(idle):
                     return
                 loop, thread = self._loop, self._thread
                 self._loop = self._thread = None

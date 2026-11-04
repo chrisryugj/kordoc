@@ -35,3 +35,4 @@ kordoc = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+faulthandler_timeout = 300  # 한 시험이 5분을 넘기면 모든 스레드의 스택을 남긴다(멈춘 자리를 CI 로그에서 본다)

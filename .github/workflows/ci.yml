@@ -51,6 +51,7 @@ jobs:
   python-sdk:
     needs: engine-dist
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # 평소 2분 안팎 — 멈추면 기본 6시간을 다 쓰지 않고 끊는다(faulthandler_timeout 300초 스택이 먼저 남는다)
     # 지원 하한과 최신 — 3.14 는 run_coroutine_threadsafe 가 첫 걸음 전 취소를 바로 건다(동기 close 를 Ctrl-C 로 끊는 경로)
     strategy:
       matrix:
