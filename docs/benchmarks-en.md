@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.43: OCR circled marks and headings · 2026-11-04
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.872 → **0.877** (text .830 → **.852**, tables and handwriting unchanged), `ocrRec: "auto"` 0.873 → **0.877**. Exam circled-mark retention (mark_keep) .682 → **.947**, KDI heading recall .798 → **.924**, patent CER .029 → **.021** and order .990 → .996. External opendataloader-bench, 200 documents: heading MHS .949 → **.953**, overall .9637 → **.9649** (no per-document drops). In-house OCR, OCR robust and ODL-OCR benchmarks: no per-document drops.
+
+- Circled jamo and Latin letters (㉠–㉤, ⓐ–ⓕ) are not in the recognizer's dictionary — the model read only the inner letter ("a", "C", "ㄴ"), dropped the mark, or read it as ①–⑨ (retention 0 on the Korean exam pages). Ring components at the character position (+.10), re-reading only the ring interior with a stroke-position test for bare jamo (+.13), faint 1px rings and two adjacent circled marks (+.03). A crop with the ring painted over read the jamo ㄱ as "7" and did worse.
+- A few pages where a circled mark was corrected lose .001–.015 on the official order score (only "3" → "③" changed — jitter in the scorer's block matching). The order set as a whole goes .905 → .906.
+- Numbered chapter and section headings (1–1.3× the body, including "제1절미국" with the space after the number lost) and all-caps Latin heading lines (picture-text pages where OCR sizes vary).
+- Patent paragraph numbers "[0230]" are attached to the paragraph on the same line (21 of 85 patent pages put the number in a table's first column or another column).
+
 ## 4.24.42: OCR handwriting by default, statistics tables, share columns · 2026-11-04
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.835 → **0.872** (tables .853 → .871, handwriting .761 → **.901**, text and order unchanged), `ocrRec: "auto"` 0.856 → **0.873**. Statistics tables .839 → .872, table set .745 → .768, gazette CER .094 → .091, handwriting CER owner20 .212 → .116 · rw11 .265 → .083. In-house OCR, OCR robust, ODL, ODL-OCR and PDF table benchmarks: no per-document drops.
