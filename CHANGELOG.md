@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- DOCX 쪽 번호: Word 가 저장한 조판 쪽 나눔 표지(`w:lastRenderedPageBreak`)로 블록·그림·개요에 `pageNumber` 를 달고 `pages`·`pageCount`·`metadata.pageMode: "layout"` 을 내고, `pages`(`-p`) 범위로 블록·그림을 거른다. 표지가 글 뒤에 있으면 다음 블록부터, 한 문단 안 표지 뒤 그림은 그 다음 쪽, 표 칸 안 그림은 표의 쪽이다. Word 저장본 2건에서 쪽 수가 `docProps/app.xml` 의 `Pages` 와 같다(10·9쪽). 표지가 없는 문서(Word 밖에서 만든 문서)는 종전처럼 쪽을 매기지 않는다 — 명시 쪽 나눔만 세면 넘쳐 넘어간 쪽이 빠져 번호가 실제보다 작다
+
 ## [4.24.45] - 2026-11-05
 
 ### Fixed
