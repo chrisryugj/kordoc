@@ -225,3 +225,21 @@ describe("줄 간격이 넓은 표에서 비켜 앉은 OCR 값", () => {
     assert.deepEqual(rebuilt?.map(r => r[1]), values)
   })
 })
+
+describe("OCR 숫자 열 하위 행의 줄 맞춤 허용치", () => {
+  const ocr = (text: string, x: number, y: number): TextItem => ({ text, x, y, w: 15, h: 8, fontSize: 8, fontName: "ocr" })
+  const cols = [0, 40, 60, 80, 100]
+  const lines = [["2024.7월", "512", "98", "29"], ["8월", "511", "103", "30"], ["9월", "463", "91", "26"]]
+  // 행 괘선 없이 한 격자 행에 쌓인 묶음 하나 (머리 행 아래 행마다 이 꼴로 부른다)
+  const original = [[{ text: lines.map(l => l[0]).join("\n") }, { text: "" }, { text: "" }, { text: "" }]]
+
+  it("줄 간격이 넓으면 글자 높이 반 넘게 비켜 앉은 숫자 상자도 같은 행이다 (시도별 전입 \"512\" 4.5px)", () => {
+    const items = lines.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 2, 150 - i * 26 + (c === 1 ? 4.5 : 0))))
+    assert.deepEqual(normalizeUndersegmentedTable(original, cols, items), lines)
+  })
+  it("줄 간격이 좁은 글 열은 종전 허용치 — 비켜 앉은 상자면 펼치지 않는다", () => {
+    const words = [["가나", "다라", "마바", "사아"], ["자차", "카타", "파하", "거너"], ["더러", "머버", "서어", "저처"]]
+    const items = words.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c] + 2, 150 - i * 26 + (c === 1 ? 4.5 : 0))))
+    assert.equal(normalizeUndersegmentedTable(original, cols, items), null)
+  })
+})

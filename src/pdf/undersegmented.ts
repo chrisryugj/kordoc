@@ -105,10 +105,16 @@ function alignedSubRows(itemsByCol: TextItem[][], minLines = MIN_ALIGNED_LINES, 
     cols.slice(1).every(lines => lines.every(line => NUMERIC_LINE.test(cellTextToString(line).trim())))
   if ((k < minLines && !numericPair) || cols.some(lines => lines.length !== k)) return anchoredSubRows(byCol, minLines, covered)
   const cy = (line: TextItem[]) => line.reduce((s, it) => s + itemCenterY(it), 0) / line.length
+  // OCR 숫자 열(이름표 열 하나 빼고 다 숫자 줄)은 허용치에 줄 간격도 본다 — 줄 간격이 글자보다 훨씬 넓은 통계표에서 상자 하나가 글자 높이
+  // 반 넘게 비켜 앉아(시도별 전입 "512" 4.5px, 글자 8) 여섯 행 묶음이 통째로 한 행에 남았다 (anchoredSubRows 와 같은 허용치)
+  const ocr = cols.every(lines => lines.every(line => line.every(it => it.fontName === "ocr")))
+  const numericCols = cols.filter(lines => lines.every(line => NUMERIC_LINE.test(cellTextToString(line).trim()) || /^[-–—]$/.test(cellTextToString(line).trim()))).length
+  const centers = cols[0].map(cy), pitches = centers.slice(1).map((y, i) => Math.abs(centers[i] - y)).sort((a, b) => a - b)
+  const pitch = ocr && numericCols >= cols.length - 1 ? pitches[pitches.length >> 1] ?? 0 : 0
   for (let i = 0; i < k; i++) {
     const ys = cols.map(lines => cy(lines[i]))
     const hs = cols.map(lines => itemHeight(lines[i][0])).sort((a, b) => a - b), h = hs[hs.length >> 1]
-    if (Math.max(...ys) - Math.min(...ys) > h * ALIGNED_LINE_TOL) return null
+    if (Math.max(...ys) - Math.min(...ys) > Math.max(h * ALIGNED_LINE_TOL, pitch * 0.4)) return null
   }
   // 줄 상자가 줄 간격보다 커(OCR) 띠 묶기는 겹친 줄을 한 띠로 합친다 — 맞춘 k 번째 줄끼리 바로 행으로
   return Array.from({ length: k }, (_, i) => byCol.map(lines => lines.length ? cellTextToString(lines[i]) : ""))
