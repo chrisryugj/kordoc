@@ -19,6 +19,7 @@ import { blocksToMarkdown, buildTable, escapeLiteralDollar } from "../table/buil
 import { ommlElementToLatex, isDisplayMath } from "./equation.js"
 import { detectImageMime } from "../hwp5/images.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
+import { parsePageRange } from "../page-range.js"
 
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
 const MAX_DECOMPRESS_SIZE = unzipLimitBytes(100 * 1024 * 1024)
@@ -605,6 +606,43 @@ function collectTextboxParagraphs(node: Element, inTxbx = false, out: Element[] 
   return out
 }
 
+interface RenderedPageBreaks {
+  /** 첫 글자 앞 표지 수 — 요소가 새 쪽에서 시작한다 */
+  leading: number
+  /** 첫 글자 뒤 표지 수 — 다음 요소부터 새 쪽이다 */
+  trailing: number
+  /** 그림(a:blip·v:imagedata) → 그 앞 표지 수. 글 뒤 표지 다음의 그림은 문단과 다른 쪽에 있다 */
+  imageBreaks: Map<Element, number>
+  text: boolean
+}
+
+/**
+ * 블록 요소 하나에 든 Word 조판 쪽 나눔 표지(w:lastRenderedPageBreak)를 센다.
+ * Word 는 명시 나눔(w:br type="page"·w:pageBreakBefore) 자리에도 이 표지를 찍으므로 명시 나눔은 따로 세지 않는다.
+ * 글상자(w:txbxContent)는 본문 쪽 흐름 밖이고 mc:Fallback 은 Choice 의 사본이라 건너뛴다.
+ */
+function countRenderedPageBreaks(
+  node: Element,
+  acc: RenderedPageBreaks = { leading: 0, trailing: 0, imageBreaks: new Map(), text: false },
+  depth = 0,
+): RenderedPageBreaks {
+  if (depth > 40) return acc
+  for (const el of effectiveChildElements(node)) {
+    if (matchesLocal(el, "txbxContent") || matchesLocal(el, "Fallback")) continue
+    if (matchesLocal(el, "lastRenderedPageBreak")) {
+      if (acc.text) acc.trailing++
+      else acc.leading++
+    } else if (matchesLocal(el, "t") && el.textContent) {
+      acc.text = true
+    } else if (matchesLocal(el, "blip") || matchesLocal(el, "imagedata")) {
+      acc.imageBreaks.set(el, acc.leading + acc.trailing)
+    } else {
+      countRenderedPageBreaks(el, acc, depth + 1)
+    }
+  }
+  return acc
+}
+
 interface RawDocxCell {
   /** 그리드 열 주소 — gridSpan 누적 합 (배열 인덱스는 span 앞에서 어긋난다) */
   col: number
@@ -836,6 +874,7 @@ function emitParagraphImages(
   imageMap: Map<string, string>,
   linked: Set<string>,
   out: IRBlock[],
+  pageOf?: (blip: Element) => number,
 ): void {
   for (const blip of collectParagraphBlips(p)) {
     // a:blip은 r:embed, v:imagedata는 r:id
@@ -844,7 +883,7 @@ function emitParagraphImages(
     const filename = imageMap.get(embedId)
     if (!filename) continue
     linked.add(embedId)
-    out.push({ type: "image", text: filename })
+    out.push({ type: "image", text: filename, ...(pageOf ? { pageNumber: pageOf(blip) } : {}) })
   }
 }
 
@@ -989,39 +1028,77 @@ export async function parseDocxDocument(
   const bodyEl = body[0]
   // sdt(콘텐츠 컨트롤)로 감싼 블록 문단/표도 펼쳐서 본다
   const topLevel = effectiveChildElements(bodyEl)
+  // 쪽 번호는 Word 가 저장한 조판 표지로만 — 표지가 없는 문서(Word 밖에서 만든 문서)는 쪽을 매기지 않는다.
+  // 명시 나눔만 세면 넘쳐서 넘어간 쪽이 빠져 실제보다 작은 번호가 된다
+  const pageBreaks = topLevel.map(el => countRenderedPageBreaks(el))
+  const rendered = pageBreaks.some(b => b.leading + b.trailing > 0)
+  // 그림 관계 id → 쪽. 본문 워크에서 링크되지 않아 문서 끝에 붙는 그림(표 칸 안 등)에 쓴다
+  const imagePages = new Map<string, number>()
+  let page = 1
 
-  for (const el of topLevel) {
+  for (const [k, el] of topLevel.entries()) {
     const localName = el.localName ?? el.tagName?.split(":").pop()
+    const first = blocks.length
+    const start = page
+    const breaks = rendered ? pageBreaks[k] : undefined
+    const pageOf = breaks && ((blip: Element) => start + (breaks.imageBreaks.get(blip) ?? breaks.leading))
+    if (breaks) {
+      page += breaks.leading
+      for (const blip of breaks.imageBreaks.keys()) {
+        const embedId = getAttr(blip, "embed") ?? getAttr(blip, "id")
+        if (embedId && !imagePages.has(embedId)) imagePages.set(embedId, pageOf!(blip))
+      }
+    }
 
     if (localName === "p") {
       const block = parseParagraph(el, styles, numbering, footnotes, rels)
       if (block) blocks.push(block)
       // 문단 내 이미지를 문서 순서대로 본문에 삽입 (저장만 되고 링크 누락되던 버그 수정)
-      if (imageMap.size > 0) emitParagraphImages(el, imageMap, linkedImages, blocks)
+      if (imageMap.size > 0) emitParagraphImages(el, imageMap, linkedImages, blocks, pageOf)
       // 텍스트박스(도형 안 글) 문단 — 앵커 문단 뒤에 별도 블록으로
       for (const tp of collectTextboxParagraphs(el)) {
         const tb = parseParagraph(tp, styles, numbering, footnotes, rels)
         if (tb) blocks.push(tb)
-        if (imageMap.size > 0) emitParagraphImages(tp, imageMap, linkedImages, blocks)
+        if (imageMap.size > 0) emitParagraphImages(tp, imageMap, linkedImages, blocks, pageOf)
       }
     } else if (localName === "tbl") {
       const block = parseTable(el, styles, numbering, footnotes, rels, options?.keepTrailingEmptyCols)
       if (block) blocks.push(block)
+    }
+    if (breaks) {
+      for (let i = first; i < blocks.length; i++) blocks[i].pageNumber ??= page
+      page += breaks.trailing
     }
   }
 
   // 본문 워크에서 링크되지 않은 이미지(표 셀 안 등)는 문서 끝에 참조 추가 —
   // 위치는 부정확하지만 "파일만 저장되고 본문 링크 없음"을 방지
   for (const [embedId, filename] of imageMap) {
-    if (!linkedImages.has(embedId)) blocks.push({ type: "image", text: filename })
+    if (!linkedImages.has(embedId)) blocks.push({ type: "image", text: filename, ...(imagePages.has(embedId) ? { pageNumber: imagePages.get(embedId) } : {}) })
+  }
+
+  // 쪽 범위(-p·pages) — Word 조판 쪽으로 거른다. 표지가 없는 문서는 쪽이 없어 종전처럼 거르지 않는다
+  if (rendered && options?.pages) {
+    const keep = parsePageRange(options.pages, page)
+    blocks.splice(0, blocks.length, ...blocks.filter(b => b.pageNumber === undefined || keep.has(b.pageNumber)))
   }
 
   // 머리글은 본문 앞, 바닥글은 문서 끝 (HWPX 머리말·꼬리말 배치와 같다)
   blocks.unshift(...await parseHeaderFooterBlocks(zip, doc, rels, "header", styles, numbering, footnotes))
-  blocks.push(...await parseHeaderFooterBlocks(zip, doc, rels, "footer", styles, numbering, footnotes))
+  const footerBlocks = await parseHeaderFooterBlocks(zip, doc, rels, "footer", styles, numbering, footnotes)
+  // 바닥글은 남은 본문의 마지막 쪽에 — 쪽 번호가 없으면 직전 블록(문서 끝 그림)의 쪽으로 붙는다
+  const lastPage = blocks.reduce((m, b) => Math.max(m, b.pageNumber ?? 0), 0)
+  if (lastPage > 0) for (const b of footerBlocks) b.pageNumber ??= lastPage
+  blocks.push(...footerBlocks)
+  if (rendered && options?.pages) {
+    // 걸러진 쪽의 그림은 결과 이미지에서도 뺀다
+    const shown = new Set(blocks.filter(b => b.type === "image").map(b => b.text))
+    images.splice(0, images.length, ...images.filter(img => shown.has(img.filename)))
+  }
 
   // 7. 메타데이터
-  const metadata: DocumentMetadata = {}
+  // Word 조판 표지가 있으면 그 쪽 수가 Word 가 저장한 쪽 수(docProps/app.xml Pages)와 같다
+  const metadata: DocumentMetadata = rendered ? { pageCount: page, pageMode: "layout" } : {}
   const coreFile = zip.file("docProps/core.xml")
   if (coreFile) {
     try {
@@ -1049,7 +1126,7 @@ export async function parseDocxDocument(
   // 8. 아웃라인
   const outline = blocks
     .filter(b => b.type === "heading")
-    .map(b => ({ level: b.level ?? 2, text: b.text ?? "" }))
+    .map(b => ({ level: b.level ?? 2, text: b.text ?? "", pageNumber: b.pageNumber }))
 
   const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 
