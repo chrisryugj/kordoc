@@ -91,8 +91,8 @@ class ConcurrencyTest {
                 if (starting > 0 && Support.alive(starting)) break;
                 Thread.sleep(10);
             }
-            assertTrue(starting > 0 && Support.alive(starting), "ready 前 프로세스가 생기지 않았다");
-            assertFalse(next.isDone(), "ready 前 관측 시점을 놓쳤다");
+            assertTrue(starting > 0 && Support.alive(starting), "ready 전 프로세스가 생기지 않았다");
+            assertFalse(next.isDone(), "ready 전 관측 시점을 놓쳤다");
             assertTrue(client.workerPids().contains(starting), "기동 중인 소유 PID가 누락됐다");
             assertTrue(client.workerRss().isEmpty(), "측정 전 RSS 값을 만들어 냈다");
             assertTrue(next.get(10, TimeUnit.SECONDS).success());
@@ -372,4 +372,145 @@ class ConcurrencyTest {
         }
     }
 
+    @Test
+    void errorInOneWarmupChildInterruptsSiblingsAndIsRethrownAsIs() throws Exception {
+        // 종전: 자식이 RuntimeException 만 잡아 Error(OOM 등)를 실패로 남기지 못했다 — 형제는 중단되지 않고 부모는 빈 결과 칸에서 NPE 를 냈다.
+        // 자리 1 의 워밍업이 자리 잠금을 잡는 곳에서, 자리 0 이 요청을 보낸 뒤 Error 를 낸다(메모리를 실제로 소진하지 않는다)
+        OutOfMemoryError injected = new OutOfMemoryError("시험이 주입한 Error");
+        try (KordocClient client = KordocClient.start(barrierConfig())) {
+            List<Long> pids = slotPids(client);
+            var children = new java.util.concurrent.atomic.AtomicReference<List<Thread>>(List.of());
+            var slotsField = KordocClient.class.getDeclaredField("slots");
+            slotsField.setAccessible(true);
+            Object slot = ((Object[]) slotsField.get(client))[1];
+            var lockField = slot.getClass().getDeclaredField("lock");
+            lockField.setAccessible(true);
+            lockField.set(slot, new java.util.concurrent.locks.ReentrantLock() {
+                @Override
+                public void lockInterruptibly() throws InterruptedException {
+                    if (!Thread.currentThread().getName().startsWith("kordoc-sdk-warmup-")) {
+                        super.lockInterruptibly();
+                        return;
+                    }
+                    try {
+                        awaitArrivals(1);
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                    children.set(Thread.getAllStackTraces().keySet().stream()
+                            .filter(t -> t.isAlive() && t.getName().startsWith("kordoc-sdk-warmup-")).toList());
+                    throw injected;
+                }
+            });
+            var settledAtThrow = new java.util.concurrent.atomic.AtomicBoolean();
+            CompletableFuture<Throwable> outcome = new CompletableFuture<>();
+            Thread caller = new Thread(() -> {
+                try {
+                    client.warmup(tmp.resolve("hold.docx"), ParseOptions.defaults());
+                    outcome.complete(null);
+                } catch (Throwable e) {
+                    settledAtThrow.set(children.get().size() == 2 && children.get().stream().noneMatch(Thread::isAlive));
+                    outcome.complete(e);
+                }
+            }, "test-error-warmup");
+            caller.start();
+            boolean returned;
+            try {
+                caller.join(10_000);
+                returned = !caller.isAlive();
+            } finally {
+                Files.writeString(tmp.resolve("release"), "go");
+                caller.join(10_000);
+            }
+            Throwable thrown = outcome.get(1, TimeUnit.SECONDS);
+            assertTrue(returned, "Error 를 낸 자식이 형제를 중단시키지 않아 warmup 이 돌아오지 않았다 (풀어 준 뒤 결과: " + thrown + ")");
+            assertSame(injected, thrown);
+            assertTrue(settledAtThrow.get(), "예외 전달 전에 실제 자식 종료를 마쳐야 한다");
+            assertFalse(Support.alive(pids.get(0)), "중단된 형제가 응답을 기다리던 워커를 정리하지 않았다");
+            assertTrue(client.parse(tmp.resolve("after.docx")).success());
+        }
+    }
+
+    @Test
+    void childThreadStartFailureStopsStartedChildrenBeforeRethrowing() throws Exception {
+        // 종전: 자식 스레드 시작이 중간에 실패하면(unable to create native thread) 이미 시작한 자식이 시작 장벽에서 영영 풀리지 않았다.
+        // 장벽만 열면 호출이 끝난 뒤에 워밍업·spawn 을 이어 간다 — 두 번째 시작을 실패시킨다(실제 native thread 고갈 없이)
+        OutOfMemoryError injected = new OutOfMemoryError("unable to create native thread: 시험 주입");
+        try (KordocClient client = KordocClient.start(barrierConfig())) {
+            List<Long> pids = slotPids(client);
+            ProcessHandle old = ProcessHandle.of(pids.get(0)).orElseThrow();
+            old.destroyForcibly();
+            old.onExit().get(5, TimeUnit.SECONDS); // 자리 0 의 자식이 늦게 돌면 새 워커를 띄운다
+            List<Thread> made = new java.util.concurrent.CopyOnWriteArrayList<>();
+            client.warmupThreads = r -> {
+                Thread t = new Thread(r) {
+                    @Override
+                    public void start() {
+                        if (made.indexOf(this) == 1) throw injected;
+                        super.start();
+                    }
+                };
+                made.add(t);
+                return t;
+            };
+            var settledAtThrow = new java.util.concurrent.atomic.AtomicBoolean();
+            CompletableFuture<Throwable> outcome = new CompletableFuture<>();
+            Thread caller = new Thread(() -> {
+                try {
+                    client.warmup(tmp.resolve("w.docx"), ParseOptions.defaults());
+                    outcome.complete(null);
+                } catch (Throwable e) {
+                    settledAtThrow.set(!made.get(0).isAlive());
+                    outcome.complete(e);
+                }
+            }, "test-start-failure-warmup");
+            caller.start();
+            assertSame(injected, outcome.get(10, TimeUnit.SECONDS));
+            made.get(0).join(5_000);
+            assertTrue(settledAtThrow.get(), "시작한 자식이 끝나기 전에 던졌다 (지금 " + made.get(0).getState() + ")");
+            try (var received = Files.list(tmp.resolve("received"))) {
+                assertEquals(0, received.count(), "호출이 끝난 뒤 자식이 워밍업을 보냈다");
+            }
+            assertEquals(List.of(pids.get(1)), client.workerPids(), "호출이 끝난 뒤 자식이 워커를 띄웠다");
+            assertTrue(client.parse(tmp.resolve("after.docx")).success());
+        }
+    }
+
+    @Test
+    void interruptAfterTheLastWarmupChildFinishedStillThrows() throws Exception {
+        // 종전: 여러 자리 경로는 마지막 자식이 끝난 뒤(join 이 던지지 않는다) 온 interrupt 를 보지 않아 성공 보고를 돌려주고 워밍업 문서도 등록했다
+        // (1자리 경로는 던진다). 그 창에는 기다리는 지점이 없다 — 자식이 모두 끝난 뒤 호출 스레드가 interrupt 상태를 읽는 순간에 실제로 interrupt 한다
+        try (KordocClient client = KordocClient.start(Support.fault("ok", Map.of()).maxWorkers(2).build())) {
+            List<Thread> made = new java.util.concurrent.CopyOnWriteArrayList<>();
+            client.warmupThreads = r -> {
+                Thread t = new Thread(r);
+                made.add(t);
+                return t;
+            };
+            CompletableFuture<Object> outcome = new CompletableFuture<>();
+            CompletableFuture<Boolean> stillInterrupted = new CompletableFuture<>();
+            Thread caller = new Thread(() -> {
+                try {
+                    outcome.complete(client.warmup(tmp.resolve("w.docx"), ParseOptions.defaults()));
+                } catch (RuntimeException e) {
+                    outcome.complete(e);
+                }
+                stillInterrupted.complete(Thread.interrupted());
+            }, "test-late-interrupt-warmup") {
+                @Override
+                public boolean isInterrupted() {
+                    if (made.size() == 2 && made.stream().noneMatch(Thread::isAlive)) interrupt();
+                    return super.isInterrupted();
+                }
+            };
+            caller.start();
+            Object r = outcome.get(10, TimeUnit.SECONDS);
+            assertEquals(KordocException.class, r.getClass(), "마지막 자식이 끝난 뒤 온 interrupt 를 보지 않고 결과를 냈다: " + r);
+            assertTrue(stillInterrupted.get(10, TimeUnit.SECONDS), "interrupt 상태를 지웠다");
+            var spec = KordocClient.class.getDeclaredField("warmupSpec");
+            spec.setAccessible(true);
+            assertNull(spec.get(client), "중단된 워밍업의 문서를 교체 워커용으로 등록했다");
+            assertTrue(client.parse(tmp.resolve("a.docx")).success());
+        }
+    }
 }

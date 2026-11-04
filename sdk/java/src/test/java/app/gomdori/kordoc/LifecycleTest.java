@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -889,5 +890,112 @@ class LifecycleTest {
         assertTrue(inCallback.get() < 500, "콜백 안의 close 가 " + inCallback.get() + "ms 기다렸다");
         assertTrue(running.get().success(), "첫 close 가 진행 요청을 기다리지 않았다");
         assertTrue(ms < 2500, "첫 close 가 " + ms + "ms 걸렸다(closeTimeout 3s)");
+    }
+
+    /**
+     * 자리 0 의 회수 스레드를 release 까지 끝나지 않는 시험 스레드로 바꾼다. 실제 회수 스레드는 close 가 그 워커를 죽이면 곧 끝나
+     * 디스패처 interrupt 와의 순서를 고정할 수 없다
+     */
+    private static Thread holdRetirement(KordocClient client, CountDownLatch release) throws Exception {
+        Thread t = new Thread(() -> {
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "test-retire");
+        t.start();
+        Object slot = ((Object[]) field(client, "slots"))[0];
+        Field f = slot.getClass().getDeclaredField("retireThread");
+        f.setAccessible(true);
+        f.set(slot, t);
+        return t;
+    }
+
+    /** t 가 받은 interrupt 를 InterruptedException 으로 처리할(상태가 지워질) 때까지 기다린다 */
+    private static void awaitInterruptHandled(Thread t) throws InterruptedException {
+        long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (t.isInterrupted() && System.nanoTime() < end) Thread.sleep(1);
+        assertFalse(t.isInterrupted(), t.getName() + " 이 interrupt 를 처리하지 않았다");
+    }
+
+    @Test
+    void closeDuringRetirementWaitEndsTheTakenRequestAsClosed() throws Exception {
+        // 종전: 디스패처가 이전 워커 회수를 기다리는 중에 close 가 interrupt 하면 큐에서 꺼낸 요청이 KordocClosedException 이 아니라
+        // 일반 KordocException("워커 종료를 기다리다 중단됐습니다") 으로 끝났다 — interrupt 가 회수 대기 뒤에 오면 KordocClosedException 이었다
+        for (String when : List.of("회수 대기 중 close", "회수 대기 직후 close")) {
+            KordocClient client = KordocClient.start(Support.fault("ok", Map.of()).closeTimeout(Duration.ofMillis(1000)).build());
+            CountDownLatch release = new CountDownLatch(1);
+            Thread retire = holdRetirement(client, release);
+            AtomicReference<Object> taken = new AtomicReference<>();
+            Field queue = KordocClient.class.getDeclaredField("queue");
+            queue.setAccessible(true);
+            queue.set(client, new ArrayDeque<Object>() {
+                @Override
+                public Object pollFirst() {
+                    Object job = super.pollFirst();
+                    taken.set(job);
+                    return job;
+                }
+            });
+            Thread closer = new Thread(client::close, "test-close");
+            try {
+                CompletableFuture<ParseResult> f = client.parseAsync(tmp.resolve("a.docx"));
+                Thread dispatcher = awaitThread("kordoc-sdk-dispatch-0", Thread.State.WAITING, "KordocClient.awaitRetirement", 5000);
+                assertNotNull(dispatcher, when + ": 디스패처가 회수를 기다리지 않는다");
+                if (when.endsWith("중 close")) {
+                    closer.start();
+                    awaitCloseWait(closer, "java.lang.Thread.join"); // 디스패처를 interrupt 한 뒤다
+                    awaitInterruptHandled(dispatcher);
+                    release.countDown();
+                } else {
+                    // 회수 대기를 마친 디스패처를 작업 잠금 앞에 세운 채 닫는다
+                    synchronized (taken.get()) {
+                        release.countDown();
+                        assertNotNull(awaitThread("kordoc-sdk-dispatch-0", Thread.State.BLOCKED, "KordocClient.run", 5000), when + ": 디스패처가 작업 잠금 앞에 서지 않았다");
+                        closer.start();
+                        awaitCloseWait(closer, "java.lang.Thread.join");
+                    }
+                }
+                ExecutionException e = assertThrows(ExecutionException.class, () -> f.get(10, TimeUnit.SECONDS));
+                assertEquals(KordocClosedException.class, e.getCause().getClass(), when + ": " + e.getCause());
+            } finally {
+                release.countDown();
+                client.close();
+                closer.join(10_000);
+                retire.join(10_000);
+            }
+        }
+    }
+
+    @Test
+    void interruptedRetirementWaitWithoutCloseStillThrowsKordocException() throws Exception {
+        // close 와 무관한 interrupt(워밍업을 부른 스레드)는 종전 뜻 그대로 KordocException 이고 interrupt 상태를 유지한다
+        try (KordocClient client = KordocClient.start(Support.fault("ok", Map.of()).build())) {
+            worker(client, 0).kill(); // 워밍업이 새 워커를 띄우기 전에 회수를 기다리게
+            CountDownLatch release = new CountDownLatch(1);
+            Thread retire = holdRetirement(client, release);
+            CompletableFuture<Boolean> stillInterrupted = new CompletableFuture<>();
+            CompletableFuture<Object> warm = onThread("test-warmup", () -> {
+                try {
+                    return client.warmup(tmp.resolve("w.docx"), ParseOptions.defaults());
+                } finally {
+                    stillInterrupted.complete(Thread.currentThread().isInterrupted());
+                }
+            });
+            try {
+                Thread t = awaitThread("test-warmup", Thread.State.WAITING, "KordocClient.awaitRetirement", 5000);
+                assertNotNull(t, "워밍업이 회수를 기다리지 않는다");
+                t.interrupt();
+                awaitInterruptHandled(t);
+            } finally {
+                release.countDown();
+                retire.join(10_000);
+            }
+            Object r = warm.get(10, TimeUnit.SECONDS);
+            assertEquals(KordocException.class, r.getClass(), "warmup 결과: " + r);
+            assertTrue(stillInterrupted.get(10, TimeUnit.SECONDS), "interrupt 상태를 지웠다");
+            assertTrue(client.parse(tmp.resolve("a.docx")).success());
+        }
     }
 }

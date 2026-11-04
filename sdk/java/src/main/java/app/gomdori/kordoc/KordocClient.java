@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -67,6 +68,8 @@ public final class KordocClient implements AutoCloseable {
     private boolean closeDone;
     private volatile Warmup warmupSpec;
     private Path tempRoot;
+    /** 병렬 워밍업 자식 스레드를 만든다 — 시험이 시작 실패를 주입하거나 자식을 잡는 자리 */
+    ThreadFactory warmupThreads = Thread::new;
 
     private KordocClient(KordocConfig config) {
         this.config = config;
@@ -234,31 +237,38 @@ public final class KordocClient implements AutoCloseable {
             out = List.of(warmSlot(slots[0], spec));
         } else {
             WarmupReport.Worker[] results = new WarmupReport.Worker[slots.length];
-            java.util.concurrent.atomic.AtomicReference<RuntimeException> failure = new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
             java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
             List<Thread> children = new ArrayList<>();
             for (int i = 0; i < slots.length; i++) {
                 final int index = i;
-                Thread child = new Thread(() -> {
+                Thread child = warmupThreads.newThread(() -> {
                     try {
                         start.await();
                         results[index] = warmSlot(slots[index], spec);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         failure.compareAndSet(null, new KordocException("워밍업을 기다리다 중단됐습니다", e));
-                    } catch (RuntimeException e) {
+                    } catch (Throwable e) { // Error 도 넘긴다 — 놓치면 형제가 계속 돌고 부모는 빈 결과 칸에서 NPE 를 낸다
                         failure.compareAndSet(null, e);
                     } finally {
                         if (failure.get() != null) for (Thread sibling : children) {
                             if (sibling != Thread.currentThread()) sibling.interrupt();
                         }
                     }
-                }, "kordoc-sdk-warmup-" + i);
+                });
+                child.setName("kordoc-sdk-warmup-" + i);
                 child.setDaemon(true);
                 children.add(child);
             }
-            for (Thread child : children) child.start();
-            start.countDown();
+            try {
+                for (Thread child : children) child.start();
+                start.countDown();
+            } catch (Throwable e) {
+                // 스레드를 못 만들었다(native thread 부족 등) — 장벽을 열지 않고, 시작한 자식은 장벽에서 깨워 끝낸 뒤 이 실패를 던진다
+                failure.compareAndSet(null, e);
+                for (Thread child : children) child.interrupt();
+            }
             boolean interrupted = false;
             for (Thread child : children) {
                 while (child.isAlive()) {
@@ -270,11 +280,16 @@ public final class KordocClient implements AutoCloseable {
                     }
                 }
             }
-            if (interrupted) {
+            Throwable f = failure.get();
+            // 마지막 자식이 끝난 뒤 온 interrupt 는 join 이 던지지 않는다 — 1자리 경로처럼 보고·등록 대신 던진다
+            if (interrupted || Thread.currentThread().isInterrupted()) {
                 Thread.currentThread().interrupt();
-                throw new KordocException("워밍업을 기다리다 중단됐습니다");
+                KordocException e = new KordocException("워밍업을 기다리다 중단됐습니다");
+                if (f != null) e.addSuppressed(f); // 같은 때 난 자식 실패(Error 포함)를 버리지 않는다
+                throw e;
             }
-            if (failure.get() != null) throw failure.get();
+            if (f instanceof Error err) throw err;
+            if (f != null) throw (RuntimeException) f; // 검사 예외는 넘어오지 않는다
             out = List.of(results);
         }
         warmupSpec = out.stream().anyMatch(WarmupReport.Worker::success) ? spec : null;
@@ -598,6 +613,8 @@ public final class KordocClient implements AutoCloseable {
         slot.retireThread = null;
         if (interrupted) {
             Thread.currentThread().interrupt();
+            // close 의 interrupt 면 회수 대기 뒤에 온 interrupt 와 같게 닫힘으로 끝낸다 — run·spawn 두 호출부 모두
+            if (isClosed()) throw new KordocClosedException("클라이언트가 닫혀 워커 종료 대기를 멈췄습니다");
             throw new KordocException("워커 종료를 기다리다 중단됐습니다");
         }
     }
