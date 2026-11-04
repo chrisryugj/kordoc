@@ -355,7 +355,10 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
             // 아이콘이 잡음 글("0 0")로 들어와 제목 구조가 흐트러진다(ODL 200 실측)
             // 쪽 머리 띠(위 20%)의 작은 로고(0.5% 이상)도 — 기관·사업 이름이 로고 글로만 있다(ODL 147·148·150 "ECO Circle")
             const headerLogo = area >= pageArea * 0.005 && r.y1 >= pageH * 0.8
-            if (area < pageArea * 0.02 && !headerLogo) continue // 작은 장식 이미지 무시
+            // 글 한 줄을 그림으로 찍은 가는 띠(0.5% 이상, 가로가 높이 6배 이상·쪽 높이 4% 이하)도 — 각주를 띠 그림으로 둔 쪽(ODL 184 "1 Evaluated
+            // against …")은 줄이 쪽 면적 1~2% 띠 여럿이다. 기본 자동 OCR 은 5% 넘는 그림만 읽어 `ocr: true` 에서만 쓰인다
+            const textStrip = area >= pageArea * 0.005 && r.x2 - r.x1 >= (r.y2 - r.y1) * 6 && r.y2 - r.y1 <= pageH * 0.04
+            if (area < pageArea * 0.02 && !headerLogo && !textStrip) continue // 작은 장식 이미지 무시
             const large = area >= pageArea * 0.05
             if (large) pagesWithLargeImage.add(i)
             const hasText = visible.some(it => {

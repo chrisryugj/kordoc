@@ -359,6 +359,24 @@ function meanConfidence(items: OcrItem[]): number {
   return n ? sum / n : 0
 }
 
+/**
+ * 옅은 그림 글 명암 늘리기 — 투명도(소프트 마스크)를 씌운 글 그림은 흰 바탕에 휘도 230 언저리로 그려져 검출기가 글줄을 못 잡았다
+ * (ODL 184 각주 띠 "1 Evaluated against …", 그림 파일만 따로 읽으면 읽힌다). 영역 휘도의 어두운 끝(1%)이 밝은 끝(99%)과 120 넘게
+ * 차이 나지 않으면 그 폭을 0~255 로 늘린다 — 대비가 제대로 된 영역은 그대로
+ */
+export function stretchFaintCrop(rgba: Uint8Array): void {
+  const n = rgba.length >> 2
+  if (!n) return
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < n; i++) hist[(rgba[i * 4] * 77 + rgba[i * 4 + 1] * 150 + rgba[i * 4 + 2] * 29) >> 8]++
+  let lo = 0, hi = 255
+  for (let acc = 0; lo < 255 && (acc += hist[lo]) < n * 0.01;) lo++
+  for (let acc = 0; hi > 0 && (acc += hist[hi]) < n * 0.01;) hi--
+  if (hi - lo >= 120 || hi - lo < 16) return
+  const k = 255 / (hi - lo)
+  for (let i = 0; i < n * 4; i++) if ((i & 3) !== 3) rgba[i] = Math.max(0, Math.min(255, Math.round((rgba[i] - lo) * k)))
+}
+
 /** 그림 영역마다 두 배 래스터에서 잘라 다시 인식한 글줄 — 좌표는 쪽 배율 래스터 기준으로 되돌린다 */
 async function closerReads(
   rgba: Uint8Array, rw: number, rh: number, pdfH: number, hi: number,
@@ -373,6 +391,8 @@ async function closerReads(
     if (cw < 16 || ch < 16) { out.push(null); continue }
     const crop = new Uint8Array(cw * ch * 4)
     for (let y = 0; y < ch; y++) crop.set(rgba.subarray(((y0 + y) * rw + x0) * 4, ((y0 + y) * rw + x0 + cw) * 4), y * cw * 4)
+    // 글 한 줄 띠(가로가 높이 6배 이상)만 — 큰 그림(손글씨 판서 사진, ODL 106)까지 늘리면 잡음 글이 달라졌다
+    if (cw >= ch * 6) stretchFaintCrop(crop)
     const items = await engine.recognizePage(crop, cw, ch, undefined, tuning)
     out.push(items.map(it => {
       const placed = { ...it, x: (it.x + x0) / 2, y: (it.y + y0) / 2, w: it.w / 2, h: it.h / 2 }
