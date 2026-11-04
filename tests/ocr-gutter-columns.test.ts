@@ -58,3 +58,11 @@ it("cuts a value from its bracketed share beside it (\"3,193 (1.7)\" — 구성�
   assert.equal(lines.length, 1)
   assert.deepEqual(splitItemsAtGutters([share(150)], lines).map(it => it.text), ["3,193", "(1.7)"])
 })
+
+it("splits glued thousands-grouped integers across the columns they span (\"7,3022,6071,364\")", () => {
+  const g: TableGrid = { colXs: [0, 50, 100, 150, 200], rowYs: [100, 0], bbox: { x1: 0, y1: 0, x2: 200, y2: 100 }, vertexRadius: 1 }
+  const out = splitItemsAcrossColumns([item("7,3022,6071,36410,563", 10, 50, 180), item("1,364,123 5", 10, 20, 130)], [g])
+  assert.deepEqual(out.map(it => it.text).slice(0, 4), ["7,302", "2,607", "1,364", "10,563"])
+  // 쉼표 정수가 열 수와 맞지 않으면 그대로
+  assert.equal(out[4].text, "1,364,123 5")
+})

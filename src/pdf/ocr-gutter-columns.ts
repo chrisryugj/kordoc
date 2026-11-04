@@ -196,15 +196,21 @@ export function splitItemsAcrossColumns(items: NormItem[], grids: TableGrid[]): 
   })
 }
 
-/** 글을 값 k 개로 — 공백으로 갈린 값 토큰, 아니면 소수 자릿수 d(1·2) 가 같은 수 k 개가 이어 붙은 꼴 */
+/** 글을 값 k 개로 — 공백으로 갈린 값 토큰, 아니면 소수 자릿수 d(1·2) 가 같은 수 k 개가 이어 붙은 꼴, 아니면 천 단위 쉼표 정수 k 개가
+ *  이어 붙은 꼴("7,3022,6071,364" — 쉼표 뒤 세 자리가 끝나는 자리가 다음 수의 머리라 한 가지로만 갈린다) */
 function valueTokens(text: string, k: number): string[] | null {
   const parts = text.split(/\s+/)
   if (parts.length === k && parts.every(p => VALUE_TOKEN.test(p))) return parts
+  const bare = text.replace(/\s+/g, "")
   for (const d of [1, 2]) {
     const one = `[-−]?\\d{1,3}(?:,\\d{3})*\\.\\d{${d}}`
-    const m = new RegExp(`^(?:${one}){${k}}$`).test(text.replace(/\s+/g, ""))
-    if (m) return text.replace(/\s+/g, "").match(new RegExp(one, "g"))
+    const m = new RegExp(`^(?:${one}){${k}}$`).test(bare)
+    if (m) return bare.match(new RegExp(one, "g"))
   }
-  return null
+  const grouped = /[-−]?\d{1,3}(?:,\d{3})+/g
+  // 앞뒤 "|" 는 인식기가 표 테두리를 읽은 것이다
+  const body = bare.replace(/^\|+|\|+$/g, "")
+  const ints = body.match(grouped)
+  return ints && ints.length === k && ints.join("") === body ? ints : null
 }
 
