@@ -123,7 +123,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 66 tables | CER **0.0239** · character recall **99.32%** · table structure **34/66** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.877** by default · `ocrRec: "auto"` **0.877** · handwriting **0.901** · heading recall 0.924 (4.24.43) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.878** by default · `ocrRec: "auto"` **0.879** · handwriting **0.901** · heading recall 0.924 (4.24.44) |
 | opendataloader-bench | 200 PDF documents | Overall **0.964** with defaults · **0.939** with OCR off |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -131,15 +131,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.43](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.43)** · 2026-11-04
+Latest release: **[4.24.44](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.44)** · 2026-11-04
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.44 | OCR: multi-column prose (spread textbooks, glossary columns) no longer becomes one cluster table · figure OCR (`ocr: true`) reads faint one-line strip images (footnotes) | KoOCR-Bench total 0.877 → **0.878** (`auto` **0.879**, with the fixed measurement converter) · user-document CER .301 → .285 · ODL `ocr: true` .9665 → .9666 · in-house benchmarks no per-document drops |
 | 4.24.43 | OCR: circled jamo and Latin letters missing from the dictionary (㉠–㉭, ⓐ–ⓩ) are restored (ring interior re-read, stroke test for bare jamo) · numbered chapter/section headings and all-caps Latin heading lines · PDF patent paragraph numbers · trailing columns holding only empty nested tables | KoOCR-Bench total 0.872 → **0.877** (`auto` **0.877**) · exam circled marks .682 → **.947** · heading recall .798 → .924 · ODL headings .949 → .953 · in-house benchmarks no per-document drops |
 | 4.24.42 | OCR: clearly handwritten pages are read with the handwriting model by default (`ocrRec: "printed"` turns it off) · very flat one-line strips are detected · statistics-table bodies expanded (label–value lines, vertical labels, two-line numeric rows, spanning cell text) · inflated boxes no longer merge rows · share/growth-rate columns and stacked share rows · a neighbouring cell's glyph read across a cell rule · glued thousands-grouped integers | KoOCR-Bench total 0.835 → **0.872** (`auto` **0.873**) · handwriting .761 → **.901** · statistics tables .839 → .872 · in-house benchmarks no per-document drops |
 | 4.24.41 | HWP → HWPX: distribution-protected documents are converted (previously refused) · deleted spans and change lists of track-changes documents · outer margins of shadowed objects · colours with an alpha byte · default track-changes settings · duplicate page-number positions · highlight ends · memo line shapes | 67 public HWP files against Hancom-saved HWPX: converted 63 → **67**/67, attribute-exact documents 38 → **52**/63 |
 | 4.24.40 | OCR: repeated digits merged by condensed number fonts ("37,369,00") are re-read on a horizontally stretched crop · stacked rows of label–value tables (balance sheets) are expanded along the label lines | KoOCR-Bench total 0.830 → **0.835** (`auto` **0.856**) · gazette CER .116 → .094 · in-house benchmarks no per-document drops |
-| 4.24.39 | OCR: pages scanned sideways are turned upright · two columns split by a middle column rule or by two-column prose · outer label column of open statistics tables · row expansion of large numeric tables (text outside the bands no longer dropped) · page border frames holding a table · multi-row headers no longer read as charts | KoOCR-Bench total 0.810 → **0.830** (`auto` **0.851**) · exam CER .416 → .302 · in-house benchmarks no per-document drops |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

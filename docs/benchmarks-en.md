@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.44: OCR multi-column prose and strip images · 2026-11-05
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.877 → **0.878**, `ocrRec: "auto"` 0.878 → **0.879**. User-document CER .301 → .285. External opendataloader-bench with `ocr: true`: .96646 → **.96659** (no per-document drops). Default ODL, in-house OCR, OCR robust and Korean PDF text and table benchmarks: no per-document drops.
+
+- **Measurement converter fix** (not the scorer): the tool that turns kordoc output into the scoring format wrote a lone "<" in text blocks as is ("청소율<30mL"), and the official scorer's tag stripping (`<[^>]+>`) swallowed the text up to the next ">". A "<" not closed on the same line is now written as `&lt;` (closed "<보기>" and "<신설>" stay, as the truth loses them the same way). With the fixed converter 4.24.43 measures .8765 → .8771 and auto .8773 → .8783; the before/after above both use the fixed converter. Two drug-label pages whose truth itself has a lone "<" look worse because the truth is trimmed.
+- OCR cluster tables made of long prose line pieces (40%+ of cells) go to column splitting — spread textbook pages and glossary + body columns, CER −.43, −.29, −.21.
+- Rejected: a blank-gutter column between name and value in ranking tables ("중국 64,822" → nationality | arrivals) — one page TEDS .61 → .88, but on another wide OCR boxes spanning several columns tangled with it and rows came out twice. Turning image formula OCR on by default — it stays an option.
+
 ## 4.24.43: OCR circled marks and headings · 2026-11-04
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.872 → **0.877** (text .830 → **.852**, tables and handwriting unchanged), `ocrRec: "auto"` 0.873 → **0.877**. Exam circled-mark retention (mark_keep) .682 → **.947**, KDI heading recall .798 → **.924**, patent CER .029 → **.021** and order .990 → .996. External opendataloader-bench, 200 documents: heading MHS .949 → **.953**, overall .9637 → **.9649** (no per-document drops). In-house OCR, OCR robust and ODL-OCR benchmarks: no per-document drops.
