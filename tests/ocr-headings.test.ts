@@ -38,3 +38,9 @@ it("keeps stacked headings of very different sizes apart (인포그래픽 ODL 14
   markOcrHeadings(blocks)
   assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => b.text), ["10 THINGS YOU SHOULD KNOW ABOUT", "COPYRIGHT"])
 })
+
+it("marks a numbered section line barely larger than the body as a heading (KDI \"제1절 …\" 1.1배)", () => {
+  const blocks = [p("제1절 임금변동성과 측정방법", 13.5, 700), p("제1절에서는 임금변동성을 측정하는 방법을 살펴본다", 12.5, 660), p(body, 12, 500, 120), p(body, 12, 300, 120)]
+  markOcrHeadings(blocks)
+  assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => [b.text, b.level]), [["제1절 임금변동성과 측정방법", 2]])
+})

@@ -532,6 +532,14 @@ export function markOcrHeadings(blocks: IRBlock[]): void {
   for (const b of sized) {
     const text = b.text!.trim(), size = b.style!.fontSize!
     const ratio = size / body
+    // 번호 붙은 장·절 제목("제1절 임금변동성과 측정방법")은 본문보다 조금만 커도 제목이다 — 1.3배 문턱에 못 미쳐 절 제목을 놓쳤다(KDI
+    // 보고서). 한 줄·30자 안·문장부호로 안 끝날 때만(본문 "제1절에서는 …" 은 길거나 여러 줄이다)
+    if (ratio >= 1 && ratio < 1.3 && /^제\s*\d+\s*[장절편부]\s+\S/.test(text) && text.length <= 30 && !/[.!?。,]$|다\.?$/.test(text) &&
+        (!b.bbox || b.bbox.height <= size * 1.6)) {
+      b.type = "heading"
+      b.level = /^제\s*\d+\s*절/.test(text) ? 2 : 1
+      continue
+    }
     if (ratio < 1.3) continue
     if (text.length < 2 || text.length > (ratio >= 1.5 ? 60 : 40) || /[.!?。]$|다\.?$/.test(text) || /^[\d\s.,%·-]+$/.test(text)) continue
     // 한 줄만 — 1.5배 넘게 큰 짧은 글은 두 줄로 꺾인 장 제목까지
