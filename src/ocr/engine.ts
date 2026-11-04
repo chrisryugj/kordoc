@@ -39,7 +39,8 @@ import {
 } from "./models.js"
 import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
-import { restoreGlyphs, trimInklessEnds } from "./glyph-restore.js"
+import { restoreGlyphs, ringAsks, ringGlyph, trimInklessEnds } from "./glyph-restore.js"
+import type { RingRead } from "./glyph-restore.js"
 import { dropNestedFragments, isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { disableOrtTelemetry } from "./runtime-env.js"
@@ -735,11 +736,21 @@ export class OcrEngine {
     const boxOf = new Map<OcrItem, Box>()
     /** 신뢰도에 걸려 버린 상자 — 줄 띠가 둘 이상이면 띠마다 다시 읽는다(아래) */
     const retry: Box[] = []
+    // 원문자 고리 속 글자만 따로 다시 읽는다(glyph-restore ringAsks) — 사전 밖 ㉠·ⓐ 를 모델이 빠뜨리거나 ①~⑨ 로 바꿔 읽은 자리
+    const ringReads = new Map<LineJob, RingRead[]>()
+    if (tuning.postprocess) {
+      const asks = [...best.values()].flatMap(r => r.job.rot === 0 ? ringAsks(rgba, width, r.job.box, r.text, r.steps, r.stepPx).map(a => ({ ...a, job: r.job })) : [])
+      const res = asks.length ? await this.recognizeJobs(rgba, width, asks.map((a, k) => ({ box: a.box, rot: 0 as const, group: k })), tuning.recBatch) : []
+      asks.forEach((a, k) => {
+        const glyph = res[k] ? ringGlyph(res[k]!.text, a.jamo, res[k]!.confidence) : null
+        if (glyph) ringReads.set(a.job, [...ringReads.get(a.job) ?? [], { x0: a.x0, x1: a.x1, glyph }])
+      })
+    }
     for (const r of best.values()) {
       const { job, confidence, stepPx } = r
       const { text: read, steps } = tuning.postprocess && job.rot === 0 ? trimInklessEnds(rgba, width, job.box, r.text, r.steps, stepPx) : r
       const note: { ringLead?: boolean } = {}
-      const raw = tuning.postprocess && job.rot === 0 ? restoreGlyphs(rgba, width, job.box, read, steps, stepPx, note) : read
+      const raw = tuning.postprocess && job.rot === 0 ? restoreGlyphs(rgba, width, job.box, read, steps, stepPx, note, ringReads.get(job)) : read
       let text = tuning.postprocess ? restoreSymbols(raw.trim(), note.ringLead) : raw
       if (!text.trim()) continue
       // 빗금 하나만 든 칸을 "(/:"·"(/" 로 지어 읽었다(여수 인원표 "현원/정원" 칸) — 키 큰 잉크 덩어리가 하나뿐이면 "/"

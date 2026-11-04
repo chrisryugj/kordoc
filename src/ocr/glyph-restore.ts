@@ -3,7 +3,7 @@
  * 모델이 줄여·바꿔·빠뜨려 읽는 글자를 고친다(괄호 「」【】·여는 따옴표·원문자·로마 숫자·두 글자 사이에서 빠진 기호). 모양 판정은
  * line-split.ts, 여기는 글자열 배선만. 글자 배열은 CTC 글자와 1:1 로 두고 칸마다 바꿔 넣거나(빈 글·여러 글자 허용) 끝에 잇는다
  */
-import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, leadingBullet, quoteHead, ringBullet, romanStems, serifOne, slantedPair, starRun } from "./line-split.js"
+import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, leadingBullet, quoteHead, ringBoxes, ringBullet, romanStems, serifOne, slantedPair, starRun } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
 import type { Box } from "./crop.js"
 
@@ -12,8 +12,48 @@ const INKLESS_DELTA = 32
 
 interface Ctx { chars: string[]; cx: (i: number) => number; gray: Uint8Array; w: number; h: number; ink: InkStats }
 
+/** 고리 속 글자를 다시 읽은 원문자 — x0·x1 은 고리 자리(박스 로컬), glyph 는 바꿔 넣을 원문자 */
+export interface RingRead { x0: number; x1: number; glyph: string }
+
+/**
+ * 고리 속 글자를 다시 읽을 자리 — 원문자 자모 ㉠~㉭·영문 ⓐ~ⓩ 는 사전에 없어 모델이 고리째 빠뜨리거나("때, ㉠～㉤에" → "때,~에")
+ * 사전에 있는 원문자 숫자로 바꿔 읽는다("ⓐ～ⓔ를" → "②~②를", 수능 국어). 고리 자리에 CTC 글자가 없거나 그 글자가 ①~⑨ 인 고리만,
+ * 고리 속 글자 성분을 감싼 상자(쪽 좌표)를 낸다 — 엔진이 그 상자만 따로 읽어 ringGlyph 로 원문자를 정한다
+ */
+export function ringAsks(rgba: Uint8Array, pageW: number, box: Box, text: string, steps: number[], stepPx: number): Array<{ x0: number; x1: number; box: Box; jamo: string | null }> {
+  const chars = [...text]
+  if (chars.length !== steps.length || !/[가-힣]/.test(text)) return []
+  const gray = grayCrop(rgba, pageW, box)
+  return ringBoxes(gray, box.w, box.h, inkStats(gray)).flatMap(r => {
+    const at = chars.findIndex((c, i) => c.trim() && (steps[i] + 0.5) * stepPx >= r.x0 && (steps[i] + 0.5) * stepPx <= r.x1)
+    if (at >= 0 && !/^[\u2460-\u2468]$/.test(chars[at])) return []
+    const { inner } = r
+    return [{ x0: r.x0, x1: r.x1, jamo: r.jamo, box: { x: box.x + inner.x0 - 1, y: box.y + inner.y0 - 1, w: inner.x1 - inner.x0 + 2, h: inner.y1 - inner.y0 + 2 } }]
+  })
+}
+
+const RING_JAMO = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ", RING_SYLLABLE = "가나다라마바사아자차카타파하"
+
+/**
+ * 고리 속 글자 한 자 → 원문자. 고리 속이 o·0·ㅇ 이면 이중 원(◎)이라 null. 모양이 대소문자 같은 영문(C·O·S…)은 소문자로.
+ * jamo: 획 자리로 가른 홀자모(line-split ringJamo) — 모델이 홀자모를 음절("그")·네모("□")로 읽은 것은 이것을 쓴다
+ */
+export function ringGlyph(read: string, jamo: string | null = null, confidence = 1): string | null {
+  const t = read.trim()
+  // 획 자리가 증거라 인식 신뢰도와 상관없이 — 고리 속 "□" 를 0.4~0.5 로 읽었다
+  if (jamo && /^[가-힣□口ㄱ-ㅎ]$/.test(t) && !RING_SYLLABLE.includes(t)) return String.fromCharCode(0x3260 + RING_JAMO.indexOf(jamo))
+  if (confidence < 0.5 || [...t].length !== 1 || /^[oO0ㅇ]$/.test(t)) return null
+  if (/^[1-9]$/.test(t)) return String.fromCharCode(0x245f + Number(t))
+  if (RING_JAMO.includes(t)) return String.fromCharCode(0x3260 + RING_JAMO.indexOf(t))
+  if (RING_SYLLABLE.includes(t)) return String.fromCharCode(0x326e + RING_SYLLABLE.indexOf(t))
+  const l = /^[CSUVWXZ]$/.test(t) ? t.toLowerCase() : t
+  if (/^[a-z]$/.test(l)) return String.fromCharCode(0x24d0 + l.charCodeAt(0) - 97)
+  if (/^[A-Z]$/.test(l)) return String.fromCharCode(0x24b6 + l.charCodeAt(0) - 65)
+  return null
+}
+
 /** text 는 CTC 글자와 1:1 이어야 한다 — 아니면 그대로 돌려준다. note.ringLead: 줄 머리 고리를 픽셀로 정했다(restoreSymbols 의 O → ○ 를 건너뛸 것) */
-export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: string, steps: number[], stepPx: number, note: { ringLead?: boolean } = {}): string {
+export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: string, steps: number[], stepPx: number, note: { ringLead?: boolean } = {}, rings: RingRead[] = []): string {
   const chars = [...text]
   if (chars.length !== steps.length) return text
   const gray = grayCrop(rgba, pageW, box)
@@ -21,7 +61,7 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   if (/[[\]]/.test(text)) brackets(c)
   if (text.includes("'")) cornerQuotes(c)
   if (/['"]/.test(text)) quotes(c)
-  if (/(^|\D)[1-9](\D|$)/.test(text)) circled(c)
+  if (/(^|\D)[1-9](\D|$)|[ㄱ-ㅎa-zCSUVWXZ]/.test(text)) circled(c)
   if (text.includes("*")) stars(c)
   if (/[\u00b7\u2022]/.test(text)) discs(c)
   if (/[-\u2013\u2014]/.test(text)) dashes(c)
@@ -31,6 +71,15 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   note.ringLead = ring(c)
   if (/[I|]/.test(text)) parallels(c)
   if (/[I1Ⅰ-Ⅲ|]|^\s*\./.test(text)) roman(c)
+  // 고리 속을 다시 읽은 원문자 — 고리 자리 글자(①~⑨ 로 잘못 읽은 것)를 바꾸고, 글자가 없으면 앞 글자 뒤(맨 앞이면 첫 글자 앞)에 넣는다
+  for (const r of rings) {
+    const live = chars.map((_, i) => i).filter(i => chars[i].trim())
+    const at = live.find(i => c.cx(i) >= r.x0 && c.cx(i) <= r.x1)
+    if (at !== undefined) { chars[at] = r.glyph; continue }
+    const prev = live.filter(i => c.cx(i) < r.x0).pop()
+    if (prev !== undefined) chars[prev] += r.glyph
+    else if (live.length) chars[live[0]] = r.glyph + chars[live[0]]
+  }
   return chars.join("")
 }
 
@@ -167,12 +216,24 @@ function dashes({ chars, cx, gray, w, h, ink }: Ctx) {
   }
 }
 
-/** 원문자 숫자 — 모델이 고리를 버리고 읽은 홀로 선 숫자 1~9(앞뒤가 숫자 아님)를 그 자리 고리 성분(line-split circledAt)으로 ①~⑨ */
+/**
+ * 원문자 — 모델이 고리를 버리고 읽은 홀로 선 숫자 1~9(앞뒤가 숫자 아님)를 그 자리 고리 성분(line-split circledAt)으로 ①~⑨.
+ * 사전에 없는 원문자 자모 ㉠~㉭·영문 ⓐ~ⓩ 도 — 모델은 고리 속 글자만 "ㄴ"·"a" 로 읽는다(수능 국어 "ⓐ방패연에" → "a방패연에").
+ * 자모·영문은 앞뒤가 같은 갈래 글자가 아닐 때만(낱말 속 글자는 고리를 볼 까닭이 없다)
+ */
 function circled({ chars, cx, gray, w, h, ink }: Ctx) {
-  const at = chars.flatMap((c, i) => /^[1-9]$/.test(c) && !/\d/.test(chars[i - 1] ?? "") && !/\d/.test(chars[i + 1] ?? "") ? [i] : [])
+  const alone = (re: RegExp, i: number) => re.test(chars[i]) && !re.test(chars[i - 1] ?? "") && !re.test(chars[i + 1] ?? "")
+  // 대소문자 모양이 같은 영문(C·S·U·V·W·X·Z)은 대문자로도 읽는다("ⓒ가" → "C가")
+  const at = chars.flatMap((_, i) => alone(/^\d$/, i) && chars[i] !== "0" || alone(/^[ㄱ-ㅎ]$/, i) || alone(/^[A-Za-z]$/, i) && /[a-zCSUVWXZ]/.test(chars[i]) ? [i] : [])
   if (!at.length) return
   const hit = circledAt(gray, w, h, ink, at.map(cx))
-  at.forEach((i, k) => { if (hit[k]) chars[i] = String.fromCharCode(0x245f + Number(chars[i])) })
+  const JAMO = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ"
+  at.forEach((i, k) => {
+    if (!hit[k]) return
+    const ch = chars[i]
+    chars[i] = /\d/.test(ch) ? String.fromCharCode(0x245f + Number(ch)) : /[a-zA-Z]/.test(ch) ? String.fromCharCode(0x24d0 + ch.toLowerCase().charCodeAt(0) - 97)
+      : JAMO.includes(ch) ? String.fromCharCode(0x3260 + JAMO.indexOf(ch)) : ch
+  })
 }
 
 /** 별표 겹침 — CTC 가 붙은 같은 글자를 하나로 합친 "**" → "*" 를 그 자리 별표 조각 수(line-split starRun)만큼 채운다 */

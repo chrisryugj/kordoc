@@ -468,6 +468,12 @@ export function romanStems(gray: Uint8Array, w: number, h: number, ink: InkStats
  * 성분(숫자)을 안에 두면 원문자다. 괄호 숫자 "(1)"·네모 칸은 고리가 아니라 걸리지 않는다
  */
 export function circledAt(gray: Uint8Array, w: number, h: number, ink: InkStats, xs: number[]): boolean[] {
+  const rings = ringBoxes(gray, w, h, ink)
+  return xs.map(x => rings.some(r => x >= r.x0 && x <= r.x1))
+}
+
+/** 원문자 고리 상자(박스 로컬) — 둥근 고리 성분이 안에 글자 성분을 둔 것(circledAt 의 판정). 안쪽 x0·x1·y0·y1 은 고리 속 글자 성분을 감싼다 */
+export function ringBoxes(gray: Uint8Array, w: number, h: number, ink: InkStats): Array<{ x0: number; x1: number; y0: number; y1: number; inner: { x0: number; x1: number; y0: number; y1: number }; jamo: string | null }> {
   const { comps, label } = components(gray, w, h, ink)
   let charH = 0
   for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
@@ -481,14 +487,40 @@ export function circledAt(gray: Uint8Array, w: number, h: number, ink: InkStats,
     }
     return a <= b ? [a, b + 1] : [r.x0, r.x1]
   }
-  const rings = charH < 10 ? [] : comps.flatMap(r => {
+  return charH < 10 ? [] : comps.flatMap(r => {
     const rh = r.y1 - r.y0
     if (rh < charH * 0.55) return []
     const [x0, x1] = arcX(r), rw = x1 - x0
-    return rw >= rh * 0.8 && rw <= rh * 1.25
-      && comps.some(d => d !== r && d.x0 > x0 && d.x1 < x1 && d.y0 > r.y0 && d.y1 < r.y1 && d.y1 - d.y0 >= rh * 0.35) ? [{ x0, x1 }] : []
+    if (rw < rh * 0.8 || rw > rh * 1.25) return []
+    const inside = comps.filter(d => d !== r && d.x0 > x0 && d.x1 < x1 && d.y0 > r.y0 && d.y1 < r.y1)
+    if (!inside.some(d => d.y1 - d.y0 >= rh * 0.35)) return []
+    const inner = { x0: Math.min(...inside.map(d => d.x0)), x1: Math.max(...inside.map(d => d.x1)), y0: Math.min(...inside.map(d => d.y0)), y1: Math.max(...inside.map(d => d.y1)) }
+    const ids = new Set(inside.map(d => d.id))
+    return [{ x0, x1, y0: r.y0, y1: r.y1, inner, jamo: ringJamo(label, w, inner, ids) }]
   })
-  return xs.map(x => rings.some(r => x >= r.x0 && x <= r.x1))
+}
+
+/**
+ * 고리 속 홀자모 ㄱ~ㅁ 을 획 자리로 — 모델은 고리 속 홀자모를 음절("그")·네모("□")로 읽는다. 속 글자 상자의 위·가운데·아래 가로 띠와
+ * 왼쪽·오른쪽 세로 띠마다 잉크가 덮는 비율(띠 안 줄·열 중 가장 많이 덮은 것)로 가른다: ㄱ 위·오른쪽, ㄴ 왼쪽·아래, ㄷ 위·왼쪽·아래,
+ * ㄹ 위·가운데·아래(세로 변은 반만), ㅁ 네 변. 어느 꼴에도 안 맞으면 null
+ */
+function ringJamo(label: Int32Array, w: number, b: { x0: number; x1: number; y0: number; y1: number }, ids: Set<number>): string | null {
+  const W = b.x1 - b.x0, H = b.y1 - b.y0
+  if (W < 4 || H < 4) return null
+  const on = (x: number, y: number) => ids.has(label[y * w + x])
+  const row = (y: number) => { let n = 0; for (let x = b.x0; x < b.x1; x++) if (on(x, y)) n++; return n / W }
+  const col = (x: number) => { let n = 0; for (let y = b.y0; y < b.y1; y++) if (on(x, y)) n++; return n / H }
+  const band = (f: (v: number) => number, a: number, z: number) => { let m = 0; for (let v = Math.floor(a); v < Math.ceil(z); v++) m = Math.max(m, f(v)); return m }
+  const top = band(row, b.y0, b.y0 + H * 0.25), bot = band(row, b.y1 - H * 0.25, b.y1), mid = band(row, b.y0 + H * 0.35, b.y1 - H * 0.35)
+  const left = band(col, b.x0, b.x0 + W * 0.25), right = band(col, b.x1 - W * 0.25, b.x1)
+  const S = 0.75, Wk = 0.45
+  if (top >= S && bot >= S && left >= S && right >= S && mid < Wk) return "ㅁ"
+  if (top >= S && mid >= S && bot >= S && left < S && right < S) return "ㄹ"
+  if (top >= S && bot >= S && left >= S && right < Wk) return "ㄷ"
+  if (top >= S && right >= S && bot < Wk && left < Wk) return "ㄱ"
+  if (left >= S && bot >= S && top < Wk && right < Wk) return "ㄴ"
+  return null
 }
 
 /**
