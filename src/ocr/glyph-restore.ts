@@ -24,11 +24,23 @@ export function ringAsks(rgba: Uint8Array, pageW: number, box: Box, text: string
   const chars = [...text]
   if (chars.length !== steps.length || !/[가-힣]/.test(text)) return []
   const gray = grayCrop(rgba, pageW, box)
-  return ringBoxes(gray, box.w, box.h, inkStats(gray)).flatMap(r => {
-    const at = chars.findIndex((c, i) => c.trim() && (steps[i] + 0.5) * stepPx >= r.x0 && (steps[i] + 0.5) * stepPx <= r.x1)
+  const rings = ringBoxes(gray, box.w, box.h, inkStats(gray))
+  const owner = ringOwners(chars, i => (steps[i] + 0.5) * stepPx, rings)
+  return rings.flatMap((r, k) => {
+    const at = owner.indexOf(k)
     if (at >= 0 && !/^[\u2460-\u2468]$/.test(chars[at])) return []
     const { inner } = r
     return [{ x0: r.x0, x1: r.x1, jamo: r.jamo, box: { x: box.x + inner.x0 - 1, y: box.y + inner.y0 - 1, w: inner.x1 - inner.x0 + 2, h: inner.y1 - inner.y0 + 2 } }]
+  })
+}
+
+/** 글자마다 제 자리를 품은 고리 중 가운데가 가장 가까운 것(없으면 -1) — 붙은 두 원문자("①㉠")는 CTC 자리가 두 고리에 걸쳐 한 글자를 둘이 가졌다 */
+function ringOwners(chars: string[], cx: (i: number) => number, rings: Array<{ x0: number; x1: number }>): number[] {
+  return chars.map((c, i) => {
+    if (!c.trim()) return -1
+    let best = -1, d = Infinity
+    rings.forEach((r, k) => { const e = Math.abs(cx(i) - (r.x0 + r.x1) / 2); if (cx(i) >= r.x0 && cx(i) <= r.x1 && e < d) { d = e; best = k } })
+    return best
   })
 }
 
@@ -72,14 +84,16 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   if (/[I|]/.test(text)) parallels(c)
   if (/[I1Ⅰ-Ⅲ|]|^\s*\./.test(text)) roman(c)
   // 고리 속을 다시 읽은 원문자 — 고리 자리 글자(①~⑨ 로 잘못 읽은 것)를 바꾸고, 글자가 없으면 앞 글자 뒤(맨 앞이면 첫 글자 앞)에 넣는다
-  for (const r of rings) {
+  const owner = ringOwners(chars, c.cx, rings)
+  rings.forEach((r, k) => {
     const live = chars.map((_, i) => i).filter(i => chars[i].trim())
-    const at = live.find(i => c.cx(i) >= r.x0 && c.cx(i) <= r.x1)
-    if (at !== undefined) { chars[at] = r.glyph; continue }
+    const at = owner.indexOf(k)
+    // 첫 글자만 바꾼다 — 칸 끝에 이어 붙인 글(앞 고리 자리에 넣은 원문자 "①㉠")을 덮어쓰지 않게
+    if (at >= 0) { chars[at] = r.glyph + [...chars[at]].slice(1).join(""); return }
     const prev = live.filter(i => c.cx(i) < r.x0).pop()
     if (prev !== undefined) chars[prev] += r.glyph
     else if (live.length) chars[live[0]] = r.glyph + chars[live[0]]
-  }
+  })
   return chars.join("")
 }
 

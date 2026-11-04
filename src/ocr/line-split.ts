@@ -474,6 +474,14 @@ export function circledAt(gray: Uint8Array, w: number, h: number, ink: InkStats,
 
 /** 원문자 고리 상자(박스 로컬) — 둥근 고리 성분이 안에 글자 성분을 둔 것(circledAt 의 판정). 안쪽 x0·x1·y0·y1 은 고리 속 글자 성분을 감싼다 */
 export function ringBoxes(gray: Uint8Array, w: number, h: number, ink: InkStats): Array<{ x0: number; x1: number; y0: number; y1: number; inner: { x0: number; x1: number; y0: number; y1: number }; jamo: string | null }> {
+  const strict = ringsAt(gray, w, h, ink)
+  // 잉크 문턱을 배경 쪽으로 절반 늦춰 한 번 더 — 원문자 고리는 1px 옅은 선이라 Otsu 문턱에서 군데군데 끊겨 한 성분이 안 됐다(수능
+  // "㉡그러나"). 늦춘 문턱은 고리와 이웃 괄호를 한 성분으로 붙이기도 해("(Ⅰ-3-②)" → "-3-2)") 제 문턱이 못 찾은 자리만 보탠다
+  const loose = ringsAt(gray, w, h, { ...ink, threshold: ink.darkInk ? ink.threshold + (255 - ink.threshold) / 2 : ink.threshold / 2 })
+  return [...strict, ...loose.filter(r => !strict.some(s => r.x0 < s.x1 && s.x0 < r.x1))]
+}
+
+function ringsAt(gray: Uint8Array, w: number, h: number, ink: InkStats): Array<{ x0: number; x1: number; y0: number; y1: number; inner: { x0: number; x1: number; y0: number; y1: number }; jamo: string | null }> {
   const { comps, label } = components(gray, w, h, ink)
   let charH = 0
   for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)

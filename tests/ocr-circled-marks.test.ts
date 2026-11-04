@@ -28,6 +28,14 @@ describe("원문자 자모·영문 — 사전에 없는 ㉠·ⓐ (수능 국어)
     assert.equal(restoreGlyphs(rgba, W, box, "C방패연", steps, 10), "ⓒ방패연")
     assert.equal(restoreGlyphs(rgba, W, box, "ㄴ방패연", steps, 10), "㉡방패연")
   })
+  it("옅은 1px 고리도 고리다(Otsu 문턱에선 끊기는 회색 선, 수능 \"㉡그러나\")", () => {
+    const rgba = page(set => { rect(set, 10, 14, 20, 26); hangul(set) })
+    for (let y = 7; y <= 33; y++) for (let x = 2; x <= 28; x++) {
+      const d = Math.hypot(x - 15, y - 20)
+      if (d <= 13 && d >= 11.5) { const p = (y * W + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 110 }
+    }
+    assert.equal(restoreGlyphs(rgba, W, box, "ㄴ그러나", steps, 10), "㉡그러나")
+  })
   it("고리가 없으면 그대로", () => {
     const rgba = page(set => { rect(set, 10, 14, 20, 26); hangul(set) })
     assert.equal(restoreGlyphs(rgba, W, box, "a방패연", steps, 10), "a방패연")
@@ -44,6 +52,11 @@ describe("원문자 자모·영문 — 사전에 없는 ㉠·ⓐ (수능 국어)
     const rgba = page(set => { hangul(set) })
     assert.equal(restoreGlyphs(rgba, W, box, "②방패연", steps, 10, {}, [{ x0: 2, x1: 28, glyph: "ⓐ" }]), "ⓐ방패연")
     assert.equal(restoreGlyphs(rgba, W, box, "방패연", [3, 5, 7], 10, {}, [{ x0: 2, x1: 28, glyph: "㉠" }]), "㉠방패연")
+  })
+  it("붙은 두 원문자 — 빠진 ㉠ 을 앞 ① 뒤에 넣고, ① 고리가 그 칸을 덮어쓰지 않는다(\"①㉠:\")", () => {
+    const rgba = page(set => { hangul(set) })
+    const rings = [{ x0: 30, x1: 50, glyph: "㉠" }, { x0: 2, x1: 28, glyph: "①" }]
+    assert.equal(restoreGlyphs(rgba, W, box, "①:다른", [1, 7, 9, 11], 10, {}, rings), "①㉠:다른")
   })
 })
 
