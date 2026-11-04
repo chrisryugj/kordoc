@@ -13,6 +13,7 @@
  */
 
 import { splitStackedOcrRows, unframeOcrLayoutTables } from "./ocr-stacked-rows.js"
+import { splitOcrNameValueColumns } from "./ocr-name-value-columns.js"
 import type { IRBlock, OcrLine, OcrPageLines, OcrProvider, ParseOptions, ParseWarning } from "../types.js"
 import type { NormItem } from "../pdf/text-line.js"
 import type { LineSegment } from "../pdf/line-types.js"
@@ -530,7 +531,7 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   }).filter(it => it.text)
-  const blocks = unframeOcrLayoutTables(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)), pdfH)
+  const blocks = unframeOcrLayoutTables(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))), pdfH)
   if (!figureRegion) markOcrHeadings(blocks)
   return blocks
 }
