@@ -44,3 +44,9 @@ it("marks a numbered section line barely larger than the body as a heading (KDI 
   markOcrHeadings(blocks)
   assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => [b.text, b.level]), [["제1절 임금변동성과 측정방법", 2]])
 })
+
+it("accepts a numbered section read without the space (\"제1절미국\") but not a particle right after the number", () => {
+  const blocks = [p("제1절미국", 13, 700), p("제1절의 결과", 13, 650), p(body, 12, 500, 120), p(body, 12, 300, 120)]
+  markOcrHeadings(blocks)
+  assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => b.text), ["제1절미국"])
+})
