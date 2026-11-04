@@ -50,3 +50,9 @@ it("accepts a numbered section read without the space (\"제1절미국\") but no
   markOcrHeadings(blocks)
   assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => b.text), ["제1절미국"])
 })
+
+it("marks an all-caps line as a heading even when OCR reads it smaller than the body (ODL 141)", () => {
+  const blocks = [p("BUT COPYRIGHT DOESN’T COVER EVERYTHING", 23, 1700, 46), p("NOTE TO SELF", 23, 1650), p("ABC 123", 23, 1600), p(body, 31, 1400, 200), p(body, 31, 1100, 200)]
+  markOcrHeadings(blocks)
+  assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => b.text), ["BUT COPYRIGHT DOESN’T COVER EVERYTHING"])
+})

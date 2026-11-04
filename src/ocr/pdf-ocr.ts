@@ -541,6 +541,14 @@ export function markOcrHeadings(blocks: IRBlock[]): void {
       b.level = /^제\s*\d+\s*절/.test(text) ? 2 : 1
       continue
     }
+    // 영문 대문자만으로 된 한 줄("BUT COPYRIGHT DOESN'T COVER EVERYTHING")은 제목이다 — 글자 그림을 OCR 한 쪽은 줄마다 잰 크기가
+    // 들쭉날쭉해(본문 16~45) 크기 문턱으로 못 가린다(ODL 141). 두 낱말·글자 12자 이상, 소문자·한글 없이, 마침표·쉼표로 안 끝날 때만(두 줄로 꺾인 것까지)
+    if (text.length <= 60 && /^[A-Z0-9][A-Z0-9 '’&:!,-]*$/.test(text) && (text.match(/[A-Z]/g) ?? []).length >= 12 &&
+        /[A-Z]{2,}[,:]?\s+[A-Z]{2,}/.test(text) && !/[.,]$/.test(text) && (!b.bbox || b.bbox.height <= size * 3.2)) {
+      b.type = "heading"
+      b.level = ratio >= 1.5 ? 1 : 2
+      continue
+    }
     if (ratio < 1.3) continue
     if (text.length < 2 || text.length > (ratio >= 1.5 ? 60 : 40) || /[.!?。]$|다\.?$/.test(text) || /^[\d\s.,%·-]+$/.test(text)) continue
     // 한 줄만 — 1.5배 넘게 큰 짧은 글은 두 줄로 꺾인 장 제목까지
