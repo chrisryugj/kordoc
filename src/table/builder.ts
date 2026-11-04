@@ -64,6 +64,7 @@ export function buildTable(rows: CellContext[][], options?: BuildTableOptions): 
   )
   const occupied: boolean[][] = Array.from({ length: numRows }, () => Array(maxCols).fill(false))
   const anchorCols = new Set<number>()
+  const tableCols = new Set<number>()
 
   for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
     let colIdx = 0
@@ -75,6 +76,7 @@ export function buildTable(rows: CellContext[][], options?: BuildTableOptions): 
 
       const cell = rows[rowIdx][cellIdx]
       anchorCols.add(colIdx)
+      if (holdsTable(cell)) tableCols.add(colIdx)
       grid[rowIdx][colIdx] = {
         text: options?.keepEmptyParagraphs ? cell.text : cell.text.trim(),
         colSpan: cell.colSpan,
@@ -92,7 +94,7 @@ export function buildTable(rows: CellContext[][], options?: BuildTableOptions): 
     }
   }
 
-  return trimAndReturn(grid, numRows, maxCols, anchorCols, options)
+  return trimAndReturn(grid, numRows, maxCols, anchorCols, tableCols, options)
 }
 
 /**
@@ -125,6 +127,7 @@ function buildTableDirect(rows: CellContext[][], numRows: number, options?: Buil
   const owner: (IRCell | undefined)[][] = Array.from({ length: numRows }, () => new Array(maxCols))
 
   const anchorCols = new Set<number>()
+  const tableCols = new Set<number>()
   for (let ri = 0; ri < rows.length; ri++) {
     for (const cell of rows[ri]) {
       const text = options?.keepEmptyParagraphs ? cell.text : cell.text.trim()
@@ -147,6 +150,7 @@ function buildTableDirect(rows: CellContext[][], numRows: number, options?: Buil
       }
       const ir: IRCell = { text, colSpan, rowSpan }
       anchorCols.add(c)
+      if (holdsTable(cell)) tableCols.add(c)
       for (let dr = 0; dr < rowSpan; dr++) {
         for (let dc = 0; dc < colSpan; dc++) {
           owner[r + dr][c + dc] = ir
@@ -156,15 +160,22 @@ function buildTableDirect(rows: CellContext[][], numRows: number, options?: Buil
     }
   }
 
-  return trimAndReturn(grid, numRows, maxCols, anchorCols, options)
+  return trimAndReturn(grid, numRows, maxCols, anchorCols, tableCols, options)
 }
 
-/** 빈 후행 열 제거 후 IRTable 반환 — 기본 텍스트 기준 전부, keepAnchoredEmptyCols면 앵커 없는 유령 열만 (#47) */
-function trimAndReturn(grid: IRCell[][], numRows: number, maxCols: number, anchorCols: Set<number>, options?: BuildTableOptions): IRTable {
+/** 칸이 중첩표를 품었나 — 파서가 칸에 실어 보낸 blocks(HWPX CellCtxEx·HWP AddressedCell). 빈 서명·체크 칸 표는 글이 없다 */
+function holdsTable(cell: CellContext): boolean {
+  return (cell as { blocks?: IRBlock[] }).blocks?.some(b => b.type === "table") === true
+}
+
+/** 빈 후행 열 제거 후 IRTable 반환 — 기본 텍스트 기준 전부, keepAnchoredEmptyCols면 앵커 없는 유령 열만 (#47).
+ *  중첩표 앵커가 있는 열은 글이 없어도 남긴다 — 결재표 마지막 열이 빈 서명·체크 칸 표뿐이면 열째 잘려 중첩표가
+ *  사라지거나(HWP) 칸 주소가 잘린 열을 가리켜 서수 폴백으로 엉뚱한 칸에 붙었다(HWPX) */
+function trimAndReturn(grid: IRCell[][], numRows: number, maxCols: number, anchorCols: Set<number>, tableCols: Set<number>, options?: BuildTableOptions): IRTable {
   let effectiveCols = maxCols
   while (effectiveCols > 0) {
     const colEmpty = grid.every(row => !row[effectiveCols - 1]?.text?.trim())
-    if (!colEmpty) break
+    if (!colEmpty || tableCols.has(effectiveCols - 1)) break
     // 실제 셀 앵커가 있는 빈 열은 서식 문서의 입력란 — 옵션 시 트림하지 않는다 (#47)
     if (options?.keepAnchoredEmptyCols && anchorCols.has(effectiveCols - 1)) break
     effectiveCols--
