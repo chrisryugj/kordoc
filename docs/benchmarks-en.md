@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.42: OCR handwriting by default, statistics tables, share columns · 2026-11-04
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.835 → **0.872** (tables .853 → .871, handwriting .761 → **.901**, text and order unchanged), `ocrRec: "auto"` 0.856 → **0.873**. Statistics tables .839 → .872, table set .745 → .768, gazette CER .094 → .091, handwriting CER owner20 .212 → .116 · rw11 .265 → .083. In-house OCR, OCR robust, ODL, ODL-OCR and PDF table benchmarks: no per-document drops.
+
+- The default setting now switches a page to the handwriting rec when its mean confidence is below .85 and the handwriting rec raises it by more than .10 (KoOCR +.019). Printed scans sit at .82–.90 with gains of .06–.10, outside the threshold. Edit distance between the two recognizers' text did not separate handwritten from printed pages.
+- One-line handwriting strips (3685×183) shrank to a 48px short side at detection and lost their glyphs — the detector input keeps a short side of at least 80px (better than 96, 128 or 160; 72 rounds to 64).
+- Statistics-table body expansion, row bands of inflated boxes, share columns and stacked share rows, glued thousands-grouped integers (low statistics pages +.10 to +.58; three table-set pages .55 → 1.0, .60 → .96, .68 → .88).
+
 ## 4.24.40: OCR digit groups and label–value tables · 2026-11-03
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.830 → **0.835**, `ocrRec: "auto"` 0.851 → **0.856**. Gazette CER .116 → **.094**, statistics tables .831 → **.839**. In-house OCR, OCR robustness, ODL-OCR and PDF table benchmarks: no per-document drops (in-house OCR budget book CER .0040 → .0033, three robustness documents up).

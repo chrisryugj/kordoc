@@ -83,7 +83,7 @@ if (result.success) {
 | `ocr` | `--ocr` · `--ocr-force` | 기본: 스캔 쪽 + 큰 그림 속 글(모델 캐시 있을 때) · `true`: + 작은 그림·로고까지(모델 ~18MB 자동 다운로드) · `"force"`: 전 쪽 · `false`: 끔 · 함수: 외부 OCR · HWP·HWPX 삽입 그림은 `true`·`"force"`·함수일 때만 읽음(기본은 원문 글만, DOCX 등 다른 형식 그림은 대상 아님) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | 내장 OCR 이 읽은 줄(상자·신뢰도)을 결과 `ocrLines` 로(PDF·이미지). `"all"` 은 저신뢰로 버린 줄도 `dropped: true` 로 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
 | `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | 글줄 검출 모델 `"mobile"`(기본)·`"server"`(~88MB, 첫 사용 시 다운로드)·`"medium"`(PP-OCRv6, ~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔 입력용)·로컬 파일 `{path, sha256}`, 검출 입력 긴 변(32~4096, 기본 960) |
-| `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 `"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·`"auto"`(기본 rec 로 읽고 확신도 낮은 손글씨 쪽만 손글씨 rec 로 다시 읽음)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
+| `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 — 기본은 기본 rec 로 읽고 뚜렷한 손글씨 쪽만 손글씨 rec 로 다시 읽음. `"printed"`(기본 rec 만)·`"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·`"auto"`(기본보다 너그러운 문턱으로 손글씨 쪽을 다시 읽음)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
 | `formulaOcr` | `--formula-ocr` | PDF·이미지 수식 OCR(MFD+MFR, 모델 ~155MB) — 감지한 수식을 `$…$`·`$$…$$` 로(이미지는 그 자리 OCR 글을 수식으로 바꾼다) |
 | `scriptTags` | `--script-tags` · `--no-script-tags` | 위·아래첨자를 `<sup>`·`<sub>` 로("10⁴ m²" 가 "104 m2" 로 펴지지 않게). 기본: HWPX·HWP·DOCX 켬, PDF 끔(논문·수식 PDF 는 `true` 권장) |
 | `images` | `--no-images` | `false` 면 이미지 바이트를 싣지 않음(그림 자리 표시는 남김, PDF 는 PNG 인코딩 생략) |
@@ -265,7 +265,8 @@ for (const page of r.success ? r.ocrLines ?? [] : []) {
 }
 await parse(buffer, { ocrRec: { path: "/models/my-rec.onnx", sha256: "…" } })   // 미세조정한 rec (같은 사전)
 await parse("수기 신청서.pdf", { ocr: true, ocrRec: "handwriting" })              // 손글씨 인식 모델
-await parse("스캔 묶음.pdf", { ocr: true, ocrRec: "auto" })                       // 손글씨 쪽만 손글씨 모델로
+await parse("스캔 묶음.pdf", { ocr: true, ocrRec: "auto" })                       // 손글씨 쪽을 너그러운 문턱으로
+await parse("인쇄 스캔.pdf", { ocr: true, ocrRec: "printed" })                    // 손글씨 모델을 받지도 쓰지도 않음
 ```
 
 - `ocrLines` 의 상자는 OCR 래스터 픽셀(왼쪽 위 원점)입니다. 쪽마다 `width`·`height`·`scale`(px/pt, PDF 기본 3 = 216dpi)·`deskewAngle` 이 붙고,
@@ -278,7 +279,8 @@ await parse("스캔 묶음.pdf", { ocr: true, ocrRec: "auto" })                 
   내장 모델(`"server"`·`"handwriting"` 포함)은 `~/.cache/kordoc/models/ppocr/` 에 받고, `KORDOC_OFFLINE` 이면 받지 않습니다. 자동 OCR(`ocr` 미지정)은 고른 모델 파일이 있을 때만 돕니다.
 - `ocrRec: "handwriting"` 은 PP-OCRv5 korean rec 를 손글씨·공문서 데이터로 추가 학습한 공개 모델([korean-handwriting-rec](https://github.com/VerifiedIdiot/korean-handwriting-rec), Apache-2.0)입니다.
   사전은 내장 한국어 사전을 그대로 씁니다. 수기 신청서·조사표처럼 손글씨가 많은 문서용이며, 장평이 좁은 숫자·빗금(쪽 표기 `1/2` 등)은 기본 모델보다 잘못 읽는 경우가 있어 기본값은 바꾸지 않았습니다.
-  `ocrRec: "auto"` 는 쪽마다 기본 모델로 읽고, 글자 확신도 평균이 0.9 미만인 쪽만 손글씨 모델로 다시 읽어 평균이 0.06 이상 오를 때 그 쪽을 바꿉니다(인쇄 쪽은 기본 모델 그대로, 손글씨 쪽은 인식을 두 번 하므로 그만큼 느립니다).
+  기본 설정(4.24.42~)은 쪽마다 기본 모델로 읽고, 글자 확신도 평균이 0.85 미만인 쪽만 손글씨 모델로 다시 읽어 평균이 0.10 넘게 오를 때 그 쪽을 바꿉니다. 손글씨 모델은 그런 쪽을 처음 만났을 때 받고(OCR 을 지정하지 않은 PDF 자동 OCR 은 캐시에 있을 때만 씀), 받지 못하면 기본 모델 결과를 그대로 둡니다. `ocrRec: "printed"` 는 기본 모델만 씁니다.
+  `ocrRec: "auto"` 는 문턱이 너그럽습니다 — 확신도 평균 0.9 미만인 쪽을 다시 읽어 0.06 이상 오르면 바꾸고, 손글씨 모델을 미리 받습니다(손글씨 쪽은 인식을 두 번 하므로 그만큼 느립니다).
   고른 모델을 받지 못하거나 열지 못하면 기본 모델로 바꾸지 않고 실패(PDF 는 `OCR_FAILED` 경고)로 알립니다.
 - MCP `parse_document` 는 프리셋 이름만 받습니다 — `ocr_rec: "handwriting" | "auto"`·`ocr_det: "mobile" | "server" | "medium"`·`ocr_det_long_side`(32~4096). 로컬 모델 파일은 CLI·라이브러리에서 지정합니다.
 - 모델 선택마다 엔진 세션을 하나씩 캐시합니다(상주 워커에서 여러 조합을 쓰면 그만큼 메모리를 씁니다).
