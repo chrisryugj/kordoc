@@ -137,14 +137,24 @@ class Worker:
                 pass
 
     async def kill(self) -> None:
-        """즉시 종료하고 회수한다."""
+        """즉시 종료하고 회수한다. 파이프를 물려받은 자손이 남아도 그 자손을 기다리지 않는다."""
         proc = self._proc
         if proc is not None and proc.returncode is None:
             try:
                 proc.kill()
             except ProcessLookupError:
                 pass
-            await proc.wait()
+            try:
+                await asyncio.wait_for(proc.wait(), 1.0)
+            except TimeoutError:
+                # 워커는 끝났어도 자손이 파이프를 쥐면 wait 가 풀리지 않는 Python 이 있다(gh-119710 전) — 우리 쪽 파이프를 닫아 푼다
+                transport = getattr(proc, "_transport", None)
+                if transport is not None:
+                    transport.close()
+                try:
+                    await asyncio.wait_for(proc.wait(), 1.0)
+                except TimeoutError:
+                    pass  # 아직 회수되지 않았다 — alive 로 남아 소유를 유지하고, 교체 전에 다시 끝낸다
         await self._finish_stderr()
 
     async def quit(self, timeout: float) -> None:
