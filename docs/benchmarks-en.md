@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.45: OCR ranking-table name/value columns and statistics sub-rows · 2026-11-05
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8779 → **0.8806** (tables .870 → **.876**; text, handwriting and order unchanged), `ocrRec: "auto"` 0.8791 → **0.8818**. Statistics tables .8715 → **.8862**, table set .7682 → .7709. 12 pages up, 1 down (−.004 — rows that had been shifted one cell left now sit under the label column, which jitters the match against the truth's row-spanning cell; the output is better). In-house OCR, OCR robust and ODL-OCR benchmarks: no per-document drops.
+
+- Name/value columns in ranking tables: the two "top 10 nationalities" pages .61 → .91 and .60 → .89. Instead of the blank-gutter vertical line rejected in 4.24.44, the split happens on cell text, so wide OCR boxes no longer make rows come out twice.
+- Line alignment for statistics sub-rows: the regional in-migration page .61 → .94 (six months of 2024 had stayed in one row, with 16 columns from Gwangju to Jeju merged into one cell).
+- Stacked share rows next to a spanning text label: two table-set pages .82 → .93 and .43 → .54.
+- Rejected: splitting same-line "value (share)" cells (one statistics page .60 → 1.0, but it also split n(%) cells in drug-label clinical tables). Left as truth-shape limits: press-release cover pages (the truth keeps only the two contact rows of the header table, split into six columns where no rule exists), three table-set pages that store an org chart, a text box or a whole page as a table, and user-document pages whose truth is another page's text or omits the table.
+
 ## 4.24.44: OCR multi-column prose and strip images · 2026-11-05
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.877 → **0.878**, `ocrRec: "auto"` 0.878 → **0.879**. User-document CER .301 → .285. External opendataloader-bench with `ocr: true`: .96646 → **.96659** (no per-document drops). Default ODL, in-house OCR, OCR robust and Korean PDF text and table benchmarks: no per-document drops.
