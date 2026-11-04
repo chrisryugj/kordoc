@@ -55,6 +55,15 @@ describe("PDF table roles", () => {
     assert.equal(isProseFragmentTable(table([["구분", "사업명", "예산액"], ["복지", "자활근로사업", "679,330"], ["보건", "결핵검진 지원", "1,550"]])), false)
   })
 
+  it("treats a grid of long prose line pieces as prose even when lines break mid-word (펼친 교재 네 단)", () => {
+    const line = ["조에서점차종이처럼얇은구조로변화된다.소실은", "이슬이 나오면서 또는 수축에 의해서 촉진될 수", "후에개대가일어나지만 경산부는대부분 소실과개대", "분만1기말에 자궁수축은2~3분간격으로빈도와"]
+    const rows = Array.from({ length: 4 }, (_, r) => [line[r % 4], "경관", line[(r + 1) % 4], line[(r + 2) % 4].replace(/와$/, "")])
+    assert.equal(isProseFragmentTable(table(rows)), true)
+    // 긴 글 칸이 절반 아래인 진짜 표(사업 설명 열)는 표로 둔다
+    const real = Array.from({ length: 4 }, (_, r) => ["복지", "자활근로사업", "저소득층 자활을 위한 근로 기회를 제공하는 사업", String(679330 + r)])
+    assert.equal(isProseFragmentTable(table(real)), false)
+  })
+
   it("keeps an OCR grid with a Hangul header row as a table even when a year column looks like an axis (공정위 피심인 일반현황)", () => {
     const years = ["2024", "2023", "2022", "2021"]
     const rows = [["사업자명", "연도", "자본금", "매출액"], ...years.map((y, i) => [i === 0 ? "대성" : "", y, "251", String(174115 - i * 1000)])]

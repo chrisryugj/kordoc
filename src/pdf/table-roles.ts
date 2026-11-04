@@ -184,7 +184,11 @@ export function isChartTable(table: IRTable, ocr = false): boolean {
 export function isProseFragmentTable(table: IRTable): boolean {
   const texts = table.cells.flat().map(cell => cell.text.trim()).filter(Boolean)
   if (texts.length < 4) return false
-  if (texts.filter(text => (text.match(/[가-힣]/g)?.length ?? 0) >= 2).length < texts.length * 0.7) return false
+  const hangul = (text: string) => text.match(/[가-힣]/g)?.length ?? 0
+  if (texts.filter(text => hangul(text) >= 2).length < texts.length * 0.7) return false
+  // 여러 단 본문 — 칸 절반 넘게가 한글 15자 넘는 한 줄(본문 줄 조각)이면 표가 아니다. 줄이 낱말 가운데서 끊겨 끝 글자로는 못 가린다
+  // (펼친 교재 두 쪽 네 단이 72칸 표가 됨 "조에서점차종이처럼얇은구조로변화된다.소실은" | "경관"). KoOCR 진짜 표는 .35 이하
+  if (texts.length >= 12 && texts.filter(text => hangul(text) >= 15 && !text.includes("\n")).length >= texts.length * 0.5) return true
   return texts.filter(text => /(?:[다요고서는을를에게지며면어아야니까던]|[.,?!])$/.test(text)).length >= texts.length * 0.3
 }
 
