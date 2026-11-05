@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.46: OCR fake rules from digit strokes and group labels · 2026-11-05
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8806 → **0.8830** (tables .876 → **.881**, order .9064 → .9069), `ocrRec: "auto"` 0.8818 → **0.8842**. Gazette CER .0911 → **.0819**, statistics tables .8862 → **.8931**. 11 pages up, 1 down (−.023, an exam page with a chart — question text and chart text that had been one block are now separate, and the chart text the truth omits counts on its own). In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
+
+- Fake rules from digit strokes: the gazette continuing-expenditure page .477 → .032, two other gazette pages .203 → .009 and .155 → .059, two statistics pages +.04 and +.07. The first version (two or more verticals only) hurt one scanned form skewed by +3°, so dotted lines of 60pt or more are accepted with one vertical.
+- Group label in the first column: the first version also split multi-line text inside one cell (election schedule "·시·도지사 … / ·시·도의원 …"), CER .062 → .080 on one in-house OCR document — now only when the other columns are numeric value columns.
+- Two stacked open tables: the per-capita GRDP page .66 → .954. The first version (both rules around the gap thick) broke a scanned form whose rule widths vary with blur (robust scan CER .098 → .401) — narrowed to one "thick frame, thin inner rules, thick frame" set on each side.
+- Rejected: splitting OCR boxes stacked in one column (six pages dropped, including vertically spaced place names), unframing a handwritten-letter cluster table (.508 → .668). The #181 spacer-row rule was not adopted: against the source tables it restored 14 places and merged different tables or boxes in 10.
+
 ## 4.24.45: OCR ranking-table name/value columns and statistics sub-rows · 2026-11-05
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8779 → **0.8806** (tables .870 → **.876**; text, handwriting and order unchanged), `ocrRec: "auto"` 0.8791 → **0.8818**. Statistics tables .8715 → **.8862**, table set .7682 → .7709. 12 pages up, 1 down (−.004 — rows that had been shifted one cell left now sit under the label column, which jitters the match against the truth's row-spanning cell; the output is better). In-house OCR, OCR robust and ODL-OCR benchmarks: no per-document drops.
