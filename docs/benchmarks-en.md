@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.47: OCR stacked header characters and digit re-reading · 2026-11-06
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8830 → **0.8834** (tables .8806 → **.8814**, order .9069 → .9071), `ocrRec: "auto"` 0.8842 → **0.8846**. Gazette CER .0819 → **.0799**, statistics tables .8931 → **.8937**. 9 pages up, none down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops. ODL default overall 0.96491.
+
+- Header characters stacked top to bottom: the provincial fertility table .782 → .824 (17 of 18 header cells recovered — "제주" misses the 0.9 bar because "제" reads at 0.77). The first version (always one word) joined the form lines "자주식 대 / 기계식 대" into "대대" and dropped one in-house OCR and one robust document — characters are now joined only when the gap between bands is within 0.3 of the glyph height.
+- Digit-count re-reading: three gazette pages. The first version turned an ODL chart tick "0,05" into "5", so a re-read is accepted only when the new number contains the original digits in order and is longer.
+- Two-row tables: a gazette before/after comparison table .301 → .183. The first version (keep only numeric tables) took a Goesan budget OCR page from CER 0 to .25.
+- Rejected: detection long side 960 → 1280 for every page (tables +.0027, text −.008, handwriting −.011, total .8807), a second detection pass at 4/3 scale to add missed lines (.8827, 40 in-house drops, 6.1 → 10.5 s per page), lowering the two-line re-read width bar from 3x to 2x (an org-chart cell "산업안전/보건본부" joined a neighbouring cell, 2 drops), merging cells beside a short rule under a two-row cell (group headers with partly missing rules split, .8830).
+
 ## 4.24.46: OCR fake rules from digit strokes and group labels · 2026-11-05
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8806 → **0.8830** (tables .876 → **.881**, order .9064 → .9069), `ocrRec: "auto"` 0.8818 → **0.8842**. Gazette CER .0911 → **.0819**, statistics tables .8862 → **.8931**. 11 pages up, 1 down (−.023, an exam page with a chart — question text and chart text that had been one block are now separate, and the chart text the truth omits counts on its own). In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
