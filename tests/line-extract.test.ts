@@ -126,3 +126,25 @@ describe("dropShadingStacks — 플러시 테두리 삼킴 방지 (리뷰 #12)",
     assert.ok(!ys.some(y => y > 101 && y < 112), "fill 스택은 드랍")
   })
 })
+
+describe("closeOpenTableEdges — 굵은 바깥 테두리로 쌓인 두 표 가르기", () => {
+  // 표마다 위·머리 아래·바닥 괘선만 — 본문 행 간격(255)이 표 사이 간격(72)보다 커 중앙값으로는 못 가른다(1인당 지역내총생산 만원 / 달러)
+  const hw = (y: number, lineWidth: number): LineSegment => ({ x1: 100, y1: y, x2: 500, y2: y, lineWidth })
+  const verticals = [v(300, 75, 385), v(300, 457, 726)]
+
+  it("다리 없는 띠의 위아래 선이 둘 다 굵으면 두 표로 닫는다", () => {
+    const horizontals = [hw(75, 1.44), hw(368, 0.72), hw(385, 1.44), hw(457, 1.44), hw(712, 0.72), hw(726, 1.44)]
+    const synth = closeOpenTableEdges(horizontals, verticals).filter(s => !verticals.includes(s))
+    assert.equal(synth.filter(s => s.y1 <= 385 && s.y2 >= 457).length, 0, `표 사이를 잇는 테두리: ${JSON.stringify(synth)}`)
+    assert.equal(synth.length, 4)
+  })
+  it("굵기가 같으면 종전대로 한 표 — 굵은 선 하나뿐인 띠도 가르지 않는다", () => {
+    const same = [hw(75, 1), hw(368, 1), hw(385, 1), hw(457, 1), hw(712, 1), hw(726, 1)]
+    assert.ok(closeOpenTableEdges(same, verticals).some(s => !verticals.includes(s) && s.y1 <= 76 && s.y2 >= 725))
+    const one = [hw(75, 1.44), hw(368, 0.72), hw(385, 0.72), hw(457, 1.44), hw(712, 0.72), hw(726, 1.44)]
+    assert.ok(closeOpenTableEdges(one, verticals).some(s => !verticals.includes(s) && s.y1 <= 76 && s.y2 >= 725))
+    // 굵기가 들쭉날쭉한 스캔 서식 — 띠 아래쪽에 가는 안쪽 선이 없으면 표 한 벌이 아니다(개발행위 허가신청서 scan)
+    const form = [hw(75, 1.44), hw(368, 1.44), hw(385, 1.44), hw(457, 1.44), hw(712, 0.72), hw(726, 1.44)]
+    assert.ok(closeOpenTableEdges(form, verticals).some(s => !verticals.includes(s) && s.y1 <= 76 && s.y2 >= 725))
+  })
+})

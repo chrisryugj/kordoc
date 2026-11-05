@@ -674,6 +674,8 @@ const EDGE_NEAR = 10
 const EDGE_CONNECT_TOL = 5
 /** 상하 스택 표 분할: 그룹 내 세로 간격이 중앙값의 이 배를 넘으면 표 경계로 보고 쪼갬 */
 const EDGE_YGAP_SPLIT_K = 2.5
+/** 상하 스택 표 분할: 다리 없는 띠의 위아래 괘선이 묶음 가는 선의 이 배 이상 굵으면 두 표의 바깥 테두리로 보고 쪼갬 */
+const EDGE_FRAME_WIDTH_K = 1.5
 /** y-간격 분할 절대 하한(pt) — 이중괘선 중앙값 붕괴 시 정상 행간을 표 경계로 오인하지 않게 */
 const EDGE_YGAP_ABS_MIN = 30
 /** 체인 뷰: 같은 논리 괘선으로 묶는 y 허용 오차 (pt) */
@@ -761,6 +763,17 @@ export function closeOpenTableEdges(
     for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i].y1 - sorted[i - 1].y1)
     const median = gaps.length ? [...gaps].sort((a, b) => a - b)[gaps.length >> 1] : 0
     const threshold = median * EDGE_YGAP_SPLIT_K
+    // 표마다 위·머리 아래·바닥 괘선만 그은 통계표는 본문 행 간격이 표 사이 간격보다 커 중앙값으로 못 가른다(1인당 지역내총생산
+    // 만원 표 / 달러 표, 사이에 제목·단위 줄). 표 바깥 테두리만 굵고 안쪽 선은 가늘다 — 다리 없는 띠 양쪽이 각각 "굵은 테두리 ·
+    // 가는 안쪽 선 · 굵은 테두리" 한 벌이면 표 사이다. 굵기가 들쭉날쭉한 스캔 서식(안쪽에도 굵은 선)은 걸리지 않는다
+    const thin = Math.min(...sorted.map(l => l.lineWidth))
+    const frame = (l: LineSegment) => thin > 0 && l.lineWidth >= thin * EDGE_FRAME_WIDTH_K
+    /** sorted[from..] 이 굵은 선으로 시작해 가는 선들 뒤 굵은 선으로 닫히면 그 끝 번호 */
+    const frameEnd = (from: number, step: 1 | -1) => {
+      if (!frame(sorted[from])) return -1
+      for (let j = from + step; j >= 0 && j < sorted.length; j += step) if (frame(sorted[j])) return Math.abs(j - from) >= EDGE_MIN_RULES - 1 ? j : -1
+      return -1
+    }
     let cur: LineSegment[] = sorted.length ? [sorted[0]] : []
     for (let i = 1; i < sorted.length; i++) {
       const yLo = sorted[i - 1].y1, yHi = sorted[i].y1
@@ -779,7 +792,8 @@ export function closeOpenTableEdges(
       const bridged = verticals.some(vl =>
         vl.y1 <= yLo + EDGE_NEAR && vl.y2 >= yHi - EDGE_NEAR &&
         vl.x1 >= gx1 - EDGE_CONNECT_TOL && vl.x1 <= gx2 + EDGE_CONNECT_TOL)
-      if (median > 0 && gap > threshold && gap > EDGE_YGAP_ABS_MIN && !bridged
+      const between = gap > threshold || frameEnd(i - 1, -1) >= 0 && frameEnd(i, 1) >= 0
+      if (median > 0 && between && gap > EDGE_YGAP_ABS_MIN && !bridged
           && cur.length >= EDGE_MIN_RULES && sorted.length - i >= EDGE_MIN_RULES) {
         splitGroups.push(cur)
         cur = []
