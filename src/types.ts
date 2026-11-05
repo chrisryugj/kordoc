@@ -145,6 +145,13 @@ export interface IRTable {
   classification?: TableClassificationSummary
   /** 원본 표 식별자(HWPX `hp:tbl id`) — 렌더 region(`RenderRegion.sourceId`)과의 조인 키 */
   sourceId?: string
+  /**
+   * XLSX·XLS 시트 표에서만: 표 행 i 가 원본 시트의 몇 번째 행인가(0부터, 길이 = rows). 글 없는 행·열은 표에서 빠지므로
+   * 표 서수와 시트 주소가 다르다 — 표 칸 (i, j) 의 원본 칸은 (sourceRows[i], sourceCols[j]) 다(시트 A1 = (0, 0))
+   */
+  sourceRows?: number[]
+  /** XLSX·XLS 시트 표에서만: 표 열 j 가 원본 시트의 몇 번째 열인가(0부터, 길이 = cols). `sourceRows` 참고 */
+  sourceCols?: number[]
   /** `tableFormat: "gfm"` 관계 표지의 표 id(`t1`, `t2` …) — 문서 블록 트리 전위 순회 순번. 그 옵션으로 렌더할 때만 채워진다(원본 id 아님) */
   markdownId?: string
   /** 렌더 인프라가 준 페이지 로컬 pt 조각(다중 페이지 표는 여럿) — extractTables 가 채운다 */

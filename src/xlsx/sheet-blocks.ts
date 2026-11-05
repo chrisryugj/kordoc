@@ -110,6 +110,11 @@ export function sheetToBlocks(
   }
 
   const table = buildTable(cellRows, { keepAnchoredEmptyCols, maxRows: rowCap, maxCols: keepCols.length })
-  if (table.rows > 0) blocks.push({ type: "table", table, pageNumber: sheetIndex + 1 })
+  if (table.rows > 0) {
+    // 표 행·열 → 원본 시트 행·열. buildTable 은 행을 빼지 않고 열은 뒤쪽 빈 열만 자르므로 앞에서부터 표 크기만큼이다
+    table.sourceRows = keepRows.slice(0, table.rows)
+    table.sourceCols = keepCols.slice(0, table.cols)
+    blocks.push({ type: "table", table, pageNumber: sheetIndex + 1 })
+  }
   return blocks
 }
