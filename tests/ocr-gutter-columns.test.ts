@@ -66,3 +66,11 @@ it("splits glued thousands-grouped integers across the columns they span (\"7,30
   // 쉼표 정수가 열 수와 맞지 않으면 그대로
   assert.equal(out[4].text, "1,364,123 5")
 })
+
+it("cuts a gap that both body lines of a two-row table share, but not one of two lines (연평균 증감률 도심 | 도시클러스터)", () => {
+  const g = grid()
+  const pair = (y: number) => item("1.3 -1.0", 20, y, 260, [[3, 90, 190]])
+  assert.deepEqual((ocrGutterVerticals([g], [pair(150), pair(120)]).get(g) ?? []).map(l => Math.round(l.x1)), [140])
+  // 두 줄 가운데 한 줄만 비운 틈은 우연이다
+  assert.equal(ocrGutterVerticals([g], [pair(150), item("12.5", 20, 120, 60)]).size, 0)
+})

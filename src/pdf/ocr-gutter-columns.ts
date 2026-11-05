@@ -86,8 +86,10 @@ export function ocrGutterVerticals(grids: TableGrid[], items: NormItem[]): Map<T
         for (const g of support) gaps.splice(gaps.indexOf(g), 1)
         if (x - x0 < margin || x1 - x < margin) continue
         const supportLines = new Set(support.map(g => lines[g.line].y))
-        // 값 글줄 셋 이상·40% 이상이 같은 틈을 비워야 열이다 — 몇 줄만 우연히 맞은 틈(묶음 숫자 OCR 틈)은 아니다
-        if (supportLines.size < Math.max(3, valueLines * 0.4)) continue
+        // 값 글줄 셋 이상·40% 이상이 같은 틈을 비워야 열이다 — 몇 줄만 우연히 맞은 틈(묶음 숫자 OCR 틈)은 아니다.
+        // 본문 두 행뿐인 작은 표(연평균 증감률 "1.3 -1.0" / "0.7 -0.1")는 값 글줄 전부가 같은 틈을 비우면 열이다
+        const minSupport = valueLines === 2 && supportLines.size === 2 ? 2 : Math.max(3, valueLines * 0.4)
+        if (supportLines.size < minSupport) continue
         // 격자 행마다 x 를 가로지르는 글줄이 그 행 지지 글줄의 1/4 을 넘으면 막힌 행 — 지지 없는 머리 행(묶음 제목)은 한 줄로 막힌다.
         // 본문이 괘선 없이 한 격자 행이면 빈 구간 근거를 못 얻은 상자 한둘이 행 전체를 막지 않게 한다
         const rows = grid.rowYs.length - 1
@@ -103,7 +105,7 @@ export function ocrGutterVerticals(grids: TableGrid[], items: NormItem[]): Map<T
           if (n > bestCount) { bestCount = n; bestRun = [r, e] }
           r = e
         }
-        if (!bestRun || bestCount < 3) continue
+        if (!bestRun || bestCount < Math.min(3, minSupport)) continue
         const list = out.get(grid) ?? []
         list.push({ x1: x, y1: grid.rowYs[bestRun[1]], x2: x, y2: grid.rowYs[bestRun[0]], lineWidth: 0.5 })
         out.set(grid, list)
