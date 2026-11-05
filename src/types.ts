@@ -203,7 +203,7 @@ export interface DocumentMetadata {
   pageCount?: number
   /**
    * 페이지 경계 신뢰도 (#66) — "layout": 조판 정보 기반 실제 페이지
-   * (한컴 저장본 HWP/HWPX·PDF·COM, PPTX 슬라이드, Word 조판 표지가 있는 DOCX), "section": 섹션 단위 근사
+   * (한컴 저장본 HWP/HWPX·PDF·COM, PPTX 슬라이드, Word 조판 표지로 센 쪽 수가 app.xml Pages 와 같은 DOCX), "section": 섹션 단위 근사
    * (조판 캐시 없는 생성 파일). HWP/HWPX/PDF·PPTX·DOCX에서만 설정된다.
    */
   pageMode?: "layout" | "section"
@@ -225,7 +225,7 @@ export interface ParseOptions {
    * - 문자열: "1-3", "1,3,5-7"
    *
    * PDF: 정확한 페이지 단위. HWP/HWPX: 섹션 단위 근사치.
-   * DOCX: Word 가 저장한 조판 쪽 — 조판 표지가 없는 문서는 거르지 않는다.
+   * DOCX: Word 가 저장한 조판 쪽 — 쪽을 매기지 않은 문서(표지 없음·app.xml Pages 와 쪽 수 다름)는 거르지 않는다.
    */
   pages?: number[] | string
   /** 이미지 기반 PDF OCR (선택).

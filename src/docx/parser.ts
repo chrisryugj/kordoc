@@ -618,7 +618,7 @@ interface RenderedPageBreaks {
 
 /**
  * 블록 요소 하나에 든 Word 조판 쪽 나눔 표지(w:lastRenderedPageBreak)를 센다.
- * Word 는 명시 나눔(w:br type="page"·w:pageBreakBefore) 자리에도 이 표지를 찍으므로 명시 나눔은 따로 세지 않는다.
+ * 명시 나눔(w:br type="page"·w:pageBreakBefore)은 따로 세지 않는다 — 표지가 빠진 문서는 app.xml Pages 대조에서 걸러진다.
  * 글상자(w:txbxContent)는 본문 쪽 흐름 밖이고 mc:Fallback 은 Choice 의 사본이라 건너뛴다.
  */
 function countRenderedPageBreaks(
@@ -641,6 +641,18 @@ function countRenderedPageBreaks(
     }
   }
   return acc
+}
+
+/** Word 가 저장할 때 적은 쪽 수(docProps/app.xml Pages). 없거나 읽지 못하면 undefined */
+async function readSavedPageCount(zip: JSZip): Promise<number | undefined> {
+  const file = zip.file("docProps/app.xml")
+  if (!file) return undefined
+  try {
+    const text = parseXml(await readZipEntry(file, "text")).getElementsByTagNameNS("*", "Pages")[0]?.textContent?.trim()
+    return text && /^\d+$/.test(text) ? Number(text) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 interface RawDocxCell {
@@ -1029,9 +1041,11 @@ export async function parseDocxDocument(
   // sdt(콘텐츠 컨트롤)로 감싼 블록 문단/표도 펼쳐서 본다
   const topLevel = effectiveChildElements(bodyEl)
   // 쪽 번호는 Word 가 저장한 조판 표지로만 — 표지가 없는 문서(Word 밖에서 만든 문서)는 쪽을 매기지 않는다.
-  // 명시 나눔만 세면 넘쳐서 넘어간 쪽이 빠져 실제보다 작은 번호가 된다
+  // 명시 나눔만 세면 넘쳐서 넘어간 쪽이 빠져 실제보다 작은 번호가 된다.
+  // 표지는 Word 판·저장 시점에 따라 빠진 자리가 있어, 같은 저장의 docProps/app.xml Pages 와 쪽 수가 같을 때만 쓴다
   const pageBreaks = topLevel.map(el => countRenderedPageBreaks(el))
-  const rendered = pageBreaks.some(b => b.leading + b.trailing > 0)
+  const breakCount = pageBreaks.reduce((n, b) => n + b.leading + b.trailing, 0)
+  const rendered = breakCount > 0 && breakCount + 1 === await readSavedPageCount(zip)
   // 그림 관계 id → 쪽. 본문 워크에서 링크되지 않아 문서 끝에 붙는 그림(표 칸 안 등)에 쓴다
   const imagePages = new Map<string, number>()
   let page = 1
@@ -1097,7 +1111,6 @@ export async function parseDocxDocument(
   }
 
   // 7. 메타데이터
-  // Word 조판 표지가 있으면 그 쪽 수가 Word 가 저장한 쪽 수(docProps/app.xml Pages)와 같다
   const metadata: DocumentMetadata = rendered ? { pageCount: page, pageMode: "layout" } : {}
   const coreFile = zip.file("docProps/core.xml")
   if (coreFile) {
