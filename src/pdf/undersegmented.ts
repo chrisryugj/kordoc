@@ -173,7 +173,7 @@ function anchoredSubRows(byCol: TextItem[][][], minLines: number, covered: boole
  * @param kept 행 3개 이상 표에서 펼치지 않고 그대로 둔 행 — 새 행 번호 → 원래 행 번호 (호출측이 그 행의 칸 합침을 잇는다)
  */
 export function normalizeUndersegmentedTable(
-  originalCells: { text: string; rowSpan?: number }[][],
+  originalCells: { text: string; rowSpan?: number; colSpan?: number }[][],
   colXs: number[],
   items: TextItem[],
   rowYs?: number[],
@@ -208,7 +208,11 @@ export function normalizeUndersegmentedTable(
       const body = normalizeUndersegmentedTable([originalCells[r]], colXs, rowItems, undefined, undefined, undefined, band > 1 ? 2 : MIN_ALIGNED_LINES)
       if (body) {
         // 행 여럿에 걸친 칸 글("2023년", 6행 걸침)은 글 중심이 이 행 띠 밖이라 펼친 행에서 빠진다 — 그 열이 통째로 비면 원래 글을 첫 하위 행에 둔다
-        originalCells[r].forEach((cell, c) => { if (cell.text.trim() && body.every(cells => !cells[c]?.trim())) body[0][c] = cell.text })
+        // 옆 열에 걸친 칸("가구당 마릿수(마리) / - 산란계 / - 육용계", 두 열 걸침)은 글이 걸친 다른 열로 펼쳐졌으면 되살리지 않는다
+        originalCells[r].forEach((cell, c) => {
+          const cols = Array.from({ length: Math.max(1, cell.colSpan ?? 1) }, (_, k) => c + k)
+          if (cell.text.trim() && body.every(cells => cols.every(k => !cells[k]?.trim()))) body[0][c] = cell.text
+        })
         rebuilt.push(...body); expanded++; r += band - 1
       }
       else { kept?.set(rebuilt.length, r); rebuilt.push(row) }

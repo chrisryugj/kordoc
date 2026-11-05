@@ -192,6 +192,20 @@ describe("펼친 행의 한 자리 수 열과 걸친 칸 글 (OCR)", () => {
     const rebuilt = normalizeUndersegmentedTable(original, cols, items, [200, 170, 140, 120, 100], undefined, 40)
     assert.deepEqual(rebuilt?.slice(1, 3), [["2023년", ...lines[0]], ["", ...lines[1]]])
   })
+
+  it("does not restore a column-spanning label whose lines landed in the next column", () => {
+    // 두 열에 걸친 이름표 칸 글이 걸친 둘째 열로 펼쳐졌다(가축동향 "가구당 마릿수(마리) / - 산란계 / - 육용계")
+    const lines = [["가구당 마릿수", "62,348", "100"], ["- 산란계", "76,757", "247"], ["- 육용계", "59,093", "-214"]]
+    const items = lines.flatMap((row, i) => row.map((t, c) => ocr(t, cols[c + 1] + 5, 160 - i * 16)))
+    const original = [
+      [{ text: "구분", colSpan: 2 }, { text: "" }, { text: "계" }, { text: "증감" }],
+      [{ text: "가구당 마릿수\n- 산란계\n- 육용계", colSpan: 2 }, { text: "" }, { text: "62,348\n76,757\n59,093" }, { text: "100\n247\n-214" }],
+      [{ text: "" }, { text: "" }, { text: "" }, { text: "" }],
+      [{ text: "" }, { text: "" }, { text: "" }, { text: "" }],
+    ]
+    const rebuilt = normalizeUndersegmentedTable(original, cols, items, [200, 170, 110, 100, 90], undefined, 40)
+    assert.deepEqual(rebuilt?.slice(1, 4), lines.map(l => ["", ...l]))
+  })
 })
 
 describe("부푼 OCR 상자의 행 띠 (OCR)", () => {
