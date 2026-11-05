@@ -126,6 +126,26 @@ export function badThousands(text: string): boolean {
   }
   return false
 }
+/** 수 하나만 든 글 — 부호·괄호, 금액 단위 꼬리("67,05,00,000원"·"1,234명"·"12%")까지. 단위째 읽힌 기금운용계획 금액 열이 재인식에서 빠졌다(관보) */
+export function singleNumberText(text: string): boolean {
+  return /^[-−(△▲]?\d[\d,]*\)?\s?(?:[가-힣]{1,2}|%)?$/.test(text.trim())
+}
+/**
+ * 숫자 재인식 결과 반영 — 숫자 밖 글자가 같으면 다시 읽은 글 그대로, 다르면 원래 글의 수만 다시 읽은 수로 바꾼다(수가 하나씩일 때).
+ * 늘려 읽으면 칸 테두리를 "|"·"]" 로 붙여 읽거나 앞 "△" 를 빠뜨려(관보 기금 금액 "△19,454,00,000원" → "19,454,000,000원") 버려졌다
+ */
+export function rereadNumberText(original: string, reread: string): string | null {
+  const skeleton = (t: string) => t.replace(/[\d,\s]/g, "")
+  if (skeleton(reread) === skeleton(original)) return restoreSymbols(reread.trim())
+  const num = (t: string) => t.match(/\d[\d,]*\d|\d/g) ?? []
+  const before = num(original), after = num(reread)
+  if (before.length !== 1 || after.length !== 1) return null
+  // 붙어 읽힌 같은 숫자를 되살리는 재인식이라 자릿수가 늘고 원래 숫자를 차례로 품어야 한다 — "0,05" 가 "5" 로 바뀌었다(ODL 027 차트 눈금)
+  const a = before[0].replace(/,/g, ""), b = after[0].replace(/,/g, "")
+  let i = 0
+  for (const ch of b) if (ch === a[i]) i++
+  return b.length > a.length && i === a.length ? original.replace(before[0], after[0]) : null
+}
 const DET_MAX_BOXES = 3000
 const REC_MIN_WIDTH = 320
 /** 배치 텐서 폭 합 상한 — 긴 줄 여러 개를 한 텐서로 묶어 메모리가 튀지 않게 */
@@ -825,15 +845,16 @@ export class OcrEngine {
     // 합쳤다(관보 계속비). 그 상자만 가로로 늘려 다시 읽어, 자릿수가 바로 서고 숫자 밖 글은 같으면 바꾼다
     for (const stretch of tuning.postprocess ? NUMBER_STRETCH : []) {
       // 수 하나만 든 상자만 — 여러 값이 붙은 상자("7,3022,6071,364…")를 다시 읽으면 틈 정보가 바뀌어 칸 가르기가 흔들렸다(통계표)
-      const fix = items.filter(it => boxOf.has(it) && /^[-−(△▲]?\d[\d,]*\)?$/.test(it.text.trim()) && badThousands(it.text))
+      const fix = items.filter(it => boxOf.has(it) && singleNumberText(it.text) && badThousands(it.text))
       if (!fix.length) break
       const res = await this.recognizeJobs(rgba, width, fix.map((it, k) => ({ box: boxOf.get(it)!, rot: 0 as const, group: k, stretch })), tuning.recBatch)
-      const skeleton = (t: string) => t.replace(/[\d,\s]/g, "")
       fix.forEach((it, k) => {
         const r = res[k]
         // 다시 읽어도 수 하나여야 — 공백 없이 붙은 여러 값("6,8052,2951…")이 띄어 읽히면 그 줄만 모양이 달라져 행 펼치기가 깨졌다
-        if (!r || /\s/.test(r.text.trim()) || badThousands(r.text) || r.confidence < it.confidence - 0.05 || skeleton(r.text) !== skeleton(it.text)) return
-        it.text = restoreSymbols(r.text.trim())
+        if (!r || /\s/.test(r.text.trim()) || badThousands(r.text) || r.confidence < it.confidence - 0.05) return
+        const merged = rereadNumberText(it.text, r.text)
+        if (merged === null) return
+        it.text = merged
         rememberOcrTextGaps(it, findOcrTextGaps(rgba, width, boxOf.get(it)!, r.text, it.text, r.steps, r.stepPx))
       })
     }
