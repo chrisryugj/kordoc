@@ -72,14 +72,14 @@ if (result.success) {
 }
 ```
 
-- `pages` appears only for formats whose blocks carry page numbers (HWP · HWPX · PDF; XLS(X): one sheet = one page; PPTX: one slide = one page). DOCX, which has no page numbering, omits the field.
+- `pages` appears only for formats whose blocks carry page numbers (HWP · HWPX · PDF; XLS(X): one sheet = one page; PPTX: one slide = one page; DOCX: the pages Word laid out when it saved the file). A DOCX gets page numbers only when the page count from its rendered page break markers (`w:lastRenderedPageBreak`) equals `Pages` in `docProps/app.xml`; without markers (files not saved by Word) or on a mismatch it omits the field.
 - Page-boundary reliability is `metadata.pageMode` — `"layout"` (real pages from the typesetting cache) / `"section"` (section approximation).
 
 **Parse options** (`parse(buffer, options)` · CLI flag)
 
 | Option | CLI | Description |
 | --- | --- | --- |
-| `pages` | `-p, --pages` | `"1-3"` · `"1,3,5-7"` · `[1, 5, 10]` — real pages for PDF and Hancom-saved files, section approximation without a typesetting cache |
+| `pages` | `-p, --pages` | `"1-3"` · `"1,3,5-7"` · `[1, 5, 10]` — real pages for PDF and Hancom-saved files, section approximation without a typesetting cache. DOCX: the pages Word laid out (no filtering when the document has no page numbers) |
 | `ocr` | `--ocr` · `--ocr-force` | default: scanned pages + text in large images (when the model is cached) · `true`: + small images and logos (~18MB model auto-download) · `"force"`: every page · `false`: off · function: external OCR · images embedded in HWP/HWPX are read only with `true`, `"force"` or a function (default: source text only; images in DOCX and other formats are not covered) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | built-in OCR lines (box, confidence) as `result.ocrLines` (PDF, images). `"all"` also lists lines dropped for low confidence with `dropped: true` — see [OCR lines and models](#ocr-lines-and-models) |
 | `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | text detection model `"mobile"` (default), `"server"` (~88MB, downloaded on first use), `"medium"` (PP-OCRv6, ~62MB, downloaded on first use; for skewed, blurred or scanned input) or a local file `{path, sha256}`; detector input long side (32–4096, default 960) |
