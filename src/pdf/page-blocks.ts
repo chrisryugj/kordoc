@@ -653,7 +653,15 @@ function extractBlocksWithGrids(
     // 12행 넘는 격자는 전폭 긴 글 칸(쪽 레이아웃 틀 — 설명 글 아래 표들)이 없을 때만 — 틀까지 글줄로 펼치면 쪽 전체가 한 표가 된다
     const layoutProse = irGrid.some(row => row.some(c => c.colSpan >= numCols - 1 && c.text.length > 60))
     const maxRows = numericBody ? (layoutProse ? OCR_NUMERIC_MAX_ROWS_FRAMED : OCR_NUMERIC_MAX_ROWS) : 5
-    if (!grid.cells && numRows <= maxRows && numCols >= 3 && !nestedAttached && (numRows <= 2 || unitLine.length > 0 || numericBody)) {
+    // OCR 두 행 표(머리 + 본문 한 행)에서 본문 칸 둘 이상이 여러 줄 글(줄 셋 이상, 60% 이상이 한글 6자 넘는 숫자 아닌 줄)이면 펼치지 않는다 —
+    // 관보 민원사무 "당초 | 변경" 구비서류는 두 칸 글이 줄마다 행으로 갈려 섞였다. 글 칸 하나 + 금액 열(예산서 산출근거)은 종전대로 펼친다
+    const proseLine = (t: string) => (t.match(/[가-힣]/g)?.length ?? 0) > 6 && !/^[-−]?[\d,.]+$/.test(t.replace(/\s+/g, ""))
+    const proseCols = numRows === 2 ? (irGrid[1] ?? []).filter(c => {
+      const ls = c.text.split("\n").map(t => t.trim()).filter(Boolean)
+      return ls.length >= 3 && ls.filter(proseLine).length >= ls.length * 0.6
+    }).length : 0
+    const twoRowOk = !ocrPage || proseCols < 2
+    if (!grid.cells && numRows <= maxRows && numCols >= 3 && !nestedAttached && (numRows <= 2 ? twoRowOk : unitLine.length > 0 || numericBody)) {
       const kept = new Map<number, number>()
       const rebuilt = normalizeUndersegmentedTable(irGrid, grid.colXs, textItems, grid.rowYs, kept, maxRows)
       if (rebuilt) {
