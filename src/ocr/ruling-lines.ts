@@ -52,6 +52,8 @@ const DOT_MAX_PERIOD_PT = 2.2
 const DOT_MIN_COUNT = 8
 /** 점선 후보가 수직 괘선에 닿았다고 보는 거리 (pt) */
 const DOT_TOUCH_PT = 1.5
+/** 세로선 하나에만 닿는 가로 점선을 받을 최소 길이 — 칸 오른쪽에 붙인 숫자 줄 획(관보 계속비 25~36pt)보다 길다 */
+const DOT_ONE_SIDE_MIN_PT = 60
 /**
  * 채움 경계. 텍스트층 경로는 순수 채움 경로(머리 행 음영·색 칸의 사각형)의 변도 선으로 받는다(line-extract.ts
  * flushPath → classifyAndAdd). 잉크 감지(휘도 ≤ 190)는 연한 채움과 흰 바탕의 경계를 못 봐, 머리 행에만 좌우 변이
@@ -156,7 +158,12 @@ export function detectRulingLines(
   // 가로 a 가 세로 선(p.x1 = p.x2)과 만나거나 끝이 닿는지 (세로 a 는 축을 바꿔 같은 판정)
   const touchesV = (a: PxSegment) => allV.some(p => p.x1 >= a.x1 - tol && p.x1 <= a.x2 + tol && a.y1 >= p.y1 - tol && a.y1 <= p.y2 + tol)
   const touchesH = (a: PxSegment) => allH.some(p => p.y1 >= a.y1 - tol && p.y1 <= a.y2 + tol && a.x1 >= p.x1 - tol && a.x1 <= p.x2 + tol)
-  horizontals.push(...dotH.filter(touchesV))
+  // 가로 점선은 세로선 둘 이상과 만나야 한다 — 칸 오른쪽에 붙여 쓴 숫자 줄("333,500,000")의 둥근 획 위·아래가 점선 꼴로 잡혀 오른쪽
+  // 세로선 하나에만 닿았다(관보 계속비 값 열마다 짧은 가로선 쌍 → 몇 열에만 행 경계가 생겨 값이 여러 행 걸친 칸에 쌓였다)
+  // 기울어진 스캔에선 긴 점선이 조각나 세로선 하나에만 닿는다 — 숫자 줄 획(한 칸 폭)보다 긴 것(DOT_ONE_SIDE_MIN_PT)은 하나로도 받는다
+  const crossesV = (a: PxSegment) => new Set(allV.filter(p => p.x1 >= a.x1 - tol && p.x1 <= a.x2 + tol && a.y1 >= p.y1 - tol && a.y1 <= p.y2 + tol).map(p => Math.round(p.x1 / tol))).size >= 2
+  const oneSideMin = DOT_ONE_SIDE_MIN_PT * scale
+  horizontals.push(...dotH.filter(a => crossesV(a) || a.x2 - a.x1 >= oneSideMin && touchesV(a)))
   verticals.push(...dotV.filter(touchesH))
   // 채움 경계는 표 괘선에 맞물린 것만 쓴다 — 머리 행 음영의 윗변·아랫변은 표 가로 괘선(세로 괘선과 만나는 것)과 폭(양 끝)이
   // 같고, 좌우 변은 그 가로선 끝점에, 칸 사이 흰 틈은 바로 위아래 본문 세로 괘선과 같은 x 에 선다. 칸 안에 놓인 단색

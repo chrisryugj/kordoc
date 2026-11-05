@@ -181,6 +181,16 @@ describe("detectRulingLines — 점선 괘선", () => {
     assert.equal(detectRulingLines(rgba, w, h, SCALE).horizontals.length, 0)
   })
 
+  it("세로 괘선 하나에만 닿는 점선(칸 오른쪽에 붙인 숫자 줄의 획)은 버린다", () => {
+    // 관보 계속비: "333,500,000" 의 둥근 획 위·아래가 점선 꼴로 잡혀 칸 오른쪽 세로선에만 닿았다
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    drawVLine(rgba, w, 100, 50, 350)
+    drawVLine(rgba, w, 800, 50, 350)
+    drawDottedH(rgba, w, 718, 798, 200, 3, 3)
+    assert.equal(detectRulingLines(rgba, w, h, SCALE).horizontals.length, 0)
+  })
+
   it("수직 괘선에 닿지 않고 떠 있는 점선은 버린다", () => {
     const w = 900, h = 400
     const rgba = makeCanvas(w, h)
