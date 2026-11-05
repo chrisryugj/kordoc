@@ -13,7 +13,7 @@ it("leaves well-formed amounts and non-grouped numbers alone", () => {
 })
 
 it("treats a number with a unit tail as a single number to re-read (기금운용계획 \"67,05,00,000원\")", () => {
-  for (const t of ["67,05,00,000원", "1,234명", "(1,234)", "-5,000", "12%"]) assert.equal(singleNumberText(t), true, t)
+  for (const t of ["67,05,00,000원", "1,234명", "(1,234)", "-5,000", "12%", "2,51.8"]) assert.equal(singleNumberText(t), true, t)
   for (const t of ["6,177,000,000원 67,055,000,000원", "자체수입 23,943", "1,234 5,678"]) assert.equal(singleNumberText(t), false, t)
 })
 
@@ -21,6 +21,7 @@ it("keeps the non-digit text of the original when the stretched re-read adds a b
   assert.equal(rereadNumberText("2,618,631,00,000원", "2,618,631,000,000원|"), "2,618,631,000,000원")
   assert.equal(rereadNumberText("△19,454,00,000원", "19,454,000,000원"), "△19,454,000,000원")
   assert.equal(rereadNumberText("37,369,00", "37,369,000"), "37,369,000")
+  assert.equal(rereadNumberText("2,51.8", "2,251.8"), "2,251.8")
   // 수가 둘 이상이면 어느 수인지 모른다
   assert.equal(rereadNumberText("1,23,000원", "1,230|00원"), null)
   // 자릿수가 줄거나 원래 숫자를 품지 않으면 오독이다
