@@ -1015,3 +1015,17 @@ export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkSt
   if (!mark) return null
   return { mark, covers: firstX <= x1 + ch * 0.3 }
 }
+
+/** 세로로 쌓인 글자로 볼 잉크 키/폭 비 — 한 글자는 1 안팎, 두 글자 세로쓰기는 2 안팎 */
+const STACK_INK_RATIO = 1.6
+
+/**
+ * 세로로 쌓인 두세 글자 상자의 글자 띠 — 표 머리 "서/울"·"부/산" 은 여백 붙은 검출 상자 키가 폭의 1.3배라 세로 상자 가르기(engine TALL_RATIO)에
+ * 안 걸려 한 줄로 읽히고("설울"·빈 글) 버려진다. 잉크가 폭의 STACK_INK_RATIO 배 넘게 길고 글자 띠 2~4개로 갈릴 때만 띠를 낸다
+ */
+export function stackedGlyphBands(gray: Uint8Array, w: number, h: number, ink: InkStats): Array<{ y0: number; y1: number; x0: number; x1: number }> | null {
+  const ib = inkBounds(gray, w, h, ink)
+  if (ib.y1 - ib.y0 < STACK_INK_RATIO * (ib.x1 - ib.x0)) return null
+  const bands = splitRowBands(gray, w, h, ink, 0.45)
+  return bands.length >= 2 && bands.length <= 4 ? bands : null
+}

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { closingParens, footerInkBox, joinGapLeaders, midBlankRow, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
-import { inkStats } from "../src/ocr/line-split.js"
+import { inkStats, stackedGlyphBands } from "../src/ocr/line-split.js"
 
 const W = 400, H = 600
 function page(): Uint8Array {
@@ -159,6 +159,27 @@ describe("midBlankRow — 두 줄 상자 가운데 빈 행", () => {
     const g = crop(true)
     assert.equal(midBlankRow(g, W7, H7, inkStats(g)), null)
     assert.equal(midBlankRow(g.subarray(0, W7 * 20), W7, 20, inkStats(g.subarray(0, W7 * 20))), null)
+  })
+})
+
+describe("stackedGlyphBands — 세로로 쌓인 글자 상자", () => {
+  // 여백 붙은 검출 상자 49x65 안에 21x21 글자 둘이 4px 띄워 쌓였다(표 머리 "서/울")
+  const W8 = 49, H8 = 65
+  function crop(glyphs: Array<[number, number, number, number]>): Uint8Array {
+    const g = new Uint8Array(W8 * H8).fill(230)
+    for (const [x0, y0, x1, y1] of glyphs) for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if ((x + y) % 3) g[y * W8 + x] = 0
+    return g
+  }
+  it("글자마다 띠를 낸다", () => {
+    const g = crop([[14, 10, 35, 31], [14, 35, 35, 56]])
+    const bands = stackedGlyphBands(g, W8, H8, inkStats(g))
+    assert.deepEqual(bands?.map(b => [b.y0, b.y1]), [[10, 31], [35, 56]])
+  })
+  it("한 글자·가로로 긴 잉크는 null", () => {
+    const one = crop([[14, 20, 35, 41]])
+    assert.equal(stackedGlyphBands(one, W8, H8, inkStats(one)), null)
+    const wide = crop([[2, 10, 47, 31], [2, 35, 47, 56]])
+    assert.equal(stackedGlyphBands(wide, W8, H8, inkStats(wide)), null)
   })
 })
 

@@ -37,7 +37,7 @@ import {
   ocrSourcePath,
   parseCharacterDict,
 } from "./models.js"
-import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
+import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands, stackedGlyphBands } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
 import { restoreGlyphs, ringAsks, ringGlyph, trimInklessEnds } from "./glyph-restore.js"
 import type { RingRead } from "./glyph-restore.js"
@@ -166,6 +166,8 @@ const ORIENT_GAIN = 0.1
 const KEEP_MARGIN = 0.06
 /** 두 줄로 갈라 다시 읽은 줄(recognizePage 재시도)을 받을 신뢰도 하한 */
 const RETRY_SCORE = 0.9
+/** 세로로 쌓인 글자 띠를 한 낱말로 붙일 띠 사이 틈 상한 (글자 높이 대비) */
+const STACK_WORD_GAP = 0.3
 /** 리더로 볼 최소 점 수 — 말줄임표 "…"(3점)보다 많이. 목차 쪽번호 박스가 무는 점은 코퍼스 실측 4~9개가 대부분 */
 const LEADER_MIN_DOTS = 4
 /** 리더 앞 조각 crop 을 리더 안쪽으로 더 무는 폭 (박스 높이 배수, recognizePage 주석) */
@@ -860,13 +862,22 @@ export class OcrEngine {
     }
     // 두 줄을 한 상자로 잡아 인식이 무너진 표 칸 — 상자가 넓어 세로로 긴 상자 가르기(splitTall)에 안 걸린다(여수 인원표 "산 단 환 경 /
     // 관 리 과" 가 "살다까" 로 읽혀 버려짐). 버려질 상자만 가운데 빈 행에서 두 줄로 갈라 다시 읽어 신뢰도를 넘는 줄을 받는다
-    if (retry.length) {
+    // 빈 글로 읽힌 상자 — 세로로 쌓인 글자 상자는 한 줄로 읽으면 아무것도 안 나오기도 한다(아래 세로 글자 다시 읽기만)
+    const blank = tuning.postprocess ? jobs.filter(j => j.rot === 0 && j.join === undefined && !j.footer && !j.keep && !best.has(j.group)).map(j => j.box) : []
+    if (retry.length || blank.length) {
       const subs: Box[] = []
-      for (const b of retry) {
+      /** 세로로 쌓인 글자 상자 — 글자 띠마다 한 자씩 다시 읽는다 */
+      const stacks: Array<{ box: Box; parts: Box[]; word: boolean }> = []
+      for (const b of [...retry, ...blank]) {
         const gray = grayCrop(rgba, width, b)
-        const cut = midBlankRow(gray, b.w, b.h, inkStats(gray))
+        const ink = inkStats(gray)
+        const cut = retry.includes(b) ? midBlankRow(gray, b.w, b.h, ink) : null
         // 가로 글줄만 — 좁은 세로쓰기 조직도 칸("중앙노동위원회")의 두 글자 조각("원회")은 순서가 섞여 들어갔다(web068)
-        if (cut && b.w >= 3 * Math.max(cut[0], b.h - cut[1])) subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] })
+        if (cut && b.w >= 3 * Math.max(cut[0], b.h - cut[1])) { subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] }); continue }
+        const bands = stackedGlyphBands(gray, b.w, b.h, ink)
+        // 띠 사이 틈이 글자 높이 0.3배 안이면 세로쓰기 낱말("서/울" 틈 4px·글자 21px) — 한 아이템으로. 더 벌어지면 위아래 두 줄 끝 글자
+        // ("자주식 대 / 기계식 대" 틈 8px·글자 22px)라 띠마다 아이템으로 둔다(붙이면 "대대" 가 한 줄에 갔다)
+        if (bands) stacks.push({ box: b, parts: bandBoxes(b, bands, height), word: bands.every((x, i) => i === 0 || x.y0 - bands[i - 1].y1 <= STACK_WORD_GAP * Math.max(x.y1 - x.y0, bands[i - 1].y1 - bands[i - 1].y0)) })
       }
       // 이미 읽힌 아이템과 반 넘게 겹치는 줄은 뺀다 — 검출기가 두 줄 상자와 아랫줄 상자를 함께 내 "봉림동" 이 두 번 들어갔다(창원 계획)
       const overlap = (a: Box, o: OcrItem) => Math.max(0, Math.min(a.x + a.w, o.x + o.w) - Math.max(a.x, o.x)) * Math.max(0, Math.min(a.y + a.h, o.y + o.h) - Math.max(a.y, o.y))
@@ -880,6 +891,17 @@ export class OcrEngine {
         // 글자·숫자가 두 자 이상이어야 — 장식 띠를 "---" 로 읽었고(경기 학교 매뉴얼 머리), 그림 세로 축 글자 한 자("s")가 끼어 줄 묶음이 바뀌었다(ODL 134)
         if ((text.match(/[\p{L}\p{N}]/gu) ?? []).length >= 2) items.push({ text, ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
       })
+      const free = stacks.filter(st => !items.some(o => overlap(st.box, o) * 2 > st.box.w * st.box.h))
+      const parts = free.flatMap(st => st.parts)
+      const partRes = parts.length ? await this.recognizeJobs(rgba, width, parts.map((box, k) => ({ box, rot: 0 as const, group: k })), tuning.recBatch) : []
+      let k = 0
+      for (const st of free) {
+        const rs = partRes.slice(k, k += st.parts.length)
+        // 띠마다 한글 한 자를 확신할 때만 — 쌍점·괄호 같은 기호 상자는 띠가 갈려도 한 자 꼴이 아니다
+        if (rs.length !== st.parts.length || rs.some(r => !r || r.confidence < RETRY_SCORE || !/^[가-힣]$/.test(r.text.trim()))) continue
+        if (st.word) items.push({ text: rs.map(r => r!.text.trim()).join(""), ...this.itemBox(rgba, width, st.box, tuning), confidence: Math.min(...rs.map(r => r!.confidence)) })
+        else st.parts.forEach((box, i) => items.push({ text: rs[i]!.text.trim(), ...this.itemBox(rgba, width, box, tuning), confidence: rs[i]!.confidence }))
+      }
     }
     const leaderEnds = new Map<OcrItem, { lead: boolean; trail: boolean }>()
     for (const j of joins) {
