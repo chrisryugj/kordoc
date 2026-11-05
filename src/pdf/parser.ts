@@ -20,6 +20,8 @@ import { unframeLayoutTables, CONTENT_CELLS, CELL_BASELINES } from "../table/lay
 import { CELL_LINES, CLIP_TABLES, IMAGE_CELLS } from "./table-meta.js"
 import { extractImageRegions, extractLines } from "./line-detector.js"
 import { mergeOcrImageRegions, type ImageRegion } from "./ocr-region-merge.js"
+import { blankLargeImageStreams } from "./image-blank.js"
+import { openPdfiumImages } from "./pdfium-images.js"
 import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
@@ -132,10 +134,10 @@ export const PDFJS_DOCUMENT_OPTIONS = {
 }
 
 /** getDocument + 타임아웃 래퍼 */
-async function loadPdfWithTimeout(buffer: ArrayBuffer) {
+async function loadPdfWithTimeout(buffer: ArrayBuffer, data?: Uint8Array) {
   const loadingTask = getDocument({
     // pdfjs transfers its input to the worker; retain the caller's buffer for reuse.
-    data: new Uint8Array(buffer.slice(0)),
+    data: data ?? new Uint8Array(buffer.slice(0)),
     ...PDFJS_DOCUMENT_OPTIONS,
   })
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -164,7 +166,13 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
   const autoOcr = options?.ocr === undefined && await ocrModelsCached(resolveOcrModels(options)) &&
     (options?.ocrRec !== "auto" || await ocrModelsCached(handwritingFallbackModels(resolveOcrModels(options))))
   const ocrBuffer: ArrayBuffer | null = options?.ocr || autoOcr ? buffer : null
-  const doc = await loadPdfWithTimeout(buffer)
+  // 큰 그림은 pdfjs 사본에서 표본을 지우고 PDFium 이 원본에서 디코딩한다 (#186) — PDFium 이 없거나 못 열면 지우지 않은 사본
+  const pdfjsData = new Uint8Array(buffer.slice(0))
+  const blanked = blankLargeImageStreams(pdfjsData)
+  const pdfium = blanked.byRaw.size > 0 ? await openPdfiumImages(buffer, blanked) : null
+  const doc = await loadPdfWithTimeout(buffer, blanked.byRaw.size === 0 || pdfium ? pdfjsData : undefined).catch(e => { pdfium?.close(); throw e })
+  // PDFium 이 못 찾는 지운 그림은 지우지 않은 pdfjs 문서로 — 필요할 때만 연다
+  let pristine: ReturnType<typeof loadPdfWithTimeout> | undefined
 
   try {
     const pageCount = doc.numPages
@@ -204,7 +212,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 이미지 XObject 바이트 추출 상태 (문서 단위 중복 억제·상한).
     // image 블록은 페이지 경계 표 병합(mergeCrossPageTables)의 인접성을 깨지 않도록
     // 페이지별로 모아뒀다가 병합 후 주입한다.
-    const imageState = createPdfImageState()
+    const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined)
     const imageBulletShapes = new Map<string, boolean>()
     const imageArrowDirections = new Map<string, -1 | 0 | 1>()
     const extractedImages: ExtractedImage[] = []
@@ -700,6 +708,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     }
   } finally {
     await doc.destroy().catch(() => {})
+    pdfium?.close()
+    await pristine?.then(d => d.destroy()).catch(() => {})
   }
 }
 

@@ -1,6 +1,8 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
+import { parse } from "../src/index.js"
 import { blankLargeImageStreams } from "../src/pdf/image-blank.js"
+import { encodePng } from "../src/image/transcode.js"
 
 // ─── 합성 PDF (pdf-resource-regression.test.ts 와 같은 꼴) ─────────────
 
@@ -62,5 +64,31 @@ describe("PDF 큰 그림 — pdfjs 사본 표본 지우기 (#186)", () => {
 
     const encrypted = Buffer.from(pdf.toString("latin1").replace("/Root 1 0 R", "/Root 1 0 R /Encrypt 99 0 R"), "latin1")
     assert.equal(blankLargeImageStreams(new Uint8Array(encrypted)).byRaw.size, 0)
+  })
+
+  it("지운 큰 그림은 PDFium 원본 픽셀로 — 번호·쪽·바이트가 원본과 같다(쪽 본문·Form XObject 안·여러 쪽 반복·공용 id 재사용)", async () => {
+    const a = rgb(200, 150, 10), b = rgb(160, 300, 20), small = rgb(40, 40, 30), last = rgb(48, 48, 40)
+    const draw = (name: string) => `q 100 0 0 80 100 500 cm /${name} Do Q\n`
+    const pdf = simplePdf([
+      { content: draw("A") + draw("S") + text("one"), res: "/XObject << /A 12 0 R /S 14 0 R >>" },
+      { content: draw("F") + draw("A") + text("two"), res: "/XObject << /A 12 0 R /F 15 0 R >>" },
+      // 셋째 쪽부터 pdfjs 는 A 에 문서 공용 id 를 붙인다 — 앞 쪽 짝을 다시 쓰고 PDFium 쪽은 B 를 위해서만 연다
+      { content: draw("A") + draw("F") + text("three"), res: "/XObject << /A 12 0 R /F 15 0 R >>" },
+      // 같은 쪽에서 다시 그린 공용 그림 — PDFium 쪽을 열기 전에 두 번째 몫을 셈한다(종전엔 여기서 쪽 추출이 멈춰 T 가 빠졌다)
+      { content: draw("A") + draw("A") + draw("T") + text("four"), res: "/XObject << /A 12 0 R /T 16 0 R >>" },
+    ], [
+      stream(imageDict(200, 150), a.data), // 12
+      stream(imageDict(160, 300), b.data), // 13
+      stream(imageDict(40, 40), small.data), // 14
+      stream("<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject << /B 13 0 R >> >> >>", "/B Do"), // 15
+      stream(imageDict(48, 48), last.data), // 16
+    ])
+    const r = await parse(pdf, { ocr: false })
+    assert.ok(r.success)
+    if (!r.success) return
+    assert.deepEqual(r.blocks.filter(x => x.type === "image").map(x => [x.pageNumber, x.text]),
+      [[1, "image_001.png"], [1, "image_002.png"], [2, "image_003.png"], [4, "image_004.png"]])
+    assert.deepEqual(r.images?.map(x => Buffer.from(x.data)),
+      [encodePng(200, 150, a.rgba), encodePng(40, 40, small.rgba), encodePng(160, 300, b.rgba), encodePng(48, 48, last.rgba)].map(x => Buffer.from(x)))
   })
 })
