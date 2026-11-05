@@ -144,9 +144,18 @@ function anchoredSubRows(byCol: TextItem[][][], minLines: number, covered: boole
   const pitches = ys.slice(1).map((y, i) => Math.abs(ys[i] - y)).sort((x, y) => x - y), pitch = pitches[pitches.length >> 1] ?? 0
   const numericCols = byCol.every((lines, c) => c === a || vertical[c] || lines.every(line => NUMERIC_LINE.test(cellTextToString(line).trim()) || /^[-–—]$/.test(cellTextToString(line).trim())))
   const tol = numericCols ? Math.max(h * ALIGNED_LINE_TOL, pitch * 0.4) : h * ALIGNED_LINE_TOL
+  const valueColsNumeric = byCol.every((lines, c) => c === 0 || c === a || lines.every(line => NUMERIC_LINE.test(cellTextToString(line).trim()) || /^[-–—]$/.test(cellTextToString(line).trim())))
   const rows = Array.from({ length: k }, () => byCol.map(() => ""))
   for (let c = 0; c < byCol.length; c++) {
     if (vertical[c]) { if (!covered[c]) rows[0][c] = byCol[c].map(line => cellTextToString(line).trim()).join(""); continue }
+    // 묶음 첫 열의 글 이름표("일반회계 / (국토해양부)")는 묶음 높이 가운데에 놓여 첫 줄이 기준 줄 위로 벗어난다 — 세로쓰기 이름표처럼
+    // 첫 하위 행에 둔다. 숫자 줄이 섞인 열·기준 열보다 줄이 많은 열은 종전대로 맞춘다. 이름표·기준 열 밖이 모두 숫자 값 열일 때만 —
+    // 글 칸 안 여러 줄("·시·도지사 … / ·시·도의원 …")은 행이 아니다(선거 일정표)
+    if (c === 0 && c !== a && valueColsNumeric && byCol[c].length < k && byCol[c].every(line => !NUMERIC_LINE.test(cellTextToString(line).trim())) &&
+        byCol[c].some(line => Math.min(...ys.map(y => Math.abs(y - cy(line)))) > tol)) {
+      if (!covered[c]) rows[0][c] = byCol[c].map(line => cellTextToString(line).trim()).join(" ")
+      continue
+    }
     const used = new Set<number>()
     for (const line of byCol[c]) {
       const y = cy(line)

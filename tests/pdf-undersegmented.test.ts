@@ -257,3 +257,19 @@ describe("OCR 숫자 열 하위 행의 줄 맞춤 허용치", () => {
     assert.equal(normalizeUndersegmentedTable(original, cols, items), null)
   })
 })
+
+describe("OCR 묶음 첫 열의 글 이름표", () => {
+  const ocr = (text: string, x: number, y: number, w = 30): TextItem => ({ text, x, y, w, h: 8, fontSize: 8, fontName: "ocr" })
+  const cols = [0, 60, 140, 200]
+  // "일반회계 / (국토해양부)" 가 묶음 높이 가운데에 놓여 첫 줄이 기준 줄(사업별 열) 위로 벗어났다(관보 계속비)
+  const items = [
+    ocr("일반회계", 5, 212, 40), ocr("(국토해양부)", 2, 195, 50),
+    ocr("1. 울산신항북방파제", 62, 195, 70), ocr("- 2010 예산", 62, 177, 60), ocr("144,397,000", 142, 177, 50),
+    ocr("- 2011 예산", 62, 160, 60), ocr("140,188,000", 142, 160, 50),
+  ]
+  it("기준 줄에 안 맞는 첫 열 글 이름표는 첫 하위 행에 두고 나머지 열을 펼친다", () => {
+    assert.deepEqual(normalizeUndersegmentedTable([[{ text: "x" }, { text: "" }, { text: "" }]], cols, items), [
+      ["일반회계 (국토해양부)", "1. 울산신항북방파제", ""], ["", "- 2010 예산", "144,397,000"], ["", "- 2011 예산", "140,188,000"],
+    ])
+  })
+})
