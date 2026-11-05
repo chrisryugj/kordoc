@@ -246,3 +246,38 @@ describe("병합은 펼칠 행 범위로 자른다", () => {
     assert.deepEqual(t.cells[1].map(c => c.text), ["", "금액", "비고", "", ""])
   })
 })
+
+describe("표 칸의 원본 시트 주소 (sourceRows·sourceCols)", () => {
+  it("빈 행·열이 빠져도 표 칸 (i, j) 가 시트 (sourceRows[i], sourceCols[j]) 를 가리킨다", () => {
+    // B2 "품명", D2 "수량", B5 "볼트", D5 "3" — 1·3·4행(0부터 0·2·3)과 A·C 열이 비어 표는 2×2
+    const rows = new Map<number, string[]>([[1, ["", "품명", "", "수량"]], [4, ["", "볼트", "", "3"]]])
+    const t = sheetToBlocks("S", rows, 3, [], 0, []).find(b => b.type === "table")!.table!
+    assert.equal(t.rows, 2)
+    assert.equal(t.cols, 2)
+    assert.deepEqual(t.sourceRows, [1, 4])
+    assert.deepEqual(t.sourceCols, [1, 3])
+    assert.equal(t.cells[1][1].text, "3")
+  })
+
+  it("keepTrailingEmptyCols 면 열은 0 ~ maxCol 그대로", () => {
+    const rows = new Map<number, string[]>([[2, ["", "가", "", ""]]])
+    const t = sheetToBlocks("S", rows, 3, [], 0, [], true).find(b => b.type === "table")!.table!
+    assert.deepEqual(t.sourceRows, [2])
+    assert.deepEqual(t.sourceCols, [0, 1, 2, 3].slice(0, t.cols))
+  })
+
+  it("XLSX 파싱 결과에도 실린다", async () => {
+    const zip = new JSZip()
+    zip.file("[Content_Types].xml", `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>`)
+    zip.file("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="S1" sheetId="1"/></sheets></workbook>`)
+    zip.file("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>`
+      + `<row r="3"><c r="C3" t="inlineStr"><is><t>품명</t></is></c></row>`
+      + `<row r="6"><c r="C6" t="inlineStr"><is><t>볼트</t></is></c><c r="E6"><v>3</v></c></row>`
+      + `</sheetData></worksheet>`)
+    const r = await parseXlsx(await zip.generateAsync({ type: "arraybuffer" }))
+    assert.ok(r.success)
+    const t = r.blocks!.find(b => b.type === "table")!.table!
+    assert.deepEqual(t.sourceRows, [2, 5])
+    assert.deepEqual(t.sourceCols, [2, 4])
+  })
+})
