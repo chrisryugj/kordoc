@@ -566,3 +566,84 @@ describe("DOCX 과학 문서 보충자료 (#104·#105·#107·#108)", () => {
     assert.ok(on.error.includes("그림·개체 파트가 101.0MB"), on.error)
   })
 })
+
+describe("DOCX 쪽 번호 — Word 조판 표지(w:lastRenderedPageBreak)", () => {
+  const IMG_REL = `<Relationship Id="rId200" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>`
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const LRPB = "<w:r><w:lastRenderedPageBreak/></w:r>"
+  const p = (s: string, before = "", after = "") => `<w:p>${before}<w:r><w:t>${s}</w:t></w:r>${after}</w:p>`
+  const blip = `<w:r><w:drawing><a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" r:embed="rId200"/></w:drawing></w:r>`
+  const app = (pages: number) => `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Pages>${pages}</Pages></Properties>`
+
+  it("글 앞 표지는 그 블록부터, 글 뒤 표지는 다음 블록부터 새 쪽 — 표 안 표지도 센다", async () => {
+    const table = `<w:tbl><w:tr><w:tc><w:p>${LRPB}<w:r><w:t>칸</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+    const buf = await createDocx(p("일") + p("이", LRPB) + p("이어짐", "", LRPB) + table + p("삼") + `<w:p><w:r><w:t>그림 앞</w:t></w:r>${LRPB}${blip}</w:p>`,
+      { relationships: IMG_REL, files: { "word/media/image1.png": PNG, "docProps/app.xml": app(5) } })
+    const r = await parse(buf)
+    assert.equal(r.success, true)
+    if (!r.success) return
+    assert.deepEqual(r.blocks.map(b => [b.type === "table" ? "표" : b.text, b.pageNumber]),
+      [["일", 1], ["이", 2], ["이어짐", 2], ["표", 4], ["삼", 4], ["그림 앞", 4], ["image_001.png", 5]])
+    assert.equal(r.pageCount, 5)
+    assert.equal(r.metadata?.pageMode, "layout")
+    assert.deepEqual(r.pages?.map(pg => pg.pageNumber), [1, 2, 3, 4, 5])
+    assert.equal(r.pages?.[2].markdown, "")
+  })
+
+  it("표 칸 그림은 표의 쪽에, pages 범위는 조판 쪽으로 거른다", async () => {
+    const cellImg = `<w:tbl><w:tr><w:tc><w:p>${blip}</w:p></w:tc></w:tr></w:tbl>`
+    const doc = p("일") + p("이", LRPB) + cellImg + p("삼", LRPB)
+    const opts = { relationships: IMG_REL, files: { "word/media/image1.png": PNG, "docProps/app.xml": app(3) } }
+    const all = await parse(await createDocx(doc, opts))
+    assert.equal(all.success, true)
+    if (!all.success) return
+    assert.deepEqual(all.blocks.filter(b => b.type === "image").map(b => [b.text, b.pageNumber]), [["image_001.png", 2]])
+
+    const two = await parse(await createDocx(doc, opts), { pages: "2" })
+    assert.equal(two.success, true)
+    if (!two.success) return
+    assert.deepEqual(two.blocks.map(b => b.type === "table" ? "표" : b.text), ["이", "표", "image_001.png"])
+    assert.equal(two.images?.length, 1)
+    assert.equal(two.warnings, undefined)
+
+    const three = await parse(await createDocx(doc, opts), { pages: "3" })
+    assert.equal(three.success, true)
+    if (!three.success) return
+    assert.deepEqual(three.blocks.map(b => b.text), ["삼"])
+    assert.equal(three.images, undefined)
+  })
+
+  it("글상자 안 표지·글은 본문 쪽에 넣지 않는다 — mc:Fallback 사본도 건너뛴다", async () => {
+    const txbx = (inner: string) => `<w:txbxContent><w:p>${inner}<w:r><w:t>글상자</w:t></w:r></w:p></w:txbxContent>`
+    const shape = `<w:r><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">`
+      + `<mc:Choice Requires="wps"><w:drawing>${txbx(LRPB)}</w:drawing></mc:Choice>`
+      + `<mc:Fallback><w:pict>${txbx(LRPB)}</w:pict></mc:Fallback></mc:AlternateContent></w:r>`
+    const r = await parse(await createDocx(p("일") + `<w:p>${shape}${LRPB}<w:r><w:t>본문</w:t></w:r></w:p>`, { files: { "docProps/app.xml": app(2) } }))
+    assert.equal(r.success, true)
+    if (!r.success) return
+    assert.deepEqual(r.blocks.filter(b => b.text === "본문").map(b => b.pageNumber), [2])
+    assert.equal(r.pageCount, 2)
+  })
+
+  it("표지가 없으면(Word 밖에서 만든 문서) 명시 쪽 나눔이 있어도 쪽을 매기지 않는다", async () => {
+    const r = await parse(await createDocx(p("일", "", `<w:r><w:br w:type="page"/></w:r>`) + p("이")))
+    assert.equal(r.success, true)
+    if (!r.success) return
+    assert.ok(r.blocks.every(b => b.pageNumber === undefined))
+    assert.equal(r.pages, undefined)
+    assert.equal(r.pageCount, undefined)
+  })
+
+  it("표지로 센 쪽 수가 app.xml Pages 와 다르거나 Pages 가 없으면 쪽을 매기지 않는다", async () => {
+    const doc = p("일") + p("이", LRPB) + p("삼", LRPB)
+    for (const files of [{ "docProps/app.xml": app(5) }, {}]) {
+      const r = await parse(await createDocx(doc, { files }), { pages: "2" })
+      assert.equal(r.success, true)
+      if (!r.success) return
+      assert.deepEqual(r.blocks.map(b => [b.text, b.pageNumber]), [["일", undefined], ["이", undefined], ["삼", undefined]])
+      assert.equal(r.pages, undefined)
+      assert.equal(r.pageCount, undefined)
+      assert.equal(r.metadata?.pageMode, undefined)
+    }
+  })
+})

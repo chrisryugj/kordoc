@@ -203,8 +203,8 @@ export interface DocumentMetadata {
   pageCount?: number
   /**
    * 페이지 경계 신뢰도 (#66) — "layout": 조판 정보 기반 실제 페이지
-   * (한컴 저장본 HWP/HWPX·PDF·COM, PPTX 슬라이드), "section": 섹션 단위 근사
-   * (조판 캐시 없는 생성 파일). HWP/HWPX/PDF·PPTX에서만 설정된다.
+   * (한컴 저장본 HWP/HWPX·PDF·COM, PPTX 슬라이드, Word 조판 표지로 센 쪽 수가 app.xml Pages 와 같은 DOCX), "section": 섹션 단위 근사
+   * (조판 캐시 없는 생성 파일). HWP/HWPX/PDF·PPTX·DOCX에서만 설정된다.
    */
   pageMode?: "layout" | "section"
   /** 문서 포맷 버전 (예: HWP "5.1.0.1") */
@@ -225,6 +225,7 @@ export interface ParseOptions {
    * - 문자열: "1-3", "1,3,5-7"
    *
    * PDF: 정확한 페이지 단위. HWP/HWPX: 섹션 단위 근사치.
+   * DOCX: Word 가 저장한 조판 쪽 — 쪽을 매기지 않은 문서(표지 없음·app.xml Pages 와 쪽 수 다름)는 거르지 않는다.
    */
   pages?: number[] | string
   /** 이미지 기반 PDF OCR (선택).
@@ -456,7 +457,7 @@ export interface ParseSuccess extends ParseResultBase {
    * 페이지별 마크다운 (#68) — `blocks` 의 `pageNumber` 로 갈라 페이지마다 다시
    * 마크다운을 만든 것. 페이지 경계의 신뢰도는 `metadata.pageMode` 를 따른다
    * ("layout" = 실제 페이지, "section" = 섹션 근사). `pages` 옵션으로 범위를
-   * 줄이면 그 범위만 담긴다. 페이지 번호를 매기지 않는 포맷(DOCX 등)에서는 없고,
+   * 줄이면 그 범위만 담긴다. 페이지 번호를 매기지 않는 문서(Word 조판 표지가 없는 DOCX 등)에서는 없고,
    * XLSX 는 `pageCount` 와 같은 의미로 시트 한 장이 한 쪽이다.
    *
    * 여러 페이지에 걸친 표는 시작 페이지 한 블록이라, 표가 이어지는 중간
