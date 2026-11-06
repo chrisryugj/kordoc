@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.49: OCR two-row header cells and empty ruled cells · 2026-11-07
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8912 → **0.8928** (tables .8968 → **.8999**), `ocrRec: "auto"` 0.8924 → **0.8940**. Gazette CER .0799 → **.0754**, statistics tables .9021 → **.9076**. 28 pages up, 3 down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
+
+- Header cells spanning two rows: 16 statistics pages, including the employment-trend header page rejected in 4.24.47 (.748 → .998). The first version split an org-chart connector (in-house OCR web068) and the group header "출생아 수", so the vertical now has to cross two or more row rules and no group-header text may sit on the extended part.
+- Empty ruled cells read again: 14 pages, such as the location cells of gazette land registers. Crops cut exactly at the cell made the detector break edge glyphs, so a 16px white margin is added. The 3 pages down are calendar cells inside a blog screenshot in the Korean exam (−.006 to −.012): the text is recovered but the reference leaves out text inside figures.
+- Rejected or reference limits: stacked gazette "○ item | amount" rows (the reference alternates name and value in line order while the in-house OCR reference keeps the original single cell), splitting two-line department cells into rows (references disagree), user-document pages whose reference leaves out tables.
+
 ## 4.24.48: OCR contact columns, welded open tables and chart text · 2026-11-06
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8834 → **0.8912** (tables .8814 → **.8968**, text .8593 → .8600), `ocrRec: "auto"` 0.8846 → **0.8924**. Tables slice .7711 → **.8179**, statistics tables .8937 → **.9021**, drug-label CER .0713 → **.0658**. 24 pages up, none down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.

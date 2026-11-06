@@ -7,20 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- CLI `kordoc 문서.pdf -o 문서.hwpx` 가 마크다운 글을 .hwpx 이름으로 저장해 한글에서 열리지 않았다. 출력이 `.hwpx` 면 HWP·HWP3 는 서식 그대로 바꾸고, 그 밖(PDF·DOCX·XLSX 등)은 읽은 마크다운으로 HWPX 를 만들어 그림까지 담는다(HWPX 입력은 그대로 복사)
-
-### Removed
-
-- HWP → HWPX 변환(`convertToHwpx`·CLI `to-hwpx`·MCP `convert_to_hwpx`)의 `engine`·`--engine` 옵션 — 늘 kordoc 자체 변환만 쓴다. 결과의 `engine` 은 늘 `"kordoc"`
+## [4.24.49] - 2026-11-07
 
 ### Added
 
 - 그림 형식 `imageFormat`(#188, CLI `--image-format <png|webp>`, protocol 2·두 SDK): 지정하면 모든 그림(PDF·HWP·HWPX·HWP3·DOCX·PPTX)이 그 형식이다 — 파일명·MIME·바이트가 같은 형식이고 형식은 확장자가 아니라 바이트로 판정한다. 뒤 단계(비전 모델·브라우저·저장소)가 파일명·MIME 을 믿고 돌기 때문이다(Claude·OpenAI·Gemini 비전 API 가 함께 받는 형식은 PNG·JPEG·WebP 뿐이고, llama.cpp 는 stb_image 라 TIFF 를 읽지 못한다). `"png"` 는 PNG(이미 PNG 면 바이트 그대로, BMP 는 kordoc 디코더 `bmpToRgba` — `bmpToPng` 에서 나눔), `"webp"` 는 무손실 WebP(`exact`, 완전 투명 화소의 RGB 도 지킨다). EXIF 회전·ICC·CMYK·움직이는 GIF(첫 장)·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식(PDF 는 PNG)으로 내고 경고(`SKIPPED_IMAGE`)를 남기며, PDF WebP 인코딩이 실패한 그림도 그 그림만 PNG 로 낸다. 바꾼 그림은 `images`·그림 블록 `text`·`imageData`·글에 박힌 참조(표 칸·머리말·각주·캡션)가 함께 새 이름이 된다. 지정하지 않으면 출력은 지금과 같다(PDF 253개·그림 3,367개에서 블록·마크다운·그림 바이트 같음). optional dependency `sharp` 는 켰을 때만 동적 import 로 불러오고 네트워크에 접근하지 않는다. PDF WebP 인코딩은 libuv 스레드에서 나란히 돌리고 인코딩 중 RGBA 는 64MB 안으로 묶는다. `images: false` 면 인코딩하지 않는다
 
+### Removed
+
+- HWP → HWPX 변환(`convertToHwpx`·CLI `to-hwpx`·MCP `convert_to_hwpx`)의 `engine`·`--engine` 옵션 — 늘 kordoc 자체 변환만 쓴다. 결과의 `engine` 은 늘 `"kordoc"`
+
+### Fixed
+
+- CLI `kordoc 문서.pdf -o 문서.hwpx` 가 마크다운 글을 .hwpx 이름으로 저장해 한글에서 열리지 않았다. 출력이 `.hwpx` 면 HWP·HWP3 는 서식 그대로 바꾸고, 그 밖(PDF·DOCX·XLSX 등)은 읽은 마크다운으로 HWPX 를 만들어 그림까지 담는다(HWPX 입력은 그대로 복사)
+- OCR 머리 칸 L자 영역: 오른쪽 머리 묶음 아래 가로선이 세로선 하나에서 시작하고 그 세로선이 그 아래로만 내려가면 왼쪽 칸("2023")을 두 행으로 갈랐다. 왼쪽 칸 안 글이 그 가로선 연장선에 위아래로 걸치면 세로선을 위로 늘려 두 행에 걸친 한 칸으로 둔다(세로선이 행 괘선 둘 이상을 가로지를 때만 — 조직도 연결선 제외)
+- OCR 빈 괘선 칸: 쪽 검출이 줄인 해상도로 보느라 좁은 칸에 촘촘히 쌓인 작은 글(관보 토지조서 소재지 "서울시 / 노원구 / 월계동")을 통째로 놓쳤다. 네 변이 닫힌 칸 가운데 잉크는 있는데 읽힌 글이 없는 칸만 잘라 제 해상도로 다시 읽는다(쪽당 60칸)
+
 ### 측정 참고
 
+- KoOCR-Bench v2.0c 공개 877쪽(공식 채점기 그대로): 종합 0.8912 → **0.8928**(표 .8968 → **.8999**), `ocrRec: "auto"` 0.8924 → **0.8940**. 관보 CER .0799 → **.0754**, 통계표 .9021 → **.9076**. 쪽 28개 오르고 3개 내림(수능 국어 −.006~−.012 — 블로그 화면 그림 속 달력 칸 글을 되살렸는데 정답이 그림 속 글을 뺀다). 자체 OCR·OCR robust·ODL·ODL-OCR·한국 PDF 글·표 벤치 문서별 하락 0
 - `imageFormat: "webp"` 비용(sharp effort 1·quality 1): 교재 그림 200개 인코딩만 PNG 3.25초 CPU → WebP 8.6초 CPU(약 2.6배), 경과 시간 2.58 → 2.1초(스레드 4개), 25.5 → 14.8MB(58%). quality 75 는 13.4MB 지만 CPU 5.4배라 쓰지 않았다. 파싱 전체(3회 중앙값, `ocr: false`): 그림 위주 교재 PDF(그림 200개) 5.79 → 3.71초·CPU 7.72 → 13.19초·최대 RSS 691 → 794MB·26.7 → 15.5MB, 보고서 PDF(그림 8개) 2.84 → 2.59초·CPU 4.57 → 4.81초·393 → 442MB·2.64 → 1.69MB. PDF 253개 그림 3,367개 모두 디코딩한 화소가 PNG 와 같고 크기는 552 → 336MB(61%)
 - `imageFormat` 원본 그림(HWP·HWPX·DOCX 2,782개 중 그림 있는 707개, 그림 6,412개, `ocr: false`): `"png"` 6,109개 바꿈·303개 원본(WMF·EMF·못 읽는 BMP)·4,099 → 775MB·파싱 시간 합계 40 → 83초, `"webp"` 5,680개 바꿈·732개 원본(손상 PNG 약 430개 포함)·4,099 → 504MB·40 → 270초. 화소를 바로 대조할 수 있는 그림 5,176개 모두 같고, 마크다운·블록은 그림 이름 말고 기본과 같다. 기본 경로는 MIME 을 확장자로 정해 그림 235개(HWPX 232·DOCX 3)가 MIME 과 바이트가 다르다(예: `.bmp` 인데 JPEG 125개) — 지정하면 바이트로 판정해 맞는다
 
