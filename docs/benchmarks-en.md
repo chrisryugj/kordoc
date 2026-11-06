@@ -2,6 +2,16 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.48: OCR contact columns, welded open tables and chart text · 2026-11-06
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8834 → **0.8912** (tables .8814 → **.8968**, text .8593 → .8600), `ocrRec: "auto"` 0.8846 → **0.8924**. Tables slice .7711 → **.8179**, statistics tables .8937 → **.9021**, drug-label CER .0713 → **.0658**. 24 pages up, none down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
+
+- Contact columns: 21 of the 22 press-release "담당 부서" contact-table pages gain .10 to .26 (the reference follows the original form's invisible cells "title | name | phone"). The press-release cover pages left as a "reference shape limit" in 4.24.45 belong here too — the cells can be restored from the cell text pattern. The first version (three or more matching cells) missed covers with only two contact rows and pages where OCR put spaces inside e-mail addresses, so counting now starts at the first matching cell and spaces inside e-mail addresses are removed.
+- Welded open tables: the employment-trend education and health/welfare tables .616 → .880.
+- Chart text: a drug-label Kaplan-Meier page CER .787 → .437 (the number-at-risk table below stays, it lies outside the axes).
+- Faint row rules: a drug-label adverse-event table CER .156 → .068. The first version (accept faint verticals running past the frame) split the shaded accounting header "제6(당)기" and dropped 13 pages by .01 — new faint verticals are still added only when they fit the frame.
+- Rejected or reference limits: rendering one-cell tables as text in the measurement converter (total −.0002, reverted), re-reading tight multi-line name-cell boxes band by band (detection boxes overlap the line above, under 0.9), forest plots (only a horizontal axis, outside the two-axis test — chart text is in the ODL reference but not in KoOCR's), splitting stacked "○ item | amount" gazette rows (conflicts with the in-house OCR reference that keeps budget "○ items" in one cell).
+
 ## 4.24.47: OCR stacked header characters and digit re-reading · 2026-11-06
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8830 → **0.8834** (tables .8806 → **.8814**, order .9069 → .9071), `ocrRec: "auto"` 0.8842 → **0.8846**. Gazette CER .0819 → **.0799**, statistics tables .8931 → **.8937**. 9 pages up, none down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops. ODL default overall 0.96491.

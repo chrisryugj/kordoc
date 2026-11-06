@@ -123,7 +123,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 66 tables | CER **0.0239** · character recall **99.32%** · table structure **34/66** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.883** by default · `ocrRec: "auto"` **0.885** · handwriting **0.901** · heading recall 0.924 (4.24.47) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.891** by default · `ocrRec: "auto"` **0.892** · tables **0.897** · handwriting **0.901** · heading recall 0.924 (4.24.48) |
 | opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.939** with OCR off |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -131,15 +131,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.47](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.47)** · 2026-11-06
+Latest release: **[4.24.48](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.48)** · 2026-11-06
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.48 | OCR: title, name and phone cells of press-release contact tables are restored · two open tables stacked on top of each other no longer weld into one · chart text inside page figures is dropped · faint row rules of tables that continue on the next page · PDF: large images decoded by PDFium (about half the memory) · QR code values in images (`qrCodes`) | KoOCR-Bench total 0.8834 → **0.8912** (`auto` 0.8846 → **0.8924**) · tables slice .771 → **.818** · statistics tables .894 → **.902** · no per-document drops on in-house benchmarks |
 | 4.24.47 | OCR: header characters stacked top to bottom ("서/울") are read again · digit-count re-reading covers amounts with unit tails and decimals · two-row tables whose body cells hold sentences are no longer split into rows · DOCX layout page numbers (`pageNumber`, `pages`) | KoOCR-Bench total 0.8830 → **0.8834** (`auto` 0.8842 → **0.8846**) · gazette CER .082 → .080 · no per-document drops on in-house benchmarks |
 | 4.24.46 | OCR: digit-row strokes no longer become fake rules that stacked values in continuing-expenditure and statistics tables · sub-rows under a group label in the first column are expanded · columns in small two-row tables · PDF: two open tables stacked on top of each other are closed separately · Excel tables carry each cell's source sheet address (`sourceRows`, `sourceCols`) | KoOCR-Bench total 0.881 → **0.883** (`auto` **0.884**) · gazette CER .091 → .082 · statistics tables .886 → .893 · in-house benchmarks no per-document drops |
 | 4.24.45 | OCR: name and value columns of ranking tables are split ("중 국155,252" → nationality \| arrivals) · statistics-table sub-rows left in one row by a single offset box are expanded · stacked share rows next to a spanning text label | KoOCR-Bench total 0.878 → **0.881** (`auto` **0.882**) · statistics tables .872 → **.886** · in-house benchmarks no per-document drops |
 | 4.24.44 | OCR: multi-column prose (spread textbooks, glossary columns) no longer becomes one cluster table · figure OCR (`ocr: true`) reads faint one-line strip images (footnotes) | KoOCR-Bench total 0.877 → **0.878** (`auto` **0.879**, with the fixed measurement converter) · user-document CER .301 → .285 · ODL `ocr: true` .9665 → .9666 · in-house benchmarks no per-document drops |
-| 4.24.43 | OCR: circled jamo and Latin letters missing from the dictionary (㉠–㉭, ⓐ–ⓩ) are restored (ring interior re-read, stroke test for bare jamo) · numbered chapter/section headings and all-caps Latin heading lines · PDF patent paragraph numbers · trailing columns holding only empty nested tables | KoOCR-Bench total 0.872 → **0.877** (`auto` **0.877**) · exam circled marks .682 → **.947** · heading recall .798 → .924 · ODL headings .949 → .953 · in-house benchmarks no per-document drops |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
