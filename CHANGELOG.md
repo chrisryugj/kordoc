@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- HWP → HWPX 변환(`convertToHwpx`·CLI `to-hwpx`·MCP `convert_to_hwpx`)의 `engine`·`--engine` 옵션을 되살린다(4.24.49 에서 뺀 것). 기본은 종전대로 kordoc 자체 변환
+
 ## [4.24.49] - 2026-11-07
 
 ### Added

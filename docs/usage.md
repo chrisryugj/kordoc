@@ -361,6 +361,7 @@ npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서        # M
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx                    # 서식 보존 패치 (.hwp 도 자동)
 npx kordoc patch 원본.hwpx 편집.md --json --silent                  # 적용 수·건너뛴 편집·검증 잔차 JSON
 npx kordoc to-hwpx 문서.hwp                                         # HWP → HWPX (5.x 는 서식 그대로, 같은 이름 .hwpx 가 있으면 -o 필요)
+npx kordoc to-hwpx 문서.hwp --engine hancom                         # Windows 한/글 자체 저장(팝업 없이 — 승인·확인·암호 창 안 뜸, HWP 3.x 도 서식 그대로). auto: 한/글 있으면 hancom
 npx kordoc compare 구버전.hwp 신버전.hwpx                           # 문서 비교 (차이 있으면 exit 1, --json)
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx
 npx kordoc memo 보고서.hwpx --anchor "찾을 문구" --text "메모 내용" -o 검토.hwpx   # 앵커 문구에 메모 달기 (.hwp 는 서식 그대로 HWPX 로)
