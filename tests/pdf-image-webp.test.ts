@@ -75,6 +75,7 @@ describe("PDF 그림 WebP (#188, imageFormat)", () => {
     assert.deepEqual(r.images!.map(i => [i.filename, i.mimeType]), [["image_001.png", "image/png"]])
     assert.ok(r.markdown.includes("image_001.png"))
     assert.equal((await sharp(r.images![0].data).metadata()).format, "png")
+    assert.ok(r.warnings?.some(w => w.message.includes("16,383px") && w.message.includes("1개")))
   })
 
   it("WebP 인코딩이 실패한 그림은 PNG 로 낸다 — 파일명·MIME·바이트·마크다운·블록이 한 이름", async () => {

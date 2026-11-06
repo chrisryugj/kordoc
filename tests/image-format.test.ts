@@ -4,7 +4,7 @@ import JSZip from "jszip"
 import sharp from "sharp"
 import { parse } from "../src/index.js"
 import { bmpToRgba, encodePng } from "../src/image/transcode.js"
-import { webpSmallerImages } from "../src/image/webp.js"
+import { convertImages } from "../src/image/format.js"
 import type { ExtractedImage, IRBlock } from "../src/types.js"
 
 const W = 200, H = 150
@@ -25,7 +25,7 @@ function bmp24(rgba: Uint8Array): Uint8Array {
   return out
 }
 
-/** 그림 다섯 장: BMP·PNG(WebP 가 더 작다), 잡음 JPEG(WebP 가 더 크다), ICC 프로필 PNG·움직이는 GIF(화소를 그대로 풀 수 없다) */
+/** 그림 여섯 장: BMP·PNG·잡음 JPEG·ICC 프로필 PNG·움직이는 GIF·WMF(바꿀 수 없다) */
 async function docx(): Promise<{ buf: ArrayBuffer; media: Uint8Array[] }> {
   const noise = Buffer.alloc(W * H * 3); for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) >>> 24
   const raw = { raw: { width: W, height: H, channels: 4 as const } }
@@ -35,8 +35,9 @@ async function docx(): Promise<{ buf: ArrayBuffer; media: Uint8Array[] }> {
     new Uint8Array(await sharp(noise, { raw: { width: W, height: H, channels: 3 } }).jpeg({ quality: 20 }).toBuffer()),
     new Uint8Array(await sharp(Buffer.from(flat()), raw).withIccProfile("p3").png().toBuffer()),
     new Uint8Array(await sharp([Buffer.from(encodePng(W, H, flat())), Buffer.from(encodePng(W, H, flat().reverse()))], { join: { animated: true } }).gif().toBuffer()),
+    Uint8Array.from([0xd7, 0xcd, 0xc6, 0x9a, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
   ]
-  const exts = ["bmp", "png", "jpeg", "png", "gif"]
+  const exts = ["bmp", "png", "jpeg", "png", "gif", "wmf"]
   const zip = new JSZip()
   zip.file("[Content_Types].xml", `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`)
   zip.file("_rels/.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`)
@@ -49,24 +50,38 @@ async function docx(): Promise<{ buf: ArrayBuffer; media: Uint8Array[] }> {
 
 const rgbaOf = async (b: Uint8Array) => new Uint8Array(await sharp(b).ensureAlpha().raw().toBuffer())
 
-describe("원본 그림 파일 WebP (#188, imageFormat — HWP·HWPX·HWP3·DOCX·PPTX)", () => {
-  it("화소를 그대로 풀 수 있고 WebP 가 더 작은 그림만 바꾼다 — 파일명·MIME·바이트·블록·마크다운이 한 이름. 기본은 그대로", async () => {
+const isPng = (b: Uint8Array) => b[0] === 0x89 && b[1] === 0x50
+const isWebp = (b: Uint8Array) => Buffer.from(b.subarray(8, 12)).toString("latin1") === "WEBP"
+
+describe("원본 그림 파일 형식 맞추기 (#188, imageFormat — HWP·HWPX·HWP3·DOCX·PPTX)", () => {
+  it("명시하면 모든 그림이 그 형식 — 파일명·MIME·바이트·블록·마크다운이 한 이름. 바꿀 수 없는 그림(WMF)은 원본·경고. 기본은 원본 그대로", async () => {
     const { buf, media } = await docx()
     assert.equal((await sharp(media[4], { pages: -1 }).metadata()).pages, 2, "움직이는 GIF 표본")
-    const def = await parse(buf), webp = await parse(buf, { imageFormat: "webp" })
-    assert.ok(def.success && webp.success)
-    if (!def.success || !webp.success) return
-    assert.deepEqual(def.images!.map(i => i.filename), ["image_001.bmp", "image_002.png", "image_003.jpeg", "image_004.png", "image_005.gif"])
-    assert.deepEqual(webp.images!.map(i => [i.filename, i.mimeType]), [
-      ["image_001.webp", "image/webp"], ["image_002.webp", "image/webp"], ["image_003.jpeg", "image/jpeg"], ["image_004.png", "image/png"], ["image_005.gif", "image/gif"],
-    ])
-    // 바꾼 그림은 화소가 같고 더 작다. 안 바꾼 그림은 바이트 그대로
-    assert.deepEqual(await rgbaOf(webp.images![0].data), bmpToRgba(media[0])!.data)
-    assert.deepEqual(await rgbaOf(webp.images![1].data), await rgbaOf(media[1]))
-    for (const k of [0, 1]) assert.ok(webp.images![k].data.length < media[k].length)
-    for (const k of [2, 3, 4]) assert.deepEqual(webp.images![k].data, media[k])
-    assert.deepEqual(webp.blocks.filter(b => b.type === "image").map(b => b.text), webp.images!.map(i => i.filename))
-    assert.equal(webp.markdown, def.markdown.replace("(image_001.bmp)", "(image_001.webp)").replace("(image_002.png)", "(image_002.webp)"))
+    const def = await parse(buf)
+    assert.ok(def.success)
+    if (!def.success) return
+    const names = ["image_001.bmp", "image_002.png", "image_003.jpeg", "image_004.png", "image_005.gif", "image_006.wmf"]
+    assert.deepEqual(def.images!.map(i => i.filename), names)
+    for (const [k, m] of media.entries()) assert.deepEqual(def.images![k].data, m)
+    for (const format of ["png", "webp"] as const) {
+      const r = await parse(buf, { imageFormat: format })
+      assert.ok(r.success)
+      if (!r.success) return
+      const want = names.map((n, k) => (k === 5 ? n : n.replace(/\.[^.]+$/, "." + format)))
+      assert.deepEqual(r.images!.map(i => i.filename), want, format)
+      assert.deepEqual(r.images!.map(i => i.mimeType), want.map((_, k) => (k === 5 ? "image/wmf" : "image/" + format)))
+      for (const k of [0, 1, 2, 3, 4]) assert.ok((format === "png" ? isPng : isWebp)(r.images![k].data), `${format} ${k}`)
+      assert.deepEqual(r.images![5].data, media[5])
+      // 화소: BMP·PNG 는 원본과 같다. 이미 PNG 인 그림은 바이트 그대로
+      assert.deepEqual(await rgbaOf(r.images![0].data), bmpToRgba(media[0])!.data)
+      assert.deepEqual(await rgbaOf(r.images![1].data), await rgbaOf(media[1]))
+      if (format === "png") { assert.deepEqual(r.images![1].data, media[1]); assert.deepEqual(r.images![3].data, media[3]) }
+      assert.deepEqual(r.blocks.filter(b => b.type === "image").map(b => b.text), want)
+      let md = def.markdown
+      for (const [k, n] of names.entries()) md = md.replace(`(${n})`, `(${want[k]})`)
+      assert.equal(r.markdown, md)
+      assert.ok(r.warnings?.some(w => w.message.includes(`그림 1개는 ${format.toUpperCase()} 로 바꾸지 못해`) && w.message.includes("image/wmf")), format)
+    }
     // images: false 면 바꾸지 않는다
     const none = await parse(buf, { imageFormat: "webp", images: false })
     assert.ok(none.success && none.markdown === def.markdown)
@@ -79,7 +94,7 @@ describe("원본 그림 파일 WebP (#188, imageFormat — HWP·HWPX·HWP3·DOCX
       { type: "paragraph", text: ref, footnoteText: ref },
       { type: "table", table: { rows: 1, cols: 1, caption: ref, cells: [[{ text: ref, colSpan: 1, rowSpan: 1, blocks: [{ type: "image", text: "image_001.bmp" }] }]] } },
     ]
-    assert.equal(await webpSmallerImages(blocks, images, []), true)
+    assert.equal(await convertImages(blocks, images, "webp", []), true)
     assert.deepEqual([blocks[0].text, blocks[0].footnoteText, blocks[1].table!.caption, blocks[1].table!.cells[0][0].text, blocks[1].table!.cells[0][0].blocks![0].text], [fixed, fixed, fixed, fixed, "image_001.webp"])
   })
 })

@@ -90,6 +90,8 @@ export interface PdfImageState {
   pendingRaw: number
   /** WebP 인코딩에 실패해 PNG 로 낸 그림의 이름 — `image_NNN.webp` → `image_NNN.png` */
   renamed: Map<string, string>
+  /** WebP 한도(16,383px)를 넘어 PNG 로 낸 그림 수 */
+  oversize: number
 }
 
 /** 지운 그림을 디코딩하는 길 — PDFium 이 기본, PDFium 이 못 찾는 그림은 지우지 않은 pdfjs 문서 */
@@ -101,7 +103,7 @@ export interface BlankedImageSource {
 }
 
 export function createPdfImageState(blanked?: BlankedImageSource, webp?: WebpEncoder): PdfImageState {
-  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, blanked, rawKeys: new Map(), pdfiumGlobal: new Map(), webp, pending: [], pendingRaw: 0, renamed: new Map() }
+  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, blanked, rawKeys: new Map(), pdfiumGlobal: new Map(), webp, pending: [], pendingRaw: 0, renamed: new Map(), oversize: 0 }
 }
 
 /** 픽셀 버퍼 내용 해시 — 네이티브 SHA-1. 종전 FNV-1a JS 루프는 맥미니에서 0.93GB/s(SHA-1 2.97GB/s)라, 쪽마다 같은 그림을
@@ -341,6 +343,7 @@ async function capReached(state: PdfImageState, pageNumber: number, warnings: Pa
 /** 그림 바이트를 images 에 넣는다. WebP 는 인코딩을 걸어 두고 자리만 먼저 넣어 순서·파일명이 PNG 와 같다 */
 async function pushImage(state: PdfImageState, filename: string, w: number, h: number, rgba: Uint8Array, images: ExtractedImage[]): Promise<void> {
   if (!webpable(state, w, h)) {
+    if (state.webp) state.oversize++
     const png = encodePng(w, h, rgba)
     state.totalBytes += png.length
     images.push({ filename, data: png, mimeType: "image/png" })
@@ -376,6 +379,7 @@ async function drain(state: PdfImageState, keep: number): Promise<void> {
 /** 걸어 둔 WebP 인코딩을 모두 기다리고, PNG 로 낸 그림은 블록 이름도 바꾼다 — 그림 블록 주입(injectPageImageBlocks) 전에 부른다 */
 export async function flushPdfImages(state: PdfImageState, warnings: ParseWarning[], pageImages: Map<number, IRBlock[]>): Promise<void> {
   await drain(state, 0)
+  if (state.oversize) warnings.push({ message: `WebP 한도(가로·세로 16,383px)를 넘는 그림 ${state.oversize}개를 PNG 로 냈습니다`, code: "SKIPPED_IMAGE" })
   if (!state.renamed.size) return
   for (const list of pageImages.values()) for (const b of list) b.text = state.renamed.get(b.text!) ?? b.text
   warnings.push({ message: `WebP 인코딩 실패로 그림 ${state.renamed.size}개를 PNG 로 냈습니다`, code: "SKIPPED_IMAGE" })
