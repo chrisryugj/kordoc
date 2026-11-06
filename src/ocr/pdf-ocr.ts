@@ -26,6 +26,7 @@ import { copyOcrTextGaps } from "./text-gaps.js"
 import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrModelsCached, resolveOcrModels, type OcrModelSelection } from "./models.js"
 import { validateOcrOptions } from "./options.js"
 import { chartPlotItems } from "./ocr-chart-axes.js"
+import { splitOcrContactColumns } from "./ocr-contact-columns.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
@@ -537,7 +538,7 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   }).filter(it => it.text)
-  const blocks = unframeOcrLayoutTables(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))), pdfH)
+  const blocks = unframeOcrLayoutTables(splitOcrContactColumns(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)))), pdfH)
   if (!figureRegion) markOcrHeadings(blocks)
   return blocks
 }
