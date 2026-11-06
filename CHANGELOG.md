@@ -7,12 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 그림 형식 `imageFormat`(#188, CLI `--image-format <png|webp>`, protocol 2·두 SDK): 지정하면 모든 그림(PDF·HWP·HWPX·HWP3·DOCX·PPTX)이 그 형식이다 — 파일명·MIME·바이트가 같은 형식이고 형식은 확장자가 아니라 바이트로 판정한다. 뒤 단계(비전 모델·브라우저·저장소)가 파일명·MIME 을 믿고 돌기 때문이다(Claude·OpenAI·Gemini 비전 API 가 함께 받는 형식은 PNG·JPEG·WebP 뿐이고, llama.cpp 는 stb_image 라 TIFF 를 읽지 못한다). `"png"` 는 PNG(이미 PNG 면 바이트 그대로, BMP 는 kordoc 디코더 `bmpToRgba` — `bmpToPng` 에서 나눔), `"webp"` 는 무손실 WebP(`exact`, 완전 투명 화소의 RGB 도 지킨다). EXIF 회전·ICC·CMYK·움직이는 GIF(첫 장)·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식(PDF 는 PNG)으로 내고 경고(`SKIPPED_IMAGE`)를 남기며, PDF WebP 인코딩이 실패한 그림도 그 그림만 PNG 로 낸다. 바꾼 그림은 `images`·그림 블록 `text`·`imageData`·글에 박힌 참조(표 칸·머리말·각주·캡션)가 함께 새 이름이 된다. 지정하지 않으면 출력은 지금과 같다(PDF 253개·그림 3,367개에서 블록·마크다운·그림 바이트 같음). optional dependency `sharp` 는 켰을 때만 동적 import 로 불러오고 네트워크에 접근하지 않는다. PDF WebP 인코딩은 libuv 스레드에서 나란히 돌리고 인코딩 중 RGBA 는 64MB 안으로 묶는다. `images: false` 면 인코딩하지 않는다
+
+### 측정 참고
+
+- `imageFormat: "webp"` 비용(sharp effort 1·quality 1): 교재 그림 200개 인코딩만 PNG 3.25초 CPU → WebP 8.6초 CPU(약 2.6배), 경과 시간 2.58 → 2.1초(스레드 4개), 25.5 → 14.8MB(58%). quality 75 는 13.4MB 지만 CPU 5.4배라 쓰지 않았다. 파싱 전체(3회 중앙값, `ocr: false`): 그림 위주 교재 PDF(그림 200개) 5.79 → 3.71초·CPU 7.72 → 13.19초·최대 RSS 691 → 794MB·26.7 → 15.5MB, 보고서 PDF(그림 8개) 2.84 → 2.59초·CPU 4.57 → 4.81초·393 → 442MB·2.64 → 1.69MB. PDF 253개 그림 3,367개 모두 디코딩한 화소가 PNG 와 같고 크기는 552 → 336MB(61%)
+- `imageFormat` 원본 그림(HWP·HWPX·DOCX 2,782개 중 그림 있는 707개, 그림 6,412개, `ocr: false`): `"png"` 6,109개 바꿈·303개 원본(WMF·EMF·못 읽는 BMP)·4,099 → 775MB·파싱 시간 합계 40 → 83초, `"webp"` 5,680개 바꿈·732개 원본(손상 PNG 약 430개 포함)·4,099 → 504MB·40 → 270초. 화소를 바로 대조할 수 있는 그림 5,176개 모두 같고, 마크다운·블록은 그림 이름 말고 기본과 같다. 기본 경로는 MIME 을 확장자로 정해 그림 235개(HWPX 232·DOCX 3)가 MIME 과 바이트가 다르다(예: `.bmp` 인데 JPEG 125개) — 지정하면 바이트로 판정해 맞는다
+
 ## [4.24.48] - 2026-11-06
 
 ### Added
 
 - 그림 속 QR 코드 읽기 `qrCodes`(#187, CLI `--qr-codes`, protocol 2·두 SDK): 켜면 모든 형식(HWP·HWPX·HWP3·DOCX·PPTX·PDF)의 그림에서 QR 을 읽어 그림 블록 `qr: string[]` 과 Markdown 그림 자리 다음 줄에 값을 낸다(값의 줄마다 한 줄·빈 줄은 뺌, 문단을 끊는 줄머리 표지는 이스케이프, 표 칸 안은 `<br>`). `images: false` 여도 읽고, PDF 는 디코딩한 픽셀을 그대로 쓴다. 기본은 꺼짐이고 끄면 출력이 지금과 같다. optional dependency `zxing-wasm`(zxing-cpp) 을 켰을 때만 동적 import 로 불러오고 패키지 안 wasm 을 넘겨 네트워크에 접근하지 않는다(zxing-wasm 기본값은 CDN 에서 wasm 을 받는다). QR 형식만 읽고 해독한 값만 그림마다 중복 없이 낸다
-- 그림 형식 `imageFormat`(#188, CLI `--image-format <png|webp>`, protocol 2·두 SDK): 지정하면 모든 그림(PDF·HWP·HWPX·HWP3·DOCX·PPTX)이 그 형식이다 — 파일명·MIME·바이트가 같은 형식이고 형식은 확장자가 아니라 바이트로 판정한다. 뒤 단계(비전 모델·브라우저·저장소)가 파일명·MIME 을 믿고 돌기 때문이다(Claude·OpenAI·Gemini 비전 API 가 함께 받는 형식은 PNG·JPEG·WebP 뿐이고, llama.cpp 는 stb_image 라 TIFF 를 읽지 못한다). `"png"` 는 PNG(이미 PNG 면 바이트 그대로, BMP 는 kordoc 디코더 `bmpToRgba` — `bmpToPng` 에서 나눔), `"webp"` 는 무손실 WebP(`exact`, 완전 투명 화소의 RGB 도 지킨다). EXIF 회전·ICC·CMYK·움직이는 GIF(첫 장)·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식(PDF 는 PNG)으로 내고 경고(`SKIPPED_IMAGE`)를 남기며, PDF WebP 인코딩이 실패한 그림도 그 그림만 PNG 로 낸다. 바꾼 그림은 `images`·그림 블록 `text`·`imageData`·글에 박힌 참조(표 칸·머리말·각주·캡션)가 함께 새 이름이 된다. 지정하지 않으면 출력은 지금과 같다(PDF 253개·그림 3,367개에서 블록·마크다운·그림 바이트 같음). optional dependency `sharp` 는 켰을 때만 동적 import 로 불러오고 네트워크에 접근하지 않는다. PDF WebP 인코딩은 libuv 스레드에서 나란히 돌리고 인코딩 중 RGBA 는 64MB 안으로 묶는다. `images: false` 면 인코딩하지 않는다
 
 ### Changed
 
@@ -33,8 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 그림 위주 교재 PDF 325쪽(그림 646개): `images: false` 3.75 → **2.79**초·최대 RSS 1,761 → **868**MB, `images: true` 7.00 → **5.42**초·1,761 → **922**MB. 주택청약 FAQ 273쪽 `images: true` 4.33 → 3.96초·744 → 632MB. 그림 적은 보고서 106쪽 2.50 → 2.59초(PDFium 초기화)
 - QR 읽기 라이브러리(문서 그림 4,215개, 19.4억 화소): zxing-wasm 그림당 1.7ms·QR 37개 모두 읽고 오탐 0, jsQR 55ms·1개 놓침·빈 값 9개, @zxing/library 14ms·5개 놓침·1D 오탐 8개
 - `qrCodes: true` 비용: 모듈 로드 12ms·RSS 13MB. 그림 위주 교재 PDF(그림 200개) 4.05 → 4.94초, 그림 435개 HWP 0.24 → 0.68초, 그림 적은 보고서 106쪽 2.57 → 2.70초. 끄면 비용 없음(PDF·HWP·HWPX·DOCX 등 1,770개에서 출력 전체 해시가 같다)
-- `imageFormat: "webp"` 비용(sharp effort 1·quality 1): 교재 그림 200개 인코딩만 PNG 3.25초 CPU → WebP 8.6초 CPU(약 2.6배), 경과 시간 2.58 → 2.1초(스레드 4개), 25.5 → 14.8MB(58%). quality 75 는 13.4MB 지만 CPU 5.4배라 쓰지 않았다. 파싱 전체(3회 중앙값, `ocr: false`): 그림 위주 교재 PDF(그림 200개) 5.79 → 3.71초·CPU 7.72 → 13.19초·최대 RSS 691 → 794MB·26.7 → 15.5MB, 보고서 PDF(그림 8개) 2.84 → 2.59초·CPU 4.57 → 4.81초·393 → 442MB·2.64 → 1.69MB. PDF 253개 그림 3,367개 모두 디코딩한 화소가 PNG 와 같고 크기는 552 → 336MB(61%)
-- `imageFormat` 원본 그림(HWP·HWPX·DOCX 2,782개 중 그림 있는 707개, 그림 6,412개, `ocr: false`): `"png"` 6,109개 바꿈·303개 원본(WMF·EMF·못 읽는 BMP)·4,099 → 775MB·파싱 시간 합계 40 → 83초, `"webp"` 5,680개 바꿈·732개 원본(손상 PNG 약 430개 포함)·4,099 → 504MB·40 → 270초. 화소를 바로 대조할 수 있는 그림 5,176개 모두 같고, 마크다운·블록은 그림 이름 말고 기본과 같다. 기본 경로는 MIME 을 확장자로 정해 그림 235개(HWPX 232·DOCX 3)가 MIME 과 바이트가 다르다(예: `.bmp` 인데 JPEG 125개) — 지정하면 바이트로 판정해 맞는다
 
 ## [4.24.47] - 2026-11-06
 
