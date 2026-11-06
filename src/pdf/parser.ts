@@ -22,7 +22,8 @@ import { extractImageRegions, extractLines } from "./line-detector.js"
 import { mergeOcrImageRegions, type ImageRegion } from "./ocr-region-merge.js"
 import { blankLargeImageStreams } from "./image-blank.js"
 import { openPdfiumImages } from "./pdfium-images.js"
-import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
+import { createPdfImageState, extractPageImages, flushPdfImages, injectPageImageBlocks } from "./image-extract.js"
+import { loadWebpEncoder, WEBP_UNAVAILABLE } from "../image/webp.js"
 import { loadQrReader, QR_UNAVAILABLE } from "../qr.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
@@ -213,7 +214,10 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 이미지 XObject 바이트 추출 상태 (문서 단위 중복 억제·상한).
     // image 블록은 페이지 경계 표 병합(mergeCrossPageTables)의 인접성을 깨지 않도록
     // 페이지별로 모아뒀다가 병합 후 주입한다.
-    const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined)
+    const wantWebp = options?.imageFormat === "webp" && options.images !== false
+    const encodeWebp = wantWebp ? await loadWebpEncoder() : null
+    if (wantWebp && !encodeWebp) warnings.push(WEBP_UNAVAILABLE)
+    const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined, encodeWebp ?? undefined)
     const readQr = options?.qrCodes ? await loadQrReader() : null
     if (options?.qrCodes && !readQr) warnings.push(QR_UNAVAILABLE)
     const imageBulletShapes = new Map<string, boolean>()
@@ -695,6 +699,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     if (options?.tableFormat === "gfm") assignTableIds(blocks)
     let markdown = finishMarkdown(outBlocks)
     const outline = collectPdfOutline(outBlocks)
+    await flushPdfImages(imageState)
 
     return {
       markdown,
