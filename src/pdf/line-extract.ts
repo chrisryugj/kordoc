@@ -757,6 +757,8 @@ export function closeOpenTableEdges(
   //     EDGE_YGAP_SPLIT_K배를 넘고 양쪽이 각각 최소 괘선 수를 만족할 때만 분할하므로,
   //     행 간격이 균일한 연속 단일 표에는 발동하지 않는다(무회귀).
   const splitGroups: LineSegment[][] = []
+  /** 표 사이로 가른 띠 — 다른 묶음도 이 띠를 넘어 변을 합성하지 않는다 */
+  const cuts: Array<{ yLo: number; yHi: number; x1: number; x2: number }> = []
   for (const g of groups) {
     const sorted = [...g].sort((a, b) => a.y1 - b.y1)
     const gaps: number[] = []
@@ -797,10 +799,29 @@ export function closeOpenTableEdges(
           && cur.length >= EDGE_MIN_RULES && sorted.length - i >= EDGE_MIN_RULES) {
         splitGroups.push(cur)
         cur = []
+        cuts.push({ yLo, yHi, x1: gx1, x2: gx2 })
       }
       cur.push(sorted[i])
     }
     if (cur.length) splitGroups.push(cur)
+  }
+  // 한 묶음이 표 사이로 가른 띠는 겹쳐 놓인 다른 묶음도 가른다 — 첫 열이 열린 안쪽 괘선 묶음은 아래 표 몫이 두 줄뿐이라 제 간격만으로는
+  // 못 갈라, 그 묶음의 합성 변이 위아래 두 표를 한 격자로 용접했다(고용 동향 교육·보건복지 가입자 표: 바깥 전폭 괘선 묶음은 갈림)
+  if (cuts.length) {
+    const parts: LineSegment[][] = []
+    for (const g of splitGroups) {
+      const gx1 = Math.min(...g.map(l => l.x1)), gx2 = Math.max(...g.map(l => l.x2))
+      const own = cuts.filter(c => Math.min(c.x2, gx2) - Math.max(c.x1, gx1) >= (gx2 - gx1) * 0.5)
+      let cur: LineSegment[] = []
+      for (const l of g) {
+        const prev = cur[cur.length - 1]
+        if (prev && own.some(c => prev.y1 <= c.yLo + EDGE_CONNECT_TOL && l.y1 >= c.yHi - EDGE_CONNECT_TOL)) { parts.push(cur); cur = [] }
+        cur.push(l)
+      }
+      if (cur.length) parts.push(cur)
+    }
+    splitGroups.length = 0
+    splitGroups.push(...parts)
   }
 
   const synthesized: LineSegment[] = []
