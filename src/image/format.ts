@@ -21,6 +21,9 @@ function isFormat(b: Uint8Array, format: ImageFormat): boolean {
   return b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
 }
 
+/** sharp 는 Buffer 를 돌려준다 — 결과 JSON(워커 protocol)에서 Buffer 는 {type, data} 로 바뀌어 순수 Uint8Array 로 */
+const plain = (b: Buffer | null) => b && new Uint8Array(b.buffer, b.byteOffset, b.byteLength)
+
 /** 그 형식 바이트 — 못 바꾸면 null */
 async function convert(sharp: SharpFactory | null, img: ExtractedImage, format: ImageFormat): Promise<Uint8Array | null> {
   if (isFormat(img.data, format)) return img.data
@@ -29,11 +32,11 @@ async function convert(sharp: SharpFactory | null, img: ExtractedImage, format: 
     if (format === "png") return bmpToPng(img.data)
     const px = bmpToRgba(img.data)
     if (!px || !sharp) return null
-    return sharp(toBuffer(px.data), { raw: { width: px.width, height: px.height, channels: 4 } }).webp(WEBP_OPTIONS).toBuffer().catch(() => null)
+    return plain(await sharp(toBuffer(px.data), { raw: { width: px.width, height: px.height, channels: 4 } }).webp(WEBP_OPTIONS).toBuffer().catch(() => null))
   }
   if (!sharp) return null
   const out = sharp(toBuffer(img.data), { limitInputPixels: MAX_PIXELS }).rotate()
-  return (format === "png" ? out.png() : out.webp(WEBP_OPTIONS)).toBuffer().catch(() => null)
+  return plain(await (format === "png" ? out.png() : out.webp(WEBP_OPTIONS)).toBuffer().catch(() => null))
 }
 
 /**

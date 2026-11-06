@@ -71,6 +71,8 @@ describe("원본 그림 파일 형식 맞추기 (#188, imageFormat — HWP·HWPX
       assert.deepEqual(r.images!.map(i => i.filename), want, format)
       assert.deepEqual(r.images!.map(i => i.mimeType), want.map((_, k) => (k === 5 ? "image/wmf" : "image/" + format)))
       for (const k of [0, 1, 2, 3, 4]) assert.ok((format === "png" ? isPng : isWebp)(r.images![k].data), `${format} ${k}`)
+      // 결과 JSON(워커 protocol)에서 Buffer 는 {type, data} 로 바뀐다 — 순수 Uint8Array 여야 한다
+      for (const img of r.images!) assert.ok(!Buffer.isBuffer(img.data), `${format} ${img.filename} Buffer`)
       assert.deepEqual(r.images![5].data, media[5])
       // 화소: BMP·PNG 는 원본과 같다. 이미 PNG 인 그림은 바이트 그대로
       assert.deepEqual(await rgbaOf(r.images![0].data), bmpToRgba(media[0])!.data)
