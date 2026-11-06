@@ -2,6 +2,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import sharp from "sharp"
 import { parse } from "../src/index.js"
+import { inlineImagesIntoMarkdown } from "../src/image/transcode.js"
 
 /** 그림 둘 — A: 40×30 RGB + SMask(왼쪽 절반 alpha 0, 그 아래 RGB 는 0 이 아님 → pdfjs 경로), B: 200×150 RGB(PDFium 경로) */
 function pdfWithImages(): { pdf: Buffer; originals: Uint8Array[] } {
@@ -74,5 +75,36 @@ describe("PDF 그림 WebP (#188, imageFormat)", () => {
     assert.deepEqual(r.images!.map(i => [i.filename, i.mimeType]), [["image_001.png", "image/png"]])
     assert.ok(r.markdown.includes("image_001.png"))
     assert.equal((await sharp(r.images![0].data).metadata()).format, "png")
+  })
+
+  it("WebP 인코딩이 실패한 그림은 PNG 로 낸다 — 파일명·MIME·바이트·마크다운·블록이 한 이름", async () => {
+    const { pdf, originals } = pdfWithImages()
+    const proto = sharp.prototype as unknown as { webp: unknown }
+    const webp = proto.webp
+    proto.webp = () => { throw new Error("mock") }
+    let r: Awaited<ReturnType<typeof parse>>
+    try { r = await parse(pdf, { ocr: false, imageFormat: "webp" }) } finally { proto.webp = webp }
+    assert.ok(r.success)
+    if (!r.success) return
+    assert.deepEqual(r.images!.map(i => [i.filename, i.mimeType]), [["image_001.png", "image/png"], ["image_002.png", "image/png"]])
+    for (const [k, original] of originals.entries()) {
+      assert.equal((await sharp(r.images![k].data).metadata()).format, "png")
+      assert.deepEqual(await decode(r.images![k].data), original)
+    }
+    const names = ["image_001.png", "image_002.png"]
+    assert.deepEqual(r.blocks.filter(b => b.type === "image").map(b => b.text), names)
+    for (const n of names) assert.ok(r.markdown.includes(`(${n})`), n)
+    assert.ok(!r.markdown.includes(".webp"))
+    assert.ok(r.warnings?.some(w => w.message.includes("WebP 인코딩 실패로 그림 2개")))
+  })
+
+  it("inlineImages 는 WebP 바이트를 다시 인코딩하지 않고 data:image/webp 로 싣는다. PDF 는 inlineImages 대상이 아니라 참조를 둔다", async () => {
+    const { pdf } = pdfWithImages()
+    const r = await parse(pdf, { ocr: false, imageFormat: "webp", inlineImages: true })
+    assert.ok(r.success)
+    if (!r.success) return
+    assert.ok(r.markdown.includes("(image_001.webp)") && !r.markdown.includes("data:"))
+    const md = inlineImagesIntoMarkdown(r.markdown, r.images!, { compress: true })
+    for (const img of r.images!) assert.ok(md.includes(`(data:image/webp;base64,${Buffer.from(img.data).toString("base64")})`), img.filename)
   })
 })

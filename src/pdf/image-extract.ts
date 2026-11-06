@@ -88,8 +88,8 @@ export interface PdfImageState {
   /** 건 순서대로 기다릴 WebP 인코딩과 그 RGBA 바이트 */
   pending: { done: Promise<void>; raw: number }[]
   pendingRaw: number
-  /** WebP 인코딩에 실패해 PNG 바이트로 대신한 그림 수 */
-  webpFailed: number
+  /** WebP 인코딩에 실패해 PNG 로 낸 그림의 이름 — `image_NNN.webp` → `image_NNN.png` */
+  renamed: Map<string, string>
 }
 
 /** 지운 그림을 디코딩하는 길 — PDFium 이 기본, PDFium 이 못 찾는 그림은 지우지 않은 pdfjs 문서 */
@@ -101,7 +101,7 @@ export interface BlankedImageSource {
 }
 
 export function createPdfImageState(blanked?: BlankedImageSource, webp?: WebpEncoder): PdfImageState {
-  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, blanked, rawKeys: new Map(), pdfiumGlobal: new Map(), webp, pending: [], pendingRaw: 0, webpFailed: 0 }
+  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, blanked, rawKeys: new Map(), pdfiumGlobal: new Map(), webp, pending: [], pendingRaw: 0, renamed: new Map() }
 }
 
 /** 픽셀 버퍼 내용 해시 — 네이티브 SHA-1. 종전 FNV-1a JS 루프는 맥미니에서 0.93GB/s(SHA-1 2.97GB/s)라, 쪽마다 같은 그림을
@@ -351,8 +351,14 @@ async function pushImage(state: PdfImageState, filename: string, w: number, h: n
   images.push(image)
   const done = state.webp!(rgba, w, h).then(
     webp => { image.data = webp; state.totalBytes += webp.length },
-    // 실패해도 파싱은 계속한다 — 그 그림만 PNG 바이트로 (이름은 이미 블록에 실렸다)
-    () => { image.data = encodePng(w, h, rgba); image.mimeType = "image/png"; state.totalBytes += image.data.length; state.webpFailed++ },
+    // 실패해도 파싱은 계속한다 — 그 그림만 PNG 로. 블록의 이름은 flushPdfImages 가 바꾼다
+    () => {
+      image.data = encodePng(w, h, rgba)
+      image.mimeType = "image/png"
+      image.filename = filename.replace(/\.webp$/, ".png")
+      state.totalBytes += image.data.length
+      state.renamed.set(filename, image.filename)
+    },
   )
   state.pending.push({ done, raw: rgba.length })
   state.pendingRaw += rgba.length
@@ -367,10 +373,12 @@ async function drain(state: PdfImageState, keep: number): Promise<void> {
   }
 }
 
-/** 걸어 둔 WebP 인코딩을 모두 기다린다 — 파서가 결과를 돌려주기 전에 부른다 */
-export async function flushPdfImages(state: PdfImageState, warnings: ParseWarning[]): Promise<void> {
+/** 걸어 둔 WebP 인코딩을 모두 기다리고, PNG 로 낸 그림은 블록 이름도 바꾼다 — 그림 블록 주입(injectPageImageBlocks) 전에 부른다 */
+export async function flushPdfImages(state: PdfImageState, warnings: ParseWarning[], pageImages: Map<number, IRBlock[]>): Promise<void> {
   await drain(state, 0)
-  if (state.webpFailed) warnings.push({ message: `WebP 인코딩 실패로 그림 ${state.webpFailed}개를 PNG 바이트로 냈습니다`, code: "SKIPPED_IMAGE" })
+  if (!state.renamed.size) return
+  for (const list of pageImages.values()) for (const b of list) b.text = state.renamed.get(b.text!) ?? b.text
+  warnings.push({ message: `WebP 인코딩 실패로 그림 ${state.renamed.size}개를 PNG 로 냈습니다`, code: "SKIPPED_IMAGE" })
 }
 
 /** WebP 는 가로·세로 16,383px 까지 — 넘는 그림은 처음부터 PNG 로 낸다 */

@@ -601,6 +601,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 쪽 넘김으로 꺾인 본문 문단 잇기 — 머리말·꼬리말 제거 뒤, 쪽 끝 그림 주입 전 (line-wrap.ts)
     joinPageBreakWraps(blocks, wrapLexicon)
 
+    await flushPdfImages(imageState, warnings, pageImageBlocks)
     // 추출 이미지 참조를 페이지 말미 위치에 주입 (표 병합 뒤 — 인접성 보존)
     injectPageImageBlocks(blocks, pageImageBlocks)
 
@@ -699,7 +700,6 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     if (options?.tableFormat === "gfm") assignTableIds(blocks)
     let markdown = finishMarkdown(outBlocks)
     const outline = collectPdfOutline(outBlocks)
-    await flushPdfImages(imageState, warnings)
 
     return {
       markdown,
