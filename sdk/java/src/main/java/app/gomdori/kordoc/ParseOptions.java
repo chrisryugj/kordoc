@@ -77,6 +77,8 @@ public final class ParseOptions {
         public Builder images(boolean v) { return put("images", v); }
         public Builder inlineImages(boolean v) { return put("inlineImages", v); }
         public Builder qrCodes(boolean v) { return put("qrCodes", v); }
+        /** "png" | "webp" — 지정하면 모든 그림을 그 형식으로(webp 는 무손실). 지정하지 않으면 PDF 는 PNG, 다른 형식은 원본 그대로 */
+        public Builder imageFormat(String format) { wire.put("imageFormat", format); return this; }
         /** true: 필요한 쪽만 OCR, false: 끔 */
         public Builder ocr(boolean v) { return put("ocr", v); }
         /** 전 쪽 강제 OCR */

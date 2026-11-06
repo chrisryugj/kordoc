@@ -100,6 +100,7 @@ if (result.success) {
 | `memos` | `--memos` | append document memos (Hangul "insert memo") as a final "메모" section — the memo list is always in the result's `memos` (memo text, anchored text, paragraph, author, time, block index; HWPX · HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | drop running headers repeated per page in HWP5 layout tables (opt-in: may also drop per-attachment renumbering) |
 | `inlineImages` | `--inline-images` | inline images as base64 data URIs (BMP→PNG, HWP5) |
+| `imageFormat` | `--image-format webp` | image format. Unset: as before, PDF images are PNG and other formats keep the original embedded images. Set: every image is in that format (file name, MIME and bytes agree; the format is judged from the bytes): `"png"` gives PNG, `"webp"` lossless WebP (`exact`; 200 PDF images: 25.5 → 14.8MB, encoding CPU 3.25 → 8.6s). EXIF rotation, ICC, CMYK, animated GIF and SVG are matched to what is shown. Images that cannot be converted (WMF/EMF, unreadable BMP or damaged, WebP over 16,383px) keep their original format with a warning. 2,782 documents: png 4,099 → 775MB, webp 4,099 → 504MB. Needs the optional dependency `sharp` |
 | `qrCodes` | `--qr-codes` | read QR codes in images into the image block's `qr` and the line after the Markdown image placeholder (all formats, also with `images: false`). Needs the optional dependency `zxing-wasm` |
 | `classifyTables` | — | classify tables as data / layout / uncertain into `IRTable.classification` |
 | `onProgress` | — | progress callback `(current, total)` |

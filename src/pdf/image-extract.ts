@@ -1,6 +1,6 @@
 /**
  * PDF 이미지 XObject 바이트 추출 — 페이지 operatorList의 paint 이미지를
- * page.objs/commonObjs에서 디코딩된 픽셀로 받아 PNG로 인코딩한다.
+ * page.objs/commonObjs에서 디코딩된 픽셀로 받아 PNG(imageFormat "webp" 면 WebP)로 인코딩한다.
  *
  * getOperatorList()가 이미 디코딩 비용을 지불하므로(선 감지용으로 항상 호출)
  * 여기서는 RGBA 변환 + PNG deflate만 추가된다. 순수 JS (node:zlib) 전용.
@@ -11,6 +11,7 @@ import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { encodePng } from "../image/transcode.js"
 import type { ExtractedImage, IRBlock, ParseWarning } from "../types.js"
 import type { QrReader } from "../qr.js"
+import type { WebpEncoder } from "../image/webp.js"
 import type { PdfiumImage, PdfiumImages } from "./pdfium-images.js"
 import { SMALL_IMAGE_DIM } from "./image-blank.js"
 
@@ -64,6 +65,8 @@ const MAX_PIXELS = 36_000_000
 const MAX_IMAGES_PER_DOC = 200
 /** 문서당 PNG 누적 바이트 상한 (128MB) */
 const MAX_TOTAL_IMAGE_BYTES = 128 * 1024 * 1024
+/** 인코딩 중인 WebP 의 RGBA 바이트 상한 (64MB) — 넘으면 가장 먼저 건 인코딩부터 기다린다 */
+const MAX_PENDING_RAW_BYTES = 64 * 1024 * 1024
 
 /** 문서 단위 추출 상태 — 페이지 간 중복(로고·워터마크) 억제 + 상한 추적 */
 export interface PdfImageState {
@@ -80,6 +83,15 @@ export interface PdfImageState {
   rawKeys: Map<string, string>
   /** 문서 공용 객체 id("g_…") → 짝지은 PDFium 그림. 같은 id 는 같은 XObject 라 다음 쪽은 PDFium 쪽을 열지 않아도 된다 */
   pdfiumGlobal: Map<string, PdfiumImage>
+  /** imageFormat "webp" (#188) — 없으면 PNG */
+  webp?: WebpEncoder
+  /** 건 순서대로 기다릴 WebP 인코딩과 그 RGBA 바이트 */
+  pending: { done: Promise<void>; raw: number }[]
+  pendingRaw: number
+  /** WebP 인코딩에 실패해 PNG 로 낸 그림의 이름 — `image_NNN.webp` → `image_NNN.png` */
+  renamed: Map<string, string>
+  /** WebP 한도(16,383px)를 넘어 PNG 로 낸 그림 수 */
+  oversize: number
 }
 
 /** 지운 그림을 디코딩하는 길 — PDFium 이 기본, PDFium 이 못 찾는 그림은 지우지 않은 pdfjs 문서 */
@@ -90,8 +102,8 @@ export interface BlankedImageSource {
   pristine(): Promise<{ getPage(n: number): Promise<PdfPageObjs & { getOperatorList(): Promise<{ fnArray: Uint32Array | number[]; argsArray: unknown[][] }>; cleanup(): void }> }>
 }
 
-export function createPdfImageState(blanked?: BlankedImageSource): PdfImageState {
-  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, blanked, rawKeys: new Map(), pdfiumGlobal: new Map() }
+export function createPdfImageState(blanked?: BlankedImageSource, webp?: WebpEncoder): PdfImageState {
+  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, blanked, rawKeys: new Map(), pdfiumGlobal: new Map(), webp, pending: [], pendingRaw: 0, renamed: new Map(), oversize: 0 }
 }
 
 /** 픽셀 버퍼 내용 해시 — 네이티브 SHA-1. 종전 FNV-1a JS 루프는 맥미니에서 0.93GB/s(SHA-1 2.97GB/s)라, 쪽마다 같은 그림을
@@ -209,7 +221,7 @@ export async function extractPageImages(
         continue
       }
       // 상한 뒤에는 PDFium 쪽도 열지 않는다
-      if (capReached(state, pageNumber, warnings)) continue
+      if (await capReached(state, pageNumber, warnings)) continue
       if (state.blanked) {
         const w = op === OPS.paintImageXObject ? argsArray[i]?.[1] as number : undefined
         const h = op === OPS.paintImageXObject ? argsArray[i]?.[2] as number : undefined
@@ -244,7 +256,7 @@ export async function extractPageImages(
 
     // 상한 도달 검사 — resolveImgData(이미지당 최대 5초 대기) 앞에서 중단해야
     // 상한 이후 이미지들이 페이지마다 디코딩 대기 시간만 소모하지 않는다
-    if (capReached(state, pageNumber, warnings)) continue
+    if (await capReached(state, pageNumber, warnings)) continue
 
     if (fromPristine) {
       if (!pristine) {
@@ -283,13 +295,9 @@ export async function extractPageImages(
     if (!rgba) continue // 미지원 픽셀 형태 (bitmap 전용 등)
 
     state.imageIndex++
-    const filename = `image_${String(state.imageIndex).padStart(3, "0")}.png`
+    const filename = imageFilename(state, w, h)
     state.seen.set(hash, filename)
-    if (withBytes) {
-      const png = encodePng(w, h, rgba)
-      state.totalBytes += png.length
-      images.push({ filename, data: png, mimeType: "image/png" })
-    }
+    if (withBytes) await pushImage(state, filename, w, h, rgba, images)
     const qr = readQr ? await readQr({ data: rgba, width: w, height: h }) : []
     blocks.push({ type: "image", text: filename, pageNumber, ...(qr.length ? { qr } : {}) })
   }
@@ -321,7 +329,9 @@ function pairingCounts(fnArray: Uint32Array | number[], argsArray: unknown[][], 
 }
 
 /** 문서당 상한(개수·바이트) — 처음 닿을 때 한 번 경고 */
-function capReached(state: PdfImageState, pageNumber: number, warnings: ParseWarning[]): boolean {
+async function capReached(state: PdfImageState, pageNumber: number, warnings: ParseWarning[]): Promise<boolean> {
+  // 인코딩 중인 WebP 가 상한을 넘길 수 있으면(RGBA ×1.1 + 1KB 를 크기 상한으로 본다) 모두 기다린다 — 판정이 인코딩 완료 시점에 따라 바뀌지 않게
+  if (state.pending.length && state.totalBytes + state.pendingRaw * 1.1 + 1024 * state.pending.length >= MAX_TOTAL_IMAGE_BYTES) await drain(state, 0)
   if (state.imageIndex < MAX_IMAGES_PER_DOC && state.totalBytes < MAX_TOTAL_IMAGE_BYTES) return false
   if (!state.capWarned) {
     state.capWarned = true
@@ -329,6 +339,56 @@ function capReached(state: PdfImageState, pageNumber: number, warnings: ParseWar
   }
   return true
 }
+
+/** 그림 바이트를 images 에 넣는다. WebP 는 인코딩을 걸어 두고 자리만 먼저 넣어 순서·파일명이 PNG 와 같다 */
+async function pushImage(state: PdfImageState, filename: string, w: number, h: number, rgba: Uint8Array, images: ExtractedImage[]): Promise<void> {
+  if (!webpable(state, w, h)) {
+    if (state.webp) state.oversize++
+    const png = encodePng(w, h, rgba)
+    state.totalBytes += png.length
+    images.push({ filename, data: png, mimeType: "image/png" })
+    return
+  }
+  await drain(state, MAX_PENDING_RAW_BYTES - rgba.length)
+  const image: ExtractedImage = { filename, data: NO_BYTES, mimeType: "image/webp" }
+  images.push(image)
+  const done = state.webp!(rgba, w, h).then(
+    webp => { image.data = webp; state.totalBytes += webp.length },
+    // 실패해도 파싱은 계속한다 — 그 그림만 PNG 로. 블록의 이름은 flushPdfImages 가 바꾼다
+    () => {
+      image.data = encodePng(w, h, rgba)
+      image.mimeType = "image/png"
+      image.filename = filename.replace(/\.webp$/, ".png")
+      state.totalBytes += image.data.length
+      state.renamed.set(filename, image.filename)
+    },
+  )
+  state.pending.push({ done, raw: rgba.length })
+  state.pendingRaw += rgba.length
+}
+
+/** 인코딩 중인 RGBA 가 keep 바이트 이하가 될 때까지 먼저 건 것부터 기다린다 */
+async function drain(state: PdfImageState, keep: number): Promise<void> {
+  while (state.pending.length && state.pendingRaw > keep) {
+    const p = state.pending.shift()!
+    state.pendingRaw -= p.raw
+    await p.done
+  }
+}
+
+/** 걸어 둔 WebP 인코딩을 모두 기다리고, PNG 로 낸 그림은 블록 이름도 바꾼다 — 그림 블록 주입(injectPageImageBlocks) 전에 부른다 */
+export async function flushPdfImages(state: PdfImageState, warnings: ParseWarning[], pageImages: Map<number, IRBlock[]>): Promise<void> {
+  await drain(state, 0)
+  if (state.oversize) warnings.push({ message: `WebP 한도(가로·세로 16,383px)를 넘는 그림 ${state.oversize}개를 PNG 로 냈습니다`, code: "SKIPPED_IMAGE" })
+  if (!state.renamed.size) return
+  for (const list of pageImages.values()) for (const b of list) b.text = state.renamed.get(b.text!) ?? b.text
+  warnings.push({ message: `WebP 인코딩 실패로 그림 ${state.renamed.size}개를 PNG 로 냈습니다`, code: "SKIPPED_IMAGE" })
+}
+
+/** WebP 는 가로·세로 16,383px 까지 — 넘는 그림은 처음부터 PNG 로 낸다 */
+const WEBP_MAX_DIM = 16_383
+const webpable = (state: PdfImageState, w: number, h: number) => !!state.webp && w <= WEBP_MAX_DIM && h <= WEBP_MAX_DIM
+const imageFilename = (state: PdfImageState, w: number, h: number) => `image_${String(state.imageIndex).padStart(3, "0")}.${webpable(state, w, h) ? "webp" : "png"}`
 
 /** PDFium 이 디코딩하지 못했다 — 호출자가 지우지 않은 pdfjs 문서로 다시 그린다 */
 const UNDECODED = Symbol("undecoded")
@@ -357,13 +417,9 @@ async function extractPdfiumImage(
   state.rawKeys.set(image.raw, hash)
   if (state.seen.has(hash)) return null
   state.imageIndex++
-  const filename = `image_${String(state.imageIndex).padStart(3, "0")}.png`
+  const filename = imageFilename(state, w, h)
   state.seen.set(hash, filename)
-  if (withBytes) {
-    const png = encodePng(w, h, rgba)
-    state.totalBytes += png.length
-    images.push({ filename, data: png, mimeType: "image/png" })
-  }
+  if (withBytes) await pushImage(state, filename, w, h, rgba, images)
   const qr = readQr ? await readQr({ data: rgba, width: w, height: h }) : []
   return { type: "image", text: filename, pageNumber, ...(qr.length ? { qr } : {}) }
 }

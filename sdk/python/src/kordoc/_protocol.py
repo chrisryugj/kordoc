@@ -28,6 +28,7 @@ OPTION_NAMES: dict[str, str] = {
     "images": "images",
     "inline_images": "inlineImages",
     "qr_codes": "qrCodes",
+    "image_format": "imageFormat",
     "ocr": "ocr",
     "ocr_lines": "ocrLines",
     "ocr_det": "ocrDet",

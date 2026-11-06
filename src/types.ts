@@ -357,6 +357,17 @@ export interface ParseOptions {
    *  모든 형식의 그림(HWP·HWPX·HWP3·DOCX·PPTX·PDF), `images: false` 여도 읽는다. optional dependency `zxing-wasm` 이 필요하다 */
   qrCodes?: boolean
   /**
+   * 그림 형식 (#188). 기본(지정 안 함)은 지금처럼 PDF 그림은 PNG, 다른 형식은 문서에 든 원본 그림 그대로다.
+   * 지정하면 모든 그림이 그 형식이다 — 파일명(`image_NNN.png`·`.webp`)·MIME·바이트가 같은 형식이고, 형식은 확장자가 아니라 바이트로 판정한다.
+   * - `"png"`: PNG. 이미 PNG 인 그림은 바이트 그대로, BMP 는 kordoc 디코더, 그 밖(JPEG·GIF·TIFF·WebP·SVG)은 sharp.
+   * - `"webp"`: 무손실 WebP(`exact`). PDF 그림 200개 실측 25.5 → 14.8MB(58%), 인코딩 CPU 3.25 → 8.6초(4개 스레드로 경과 시간 2.58 → 2.1초).
+   * 보이는 그림을 맞춘다: EXIF 회전 적용, ICC 프로필·CMYK 는 sRGB, 움직이는 GIF 는 첫 장, SVG 는 그린 그림.
+   * 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP 변형·손상, WebP 한도 16,383px 초과)은 원본 형식(PDF 는 PNG)으로 내고 경고(`SKIPPED_IMAGE`)한다.
+   * HWP·HWPX·DOCX 2,782개(그림 6,412개) 실측: png 6,109개 바꿈·4,099 → 775MB, webp 5,680개 바꿈·4,099 → 504MB.
+   * optional dependency `sharp` 가 필요하다(없으면 `"png"` 는 BMP·PNG 만 맞추고 경고). `images: false` 면 인코딩하지 않는다
+   */
+  imageFormat?: "png" | "webp"
+  /**
    * PDF 표 감지 활성화 (기본 true). false 면 선 기반 그리드·클러스터 표 감지를 모두 끄고
    * 자연 읽기순 텍스트만 뽑는다 (#64).
    *
