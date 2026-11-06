@@ -358,7 +358,6 @@ npx kordoc generate report.md -o report.hwpx --preset 보고서         # Markdo
 npx kordoc patch original.hwpx edited.md -o patched.hwpx            # format-preserving patch (.hwp auto)
 npx kordoc patch original.hwpx edited.md --json --silent            # applied count, skipped edits, verification residual as JSON
 npx kordoc to-hwpx document.hwp                                     # HWP → HWPX (5.x keeps formatting; -o needed when a same-name .hwpx exists)
-npx kordoc to-hwpx document.hwp --engine hancom                     # Windows: save with Hancom Office itself, no pop-ups (HWP 3.x keeps formatting too); auto: hancom when installed
 npx kordoc compare old.hwp new.hwpx                                 # document diff (exit 1 when they differ, --json)
 npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx
 npx kordoc memo report.hwpx --anchor "phrase" --text "memo text" -o reviewed.hwpx   # attach a memo to an anchor phrase (.hwp converts to HWPX keeping formatting)

@@ -20,9 +20,6 @@ import { VERSION, KordocError } from "../../utils.js"
 export interface HwpToHwpxOptions {
   /** 암호 문서의 열기 암호 */
   password?: string
-  /** 변환 엔진 (convertToHwpx 만 본다). "kordoc"(기본): 자체 변환 — 어디서나. "hancom": 한/글 자체 저장(Windows + 한/글, 팝업 없이) —
-   *  HWP 3.x·HWPML 도 서식 그대로. "auto": 한/글이 있으면 hancom, 없으면 kordoc */
-  engine?: "kordoc" | "hancom" | "auto"
 }
 
 const require = createRequire(import.meta.url)
@@ -269,8 +266,8 @@ export interface ConvertToHwpxResult {
   data: Uint8Array
   /** preserve: 서식 그대로(HWP 5.x), content: 글·표만 옮겨 kordoc 기본 서식으로(HWP 3.x 등) */
   mode: "preserve" | "content"
-  /** 실제로 쓴 엔진 */
-  engine: "kordoc" | "hancom"
+  /** 변환 엔진 — 늘 자체 변환 */
+  engine: "kordoc"
   warnings: string[]
 }
 
@@ -285,15 +282,6 @@ export async function convertToHwpx(input: Uint8Array | ArrayBuffer, options?: H
   const format = detectFormat(ab)
   if (format === "hwpx") return { data: bytes, mode: "preserve", engine: "kordoc", warnings: ["이미 HWPX 문서입니다 — 그대로 둡니다"] }
   if (format !== "hwp" && format !== "hwp3" && format !== "hwpml") throw new KordocError(`HWP 문서가 아닙니다 (${format})`)
-  // 한/글 자체 저장 — 암호는 넘기지 않는다(암호 창을 띄우지 않으려 suspendpassword). 암호 문서는 auto 면 kordoc 으로
-  const engine = options?.engine ?? "kordoc"
-  if (engine !== "kordoc") {
-    const { hancomAvailable, hwpToHwpxViaHancom } = await import("./hancom.js")
-    if (engine === "hancom" || (!options?.password && hancomAvailable())) {
-      if (options?.password) throw new KordocError("한/글 저장 변환은 열기 암호를 받지 않습니다 — engine \"kordoc\" 으로 바꾸세요")
-      return { data: hwpToHwpxViaHancom(bytes, format === "hwpml" ? "hml" : "hwp"), mode: "preserve", engine: "hancom", warnings: [] }
-    }
-  }
   if (format === "hwp") return { data: await hwpToHwpx(bytes, options), mode: "preserve", engine: "kordoc", warnings: [] }
   const { parse } = await import("../../index.js")
   const { markdownToHwpx } = await import("../../hwpx/generator.js")

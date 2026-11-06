@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- HWP → HWPX 변환(`convertToHwpx`·CLI `to-hwpx`·MCP `convert_to_hwpx`)의 `engine`·`--engine` 옵션 — 늘 kordoc 자체 변환만 쓴다. 결과의 `engine` 은 늘 `"kordoc"`
+
 ### Added
 
 - 그림 형식 `imageFormat`(#188, CLI `--image-format <png|webp>`, protocol 2·두 SDK): 지정하면 모든 그림(PDF·HWP·HWPX·HWP3·DOCX·PPTX)이 그 형식이다 — 파일명·MIME·바이트가 같은 형식이고 형식은 확장자가 아니라 바이트로 판정한다. 뒤 단계(비전 모델·브라우저·저장소)가 파일명·MIME 을 믿고 돌기 때문이다(Claude·OpenAI·Gemini 비전 API 가 함께 받는 형식은 PNG·JPEG·WebP 뿐이고, llama.cpp 는 stb_image 라 TIFF 를 읽지 못한다). `"png"` 는 PNG(이미 PNG 면 바이트 그대로, BMP 는 kordoc 디코더 `bmpToRgba` — `bmpToPng` 에서 나눔), `"webp"` 는 무손실 WebP(`exact`, 완전 투명 화소의 RGB 도 지킨다). EXIF 회전·ICC·CMYK·움직이는 GIF(첫 장)·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식(PDF 는 PNG)으로 내고 경고(`SKIPPED_IMAGE`)를 남기며, PDF WebP 인코딩이 실패한 그림도 그 그림만 PNG 로 낸다. 바꾼 그림은 `images`·그림 블록 `text`·`imageData`·글에 박힌 참조(표 칸·머리말·각주·캡션)가 함께 새 이름이 된다. 지정하지 않으면 출력은 지금과 같다(PDF 253개·그림 3,367개에서 블록·마크다운·그림 바이트 같음). optional dependency `sharp` 는 켰을 때만 동적 import 로 불러오고 네트워크에 접근하지 않는다. PDF WebP 인코딩은 libuv 스레드에서 나란히 돌리고 인코딩 중 RGBA 는 64MB 안으로 묶는다. `images: false` 면 인코딩하지 않는다
