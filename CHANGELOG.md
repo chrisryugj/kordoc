@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- PDF 큰 그림 디코딩(#186): 가로·세로 한쪽이라도 128px 를 넘고 자체 마스크가 없는 그림은 pdfjs 에 줄 사본에서 `/BitsPerComponent` 를 0 으로, 표본을 0 으로 바꾸고 `@hyzyla/pdfium` 이 원본에서 디코딩한다. pdfjs 는 그림 op·위치만 내고 디코딩하지 않아, 추출 상한(200개·128MB) 뒤 그림과 같은 원본을 다시 그린 그림의 디코딩이 사라진다. 블록·마크다운·그림 번호·개수는 그대로이고 그림 바이트는 PDFium 디코딩 결과다(PDF 2,001개의 그림 23,734개: 바이트 같음 15,263, 평균 픽셀 차 1 이하 6,765, 가장 큰 평균 차 9.3 — CMYK·ICC 색 변환 차). PDFium 이 없거나 문서를 못 열면 종전 경로, PDFium 이 못 찾거나 못 그린 그림은 지우지 않은 pdfjs 문서로 그린다
+
+### 측정 참고
+
+- 그림 위주 교재 PDF 325쪽(그림 646개): `images: false` 3.75 → **2.79**초·최대 RSS 1,761 → **868**MB, `images: true` 7.00 → **5.42**초·1,761 → **922**MB. 주택청약 FAQ 273쪽 `images: true` 4.33 → 3.96초·744 → 632MB. 그림 적은 보고서 106쪽 2.50 → 2.59초(PDFium 초기화)
+
 ## [4.24.47] - 2026-11-06
 
 ### Changed
