@@ -82,6 +82,12 @@ describe("QR 코드 읽기 (#187, qrCodes)", () => {
     assert.deepEqual(qrOf(on.blocks), [[URL_]])
     assert.ok(on.markdown.includes(`![image](image_001.png)\n${URL_}\n`), on.markdown)
     assert.equal(on.markdown.replace(`\n${URL_}`, ""), off.markdown)
+    // images: false — DOCX·PPTX 는 이때 그림 파일을 안 읽었다. QR 을 켜면 읽고 바이트만 뗀다
+    const noImages = await parse(buf, { qrCodes: true, images: false })
+    assert.ok(noImages.success)
+    if (!noImages.success) return
+    assert.deepEqual(qrOf(noImages.blocks), [[URL_]])
+    assert.equal(noImages.images, undefined)
   })
 
   it("표 칸 그림의 값은 칸 안에서 <br> 로 잇는다 — GFM·HTML 표", () => {

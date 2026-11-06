@@ -963,7 +963,8 @@ export async function parseDocxDocument(
   options?: ParseOptions,
 ): Promise<InternalParseResult> {
   // ZIP bomb 사전 검사
-  const readImages = options?.images !== false
+  // QR(qrCodes)은 images: false 여도 그림을 읽는다 — 바이트는 parse() 가 뗀다
+  const readImages = options?.images !== false || !!options?.qrCodes
   precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, undefined, { re: MEDIA_PART_RE, skip: !readImages, never: NEVER_READ_RE })
 
   const zip = await JSZip.loadAsync(buffer)
