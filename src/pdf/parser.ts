@@ -23,6 +23,7 @@ import { mergeOcrImageRegions, type ImageRegion } from "./ocr-region-merge.js"
 import { blankLargeImageStreams } from "./image-blank.js"
 import { openPdfiumImages } from "./pdfium-images.js"
 import { createPdfImageState, extractPageImages, injectPageImageBlocks } from "./image-extract.js"
+import { loadQrReader, QR_UNAVAILABLE } from "../qr.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
 import { type PdfTextItem, type NormItem, normalizeItems, filterHiddenText } from "./text-line.js"
@@ -213,6 +214,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // image 블록은 페이지 경계 표 병합(mergeCrossPageTables)의 인접성을 깨지 않도록
     // 페이지별로 모아뒀다가 병합 후 주입한다.
     const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined)
+    const readQr = options?.qrCodes ? await loadQrReader() : null
+    if (options?.qrCodes && !readQr) warnings.push(QR_UNAVAILABLE)
     const imageBulletShapes = new Map<string, boolean>()
     const imageArrowDirections = new Map<string, -1 | 0 | 1>()
     const extractedImages: ExtractedImage[] = []
@@ -401,7 +404,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
         // images:false 면 PNG 인코딩을 건너뛰고 자리 표시 블록만 받는다
         try {
-          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings, options?.images !== false)
+          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings, options?.images !== false, readQr ?? undefined)
           if (imgBlocks.length > 0) pageImageBlocks.set(i, imgBlocks)
           extractedImages.push(...pageImages)
         } catch { /* 이미지 추출 실패가 텍스트 파싱을 막지 않도록 */ }

@@ -7,13 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 그림 속 QR 코드 읽기 `qrCodes`(#187, CLI `--qr-codes`, protocol 2·두 SDK): 켜면 모든 형식(HWP·HWPX·HWP3·DOCX·PPTX·PDF)의 그림에서 QR 을 읽어 그림 블록 `qr: string[]` 과 Markdown 그림 자리 다음 줄에 값을 낸다(값의 줄마다 한 줄·빈 줄은 뺌, 문단을 끊는 줄머리 표지는 이스케이프, 표 칸 안은 `<br>`). `images: false` 여도 읽고, PDF 는 디코딩한 픽셀을 그대로 쓴다. 기본은 꺼짐이고 끄면 출력이 지금과 같다. optional dependency `zxing-wasm`(zxing-cpp) 을 켰을 때만 동적 import 로 불러오고 패키지 안 wasm 을 넘겨 네트워크에 접근하지 않는다(zxing-wasm 기본값은 CDN 에서 wasm 을 받는다). QR 형식만 읽고 해독한 값만 그림마다 중복 없이 낸다
+
 ### Changed
 
 - PDF 큰 그림 디코딩(#186): 가로·세로 한쪽이라도 128px 를 넘고 자체 마스크가 없는 그림은 pdfjs 에 줄 사본에서 `/BitsPerComponent` 를 0 으로, 표본을 0 으로 바꾸고 `@hyzyla/pdfium` 이 원본에서 디코딩한다. pdfjs 는 그림 op·위치만 내고 디코딩하지 않아, 추출 상한(200개·128MB) 뒤 그림과 같은 원본을 다시 그린 그림의 디코딩이 사라진다. 블록·마크다운·그림 번호·개수는 그대로이고 그림 바이트는 PDFium 디코딩 결과다(PDF 2,001개의 그림 23,734개: 바이트 같음 15,263, 평균 픽셀 차 1 이하 6,765, 가장 큰 평균 차 9.3 — CMYK·ICC 색 변환 차). PDFium 이 없거나 문서를 못 열면 종전 경로, PDFium 이 못 찾거나 못 그린 그림은 지우지 않은 pdfjs 문서로 그린다
 
+### Fixed
+
+- PDF 큰 그림 디코딩(#186) 보완: 표본을 찾을 때 사본 전체를 문자열로 바꾸지 않고 바이트에서 낱말 자리를 찾아 그 둘레만 본다. Node 문자열 상한(약 512MB)을 넘는 PDF 가 RangeError 로 파싱 전체가 실패했는데, 이제 이런 PDF 도 표본 지우기·PDFium 디코딩이 그대로 적용된다(540MB PDF: 실패 → 0.13초에 그림 표본을 지우고 글·그림을 읽음). 지우는 스트림은 문자열 방식과 같다(PDF 2,001개에서 고친 사본 바이트까지 같음). 이미지 마스크(`/ImageMask true`)는 pdfjs 가 마스크 op 로 그려 추출하지 않으므로 지우지 않는다
+
 ### 측정 참고
 
 - 그림 위주 교재 PDF 325쪽(그림 646개): `images: false` 3.75 → **2.79**초·최대 RSS 1,761 → **868**MB, `images: true` 7.00 → **5.42**초·1,761 → **922**MB. 주택청약 FAQ 273쪽 `images: true` 4.33 → 3.96초·744 → 632MB. 그림 적은 보고서 106쪽 2.50 → 2.59초(PDFium 초기화)
+- QR 읽기 라이브러리(문서 그림 4,215개, 19.4억 화소): zxing-wasm 그림당 1.7ms·QR 37개 모두 읽고 오탐 0, jsQR 55ms·1개 놓침·빈 값 9개, @zxing/library 14ms·5개 놓침·1D 오탐 8개
+- `qrCodes: true` 비용: 모듈 로드 12ms·RSS 13MB. 그림 위주 교재 PDF(그림 200개) 4.05 → 4.94초, 그림 435개 HWP 0.24 → 0.68초, 그림 적은 보고서 106쪽 2.57 → 2.70초. 끄면 비용 없음(PDF·HWP·HWPX·DOCX 등 1,770개에서 출력 전체 해시가 같다)
 
 ## [4.24.47] - 2026-11-06
 

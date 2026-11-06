@@ -244,3 +244,24 @@ Modifications:
 
 You may obtain a copy of the MIT License at:
 https://opensource.org/licenses/MIT
+
+================================================================================
+
+zxing-cpp (zxing-wasm 으로 배포)
+https://github.com/zxing-cpp/zxing-cpp
+https://github.com/Sec-ant/zxing-wasm
+
+Copyright 2016 Nu-book Inc. and ZXing authors (zxing-cpp) · Copyright (c) 2023 Ze-Zheng Wu (zxing-wasm)
+Licensed under the Apache License, Version 2.0 (zxing-cpp) · MIT License (zxing-wasm)
+
+Used in:
+- src/qr.ts — 그림 속 QR 코드 읽기(`qrCodes: true`). optional dependency `zxing-wasm` 을 켰을 때만 동적
+  import 로 불러오고, 패키지 안 wasm(zxing-wasm/reader/zxing_reader.wasm)을 넘겨 네트워크에 접근하지 않는다
+
+Modifications:
+- 없음(코드를 싣지 않고 런타임 의존성으로만 쓴다)
+
+라이선스 전문: THIRD_PARTY/apache-2.0.LICENSE
+
+You may obtain a copy of the Apache License at:
+http://www.apache.org/licenses/LICENSE-2.0

@@ -54,6 +54,7 @@ const optionsSchema = z.object({
   pages: z.union([z.string(), z.array(z.number().int().positive())]),
   images: z.boolean(),
   inlineImages: z.boolean(),
+  qrCodes: z.boolean(),
   ocr: z.union([z.boolean(), z.literal("force")]),
   ocrLines: z.union([z.boolean(), z.literal("all")]),
   ocrDet: z.union([z.enum(["mobile", "server", "medium"]), modelFileSchema]),

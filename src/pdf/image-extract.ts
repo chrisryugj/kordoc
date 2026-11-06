@@ -10,6 +10,7 @@ import { createHash } from "node:crypto"
 import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { encodePng } from "../image/transcode.js"
 import type { ExtractedImage, IRBlock, ParseWarning } from "../types.js"
+import type { QrReader } from "../qr.js"
 import type { PdfiumImage, PdfiumImages } from "./pdfium-images.js"
 import { SMALL_IMAGE_DIM } from "./image-blank.js"
 
@@ -149,7 +150,7 @@ function toRgba(img: PdfImgData, convert = true): Uint8Array | null {
  *
  * `withBytes` 가 false(images:false)면 PNG 인코딩을 건너뛰고 image 블록만 낸다.
  * 거르기·중복 판정은 같아서 자리 표시가 바이트를 뽑을 때와 같다. 바이트 누적 상한은
- * 메모리 보호용이라 이때는 걸리지 않는다.
+ * 메모리 보호용이라 이때는 걸리지 않는다. `readQr`(qrCodes, #187)가 있으면 디코딩한 픽셀로 QR 을 읽어 블록 `qr` 에 붙인다.
  */
 export async function extractPageImages(
   page: PdfPageObjs,
@@ -159,6 +160,7 @@ export async function extractPageImages(
   state: PdfImageState,
   warnings: ParseWarning[],
   withBytes = true,
+  readQr?: QrReader,
 ): Promise<{ blocks: IRBlock[]; images: ExtractedImage[] }> {
   const blocks: IRBlock[] = []
   const images: ExtractedImage[] = []
@@ -225,7 +227,7 @@ export async function extractPageImages(
           if (image && objId.startsWith("g_")) state.pdfiumGlobal.set(objId, image)
         }
         pdfiumById.set(objId, image)
-        const block = image?.blanked ? extractPdfiumImage(image, pageNumber, state, warnings, withBytes, images) : UNDECODED
+        const block = image?.blanked ? await extractPdfiumImage(image, pageNumber, state, warnings, withBytes, images, readQr) : UNDECODED
         if (block !== UNDECODED) {
           pageSeenIds.add(objId)
           if (block) blocks.push(block)
@@ -277,7 +279,7 @@ export async function extractPageImages(
     }
     if (state.seen.has(hash)) continue
 
-    const rgba = toRgba(imgData, withBytes)
+    const rgba = toRgba(imgData, withBytes || !!readQr)
     if (!rgba) continue // 미지원 픽셀 형태 (bitmap 전용 등)
 
     state.imageIndex++
@@ -288,7 +290,8 @@ export async function extractPageImages(
       state.totalBytes += png.length
       images.push({ filename, data: png, mimeType: "image/png" })
     }
-    blocks.push({ type: "image", text: filename, pageNumber })
+    const qr = readQr ? await readQr({ data: rgba, width: w, height: h }) : []
+    blocks.push({ type: "image", text: filename, pageNumber, ...(qr.length ? { qr } : {}) })
   }
 
   pristine?.page.cleanup()
@@ -330,15 +333,16 @@ function capReached(state: PdfImageState, pageNumber: number, warnings: ParseWar
 /** PDFium 이 디코딩하지 못했다 — 호출자가 지우지 않은 pdfjs 문서로 다시 그린다 */
 const UNDECODED = Symbol("undecoded")
 
-/** 지운 그림 하나 — 거르기·중복·번호는 pdfjs 경로와 같다. 같은 원본 스트림은 디코딩하지 않고 앞 판정을 쓴다 */
-function extractPdfiumImage(
+/** 지운 그림 하나 — 거르기·중복·번호·QR 은 pdfjs 경로와 같다. 같은 원본 스트림은 디코딩하지 않고 앞 판정을 쓴다 */
+async function extractPdfiumImage(
   image: PdfiumImage,
   pageNumber: number,
   state: PdfImageState,
   warnings: ParseWarning[],
   withBytes: boolean,
   images: ExtractedImage[],
-): IRBlock | null | typeof UNDECODED {
+  readQr?: QrReader,
+): Promise<IRBlock | null | typeof UNDECODED> {
   const { width: w, height: h } = image
   if (w < MIN_DIM || h < MIN_DIM) return null // 괘선 장식 — pdfjs 경로와 같다
   if (w * h > MAX_PIXELS) {
@@ -360,7 +364,8 @@ function extractPdfiumImage(
     state.totalBytes += png.length
     images.push({ filename, data: png, mimeType: "image/png" })
   }
-  return { type: "image", text: filename, pageNumber }
+  const qr = readQr ? await readQr({ data: rgba, width: w, height: h }) : []
+  return { type: "image", text: filename, pageNumber, ...(qr.length ? { qr } : {}) }
 }
 
 /**

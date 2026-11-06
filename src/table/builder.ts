@@ -564,9 +564,9 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
       continue
     }
 
-    // 이미지 블록 — ![alt](filename) 참조
+    // 이미지 블록 — ![alt](filename) 참조, 읽은 QR 값은 다음 줄마다(#187)
     if (block.type === "image" && block.text) {
-      lines.push("", `![image](${block.text})`, "")
+      lines.push("", `![image](${block.text})`, ...(block.qr ?? []).flatMap(qrLines), "")
       continue
     }
 
@@ -791,7 +791,7 @@ function cellInnerHtml(cell: IRCell): string {
           const cap = captionToHtml(b.table)
           return (cap ? cap + "<br>" : "") + tableToHtml(b.table)
         }
-        if (b.type === "image" && b.text) return `<img src="${escapeHtml(b.text, true)}" alt="image">`
+        if (b.type === "image" && b.text) return `<img src="${escapeHtml(b.text, true)}" alt="image">` + (b.qr ?? []).map(v => "<br>" + escapeHtmlCellText(v).replace(/\r?\n/g, "<br>")).join("")
         const note = noteTableHtml(b)
         const t = (sanitizeText(visibleText(b)) + (note ? "" : noteSuffix(b))).trim()
         return ((t ? escapeHtmlCellText(t).replace(/\n/g, "<br>") : "") + note).trim()
@@ -845,9 +845,20 @@ export function hasInlineCellBlocks(cell: IRCell): boolean {
   return !!cell.blocks?.some(b => b.spans?.length || b.footnoteText || (b.type === "image" && b.text))
 }
 
+/**
+ * 표 밖 QR 값의 줄들(#187) — 그림 자리 문단의 이어지는 줄로 남긴다. 값의 줄 경계(Python splitlines 와 같은 문자)마다
+ * 한 줄, 앞뒤 공백을 걷고 빈 줄은 뺀다(빈 줄은 문단을 끝낸다). 문단을 끊는 줄머리 표지는 \ 로 지운다:
+ * 목록 "- "·"+ "·"1. "·"1) ", 인용 ">", setext 밑줄 "==="·"---" (#·*·_·`·~·<·| 는 escapeGfm 이 맡는다)
+ */
+function qrLines(value: string): string[] {
+  return value.split(/\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/).map(l => l.trim()).filter(Boolean).map(l => escapeGfm(l)
+    .replace(/^(?:[-+](?=[ \t]|$)|>|(?=(?:=+|-+)[ \t]*$))/, m => "\\" + m)
+    .replace(/^(0{0,8}1)([.)])(?=[ \t]|$)/, "$1\\$2"))
+}
+
 function cellBlockToMarkdown(b: IRBlock): string {
   return b.type === "image" && b.text
-    ? `![image](${b.text})`
+    ? `![image](${b.text})` + (b.qr ?? []).map(v => "<br>" + escapeGfm(v).replace(/\r?\n/g, "<br>")).join("")
     : b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b))
 }
 

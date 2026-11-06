@@ -44,7 +44,7 @@ const MAX_DIM = 0x7fff
  * 36MP = A4 전면 600dpi 스캔(≈35MP)까지 허용 — 그 이상은 rgba+raw 로 300MB 를 넘겨
  * MCP 서버 이벤트루프를 수 초 세우므로 원본 바이트 폴백으로 돌린다.
  */
-const MAX_PIXELS = 36_000_000
+export const MAX_PIXELS = 36_000_000
 
 /**
  * 비압축 BMP(24/32bpp, BI_RGB) → PNG(8bit RGBA).

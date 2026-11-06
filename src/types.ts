@@ -57,6 +57,8 @@ export interface IRBlock {
   footnoteBlocks?: IRBlock[]
   /** 이미지 데이터 (type="image"일 때) */
   imageData?: ImageData
+  /** 그림 속 QR 코드 값 (type="image", `ParseOptions.qrCodes` 를 켰을 때 읽은 것만, #187) */
+  qr?: string[]
   /** 인라인 강조 run-span (선택 — kordoc 생성 hwpx 왕복 채널 + 외래 실속성 볼드/이탤릭).
    *  존재하면 마크다운 변환이 **·*·` 마커를 재방출한다 */
   spans?: IRSpan[]
@@ -351,6 +353,9 @@ export interface ParseOptions {
    * OCR 은 이 옵션과 무관하다.
    */
   images?: boolean
+  /** 그림 속 QR 코드를 읽어 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에 값을 낸다 (#187). 기본 false — 끄면 출력 불변.
+   *  모든 형식의 그림(HWP·HWPX·HWP3·DOCX·PPTX·PDF), `images: false` 여도 읽는다. optional dependency `zxing-wasm` 이 필요하다 */
+  qrCodes?: boolean
   /**
    * PDF 표 감지 활성화 (기본 true). false 면 선 기반 그리드·클러스터 표 감지를 모두 끄고
    * 자연 읽기순 텍스트만 뽑는다 (#64).

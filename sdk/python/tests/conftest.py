@@ -67,7 +67,7 @@ SNAKE = {
     "classifyTables": "classify_tables", "scriptTags": "script_tags", "removeHeaderFooter": "remove_header_footer",
     "dedupeRunningHeaders": "dedupe_running_headers", "keepTrailingEmptyCols": "keep_trailing_empty_cols",
     "keepEmptyParagraphs": "keep_empty_paragraphs", "includeFieldPlaceholders": "include_field_placeholders",
-    "inlineImages": "inline_images", "formulaOcr": "formula_ocr", "ocrLines": "ocr_lines", "ocrDet": "ocr_det",
+    "inlineImages": "inline_images", "qrCodes": "qr_codes", "formulaOcr": "formula_ocr", "ocrLines": "ocr_lines", "ocrDet": "ocr_det",
     "ocrDetLongSide": "ocr_det_long_side", "ocrRec": "ocr_rec", "ocrRecDict": "ocr_rec_dict",
 }
 

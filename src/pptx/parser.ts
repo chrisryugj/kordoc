@@ -260,7 +260,7 @@ async function pictureBlock(pic: Element, ctx: SlideContext): Promise<IRBlock | 
     filename = `image_${String(ctx.imageNames.size + 1).padStart(3, "0")}.${ext}`
     try {
       // 삼항 안 await 는 CJS 빌드(sucrase)가 못 읽는다 — if 로
-      if (ctx.options?.images !== false) {
+      if (ctx.options?.images !== false || ctx.options?.qrCodes) {
         const data = await readZipEntry(file, "uint8array")
         ctx.images.push({ filename, data, mimeType: IMAGE_MIME[ext] ?? detectImageMime(data) ?? "application/octet-stream", source: rel.target })
       }
@@ -345,7 +345,8 @@ export async function parsePptxDocument(
   options?: ParseOptions,
 ): Promise<InternalParseResult> {
   // ZIP bomb 사전 검사
-  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, { re: MEDIA_PART_RE, skip: options?.images === false, never: NEVER_READ_RE })
+  // QR(qrCodes)은 images: false 여도 그림을 읽는다 — 바이트는 parse() 가 뗀다
+  precheckZipSize(buffer, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES, { re: MEDIA_PART_RE, skip: options?.images === false && !options?.qrCodes, never: NEVER_READ_RE })
 
   const zip = await JSZip.loadAsync(buffer)
   if (!zip.file("ppt/presentation.xml")) {
