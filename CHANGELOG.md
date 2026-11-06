@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CLI `kordoc 문서.pdf -o 문서.hwpx` 가 마크다운 글을 .hwpx 이름으로 저장해 한글에서 열리지 않았다. 출력이 `.hwpx` 면 HWP·HWP3 는 서식 그대로 바꾸고, 그 밖(PDF·DOCX·XLSX 등)은 읽은 마크다운으로 HWPX 를 만들어 그림까지 담는다(HWPX 입력은 그대로 복사)
+
 ### Removed
 
 - HWP → HWPX 변환(`convertToHwpx`·CLI `to-hwpx`·MCP `convert_to_hwpx`)의 `engine`·`--engine` 옵션 — 늘 kordoc 자체 변환만 쓴다. 결과의 `engine` 은 늘 `"kordoc"`

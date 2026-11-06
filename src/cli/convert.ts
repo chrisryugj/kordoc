@@ -179,7 +179,23 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
         assertSafeOutputs([output, ...imageOutputs])
       }
 
-      if (opts.output && files.length === 1) {
+      // -o 문서.hwpx — 마크다운 글을 .hwpx 이름으로 쓰면 한글이 못 연다. HWP 계열은 서식 그대로 바꾸고, 그 밖(PDF·DOCX 등)은
+      // 읽은 마크다운으로 HWPX 를 만들어 그림까지 담는다
+      if (opts.output && files.length === 1 && /\.hwpx$/i.test(opts.output) && opts.format !== "json" && opts.format !== "chunks") {
+        assertSafeOutputs([opts.output])
+        let hwpx: Uint8Array
+        if (result.fileType === "hwpx") hwpx = new Uint8Array(arrayBuffer)
+        else if (result.fileType === "hwp" || result.fileType === "hwp3") {
+          const { convertToHwpx } = await import("../index.js")
+          hwpx = (await convertToHwpx(new Uint8Array(arrayBuffer), parseOptions.password ? { password: parseOptions.password } : undefined)).data
+        } else {
+          const { markdownToHwpx } = await import("../index.js")
+          const images = Object.fromEntries((result.images ?? []).map(img => [img.filename, img.data]))
+          hwpx = new Uint8Array(await markdownToHwpx(result.markdown, Object.keys(images).length ? { images } : undefined))
+        }
+        writeFileSync(opts.output, hwpx)
+        if (!opts.silent) process.stderr.write(`  → ${opts.output}\n`)
+      } else if (opts.output && files.length === 1) {
         assertSafeDestination(opts.output, resolve(opts.output, ".."))
         writeFileSync(opts.output, output, "utf-8")
         if (!opts.silent) process.stderr.write(`  → ${opts.output}\n`)
