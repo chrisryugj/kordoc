@@ -76,6 +76,7 @@ public final class ParseOptions {
         /** false 면 이미지 바이트 추출을 생략한다 (전송 방식과 별개) */
         public Builder images(boolean v) { return put("images", v); }
         public Builder inlineImages(boolean v) { return put("inlineImages", v); }
+        public Builder qrCodes(boolean v) { return put("qrCodes", v); }
         /** true: 필요한 쪽만 OCR, false: 끔 */
         public Builder ocr(boolean v) { return put("ocr", v); }
         /** 전 쪽 강제 OCR */

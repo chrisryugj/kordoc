@@ -62,7 +62,7 @@ try (KordocClient client = KordocClient.start(KordocConfig.defaults())) {
 
 `tableFormat("gfm")` · `htmlTables` · `layoutTables("visual"|"keep")` · `classifyTables` · `tables` · `plain` · `scriptTags` ·
 `removeHeaderFooter` · `dedupeRunningHeaders` · `keepTrailingEmptyCols` · `keepEmptyParagraphs` · `includeFieldPlaceholders` ·
-`pages("1-3")`·`pages(List.of(1, 3))` · `images` · `inlineImages` · `ocr(boolean)`·`ocrForce()` · `formulaOcr` · `password` · `timeout(Duration)` ·
+`pages("1-3")`·`pages(List.of(1, 3))` · `images` · `inlineImages` · `qrCodes` · `ocr(boolean)`·`ocrForce()` · `formulaOcr` · `password` · `timeout(Duration)` ·
 `ocrLines(boolean)`·`ocrLinesAll()` · `ocrDet("mobile" | "server")`·`ocrDet(OcrModelFile)` · `ocrDetLongSide(int)` · `ocrRec("handwriting")`·`ocrRec(OcrModelFile)` · `ocrRecDict(OcrModelFile)`
 
 ```java
