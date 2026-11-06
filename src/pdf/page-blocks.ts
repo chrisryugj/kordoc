@@ -14,6 +14,7 @@ import { dropShadingClipGrids, dropInsetClipGrids, dropHeadBandClipGrids, dropRu
 import { chainShortSegments } from "./line-extract.js"
 import { isTextRunClipStrip, isProseBoxGrid, isSparseProseGrid } from "./grid-classify.js"
 import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
+import { extendStraddledVerticals } from "./ocr-straddle-verticals.js"
 import { detectClusterTables, findTwoColumnProseCutX, sideTabGlyphs, type ClusterItem, type ClusterTableResult } from "./cluster-detector.js"
 import { copyOcrTextGaps } from "../ocr/text-gaps.js"
 import { type NormItem, computeBBox, dominantStyle, groupByY, mergeSuperscriptLines, mergeLineSimple } from "./text-line.js"
@@ -176,6 +177,7 @@ export function extractPageBlocksWithLines(
 
   // 2단계: 선으로 테이블 그리드 구성 (표 감지 opt-out 시 건너뜀 — #64)
   const ocrItems = items.length > 0 && items.every(it => it.fontName === "ocr")
+  if (ocrItems && detectTables) verticals = extendStraddledVerticals(horizontals, verticals, items)
   let lineGrids = detectTables ? buildTableGrids(horizontals, verticals, !ocrItems) : []
   // OCR 통계표의 묶음 안 빈칸 열 — 숫자 값 빈 구간이 줄마다 맞으면 가상 세로선 (ocr-gutter-columns)
   // 가상선을 받은 격자만 그 영역 안 선으로 다시 짠다 — 전역으로 다시 짜면 바깥 틀 격자가 가상선을 먹고 쪽 전체 표가 된다
