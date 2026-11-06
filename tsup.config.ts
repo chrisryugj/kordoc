@@ -13,6 +13,7 @@ const OPTIONAL_EXTERNAL = [
   "@huggingface/tokenizers",
   "@hyzyla/pdfium",
   "sharp",
+  "zxing-wasm",
 ]
 
 export default defineConfig([
