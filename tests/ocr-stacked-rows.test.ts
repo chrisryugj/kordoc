@@ -26,6 +26,17 @@ it("leaves wrapped prose cells and single stacked cells alone", () => {
   assert.equal(one.table!.rows, 2)
 })
 
+it("세로로 쌓은 이름표 글자(\"저/위\" → \"z / 위\")가 값 줄보다 적으면 한 덩이로 걸친다 (시도별 합계출산율)", () => {
+  const b = table([
+    [c("구분"), c("연도"), c("전국"), c("서울")],
+    [c("z\n위"), c("2020\n2035\n2050"), c("0.84\n0.94\n1.02"), c("0.64\n0.71\n0.79")],
+  ])
+  splitStackedOcrRows([b])
+  assert.equal(b.table!.rows, 4)
+  assert.equal(b.table!.cells[1][0].rowSpan, 3)
+  assert.deepEqual(b.table!.cells.slice(1).map(r => r.slice(1).map(x => x.text)), [["2020", "0.84", "0.64"], ["2035", "0.94", "0.71"], ["2050", "1.02", "0.79"]])
+})
+
 it("splits rows covered by a row span from above and grows that span (주택 소유 통계 연도 열)", () => {
   const year = c("2023", 1, 3)
   const b = table([

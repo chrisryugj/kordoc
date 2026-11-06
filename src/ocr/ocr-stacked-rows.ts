@@ -45,6 +45,8 @@ function splitTable(t: IRTable): boolean {
     const counts = new Map<number, number>()
     for (const ls of lines) if (ls.length >= 2) counts.set(ls.length, (counts.get(ls.length) ?? 0) + 1)
     const [k, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [0, 0]
+    // 세로로 쌓은 이름표 글자("저/위" → "z / 위")는 값 줄보다 적으면 한 덩이다 — 줄 수가 안 맞아 묶음 세 행이 한 행에 남았다(시도별 합계출산율 저위)
+    lines.forEach((ls, i) => { if (ls.length > 1 && ls.length < k && ls.every(l => /^[가-힣A-Za-z]$/.test(l))) lines[i] = [ls.join("")] })
     const nonEmpty = lines.filter(ls => ls.length).length
     // 이웃 열 숫자가 한 검출 상자로 붙은 칸은 줄이 한둘 모자란다 — 다수 줄 수의 80% 이상이면 같은 쌓임으로 보고 모자란 줄은 아래를 비운다
     const near = (ls: string[]) => ls.length >= 2 && ls.length <= k && ls.length >= Math.ceil(k * 0.8)
