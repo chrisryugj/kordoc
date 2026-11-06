@@ -35,6 +35,7 @@ import { readImageQrCodes } from "./qr.js"
 import { ocrEmbeddedImages } from "./ocr/embedded-image-ocr.js"
 import { validateOcrOptions } from "./ocr/options.js"
 import { inlineImagesIntoMarkdown } from "./image/transcode.js"
+import { webpSmallerImages } from "./image/webp.js"
 import { classifyTableTree } from "./table/analyze.js"
 import { blocksToPages } from "./page-markdown.js"
 import { markdownToHwpx } from "./hwpx/generator.js"
@@ -185,6 +186,17 @@ async function withImageQr(
   return { markdown: found ? blocksMarkdown(blocks, options, inline) : markdown, warnings: list.length ? list : undefined }
 }
 
+/** 원본 그림 파일을 무손실 WebP 로(#188, `imageFormat: "webp"`) — WebP 가 더 작은 그림만. 바꿨으면 마크다운을 블록에서 다시 만든다.
+ *  `inline` 은 그림 인라인(inlineImages)을 쓰는 형식(HWP·HWP3)만 넘긴다 */
+async function withWebpImages(
+  blocks: IRBlock[], markdown: string, warnings: ParseSuccess["warnings"], images: ParseSuccess["images"], options: ParseOptions | undefined, inline?: ParseSuccess["images"],
+): Promise<{ markdown: string; warnings: ParseSuccess["warnings"] }> {
+  if (options?.imageFormat !== "webp" || options.images === false || !images?.length) return { markdown, warnings }
+  const list = [...(warnings ?? [])]
+  const changed = await webpSmallerImages(blocks, images, list)
+  return { markdown: changed ? blocksMarkdown(blocks, options, inline) : markdown, warnings: list.length ? list : undefined }
+}
+
 /** 블록에서 마크다운을 다시 만든다 — 그림 인라인은 `images` 를 넘길 때만 다시 건다 */
 function blocksMarkdown(blocks: IRBlock[], options: ParseOptions | undefined, images: ParseSuccess["images"]): string {
   const md = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
@@ -223,7 +235,8 @@ export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Pr
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = parseHwp3Document(buffer, options)
     const qr = await withImageQr(blocks, markdown, warnings, images, options, images)
-    return { success: true, fileType: "hwp3", markdown: qr.markdown, blocks, metadata, outline, warnings: qr.warnings, images, pageCount: metadata?.pageCount }
+    const webp = await withWebpImages(blocks, qr.markdown, qr.warnings, images, options, images)
+    return { success: true, fileType: "hwp3", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images, pageCount: metadata?.pageCount }
   } catch (err) {
     // 에러 메시지 정제 — KordocError만 그대로, 내부 에러는 일반화 (MCP 노출 일관성)
     return { success: false, fileType: "hwp3", error: sanitizeError(err), code: classifyError(err) }
@@ -239,8 +252,9 @@ export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     const { blocks, metadata, outline, images, memos } = doc
     const ocr = await withEmbeddedImageOcr(blocks, doc.markdown, doc.warnings, undefined, options)
     const qr = await withImageQr(blocks, ocr.markdown, ocr.warnings, images, options)
-    const markdown = options?.memos && memos?.length ? qr.markdown + memosMarkdown(memos) : qr.markdown
-    return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings: qr.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
+    const webp = await withWebpImages(blocks, qr.markdown, qr.warnings, images, options)
+    const markdown = options?.memos && memos?.length ? webp.markdown + memosMarkdown(memos) : webp.markdown
+    return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwpx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -275,8 +289,9 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
 
     const ocred = await withEmbeddedImageOcr(blocks, markdown, warnings, images, options)
     const qr = await withImageQr(blocks, ocred.markdown, ocred.warnings, images, options, images)
-    const md = options?.memos && memos?.length ? qr.markdown + memosMarkdown(memos) : qr.markdown
-    return scriptsOff({ success: true, fileType: "hwp", markdown: md, blocks, metadata, outline, warnings: qr.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
+    const webp = await withWebpImages(blocks, qr.markdown, qr.warnings, images, options, images)
+    const md = options?.memos && memos?.length ? webp.markdown + memosMarkdown(memos) : webp.markdown
+    return scriptsOff({ success: true, fileType: "hwp", markdown: md, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "hwp", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -330,7 +345,8 @@ export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Pr
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parseDocxDocument(buffer, options)
     const qr = await withImageQr(blocks, markdown, warnings, images, options)
-    return scriptsOff({ success: true, fileType: "docx", markdown: qr.markdown, blocks, metadata, outline, warnings: qr.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
+    const webp = await withWebpImages(blocks, qr.markdown, qr.warnings, images, options)
+    return scriptsOff({ success: true, fileType: "docx", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "docx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -341,7 +357,8 @@ export async function parsePptx(buffer: ArrayBuffer, options?: ParseOptions): Pr
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parsePptxDocument(buffer, options)
     const qr = await withImageQr(blocks, markdown, warnings, images, options)
-    return scriptsOff({ success: true, fileType: "pptx", markdown: qr.markdown, blocks, metadata, outline, warnings: qr.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
+    const webp = await withWebpImages(blocks, qr.markdown, qr.warnings, images, options)
+    return scriptsOff({ success: true, fileType: "pptx", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "pptx", error: sanitizeError(err), code: classifyError(err) }
   }
