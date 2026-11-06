@@ -10,6 +10,7 @@
  * 디코딩은 optional dependency `sharp` — 미설치면 MISSING_DEPENDENCY 안내.
  */
 
+import { rescueEmptyCells } from "./empty-cell-rescue.js"
 import type { IRBlock, OcrPageLines, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import { getOcrEngine, type OcrPageStats } from "./engine.js"
@@ -92,6 +93,8 @@ export async function parseImageDocument(
     items = await recognizeOcrPage(engine, config, { ...config.tuning, orientPage: false }, data, width, height, stats,
       [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
   }
+  // 쪽 검출이 놓친 빈 칸 글 — 괘선 칸만 잘라 다시 읽는다(empty-cell-rescue)
+  if (config.tuning.postprocess) items = [...items, ...await rescueEmptyCells(engine, config.tuning, data, width, height, ruling, items)]
   // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
   if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
   const lines = config.lines ? pageLines(1, width, height, scale, angle, items, stats.dropped) : undefined

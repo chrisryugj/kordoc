@@ -27,6 +27,7 @@ import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrM
 import { validateOcrOptions } from "./options.js"
 import { chartPlotItems } from "./ocr-chart-axes.js"
 import { splitOcrContactColumns } from "./ocr-contact-columns.js"
+import { rescueEmptyCells } from "./empty-cell-rescue.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
@@ -266,6 +267,8 @@ export async function ocrOnePage(
       items = await recognizeOcrPage(engine!, config, { ...tuning, orientPage: false }, upright, rw, rh, stats,
         [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
     }
+    // 쪽 검출이 놓친 빈 칸 글 — 괘선 칸만 잘라 다시 읽는다(empty-cell-rescue). 그림 영역·벡터 글자 쪽은 쪽 래스터를 다 읽지 않는다
+    if (ruling && !regions && !vectorOps && config.tuning.postprocess) items = [...items, ...await rescueEmptyCells(engine!, tuning, upright, rw, rh, ruling, items)]
     if (stats.droppedLowConf > 0) {
       warnings.push({
         page: pageNo,
