@@ -699,7 +699,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     if (options?.tableFormat === "gfm") assignTableIds(blocks)
     let markdown = finishMarkdown(outBlocks)
     const outline = collectPdfOutline(outBlocks)
-    await flushPdfImages(imageState)
+    await flushPdfImages(imageState, warnings)
 
     return {
       markdown,

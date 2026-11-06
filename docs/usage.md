@@ -100,7 +100,7 @@ if (result.success) {
 | `memos` | `--memos` | 메모(한글 메모 넣기)를 문서 끝 "메모" 절로 — 메모 목록은 옵션 없이도 결과 `memos`(메모 글·붙은 글·문단·작성자·시각·블록 순번, HWPX·HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | HWP5 레이아웃 표의 쪽마다 반복된 러닝 헤더 제거(붙임별 재번호도 지울 수 있어 opt-in) |
 | `inlineImages` | `--inline-images` | 이미지를 base64 data URI 로 인라인(BMP→PNG, HWP5) |
-| `imageFormat` | `--image-format webp` | kordoc 이 인코딩하는 PDF 그림 형식. 기본 `"png"`(출력 불변), `"webp"`: 무손실 WebP(`image_NNN.webp`, 화소·완전 투명 화소의 RGB 까지 PNG 와 같음). 그림 200개 실측 크기 25.5 → 14.8MB(58%), 인코딩 CPU 3.25 → 8.6초(약 2.6배, 4개 스레드로 나눠 벽시계 2.58 → 2.1초). optional dependency `sharp` 필요(없으면 경고 후 PNG). 다른 형식은 원본 그림 그대로 |
+| `imageFormat` | `--image-format webp` | kordoc 이 인코딩하는 PDF 그림 형식. 기본 `"png"`(출력 불변), `"webp"`: 무손실 WebP(`image_NNN.webp`, 화소·완전 투명 화소의 RGB 까지 PNG 와 같음). 그림 200개 실측 크기 25.5 → 14.8MB(58%), 인코딩 CPU 3.25 → 8.6초(약 2.6배, 4개 스레드로 나눠 경과 시간 2.58 → 2.1초). optional dependency `sharp` 필요(없으면 경고 후 PNG). 다른 형식은 원본 그림 그대로 |
 | `qrCodes` | `--qr-codes` | 그림 속 QR 코드 값을 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에(모든 형식, `images: false` 여도 읽음). optional dependency `zxing-wasm` 필요 |
 | `classifyTables` | — | 표를 의미표/레이아웃/불확실로 분류해 `IRTable.classification` 에 |
 | `onProgress` | — | 진행률 콜백 `(current, total)` |

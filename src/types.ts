@@ -360,7 +360,8 @@ export interface ParseOptions {
    * kordoc 이 직접 인코딩하는 PDF 그림의 형식 (#188). 기본 `"png"` — 출력 불변.
    * `"webp"` 는 무손실 WebP(`image_NNN.webp`, `image/webp`)로 낸다. 화소는 PNG 와 같고 완전 투명 화소의 RGB 도 지킨다.
    * 그림 위주 교재 PDF 그림 200개 실측: 크기 25.5 → 14.8MB(58%), 인코딩 CPU 3.25 → 8.6초(PNG 의 약 2.6배),
-   * 4개 스레드에 나눠 벽시계는 2.58 → 2.1초. optional dependency `sharp` 가 필요하고 없으면 경고 후 PNG 로 낸다.
+   * 4개 스레드에 나눠 경과 시간은 2.58 → 2.1초. optional dependency `sharp` 가 필요하고 없으면 경고 후 PNG 로 낸다.
+   * WebP 한도(가로·세로 16,383px)를 넘는 그림은 PNG(`image_NNN.png`)로 낸다.
    * 다른 형식은 원본 그림 파일을 그대로 내므로 무관하고, `images: false` 면 인코딩하지 않는다
    */
   imageFormat?: "png" | "webp"

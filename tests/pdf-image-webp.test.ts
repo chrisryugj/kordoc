@@ -54,4 +54,25 @@ describe("PDF 그림 WebP (#188, imageFormat)", () => {
     const none = await parse(pdf, { ocr: false, images: false, imageFormat: "webp" })
     assert.ok(none.success && none.images === undefined && none.markdown.includes("image_001.png"))
   })
+
+  it("WebP 한도(가로·세로 16,383px)를 넘는 그림은 PNG 로 낸다 — 파싱은 계속된다", async () => {
+    const w = 16_400, h = 8, rgb = Buffer.alloc(w * h * 3, 0x5a)
+    const content = "q 500 0 0 4 50 400 cm /W Do Q BT /F1 12 Tf 72 760 Td (wide) Tj ET"
+    const objs = [
+      "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> /XObject << /W 6 0 R >> >> /Contents 4 0 R >>",
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+      `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${rgb.length} >>\nstream\n${rgb.toString("latin1")}\nendstream`,
+    ]
+    let pdf = "%PDF-1.4\n"; const offsets: number[] = []
+    objs.forEach((o, i) => { offsets.push(Buffer.byteLength(pdf, "latin1")); pdf += `${i + 1} 0 obj\n${o}\nendobj\n` })
+    const xref = Buffer.byteLength(pdf, "latin1")
+    pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map(o => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+    const r = await parse(Buffer.from(pdf, "latin1"), { ocr: false, imageFormat: "webp" })
+    assert.ok(r.success)
+    if (!r.success) return
+    assert.deepEqual(r.images!.map(i => [i.filename, i.mimeType]), [["image_001.png", "image/png"]])
+    assert.ok(r.markdown.includes("image_001.png"))
+    assert.equal((await sharp(r.images![0].data).metadata()).format, "png")
+  })
 })
