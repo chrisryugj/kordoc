@@ -40,6 +40,17 @@ interface PdfiumModule {
 const IMAGE_OBJECT = 3
 const FORM_OBJECT = 5
 
+/** PdfiumModule 의 wasm 함수가 다 있는가 */
+function hasPdfiumFunctions(m: PdfiumModule): boolean {
+  const fns = ["_FPDF_LoadPage", "_FPDF_ClosePage", "_FPDFPage_CountObjects", "_FPDFPage_GetObject", "_FPDFPageObj_GetType",
+    "_FPDFFormObj_CountObjects", "_FPDFFormObj_GetObject", "_FPDFPage_GetAnnotCount", "_FPDFPage_GetAnnot", "_FPDFPage_CloseAnnot",
+    "_FPDFAnnot_GetObjectCount", "_FPDFAnnot_GetObject", "_FPDFImageObj_GetImagePixelSize", "_FPDFImageObj_GetImageDataRaw",
+    "_FPDFImageObj_GetBitmap", "_FPDFBitmap_GetBuffer", "_FPDFBitmap_GetWidth", "_FPDFBitmap_GetHeight", "_FPDFBitmap_GetStride",
+    "_FPDFBitmap_GetFormat", "_FPDFBitmap_Destroy"] as const
+  return fns.every(f => typeof m[f] === "function") && typeof m.wasmExports?.malloc === "function" && typeof m.wasmExports.free === "function" &&
+    m.HEAPU8 instanceof Uint8Array && m.HEAPU32 instanceof Uint32Array
+}
+
 /** 큰 그림 하나 — 핸들은 그 쪽을 닫기 전까지만 유효하다 */
 export interface PdfiumImage {
   width: number
@@ -69,8 +80,10 @@ export async function openPdfiumImages(buffer: ArrayBuffer, blanked: BlankedImag
   if (!lib) return null
   const doc = await lib.loadDocument(new Uint8Array(buffer)).catch(() => null)
   if (!doc) { lib.destroy(); return null }
-  const m = (lib as unknown as { module: PdfiumModule }).module
-  const docHandle = (doc as unknown as { documentIdx: number }).documentIdx
+  const m = (lib as unknown as { module?: PdfiumModule }).module
+  const docHandle = (doc as unknown as { documentIdx?: number }).documentIdx
+  // 래퍼 내부(module·documentIdx)는 공개 API 가 아니다 — 모양이 바뀐 판이면 page() 가 던져 그 쪽 그림을 잃으므로 pdfjs 경로로 돌린다
+  if (!m || typeof docHandle !== "number" || !hasPdfiumFunctions(m)) { doc.destroy(); lib.destroy(); return null }
   let open: { page: number; annots: number[] } | null = null
 
   const closePage = () => {
