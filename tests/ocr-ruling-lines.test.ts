@@ -315,6 +315,19 @@ describe("light grid inside a dark frame", () => {
     for (const x of [280,500]) for(let y=60;y<=540;y++) ink(blank,w,x,y,230)
     assert.equal(detectRulingLines(blank,w,h,SCALE).horizontals.length,0)
   })
+
+  it("쪽을 넘는 표 — 세로선이 틀 아래로 이어져도 옅은 행 구분선을 받는다", () => {
+    // 진한 가로선 60·400 이 틀, 세로선은 바닥 괘선 없이 580 까지. 왼쪽 이름 칸 구분선만 옅고(230) 오른쪽은 진하다
+    const w = 800, h = 600, rgba = makeCanvas(w, h)
+    drawHLine(rgba, w, 60, 740, 60); drawHLine(rgba, w, 60, 740, 400)
+    drawVLine(rgba, w, 60, 60, 580); drawVLine(rgba, w, 740, 60, 580); drawVLine(rgba, w, 200, 60, 580)
+    for (const y of [140, 220, 300]) {
+      for (let x = 62; x < 200; x++) ink(rgba, w, x, y, 230)
+      drawHLine(rgba, w, 200, 740, y, 1)
+    }
+    const lines = detectRulingLines(rgba, w, h, SCALE)
+    for (const y of [140, 220, 300]) assert.ok(lines.horizontals.some(l => Math.abs(l.y1 - y) <= 2 && l.x1 <= 62 && l.x2 >= 738), `y=${y} 전폭`)
+  })
 })
 
 it("splits a line at recovered cell boundaries but preserves a merged header", async () => {

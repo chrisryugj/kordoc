@@ -246,7 +246,11 @@ export function detectRulingLines(
     for (const f of frames) {
       const innerH = hs.filter(h => h.y1 > f.y1 + tol && h.y1 < f.y2 - tol && Math.abs(h.x1 - f.x1) <= tol && Math.abs(h.x2 - f.x2) <= tol)
       const innerV = vs.filter(v => v.x1 > f.x1 + tol && v.x1 < f.x2 - tol && Math.abs(v.y1 - f.y1) <= tol && Math.abs(v.y2 - f.y2) <= tol)
-      if (innerH.length < 3 || innerV.length < 1) continue
+      // 진한 안쪽 세로선이 틀을 다 가로지르는 것도 열 근거다 — 쪽을 넘는 표는 바닥 괘선이 옅어 틀 아래끝이 안쪽 가로선이고 세로선은
+      // 그 아래로 이어진다(약품 이상사례 표: 왼쪽 이름 칸 행 구분선이 밝기 211 로 옅어 이름 다섯이 한 칸에 몰렸다). 옅은 세로선은 틀에 맞는 것만 더한다 —
+      // 음영 머리 띠의 옅은 자국이 걸친 머리 칸("제6(당)기")을 갈랐다(회계표)
+      const darkV = inkV.some(v => v.x1 > f.x1 + tol && v.x1 < f.x2 - tol && v.y1 <= f.y1 + tol && v.y2 >= f.y2 - tol)
+      if (innerH.length < 3 || (innerV.length < 1 && !darkV)) continue
       for (const h of innerH) if (!horizontals.some(p => Math.abs(p.y1 - h.y1) <= tol && p.x1 <= h.x1 + tol && p.x2 >= h.x2 - tol)) horizontals.push(h)
       for (const v of innerV) if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) { verticals.push(v); cellDividers.push(v) }
     }
