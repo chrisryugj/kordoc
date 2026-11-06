@@ -8,6 +8,7 @@
  * 가로·세로 128px 이하 그림은 지우지 않는다 — 그림 글머리표·화살표 판정(image-bullets.ts·flow-boxes.ts)이 pdfjs 픽셀을 본다.
  */
 
+import { constants } from "node:buffer"
 import { createHash } from "node:crypto"
 
 /** 이 크기 이하 그림은 pdfjs 가 디코딩한다 — image-bullets.ts·flow-boxes.ts 의 픽셀 판정 상한과 같다 */
@@ -25,11 +26,14 @@ export interface BlankedImages {
 
 /**
  * `bytes` 를 제자리에서 고친다. /Width·/Height 가 직접 값이고 길이를 아는 그림 스트림만 지운다.
- * 암호 문서, 자체 마스크(/SMask·/Mask·/SMaskInData)가 있는 그림, 다른 그림의 마스크로 쓰이는 스트림은 건드리지 않는다.
+ * 암호 문서, Node 문자열 상한(약 512MB)을 넘는 문서, 자체 마스크(/SMask·/Mask·/SMaskInData)가 있는 그림,
+ * 다른 그림의 마스크로 쓰이는 스트림, 이미지 마스크(/ImageMask true — pdfjs 는 마스크 op 로 그려 추출하지 않는다)는 건드리지 않는다.
  */
 export function blankLargeImageStreams(bytes: Uint8Array): BlankedImages {
   const blanked: BlankedImages = { byRaw: new Map(), sizes: new Set() }
   const dicts = new Map<string, string>()
+  // 문서 전체를 문자열로 읽는다 — 상한을 넘으면 RangeError 라 지우지 않고 지금 pdfjs 경로로 둔다
+  if (bytes.byteLength > constants.MAX_STRING_LENGTH) return blanked
   const text = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("latin1")
   // 암호 문서는 PDFium 이 돌려주는 원본 바이트가 복호화 뒤라 해시가 맞지 않는다
   if (/\/Encrypt\b/.test(text)) return blanked
@@ -67,7 +71,7 @@ export function blankLargeImageStreams(bytes: Uint8Array): BlankedImages {
     }
     objRe.lastIndex = stop
     // 자체 마스크가 있는 그림은 pdfjs 가 알파까지 디코딩한다 — PDFium GetBitmap 은 마스크를 반영하지 않는다
-    if (!/\/Subtype\s*\/Image\b/.test(dict) || masks.has(`${m[1]} ${m[2]}`) || /\/(?:SMask|Mask|SMaskInData)\b/.test(dict)) continue
+    if (!/\/Subtype\s*\/Image\b/.test(dict) || masks.has(`${m[1]} ${m[2]}`) || /\/(?:SMask|Mask|SMaskInData)\b/.test(dict) || /\/(?:ImageMask|IM)\s+true\b/.test(dict)) continue
     const w = /\/Width\s+(\d+)\b(?!\s+\d+\s+R)/.exec(dict), h = /\/Height\s+(\d+)\b(?!\s+\d+\s+R)/.exec(dict)
     if (!w || !h || (Number(w[1]) <= SMALL_IMAGE_DIM && Number(h[1]) <= SMALL_IMAGE_DIM)) continue
     // 직접 값 /BitsPerComponent 하나만 — 없거나(JPX)·간접이거나·/DecodeParms 안에도 있으면 어느 것이 그림 값인지 몰라 지우지 않는다

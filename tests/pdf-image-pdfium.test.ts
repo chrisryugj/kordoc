@@ -45,13 +45,14 @@ const imageDict = (w: number, h: number, extra = "") => `<< /Type /XObject /Subt
 const text = (s: string) => `BT /F1 12 Tf 1 0 0 1 72 760 Tm (${s}) Tj ET\n`
 
 describe("PDF 큰 그림 — pdfjs 사본 표본 지우기 (#186)", () => {
-  it("큰 그림만 지운다 — 128px 이하·자체 마스크·마스크 대상·암호 문서는 그대로", () => {
+  it("큰 그림만 지운다 — 128px 이하·자체 마스크·마스크 대상·이미지 마스크·암호 문서는 그대로", () => {
     const big = rgb(200, 150, 1), small = rgb(64, 64, 2)
     const pdf = simplePdf([{ content: text("x"), res: "" }], [
       stream(imageDict(200, 150), big.data), // 6
       stream(imageDict(64, 64), small.data), // 7
       stream(imageDict(200, 150, "/SMask 9 0 R "), big.data), // 8 자체 마스크
       stream("<< /Type /XObject /Subtype /Image /Width 200 /Height 150 /ColorSpace /DeviceGray /BitsPerComponent 8 >>", "\x80".repeat(200 * 150)), // 9 마스크 대상
+      stream("<< /Type /XObject /Subtype /Image /Width 200 /Height 150 /ImageMask true /BitsPerComponent 1 >>", "\x55".repeat(25 * 150)), // 10 이미지 마스크
     ])
     const copy = new Uint8Array(pdf)
     const blanked = blankLargeImageStreams(copy)
@@ -61,6 +62,7 @@ describe("PDF 큰 그림 — pdfjs 사본 표본 지우기 (#186)", () => {
     assert.equal(Buffer.byteLength(text1, "latin1"), pdf.length) // 길이·오프셋 그대로
     assert.equal((text1.match(/\x00{90000}/g) ?? []).length, 1) // 6번(200×150×3)만 지웠다
     assert.ok(text1.includes(small.data) && text1.includes("\x80".repeat(200 * 150)))
+    assert.ok(text1.includes("/ImageMask true /BitsPerComponent 1 ") && text1.includes("\x55".repeat(25 * 150)))
 
     const encrypted = Buffer.from(pdf.toString("latin1").replace("/Root 1 0 R", "/Root 1 0 R /Encrypt 99 0 R"), "latin1")
     assert.equal(blankLargeImageStreams(new Uint8Array(encrypted)).byRaw.size, 0)
