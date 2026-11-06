@@ -25,6 +25,7 @@ import { deskewPage, rotateQuarter } from "./deskew.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
 import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrModelsCached, resolveOcrModels, type OcrModelSelection } from "./models.js"
 import { validateOcrOptions } from "./options.js"
+import { chartPlotItems } from "./ocr-chart-axes.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
@@ -486,6 +487,11 @@ export function ocrItemsToBlocks(
   opList: PageOps = { fnArray: [], argsArray: [] },
   figureRegion = false,
 ): IRBlock[] {
+  // 쪽 OCR 의 그림 속 차트(두 축 눈금이 감싼 판) 글은 뺀다 — 원본에선 그림이다(ocr-chart-axes.ts)
+  if (!figureRegion) {
+    const chart = chartPlotItems(items)
+    if (chart.size) items = items.filter((_, i) => !chart.has(i))
+  }
   // 줄마다 아래 끝을 중앙값으로 맞추고, 겹친 이웃 박스는 겹친 구간 가운데서 갈라 낱말 경계(따로 검출된 상자)를 공백으로 남긴다
   const bottoms = items.map(it => it.y + it.h)
   const xs = items.map(it => ({ x: it.x, r: it.x + it.w, space: false }))
