@@ -69,6 +69,7 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
       if (opts.password) parseOptions.password = opts.password as string
       if (opts.images === false) parseOptions.images = false
       if (opts.qrCodes) parseOptions.qrCodes = true
+      if (opts.imageFormat) parseOptions.imageFormat = opts.imageFormat as "png" | "webp"
       if (opts.plain) parseOptions.plain = true
       if (opts.scriptTags !== undefined) parseOptions.scriptTags = opts.scriptTags as boolean
       if (opts.htmlTables) parseOptions.htmlTables = true

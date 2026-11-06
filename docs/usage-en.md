@@ -100,6 +100,7 @@ if (result.success) {
 | `memos` | `--memos` | append document memos (Hangul "insert memo") as a final "메모" section — the memo list is always in the result's `memos` (memo text, anchored text, paragraph, author, time, block index; HWPX · HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | drop running headers repeated per page in HWP5 layout tables (opt-in: may also drop per-attachment renumbering) |
 | `inlineImages` | `--inline-images` | inline images as base64 data URIs (BMP→PNG, HWP5) |
+| `imageFormat` | `--image-format webp` | format of PDF images kordoc encodes itself. Default `"png"` (output unchanged); `"webp"`: lossless WebP (`image_NNN.webp`, same pixels as PNG including RGB under fully transparent pixels). Measured on 200 images: 25.5 → 14.8MB (58%), encoding CPU 3.25 → 8.6s (about 2.6x; spread over 4 threads, wall 2.58 → 2.1s). Needs the optional dependency `sharp` (falls back to PNG with a warning). Other formats keep the original embedded images |
 | `qrCodes` | `--qr-codes` | read QR codes in images into the image block's `qr` and the line after the Markdown image placeholder (all formats, also with `images: false`). Needs the optional dependency `zxing-wasm` |
 | `classifyTables` | — | classify tables as data / layout / uncertain into `IRTable.classification` |
 | `onProgress` | — | progress callback `(current, total)` |
