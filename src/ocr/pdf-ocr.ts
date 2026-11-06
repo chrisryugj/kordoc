@@ -27,6 +27,7 @@ import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrM
 import { validateOcrOptions } from "./options.js"
 import { chartPlotItems } from "./ocr-chart-axes.js"
 import { splitOcrContactColumns } from "./ocr-contact-columns.js"
+import { splitOcrJoinedHeaders } from "./ocr-header-split.js"
 import { rescueEmptyCells } from "./empty-cell-rescue.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
@@ -541,7 +542,7 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   }).filter(it => it.text)
-  const blocks = unframeOcrLayoutTables(splitOcrContactColumns(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables)))), pdfH)
+  const blocks = unframeOcrLayoutTables(splitOcrJoinedHeaders(splitOcrContactColumns(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))))), pdfH)
   if (!figureRegion) markOcrHeadings(blocks)
   return blocks
 }
