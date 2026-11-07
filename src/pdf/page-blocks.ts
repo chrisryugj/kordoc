@@ -11,7 +11,7 @@ import type { IRBlock, IRTable, IRCell, BoundingBox, InlineStyle } from "../type
 import { safeMin, safeMax } from "../utils.js"
 import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells.js"
 import { dropShadingClipGrids, dropInsetClipGrids, dropHeadBandClipGrids, dropRuledFragmentClipGrids } from "./table-grid.js"
-import { chainShortSegments } from "./line-extract.js"
+import { chainShortSegments, type ClipRect } from "./line-extract.js"
 import { isTextRunClipStrip, isProseBoxGrid, isSparseProseGrid } from "./grid-classify.js"
 import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
 import { extendStraddledVerticals } from "./ocr-straddle-verticals.js"
@@ -54,6 +54,9 @@ import { extendNestedShadedHeaders } from "./nested-shaded-headers.js"
 import { isChartTable, isExamLayoutTable, isFormulaTable, isTableOfContents, tocBlock, valueAxisBeside } from "./table-roles.js"
 import { isSideTabTable, SIDE_TAB_TABLES } from "./side-tabs.js"
 import { attachSideTabBlocks } from "./side-tab-blocks.js"
+
+/** 그림 클립 판정 — 클립 사각형과 그림 영역의 변이 이 안(pt)이면 그 그림만 잘라 내는 클립이다 */
+const IMAGE_CLIP_TOL = 1
 import { splitTwoColumnProse, figureColumnBands, topTableBand, tieredHeaderTable, stackedTableBands, threeColumnCards, threeColumnInfographic } from "./page-regions.js"
 
 /** 쪽 사이로 넘기는 칸 이어짐 상태 — 앞 쪽 번호와 그 쪽 클립 사실 (다음 쪽 첫 클립이 앞 쪽 마지막 칸의 이어짐인지 가른다, clip-cells) */
@@ -116,8 +119,13 @@ export function extractPageBlocksWithLines(
   // 1.2단계: 셀 클립 사각형 → 테두리 없는 표 그리드 (법령 별지서식 외곽 표). 셀 기하가 확정돼
   // 있어 line 경로를 거치지 않고, 실선 표는 아래 line 경로가 그대로 맡는다 (clip-cells.ts)
   const prevPage = carry?.page === pageNum - 1 ? carry.clip : undefined
+  // 그림 한 장을 잘라 내는 클립(네 변이 그 그림 영역과 맞는 사각형)끼리만 맞댄 묶음은 칸이 아니다 — 띠 그림을 쌓아 그린 상자는
+  // 띠마다 클립을 깔아 맞댄 클립 묶음이 되고, 띠 이음선마다 행이 갈린 1열 표로 읽혔다(주택청약 FAQ: 1열 표 58개 579행 중 빈 행 165).
+  // 그림 아닌 클립(글 칸)과 변을 맞댄 그림 클립은 여백 없이 그림만 든 표 칸이라 남긴다(한컴 보도자료 그림 칸)
+  const images = extractImageRegions(opList.fnArray, opList.argsArray)
+  const clipRects = images.length ? withoutImageOnlyClips(extracted.clipRects, images) : extracted.clipRects
   const clipResult = detectTables
-    ? buildClipCellGrids(extracted.clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects, prevPage)
+    ? buildClipCellGrids(clipRects, horizontals, verticals, pageWidth, pageHeight, items.map(it => ({ x: it.x + it.w / 2, y: it.y + it.h / 2 })), extracted.fillRects, prevPage)
     : { grids: [], containers: [], page: undefined }
   if (carry) { carry.page = pageNum; carry.clip = clipResult.page }
   // 글 조각마다 깐 클립(ezPDF Builder·MS Print To PDF)이 맞대어 선 한 줄은 표가 아니다 (isTextRunClipStrip)
@@ -1432,4 +1440,16 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
 
   // 한국어 특수 테이블 감지 (구분/항목/종류 패턴)
   return detectTables ? detectSpecialKoreanTables(blocks) : blocks
+}
+
+/** 그림 클립(네 변이 한 그림 영역과 IMAGE_CLIP_TOL 안)끼리만 맞댄 것을 뺀다 — 그림 아닌 클립과 변을 맞댄 그림 클립은 남긴다 */
+function withoutImageOnlyClips(clips: ClipRect[], images: ImageRegion[]): ClipRect[] {
+  const near = (a: number, b: number) => Math.abs(a - b) <= IMAGE_CLIP_TOL
+  const isImage = clips.map(c => images.some(r => near(r.x1, c.x1) && near(r.x2, c.x2) && near(r.y1, c.y1) && near(r.y2, c.y2)))
+  if (!isImage.some(Boolean)) return clips
+  const touches = (a: ClipRect, b: ClipRect) => {
+    const ox = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1), oy = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1)
+    return (oy > 0 && (near(a.x2, b.x1) || near(b.x2, a.x1))) || (ox > 0 && (near(a.y2, b.y1) || near(b.y2, a.y1)))
+  }
+  return clips.filter((c, i) => !isImage[i] || clips.some((d, j) => !isImage[j] && touches(c, d)))
 }

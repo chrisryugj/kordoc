@@ -49,7 +49,7 @@ stdout 이 닫히면(EPIPE) 남은 요청을 버리고, stdin EOF 를 기다리�
 | 표·구조 | `tableFormat`(`"gfm"`), `htmlTables`, `layoutTables`(`"visual"`·`"keep"`), `classifyTables`, `tables` |
 | 텍스트·서식 | `plain`, `scriptTags`, `removeHeaderFooter`, `dedupeRunningHeaders` |
 | 빈 내용·입력란 | `keepTrailingEmptyCols`, `keepEmptyParagraphs`, `includeFieldPlaceholders` |
-| 범위·이미지 | `pages`(문자열 또는 양의 정수 배열), `images`, `inlineImages`, `qrCodes`, `imageFormat`(`"png"`·`"webp"`) |
+| 범위·이미지 | `pages`(문자열 또는 양의 정수 배열), `images`, `inlineImages`, `qrCodes`, `imageFormat`(`"png"`·`"webp"`), `imagePlacement`(`"page-end"`·`"flow"`), `dropBlankImages` |
 | OCR·암호 | `ocr`(`true`·`false`·`"force"`), `ocrLines`(`true`·`false`·`"all"`), `ocrDet`(`"mobile"`·`"server"`·`"medium"`·`{path, sha256}`), `ocrDetLongSide`(32~4096 정수), `ocrRec`(`"handwriting"`·`"auto"`·`"printed"`·`{path, sha256}`), `ocrRecDict`(`{path, sha256}`), `formulaOcr`, `password` |
 
 - 키를 빼면 엔진 기본값입니다. `false` 를 주면 실제로 `false` 를 넘깁니다(예: `ocr: false` 는 OCR 끔).

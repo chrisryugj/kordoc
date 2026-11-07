@@ -29,6 +29,8 @@ OPTION_NAMES: dict[str, str] = {
     "inline_images": "inlineImages",
     "qr_codes": "qrCodes",
     "image_format": "imageFormat",
+    "image_placement": "imagePlacement",
+    "drop_blank_images": "dropBlankImages",
     "ocr": "ocr",
     "ocr_lines": "ocrLines",
     "ocr_det": "ocrDet",
