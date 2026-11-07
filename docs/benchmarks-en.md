@@ -862,7 +862,16 @@ The nested-table 100% is limited to this text-layer sample; it does not cover PD
 
 [opendataloader-bench](https://github.com/opendataloader-project/opendataloader-bench) scores 200 PDFs (papers, reports, slides, posters, scans) against human-made ground truth for **reading order (NID), table structure (TEDS) and heading hierarchy (MHS)** (1.0 = identical to the ground truth).
 
-### Latest separate verification: 4.22.14 release candidate · 2026-10-19
+### Latest measurement: 4.24.50 · 2026-11-07
+
+| Setting | Overall | Reading order | Tables | Headings |
+| --- | ---: | ---: | ---: | ---: |
+| Default | 0.965 | 0.964 | 0.980 | 0.953 |
+| `ocr: true` | 0.967 | 0.965 | 0.980 | 0.959 |
+
+200 documents each, no missing predictions. Measured with `node bench/suite.mjs run r426 --only=odl,odlocr` (4.24.50 code). The two settings below (`plain`/`htmlTables` and `ocr: false`) have not been re-measured since 4.22.14.
+
+### Separate verification: 4.22.14 release candidate · 2026-10-19
 
 | Setting | Overall | Reading order | Tables | Headings |
 | --- | ---: | ---: | ---: | ---: |
@@ -905,7 +914,7 @@ Time per page: 200 documents parsed sequentially in one process on an Apple M4 2
 
 ### Published engine comparison: historical results, 2026-09-29
 
-Preserved from the earlier README. These are historical results, not current rankings or a same-hardware performance comparison. See the 4.22.0 release-candidate table above for the latest verified kordoc scores.
+Preserved from the earlier README. These are historical results, not current rankings or a same-hardware performance comparison. See the 4.24.50 table above for the latest kordoc scores.
 
 | Rank | Engine | Overall | Reading order | Tables | Headings | Time / page |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |

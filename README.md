@@ -16,7 +16,7 @@ HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, PNG·JPG·WebP를 Markdow
 
 <sub>같은 법령 별표 한 건을 HWP·HWPX·PDF·스캔 이미지로 넣은 실제 출력입니다. 네 경우 모두 병합 칸(`rowspan`·`colspan`)을 같은 짜임의 표로 읽습니다. 스캔 이미지는 OCR이 자동으로 켜집니다.</sub>
 
-- 📊 **PDF 공개 벤치 종합 0.964**: opendataloader-bench 200문서, 공개 리더보드 12개 파서보다 높은 점수(4.22.14 측정). [측정 조건](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
+- 📊 **PDF 공개 벤치 종합 0.965**: opendataloader-bench 200문서, 공개 리더보드(2026-09-29 기록) 12개 파서보다 높은 점수(4.24.50 측정). [측정 조건](docs/benchmarks.md#pdf--markdown--opendataloader-bench)
 - 🇰🇷 **한국 공문서 표 구조 100%**: 원본 HWPX 2,424문서의 보이는 표 **10,342개 전부 구조 일치**. [검증 결과](#검증-결과)
 
 쓸모 있었다면 GitHub ⭐ 하나 눌러주세요. 다른 사람이 이 도구를 찾는 데 도움이 됩니다.
@@ -31,7 +31,7 @@ Node.js **20 이상** · macOS / Linux / Windows
 npm install kordoc
 ```
 
-CLI는 설치 없이 `npx kordoc`으로 실행할 수 있습니다. PDF·OCR 의존성은 기본 설치되며, `--omit=optional`로 제외하면 해당 기능이 제한됩니다.
+CLI는 설치 없이 `npx kordoc`으로 실행할 수 있습니다. PDF·OCR·그림 형식 변환·QR 읽기 의존성은 기본 설치되며, `--omit=optional`로 제외하면 해당 기능이 제한됩니다.
 
 **AI 에이전트에 연결**
 
@@ -66,6 +66,7 @@ npx kordoc 스캔본.pdf --ocr -o 스캔본.md
 npx kordoc generate 보고서.md --preset 보고서 -o 보고서.hwpx
 npx kordoc to-hwpx 문서.hwp -o 문서.hwpx
 npx kordoc to-hwpx ./옛문서   # 폴더째(하위 폴더까지) — 각 파일 옆에 .hwpx, 이미 있으면 건너뜀
+npx kordoc 문서.pdf -o 문서.hwpx   # PDF·DOCX 등도 읽은 내용으로 HWPX (그림 포함)
 npx kordoc pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack   # 기관팩 (docs/agency-pack.md)
 npx kordoc generate 새보고서.md --pack 광양시.kpack -o 새보고서.hwpx
 npx kordoc fill --template gian -j 값.json -o 기안문.hwpx
@@ -98,10 +99,10 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 | 작업 | 기능 |
 | --- | --- |
-| 읽기 | 문서 → Markdown·IR·쪽별 본문·RAG 청크, 로컬 OCR |
+| 읽기 | 문서 → Markdown·IR·쪽별 본문·RAG 청크, 로컬 OCR(손글씨 인식 포함), 그림 속 QR 값(`--qr-codes`), 그림 형식 통일(`--image-format png\|webp`) |
 | 비교·편집 | 블록·셀 단위 비교, HWPX·HWP 서식 보존 패치, 견본 서식 그대로 새 내용 쓰기 |
 | 작성 | Markdown → HWPX, 공문서 프리셋·부서 서식 견본(`--template`), 표·수식·차트 |
-| 변환 | HWP → HWPX — HWP 5.x 는 서식 그대로(글꼴·문단 모양·표·그림·도형·수식·머리말·각주·차트) |
+| 변환 | HWP → HWPX — HWP 5.x 는 서식 그대로(글꼴·문단 모양·표·그림·도형·수식·머리말·각주·차트, 배포용·변경 추적 문서 포함). PDF·DOCX 등은 `-o 문서.hwpx` 로 읽은 내용을 HWPX 로 |
 | 기관팩 | 우리 기관 문서 몇 건으로 서식 묶음(`.kpack`)을 만들어 그 서식대로 새 문서 — [기관팩](docs/agency-pack.md) |
 | 양식 | 필드·누름틀 채우기, 표준 기안문 2종, 도장 날인 |
 | 검수 | 표기법·공공언어, 구성·AI 문체 게이트, 예산 산출근거 검산, 열린 문서 블록 단위 검수(`lint-blocks`) |
@@ -111,14 +112,14 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 검증 결과
 
-**4.22.14 · 2026-10-19 검증**(렌더 배치·별표는 4.24.24 · 2026-10-30, PDF 글은 4.24.36 · 2026-11-01, PDF 표는 4.24.35 · 2026-11-01, OCR 은 4.24.32 · 2026-11-01, HWP → HWPX 변환은 4.24.29 · 2026-10-31). 고정 코퍼스와 참조 기준으로 측정한 결과입니다.
+**4.22.14 · 2026-10-19 검증**(렌더 배치·별표는 4.24.24 · 2026-10-30, PDF 표는 4.24.35 · 2026-11-01, OCR 은 4.24.32 · 2026-11-01, HWP → HWPX 변환은 4.24.29 · 2026-10-31, PDF 글·KoOCR-Bench·opendataloader-bench 기본값과 OCR 켬은 4.24.50 · 2026-11-07). 고정 코퍼스와 참조 기준으로 측정한 결과입니다.
 
 | 대상 | 규모 | 결과 |
 | --- | --- | --- |
 | HWPX | 2,424문서 · 10,342표 | 표 구조 일치 **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130쌍 · 4,315표 | 짝 문서의 표 구조 일치 **100%** |
 | HWP 5.x → HWPX 변환 | 한글 저장 짝 264쌍 (속성 대조 232쌍) | 속성 일치 **99.21%** · 완전 일치 **69/232** · 글 **264/264** · 한글 화면 대조 80문서 |
-| PDF 글 | 744쌍 | 글자 재현율 **99.885%** · 정확도 **99.682%** · 읽기 순서 **99.360%** · 어절 F1 **99.103%** |
+| PDF 글 | 744쌍 | 글자 재현율 **99.885%** · 정확도 **99.682%** · 읽기 순서 **99.363%** · 어절 F1 **99.103%** |
 | PDF 표 | 708쌍 · 2,331표 | 표 탐지 **99.83%** · 구조 일치 **98.24%** · 칸 F1 **0.9919** |
 | HWPX 재조판 | 다중줄 25,187문단 (12개 폴더) | 모든 줄 시작 일치 **24,941/25,187 · 99.02%** |
 | PDF 중첩표 (텍스트층) | 29문서 · 101표 | 구조·칸 내용 **101/101 · 100%** |
@@ -126,7 +127,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 | PDF 전체 | 1,911문서 중 1,729건 채점 | 글 커버리지 **99.80%** |
 | OCR | 53문서 · 102쪽 · 66표 | CER **0.0239** · 글자 재현율 **99.32%** · 표 구조 일치 **34/66** |
 | KoOCR-Bench v2.0c (외부) | 공개 877쪽 (표·글·손글씨·순서) | 종합 기본값 **0.894** · `ocrRec: "auto"` **0.895** · 표 **0.901** · 손글씨 **0.901** · 제목 재현율 0.924 (4.24.50) |
-| opendataloader-bench | PDF 200문서 | 종합 기본값 **0.965** · OCR 끔 **0.939** |
+| opendataloader-bench | PDF 200문서 | 종합 기본값 **0.965** · `ocr: true` **0.967** · OCR 끔 0.939 (4.22.14) |
 | HWPX 렌더 배치 | 한컴 PDF 짝 1,565문서(쪽 수 일치 1,508) · 글 조각 111,480 · 그림 4,300 | 글 위치(±1.5pt) **106,904 · 95.9%** · 그림 위치(±2pt) **4,213 · 98.0%** |
 
 표 구조 점수와 셀 내용·화면 재현은 별도 지표입니다. 중첩표 100%는 위 101표에 한정하며 전체 PDF·조판의 완전 일치를 뜻하지 않습니다. 채점 범위·제외 기준·옵션별 수치·재현 방법은 [벤치마크 상세](docs/benchmarks.md)에 있습니다.
@@ -160,7 +161,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 `--format chunks`가 제목 경로를 붙인 구조 청크와 독립 표 청크를 냅니다. 표를 HTML 없이 받으려면 `--table-format gfm`(API는 `tableFormat: "gfm"`)을 씁니다. Python·Java에서는 [Python SDK](sdk/python/README.md)·[Java SDK](sdk/java/README.md)로 부릅니다.
 
 **Q. OCR 줄 좌표나 다른 모델이 필요하면?**
-`--ocr --ocr-lines --format json`이 줄별 상자·신뢰도를 내고, `--ocr-det`·`--ocr-det-long-side`로 검출 모델과 해상도를 고릅니다. [OCR 줄·모델 선택](docs/usage.md#ocr-줄모델-선택)
+`--ocr --ocr-lines --format json`이 줄별 상자·신뢰도를 내고, `--ocr-det`·`--ocr-det-long-side`로 검출 모델과 해상도를, `--ocr-rec handwriting|auto`로 손글씨 인식 모델을 고릅니다. [OCR 줄·모델 선택](docs/usage.md#ocr-줄모델-선택)
 
 ## 문서·보안
 

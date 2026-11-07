@@ -16,7 +16,7 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to 
 
 <sub>Actual output for one statute annex given as HWP, HWPX, PDF and a scanned image. All four read the merged cells (`rowspan`, `colspan`) into the same table structure. OCR turns on automatically for images.</sub>
 
-- 📊 **0.964 overall on the public PDF benchmark**: opendataloader-bench, 200 documents, higher than the 12 parsers on the public leaderboard (measured on 4.22.14). [Measurement details](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
+- 📊 **0.965 overall on the public PDF benchmark**: opendataloader-bench, 200 documents, higher than the 12 parsers on the public leaderboard (as recorded on 2026-09-29; measured on 4.24.50). [Measurement details](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 - 🇰🇷 **100% Korean document table structure match**: all **10,342 visible tables** from 2,424 original HWPX documents. [Validation](#validation)
 
 If this saves you time, a GitHub ⭐ helps others find it.
@@ -31,7 +31,7 @@ Node.js **20+** · macOS / Linux / Windows
 npm install kordoc
 ```
 
-Run the CLI without installing it globally: `npx kordoc`. PDF/OCR dependencies are installed by default; omitting them with `--omit=optional` limits those features.
+Run the CLI without installing it globally: `npx kordoc`. PDF, OCR, image-format conversion and QR-reading dependencies are installed by default; omitting them with `--omit=optional` limits those features.
 
 **Connect an AI agent**
 
@@ -66,6 +66,9 @@ npx kordoc scan.pdf --ocr -o scan.md
 npx kordoc generate report.md --preset report -o report.hwpx
 npx kordoc to-hwpx document.hwp -o document.hwpx
 npx kordoc to-hwpx ./old-docs   # whole folder (subfolders too) — .hwpx next to each file, existing ones skipped
+npx kordoc document.pdf -o document.hwpx   # PDF, DOCX and others become HWPX from what was read (images included)
+npx kordoc pack build report1.hwpx report2.hwpx report3.hwpx --name Gwangyang -o gwangyang.kpack   # agency pack (docs/agency-pack-en.md)
+npx kordoc generate new-report.md --pack gwangyang.kpack -o new-report.hwpx
 npx kordoc fill --template gian -j values.json -o draft.hwpx
 npx kordoc lint report.hwpx --gate --preset report
 ```
@@ -96,10 +99,10 @@ await writeFile("report.hwpx", Buffer.from(hwpx))
 
 | Task | Capabilities |
 | --- | --- |
-| Read | Markdown, IR, page text, RAG chunks and local OCR |
+| Read | Markdown, IR, page text, RAG chunks, local OCR (handwriting included), QR code values in images (`--qr-codes`), one image format for all images (`--image-format png\|webp`) |
 | Compare and edit | Block/cell diffs, format-preserving HWPX/HWP patches, new content in a sample's format |
 | Create | Markdown → HWPX, government-document presets and department templates (`--template`), tables, equations and charts |
-| Convert | HWP → HWPX — HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts) |
+| Convert | HWP → HWPX — HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts; distribution-protected and track-changes documents included). PDF, DOCX and others become HWPX from what was read with `-o document.hwpx` |
 | Agency packs | Build a house-style pack (`.kpack`) from a few of your own agency documents and write new documents in that style — [agency packs](docs/agency-pack-en.md) |
 | Fill forms | Fields, click-here controls, two draft templates and seal placement |
 | Review | Notation and public-language rules, structure and AI-writing gate, budget calculation checks, block-level lint for open documents (`lint-blocks`) |
@@ -109,14 +112,14 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF text: 4.24.36 · 2026-11-01; PDF tables: 4.24.35 · 2026-11-01; OCR: 4.24.32 · 2026-11-01; HWP → HWPX conversion: 4.24.29 · 2026-10-31). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF tables: 4.24.35 · 2026-11-01; OCR: 4.24.32 · 2026-11-01; HWP → HWPX conversion: 4.24.29 · 2026-10-31; PDF text, KoOCR-Bench and opendataloader-bench defaults and OCR on: 4.24.50 · 2026-11-07). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
 | HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.21%** · exact **69/232** · text **264/264** · 80 documents checked side by side in Hangul |
-| PDF text | 744 pairs | Character recall **99.885%** · precision **99.682%** · reading order **99.360%** · word-boundary F1 **99.103%** |
+| PDF text | 744 pairs | Character recall **99.885%** · precision **99.682%** · reading order **99.363%** · word-boundary F1 **99.103%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
@@ -124,7 +127,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 66 tables | CER **0.0239** · character recall **99.32%** · table structure **34/66** |
 | KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.894** by default · `ocrRec: "auto"` **0.895** · tables **0.901** · handwriting **0.901** · heading recall 0.924 (4.24.50) |
-| opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.939** with OCR off |
+| opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.967** with `ocr: true` · 0.939 with OCR off (4.22.14) |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
 Table structure, cell content and visual fidelity are separate metrics. The nested-table 100% applies only to these 101 tables, not all PDF parsing or page layout. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions, per-option scores and reproduction.
@@ -158,7 +161,7 @@ Yes. `KORDOC_OFFLINE=1` blocks all outbound traffic, and OCR runs on the local C
 `--format chunks` emits structure chunks with heading breadcrumbs plus standalone table chunks. Use `--table-format gfm` (API: `tableFormat: "gfm"`) for tables without HTML. From Python or Java, use the [Python SDK](sdk/python/README.md) or [Java SDK](sdk/java/README.md).
 
 **Can I get OCR line boxes or use another model?**
-`--ocr --ocr-lines --format json` exports line boxes and confidence; `--ocr-det` and `--ocr-det-long-side` select the detector and resolution. [OCR lines and models](docs/usage-en.md#ocr-lines-and-models)
+`--ocr --ocr-lines --format json` exports line boxes and confidence; `--ocr-det` and `--ocr-det-long-side` select the detector and resolution, and `--ocr-rec handwriting|auto` selects the handwriting recognizer. [OCR lines and models](docs/usage-en.md#ocr-lines-and-models)
 
 ## Documentation and security
 
