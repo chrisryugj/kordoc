@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.52] - 2026-11-07
+
 ### Added
 
 - 빈 그림 빼기 `dropBlankImages`(CLI `--drop-blank-images`, protocol 2·두 SDK): 흰 바탕에 합성했을 때 거의 한 색인 그림(채널마다 최댓값−최솟값 24 이하 — 빈 판·단색 띠·옅은 그러데이션 배경)을 그림 블록·`images`·글에 박힌 참조에서 뺀다. 한 색에 투명도로 모양을 낸 아이콘은 남는다. 그림 바이트를 낼 때만 본다(`images: false` 면 판정하지 않는다). 모든 형식 — PDF 는 디코딩한 화소로(같은 원본은 한 번만 판정, 번호는 남은 그림으로), HWP·HWPX·HWP3·DOCX·PPTX 는 원본 그림을 풀어 본다(BMP 는 내장 디코더 `bmpToRgba`, 그 밖은 optional dependency `sharp`, WMF·EMF 는 남긴다)

@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.52: Images in reading order (opt-in), blank images, stacked image bands and OCR prose rows · 2026-11-07
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89359 → **0.89408** (tables .9006 → **.9016**); seven pages up, two down. No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.
+
+- OCR prose rows: 156745651_p060_t2 .442 → .605, statistics table 228_421087 .565 → .678 and more. The two pages that dropped are 156760890 (−.003) and one lecture-notes page (CER +.03: the scorer reorders blocks to the truth order, and the cut moves where figure-fragment text lands). The first version also pulled out a trailing "※" test-conditions row (−.015; the truth keeps it in the table), so trailing ※ rows stay. Applied to figure-region OCR it moved paragraphs that carry the table box to the front when fragments are re-laid by position (one OCR robust document CER .06 → .39), so it runs on page OCR only.
+- External contribution #195 (`imagePlacement`, `dropBlankImages`, image-clip tables): a `"flow"` default drops 18 ODL documents (overall .9649 → .9640; the truth has no image lines, so only heading structure loses), so the default stays `"page-end"`. Dropping only some clips of a group left a broken grid (press-release header box, KS standard concept diagram; two PDF text documents dropped), so only stacks of three or more vertical image bands are dropped. The fixed version has no per-document drops on ODL, PDF text and tables.
+
 ## 4.24.51: Formula trailing backslash, HWP footnote numbers and a column that goes on below a gap · 2026-11-07
 
 Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9248 → **0.9313**, recall at NED ≤ .3 0.8794 → 0.8829, overall NED 0.1167 → 0.1121, exact match unchanged at 0.5977, precision 0.9365 → 0.9341. No paper lost recall; eight gained (2609.14430 .983 → 1, 2609.13343 .971 → .990, 2609.16262 .915 → .936 and more). No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.

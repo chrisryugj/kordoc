@@ -126,7 +126,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 66 tables | CER **0.0239** · character recall **99.32%** · table structure **34/66** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.894** by default · `ocrRec: "auto"` **0.895** · tables **0.901** · handwriting **0.901** · heading recall 0.924 (4.24.50) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.894** by default · `ocrRec: "auto"` **0.895** · tables **0.902** · handwriting **0.901** · heading recall 0.924 (4.24.52) |
 | opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.967** with `ocr: true` · 0.939 with OCR off (4.22.14) |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.51](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.51)** · 2026-11-07
+Latest release: **[4.24.52](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.52)** · 2026-11-07
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.52 | PDF images placed in reading order between text blocks with `imagePlacement: "flow"` (opt-in) · `dropBlankImages` drops blank images · stacked image-band boxes no longer become one-column tables · OCR sentence lines trapped in tables come out as paragraphs (#195) | KoOCR-Bench total 0.8936 → **0.8941** (tables .901 → **.902**) · no per-document drops on in-house benchmarks |
 | 4.24.51 | PDF formula OCR: whole equations no longer come out Markdown-escaped · HWP footnote/endnote numbers (stored number, section number format) · PDF two-column pages where one column ends early · OCR bar-chart plot text · HWP preview line-spacing type | Formula OCR recall 0.925 → **0.931** (report only) · no per-document drops on in-house benchmarks |
 | 4.24.50 | OCR: column headers joined across two columns · stacked rows next to vertically written labels ("저/위") · two-column reading order (the right column was read first) | KoOCR-Bench total 0.8928 → **0.8936** (`auto` 0.8940 → **0.8948**) · order .907 → **.912** · statistics tables .908 → **.910** · no per-document drops on in-house benchmarks |
 | 4.24.49 | CLI `-o document.hwpx` now writes an HWPX that Hancom opens (it used to write Markdown text) · image format option `imageFormat` (PNG, lossless WebP) · OCR: header cells spanning two rows ("2023") · empty ruled cells missed by page detection are read again | KoOCR-Bench total 0.8912 → **0.8928** (`auto` 0.8924 → **0.8940**) · gazette CER .080 → **.075** · statistics tables .902 → **.908** · no per-document drops on in-house benchmarks |
 | 4.24.48 | OCR: title, name and phone cells of press-release contact tables are restored · two open tables stacked on top of each other no longer weld into one · chart text inside page figures is dropped · faint row rules of tables that continue on the next page · PDF: large images decoded by PDFium (about half the memory) · QR code values in images (`qrCodes`) | KoOCR-Bench total 0.8834 → **0.8912** (`auto` 0.8846 → **0.8924**) · tables slice .771 → **.818** · statistics tables .894 → **.902** · no per-document drops on in-house benchmarks |
-| 4.24.47 | OCR: header characters stacked top to bottom ("서/울") are read again · digit-count re-reading covers amounts with unit tails and decimals · two-row tables whose body cells hold sentences are no longer split into rows · DOCX layout page numbers (`pageNumber`, `pages`) | KoOCR-Bench total 0.8830 → **0.8834** (`auto` 0.8842 → **0.8846**) · gazette CER .082 → .080 · no per-document drops on in-house benchmarks |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
