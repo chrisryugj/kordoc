@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.53: Formula 512 tokens, multi-line equations, OCR single-row dividers and headings · 2026-11-08
+
+Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9313 → **0.9447**, recall at NED ≤ .3 0.8829 → **0.9114**, exact match 0.5977 → **0.6033**, precision 0.9341 → **0.9584**, BLEU-4 0.8906, 6.1 → 6.7 s per page. External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89408 → **0.89420** (tables .9016 → **.9018**), KDI heading recall 0.924 → **0.930** (outside the total). No per-document drops on the in-house OCR, OCR robust, ODL and ODL-OCR benchmarks.
+
+- Multi-line equations: 119 of the 159 missed equations were multi-line, fragmented or truncated. A fragment that sits right under a display equation and starts with a relation or operator is joined to it as `aligned` (recall .9313 → .9334, precision .934 → .949). Joining lines that start with "−" swallowed a standalone equation, so "−" is not a cue. A detection threshold of .30 lowered precision and was rejected.
+- 512-token decoding: at 256, 143 of 2,307 predictions were cut at the end (recall .9334 → .9447, seven papers up). The first version lost one equation in 2609.17086 because a trailing `\qquad` loop tripped the repetition check; the repeating tail is now cut only after 256 tokens. No paper lost recall or exact match.
+- OCR single-row dividers: three accounting-table pages .91–.98 → 1.0 ("subtotal │ amount │ -"). The first version (no text-on-both-sides condition) took the value-cell dividers of a delegation request form; the extra columns tripped the sparse-prose grid check and the table was unwound (in-house OCR CER 0 → .18). Counting only anchor cells in that check stopped it from unwinding a statistics table welded to a page border (.913 → .132) and ODL-OCR 141 (headings .85 → .21), so it was rejected; dividers between empty cells are not taken.
+
 ## 4.24.52: Images in reading order (opt-in), blank images, stacked image bands and OCR prose rows · 2026-11-07
 
 External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89359 → **0.89408** (tables .9006 → **.9016**); seven pages up, two down. No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.
