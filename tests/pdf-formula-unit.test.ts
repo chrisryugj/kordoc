@@ -19,6 +19,7 @@ import {
   mergeContinuationLines,
 } from "../src/pdf/formula/postprocess.js"
 import { __internal } from "../src/pdf/formula/detector.js"
+import { repeatingTail } from "../src/pdf/formula/recognizer.js"
 
 const { nms, iou, letterbox } = __internal
 
@@ -505,5 +506,17 @@ describe("formula continuation lines (mergeContinuationLines)", () => {
   it("기호로 시작하지 않거나 멀리 떨어진 식·inline 은 그대로", () => {
     const regions = [r(100, 140, "A=B"), r(150, 190, "x^2+y^2=1"), r(400, 440, "=C"), r(450, 470, "=D", 100, 200, "inline")]
     assert.equal(mergeContinuationLines(regions).length, 4)
+  })
+})
+
+describe("formula decode loop (repeatingTail)", () => {
+  it("같은 묶음이 네 번 이어진 꼬리(24토큰 이상)를 찾는다", () => {
+    const loop = [7, 8, 9, 10, 11, 12]
+    assert.equal(repeatingTail([1, 2, 3, ...loop, ...loop, ...loop, ...loop]), 6)
+  })
+  it("짧은 되풀이(행렬 0 & 0 …)·세 번만 되풀이는 고리가 아니다", () => {
+    assert.equal(repeatingTail([1, 0, 5, 0, 5, 0, 5, 0, 5]), 0)
+    const loop = [7, 8, 9, 10, 11, 12, 13, 14]
+    assert.equal(repeatingTail([1, ...loop, ...loop, ...loop]), 0)
   })
 })

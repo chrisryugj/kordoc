@@ -18,7 +18,10 @@ import type { PixelFrame } from "./types.js"
 
 const MFR_IMG_SIZE = 384
 const MFR_ENC_HIDDEN = 384
-const MFR_MAX_NEW_TOKENS = 256
+/** 디코딩 최대 길이 — 256 은 긴 정렬식의 6% 를 끝에서 잘랐다(괄호·환경이 안 닫힘, 수식 벤치 재현율 .933 → .943) */
+const MFR_MAX_NEW_TOKENS = 512
+/** 종전 상한 — 이 길이를 넘긴 뒤에만 반복 고리를 끊는다(그 안 출력은 종전과 같다) */
+const MFR_LOOP_CHECK_FROM = 256
 const MFR_EOS_ID = 2
 const MFR_PAD_ID = 0
 
@@ -104,6 +107,14 @@ export async function recognizeFormula(
     }
     tokens.push(bestId)
     if (bestId === MFR_EOS_ID) break
+    // 길게 풀다 같은 토큰 묶음을 되풀이하는 고리에 빠지면(식 끝 뒤 같은 항 되풀이) 반복 검사가 식 전체를 버렸다 —
+    // 마지막 묶음(1~40토큰)이 네 번 연달아 되풀이되고 그 길이가 24토큰 이상이면 꼬리의 그 묶음을 모두 떼고 멈춘다
+    const loop = step >= MFR_LOOP_CHECK_FROM ? repeatingTail(tokens) : 0
+    if (loop > 0) {
+      while (tokens.length > 1 + loop && tokens.slice(-loop).every((t, i) => t === tokens[tokens.length - 2 * loop + i])) tokens.length -= loop
+      tokens.length -= loop
+      break
+    }
   }
 
   // 첫 start 토큰 제외 + EOS/PAD 제거
@@ -149,4 +160,15 @@ export function deitPreprocess(crop: PixelFrame, target: number): Float32Array {
     }
   }
   return out
+}
+
+/** 꼬리가 같은 묶음 네 번 되풀이면 그 묶음 길이, 아니면 0 */
+export function repeatingTail(tokens: number[]): number {
+  for (let p = 1; p <= 40; p++) {
+    if (p * 4 > tokens.length || p * 4 < 24) continue
+    let ok = true
+    for (let i = 1; i <= p * 3 && ok; i++) ok = tokens[tokens.length - i] === tokens[tokens.length - i - p]
+    if (ok) return p
+  }
+  return 0
 }
