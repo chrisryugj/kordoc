@@ -13,6 +13,8 @@ export type WebpEncoder = (rgba: Uint8Array, width: number, height: number) => P
 
 interface SharpImage {
   rotate(): SharpImage
+  ensureAlpha(): SharpImage
+  raw(): { toBuffer(): Promise<Buffer> }
   png(): { toBuffer(): Promise<Buffer> }
   webp(opts: { lossless: true; exact: true; effort: number; quality: number }): { toBuffer(): Promise<Buffer> }
 }

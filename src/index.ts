@@ -36,6 +36,7 @@ import { ocrEmbeddedImages } from "./ocr/embedded-image-ocr.js"
 import { validateOcrOptions } from "./ocr/options.js"
 import { inlineImagesIntoMarkdown } from "./image/transcode.js"
 import { convertImages } from "./image/format.js"
+import { dropBlankImages } from "./image/blank.js"
 import { classifyTableTree } from "./table/analyze.js"
 import { blocksToPages } from "./page-markdown.js"
 import { markdownToHwpx } from "./hwpx/generator.js"
@@ -186,6 +187,17 @@ async function withImageQr(
   return { markdown: found ? blocksMarkdown(blocks, options, inline) : markdown, warnings: list.length ? list : undefined }
 }
 
+/** 빈 그림 빼기(`dropBlankImages`) — 원본 그림 파일 형식. 뺐으면 마크다운을 블록에서 다시 만든다.
+ *  `inline` 은 그림 인라인(inlineImages)을 쓰는 형식(HWP·HWP3)만 넘긴다 */
+async function withoutBlankImages(
+  blocks: IRBlock[], markdown: string, warnings: ParseSuccess["warnings"], images: ParseSuccess["images"], options: ParseOptions | undefined, inline?: ParseSuccess["images"],
+): Promise<{ markdown: string; warnings: ParseSuccess["warnings"] }> {
+  if (!options?.dropBlankImages || options.images === false || !images?.length) return { markdown, warnings }
+  const list = [...(warnings ?? [])]
+  const dropped = await dropBlankImages(blocks, images, list)
+  return { markdown: dropped ? blocksMarkdown(blocks, options, inline) : markdown, warnings: list.length ? list : undefined }
+}
+
 /** 원본 그림 파일을 명시한 형식으로(#188, `imageFormat`) — 이름을 바꿨으면 마크다운을 블록에서 다시 만든다.
  *  `inline` 은 그림 인라인(inlineImages)을 쓰는 형식(HWP·HWP3)만 넘긴다 */
 async function withImageFormat(
@@ -235,7 +247,8 @@ export async function parseHwp3(buffer: ArrayBuffer, options?: ParseOptions): Pr
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = parseHwp3Document(buffer, options)
     const qr = await withImageQr(blocks, markdown, warnings, images, options, images)
-    const webp = await withImageFormat(blocks, qr.markdown, qr.warnings, images, options, images)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options, images)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options, images)
     return { success: true, fileType: "hwp3", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images, pageCount: metadata?.pageCount }
   } catch (err) {
     // 에러 메시지 정제 — KordocError만 그대로, 내부 에러는 일반화 (MCP 노출 일관성)
@@ -252,7 +265,8 @@ export async function parseHwpx(buffer: ArrayBuffer, options?: ParseOptions): Pr
     const { blocks, metadata, outline, images, memos } = doc
     const ocr = await withEmbeddedImageOcr(blocks, doc.markdown, doc.warnings, undefined, options)
     const qr = await withImageQr(blocks, ocr.markdown, ocr.warnings, images, options)
-    const webp = await withImageFormat(blocks, qr.markdown, qr.warnings, images, options)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options)
     const markdown = options?.memos && memos?.length ? webp.markdown + memosMarkdown(memos) : webp.markdown
     return scriptsOff({ success: true, fileType: "hwpx", markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
@@ -289,7 +303,8 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
 
     const ocred = await withEmbeddedImageOcr(blocks, markdown, warnings, images, options)
     const qr = await withImageQr(blocks, ocred.markdown, ocred.warnings, images, options, images)
-    const webp = await withImageFormat(blocks, qr.markdown, qr.warnings, images, options, images)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options, images)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options, images)
     const md = options?.memos && memos?.length ? webp.markdown + memosMarkdown(memos) : webp.markdown
     return scriptsOff({ success: true, fileType: "hwp", markdown: md, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
@@ -345,7 +360,8 @@ export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Pr
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parseDocxDocument(buffer, options)
     const qr = await withImageQr(blocks, markdown, warnings, images, options)
-    const webp = await withImageFormat(blocks, qr.markdown, qr.warnings, images, options)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options)
     return scriptsOff({ success: true, fileType: "docx", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "docx", error: sanitizeError(err), code: classifyError(err) }
@@ -357,7 +373,8 @@ export async function parsePptx(buffer: ArrayBuffer, options?: ParseOptions): Pr
   try {
     const { markdown, blocks, metadata, outline, warnings, images } = await parsePptxDocument(buffer, options)
     const qr = await withImageQr(blocks, markdown, warnings, images, options)
-    const webp = await withImageFormat(blocks, qr.markdown, qr.warnings, images, options)
+    const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options)
+    const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options)
     return scriptsOff({ success: true, fileType: "pptx", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "pptx", error: sanitizeError(err), code: classifyError(err) }

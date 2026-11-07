@@ -36,11 +36,13 @@ function intersect(a: ImageRegion, b: ImageRegion | null): ImageRegion {
  * save/restore/transform으로 CTM을 추적하고, 이미지는 단위 정사각형(0,0)-(1,1)에
  * CTM을 적용한 bbox로 계산한다 (PDF 이미지 렌더링 규약).
  * respectClip은 읽기 순서용 가시 영역. OCR·그림 칸 판정은 기존 원본 영역을 유지한다.
+ * byOp 를 주면 그림 op 인덱스 → 영역도 채운다(그림 블록 자리, imagePlacement).
  */
 export function extractImageRegions(
   fnArray: Uint32Array | number[],
   argsArray: unknown[][],
   respectClip = false,
+  byOp?: Map<number, ImageRegion>,
 ): ImageRegion[] {
   const regions: ImageRegion[] = []
   let ctm = [1, 0, 0, 1, 0, 0]
@@ -100,7 +102,7 @@ export function extractImageRegions(
       case OPS.paintImageMaskXObject:
       case OPS.paintImageXObjectRepeat: {
         const { x1, y1, x2, y2 } = intersect(transformedRect(ctm, 0, 0, 1, 1), clip)
-        if (x2 - x1 > 0 && y2 - y1 > 0) regions.push({ x1, y1, x2, y2 })
+        if (x2 - x1 > 0 && y2 - y1 > 0) { regions.push({ x1, y1, x2, y2 }); byOp?.set(i, { x1, y1, x2, y2 }) }
         break
       }
     }
