@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.51: Formula trailing backslash, HWP footnote numbers and a column that goes on below a gap · 2026-11-07
+
+Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9248 → **0.9313**, recall at NED ≤ .3 0.8794 → 0.8829, overall NED 0.1167 → 0.1121, exact match unchanged at 0.5977, precision 0.9365 → 0.9341. No paper lost recall; eight gained (2609.14430 .983 → 1, 2609.13343 .971 → .990, 2609.16262 .915 → .936 and more). No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.
+
+- Trailing backslash: a recognition result cut at the length limit could end in a lone backslash, so the wrapping `$$` never closed and the whole equation was Markdown-escaped (17 of 82 matched equations in 2609.15186). Run alongside other benchmarks, page timeouts swing recall widely (.713 on the same paper), so the formula benchmark is measured alone.
+- HWP footnote numbers: of 1,539 footnotes in corpus HWP files, one had a stored number different from the counter (task1725: 83, previously 88). The trailing attribute field of every footnote control is 0, so earlier output always used digits.
+- Column continuing below a gap: a synthetic page now reads L → M → R instead of L → R → M. The first version took a margin strip of single glyphs, one line split by blank underlines and a right-hand heading line for columns, and two PDF text documents and two ODL documents dropped; it now requires three or more lines on both sides and a short-side line at least half as wide as the long side. No corpus page triggers it.
+- Reference repositories: opendataloader-pdf v2.5.17 → v2.5.20, opendataloader-bench unchanged, rhwp devel 888 commits narrowed to 26 candidates and checked against the corpus (3 applied; most others have no matching documents: the 5.0.2.4 strikeout, picture soft edge, numbering levels 8-10).
+
 ## 4.24.50: OCR joined column headers, vertical labels and two-column order · 2026-11-07
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8928 → **0.8936** (tables .8999 → **.9006**, order .9071 → **.9116**), `ocrRec: "auto"` 0.8940 → **0.8948**. Statistics tables .9076 → **.9099**. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops (one PDF text document's order .896 → .922).

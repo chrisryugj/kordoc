@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.51] - 2026-11-07
+
 ### Fixed
 
 - PDF 수식 OCR(`formulaOcr`): 인식 결과가 길이 한도에서 잘려 끝에 짝 없는 역슬래시가 남으면 감싼 `$$` 의 `$` 가 이스케이프돼 수식 스팬이 닫히지 않고 식 전체가 마크다운 이스케이프됐다(`U_{h}` → `U\_{h}`). 끝 역슬래시를 뗀다 — arXiv 2609.15186 에서 깨진 식 17 → 0, 정답과 짝지은 식 97 → 99
@@ -19,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 측정 참고
 
 - 참고 저장소 검토(지난 10-31 뒤): opendataloader-pdf v2.5.17 → v2.5.20(두 단 읽기 순서 규칙을 위처럼 반영, Type3 ToUnicode 없는 글꼴은 kordoc 이 이미 읽음), opendataloader-bench 그대로, rhwp main v0.8.7 그대로·devel 888커밋(번호 모양 코드표·각주 번호·줄간격 종류를 코퍼스 대조 뒤 반영, 나머지는 코퍼스에 해당 문서 없음)
+- 수식 OCR 벤치(arXiv 20편 2,314식, 보고 전용): 재현율 0.9248 → **0.9313**, NED≤.3 재현율 0.8794 → 0.8829, 전체 NED 0.1167 → 0.1121, 정확 일치 0.5977 그대로 — 논문별 재현율 하락 0(8편 오름)
 - 자체 OCR·OCR robust·ODL·ODL-OCR·한국 PDF 글·표 벤치 문서별 하락 0
 
 ## [4.24.50] - 2026-11-07
