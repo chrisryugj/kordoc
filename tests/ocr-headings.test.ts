@@ -46,9 +46,10 @@ it("marks a numbered section line barely larger than the body as a heading (KDI 
 })
 
 it("accepts a numbered section read without the space (\"제1절미국\") but not a particle right after the number", () => {
-  const blocks = [p("제1절미국", 13, 700), p("제1절의 결과", 13, 650), p(body, 12, 500, 120), p(body, 12, 300, 120)]
+  const blocks = [p("제1절미국", 13, 700), p("제1절의 결과", 13, 650), p("제1절 의장의 직권상정", 13, 600), p(body, 12, 500, 120), p(body, 12, 300, 120)]
   markOcrHeadings(blocks)
-  assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => b.text), ["제1절미국"])
+  // 띄어 쓴 뒤 "의장" 은 조사가 아니다 (KDI 14597)
+  assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => b.text), ["제1절미국", "제1절 의장의 직권상정"])
 })
 
 it("marks an all-caps line as a heading even when OCR reads it smaller than the body (ODL 141)", () => {

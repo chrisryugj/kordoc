@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OCR 장·절 제목: "제1절 의장의 직권상정" 처럼 번호 뒤 띄어 쓴 첫 글자가 조사 꼴(의·은·이 …)이면 본문으로 뺐다 — 조사 검사는 번호에 붙은 글자("제1절의")에만. KoOCR-Bench KDI 제목 재현율 0.924 → 0.930(종합 점수엔 들지 않음), 자체 OCR·ODL·ODL-OCR 문서별 하락 0
+
 ## [4.24.52] - 2026-11-07
 
 ### Added

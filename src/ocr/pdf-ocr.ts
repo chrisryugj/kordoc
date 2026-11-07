@@ -569,8 +569,8 @@ export function markOcrHeadings(blocks: IRBlock[]): void {
     const ratio = size / body
     // 번호 붙은 장·절 제목("제1절 임금변동성과 측정방법")은 본문보다 조금만 커도 제목이다 — 1.3배 문턱에 못 미쳐 절 제목을 놓쳤다(KDI
     // 보고서). 한 줄·30자 안·문장부호로 안 끝날 때만(본문 "제1절에서는 …" 은 길거나 여러 줄이다). OCR 이 번호 뒤 공백을 빠뜨린 "제1절미국" 도 —
-    // 번호 바로 뒤 조사("제1절의")는 본문이다
-    if (ratio >= 1 && ratio < 1.3 && /^제\s*\d+\s*[장절편부]\s*(?![에의은는을를이가와과로도만\s])\S/.test(text) && text.length <= 30 && !/[.!?。,]$|다\.?$/.test(text) &&
+    // 번호 바로 뒤에 붙은 조사("제1절의")는 본문이다. 띄어 쓴 뒤의 첫 글자는 조사가 아니다("제1절 의장의 직권상정")
+    if (ratio >= 1 && ratio < 1.3 && /^제\s*\d+\s*[장절편부](?:\s+\S|(?![에의은는을를이가와과로도만\s])\S)/.test(text) && text.length <= 30 && !/[.!?。,]$|다\.?$/.test(text) &&
         (!b.bbox || b.bbox.height <= size * 1.6)) {
       b.type = "heading"
       b.level = /^제\s*\d+\s*절/.test(text) ? 2 : 1
