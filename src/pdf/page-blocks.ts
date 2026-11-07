@@ -1442,7 +1442,8 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
   return detectTables ? detectSpecialKoreanTables(blocks) : blocks
 }
 
-/** 그림 클립(네 변이 한 그림 영역과 IMAGE_CLIP_TOL 안)끼리만 맞댄 것을 뺀다 — 그림 아닌 클립과 변을 맞댄 그림 클립은 남긴다 */
+/** 그림 클립(네 변이 한 그림 영역과 IMAGE_CLIP_TOL 안)끼리만 맞댄 묶음을 통째로 뺀다 — 변을 맞댄 클립 묶음에 그림 아닌 클립이
+ *  하나라도 있거나 그림 클립이 가로로도 맞대 있으면 묶음 전체를 남긴다 */
 function withoutImageOnlyClips(clips: ClipRect[], images: ImageRegion[]): ClipRect[] {
   const near = (a: number, b: number) => Math.abs(a - b) <= IMAGE_CLIP_TOL
   const isImage = clips.map(c => images.some(r => near(r.x1, c.x1) && near(r.x2, c.x2) && near(r.y1, c.y1) && near(r.y2, c.y2)))
@@ -1451,5 +1452,21 @@ function withoutImageOnlyClips(clips: ClipRect[], images: ImageRegion[]): ClipRe
     const ox = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1), oy = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1)
     return (oy > 0 && (near(a.x2, b.x1) || near(b.x2, a.x1))) || (ox > 0 && (near(a.y2, b.y1) || near(b.y2, a.y1)))
   }
-  return clips.filter((c, i) => !isImage[i] || clips.some((d, j) => !isImage[j] && touches(c, d)))
+  // 변을 맞댄 클립 묶음(연결 요소)마다 — 모두 그림 클립인 묶음만 뺀다
+  const group = clips.map((_, i) => i)
+  const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])))
+  for (let i = 0; i < clips.length; i++) for (let j = i + 1; j < clips.length; j++) if (touches(clips[i], clips[j])) group[find(i)] = find(j)
+  const keep = new Set<number>()
+  clips.forEach((_, i) => { if (!isImage[i]) keep.add(find(i)) })
+  // 띠를 세로로 쌓은 묶음(좌우 변이 모두 같은 그림 클립, 서로 다른 띠 셋 이상)만 뺀다 — 그림 클립끼리 가로로 맞댄 상자(보도자료 머리 상자·개념도)는
+  // 빼면 그 안 글이 남은 클립 격자로 깨진 표가 됐다. 띠 둘(보도자료 배포 시각 그림 칸)은 상자가 아니다
+  const members = new Map<number, number[]>()
+  clips.forEach((_, i) => members.set(find(i), [...(members.get(find(i)) ?? []), i]))
+  for (const [root, idx] of members) {
+    if (keep.has(root)) continue
+    const a = clips[idx[0]]
+    const bands = new Set(idx.map(i => Math.round(clips[i].y1)))
+    if (bands.size < 3 || !idx.every(i => near(clips[i].x1, a.x1) && near(clips[i].x2, a.x2))) keep.add(root)
+  }
+  return clips.filter((_, i) => keep.has(find(i)))
 }

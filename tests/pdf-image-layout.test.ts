@@ -35,13 +35,13 @@ const blank = () => [235, 240, 248]
 const order = (md: string) => new MarkdownIt().parse(md, {}).filter(t => t.type === "inline").map(t => t.children?.find(c => c.type === "image")?.attrGet("src") ?? t.content)
 
 describe("PDF 그림 자리 imagePlacement", () => {
-  it('기본 "flow" 는 그림을 같은 단의 글 사이(위쪽 변 기준)에 끼운다. "page-end" 는 4.24.50 까지처럼 쪽 끝', async () => {
+  it('"flow" 는 그림을 같은 단의 글 사이(위쪽 변 기준)에 끼운다. 기본 "page-end" 는 종전대로 쪽 끝', async () => {
     // 2단: 왼쪽 단 글 3줄 사이에 그림, 오른쪽 단 글 2줄 아래에 그림
     const buf = pdf(
       [[60, 760, "Left one"], [60, 740, "Left two"], [60, 560, "Left three"], [330, 760, "Right one"], [330, 740, "Right two"]],
       [[60, 600, 160, 120, pattern], [330, 560, 160, 120, (x, y) => pattern(y, x)]],
     )
-    const def = await parse(buf, { ocr: false, imagePlacement: "page-end" }), flow = await parse(buf, { ocr: false })
+    const def = await parse(buf, { ocr: false }), flow = await parse(buf, { ocr: false, imagePlacement: "flow" })
     assert.ok(def.success && flow.success)
     if (!def.success || !flow.success) return
     // page-end 는 그림을 쪽 끝에 모은다. flow 는 같은 단에서 그림 위쪽 변보다 높게 시작하는 마지막 블록 뒤 — 왼쪽 그림은 "Left two" 뒤,
@@ -51,7 +51,7 @@ describe("PDF 그림 자리 imagePlacement", () => {
     assert.deepEqual(f.filter(t => !t.startsWith("image_")), d.filter(t => !t.startsWith("image_")))
     assert.equal(f[f.indexOf("image_001.png") - 1], "Left two")
     assert.equal(f[f.indexOf("image_002.png") - 1], "Right two")
-    // page-end 는 그림 블록에 bbox 가 없다(4.24.50 출력), flow 는 쪽 위 자리를 붙인다
+    // page-end(기본)는 그림 블록에 bbox 가 없고, flow 는 쪽 위 자리를 붙인다
     assert.equal(def.blocks.find(b => b.type === "image")?.bbox, undefined)
     assert.deepEqual(flow.blocks.find(b => b.type === "image")?.bbox, { page: 1, x: 60, y: 600, width: 160, height: 120 })
   })

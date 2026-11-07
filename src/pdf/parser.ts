@@ -217,7 +217,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const wantWebp = options?.imageFormat === "webp" && options.images !== false
     const encodeWebp = wantWebp ? await loadWebpEncoder() : null
     if (wantWebp && !encodeWebp) warnings.push(WEBP_UNAVAILABLE)
-    const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined, encodeWebp ?? undefined, options?.imagePlacement !== "page-end", !!options?.dropBlankImages && options?.images !== false)
+    const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined, encodeWebp ?? undefined, options?.imagePlacement === "flow", !!options?.dropBlankImages && options?.images !== false)
     const readQr = options?.qrCodes ? await loadQrReader() : null
     if (options?.qrCodes && !readQr) warnings.push(QR_UNAVAILABLE)
     const imageBulletShapes = new Map<string, boolean>()
@@ -647,7 +647,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 1×1 상자는 원문 기하에서 얻은 문단·중첩표 순서로 편다. keep 모드의 원 구조는 반환 blocks 에 남긴다.
     // 그림 제자리(imagePlacement "flow") — 제목·캡션·목록 판정이 4.24.50 과 같은 블록 열(쪽 끝 그림)로 끝난 뒤에 옮긴다.
     // 먼저 옮기면 그림이 이웃 블록을 갈라 제목·캡션 잇기가 달라졌다(ODL 062 제목이 문단으로)
-    if (options?.imagePlacement !== "page-end") moveImagesInFlow(blocks)
+    if (options?.imagePlacement === "flow") moveImagesInFlow(blocks)
     let outBlocks = splitSingleCellTables(blocks)
     if (options?.layoutTables !== "keep") {
       blocks.length = 0
