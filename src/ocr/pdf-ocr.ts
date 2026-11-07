@@ -28,6 +28,7 @@ import { validateOcrOptions } from "./options.js"
 import { chartPlotItems } from "./ocr-chart-axes.js"
 import { splitOcrContactColumns } from "./ocr-contact-columns.js"
 import { splitOcrJoinedHeaders } from "./ocr-header-split.js"
+import { splitOcrProseRows } from "./ocr-prose-rows.js"
 import { rescueEmptyCells } from "./empty-cell-rescue.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 
@@ -542,7 +543,9 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   }).filter(it => it.text)
-  const blocks = unframeOcrLayoutTables(splitOcrJoinedHeaders(splitOcrContactColumns(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))))), pdfH)
+  const laid = unframeOcrLayoutTables(splitOcrJoinedHeaders(splitOcrContactColumns(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))))), pdfH)
+  // 표 속 산문 행 꺼내기는 쪽 OCR 에만 — 그림 영역 OCR 은 조각을 위치로 다시 늘어놓아 표 상자를 받은 문단이 앞으로 간다
+  const blocks = figureRegion ? laid : splitOcrProseRows(laid)
   if (!figureRegion) markOcrHeadings(blocks)
   return blocks
 }
