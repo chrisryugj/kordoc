@@ -245,16 +245,18 @@ export function detectPersistentColumnGutter(rects: ColRect[]): number | null {
  * 유닛 내부 순서는 건드리지 않는다.
  */
 export function orderByGutter<T>(units: T[], rectOf: (u: T) => ColRect, gutterX: number): T[] {
-  interface Tagged { u: T; top: number }
+  // 좌·우 유닛은 세로 가운데로 밴드를 정한다 — 단 하나가 통째로 한 유닛이면 맨 위 머리 조각("홀수형")이 경계보다 조금 높아도
+  // 단 전체가 위 밴드로 올라갔다(수능 국어 16쪽: 우단을 좌단보다 먼저 읽음). 밴드 안에 다 든 유닛은 맨 위와 같은 밴드다
+  interface Tagged { u: T; top: number; mid: number }
   const left: Tagged[] = []
   const right: Tagged[] = []
   const cross: Tagged[] = []
   for (const u of units) {
     const r = rectOf(u)
-    const top = r.y + r.h
-    if (r.x < gutterX && r.x + r.w > gutterX) cross.push({ u, top })
-    else if (r.x + r.w <= gutterX) left.push({ u, top })
-    else right.push({ u, top })
+    const top = r.y + r.h, mid = r.y + r.h / 2
+    if (r.x < gutterX && r.x + r.w > gutterX) cross.push({ u, top, mid })
+    else if (r.x + r.w <= gutterX) left.push({ u, top, mid })
+    else right.push({ u, top, mid })
   }
   const byTopDesc = (a: Tagged, b: Tagged) => b.top - a.top
   cross.sort(byTopDesc)
@@ -270,8 +272,8 @@ export function orderByGutter<T>(units: T[], rectOf: (u: T) => ColRect, gutterX:
 
   const ordered: T[] = []
   for (let k = 0; k <= cross.length; k++) {
-    for (const t of left) { if (bandOf(t.top) === k) ordered.push(t.u) }
-    for (const t of right) { if (bandOf(t.top) === k) ordered.push(t.u) }
+    for (const t of left) { if (bandOf(t.mid) === k) ordered.push(t.u) }
+    for (const t of right) { if (bandOf(t.mid) === k) ordered.push(t.u) }
     if (k < cross.length) ordered.push(cross[k].u)
   }
   return ordered

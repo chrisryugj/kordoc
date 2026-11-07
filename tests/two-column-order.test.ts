@@ -226,3 +226,15 @@ describe("extractPageBlocksFallback — 2단 시험지 읽기 순서 (#64)", () 
     assert.ok(pos1 < pos2 && pos2 < pos3 && pos3 < pos4, `순서 1→2→3→4 (실제: ${[pos1, pos2, pos3, pos4]})`)
   })
 })
+
+describe("orderByGutter — 단 통째 유닛의 밴드", () => {
+  it("우단 유닛 맨 위 머리 조각이 전폭 제목보다 조금 높아도 우단을 좌단보다 먼저 읽지 않는다 (수능 국어 16쪽)", () => {
+    const units = [
+      { id: "title", r: rect(284, 1053, 272, 28) },         // 전폭 제목 — 위 1081
+      { id: "right", r: rect(437, 258, 317, 824) },         // "홀수형"(위 1082)부터 우단 끝까지
+      { id: "left", r: rect(89, 651, 308, 428) },           // "4"(위 1079)부터 좌단
+    ]
+    const order = orderByGutter(units, u => u.r, 406).map(u => u.id)
+    assert.deepEqual(order, ["title", "left", "right"])
+  })
+})
