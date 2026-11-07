@@ -16,6 +16,7 @@ import {
   isTrivialFormula,
   normalizeFormulaSpacing,
   hasHighRepetition,
+  mergeContinuationLines,
 } from "../src/pdf/formula/postprocess.js"
 import { __internal } from "../src/pdf/formula/detector.js"
 
@@ -490,5 +491,19 @@ trailer << /Root 1 0 R >>`)
     p.pdfium = { destroy: () => {} }
     await (p as unknown as InstanceType<typeof FormulaPipeline>).destroy()
     assert.deepEqual(released, ["mfd", "encoder", "decoder"])
+  })
+})
+
+describe("formula continuation lines (mergeContinuationLines)", () => {
+  const r = (y1: number, y2: number, latex: string, x1 = 100, x2 = 500, kind = "display") => ({ bbox: { x1, y1, x2, y2 }, kind, latex, score: 0.9 })
+  it("바로 아래 붙은 관계 기호 줄을 위 식의 다음 줄로 잇는다", () => {
+    const out = mergeContinuationLines([r(100, 140, "A=B+C"), r(150, 190, "\\leq D+E"), r(200, 240, "+F")])
+    assert.equal(out.length, 1)
+    assert.equal(out[0].latex, "\\begin{aligned}A=B+C \\\\ \\leq D+E \\\\ +F\\end{aligned}")
+    assert.deepEqual(out[0].bbox, { x1: 100, y1: 100, x2: 500, y2: 240 })
+  })
+  it("기호로 시작하지 않거나 멀리 떨어진 식·inline 은 그대로", () => {
+    const regions = [r(100, 140, "A=B"), r(150, 190, "x^2+y^2=1"), r(400, 440, "=C"), r(450, 470, "=D", 100, 200, "inline")]
+    assert.equal(mergeContinuationLines(regions).length, 4)
   })
 })
