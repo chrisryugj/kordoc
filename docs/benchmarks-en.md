@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.50: OCR joined column headers, vertical labels and two-column order · 2026-11-07
+
+External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8928 → **0.8936** (tables .8999 → **.9006**, order .9071 → **.9116**), `ocrRec: "auto"` 0.8940 → **0.8948**. Statistics tables .9076 → **.9099**. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops (one PDF text document's order .896 → .922).
+
+- Two-column order: six pages, including Korean exam pages 16 and 36 (order .627 → .970). The right-column unit ran from "홀수형" to the column end, so its top, 1pt above the full-width title, put it in the header band. One history page lost .003 CER (order of text inside a figure).
+- Vertical labels: the provincial fertility page .824 → .952. Joined column headers: the urban population page .807 → .862.
+- Rejected: splitting two-line department cells into rows (13 reference pages split, 8 keep one cell; OCR line grouping aligns baselines so line positions cannot tell them apart — always splitting gives +.0006 but drops 8 pages), the "[35~36]" line joined to the right column's "36." on Korean exam page 17 (gutter splitting and adding table rectangles both had no effect; to revisit).
+
 ## 4.24.49: OCR two-row header cells and empty ruled cells · 2026-11-07
 
 External KoOCR-Bench v2.0c, public 877 pages (official scorer unchanged): total 0.8912 → **0.8928** (tables .8968 → **.8999**), `ocrRec: "auto"` 0.8924 → **0.8940**. Gazette CER .0799 → **.0754**, statistics tables .9021 → **.9076**. 28 pages up, 3 down. In-house OCR, OCR robust, ODL, ODL-OCR and Korean PDF text and table benchmarks: no per-document drops.
