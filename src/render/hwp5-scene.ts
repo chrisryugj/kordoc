@@ -154,7 +154,9 @@ export function buildHwp5RenderStyles(records: HwpRecord[]): RenderStyles {
     const attr1 = d.readUInt32LE(0)
     paraAlign.set(id, PARA_ALIGNS[(attr1 >>> 2) & 7] ?? "JUSTIFY")
     paraGeom.set(id, {
-      lineSpacingType: LINE_SPACING_TYPES[attr1 & 3] ?? "PERCENT",
+      // 새 꼴 레코드(54바이트+)는 줄간격 종류가 속성3 아래 5비트다 — 속성1 아래 2비트는 옛 자리표라 "최소"(3)가 비율로 읽혀
+      // hwpunit 값이 % 가 됐다(변환기 header.ts 와 같은 규칙)
+      lineSpacingType: LINE_SPACING_TYPES[d.length >= 54 ? d.readUInt32LE(46) & 0x1f : attr1 & 3] ?? "PERCENT",
       lineSpacingValue: d.length >= 54 ? d.readUInt32LE(50) : d.readInt32LE(24),
       marginLeft: d.readInt32LE(4), marginRight: d.readInt32LE(8), marginIntent: d.readInt32LE(12),
       spaceBefore: d.readInt32LE(16), spaceAfter: d.readInt32LE(20),

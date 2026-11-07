@@ -74,6 +74,14 @@ describe("hwp5-scene: DocInfo → RenderStyles", () => {
     assert.equal(st.paraAlign.get("1"), "CENTER")
     assert.equal(st.paraGeom.get("1")!.lineSpacingValue, 130)
   })
+  it("paraGeom: 새 꼴 문단 모양(54바이트+)의 줄간격 종류는 속성3 — 속성1 옛 자리(비율)가 아니라 최소(AT_LEAST)", () => {
+    const d = Buffer.alloc(54)
+    d.writeUInt32LE(0, 0) // 속성1 아래 2비트 = 0(비율 자리표)
+    d.writeUInt32LE(3, 46) // 속성3 = 최소
+    d.writeUInt32LE(1200, 50)
+    const st = buildHwp5RenderStyles([{ tagId: 0x19, level: 0, data: d, size: d.length } as never])
+    assert.deepEqual([st.paraGeom.get("0")!.lineSpacingType, st.paraGeom.get("0")!.lineSpacingValue], ["AT_LEAST", 1200])
+  })
   it("borderFill: 1-based id, 변 type/width(mm→pt)/색, NONE 은 생략, 배경색 COLORREF→#RRGGBB", () => {
     const st = buildHwp5RenderStyles(docInfoRecords())
     assert.equal(st.borderFill.size, 3)

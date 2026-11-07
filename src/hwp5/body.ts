@@ -4,7 +4,7 @@ import { tidyScriptTags, type ScriptKind } from "../script-tags.js"
 import {
   extractEquationText, createParaTextState, appendParaText, LITERAL_DOLLAR_MARK, LITERAL_LT_MARK, resolveLiteralLt, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
   TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE, TAG_EQEDIT, TAG_SHAPE_COMPONENT, TAG_SHAPE_COMPONENT_CONTAINER,
-  TAG_SHAPE_COMPONENT_PICTURE, TAG_MEMO_LIST, fileTimeText, extractText, type HwpRecord, type HwpDocInfo, type IndexedControlResolver, type ParaTextState,
+  TAG_SHAPE_COMPONENT_PICTURE, TAG_MEMO_LIST, TAG_FOOTNOTE_SHAPE, fileTimeText, extractText, type HwpRecord, type HwpDocInfo, type IndexedControlResolver, type ParaTextState,
 } from "./record.js"
 import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
 import { hwpEquationToLatex } from "./equation.js"
@@ -114,6 +114,8 @@ export interface Hwp5DocState {
   outlineNumberingId: number
   /** 자동 번호 종류(0=쪽,1=각주,2=미주,3=그림,4=표,5=수식)별 다음 번호 */
   autoCounters: Map<number, number>
+  /** 구역 정의의 주석 번호 모양 코드(표 134) — 1=각주·2=미주 (secd 자식 FOOTNOTE_SHAPE 첫째·둘째) */
+  noteFormats: Map<number, number>
   headerTexts: Set<string>
   /** 목차 항목 글 — 표 칸에서 풀려 나온 문단도 제목 추정에서 뺀다 (#121, HWPX SectionShared.tocTexts 와 같은 구실) */
   tocTexts: Set<string>
@@ -132,6 +134,7 @@ export function createHwp5DocState(): Hwp5DocState {
     numbering: new NumberingState(),
     outlineNumberingId: 0,
     autoCounters: new Map(),
+    noteFormats: new Map(),
     headerTexts: new Set(),
     tocTexts: new Set(),
     headerBlocks: [],
@@ -500,6 +503,12 @@ function applyCtrlEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
       if (ctrl.data.length >= 20) {
         ctx.doc.outlineNumberingId = ctrl.data.readUInt16LE(18)
       }
+      // 주석 모양(FOOTNOTE_SHAPE) — 첫째가 각주, 둘째가 미주. 속성 아래 8비트가 번호 모양
+      let note = 1
+      for (let i = ctrl.childStart; i < ctrl.childEnd && note <= 2; i++) {
+        if (records[i].tagId !== TAG_FOOTNOTE_SHAPE || records[i].data.length < 4) continue
+        ctx.doc.noteFormats.set(note++, records[i].data.readUInt32LE(0) & 0xff)
+      }
       return
     }
     case CTRL_OLE: {
@@ -553,22 +562,21 @@ function parseListHeaderParagraphs(ctrl: ParsedCtrl, records: HwpRecord[], ctx: 
 
 /** 각주('fn  ')/미주('en  ') — 번호 + 장식문자 + 내용 (rhwp parse_footnote_control) */
 function applyNoteEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx, autoType: number): void {
-  // ctrl 데이터: ctrl_id(4) + number(u32) + before(WCHAR) + after(WCHAR) + numberShape(u32)
-  // 번호는 각주 내용 안의 atno(자동번호)가 같은 카운터를 소비하므로 peek만 하고,
-  // 내용 파싱 후 카운터가 안 움직였으면(atno 없음) 직접 전진시킨다 (rhwp assign_auto_numbers 정합)
-  const num = ctx.doc.autoCounters.get(autoType) ?? 1
+  // ctrl 데이터: ctrl_id(4) + 번호(u32 — 아래 16비트 번호, 위 16비트 사용자 기호) + before(WCHAR) + after(WCHAR) + 속성(u32)
+  // 번호는 한/글이 저장해 둔 값을 쓴다(HWPX hp:footNote number 와 같은 값 — 문서 차례로 센 계수기는 내용 안 atno 가 번호를 건너뛰게
+  // 해 "1) 3) 5) 9)" 가 됐다). 번호 모양은 구역의 주석 모양이 정한다(종전엔 뒤 속성 u32 를 모양으로 읽었다).
+  // 각주 내용 안의 atno(자동번호)가 같은 카운터를 소비하므로 카운터를 이 번호에 맞추고, 내용 파싱 후 안 움직였으면 직접 전진시킨다
+  const stored = ctrl.data.length >= 8 ? ctrl.data.readUInt32LE(4) & 0xffff : 0
+  const num = stored || (ctx.doc.autoCounters.get(autoType) ?? 1)
+  ctx.doc.autoCounters.set(autoType, num)
 
   let before = ""
   let after = ""
-  let shape = 0
   if (ctrl.data.length >= 12) {
     before = wcharAt(ctrl.data, 8)
     after = wcharAt(ctrl.data, 10)
   }
-  if (ctrl.data.length >= 16) {
-    shape = ctrl.data.readUInt32LE(12) & 0xff
-  }
-  const formatted = formatNumber(num, shapeFormatToNumFmt(shape))
+  const formatted = formatNumber(num, shapeFormatToNumFmt(ctx.doc.noteFormats.get(autoType) ?? 0))
   const marker = before || after ? `${before}${formatted}${after}` : `${formatted})`
 
   const blocks = parseListHeaderParagraphs(ctrl, records, ctx)

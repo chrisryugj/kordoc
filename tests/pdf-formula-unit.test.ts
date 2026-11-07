@@ -29,6 +29,11 @@ describe("formula postprocess", () => {
     assert.equal(stripTrailingWhitespace("x + y"), "x + y")
   })
 
+  it("잘린 인식 결과 끝의 짝 없는 역슬래시를 뗀다 — 줄바꿈 \\\\ 는 둔다", () => {
+    assert.equal(postProcessLatex("\\{\\boldsymbol{\\tau}\\"), "\\{\\boldsymbol{\\tau}")
+    assert.equal(postProcessLatex("a=b\\\\c=d"), "a=b\\\\c=d")
+  })
+
   it("연속 공백 축약", () => {
     assert.equal(collapseSpaces("a   b   c"), "a b c")
     assert.equal(collapseSpaces(" a b "), " a b ")

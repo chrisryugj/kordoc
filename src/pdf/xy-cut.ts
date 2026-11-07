@@ -106,7 +106,8 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
   // → 2단 레이아웃에서 문단 간 수평 갭이 단 사이 수직 갭보다 먼저 잡혀 행 단위로
   //   인터리브되는 문제 방지 (XY-Cut++ 양방향 컷의 보수적 적용)
   let useHorizontal: boolean
-  if (hValid && vValid) useHorizontal = vCut.gap <= hCut.gap * 1.5 || staggeredSides(items, vCut.position)
+  if (hValid && vValid) useHorizontal = (vCut.gap <= hCut.gap * 1.5 || staggeredSides(items, vCut.position)) &&
+    !gapInsideLongerColumn(items, hCut.position, hCut.gap, vCut.position)
   else if (hValid) useHorizontal = true
   else if (vValid) useHorizontal = false
   else return splitEdgeSpannedColumns(items, gapThreshold, depth) ?? leaf(items, wrapped) // 분할 불가 → 리프 노드
@@ -154,6 +155,30 @@ function splitsSpacedLabel(items: NormItem[], cutX: number): boolean {
  * 한 단 안의 들쭉날쭉한 줄이다 — 제목 줄마다 아래 오른쪽 끝에 붙인 "(단위 : …)" 줄(hwpx-02).
  * 두 단 본문은 양쪽 줄이 같은 높이에 나란히 놓인다.
  */
+/**
+ * 가로 틈이 긴 단 안에 있다 — 한 단이 일찍 끝나고 다른 단이 그 틈 아래로 이어지면(틈 아래 글이 모두 긴 단 쪽) 가로로 먼저 자르면
+ * 긴 단 끝이 짧은 단 뒤로 밀린다. 짧은 단 끝이 긴 단 끝보다 틈 하나(그리고 줄 셋) 넘게 위일 때만 — 두 단이 비슷한 높이에서 끝나면
+ * 그 아래 틈은 절 경계라 종전대로 가로 먼저
+ */
+function gapInsideLongerColumn(items: NormItem[], cutY: number, gap: number, cutX: number): boolean {
+  const lower = items.filter(i => i.y <= cutY)
+  const side = (i: NormItem) => i.x + i.w / 2 < cutX
+  if (!lower.length || lower.some(i => i.x < cutX && i.x + i.w > cutX)) return false
+  const longLeft = side(lower[0])
+  if (lower.some(i => side(i) !== longLeft)) return false
+  const upper = items.filter(i => i.y > cutY)
+  const long = upper.filter(i => side(i) === longLeft), short = upper.filter(i => side(i) !== longLeft)
+  if (!long.length || !short.length) return false
+  // 두 쪽 다 글 단이어야 한다 — 글줄 셋 이상, 짧은 쪽 가장 넓은 줄이 긴 쪽의 절반 이상. 쪽 여백의 세로 띠 글자(낱글자 무리)·
+  // 빈칸 밑줄로 갈린 한 줄("______部以上は…")·오른쪽에 놓인 제목 한 줄은 단이 아니다
+  const lines = (xs: NormItem[]) => new Set(xs.map(i => Math.round(i.y / 2))).size
+  if (lines(short) < 3 || lines(long) < 3) return false
+  if (Math.max(...short.map(i => i.w)) < Math.max(...long.map(i => i.w)) * 0.5) return false
+  const fs = long.reduce((a, i) => a + i.fontSize, 0) / long.length
+  const bottom = (xs: NormItem[]) => Math.min(...xs.map(i => i.y))
+  return bottom(short) - bottom(long) > Math.max(gap, 3 * fs)
+}
+
 function staggeredSides(items: NormItem[], cutX: number): boolean {
   const left = items.filter(i => i.x + i.w / 2 < cutX)
   const right = items.filter(i => i.x + i.w / 2 >= cutX)

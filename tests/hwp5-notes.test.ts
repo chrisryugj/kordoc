@@ -36,6 +36,11 @@ function hwp5Doc(id: "fn  " | "en  "): Buffer {
     tableRec(4, 2, 2),
     ...cells.flatMap(([t, col, row]) => [listHeader(4, { col, row, w: 4000, h: 1000 }), ...simplePara(t, [{ vertpos: 0, horzsize: 3700 }], { level: 4 })]),
   ]
+  return packHwp5(records)
+}
+
+/** 구역 레코드 → HWP5 CFB 문서 */
+function packHwp5(records: HwpRecord[]): Buffer {
   const section = Buffer.concat(records.flatMap(r => {
     const h = Buffer.alloc(4)
     h.writeUInt32LE(r.tagId | (r.level << 10) | (r.data.length << 20))
@@ -86,4 +91,27 @@ describe("HWP5 주석 안 표 — HWPX 짝과 같은 구조·Markdown (#149)", (
       assert.equal(rx.blocks[0].footnoteText, p5.footnoteText)
     })
   }
+})
+
+describe("HWP5 각주 번호 — 한/글이 저장한 번호와 구역 주석 모양 (HWPX number·footNotePr 와 같게)", () => {
+  /** 본문 "가" 각주(저장 번호 n) — 주석 글 "주" */
+  const note = (n: number) => [
+    paraHeader(0), paraText(1, ["가", { ctrl: "fn  ", ch: 0x11 }]), charShape(1, [[0, 0]]),
+    noteCtrl(1, "fn  ", n), listHeader(2, { col: 0, row: 0, w: 0, h: 0 }), ...simplePara("주", [{ vertpos: 0, horzsize: 3700 }], { level: 2 }),
+  ]
+  const secd = (format: number) => {
+    const shape = Buffer.alloc(28)
+    shape.writeUInt32LE(format, 0)
+    return [paraHeader(0), paraText(1, [{ ctrl: "secd" }]), charShape(1, [[0, 0]]),
+      rec(0x47, 1, Buffer.concat([ctrlIdBytes("secd"), Buffer.alloc(36)])), rec(0x4a, 2, shape), rec(0x4a, 2, Buffer.alloc(28))]
+  }
+  const marks = async (records: HwpRecord[]) => (await parseHwp5Document(packHwp5(records))).blocks.map(b => b.footnoteText).filter(Boolean)
+
+  it("저장된 번호를 쓴다 — 문서 차례로 센 계수기(1·2)가 아니라 5·7", async () => {
+    assert.deepEqual(await marks([...note(5), ...note(7)]), ["5) 주", "7) 주"])
+  })
+
+  it("번호 모양은 구역의 각주 모양(표 134 — 1 = 원숫자)", async () => {
+    assert.deepEqual(await marks([...secd(1), ...note(3)]), ["③) 주"])
+  })
 })

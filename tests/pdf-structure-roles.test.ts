@@ -233,3 +233,24 @@ describe("PDF staggered right-aligned lines", () => {
     assert.ok(groups.some(g => g.some(i => i.text === "일") && g.some(i => i.text === "시")))
   })
 })
+
+describe("PDF column that goes on below a gap after the other column ended", () => {
+  const item = (text: string, x: number, y: number): NormItem =>
+    ({ text, x, y, w: 226, h: 10, fontSize: 10, fontName: "Body", isHidden: false })
+  const page = (rightRows: number) => {
+    const items: NormItem[] = []
+    for (let row = 0; row < 20; row++) items.push(item(`L${row} left column sentence keeps going to the edge`, 60, 720 - row * 12))
+    for (let row = 0; row < 8; row++) items.push(item(`M${row} left column goes on after a wide gap`, 60, 720 - 20 * 12 - 60 - row * 12))
+    for (let row = 0; row < rightRows; row++) items.push(item(`R${row} right column sentence keeps going to the edge`, 320, 720 - row * 12))
+    return items
+  }
+  const order = (items: NormItem[]) => xyCutOrder(items, 20).flat().map(i => i.text.split(" ")[0][0]).join("").replace(/(.)\1+/g, "$1")
+
+  it("reads the left column to its end before the right column that ended early", () => {
+    assert.equal(order(page(10)), "LMR")
+  })
+
+  it("keeps the gap first when both columns end at about the same level", () => {
+    assert.equal(order(page(20)), "LRM")
+  })
+})

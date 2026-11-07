@@ -49,7 +49,7 @@ export class NumberingState {
 
 export type NumFmt =
   | "digit" | "circled" | "romanUpper" | "romanLower" | "latinUpper" | "latinLower"
-  | "ganada" | "circledGanada" | "jamo" | "circledJamo" | "hangulNum" | "hanjaNum"
+  | "ganada" | "circledGanada" | "jamo" | "circledJamo" | "hangulNum" | "hanjaNum" | "circledLatinUpper" | "circledLatinLower"
 
 /** HWP 표 43 (문단 머리 번호 형식 코드) → NumFmt */
 function headFormatToNumFmt(code: number): NumFmt {
@@ -59,6 +59,8 @@ function headFormatToNumFmt(code: number): NumFmt {
     case 3: return "romanLower"
     case 4: return "latinUpper"
     case 5: return "latinLower"
+    case 6: return "circledLatinUpper"
+    case 7: return "circledLatinLower"
     case 8: return "ganada"
     case 9: return "circledGanada"
     case 10: return "jamo"
@@ -69,19 +71,10 @@ function headFormatToNumFmt(code: number): NumFmt {
   }
 }
 
-/** HWP 표 134 (자동번호/쪽번호 모양 코드) → NumFmt */
+/** HWP 표 134 (자동번호/쪽번호/주석 번호 모양 코드) → NumFmt — 표 43 과 같은 코드표다(6·7 원 라틴, 8 가나다 … 13 한자 숫자).
+ *  종전 6=가나다·7=한글 숫자·8=한자 숫자는 두 칸씩 밀린 표였다(변환기가 한/글 저장 HWPX 와 맞춘 NUM_FORMATS 와 같은 차례) */
 export function shapeFormatToNumFmt(code: number): NumFmt {
-  switch (code) {
-    case 1: return "circled"
-    case 2: return "romanUpper"
-    case 3: return "romanLower"
-    case 4: return "latinUpper"
-    case 5: return "latinLower"
-    case 6: return "ganada"
-    case 7: return "hangulNum"
-    case 8: return "hanjaNum"
-    default: return "digit"
-  }
+  return headFormatToNumFmt(code)
 }
 
 const JAMO = "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ"
@@ -139,6 +132,8 @@ export function formatNumber(n: number, fmt: NumFmt): string {
     case "circledGanada": return n >= 1 ? circledHangul(n - 1) : String(n)
     case "jamo": return fromTable(n, JAMO)
     case "circledJamo": return fromTable(n, CIRCLED_JAMO)
+    case "circledLatinUpper": return n >= 1 && n <= 26 ? String.fromCodePoint(0x24b6 + n - 1) : formatLatin(n, true) || String(n)
+    case "circledLatinLower": return n >= 1 && n <= 26 ? String.fromCodePoint(0x24d0 + n - 1) : formatLatin(n, false) || String(n)
     case "hangulNum": return formatEastAsianNumber(n, HANGUL_DIGITS, HANGUL_UNITS, "영")
     case "hanjaNum": return formatEastAsianNumber(n, HANJA_DIGITS, HANJA_UNITS, "零")
     default: return String(n)

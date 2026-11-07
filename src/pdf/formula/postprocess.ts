@@ -33,6 +33,9 @@ export function postProcessLatex(latex: string): string {
   s = fixLatexSpacing(s)
   s = normalizeFormulaSpacing(s)
   s = s.trim()
+  // 길이 한도에서 잘린 인식 결과는 홑 역슬래시로 끝나기도 한다(…\tau} 뒤에 \ 하나) — 감싼 "$$" 의 "$" 를 이스케이프해 수식 스팬이
+  // 닫히지 않고 식 전체가 마크다운 이스케이프됐다(U_{h} 가 U\_{h}). 짝 없는 끝 역슬래시는 LaTeX 로도 무효라 뗀다
+  if ((s.match(/\\+$/)?.[0].length ?? 0) % 2) s = s.slice(0, -1).trimEnd()
   // trivial 이면 빈 문자열 반환 — 상위(pipeline/parser) 에서 latex.trim() 비었을 때 skip.
   if (isTrivialFormula(s)) return ""
   return s
