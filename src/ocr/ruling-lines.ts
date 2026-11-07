@@ -27,6 +27,10 @@ const INK_LUMA_MAX = 205
 const MIN_LINE_LENGTH_PT = 20
 /** 두 가로 괘선을 잇는 짧은 세로선의 최소 길이 (pt) — 조직도 상자 사이 연결선(16pt) */
 const BRIDGE_MIN_LENGTH_PT = 6
+/** 한 행만 긋는 칸 구분선의 최소 길이 (pt) — 서식 글 한 줄 행 높이(18pt). 머리 띠 안 짧은 구분선(15pt 안팎)은 아래 세로 괘선이 이어질 때만 받는다 */
+const ROW_DIVIDER_MIN_PT = 17
+/** 한 행 칸 구분선 양옆에 비어 있어야 하는 칸 여백 (pt) */
+const ROW_DIVIDER_MARGIN_PT = 0.8
 /** 연결선이 잇는 상자의 최소 폭 (pt) */
 const BRIDGE_BOX_MIN_PT = 30
 /** 선 두께 상한 (pt) — 진짜 괘선(0.12~0.7mm ≈ 0.3~2pt)과 굵은 글리프 획(2pt+) 분리 */
@@ -221,6 +225,44 @@ export function detectRulingLines(
   for (const v of shortV) {
     if (!endsOn(v.x1, v.y1).length || !endsOn(v.x1, v.y2).length) continue
     if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 >= v.y2 - tol && p.y1 <= v.y2 + tol * 3 && p.y2 - p.y1 + 1 >= minLenPx)) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
+  }
+  // 한 행 높이(20pt 미만)만 긋는 칸 구분선 — 서식 "성명 │ (빈칸) │ 주민등록번호 │ (빈칸)" 의 값 칸 세로선이 행 높이 18pt 라 빠져 한 칸에 몰렸다
+  // (대리인선임허가신청서). 위끝·아래끝이 실선 가로 괘선 잉크에 이어 붙고 그 두 가로선이 양옆으로 이어지며, 같은 행을 양옆에서 다 긋는 세로 괘선
+  // 사이에 있을 때만. 행 높이에 꽉 찬 글자 획(미래전략포럼 개요 표 — 점선 행)과 가르려고 선 양옆 칸 여백(ROW_DIVIDER_MARGIN_PT)에 잉크가 없어야 한다 —
+  // 글자 획은 같은 글자의 가로 획이 붙는다
+  const rowMin = Math.round(ROW_DIVIDER_MIN_PT * scale)
+  const margin = Math.max(2, Math.round(ROW_DIVIDER_MARGIN_PT * scale))
+  const spans = (x: number, y1: number, y2: number) => (p: PxSegment) => p.y1 <= y1 + tol && p.y2 >= y2 - tol && p.x1 !== x
+  const clearSide = (v: PxSegment, dir: -1 | 1) => {
+    const half = Math.ceil(v.thicknessPx / 2) + 1
+    let inked = 0, total = 0
+    for (let y = v.y1 + tol; y <= v.y2 - tol; y++) for (let d = half; d < half + margin; d++) {
+      const x = Math.round(v.x1) + dir * d
+      if (x < 0 || x >= width) continue
+      total++
+      inked += ink[y * width + x]
+    }
+    return total > 0 && inked <= total * 0.05
+  }
+  const inkMin = Math.max(4, Math.round(scale * scale * 2))
+  const inkBetween = (x1: number, x2: number, y1: number, y2: number) => {
+    let n = 0
+    for (let y = Math.max(0, y1); y <= Math.min(height - 1, y2); y++) for (let x = Math.max(0, Math.round(x1)); x <= Math.min(width - 1, Math.round(x2)); x++) n += ink[y * width + x]
+    return n >= inkMin
+  }
+  for (const v of shortV) {
+    if (v.y2 - v.y1 + 1 < rowMin || verticals.includes(v)) continue
+    const solidAcross = (h: PxSegment) => !dotH.includes(h) && h.x1 < v.x1 - tol * 2 && h.x2 > v.x1 + tol * 2
+    const top = endsOn(v.x1, v.y1).filter(h => solidAcross(h) && v.y1 <= h.y1 + 1)
+    const bot = endsOn(v.x1, v.y2).filter(h => solidAcross(h) && v.y2 >= h.y1 - 1)
+    if (!top.length || !bot.length || !clearSide(v, -1) || !clearSide(v, 1)) continue
+    const enclose = verticals.filter(spans(v.x1, v.y1, v.y2))
+    const left = enclose.filter(p => p.x1 < v.x1 - tol).reduce<PxSegment | null>((a, p) => !a || p.x1 > a.x1 ? p : a, null)
+    const right = enclose.filter(p => p.x1 > v.x1 + tol).reduce<PxSegment | null>((a, p) => !a || p.x1 < a.x1 ? p : a, null)
+    if (!left || !right) continue
+    // 양쪽 칸에 글이 있어야 한다 — 빈 칸을 가르는 선은 글 배치를 바꾸지 않고 열만 늘려, 서식 표가 성긴 산문 격자로 풀렸다(대리인선임허가신청서)
+    if (!inkBetween(left.x1 + margin * 2, v.x1 - margin * 2, v.y1 + tol, v.y2 - tol) || !inkBetween(v.x1 + margin * 2, right.x1 - margin * 2, v.y1 + tol, v.y2 - tol)) continue
     if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
   }
   // Faint internal rules are evidence only when enclosed by an existing dark
