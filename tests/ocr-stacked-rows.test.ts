@@ -92,3 +92,19 @@ it("keeps a spanning text label whole and grows its span (2024년 / (구성비) 
   assert.equal(label.rowSpan, 3)
   assert.deepEqual(b.table!.cells.map(r => r.slice(2).map(x => x.text)), [["218.7", "30.1"], ["(100.0)", "(100.0)"], ["147.1", "23.6"]])
 })
+
+it("splits \"○ 항목 | 금액\" pairs stacked in one row, the shorter side leaving its last row blank (관보 자금조달·운용)", () => {
+  const b = table([
+    [c("자금조달", 2), c(""), c("자금운용", 2), c("")],
+    [c("○자체수입\n○ 정부내부수입\n○차입금\n○ 여유자금회수등"), c("3,819,793,000,000원\n2,618,631,000,000원\n-원\n-원"),
+      c("○사업비\n기금운영비\n○ 정부내부지출\n○ 차입금원리금상환\n여유자금운용등"), c("-원\n57,000,000원\n6,436,021,000,000원\n-원\n2,346,000,000원")],
+  ])
+  splitStackedOcrRows([b])
+  assert.equal(b.table!.rows, 6)
+  assert.deepEqual(b.table!.cells[2].map(x => x.text), ["○ 정부내부수입", "2,618,631,000,000원", "기금운영비", "57,000,000원"])
+  assert.deepEqual(b.table!.cells[5].map(x => x.text), ["", "", "여유자금운용등", "2,346,000,000원"])
+  // 금액 칸 없이 글만 쌓인 목록은 그대로
+  const list = table([[c("구분"), c("내용")], [c("○ 가\n○ 나\n○ 다"), c("첫째 설명\n둘째 설명\n셋째 설명")]])
+  splitStackedOcrRows([list])
+  assert.equal(list.table!.rows, 2)
+})
