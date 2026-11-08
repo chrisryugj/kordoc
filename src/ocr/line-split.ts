@@ -601,18 +601,46 @@ export function edgeTrim(gray: Uint8Array, w: number, h: number, ink: InkStats):
   }
   // 좌우 끝 세로 괘선 — 박스 높이 95% 이상을 관통하는 열이고, 그 바깥 열엔 잉크가 없고, 안쪽으로 빈 열 틈(높이 10%, 2px 이상)을
   // 두고 글이 시작해야 한다. 큰 제목 글자의 세로 줄기("D")도 박스 높이 85% 를 넘어 테두리로 잘렸다(ODL 073 "Defensoria" → "ria")
-  const textCol = (x: number) => { for (let y = y0; y < y1; y++) if (isInk(gray[y * w + x])) return true; return false }
-  const border = (x: number) => colInk[x] >= h * 0.95
+  // 박스 위아래 끝에 걸친 가로 괘선 행(폭의 85% 넘게 잉크)은 글로 보지 않는다 — 그 행 때문에 모든 열이 글 열이 돼 테두리를 찾기 전에
+  // 멈췄다(통계표 칸 상자 윗변)
+  const ruleRow = new Uint8Array(h)
+  for (let y = 0; y < h; y++) { let n = 0; for (let x = 0; x < w; x++) if (isInk(gray[y * w + x])) n++; if (n >= w * 0.85) ruleRow[y] = 1 }
+  const textCol = (x: number) => { for (let y = y0; y < y1; y++) if (!ruleRow[y] && isInk(gray[y * w + x])) return true; return false }
+  // 점선 세로선도 테두리다 — 맨 위·맨 아래 10% 에 잉크가 닿고 빈 토막이 높이 15% 이하로 촘촘한 열(잉크 35% 이상). 글자 획은 박스
+  // 위아래 여백에 못 닿는다(통계표 점선 칸 사이 "60.5" → "(.5")
+  const dotted = (x: number) => {
+    if (colInk[x] < h * 0.35) return false
+    let first = -1, last = -1, run = 0, maxRun = 0
+    for (let y = 0; y < h; y++) {
+      if (isInk(gray[y * w + x])) { if (first < 0) first = y; last = y; maxRun = Math.max(maxRun, first === y ? 0 : run); run = 0 } else run++
+    }
+    return first <= h * 0.1 && last >= h * 0.9 && maxRun <= h * 0.15
+  }
+  const border = (x: number) => colInk[x] >= h * 0.95 || dotted(x)
   const gap = Math.max(2, Math.round(h * 0.1))
   const clearFrom = (x: number, dir: 1 | -1) => { for (let k = 0; k < gap; k++) { const c = x + dir * k; if (c < 0 || c >= w || textCol(c)) return false } return true }
+  // 겹선(‖) — 테두리 바로 안쪽(빈 틈 gap 안)에 또 테두리가 서면 둘을 한 테두리로 본다(통계표 머리 열 겹선 옆 "0:36" → ":36")
+  const runEnd = (x: number, dir: 1 | -1) => {
+    let e = x
+    for (;;) {
+      while (e + dir >= 0 && e + dir < w && border(e + dir)) e += dir
+      let k = 1
+      while (k <= gap && e + dir * k >= 0 && e + dir * k < w && !border(e + dir * k) && !textCol(e + dir * k)) k++
+      if (k <= gap && e + dir * k >= 0 && e + dir * k < w && border(e + dir * k)) e += dir * k
+      else return e
+    }
+  }
   let x0 = 0, x1 = w
+  // 글이 먼저 나와도 끝 20% 안에 높이를 꽉 채운 실선이 있으면 그 너머는 이웃 칸 글자 끝자락이다(검출 박스가 칸 괘선을 넘어 옆 칸
+  // "73.1" 의 끝을 물어 "60.5" 가 "(.5" 로 읽혔다) — 실선이고 안쪽 틈이 비었을 때만
+  const solidAt = (from: number, to: number, dir: 1 | -1) => { for (let x = from; dir > 0 ? x < to : x >= to; x += dir) if (colInk[x] >= h * 0.95) return x; return -1 }
   for (let x = 0; x < w * 0.2; x++) {
-    if (border(x)) { let e = x; while (e + 1 < w && border(e + 1)) e++; if (clearFrom(e + 1, 1)) x0 = e + 1; break }
-    if (textCol(x)) break
+    if (border(x)) { const e = runEnd(x, 1); if (clearFrom(e + 1, 1)) x0 = e + 1; break }
+    if (textCol(x)) { const s = solidAt(x + 1, Math.floor(w * 0.2), 1); if (s >= 0) { const e = runEnd(s, 1); if (clearFrom(e + 1, 1)) x0 = e + 1 } break }
   }
   for (let x = w - 1; x >= w * 0.8; x--) {
-    if (border(x)) { let e = x; while (e - 1 >= 0 && border(e - 1)) e--; if (clearFrom(e - 1, -1)) x1 = e; break }
-    if (textCol(x)) break
+    if (border(x)) { const e = runEnd(x, -1); if (clearFrom(e - 1, -1)) x1 = e; break }
+    if (textCol(x)) { const s = solidAt(x - 1, Math.ceil(w * 0.8), -1); if (s >= 0) { const e = runEnd(s, -1); if (clearFrom(e - 1, -1)) x1 = e } break }
   }
   return y0 > 0 || y1 < h || x0 > 0 || x1 < w ? { x0, x1, y0, y1 } : null
 }
