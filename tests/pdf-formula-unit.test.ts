@@ -349,6 +349,22 @@ describe("isTrivialFormula", () => {
       ),
       false,
     )
+    // 같은 첨자를 되풀이한 정상 식은 유지
+    assert.equal(isTrivialFormula("S=\\sum_{\\ell,m}S_{\\ell,m}Y_{\\ell,m},"), false)
+    assert.equal(isTrivialFormula("T_{\\ell,m}\\sim C_{\\ell,m}\\sim Q_{\\ell,m}."), false)
+    // 부등식으로만 잇는 여러 줄 평가식도 유지
+    assert.equal(
+      isTrivialFormula(
+        "\\begin{aligned}{I}&{\\leq\\frac{k_{0}}{4}|c\\widehat{E}|^{2}}\\\\{}&{+C(k_{0})|\\widehat{u\\times B}|^{2},}\\end{aligned}",
+      ),
+      false,
+    )
+    assert.equal(
+      isTrivialFormula(
+        "\\begin{aligned}{\\frac{d}{dt}L_{c}(t,\\xi)+k_{0}}&{|\\widehat{B}|^{2}}\\\\{}&{\\lesssim|\\widehat{u\\times B}|^{2},}\\end{aligned}",
+      ),
+      false,
+    )
   })
 
   it("\\begin{matrix} + \\downarrow 반복 trivial (architecture diagram)", () => {

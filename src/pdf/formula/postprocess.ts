@@ -293,7 +293,9 @@ export function isTrivialFormula(s: string): boolean {
   // 6) substring 반복 패턴 — 동일 5~15자 substring 이 3회 이상 + 커버리지 60%+
   //    (e.g. "\\alpha_{1}=\\alpha_{2}=\\alpha_{3}=..." 의 `\\alpha_{` 반복,
   //           "c_{c}^{\\prime}\\phi_{c}^{\\prime}=c_{c}^{\\prime}..." 의 `c_{c}^{\\prime}` 반복)
-  if (hasHighRepetition(t)) return true
+  //    첨자를 지운 뒤에도 되풀이가 남아야 한다 — 같은 첨자를 단 정상 식(`S=\sum_{\ell,m}S_{\ell,m}Y_{\ell,m}`)이 `_{\ell,m}`
+  //    되풀이로 버려졌다. 고리 쓰레기(`\alpha_{4}=\alpha_{4}=…`)는 첨자 밖 글까지 되풀이한다
+  if (hasHighRepetition(t) && hasHighRepetition(t.replace(/([_^])\{[^{}]*\}/g, "$1"))) return true
 
   // 7) MFR placeholder 인 `\square` 포함 — 인식 실패 영역을 `\square` 로 대체하는 특성
   //    정당한 수식에 `\square` 가 나오는 경우는 거의 없음 (대부분 `\Box`, `\blacksquare` 등 사용)
@@ -358,9 +360,9 @@ export function isTrivialFormula(s: string): boolean {
   //     — 포함만으로 trivial (e.g. `\mathtt{Welgnt}`, `\mathsf{Tr}_{s}`, `\texttt{wg}`)
   if (/\\(?:mathsf|mathtt|texttt)\{/.test(t)) return true
 
-  // 16) `\begin{aligned}` 이지만 `=` 없음 — 정당한 aligned 는 항상 등호 포함 (여러 줄 equation)
-  //     등호 없으면 OCR garbage 조합
-  if (/\\begin\{aligned\}/.test(t) && !t.includes("=")) return true
+  // 16) `\begin{aligned}` 이지만 관계 기호 없음 — 정당한 aligned 는 줄마다 관계(=·≤·≲·≈ …)로 이어진다 (여러 줄 equation)
+  //     관계 기호가 없으면 OCR garbage 조합. 등호만 보면 부등식 유도(`\leq`·`\lesssim` 로만 잇는 여러 줄 평가식)를 통째로 버렸다
+  if (/\\begin\{aligned\}/.test(t) && !/[=<>]|\\(?:leq?|geq?|leqslant|geqslant|lesssim|gtrsim|ll|gg|approx|sim|simeq|cong|equiv|neq?|propto|triangleq|implies|iff|Longleftrightarrow)(?![A-Za-z])/.test(t)) return true
 
   // 17) `\begin{matrix}` + `\downarrow` 2회+ — 네트워크 architecture 다이어그램 오인식
   if (/\\begin\{matrix\}/.test(t) && (t.match(/\\downarrow/g) ?? []).length >= 2) return true
