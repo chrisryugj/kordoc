@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.55: Handwriting model threshold, cell-rule trimming, decimal pairs, duplicate formula lines, HWP 3.x · 2026-11-09
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89885 → **0.90023** (handwriting .90065 → **.90750**, tables .91052 → .91054, order .91308 → .91284). Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): precision 0.9554 → **0.9682**, recall 0.9728 → 0.9723. No per-document drops on the in-house OCR, OCR robust and ODL-OCR benchmarks; HWPX, PDF and HWP5-pair scoring gates pass.
+
+- Handwriting model threshold: many handwritten pages score .85–.90 with the default model and gain +.08–.10 with the handwriting model, which the old threshold (.85, +.10) missed. The `ocrRec: "auto"` threshold (.9, +.06) reaches 0.90006 but breaks nine CSAT math pages (handwriting-model confidence .91–.94; math_p06 CER .65 → .86). A first version accepting only means ≥ .95 reached 0.90023 but switched noisy printed scans (two robustness documents, readings differing by .007–.03) and a 64-character table-of-contents region (rda-planfarm), dropping three in-house documents. Requiring the two readings to differ by 8% and at least 80 characters in the +.08–.10 band keeps 0.90023 with no drops.
+- Cell-rule trimming: five cells of a time-use table fixed ("0:36" read as ":36" next to a double rule, "60.5" as "(.5" past a neighbouring cell's glyph tail). Only +.00002 on the total because that table's row/column structure does not match the truth.
+- Rejected: removing dark-filled header bands from line detection (vertical rules of a weather table 1 → 21, but a heat map .69 → .45, 0.89819); median-height tolerance for handwritten line grouping (+.0001, three table pages down).
+
 ## 4.24.54: Side-by-side tables, formula junk filter, OCR grey header bands, value (share) cells · 2026-11-08
 
 External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89420 → **0.89885** (tables .9018 → **.9105**, order .9116 → **.9131**). Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9447 → **0.9728**, recall@NED≤.3 0.9114 → **0.9425**, exact match 0.6033 → **0.6141**, precision 0.9584 → 0.9554, BLEU-4 0.8906 → **0.8974**. No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.

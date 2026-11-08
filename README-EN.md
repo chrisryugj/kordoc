@@ -126,7 +126,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 66 tables | CER **0.0239** · character recall **99.32%** · table structure **34/66** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.899** by default · tables **0.911** · handwriting **0.901** · order **0.913** · heading recall 0.930 (4.24.54) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.900** by default · tables **0.911** · handwriting **0.908** · order **0.913** · heading recall 0.930 (4.24.55) |
 | opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.967** with `ocr: true` · 0.939 with OCR off (4.22.14) |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.54](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.54)** · 2026-11-08
+Latest release: **[4.24.55](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.55)** · 2026-11-09
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.55 | OCR: default threshold for re-reading handwritten pages with the handwriting model (pages at .85–.90 were missed) · OCR: cell rules (double and dotted) read as characters · decimal pairs that lost their point ("121/18.1") · PDF formula OCR: duplicate lines detected inside a multi-line box · HWP 3.x custom outline numbers, index marks, hyphens and horizontal bars | KoOCR-Bench total 0.89885 → **0.90023** (handwriting .901 → **.908**) · Formula OCR precision 0.955 → **0.968** (report only) · no per-document drops on in-house benchmarks |
 | 4.24.54 | PDF/OCR: two tables side by side were stacked into one · PDF formula OCR: the junk filter dropped inequality derivations and equations repeating the same subscript · OCR: cell dividers inside grey table header bands · OCR: "value (share)" cells split into two columns | KoOCR-Bench total 0.89420 → **0.89885** (tables .902 → **.911**) · Formula OCR recall 0.945 → **0.973** (report only) · no per-document drops on in-house benchmarks |
 | 4.24.53 | PDF formula OCR: long equations were cut at 256 tokens (now 512) · fragments of multi-line equations are joined · OCR: short cell dividers that span a single row · OCR: numbered chapter/section headings with a space after the number | Formula OCR recall 0.931 → **0.945** (report only) · KoOCR-Bench total 0.89408 → **0.89420** · heading recall 0.924 → **0.930** · no per-document drops on in-house benchmarks |
 | 4.24.52 | PDF images placed in reading order between text blocks with `imagePlacement: "flow"` (opt-in) · `dropBlankImages` drops blank images · stacked image-band boxes no longer become one-column tables · OCR sentence lines trapped in tables come out as paragraphs (#195) | KoOCR-Bench total 0.8936 → **0.8941** (tables .901 → **.902**) · no per-document drops on in-house benchmarks |
 | 4.24.51 | PDF formula OCR: whole equations no longer come out Markdown-escaped · HWP footnote/endnote numbers (stored number, section number format) · PDF two-column pages where one column ends early · OCR bar-chart plot text · HWP preview line-spacing type | Formula OCR recall 0.925 → **0.931** (report only) · no per-document drops on in-house benchmarks |
-| 4.24.50 | OCR: column headers joined across two columns · stacked rows next to vertically written labels ("저/위") · two-column reading order (the right column was read first) | KoOCR-Bench total 0.8928 → **0.8936** (`auto` 0.8940 → **0.8948**) · order .907 → **.912** · statistics tables .908 → **.910** · no per-document drops on in-house benchmarks |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
