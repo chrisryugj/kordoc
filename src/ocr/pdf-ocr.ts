@@ -59,6 +59,9 @@ export interface BuiltinOcrConfig {
   autoRec?: { pageConf: number; gain: number; altConf?: number; sureGain?: number; minDiff?: number; minChars?: number; lazy?: true; fetch?: true }
 }
 
+/** 저신뢰로 버린 줄이 많은 쪽을 큰 검출로 다시 읽는 문턱 (recognizeOcrPage) */
+const REDETECT = { minDropped: 15, minShare: 0.15, scale: 5 / 3 }
+
 /** `ocrRec: "auto"` 문턱 — 쪽 평균 확신도(글자 수 가중)가 이보다 낮은 쪽만 손글씨 rec 로 다시 읽고, 평균이 gain 이상 오를 때만 바꾼다.
  *  KoOCR-Bench 손글씨 쪽은 기본 rec .74~.90 → 손글씨 rec +.07~.22, 인쇄 쪽은 .87~.98 에 대개 +.05 이하였다 */
 const AUTO_REC = { pageConf: 0.9, gain: 0.06 }
@@ -96,8 +99,30 @@ export async function recognizeOcrPage(
   rgba: Uint8Array, width: number, height: number, stats: OcrPageStats,
   cellRules?: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>, rowRules?: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>,
 ): Promise<OcrItem[]> {
-  const items = await engine.recognizePage(rgba, width, height, stats, tuning, cellRules, rowRules)
-  if (!config.handwriting || stats.pageRotation) return items
+  const read = async (t: Readonly<OcrTuning>, st: OcrPageStats) => {
+    const items = await engine.recognizePage(rgba, width, height, st, t, cellRules, rowRules)
+    return st.pageRotation ? items : withHandwritingRec(items, config, t, rgba, width, height, st, cellRules, rowRules)
+  }
+  const items = await read(tuning, stats)
+  // 검출 상자 여럿이 저신뢰로 버려진 쪽 — 검출 크기를 5/3 배로 키워 다시 읽고(손글씨 rec 판정까지) 버린 줄이 줄고 확신도가 오르면 그것을
+  // 쓴다. 하늘 수채화 바탕 손편지(640×920)는 960 검출에서 글줄이 획 조각으로 갈려 124줄 중 66줄을 버려 CER .51 이었고, 1600 검출 +
+  // 손글씨 rec 면 버린 줄 0·CER .15. 검출 크기를 늘 키우면 손글씨 쪽 다수가 나빠졌다(1280 일괄 반려) — KoOCR 손글씨 108쪽 중 버린 줄
+  // 15+·전체 줄 15%+ 인 쪽은 둘뿐(그 밖은 7줄 이하)
+  if (!tuning.redetect || stats.pageRotation || stats.droppedLowConf < REDETECT.minDropped || stats.droppedLowConf < (items.length + stats.droppedLowConf) * REDETECT.minShare) return items
+  const bigStats: OcrPageStats = { droppedLowConf: 0, ...(stats.dropped ? { dropped: [] } : {}) }
+  const big = await read({ ...tuning, detLongSide: Math.round(tuning.detLongSide * REDETECT.scale) }, bigStats)
+  if (bigStats.pageRotation || bigStats.droppedLowConf >= stats.droppedLowConf || meanConfidence(big) <= meanConfidence(items)) return items
+  Object.assign(stats, bigStats)
+  return big
+}
+
+/** 확신도 낮은 쪽을 손글씨 rec 로 다시 읽어 더 확신하는 쪽을 쓴다(stats 도 고른 쪽 것으로) */
+async function withHandwritingRec(
+  items: OcrItem[], config: Readonly<BuiltinOcrConfig>, tuning: Readonly<OcrTuning>,
+  rgba: Uint8Array, width: number, height: number, stats: OcrPageStats,
+  cellRules?: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }>, rowRules?: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }>,
+): Promise<OcrItem[]> {
+  if (!config.handwriting) return items
   const auto: NonNullable<BuiltinOcrConfig["autoRec"]> = config.autoRec ?? AUTO_REC
   const base = meanConfidence(items)
   if (base >= auto.pageConf) return items
@@ -369,8 +394,8 @@ function halve(src: Uint8Array, w: number, h: number): { rgba: Uint8Array; width
 }
 
 /** 그림 영역만 읽을 때 — 끝자락 지우기를 끈다 (engine OcrTuning.trimEdges 주석) */
-const REGION_TUNING: Readonly<OcrTuning> = Object.freeze({ ...DEFAULT_OCR_TUNING, trimEdges: false, orientPage: false })
-const regionTuning = (t: Readonly<OcrTuning>): Readonly<OcrTuning> => t === DEFAULT_OCR_TUNING ? REGION_TUNING : { ...t, trimEdges: false, orientPage: false }
+const REGION_TUNING: Readonly<OcrTuning> = Object.freeze({ ...DEFAULT_OCR_TUNING, trimEdges: false, orientPage: false, redetect: false })
+const regionTuning = (t: Readonly<OcrTuning>): Readonly<OcrTuning> => t === DEFAULT_OCR_TUNING ? REGION_TUNING : { ...t, trimEdges: false, orientPage: false, redetect: false }
 
 function meanConfidence(items: OcrItem[]): number {
   let n = 0, sum = 0

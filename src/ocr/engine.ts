@@ -97,6 +97,9 @@ export interface OcrTuning {
   splitLeaders: boolean
   /** 눕혀 찍은 쪽 판정 — 검출 상자 대부분이 세로로 길면 돌릴 각을 stats.pageRotation 에 적고 인식을 건너뛴다 */
   orientPage: boolean
+  /** 저신뢰로 버린 줄이 많은 쪽을 큰 검출로 다시 읽기 (pdf-ocr recognizeOcrPage). 그림 영역만 읽을 때는 끈다 — 차트 글 영역은
+   *  눈금·범례 조각을 늘 많이 버려 다시 읽기가 걸렸고 "single" 이 "sing le" 로 갈렸다(ODL 027) */
+  redetect: boolean
 }
 
 export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
@@ -113,6 +116,7 @@ export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
   tightBoxes: true,
   splitLeaders: true,
   orientPage: true,
+  redetect: true,
 })
 
 const DET_MIN_SIZE = 3
