@@ -59,6 +59,22 @@ it("cuts a value from its bracketed share beside it (\"3,193 (1.7)\" — 구성�
   assert.deepEqual(splitItemsAtGutters([share(150)], lines).map(it => it.text), ["3,193", "(1.7)"])
 })
 
+it("a spaced header word over the value gap blocks the header row (\"자기 집\" 두 열 걸침 머리)", () => {
+  const g = grid()
+  const share = (y: number) => item("3,193 (1.7)", 20, y, 260, [[5, 120, 170]])
+  const items = [item("자기 집", 100, 185, 100, [[2, 136, 145]]), share(150), share(120), share(90)]
+  const lines = ocrGutterVerticals([g], items).get(g) ?? []
+  assert.deepEqual(lines.map(l => [l.y1, l.y2]), [[0, 180]])
+})
+
+it("column headers standing apart over their own columns do not block the cut (\"제조업  서비스\")", () => {
+  const g = grid()
+  const share = (y: number) => item("3,193 (1.7)", 20, y, 260, [[5, 120, 170]])
+  const items = [item("제조업 서비스", 40, 185, 220, [[3, 100, 190]]), share(150), share(120), share(90)]
+  const lines = ocrGutterVerticals([g], items).get(g) ?? []
+  assert.deepEqual(lines.map(l => [l.y1, l.y2]), [[0, 200]])
+})
+
 it("splits glued thousands-grouped integers across the columns they span (\"7,3022,6071,364\")", () => {
   const g: TableGrid = { colXs: [0, 50, 100, 150, 200], rowYs: [100, 0], bbox: { x1: 0, y1: 0, x2: 200, y2: 100 }, vertexRadius: 1 }
   const out = splitItemsAcrossColumns([item("7,3022,6071,36410,563", 10, 50, 180), item("1,364,123 5", 10, 20, 130)], [g])

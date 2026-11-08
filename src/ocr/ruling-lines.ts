@@ -23,6 +23,10 @@ import type { LineSegment } from "../pdf/line-types.js"
  * 걸려 두 픽셀로 번지면 픽셀마다 192~207 이라 190 에선 놓쳤다(ice-geomjeong 시험일정표 "구분│일자" 세로선, ktdb 목록표)
  */
 const INK_LUMA_MAX = 205
+/** 이보다 밝은 잉크(옅은 회색)는 넓게 칠한 면이면 잉크에서 뺀다 — 20% 회색 머리 띠(휘도 204)가 잉크 덩어리가 됐다 */
+const LIGHT_INK_MIN = 161
+/** 옅은 회색 면 판정 창 반지름 (pt) — 창의 절반 넘게 옅은 회색이면 면(안쪽·가장자리), 가는 괘선(1~3px)은 절반에 못 미친다 */
+const FLAT_RADIUS_PT = 1.1
 /** 최소 선 길이 (pt) — 최소 셀 변(≈7mm)과 대형 글리프 획(≤1em) 사이 */
 const MIN_LINE_LENGTH_PT = 20
 /** 두 가로 괘선을 잇는 짧은 세로선의 최소 길이 (pt) — 조직도 상자 사이 연결선(16pt) */
@@ -119,6 +123,109 @@ export function detectRulingLines(
     const l = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8
     luma[p] = l
     if (l <= INK_LUMA_MAX && rgba[i + 3] >= 128) ink[p] = 1
+  }
+  // 옅은 회색으로 칠한 표 칸은 선이 아니다 — 20% 회색 머리 띠(휘도 204)를 잉크로 보면 띠 전체가 한 덩어리라 그 안의 진한 1px 세로선과
+  // 띠에 붙은 표 테두리까지 "굵은 띠"로 버려져 표 머리 칸이 뭉개졌다(관보 배출 정보 서식 두 단 머리). 후보는 창의 절반 넘게 옅은 회색인
+  // 픽셀(면의 안쪽·가장자리) — 두 픽셀로 번진 옅은 괘선(192~207)은 창의 절반을 못 채운다
+  const r = Math.max(2, Math.round(FLAT_RADIUS_PT * scale))
+  const sum = new Int32Array((width + 1) * (height + 1))
+  for (let y = 0; y < height; y++) {
+    let row = 0
+    for (let x = 0; x < width; x++) {
+      const p = y * width + x
+      if (ink[p] && luma[p] >= LIGHT_INK_MIN) row++
+      sum[(y + 1) * (width + 1) + x + 1] = sum[y * (width + 1) + x + 1] + row
+    }
+  }
+  const flat: number[] = []
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(height, y + r + 1)
+    for (let x = 0; x < width; x++) {
+      const p = y * width + x
+      if (!ink[p] || luma[p] < LIGHT_INK_MIN) continue
+      const x0 = Math.max(0, x - r), x1 = Math.min(width, x + r + 1)
+      const n = sum[y1 * (width + 1) + x1] - sum[y0 * (width + 1) + x1] - sum[y1 * (width + 1) + x0] + sum[y0 * (width + 1) + x0]
+      if (n * 2 > (y1 - y0) * (x1 - x0)) flat.push(p)
+    }
+  }
+  // 후보를 면(4-이웃)으로 묶어 표 칸 음영만 뺀다: 양옆이 진한 괘선이고 네모를 채우며, 괘선이 면 밖으로 이어지거나(표 격자) 괘선 하나
+  // 너머 다른 칸 음영과 맞닿아야 한다. 아무 면이나 빼면 그림 입체 틀의 윤곽(수능 한국사), 사진 밝은 면 속 무늬(사진 칸 표), 옅은 음영
+  // 칸 옆 진한 음영 칸 가장자리(통계 이출입 표)가 가짜 괘선이 됐다
+  const label = new Int32Array(width * height)
+  for (const p of flat) label[p] = -1
+  const stack: number[] = []
+  let id = 0
+  const cells: { pix: number[]; x0: number; x1: number; y0: number; y1: number; runs: boolean }[] = []
+  for (const seed of flat) {
+    if (label[seed] !== -1) continue
+    id++
+    const pix: number[] = []
+    let y0 = height, y1 = 0
+    label[seed] = id; stack.push(seed)
+    while (stack.length) {
+      const p = stack.pop()!
+      pix.push(p)
+      const y = (p / width) | 0, x = p - y * width
+      if (y < y0) y0 = y
+      if (y > y1) y1 = y
+      if (x > 0 && label[p - 1] === -1) { label[p - 1] = id; stack.push(p - 1) }
+      if (x < width - 1 && label[p + 1] === -1) { label[p + 1] = id; stack.push(p + 1) }
+      if (y > 0 && label[p - width] === -1) { label[p - width] = id; stack.push(p - width) }
+      if (y < height - 1 && label[p + width] === -1) { label[p + width] = id; stack.push(p + width) }
+    }
+    // 행마다 면의 왼끝·오른끝 바로 바깥(r 안)이 진한 잉크인지 — 칸 음영은 양옆이 칸 괘선이다
+    const rows = y1 - y0 + 1
+    const lo = new Int32Array(rows).fill(width), hi = new Int32Array(rows).fill(-1)
+    let x0 = width, x1 = 0
+    for (const p of pix) {
+      const y = (p / width) | 0, x = p - y * width
+      if (x < lo[y - y0]) lo[y - y0] = x
+      if (x > hi[y - y0]) hi[y - y0] = x
+      if (x < x0) x0 = x
+      if (x > x1) x1 = x
+    }
+    const dark = (q: number) => ink[q] !== 0 && luma[q] < LIGHT_INK_MIN
+    let walled = 0
+    for (let i = 0; i < rows; i++) {
+      const base = (y0 + i) * width
+      let l = false, rr = false
+      for (let d = 1; d <= r && lo[i] - d >= 0 && !l; d++) l = dark(base + lo[i] - d)
+      for (let d = 1; d <= r && hi[i] + d < width && !rr; d++) rr = dark(base + hi[i] + d)
+      if (l && rr) walled++
+    }
+    if (walled < rows * 0.8 || pix.length < rows * (x1 - x0 + 1) * 0.7) continue
+    // 칸 괘선이 면 위나 아래로 4r 넘게 이어지는지(표 격자) — 외톨이 상자의 윤곽선은 모서리에서 끝난다
+    const mid = rows >> 1, base = (y0 + mid) * width
+    let runs = false
+    for (const dir of [-1, 1]) {
+      let x = dir < 0 ? lo[mid] : hi[mid]
+      let d = 1
+      while (d <= r && x + dir * d >= 0 && x + dir * d < width && !dark(base + x + dir * d)) d++
+      if (d > r || x + dir * d < 0 || x + dir * d >= width) continue
+      x += dir * d
+      for (const [from, step] of [[y0 - 1, -1], [y1 + 1, 1]]) {
+        let n = 0
+        for (let y = from; y >= 0 && y < height && n <= 4 * r; y += step) {
+          const q = y * width + x
+          if (!(dark(q) || (x > 0 && dark(q - 1)) || (x < width - 1 && dark(q + 1)))) break
+          n++
+        }
+        if (n > 4 * r) runs = true
+      }
+    }
+    cells.push({ pix, x0, x1, y0, y1, runs })
+  }
+  // 괘선이 면에서 끝나면 괘선 하나 너머로 맞닿은 다른 칸 음영이 있어야 한다 — 회색으로 채운 외톨이 상자(홀수형 표지)·입체 틀 옆면은 남긴다
+  const gap = 3 * r
+  const touch = (a: typeof cells[0], b: typeof cells[0]) => {
+    const ov = (p0: number, p1: number, q0: number, q1: number) => Math.min(p1, q1) - Math.max(p0, q0)
+    const side = (p0: number, p1: number, q0: number, q1: number) => (q0 > p1 ? q0 - p1 : p0 - q1)
+    const yo = ov(a.y0, a.y1, b.y0, b.y1), xo = ov(a.x0, a.x1, b.x0, b.x1)
+    const hg = side(a.x0, a.x1, b.x0, b.x1), vg = side(a.y0, a.y1, b.y0, b.y1)
+    return (hg > 0 && hg <= gap && yo >= Math.min(a.y1 - a.y0, b.y1 - b.y0) * 0.5) || (vg > 0 && vg <= gap && xo >= Math.min(a.x1 - a.x0, b.x1 - b.x0) * 0.5)
+  }
+  for (const c of cells) {
+    if (c.runs || cells.some(o => o !== c && touch(c, o))) for (const p of c.pix) ink[p] = 0
   }
 
   const solid: RunReader = (m, base, step, span) => solidRuns(m, base, step, span, minLenPx)

@@ -94,8 +94,17 @@ export function ocrGutterVerticals(grids: TableGrid[], items: NormItem[]): Map<T
         // 본문이 괘선 없이 한 격자 행이면 빈 구간 근거를 못 얻은 상자 한둘이 행 전체를 막지 않게 한다
         const rows = grid.rowYs.length - 1
         const supportIn = (r: number) => [...supportLines].filter(y => y < grid.rowYs[r] && y > grid.rowYs[r + 1]).length
+        // 값 아닌 글 둘뿐인 글줄이 틈 양옆에 글자 높이 1.2 배 안으로 붙으면(띄어 쓴 머리 "자기 집"·"전 세") x 를 가로지른다 — 두 열에
+        // 걸친 머리 칸이다. 열마다 따로 선 머리 줄("제조업  서비스  건설", "합계 기대 국내")은 셋 이상이거나 멀어 막지 않는다
+        const spaced = (l: { spans: Span[] }) => {
+          const word = l.spans.filter(sp => sp.text)
+          if (word.length !== 2 || word.some(sp => VALUE_TOKEN.test(sp.text))) return false
+          const [left, right] = [...word].sort((a, b) => a.left - b.left)
+          return left.right <= x && right.left >= x && right.left - left.right <= size * 1.2
+        }
         const blocked = Array.from({ length: rows }, (_, r) => lines.filter(l => l.y < grid.rowYs[r] && l.y > grid.rowYs[r + 1] &&
-          l.cover.some(sp => sp.estimated ? x - sp.left > size * 0.6 && sp.right - x > size * 0.6 : sp.left < x - 0.5 && sp.right > x + 0.5)).length > supportIn(r) * 0.25)
+          (l.cover.some(sp => sp.estimated ? x - sp.left > size * 0.6 && sp.right - x > size * 0.6 : sp.left < x - 0.5 && sp.right > x + 0.5) ||
+            spaced(l))).length > supportIn(r) * 0.25)
         // 막히지 않은 연속 행 가운데 지지 글줄이 가장 많은 구간
         let bestRun: [number, number] | undefined, bestCount = 0
         for (let r = 0; r < rows;) {

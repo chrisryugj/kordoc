@@ -30,7 +30,14 @@ export function findOcrTextGaps(rgba: Uint8Array, pageW: number, box: Box, read:
   const gray = grayCrop(rgba, pageW, box), ink = inkStats(gray)
   if (!ink.darkInk || ink.contrast < 35) return []
   const counts = new Uint32Array(box.w)
-  for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) if (gray[y * box.w + x] <= ink.threshold) counts[x]++
+  for (let y = 0; y < box.h; y++) {
+    // 상자에 걸친 칸 괘선 행은 글자 사이 빈 열을 모두 막는다 — 빼고 센다(통계표 "4,280 (100.0)" 칸 위아래 실선·점선). 실선은 폭의 85%,
+    // 점선(점 사이가 비어 40% 안팎)은 상자 위아래 1/4 띠에서 35% 넘게 잉크인 행 — 글자 획 행은 띠 안에서 30% 를 잘 안 넘는다
+    let n = 0
+    for (let x = 0; x < box.w; x++) if (gray[y * box.w + x] <= ink.threshold) n++
+    if (n > box.w * 0.85 || ((y < box.h * 0.25 || y >= box.h * 0.75) && n > box.w * 0.35)) continue
+    for (let x = 0; x < box.w; x++) if (gray[y * box.w + x] <= ink.threshold) counts[x]++
+  }
   const out: OcrTextGap[] = []
   let offset = 0, index = 0
   for (const c of text) {

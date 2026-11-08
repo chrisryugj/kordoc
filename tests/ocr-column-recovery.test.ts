@@ -45,6 +45,17 @@ describe("OCR body-supported column recovery", () => {
     assert.deepEqual(findOcrTextGaps(rgba, w, box, "단가수량", "다른글", [1, 3, 9, 11], 10), [])
   })
 
+  it("ignores a table rule (solid or dotted) crossing the top or bottom of the box", async () => {
+    const { findOcrTextGaps } = await import("../src/ocr/text-gaps.js")
+    const w = 140, h = 24, rgba = new Uint8Array(w * h * 4).fill(255)
+    const dot = (x: number, y: number) => { const p = (y * w + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    for (const x0 of [4, 24, 84, 104]) for (let y = 4; y < 20; y++) for (let x = x0; x < x0 + 12; x++) dot(x, y)
+    for (let x = 0; x < w; x++) { dot(x, 0); dot(x, 1) }
+    for (let x = 0; x < w; x++) if (x % 5 < 2) { dot(x, 22); dot(x, 23) }
+    const gaps = findOcrTextGaps(rgba, w, { x: 0, y: 0, w, h }, "단가수량", "단가 수량", [1, 3, 9, 11], 10)
+    assert.ok(gaps.some(g => g.at === 3 && g.left >= 36 && g.right <= 84), JSON.stringify(gaps))
+  })
+
   it("recovers the joined header and both numeric rows from two distinct body rows", () => {
     const r = table(receipt())
     assert.ok(r.table, JSON.stringify(r.blocks))

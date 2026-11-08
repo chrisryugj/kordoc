@@ -147,6 +147,28 @@ describe("detectRulingLines — 래스터 괘선 감지", () => {
     assert.equal(horizontals.length, 0)
     assert.equal(verticals.length, 0)
   })
+
+  it("20% 회색 머리 띠(휘도 204) 안 진한 1px 세로선과 띠에 붙은 테두리를 감지", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    for (let y = 50; y <= 200; y++) for (let x = 100; x <= 800; x++) ink(rgba, w, x, y, 204)
+    drawVLine(rgba, w, 96, 50, 350, 4)
+    drawVLine(rgba, w, 801, 50, 350, 4)
+    for (const x of [300, 500]) for (let y = 50; y <= 350; y++) ink(rgba, w, x, y, 80)
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.deepEqual(verticals.filter(v => v.y1 <= 52 && v.y2 >= 348).map(v => Math.round(v.x1)).sort((a, b) => a - b), [98, 300, 500, 803])
+  })
+  it("윤곽선이 모서리에서 끝나는 외톨이 회색 상자(표지 상자·그림 입체 틀)는 지우지 않아 윤곽이 괘선이 되지 않음", () => {
+    const w = 600, h = 400
+    const rgba = makeCanvas(w, h)
+    for (let y = 100; y <= 300; y++) for (let x = 100; x <= 400; x++) ink(rgba, w, x, y, 204)
+    drawVLine(rgba, w, 98, 98, 302)
+    drawVLine(rgba, w, 401, 98, 302)
+    drawHLine(rgba, w, 98, 402, 98)
+    drawHLine(rgba, w, 98, 402, 301)
+    const { verticals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.deepEqual(verticals.filter(v => v.y2 - v.y1 > 100), [])
+  })
 })
 
 /** 점선 수평선: 점 dot px·간격 gap px, 두께 thick px */
