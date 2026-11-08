@@ -134,6 +134,21 @@ export function singleNumberText(text: string): boolean {
  * 숫자 재인식 결과 반영 — 숫자 밖 글자가 같으면 다시 읽은 글 그대로, 다르면 원래 글의 수만 다시 읽은 수로 바꾼다(수가 하나씩일 때).
  * 늘려 읽으면 칸 테두리를 "|"·"]" 로 붙여 읽거나 앞 "△" 를 빠뜨려(관보 기금 금액 "△19,454,00,000원" → "19,454,000,000원") 버려졌다
  */
+/** 수 짝("12.1/18.1", 기온 최저/최고) */
+const NUMBER_PAIR = /^[-−]?\d+(?:\.\d+)?\/[-−]?\d+(?:\.\d+)?$/
+const DECIMAL_PAIR = /^[-−]?\d+\.\d+\/[-−]?\d+\.\d+$/
+/**
+ * 점이 빠진 수 짝의 재인식 결과 반영 — 다시 읽은 글이 양쪽 다 소수이고, 원래 숫자를 차례로 품으며, 숫자가 하나까지만 늘었을 때만
+ * ("121/18.1" → "12.1/18.1", "31/1.8" → "3.1/11.8")
+ */
+export function rereadDecimalPair(original: string, reread: string): string | null {
+  const r = reread.trim()
+  if (!DECIMAL_PAIR.test(r)) return null
+  const a = original.replace(/\D/g, ""), b = r.replace(/\D/g, "")
+  let i = 0
+  for (const ch of b) if (ch === a[i]) i++
+  return i === a.length && b.length - a.length <= 1 ? r : null
+}
 export function rereadNumberText(original: string, reread: string): string | null {
   const skeleton = (t: string) => t.replace(/[\d,\s]/g, "")
   if (skeleton(reread) === skeleton(original)) return restoreSymbols(reread.trim())
@@ -859,6 +874,23 @@ export class OcrEngine {
         it.text = merged
         rememberOcrTextGaps(it, findOcrTextGaps(rgba, width, boxOf.get(it)!, r.text, it.text, r.steps, r.stepPx))
       })
+    }
+    // 소수 짝("12.1/18.1", 기온 최저/최고) — 좁은 숫자 글꼴에서 점이 앞뒤 숫자에 붙어 빠졌다("121/18.1"·"124/188", 날씨 표). 쪽의 수 짝
+    // 다섯 이상에 60% 넘게 양쪽이 소수일 때만 점이 빠진 짝을 늘려 다시 읽는다(rereadDecimalPair)
+    const pairs = tuning.postprocess ? items.filter(it => boxOf.has(it) && NUMBER_PAIR.test(it.text.trim())) : []
+    let undotted = pairs.filter(it => !DECIMAL_PAIR.test(it.text.trim()))
+    if (pairs.length >= 5 && pairs.length - undotted.length >= pairs.length * 0.6) {
+      for (const stretch of NUMBER_STRETCH) {
+        if (!undotted.length) break
+        const res = await this.recognizeJobs(rgba, width, undotted.map((it, k) => ({ box: boxOf.get(it)!, rot: 0 as const, group: k, stretch })), tuning.recBatch)
+        undotted = undotted.filter((it, k) => {
+          const r = res[k]
+          const fixed = r && r.confidence >= it.confidence - 0.05 ? rereadDecimalPair(it.text, r.text) : null
+          if (fixed === null) return true
+          it.text = fixed
+          return false
+        })
+      }
     }
     // 두 줄을 한 상자로 잡아 인식이 무너진 표 칸 — 상자가 넓어 세로로 긴 상자 가르기(splitTall)에 안 걸린다(여수 인원표 "산 단 환 경 /
     // 관 리 과" 가 "살다까" 로 읽혀 버려짐). 버려질 상자만 가운데 빈 행에서 두 줄로 갈라 다시 읽어 신뢰도를 넘는 줄을 받는다

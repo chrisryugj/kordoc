@@ -2,7 +2,7 @@
 
 import { it } from "node:test"
 import assert from "node:assert/strict"
-import { badThousands, rereadNumberText, singleNumberText } from "../src/ocr/engine.js"
+import { badThousands, rereadDecimalPair, rereadNumberText, singleNumberText } from "../src/ocr/engine.js"
 
 it("flags grouped numbers whose digits do not fall in threes (자간 좁은 숫자의 0 합침, 관보 계속비)", () => {
   for (const t of ["37,369,00", "2,618,631,00,000", "302543,00", "102,260,,00"]) assert.equal(badThousands(t), true, t)
@@ -26,4 +26,15 @@ it("keeps the non-digit text of the original when the stretched re-read adds a b
   assert.equal(rereadNumberText("1,23,000원", "1,230|00원"), null)
   // 자릿수가 줄거나 원래 숫자를 품지 않으면 오독이다
   assert.equal(rereadNumberText("0,05", "|5"), null)
+})
+
+it("rereadDecimalPair: 점이 빠진 기온 짝(최저/최고)은 양쪽 소수로 다시 읽혔고 원래 숫자를 품을 때만 받는다", () => {
+  assert.equal(rereadDecimalPair("121/18.1", "12.1/18.1"), "12.1/18.1")
+  assert.equal(rereadDecimalPair("124/188", "12.4/18.8"), "12.4/18.8")
+  // 늘려 읽어 숫자 하나가 되살아난 것("1.8" → "11.8")까지
+  assert.equal(rereadDecimalPair("31/1.8", "3.1/11.8"), "3.1/11.8")
+  // 한쪽만 소수거나, 숫자가 바뀌거나 둘 이상 늘면 오독이다
+  assert.equal(rereadDecimalPair("121/18.1", "121/18.1"), null)
+  assert.equal(rereadDecimalPair("121/18.1", "13.1/18.1"), null)
+  assert.equal(rereadDecimalPair("31/1.8", "3.1/111.8"), null)
 })
