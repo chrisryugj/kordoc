@@ -2,6 +2,15 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.54: Side-by-side tables, formula junk filter, OCR grey header bands, value (share) cells · 2026-11-08
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89420 → **0.89885** (tables .9018 → **.9105**, order .9116 → **.9131**). Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9447 → **0.9728**, recall@NED≤.3 0.9114 → **0.9425**, exact match 0.6033 → **0.6141**, precision 0.9584 → 0.9554, BLEU-4 0.8906 → **0.8974**. No per-document drops on the in-house OCR, OCR robust, ODL, ODL-OCR, Korean PDF text and table benchmarks.
+
+- Side-by-side tables: joining adjacent tables on a page stacked two tables that do not overlap horizontally and overlap vertically by more than half. Table slice pages .41–.68 → .87–1.0, two CSAT Korean pages CER .30 → .11 (0.89420 → 0.89698).
+- Formula junk filter: 81 of 128 missed equations had no "=" in the truth. The rule that treated `aligned` without "=" as junk dropped `\leq`/`\lesssim` derivations, and the repetition rule dropped valid equations repeating one subscript. None of the 2,186 previous pairs was lost or got a worse NED; 2,251 pairs now. Precision dipped because 11 newly found display equations are missing from the truth (all real equations).
+- OCR grey header bands: removing every flat light-grey area from the ink mask fixed two gazette pages but turned figure bevel outlines (CSAT history order .97 → .51), textures inside photo cells (.44 → .10) and dark cell edges next to light shading (.69 → .47) into false rules, total 0.89639, so it was rejected. Only table cell shading is removed now (rules on both sides, rectangular fill, rules running beyond the area or a neighbouring shaded cell): gazette CER .50 → .01 and .149 → .088.
+- Value (share) cells: table rules crossing the top or bottom of a cell box blocked every empty column between glyphs, so there was no pixel gap evidence (.60 → 1.0). The first version of the spaced-header guard merged headers standing over their own columns ("manufacturing services construction", .939 → .884), so it now needs exactly two tokens within 1.2 glyph heights.
+
 ## 4.24.53: Formula 512 tokens, multi-line equations, OCR single-row dividers and headings · 2026-11-08
 
 Formula OCR benchmark (20 arXiv papers, 621 pages, 2,314 equations; report only, run alone): recall 0.9313 → **0.9447**, recall at NED ≤ .3 0.8829 → **0.9114**, exact match 0.5977 → **0.6033**, precision 0.9341 → **0.9584**, BLEU-4 0.8906, 6.1 → 6.7 s per page. External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89408 → **0.89420** (tables .9016 → **.9018**), KDI heading recall 0.924 → **0.930** (outside the total). No per-document drops on the in-house OCR, OCR robust, ODL and ODL-OCR benchmarks.
