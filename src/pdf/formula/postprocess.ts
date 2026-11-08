@@ -499,6 +499,22 @@ export function normalizeFormulaSpacing(s: string): string {
 }
 
 /**
+ * 여러 줄 display 상자 안에 든 낮은 display 상자 — 검출기가 정렬식 전체와 그 안의 한 줄을 따로 잡으면(IoU 가 작아 NMS 를 지난다) 같은 줄이
+ * 큰 식 안에 한 번, 짝 없는 조각으로 또 한 번 나왔다(arXiv 2609.15723 p31 "+\frac{4L_f^2…}" 줄). 면적 85% 이상이 다른 display 상자 안이고
+ * 그 상자가 1.5 배 이상 높으면(여러 줄) 뺀다. 인식이 비어 버려진 상자 안의 것은 남긴다
+ */
+export function dropNestedDisplays<T extends { bbox: { x1: number; y1: number; x2: number; y2: number }; kind: string; latex: string }>(regions: T[]): T[] {
+  const display = regions.filter(r => r.kind === "display" && r.latex.trim())
+  const nested = (r: T) => display.some(o => {
+    if (o === r || o.bbox.y2 - o.bbox.y1 < (r.bbox.y2 - r.bbox.y1) * 1.5) return false
+    const w = Math.min(r.bbox.x2, o.bbox.x2) - Math.max(r.bbox.x1, o.bbox.x1)
+    const h = Math.min(r.bbox.y2, o.bbox.y2) - Math.max(r.bbox.y1, o.bbox.y1)
+    return w > 0 && h > 0 && w * h >= (r.bbox.x2 - r.bbox.x1) * (r.bbox.y2 - r.bbox.y1) * 0.85
+  })
+  return regions.filter(r => !(r.kind === "display" && r.latex.trim() && nested(r)))
+}
+
+/**
  * 여러 줄 display 식의 이어지는 줄 — 검출기가 정렬식("A = …" 다음 줄 "≤ …", "+ …")을 줄마다 상자로 잡으면 줄마다 따로 인식돼
  * 한 식이 조각으로 흩어졌다(arXiv 2609.15723: 놓친 식 48 중 47 이 여러 줄 식, 짝 없는 조각 90). 바로 위 display 상자와 세로로
  * 붙고(틈이 두 상자 중 낮은 높이 이하) 가로로 겹치며(좁은 쪽 폭의 절반 이상) 관계·연산 기호로 시작하는 조각은 위 식의 다음 줄로

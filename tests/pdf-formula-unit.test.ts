@@ -17,6 +17,7 @@ import {
   normalizeFormulaSpacing,
   hasHighRepetition,
   mergeContinuationLines,
+  dropNestedDisplays,
 } from "../src/pdf/formula/postprocess.js"
 import { __internal } from "../src/pdf/formula/detector.js"
 import { repeatingTail } from "../src/pdf/formula/recognizer.js"
@@ -522,6 +523,18 @@ describe("formula continuation lines (mergeContinuationLines)", () => {
   it("기호로 시작하지 않거나 멀리 떨어진 식·inline 은 그대로", () => {
     const regions = [r(100, 140, "A=B"), r(150, 190, "x^2+y^2=1"), r(400, 440, "=C"), r(450, 470, "=D", 100, 200, "inline")]
     assert.equal(mergeContinuationLines(regions).length, 4)
+  })
+})
+
+describe("formula nested display boxes (dropNestedDisplays)", () => {
+  const r = (x1: number, y1: number, x2: number, y2: number, latex = "a=b", kind = "display") => ({ bbox: { x1, y1, x2, y2 }, kind, latex, score: 0.5 })
+  it("여러 줄 display 상자 안에 든 한 줄 상자는 같은 줄을 또 읽은 것이라 뺀다", () => {
+    const out = dropNestedDisplays([r(214, 268, 999, 408, "A\\leq B\\\\+C"), r(237, 341, 1023, 410, "+C"), r(183, 465, 1035, 577)])
+    assert.deepEqual(out.map(o => o.latex), ["A\\leq B\\\\+C", "a=b"])
+  })
+  it("비슷한 높이로 겹친 상자·빈 상자 안·inline 은 그대로", () => {
+    const regions = [r(100, 100, 900, 160), r(120, 110, 880, 165), r(100, 300, 900, 500, ""), r(150, 320, 800, 380), r(100, 600, 900, 800), r(200, 650, 300, 680, "x", "inline")]
+    assert.equal(dropNestedDisplays(regions).length, 6)
   })
 })
 

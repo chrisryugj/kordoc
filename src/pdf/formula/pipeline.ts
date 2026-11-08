@@ -21,7 +21,7 @@ type SharpFactory = (
 
 import { detectFormulaRegions } from "./detector.js"
 import { recognizeFormula } from "./recognizer.js"
-import { mergeContinuationLines } from "./postprocess.js"
+import { dropNestedDisplays, mergeContinuationLines } from "./postprocess.js"
 import {
   getFormulaModelsDir,
   MFD_MODEL,
@@ -318,7 +318,7 @@ export class FormulaPipeline {
 
       regions.push({ ...r, latex })
     }
-    return mergeContinuationLines(regions)
+    return mergeContinuationLines(dropNestedDisplays(regions))
   }
 }
 
