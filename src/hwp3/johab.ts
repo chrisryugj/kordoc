@@ -245,6 +245,7 @@ function decodeHwp3Extra(ch: number): number {
     // 아래 항등 코드들은 rhwp #5860 실측표(한글 2022 오라클 위치 정렬) 이식.
     // 같은 0x20xx 대에 항등과 비항등이 섞여 있어 구간 통과는 하지 않는다.
     case 0x2010: return 0x2010 // ‐
+    case 0x2015: return 0x2015 // ― 치수 화살표 가로선 (rhwp 609725346 — hwp3-empty-cell "←――…→")
     case 0x2013: return 0x2013 // –
     case 0x2103: return 0x2103 // ℃
     case 0x2113: return 0x2113 // ℓ

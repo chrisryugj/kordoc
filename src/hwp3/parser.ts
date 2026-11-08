@@ -102,9 +102,13 @@ const SIMPLE_CTRL: ReadonlyMap<number, CtrlSimple> = new Map([
   [21, { extraBytes: 6, extraHchar: 3, emit: null }],
   [22, { extraBytes: 22, extraHchar: 11, emit: "￼" }],
   [23, { extraBytes: 8, extraHchar: 4, emit: "￼" }],
-  [24, { extraBytes: 4, extraHchar: 2, emit: "-" }],
+  // 하이픈 — 줄 끝 낱말 나눔 자리라 글로 내지 않는다(HWP5 CHAR_HYPHEN 과 같은 계약). 한컴 HWP5 변환본도 "Word-processor" 를
+  // "Wordprocessor" 로 둔다(rhwp 표본 HWP3-password-123456 ↔ HWP5-nopassword-123456)
+  [24, { extraBytes: 4, extraHchar: 2, emit: null }],
   [25, { extraBytes: 4, extraHchar: 2, emit: null }], // 차례 표식 — 비가시 (rhwp #2765)
-  [26, { extraBytes: 244, extraHchar: 122, emit: "￼" }],
+  // 찾아보기 표식 — 키워드는 표식 안 자료라 본문 글이 아니다(HWP5 CTRL_IDXM·HWPX indexmark 와 같은 계약). 종전 U+FFFC 가
+  // 본문에 남았다("입력기￼(IME") — rhwp 276e4bb11 과 같은 표본
+  [26, { extraBytes: 244, extraHchar: 122, emit: null }],
   [30, { extraBytes: 2, extraHchar: 1, emit: " " }],
   [31, { extraBytes: 2, extraHchar: 1, emit: " " }],
 ])
@@ -132,7 +136,7 @@ interface Hwp3Para {
   objects: ParaObject[]
   footnotes: string[]
   /** 개요 번호 (ch=28 종류 1) — 수준 + 저장된 수준별 현재 번호 */
-  outline?: { level: number; numbers: number[] }
+  outline?: { level: number; numbers: number[]; custom?: { fmt: NumFmt; before: string; after: string } }
 }
 
 export interface Hwp3ParseOptions extends ParseOptions {
@@ -372,13 +376,28 @@ function emitHwp3Paragraph(para: Hwp3Para): IRBlock[] {
   let headMarker: string | null = null
   if (para.outline) {
     const { level, numbers } = para.outline
-    const f = OUTLINE_FORMATS[level]
+    const f = para.outline.custom ?? OUTLINE_FORMATS[level]
     const n = numbers[level]
     if (f && n > 0) headMarker = f.before + formatNumber(n, f.fmt) + f.after
     // 개요 번호 뒤 글은 한글 97 이 번호와 한 칸 띄워 그린다 — 본문 앞 공백은 번호 자리 여백
     text = text.replace(/^ +/, "")
   }
   return emitParagraphBlocks({ text: text.trim(), headMarker, headingLevel: 0, footnotes: para.footnotes, objects: para.objects })
+}
+
+/**
+ * 사용자 정의 개요 번호(모양 바이트 0) — 정보 18~31 byte 수준별 형식 u16[7], 32~59 byte 수준별 앞·뒤 장식 hchar 쌍(문서 형식 표 62).
+ * 한컴 Print 로 확인된 형식 5(한글 음절 "가.")를 쓰는 수준만 받는다 — 형식 0 이나 모르는 형식, "^" 장식이 있으면 기본 개요 모양
+ * (rhwp a65b70d42 와 같은 규칙. 표본 HWP3-password-123456 은 수준 0 이 형식 5·장식 "^." 가 아닌 "." 로 한컴 HWP5 "가." … "사.")
+ */
+function customOutline(info: Buffer, level: number): { fmt: NumFmt; before: string; after: string } | undefined {
+  if (info[2] !== 0) return undefined
+  const codes = Array.from({ length: 7 }, (_, k) => info.readUInt16LE(18 + k * 2))
+  if (codes.some(c => c !== 0 && c !== 5) || codes[level] !== 5) return undefined
+  const deco = (at: number) => { const ch = info.readUInt16LE(at); return ch === 0 ? "" : decodeJohabText(ch) ?? "" }
+  const before = deco(32 + level * 4), after = deco(34 + level * 4)
+  if (before.includes("^") || after.includes("^")) return undefined
+  return { fmt: "ganada", before, after }
 }
 
 /**
@@ -426,7 +445,8 @@ function parseCharStream(reader: Reader, charCount: number, ctx: ParaContext, pa
       const info = reader.readBytes(62)
       i += 31
       if (info.readUInt16LE(0) === 1) {
-        para.outline = { level: Math.min(info[3], 6), numbers: Array.from({ length: 7 }, (_, k) => info.readUInt16LE(4 + k * 2)) }
+        const level = Math.min(info[3], 6)
+        para.outline = { level, numbers: Array.from({ length: 7 }, (_, k) => info.readUInt16LE(4 + k * 2)), custom: customOutline(info, level) }
       }
       continue
     }

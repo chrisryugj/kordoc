@@ -164,10 +164,29 @@ describe("회귀 rhwp-5: 차례 표시(ch=25)는 비가시 표식 (#2765)", () =
     assert.equal(r.markdown, "AB")
   })
 
-  it("하이픈(ch=24)은 종전대로 '-' 를 방출한다 (대조군)", () => {
+  it("하이픈(ch=24)은 줄 끝 낱말 나눔 자리라 글로 내지 않는다 — HWP5 CHAR_HYPHEN 과 같은 계약 (한컴 HWP5 변환본 \"Wordprocessor\")", () => {
     const stream = u16seq([A, 24, 0, 24, B])
     const r = parseHwp3Document(buildHwp3(buildBody(stream, 5)))
-    assert.equal(r.markdown, "A-B")
+    assert.equal(r.markdown, "AB")
+  })
+  it("사용자 정의 개요 번호(모양 0) — 수준 형식 5 는 한글 음절 \"나.\", 형식 0 이나 기본 모양은 종전 기본 개요", () => {
+    const outline = (shape: number, code: number) => {
+      const info = Buffer.alloc(62)
+      info.writeUInt16LE(1, 0); info[2] = shape; info[3] = 0
+      info.writeUInt16LE(2, 4) // 수준 0 번호 2
+      info.writeUInt16LE(code, 18) // 수준 0 형식
+      info.writeUInt16LE(0x2e, 34) // 수준 0 뒤 장식 "."
+      return [28, ...Array.from({ length: 31 }, (_, k) => info.readUInt16LE(k * 2))]
+    }
+    const md = (shape: number, code: number) => parseHwp3Document(buildHwp3(buildBody(u16seq([...outline(shape, code), A, B]), 34))).markdown
+    assert.equal(md(0, 5), "나. AB")
+    assert.equal(md(0, 0), "II. AB")
+    assert.equal(md(1, 5), "II. AB")
+  })
+  it("찾아보기 표식(ch=26)은 본문에 대체 문자를 남기지 않는다", () => {
+    const stream = u16seq([A, 26, ...Array(121).fill(0), 26, B])
+    const r = parseHwp3Document(buildHwp3(buildBody(stream, 125)))
+    assert.equal(r.markdown, "AB")
   })
 
   it("차례 표식이 붙은 제목에 잉여 '-' 가 섞이지 않는다", () => {
