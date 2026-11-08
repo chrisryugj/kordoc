@@ -23,6 +23,7 @@ import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
 import { deskewPage, rotateQuarter } from "./deskew.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
+import { similarity } from "../diff/text-diff.js"
 import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrModelsCached, resolveOcrModels, type OcrModelSelection } from "./models.js"
 import { validateOcrOptions } from "./options.js"
 import { chartPlotItems } from "./ocr-chart-axes.js"
@@ -55,15 +56,18 @@ export interface BuiltinOcrConfig {
   handwriting?: OcrModelSelection
   /** 손글씨 rec 로 바꿀 문턱 — 쪽 평균 확신도 상한·확신도 상승 하한. lazy 면 모델을 미리 받지 않고 받기·인식 실패는 기본 rec 결과로 둔다.
    *  fetch 가 없으면(OCR 을 따로 켜지 않은 자동 OCR) 캐시에 있을 때만 쓴다 — 자동 OCR 은 내려받지 않는다 */
-  autoRec?: { pageConf: number; gain: number; lazy?: true; fetch?: true }
+  autoRec?: { pageConf: number; gain: number; altConf?: number; sureGain?: number; minDiff?: number; minChars?: number; lazy?: true; fetch?: true }
 }
 
 /** `ocrRec: "auto"` 문턱 — 쪽 평균 확신도(글자 수 가중)가 이보다 낮은 쪽만 손글씨 rec 로 다시 읽고, 평균이 gain 이상 오를 때만 바꾼다.
  *  KoOCR-Bench 손글씨 쪽은 기본 rec .74~.90 → 손글씨 rec +.07~.22, 인쇄 쪽은 .87~.98 에 대개 +.05 이하였다 */
 const AUTO_REC = { pageConf: 0.9, gain: 0.06 }
-/** 기본 설정 문턱 — 인쇄 스캔(목차·표지·계획서 쪽 기본 확신도 .82~.90, 손글씨 rec 상승 .06~.10)은 넘지 않는다.
- *  KoOCR-Bench 손글씨 쪽은 대부분 .85 아래에서 +.10 넘게 오른다(auto 문턱 이득의 93%) */
-const DEFAULT_AUTO_REC = { pageConf: 0.85, gain: 0.1, lazy: true as const }
+/** 기본 설정 문턱 — 쪽 확신도 .9 아래에서 손글씨 rec 가 +.10 넘게 오르면 바꾸고, +.08~.10 이면 손글씨 rec 확신도 .95 이상·두 결과 글
+ *  8% 이상 차이·글자 80자 이상일 때만 바꾼다(altConf·minDiff·minChars). 인쇄 시험지(기본 .84~.90)는 손글씨 rec 로 +.066~.077·확신도
+ *  .91~.94 에 그치고(수능 수학 CER .65 → .86 으로 망가졌다), 잡음 낀 인쇄 스캔은 .95 를 넘어도 두 rec 가 거의 같은 글을 읽으며(차이
+ *  .007~.07), 짧은 영역(목차 64자)은 평균이 흔들린다. 손글씨 쪽은 +.08 넘게 올라 .95 를 넘고 글이 8.5~15% 다르다(기본 rec 가 실제로
+ *  틀림). 종전(.85·.10)은 .85~.90 손글씨 쪽을 놓쳤다 */
+const DEFAULT_AUTO_REC = { pageConf: 0.9, gain: 0.08, altConf: 0.95, sureGain: 0.1, minDiff: 0.08, minChars: 80, lazy: true as const }
 
 export const DEFAULT_BUILTIN_OCR: Readonly<BuiltinOcrConfig> = Object.freeze({
   models: DEFAULT_OCR_MODELS, tuning: DEFAULT_OCR_TUNING, handwriting: handwritingFallbackModels(DEFAULT_OCR_MODELS), autoRec: DEFAULT_AUTO_REC,
@@ -108,7 +112,14 @@ export async function recognizeOcrPage(
     if (!auto.lazy) throw e
     return items
   }
-  if (meanConfidence(alt) - base < auto.gain) return items
+  const altMean = meanConfidence(alt)
+  if (altMean - base < auto.gain) return items
+  if (auto.altConf !== undefined && altMean - base < (auto.sureGain ?? Infinity)) {
+    if (altMean < auto.altConf) return items
+    const text = (xs: OcrItem[]) => xs.map(it => it.text).join("").replace(/\s/g, "")
+    const a = text(items), b = text(alt)
+    if (a.length < (auto.minChars ?? 0) || 1 - similarity(a, b) < (auto.minDiff ?? 0)) return items
+  }
   Object.assign(stats, altStats)
   return alt
 }

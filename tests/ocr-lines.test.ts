@@ -96,8 +96,8 @@ describe("모델 선택·기본 설정", () => {
     assert.equal(DEFAULT_BUILTIN_OCR.autoRec?.fetch, undefined)
   })
 
-  it("기본은 뚜렷한 손글씨 쪽만 손글씨 rec 로(.85 아래·.10 상승, 미리 받지 않음) — auto 는 너그러운 문턱, printed 는 끔", () => {
-    assert.deepEqual(DEFAULT_BUILTIN_OCR.autoRec, { pageConf: 0.85, gain: 0.1, lazy: true })
+  it("기본은 뚜렷한 손글씨 쪽만 손글씨 rec 로(.9 아래·.10 상승, 또는 .08 상승에 손글씨 rec .95 이상·글 8% 차이·80자 이상, 미리 받지 않음) — auto 는 너그러운 문턱, printed 는 끔", () => {
+    assert.deepEqual(DEFAULT_BUILTIN_OCR.autoRec, { pageConf: 0.9, gain: 0.08, altConf: 0.95, sureGain: 0.1, minDiff: 0.08, minChars: 80, lazy: true })
     assert.ok(DEFAULT_BUILTIN_OCR.handwriting)
     assert.deepEqual(builtinOcrConfig({ ocrRec: "auto" }).autoRec, { pageConf: 0.9, gain: 0.06 })
     const printed = builtinOcrConfig({ ocrRec: "printed" })
