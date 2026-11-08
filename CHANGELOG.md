@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- PDF·OCR 쪽에 좌우로 나란히 놓인 두 표: 같은 쪽 인접 표 잇기가 읽기 순서로 연달아 오고 열 수가 같은 표를 자리와 상관없이 행으로 이어, 오른쪽 표가 왼쪽 표 아래 행으로 쌓였다(지역별 혼인 건수 "지역 | 전체 | 초혼 | 재혼" 두 표·소관부처 목록 두 표). 가로 범위가 안 겹치고 세로로 절반 넘게 겹치는 두 표는 잇지 않는다 — KoOCR-Bench 0.89420 → 0.89698(표 묶음 4쪽 .41~.68 → .87~1.0, 수능 국어 두 쪽 CER .30 → .11, 하락 0), 자체 OCR·ODL·ODL-OCR·PDF 글·PDF 표 문서별 하락 0
+
 ## [4.24.53] - 2026-11-08
 
 ### Fixed

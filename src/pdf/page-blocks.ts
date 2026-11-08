@@ -1183,7 +1183,7 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
         bbox: { ...pb, y: cb.y, height: pb.y + pb.height - cb.y } }
     } else if (prev.type === "table" && curr.type === "table" && prev.table && curr.table &&
         prev.table.cols === curr.table.cols && prev.table.renderAsTable === curr.table.renderAsTable &&
-        !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table) && !separateRepeatedHeadings(prev, curr)) {
+        !CLIP_TABLES.has(prev.table) && !CLIP_TABLES.has(curr.table) && !separateRepeatedHeadings(prev, curr) && !sideBySide(prev, curr)) {
       // 합치기: prev의 cells에 curr의 cells 추가
       const merged: IRTable = {
         rows: prev.table.rows + curr.table.rows,
@@ -1198,6 +1198,16 @@ function mergeAdjacentTableBlocks(blocks: IRBlock[]): IRBlock[] {
     }
   }
   return result
+}
+
+/** 좌우로 나란히 놓인 두 표(가로 범위가 안 겹치고 세로로 절반 넘게 겹침)는 행으로 잇지 않는다 — 읽기 순서로 연달아 와도
+ *  오른쪽 표가 왼쪽 표 아래 행으로 쌓였다(지역별 혼인 건수 두 표·소관부처 목록 두 표, 스캔 쪽) */
+function sideBySide(a: IRBlock, b: IRBlock): boolean {
+  const ab = a.bbox, bb = b.bbox
+  if (!ab || !bb || ab.page !== bb.page) return false
+  const xOverlap = Math.min(ab.x + ab.width, bb.x + bb.width) - Math.max(ab.x, bb.x)
+  const yOverlap = Math.min(ab.y + ab.height, bb.y + bb.height) - Math.max(ab.y, bb.y)
+  return xOverlap <= 1 && yOverlap > Math.min(ab.height, bb.height) * 0.5
 }
 
 /** 같은 쪽에서 간격을 두고 자기 머리행을 다시 시작한 표는 독립 표다. 붙은 한 격자와 머리 없는 파편은 그대로 잇는다. */
