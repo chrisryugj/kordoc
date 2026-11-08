@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.56: Re-reading pages with many dropped lines at a larger detection size, stacked "○ item | amount" rows · 2026-11-09
+
+External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.90023 → **0.90370** (handwriting .90750 → **.92120**, tables .91054 → **.91196**, order .91284 → .91305). No per-document drops on in-house OCR, OCR robust and ODL-OCR; HWPX, PDF and HWP5-pair score gates PASS.
+
+- Larger detection re-read: two handwritten letters on a watercolour sky background were split into stroke-fragment boxes at detection size 960, dropping 66 and 40 lines as low-confidence. Only pages with 15+ dropped lines that are 15%+ of all lines are re-read at 5/3 the size (1600), including the handwriting-model decision: CER .508 → .150 and .277 → .142. A fixed larger size (1280 or 1600) made 34 of 108 handwritten pages worse (rw11 .0757 → .0929), and image size does not separate gains from losses (920px pages move ±.3), so the dropped-line count is the only trigger.
+- "○ item | amount" stacked rows: two gazette fund source/use pages, CER .266 → .008 and .314 → .148.
+- Rejected: greyscale contrast stretch for faint pencil handwriting (owner20 .082 → .136); mapping the book-bracket private-use characters (F0854, F0855) to 『』 (Hancom PDF text layers emit 《》, so spacing dropped on eight PDF text documents).
+
 ## 4.24.55: Handwriting model threshold, cell-rule trimming, decimal pairs, duplicate formula lines, HWP 3.x · 2026-11-09
 
 External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.89885 → **0.90023** (handwriting .90065 → **.90750**, tables .91052 → .91054, order .91308 → .91284). Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): precision 0.9554 → **0.9682**, recall 0.9728 → 0.9723. No per-document drops on the in-house OCR, OCR robust and ODL-OCR benchmarks; HWPX, PDF and HWP5-pair scoring gates pass.
