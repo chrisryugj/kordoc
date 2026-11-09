@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- 의존성 최소 버전을 보안 권고가 고쳐진 버전으로 올림. 종전 선언 범위는 취약한 버전을 허용해, 잠금 파일 없이 설치하거나 오래된 잠금 파일을 쓰는 설치가 권고에 노출될 수 있었다. 잠금 파일은 이미 고쳐진 버전을 고르고 있어 설치 버전·출력은 그대로(npm test 4,981건, Python SDK 86건(pytest 9.0.3), Java SDK 72건 통과, `npm audit` 0건)
+  - `@xmldom/xmldom` ^0.9.10 → ^0.9.12: 2026-09 공개 권고(이차 시간·이차 메모리 파싱, 정규식 ReDoS, `requireWellFormed` 우회 — GHSA-93r5-fhx6-vmg9·GHSA-965w-775f-mr7g·GHSA-8344-3jmq-59r6·GHSA-g53g-w8rj-fmg7·GHSA-vr34-hp96-76pp 외)
+  - `@modelcontextprotocol/sdk` ^1.29.0 → ^1.32.0: HTTP 전송 요청 크기·처리 제한(GHSA-f897-62hf-6gxq, GHSA-46jr-4wx8-v453/CVE-2026-111768), 세션에 묶이지 않는 작업(GHSA-22jm-h49p-29qw/CVE-2026-111767), 베어러 토큰 검증(GHSA-rvq5-wwqv-78pq/CVE-2026-111771), OAuth 자격 증명 전송(GHSA-6qxp-vccf-f47h/CVE-2026-104850, GHSA-6prh-2h8m-c8cw/CVE-2026-111769). `kordoc mcp` 는 stdio 전송이라 HTTP 계열은 직접 쓰지 않지만 SDK 를 함께 설치하는 앱이 영향받는다
+  - `sharp` ^0.35.0 → ^0.35.5 (선택 의존·개발 의존·overrides): 동봉 libheif(GHSA-rgj7-g3m4-5g8c)·librsvg(GHSA-wq5f-xc86-pv6w, CVE-2026-96889) 취약점
+  - overrides `adm-zip` ^0.6.0 → ^0.6.1 (`onnxruntime-node` 가 끌어옴): 압축 폭탄 방어 우회·선언 크기 메모리 할당(GHSA-rcw4-f5rp-g42v, GHSA-7q85-xj36-vmfc/CVE-2026-77301), SUID 비트 보존(GHSA-j5f4-cc29-5x44/CVE-2026-102282), 비동기 풀기 오류로 프로세스 종료(GHSA-8238-w5pm-2374) 외 3건
+  - Python SDK 시험 의존 `pytest` >=8 → >=9.0.3: 임시 디렉터리 처리로 로컬 DoS·권한 상승(GHSA-6w46-j5rx-g56g/CVE-2025-71176). 시험 전용이라 배포물은 그대로(Python 3.11 에서 86건 통과)
 ### Fixed
 
 - 공문서 프리셋 정규화(`normalizeGongmunPreset`)가 별칭 표를 프로토타입까지 뒤져, 프리셋에 "toString"·"constructor" 같은 이름을 주면 문자열 대신 함수를 돌려 `markdownToHwpx`(`gongmun.preset`)와 `lintBlocks`(`preset`)가 `preset.trim is not a function` 으로 죽었다. CLI·MCP·protocol 2 는 이미 자기 키만 받았고, 라이브러리로 부르는 쪽만 걸렸다. 표의 자기 키만 보고 모르면 종전대로 `official`, 문자열이 아닌 값도 `official`
