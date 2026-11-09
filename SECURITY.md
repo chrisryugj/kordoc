@@ -118,8 +118,9 @@ kordoc processes untrusted binary files. The following defenses are in place:
   RuntimeClass with handler `runsc`. No code change.
 - **`KORDOC_SANDBOX=gvisor`** re-runs the parsing CLI and `parse-worker` (Java/Python SDK)
   inside `runsc do` with networking off and `KORDOC_OFFLINE=1`. Host files are read-only;
-  writes stay in memory, so only stdout parsing is accepted. It fails if runsc cannot start
-  and never continues unsandboxed. Unset by default — existing behaviour is unchanged.
+  writes stay in memory, so only stdout parsing is accepted. On Linux it fails if runsc cannot
+  start and never continues unsandboxed. On macOS and Windows, where gVisor cannot run, it
+  prints a warning and runs without isolation. Unset by default — existing behaviour is unchanged.
 - CI runs the test suite inside gVisor and checks that isolation is really on. See
   [docs/sandbox.md](docs/sandbox.md).
 

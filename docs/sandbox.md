@@ -64,7 +64,8 @@ sudo KORDOC_SANDBOX=gvisor kordoc parse-worker --protocol 2   # Java·Python SDK
 | 네트워크 | `--network=none` 으로 끊는다. `KORDOC_OFFLINE=1` 도 함께 켠다 |
 | 호스트 파일 | 읽기만 보인다. 샌드박스 안에서 쓴 파일은 메모리에만 남고 끝나면 사라진다 |
 | 받는 명령 | 결과를 표준 출력으로 내는 파싱(`kordoc <파일>`)과 `parse-worker` 만. `-o`·`-d` 와 다른 하위 명령은 오류로 멈춘다. parse-worker 는 `transport.images: "files"` 를 거절한다 |
-| 실패 | runsc 가 없거나 띄우지 못하면 오류로 멈춘다. 격리 없이 계속하지 않는다 |
+| 실패 | Linux 에서 runsc 가 없거나 띄우지 못하면 오류로 멈춘다. 격리 없이 계속하지 않는다 |
+| macOS·Windows | gVisor 를 돌릴 수 없는 운영체제라 경고 한 줄을 표준 오류로 내고 격리 없이 그대로 실행한다. 같은 설정을 여러 운영체제에서 써도 오류가 나지 않는다 |
 | 권한 | root 로 실행한다. rootless runsc 는 네트워크를 따로 두지 못하고 호스트 네트워크로 바뀐다([rootless 안내](https://gvisor.dev/docs/user_guide/rootless/)) |
 | 다른 runsc | `KORDOC_RUNSC=<경로>` |
 | 지원 값 | `gvisor` 만. 다른 값은 오류 |
@@ -120,6 +121,6 @@ CI 의 `npm test` 전체는 호스트(`test (24)` 잡)에서 182초, gVisor 컨�
 
 ## 남은 한계
 
-- macOS·Windows 에서는 쓸 수 없다. Docker Desktop 의 Linux VM 안에서는 컨테이너 런타임으로 쓸 수 있다.
+- macOS·Windows 에서는 `KORDOC_SANDBOX=gvisor` 를 켜도 격리되지 않는다(경고만 낸다). 이 운영체제의 Docker Desktop 은 컨테이너를 Linux VM 안에서 돌리므로, 호스트 보호가 필요하면 컨테이너로 실행한다.
 - gVisor 커널 자체의 취약점은 gVisor 업데이트로 대응한다.
 - 파일을 쓰는 명령(`to-hwpx`, `render` 등)과 MCP 서버는 `KORDOC_SANDBOX` 를 받지 않는다. 컨테이너 런타임으로 격리한다.
