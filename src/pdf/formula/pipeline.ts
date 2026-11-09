@@ -300,15 +300,20 @@ export class FormulaPipeline {
 
       let latex = ""
       try {
-        latex = await recognizeFormula(
-          {
-            encoder: this.encoder,
-            decoder: this.decoder,
-            tokenizer: this.tokenizer,
-            ort: this.ort,
-          },
-          cropFrame,
-        )
+        const deps = { encoder: this.encoder, decoder: this.decoder, tokenizer: this.tokenizer, ort: this.ort }
+        // 여러 줄 정렬식은 줄마다 읽는다 — 인식기는 영역을 384×384 로 늘려 넣어 열 줄 넘는 증명식이 뭉개져 쓰레기("\displaystyle\frac{8}{4}…")가
+        // 됐다(수식 벤치 500자 넘는 정답 식 106개 중 26개 놓침, 그 밖은 1~2%). 넉 줄 이하는 통째로 읽는 편이 오른쪽 조건 열
+        // ("for 0≤s≤r²")·굵은 기호·정렬 기호(&)까지 맞았다(넉 줄 식을 가르면 12개 나아지고 10개 나빠짐)
+        const bands = r.kind === "display" ? lineBands(cropFrame, this.opts.scale) : []
+        if (bands.length >= MIN_SPLIT_LINES) {
+          const lines: string[] = []
+          for (const [b0, b1] of bands) {
+            const band: PixelFrame = { width: cw, height: b1 - b0, data: cropFrame.data.slice(b0 * cw * 4, b1 * cw * 4) }
+            const l = (await recognizeFormula(deps, band)).trim()
+            if (l) lines.push(l)
+          }
+          latex = lines.length > 1 ? `\\begin{aligned}${lines.join(" \\\\ ")}\\end{aligned}` : lines.join("")
+        } else latex = await recognizeFormula(deps, cropFrame)
       } catch (e) {
         process.stderr.write(
           `[kordoc-formula] recognize failed at page ${pageNumber} ${JSON.stringify(r.bbox)}: ${(e as Error).message}\n`,
@@ -360,4 +365,52 @@ function bgraToRgba(bgra: Uint8Array): Uint8Array {
     out[i + 3] = bgra[i + 3] // A ← A
   }
   return out
+}
+
+/** 줄마다 따로 읽을 여러 줄 display 영역의 최소 줄 수 */
+const MIN_SPLIT_LINES = 5
+
+/** 여러 줄 display 영역의 줄 띠 [위, 아래) — 여러 줄에 걸친 큰 괄호(세로 획 22.5pt 이상)는 빼고, 잉크 없는 행이 줄 높이 중앙값의
+ *  15% 이상 이어지는 곳에서 가른다. 가장 큰 띠의 절반이 안 되는 띠(합 기호 위아래 첨자·근호 윗선)는 가까운 이웃에 붙인다 — 중앙값
+ *  기준이면 한 줄 식의 첨자 띠가 줄로 갈려 첨자가 빠졌다. 위아래 여백 2px */
+export function lineBands(f: PixelFrame, pxPerPt: number): Array<[number, number]> {
+  const { width: w, height: h, data } = f
+  const ink = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) ink[i] = Math.min(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) < 160 ? 1 : 0
+  const tall = 22.5 * pxPerPt
+  for (let x = 0; x < w; x++) for (let y = 0; y < h;) {
+    if (!ink[y * w + x]) { y++; continue }
+    let e = y
+    while (e < h && ink[e * w + x]) e++
+    if (e - y >= tall) for (let k = y; k < e; k++) ink[k * w + x] = 2
+    y = e
+  }
+  const filled = (y: number) => { let n = 0; for (let x = 0; x < w && n < 2; x++) if (ink[y * w + x] === 1) n++; return n >= 2 }
+  const runs: Array<[number, number]> = []
+  for (let y = 0; y < h;) { if (!filled(y)) { y++; continue } let e = y; while (e < h && filled(e)) e++; runs.push([y, e]); y = e }
+  if (runs.length < 2) return []
+  const hs = runs.map(r => r[1] - r[0]).sort((a, b) => a - b)
+  const med = hs[hs.length >> 1]
+  const bands: Array<[number, number]> = [[runs[0][0], runs[0][1]]]
+  for (const r of runs.slice(1)) {
+    const last = bands[bands.length - 1]
+    if (r[0] - last[1] < Math.max(3, med * 0.15)) last[1] = r[1]; else bands.push([r[0], r[1]])
+  }
+  const tallest = () => Math.max(...bands.map(b => b[1] - b[0]))
+  for (let i = 0; i < bands.length && bands.length > 1; i++) {
+    const b = bands[i]
+    if (b[1] - b[0] >= tallest() * 0.5) continue
+    const up = i > 0 ? b[0] - bands[i - 1][1] : Infinity, dn = i < bands.length - 1 ? bands[i + 1][0] - b[1] : Infinity
+    if (up <= dn) bands[i - 1][1] = b[1]; else bands[i + 1][0] = b[0]
+    bands.splice(i--, 1)
+  }
+  // 줄 사이 틈은 고르다 — 가장 큰 틈의 60% 가 안 되는 틈은 합 기호와 그 아래 첨자 사이다(첨자 띠가 본문 줄 높이의 절반을 넘는
+  // 큰 첨자 "K∈𝒯_h" 는 높이로는 못 가른다)
+  const maxGap = Math.max(0, ...bands.slice(1).map((b, i) => b[0] - bands[i][1]))
+  for (let i = 1; i < bands.length; i++) {
+    if (bands[i][0] - bands[i - 1][1] >= maxGap * 0.6) continue
+    bands[i - 1][1] = bands[i][1]
+    bands.splice(i--, 1)
+  }
+  return bands.map(([a, b]) => [Math.max(0, a - 2), Math.min(h, b + 2)])
 }
