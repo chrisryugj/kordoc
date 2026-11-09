@@ -162,9 +162,10 @@ const EXTRACT = {
     sum: { pdfRecall: j.summary.pdf.recall, pdfPhantom: j.summary.pdf.phantom, pdfTableExact: j.summary.pdf.tableExact, pdfCellF1: j.summary.pdf.cellF1, pdfEqHit: j.summary.pdf.eqHit, hwpTableExact: j.summary.hwp.tableExact },
     docs: byKey(j.rows, r => `${r.set}/${r.stem}.${r.ext}`, r => nums({ recall: r.refChars ? r.matchedChars / r.refChars : 1, phantom: r.mdChars ? r.phantomChars / r.mdChars : 0, order: r.order, tExact: r.tableExact, cellF1: r.cellF1, eqHit: r.eqHit })),
   }),
+  // 표 일치·칸 F1 도 문서별로 본다 — CER 만 보면 OCR 표가 행으로 펼쳐져도(예산서 표 일치 2/2 → 0/2) 하락 0 으로 보였다
   ocr: j => ({
-    sum: pick(j.summary, ["docs", "pages", "cerMicro", "cerMedian", "charRecallMicro", "charPrecisionMicro", "hangulRecallMicro"]),
-    docs: byKey(j.rows, r => `${r.doc}#${(r.pages ?? []).join(",")}`, r => pick(r, ["cer", "charRecall", "charPrecision", "hangulRecall"])),
+    sum: { ...pick(j.summary, ["docs", "pages", "cerMicro", "cerMedian", "charRecallMicro", "charPrecisionMicro", "hangulRecallMicro"]), tExact: j.summary.tables?.exact, cellF1: j.summary.tables?.cellF1Mean },
+    docs: byKey(j.rows, r => `${r.doc}#${(r.pages ?? []).join(",")}`, r => ({ ...pick(r, ["cer", "charRecall", "charPrecision", "hangulRecall"]), ...nums({ tExact: r.tbl?.exact, cellF1: r.tbl?.cellF1 }) })),
   }),
   robust: j => ({
     sum: Object.fromEntries(Object.entries(j.summary).map(([v, s]) => [`cer:${v}`, s.cerMicro])),
