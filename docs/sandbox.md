@@ -15,15 +15,40 @@ gVisor 는 kordoc 이 장악됐을 때 호스트를 지킨다. 한 워커가 처
 | 컨테이너 런타임 (`docker --runtime=runsc`, 쿠버네티스 RuntimeClass) | kordoc 을 실행하는 컨테이너·파드 전체 | 없음 | 서버, MCP, 파일을 쓰는 명령 |
 | `KORDOC_SANDBOX=gvisor` | 파싱 CLI·parse-worker 프로세스 | 환경 변수 하나 | 서버 프로세스는 밖에 두고 파싱 워커만 가둘 때 |
 
-둘 다 Linux 에서만 쓴다. gVisor 설치는 [공식 설치 안내](https://gvisor.dev/docs/user_guide/install/)를 따른다.
+## 운영체제별 정리
+
+| 운영체제 | 할 일 | 호스트를 지키는 것 |
+|---------|------|------------------|
+| Linux 서버 | 아래 `설치` 를 한 번 하고 위 두 방법 중 하나로 켠다 | gVisor |
+| macOS·Windows | 설치할 것 없음. 보호가 필요하면 Docker Desktop 으로 컨테이너를 돌린다 | Docker Desktop 의 Linux VM(macOS 는 Apple Virtualization, Windows 는 WSL2) |
+
+macOS·Windows 에서 `KORDOC_SANDBOX=gvisor` 를 켜면 경고 한 줄만 내고 격리 없이 실행한다. 같은 설정을 여러 운영체제에서 써도 오류가 나지 않는다. kordoc 은 runsc 를 설치하지 않는다. 설치에는 root 권한과 패키지 저장소 등록이 필요해, 서버 이미지를 만들 때 운영자가 한 번 한다.
+
+## 설치 (Linux)
+
+Debian·Ubuntu 는 공식 apt 저장소를 쓴다. CI `gvisor` 잡도 같은 명령을 쓴다.
+
+```bash
+curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+  | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+sudo apt-get update && sudo apt-get install -y runsc
+
+# Docker 에서 쓸 때만: runsc 런타임 등록 (apt 패키지만으로는 등록되지 않는다)
+sudo runsc install && sudo systemctl restart docker
+
+# 확인
+runsc --version
+docker run --rm --runtime=runsc node:24 dmesg | head -1   # Starting gVisor... (CI 와 같은 확인)
+```
+
+다른 배포판은 [공식 설치 안내](https://gvisor.dev/docs/user_guide/install/)의 바이너리 설치(SHA-512 확인 포함)를 따른다.
 
 ## Docker 로 실행
 
-`runsc install` 이 Docker 에 `runsc` 런타임을 등록한다([Docker 빠른 시작](https://gvisor.dev/docs/user_guide/quick_start/docker/)). apt 패키지만 설치하면 등록되지 않는다.
+`설치` 의 `runsc install` 로 Docker 에 `runsc` 런타임을 등록한 뒤 쓴다([Docker 빠른 시작](https://gvisor.dev/docs/user_guide/quick_start/docker/)).
 
 ```bash
-sudo runsc install && sudo systemctl restart docker
-
 # 입력은 읽기 전용, 결과는 표준 출력. 네트워크 없음
 docker run --rm --runtime=runsc --network=none --read-only \
   -v "$PWD/in":/in:ro <kordoc 이미지> kordoc /in/문서.hwpx > 문서.md
