@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - gVisor 샌드박스 `KORDOC_SANDBOX=gvisor`(Linux): 파싱 CLI(`kordoc <파일>`)와 parse-worker(Java·Python SDK 워커)가 `runsc do` 안에서 다시 실행된다. 네트워크를 끊고(`--network=none`, `KORDOC_OFFLINE=1` 도 켬) 호스트 파일은 읽기만 보인다. sharp·onnxruntime·PDF 엔진 같은 네이티브 코드가 악성 문서로 장악되어도 호스트 커널·파일·네트워크에 직접 닿지 못한다. runsc 가 없거나 띄우지 못하면 오류로 멈추고 격리 없이 계속하지 않는다. 샌드박스 안에서 쓴 파일은 사라지므로 `-o`·`-d`·파일을 쓰는 하위 명령·MCP 서버·protocol 2 `transport.images: "files"` 는 오류로 거절한다(이런 경로는 `docker --runtime=runsc` 로 격리). 끄면(기본) 동작·출력은 그대로. 재사용 워커의 문서당 처리 시간은 일반 컨테이너의 1.08배(문서 5개 합계 2,613ms → 2,817ms, GitHub Actions 실측). 배포 가이드 [docs/sandbox.md](docs/sandbox.md)
 - CI `gvisor` 잡: `npm test` 를 gVisor 컨테이너 안에서 네트워크 없이 돌리고, `KORDOC_SANDBOX=gvisor` 경로의 격리(gVisor 커널 로그·네트워크 차단·호스트 파일 보호·실패 시 멈춤)를 단언한다. 첫 단계에서 컨테이너가 정말 gVisor 안인지 `dmesg` 의 `Starting gVisor...` 로 확인하고, 아니면 잡을 실패시킨다
 
+## [4.24.57] - 2026-11-09
+
 ### Security
 
 - 의존성 최소 버전을 보안 권고가 고쳐진 버전으로 올림. 종전 선언 범위는 취약한 버전을 허용해, 잠금 파일 없이 설치하거나 오래된 잠금 파일을 쓰는 설치가 권고에 노출될 수 있었다. 잠금 파일은 이미 고쳐진 버전을 고르고 있어 설치 버전·출력은 그대로(npm test 4,981건, Python SDK 86건(pytest 9.0.3), Java SDK 72건 통과, `npm audit` 0건)
@@ -22,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Python SDK 시험 의존 `pytest` >=8 → >=9.0.3: 임시 디렉터리 처리로 로컬 DoS·권한 상승(GHSA-6w46-j5rx-g56g/CVE-2025-71176). 시험 전용이라 배포물은 그대로(Python 3.11 에서 86건 통과)
 ### Fixed
 
+- OCR 예산서 표 산출 내역 칸: 쌓인 행 가르기가 한 칸에 적힌 항목과 산출 내역("○전기요금 / -취수정 경정 80,000,000원", "○센터 공공요금 / 전기요금 5,600,000원 / …")·재원 내역("526,657 / 균 395,010")을 행으로 펼쳐, 원본 한 칸인 자체 OCR 예산서 표가 어긋났다(11-02 행 합침 아래 쌓인 행 가르기 뒤 부천 표 일치 2/2 → 0/2, 괴산 2/2 → 0/2 — 그때 스위트 문서별 비교는 CER 만 봐 놓쳤다). 이름표 둘째 줄부터 금액(…원)을 적은 줄이 있거나 재원 표지 금액 줄("국·도·균·시·군·구 + 금액")이 있으면 한 칸으로 둔다. 금액 없는 갈래 이름("○사업비 / -사회보험성 / -사업성", 관보 기금 운용)은 종전대로 펼친다 — 자체 OCR 표 일치 28/65 → 31/65(부천 0 → 2, 괴산 2013 0 → 1, 칸 F1 .918 → 1·.809 → .856), KoOCR-Bench 0.90370 그대로, 자체 OCR·OCR robust·ODL-OCR 문서별 하락 0
 - 공문서 프리셋 정규화(`normalizeGongmunPreset`)가 별칭 표를 프로토타입까지 뒤져, 프리셋에 "toString"·"constructor" 같은 이름을 주면 문자열 대신 함수를 돌려 `markdownToHwpx`(`gongmun.preset`)와 `lintBlocks`(`preset`)가 `preset.trim is not a function` 으로 죽었다. CLI·MCP·protocol 2 는 이미 자기 키만 받았고, 라이브러리로 부르는 쪽만 걸렸다. 표의 자기 키만 보고 모르면 종전대로 `official`, 문자열이 아닌 값도 `official`
 
 - PDF 수식 OCR 긴 여러 줄 식: 인식기는 영역을 384×384 로 늘려 넣어 열 줄 넘는 증명식이 뭉개져 쓰레기("\displaystyle\frac{8}{4}[\left[a=…")가 나왔다 — 정답 식 500자 넘는 것 106개 중 26개를 놓쳤다(그 밖은 1~2%). 다섯 줄 이상인 display 영역은 줄 사이 빈 띠에서 갈라 줄마다 읽고 `aligned` 로 잇는다. 줄 띠는 여러 줄에 걸친 큰 괄호(세로 획 22.5pt 이상)를 빼고 행을 세며, 합 기호 위아래 첨자처럼 작은 띠(가장 큰 띠의 절반 미만)나 줄 사이 틈보다 좁게(가장 큰 틈의 60% 미만) 붙은 띠는 이웃 줄에 붙인다. 넉 줄 이하는 통째로 읽는다(넉 줄 식까지 가르면 오른쪽 조건 열 "for 0≤s≤r²"·굵은 기호·정렬 기호가 빠져 10개가 나빠졌다) — 수식 벤치(20편 621쪽, 혼자 실행) 재현율 0.9723 → 0.9758, NED≤.3 재현율 0.9425 → 0.9494, 정밀도 0.9682 → 0.9699, BLEU-4 0.8997 → 0.9045(2609.15723 .864 → .903), 종전 짝 중 빠지거나 NED 가 나빠진 것 0

@@ -108,3 +108,17 @@ it("splits \"○ 항목 | 금액\" pairs stacked in one row, the shorter side le
   splitStackedOcrRows([list])
   assert.equal(list.table!.rows, 2)
 })
+
+it("keeps a budget item with its amount breakdown (or fund-source lines) in one cell, but splits bare category lines (예산서 산출 내역·관보 기금 운용)", () => {
+  const budget = table([
+    [c("02 공공운영비"), c("14,944"), c("17,894")],
+    [c("○센터 공공요금\n전기요금 5,600,000원\n—상하수도요금 250,000원"), c("6,770\n5,600\n250"), c("9,720\n6,600\n1,200")],
+    [c("사회적기업육성"), c("526,657\n균 395,010"), c("771,250\n578,450")],
+  ])
+  splitStackedOcrRows([budget])
+  assert.equal(budget.table!.rows, 3)
+  const gazette = table([[c("○사업비\n-사회보험성\n-사업성"), c("1,991,955\n1,058,576\n780,325"), c("19.5\n10.3\n7.6")]])
+  splitStackedOcrRows([gazette])
+  assert.equal(gazette.table!.rows, 3)
+  assert.deepEqual(gazette.table!.cells[1].map(x => x.text), ["-사회보험성", "1,058,576", "10.3"])
+})
