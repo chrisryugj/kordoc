@@ -57,3 +57,9 @@ it("marks an all-caps line as a heading even when OCR reads it smaller than the 
   markOcrHeadings(blocks)
   assert.deepEqual(blocks.filter(b => b.type === "heading").map(b => b.text), ["BUT COPYRIGHT DOESN’T COVER EVERYTHING"])
 })
+
+it("does not mark large formula or sentence fragments as headings (\"1g(w)=Dt−()+\", \", n\", \"can be explained with the\")", () => {
+  const blocks = [p("1g(w)=Dt−()+, =1980,,2016,", 20, 700), p(", n", 18, 680), p("can be explained with the", 17, 660), p(body, 12, 500, 120), p(body, 12, 300, 120)]
+  markOcrHeadings(blocks)
+  assert.equal(blocks.filter(b => b.type === "heading").length, 0)
+})

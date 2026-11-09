@@ -622,6 +622,9 @@ export function markOcrHeadings(blocks: IRBlock[]): void {
     }
     if (ratio < 1.3) continue
     if (text.length < 2 || text.length > (ratio >= 1.5 ? 60 : 40) || /[.!?。]$|다\.?$/.test(text) || /^[\d\s.,%·-]+$/.test(text)) continue
+    // 크게 읽힌 수식 조각("1g(w)=Dt−()+, =1980")·문장 조각(", n"·"can be explained with the")은 제목이 아니다 — 등호가 있거나
+    // 문장부호·영문 소문자로 시작한다
+    if (/=/.test(text) || /^[,.;:)\]}]/.test(text) || /^[a-z]/.test(text)) continue
     // 한 줄만 — 1.5배 넘게 큰 짧은 글은 두 줄로 꺾인 장 제목까지
     if (b.bbox && b.bbox.height > size * (ratio >= 1.5 ? 3.2 : 1.6)) continue
     b.type = "heading"

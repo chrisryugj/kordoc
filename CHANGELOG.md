@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OCR 쪽 제목: 본문보다 크게 읽힌 수식 조각("1g(w)=Dt−()+, =1980")·문장 조각(", n"·"can be explained with the")이 제목이 됐다(KDI 영문 보고서 쪽). 등호가 있거나 문장부호·영문 소문자로 시작하는 글은 크기가 커도 제목으로 보지 않는다 — KoOCR-Bench 0.90378·제목 재현율 0.930 그대로, 자체 OCR·OCR robust·ODL-OCR(MHS 포함) 문서별 하락 0
+
 ## [4.24.58] - 2026-11-09
 
 ### Added
