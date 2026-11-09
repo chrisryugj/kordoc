@@ -1,0 +1,25 @@
+[package]
+name = "hayro-pdf"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+# hayro 는 git 커밋으로 고정한다(재현). 바꾸면 node build.mjs 로 wasm·THIRD_PARTY/hayro-pdf.txt 를 다시 만든다.
+# 지금 커밋은 upstream main 360f4a23 + LaurenzV/hayro#1810(표준 글꼴의 `h.smcp` 같은 접미사 글리프 이름 폭 — pdf.js 처럼 0 이 아니게).
+# #1810 이 합쳐지면 upstream 커밋으로 바꾼다
+[dependencies]
+hayro = { git = "https://github.com/VerifiedIdiot/hayro", rev = "7aaba341f2b923edd700bb66e0b1029b44c27b46" }
+hayro-interpret = { git = "https://github.com/VerifiedIdiot/hayro", rev = "7aaba341f2b923edd700bb66e0b1029b44c27b46" }
+hayro-syntax = { git = "https://github.com/VerifiedIdiot/hayro", rev = "7aaba341f2b923edd700bb66e0b1029b44c27b46" }
+hayro-font = { git = "https://github.com/VerifiedIdiot/hayro", rev = "7aaba341f2b923edd700bb66e0b1029b44c27b46" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
