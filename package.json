@@ -71,8 +71,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@xmldom/xmldom": "^0.9.10",
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "@xmldom/xmldom": "^0.9.12",
     "cfb": "1.2.2",
     "commander": "^13.0.0",
     "jszip": "^3.10.1",
@@ -92,12 +92,12 @@
     "@hyzyla/pdfium": "^2.1.0",
     "onnxruntime-node": "^1.24.0",
     "pdfjs-dist": "^4.10.38",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.5",
     "zxing-wasm": "^3.1.6"
   },
   "overrides": {
-    "adm-zip": "^0.6.0",
-    "sharp": "^0.35.0",
+    "adm-zip": "^0.6.1",
+    "sharp": "^0.35.5",
     "esbuild": "^0.28.1",
     "global-agent": "^4.1.3"
   },
@@ -109,7 +109,7 @@
     "onnxruntime-node": "^1.24.0",
     "pdfjs-dist": "^4.10.38",
     "puppeteer-core": "^25.16.0",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.5",
     "tsup": "^8.4.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"

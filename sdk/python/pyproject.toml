@@ -25,7 +25,7 @@ Homepage = "https://github.com/chrisryugj/kordoc"
 Source = "https://github.com/chrisryugj/kordoc/tree/main/sdk/python"
 
 [project.optional-dependencies]
-test = ["pytest>=8", "build>=1.2"]
+test = ["pytest>=9.0.3", "build>=1.2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
