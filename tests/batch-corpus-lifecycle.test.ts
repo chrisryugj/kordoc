@@ -50,8 +50,9 @@ for (const signal of ["SIGINT", "SIGKILL"] as const) {
       let completed = 0
       while (Date.now() < deadline) {
         try {
-          pids = readFileSync(`/proc/${child.pid}/task/${child.pid}/children`, "utf8").trim().split(/\s+/).filter(Boolean).map(Number)
-            .filter(pid => { try { return readFileSync(`/proc/${pid}/cmdline`, "utf8").includes("__convert-worker") } catch { return false } })
+          // 부모 PID 로 찾는다 — gVisor 의 /proc/<pid>/task/<pid>/children 은 이 자식들을 보여 주지 않았다(CI gvisor 잡)
+          pids = readdirSync("/proc").filter(name => /^\d+$/.test(name)).map(Number)
+            .filter(pid => { try { return Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1].split(" ")[1]) === child.pid && readFileSync(`/proc/${pid}/cmdline`, "utf8").includes("__convert-worker") } catch { return false } })
         } catch { /* child starting or already exited */ }
         completed = readdirSync(out).filter(name => name.endsWith(".md")).length
         if (completed > 0 && completed < files.length && pids.length === 2) break

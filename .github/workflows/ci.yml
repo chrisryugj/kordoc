@@ -29,6 +29,37 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # gVisor — 테스트를 gVisor 커널 위에서 네트워크 없이 돌리고, 선택형 격리 경로(KORDOC_SANDBOX=gvisor)를 검증한다 (docs/sandbox.md)
+  gvisor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: npm run build
+      - name: runsc 설치·Docker 런타임 등록 (https://gvisor.dev/docs/user_guide/install/)
+        run: |
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+          sudo apt-get update -q && sudo apt-get install -y -q runsc
+          sudo runsc install
+          sudo systemctl restart docker
+          runsc --version
+      # 런타임 등록이 틀려 일반 컨테이너에서 돌면 통과로 보이지 않게 먼저 확인한다. 대조로 runc 에서는 실패해야 한다
+      - name: gVisor 안에서 도는지 확인
+        run: |
+          docker run --rm --runtime=runsc --network=none -v "$PWD":/w:ro -w /w node:24 sh tests/gvisor/assert-gvisor.sh
+          if docker run --rm --runtime=runc --network=none -v "$PWD":/w:ro -w /w node:24 sh tests/gvisor/assert-gvisor.sh; then exit 1; fi
+      - name: npm test (gVisor·네트워크 없음)
+        run: docker run --rm --runtime=runsc --network=none -v "$PWD":/w -w /w node:24 sh -c 'sh tests/gvisor/assert-gvisor.sh && npm test'
+      - name: KORDOC_SANDBOX=gvisor 경로 (격리 신호·네트워크 차단·호스트 파일 보호·실패 시 멈춤)
+        run: sudo env "PATH=$PATH" bash tests/gvisor/opt-in.sh
+
   # Java·Python SDK — Node 24 로 한 번 빌드한 dist/ 를 두 SDK 잡이 artifact 로 받아 쓴다(기존 Node 매트릭스와 분리)
   engine-dist:
     runs-on: ubuntu-latest
