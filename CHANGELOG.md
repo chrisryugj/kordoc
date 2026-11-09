@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OCR 표 맨 끝 "*" 각주 칸: 표 속 산문 행을 문단으로 꺼내는 판정이 맨 끝 "※" 행만 표에 두고 "* 단, 체류자격 변경 …"(신분증 표 안 각주 병합 칸)은 문단으로 꺼내 표가 한 행 모자랐다. 맨 끝 전폭 행 묶음이 모두 "※" 나 "*"·"**"·"***" 로 시작하면 표에 둔다 — 자체 OCR 표 구조 일치 31/65 → 32/65(topik 1 → 2), KoOCR-Bench 0.90370 그대로(교재 스캔 한 쪽 아프가 표 아래 "*" 각주가 표에 남아 CER .135 → .139), 자체 OCR·OCR robust·ODL-OCR 문서별 하락 0
+
 ## [4.24.57] - 2026-11-09
 
 ### Security

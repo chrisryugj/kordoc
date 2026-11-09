@@ -2,7 +2,7 @@
  * OCR 표 속 산문 행 — 스캔 강의 자료처럼 도표 그림과 그 아래 문단이 한 쪽에 섞이면 군집 표 검출이 그림 조각부터 문단 줄까지
  * 한 표로 묶어 문장 줄("특정상황에 적합한 리더 유형을 결정하기 위해서는 …")이 표 폭 전체를 덮는 칸 하나짜리 행이 된다.
  * 표 폭 전체를 덮는 칸 하나짜리 행이 이어진 묶음에 긴 문장(25자 이상·한글 12자 이상·띄어쓰기 있음)이 하나라도 있으면
- * 그 묶음 행들을 문단으로 꺼내고 위·아래 행은 따로 표로 둔다. 표 맨 끝 "※" 행 묶음과, 행 병합 칸이 끊는 자리를 가로지르는 표는 그대로 둔다(OCR 전용)
+ * 그 묶음 행들을 문단으로 꺼내고 위·아래 행은 따로 표로 둔다. 표 맨 끝 "※"·"*" 각주 행 묶음과, 행 병합 칸이 끊는 자리를 가로지르는 표는 그대로 둔다(OCR 전용)
  */
 import type { IRBlock, IRCell, IRTable } from "../types.js"
 
@@ -32,8 +32,8 @@ function splitTable(b: IRBlock): IRBlock[] {
     let e = r
     while (e + 1 < t.rows && fullRow(e + 1)) e++
     const texts = Array.from({ length: e - r + 1 }, (_, k) => heads[r + k][0].cell.text.trim())
-    // 표 맨 끝 "※" 행 묶음은 원본 표의 마지막 병합 칸(시험 조건 안내 등)이다 — 표에 둔다
-    const trailingNote = e === t.rows - 1 && texts.every(s => s.startsWith("※"))
+    // 표 맨 끝 "※"·"*" 각주 행 묶음은 원본 표의 마지막 병합 칸(시험 조건 안내, 신분증 표 "* 단, 체류자격 변경 …")이다 — 표에 둔다
+    const trailingNote = e === t.rows - 1 && texts.every(s => /^(?:※|\*{1,3}(?!\*))/.test(s))
     if (!trailingNote && texts.some(isProse)) for (let k = r; k <= e; k++) prose.add(k)
     r = e + 1
   }

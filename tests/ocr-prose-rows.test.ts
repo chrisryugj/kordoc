@@ -40,6 +40,15 @@ describe("OCR 표 속 산문 행 (splitOcrProseRows)", () => {
     assert.deepEqual(splitOcrProseRows([b]), [b])
   })
 
+  it("표 맨 끝 * 각주 행도 표에 둔다 (신분증 표 \"* 단, 체류자격 변경 …\")", () => {
+    const b = table([
+      [c("규정 신분증*"), c("일반"), c("초·중·고등학생")],
+      [c("한국어능력시험 신원확인증명서"), c("×"), c("○")],
+      [c("* 단, 체류자격 변경 및 비자 연장 신청 등을 위하여 출입국·외국인청 등 공공기관에 신분증을 제출한 응시자가", 3), c(""), c("")],
+    ])
+    assert.deepEqual(splitOcrProseRows([b]), [b])
+  })
+
   it("병합 칸이 끊는 자리를 가로지르면 그대로", () => {
     const b = table([
       [c("가", 1, 2), c("1"), c("2")],
