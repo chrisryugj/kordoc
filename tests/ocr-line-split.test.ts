@@ -681,6 +681,19 @@ describe("inkBounds 점선 칸 괘선 너머 이웃 칸 글자 끝자락", () =>
     for (let y = 14; y < 34; y++) for (let x = 10; x < 50; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
     assert.equal(inkBounds(g, w, h, inkStats(g)).y0, 0)
   })
+  it("괘선 바로 옆 번진 잉크 점은 외곽에 넣지 않는다 (잡음 섞인 상자 테두리)", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < h; y++) g[y * w + 59] = 0
+    for (const y of [5, 17, 30]) g[y * w + 58] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 40; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    assert.equal(inkBounds(g, w, h, inkStats(g)).x1, 40)
+  })
+  it("괘선에 붙었어도 본문과 이어진 글자 획은 외곽에 남긴다", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < h; y++) g[y * w + 59] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 58; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    assert.equal(inkBounds(g, w, h, inkStats(g)).x1, 58)
+  })
   it("점선 너머가 비면 종전대로 점선까지 잰다 (띄어 쓴 머리 칸 높이를 바꾸지 않는다)", () => {
     const g = box(false)
     const b = inkBounds(g, 60, 40, inkStats(g))

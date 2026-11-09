@@ -379,6 +379,25 @@ export function inkBounds(
     }
   }
   if (x1 < x0 || y1 < y0) return { x0: 0, y0: 0, x1: w, y1: h }
+  // 상자 테두리 옆 번진 띠 — 잡음·흐림·회전 보간이 섞이면 테두리에 붙은 열에 잉크가 남아(테두리 열 66/66, 바로 옆 열 20/66) 외곽이
+  // 테두리까지 늘었다(조직도 팀 상자 "폐기물관리"·"산단폐기물" 이 테두리에 닿아 상자 밖 글이 됨). 외곽 끝이 괘선 열에 바로 붙은 2열
+  // 안 무리(열마다 잉크 높이 45% 이하)이고 본문 잉크와 빈 열 3개 넘게 떨어져 있으면 뺀다
+  const colAt = (x: number) => {
+    let n = 0
+    for (let y = Math.max(y0, top); y <= Math.min(y1, bottom - 1); y++) if (!ruleRow[y] && isInk(gray[y * w + x])) n++
+    return n
+  }
+  const trimSpecks = (edge: number, d: number) => {
+    let k = edge, n = 0
+    for (; n < 2 && k >= 0 && k < w && !ruleCol[k] && colAt(k) > 0; n++, k -= d) if (colAt(k) > h * 0.45) return edge
+    const touches = [edge + d, edge + 2 * d].some(r => r >= 0 && r < w && ruleCol[r])
+    if (!touches || !n) return edge
+    let gap = 0
+    for (; k >= 0 && k < w && !ruleCol[k] && colAt(k) === 0; k -= d) gap++
+    return gap >= 3 && k >= 0 && k < w && !ruleCol[k] ? k : edge
+  }
+  x1 = trimSpecks(x1, 1)
+  x0 = trimSpecks(x0, -1)
   return { x0, y0, x1: x1 + 1, y1: y1 + 1 }
 }
 
