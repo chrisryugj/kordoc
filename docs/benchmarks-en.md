@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.59: OCR dotted cell rules, smudged box borders · 2026-11-10
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90378 → **0.90439** (tables 0.91212 → 0.91333 — nine pages up such as a marriage-count table .890 → .982 and a statistics table .543 → .857; one page down: a two-row "total" header cell lands in another row, .935 → .876). OCR robust: Yeosu org-chart page scan CER 0.266 → **0.090**, noise 0.194 → 0.082, blur 0.170 → 0.054, scan overall 0.0591 → **0.0557**. The two drops are reference limits — Bucheon budget skew+1 (the text layer glues "균 450,726도" and OCR reads it line by line, 0 → 0.027) and ODL-OCR 131 (order of chart-axis tick fragments, 0.900 → 0.898). No per-document drops on in-house OCR; PDF table, PDF text and ODL text-layer benchmarks unchanged.
+
+- Rejected: cutting beyond every rule rather than only dotted ones (a user_real page CER .407 → .773), treating vertical dotted lines as rules (two kostat pages down), widening rule columns by ±2 px (the beyond-ink test for dotted rules disappears, KoOCR 0.90439 → 0.90348), the PP-OCRv6 medium detector (total 0.89519 — tables and order up, handwriting 0.921 → 0.880).
+
 ## 4.24.58: Trailing "*" footnote cells, neighbouring time values, gVisor sandbox · 2026-11-09
 
 In-house OCR table structure 31/65 → **32/65** (the "* 단, …" footnote cell at the end of the topik ID table). External KoOCR-Bench v2.0c, 877 public pages: 0.90370 → **0.90378** (two time-use table pages .802 → .827 and .806 → .824, no page down — keeping a trailing footnote in its table moves one textbook scan page from CER .135 to .139, below the fifth decimal of the total). No per-document drops on in-house OCR, OCR robust and ODL-OCR.

@@ -126,7 +126,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 65 tables | CER **0.0238** · character recall **99.33%** · table structure **32/65** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.904** by default · tables **0.912** · handwriting **0.921** · order **0.913** · heading recall 0.930 (4.24.56) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.904** by default · tables **0.913** · handwriting **0.921** · order **0.913** · heading recall 0.930 (4.24.59) |
 | opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.967** with `ocr: true` · 0.939 with OCR off (4.22.14) |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.58](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.58)** · 2026-11-09
+Latest release: **[4.24.59](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.59)** · 2026-11-10
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.59 | OCR: the tail of a neighbouring row beyond a dotted cell rule stuck to number boxes and pulled the next row's value into the same cell · OCR: the smudged band beside box borders in scans let org-chart text leak out of its box | KoOCR-Bench 0.90378 → **0.90439** (tables 0.912 → **0.913**) · OCR robust scan CER 0.0591 → **0.0557** |
 | 4.24.58 | Opt-in gVisor sandbox `KORDOC_SANDBOX=gvisor` (Linux, #199) · OCR: a trailing "*" footnote cell was pulled out of its table as a paragraph · OCR: time values in neighbouring cells ("0:34", "0:32") were glued into one cell | in-house OCR table structure 31 → **32**/65 · KoOCR-Bench 0.90370 → **0.90378** · no per-document drops on in-house benchmarks |
 | 4.24.57 | Minimum versions of dependencies with security advisories raised (xmldom, MCP SDK, sharp, adm-zip) · PDF formula OCR reads aligned equations of five or more lines line by line · OCR: budget cells holding an item with its amount breakdown were split into rows · official-document presets named after prototype keys no longer crash (#196, #197) | Formula OCR recall 0.972 → **0.976**, BLEU 0.900 → **0.905** (report only) · in-house OCR table structure 28 → **31**/65 · KoOCR-Bench 0.90370 unchanged · no per-document drops on in-house benchmarks |
 | 4.24.56 | OCR: pages where many low-confidence lines were dropped (handwritten letters on a painted background) are re-read with a larger detection size · OCR: "○ item \| amount" rows stacked in one table row are split (gazette fund sources and uses) | KoOCR-Bench total 0.90023 → **0.90370** (handwriting .908 → **.921**, tables .9105 → .9120) · no per-document drops on in-house benchmarks |
 | 4.24.55 | OCR: default threshold for re-reading handwritten pages with the handwriting model (pages at .85–.90 were missed) · OCR: cell rules (double and dotted) read as characters · decimal pairs that lost their point ("121/18.1") · PDF formula OCR: duplicate lines detected inside a multi-line box · HWP 3.x custom outline numbers, index marks, hyphens and horizontal bars | KoOCR-Bench total 0.89885 → **0.90023** (handwriting .901 → **.908**) · Formula OCR precision 0.955 → **0.968** (report only) · no per-document drops on in-house benchmarks |
-| 4.24.54 | PDF/OCR: two tables side by side were stacked into one · PDF formula OCR: the junk filter dropped inequality derivations and equations repeating the same subscript · OCR: cell dividers inside grey table header bands · OCR: "value (share)" cells split into two columns | KoOCR-Bench total 0.89420 → **0.89885** (tables .902 → **.911**) · Formula OCR recall 0.945 → **0.973** (report only) · no per-document drops on in-house benchmarks |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
