@@ -21,6 +21,7 @@ import {
 } from "../src/pdf/formula/postprocess.js"
 import { __internal } from "../src/pdf/formula/detector.js"
 import { repeatingTail } from "../src/pdf/formula/recognizer.js"
+import { lineBands } from "../src/pdf/formula/pipeline.js"
 
 const { nms, iou, letterbox } = __internal
 
@@ -549,3 +550,33 @@ describe("formula decode loop (repeatingTail)", () => {
     assert.equal(repeatingTail([1, ...loop, ...loop, ...loop]), 0)
   })
 })
+
+
+describe("lineBands — 여러 줄 정렬식 줄 띠", () => {
+  // w×h 흰 바탕에 [x1,y1,x2,y2) 검은 상자들을 칠한 프레임
+  const frame = (w: number, h: number, boxes: number[][]) => {
+    const data = new Uint8Array(w * h * 4).fill(255)
+    for (const [x1, y1, x2, y2] of boxes) for (let y = y1; y < y2; y++) for (let x = x1; x < x2; x++) data.fill(0, (y * w + x) * 4, (y * w + x) * 4 + 3)
+    return { width: w, height: h, data }
+  }
+
+  it("줄 다섯을 가르고, 여러 줄에 걸친 큰 괄호(세로 획)는 줄 사이를 잇지 않는다", () => {
+    const lines = [0, 1, 2, 3, 4].map(i => [20, 10 + i * 40, 300, 40 + i * 40])
+    const bands = lineBands(frame(320, 220, [...lines, [5, 10, 8, 200]]), 2)
+    assert.equal(bands.length, 5)
+    assert.deepEqual(bands[0], [8, 42])
+  })
+
+  it("본문 높이 절반을 넘는 큰 아래 첨자 띠도 줄 사이 틈보다 좁게 붙어 있으면 그 줄에 붙인다", () => {
+    // 줄마다 본문 30px + 6px 틈 + 첨자 18px, 줄 사이 틈 14px
+    const boxes = [0, 1, 2].flatMap(i => [[20, 10 + i * 68, 300, 40 + i * 68], [40, 46 + i * 68, 90, 64 + i * 68]])
+    assert.equal(lineBands(frame(320, 220, boxes), 2).length, 3)
+  })
+
+  it("한 줄 식의 합 기호 위아래 첨자 띠는 줄로 갈리지 않는다", () => {
+    // 본문 30px 줄 위아래로 8px 첨자 띠
+    const bands = lineBands(frame(320, 80, [[40, 5, 60, 13], [20, 20, 300, 50], [40, 56, 60, 64]]), 2)
+    assert.equal(bands.length, 1)
+  })
+})
+
