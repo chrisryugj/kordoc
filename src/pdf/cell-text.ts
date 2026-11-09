@@ -159,8 +159,9 @@ function keepWordsInOneCell(result: Map<ExtractedCell, TextItem[]>): void {
       && ca.col + ca.colSpan === cb.col && Math.abs(ca.bbox.x2 - cb.bbox.x1) <= 1
       && a.x >= ca.bbox.x1 - 1 && b.x >= cb.bbox.x1 - 1
   }
-  // 따로 검출된 OCR 값 상자 둘은 한 낱말이 아니다 — 검출기가 이웃 칸 수를 2px 틈으로 따로 잡았는데 한 칸으로 몰려 "18.43.55.27.5" 가 됐다(연도별 비율 표)
-  const value = /^[-+−]?[\d.,]+%?$/
+  // 따로 검출된 OCR 값 상자 둘은 한 낱말이 아니다 — 검출기가 이웃 칸 수를 2px 틈으로 따로 잡았는데 한 칸으로 몰려 "18.43.55.27.5" 가 됐다(연도별 비율 표).
+  // 시각 값도 같다("0:34"·"0:32" → "0:340:32", 생활시간 표)
+  const value = /^[-+−]?[\d.,:]+%?$/
   const ocrValues = (a: TextItem, b: TextItem): boolean => a.fontName === "ocr" && b.fontName === "ocr" && value.test(a.text.trim()) && value.test(b.text.trim())
   const all = [...owner.keys()].sort((a, b) => b.y - a.y || a.x - b.x)
   for (let i = 0; i < all.length;) {
