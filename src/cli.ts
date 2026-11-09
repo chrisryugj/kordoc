@@ -2,6 +2,7 @@
 
 import { Command } from "commander"
 import { VERSION, sanitizeError, routeConsoleToStderr } from "./utils.js"
+import { reexecInSandbox } from "./shared/sandbox.js"
 import { convertFiles } from "./cli/convert.js"
 import { assertDistinctStems, convertParallel, registerBatchWorker } from "./cli/batch.js"
 import { registerDocCommands } from "./cli/commands-docs.js"
@@ -120,4 +121,10 @@ program.hook("preAction", (_program, action) => {
 
 // 출처를 node 로 고정 — 정하지 않으면 commander 가 process.versions.electron 을 보고 Electron 앱 방식(argv[1]부터)으로
 // 읽어, Electron 을 node 로 띄운(ELECTRON_RUN_AS_NODE) 데스크톱 앱에서 cli.js 자신이 입력 파일로 잡힌다
+// KORDOC_SANDBOX=gvisor 면 gVisor 안에서 다시 실행한다(꺼져 있으면 아무것도 안 함).
+// 샌드박스 안에서 쓴 파일은 사라지므로 표준 출력 파싱(하위 명령 없음·-o/-d 없음)과 parse-worker 만 받는다
+const sub = process.argv[2]
+const isSubcommand = program.commands.some((c) => c.name() === sub || c.aliases().includes(sub))
+const writesFiles = process.argv.slice(2).some((a) => /^(-o|-d|--output|--out-dir)(=|$)/.test(a))
+reexecInSandbox(sub === "parse-worker" || (!isSubcommand && !writesFiles))
 program.parse(process.argv, { from: "node" })

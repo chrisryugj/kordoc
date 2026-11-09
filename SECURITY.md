@@ -110,6 +110,20 @@ kordoc processes untrusted binary files. The following defenses are in place:
   symlinks are rejected, including when parent directories do not yet exist.
   Unset by default — existing behaviour is unchanged.
 
+### Process Isolation (opt-in, Linux)
+- kordoc can run inside [gVisor](https://gvisor.dev/). A memory bug in a native dependency
+  (sharp, onnxruntime, PDF engines) triggered by a crafted document then reaches only the
+  gVisor kernel, not the host kernel, files or network.
+- Container runtime: `docker run --runtime=runsc --network=none`, or a Kubernetes
+  RuntimeClass with handler `runsc`. No code change.
+- **`KORDOC_SANDBOX=gvisor`** re-runs the parsing CLI and `parse-worker` (Java/Python SDK)
+  inside `runsc do` with networking off and `KORDOC_OFFLINE=1`. Host files are read-only;
+  writes stay in memory, so only stdout parsing is accepted. On Linux it fails if runsc cannot
+  start and never continues unsandboxed. On macOS and Windows, where gVisor cannot run, it
+  prints a warning and runs without isolation. Unset by default — existing behaviour is unchanged.
+- CI runs the test suite inside gVisor and checks that isolation is really on. See
+  [docs/sandbox.md](docs/sandbox.md).
+
 ### Model Integrity
 - OCR / formula models are pinned by SHA-256 in source; downloads are written to a
   `.part` file and verified before rename, and a mismatch deletes the file

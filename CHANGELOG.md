@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- gVisor 샌드박스 `KORDOC_SANDBOX=gvisor`(Linux): 파싱 CLI(`kordoc <파일>`)와 parse-worker(Java·Python SDK 워커)가 `runsc do` 안에서 다시 실행된다. 네트워크를 끊고(`--network=none`, `KORDOC_OFFLINE=1` 도 켬) 호스트 파일은 읽기만 보인다. sharp·onnxruntime·PDF 엔진 같은 네이티브 코드가 악성 문서로 장악되어도 호스트 커널·파일·네트워크에 직접 닿지 못한다. Linux 에서 runsc 가 없거나 띄우지 못하면 오류로 멈추고 격리 없이 계속하지 않는다. macOS·Windows 에서는 경고만 내고 그대로 실행한다. 샌드박스 안에서 쓴 파일은 사라지므로 `-o`·`-d`·파일을 쓰는 하위 명령·MCP 서버·protocol 2 `transport.images: "files"` 는 오류로 거절한다(이런 경로는 `docker --runtime=runsc` 로 격리). 끄면(기본) 동작·출력은 그대로. 재사용 워커의 문서당 처리 시간은 일반 컨테이너의 1.08배(문서 5개 합계 2,613ms → 2,817ms, GitHub Actions 실측). 배포 가이드 [docs/sandbox.md](docs/sandbox.md)
+- CI `gvisor` 잡: `npm test` 를 gVisor 컨테이너 안에서 네트워크 없이 돌리고, `KORDOC_SANDBOX=gvisor` 경로의 격리(gVisor 커널 로그·네트워크 차단·호스트 파일 보호·실패 시 멈춤)를 단언한다. 첫 단계에서 컨테이너가 정말 gVisor 안인지 `dmesg` 의 `Starting gVisor...` 로 확인하고, 아니면 잡을 실패시킨다
+
 ### Fixed
 
 - OCR 표 이웃 칸 시각 값: 따로 검출된 OCR 값 상자끼리는 칸 경계를 조금 넘어도 한 낱말로 잇지 않는데, 값 판정이 숫자·쉼표·점만 봐서 "0:34"·"0:32" 가 한 칸에 "0:340:32" 로 붙고 이웃 칸이 비었다(생활시간 표). 시각의 ":" 도 값으로 본다 — KoOCR-Bench 0.90370 → 0.90378(생활시간 표 두 쪽 .802 → .827·.806 → .824, 내려간 쪽 0), 자체 OCR·OCR robust·ODL-OCR 문서별 하락 0

@@ -12,6 +12,7 @@ import { registerRenderTools } from "./mcp/tools-render.js"
 import { registerGenerateTools } from "./mcp/tools-generate.js"
 import { registerLintTools } from "./mcp/tools-lint.js"
 import { registerConvertTools } from "./mcp/tools-convert.js"
+import { reexecInSandbox } from "./shared/sandbox.js"
 
 export { ALLOWED_EXTENSIONS, PARSE_EXTENSIONS, IMAGE_EXTENSIONS, PROFILE_EXTENSIONS, safePath, safeOutputPath, describeError, capResponseText } from "./mcp/shared.js"
 export { buildFillInputs } from "./mcp/tools-form.js"
@@ -69,4 +70,8 @@ try {
   if (entry && pathToFileURL(realpathSync(entry)).href !== import.meta.url) autoStart = false
 } catch { /* 판정 실패 → 자동 시작 유지 */ }
 
-if (autoStart) startMcpServer().catch((err) => { console.error(err); process.exit(1) })
+if (autoStart) {
+  // MCP 쓰기 도구의 결과는 샌드박스 안에서 사라진다 — KORDOC_SANDBOX=gvisor 면 격리 없이 돌지 않고 오류로 멈춘다(컨테이너 런타임으로 격리)
+  reexecInSandbox(false)
+  startMcpServer().catch((err) => { console.error(err); process.exit(1) })
+}
