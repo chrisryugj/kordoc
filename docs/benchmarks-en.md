@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.58: Trailing "*" footnote cells, neighbouring time values, gVisor sandbox · 2026-11-09
+
+In-house OCR table structure 31/65 → **32/65** (the "* 단, …" footnote cell at the end of the topik ID table). External KoOCR-Bench v2.0c, 877 public pages: 0.90370 → **0.90378** (two time-use table pages .802 → .827 and .806 → .824, no page down — keeping a trailing footnote in its table moves one textbook scan page from CER .135 to .139, below the fifth decimal of the total). No per-document drops on in-house OCR, OCR robust and ODL-OCR.
+
+- Rejected: ignoring column edges crossed only by the tail of an OCR box when splitting it per column ("5.6-2.2", 12% of the width) — the split values unsettled table detection and one statistics page collapsed (.911 → .024). Rejecting OCR cluster tables between two facing vertical rules with a blank channel (separate org-chart boxes) — it fixes the robust scan of an org chart, but a page whose truth keeps a box diagram as a table fell from .426 to 0, total 0.90378 → 0.90315.
+
 ## 4.24.57: Long aligned equations read line by line, budget breakdown cells, security dependency floors · 2026-11-09
 
 Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): recall 0.9723 → **0.9758**, NED≤.3 recall 0.9425 → **0.9494**, precision 0.9682 → **0.9699**, BLEU-4 0.8997 → **0.9045**; no earlier pair lost or worse. In-house OCR table structure 28/65 → **31/65** (cell F1 0.613 → 0.617). KoOCR-Bench 0.90370 unchanged. No per-document drops on in-house OCR, OCR robust and ODL-OCR.

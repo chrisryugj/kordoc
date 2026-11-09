@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.58] - 2026-11-09
+
 ### Added
 
 - gVisor 샌드박스 `KORDOC_SANDBOX=gvisor`(Linux): 파싱 CLI(`kordoc <파일>`)와 parse-worker(Java·Python SDK 워커)가 `runsc do` 안에서 다시 실행된다. 네트워크를 끊고(`--network=none`, `KORDOC_OFFLINE=1` 도 켬) 호스트 파일은 읽기만 보인다. sharp·onnxruntime·PDF 엔진 같은 네이티브 코드가 악성 문서로 장악되어도 호스트 커널·파일·네트워크에 직접 닿지 못한다. Linux 에서 runsc 가 없거나 띄우지 못하면 오류로 멈추고 격리 없이 계속하지 않는다. macOS·Windows 에서는 경고만 내고 그대로 실행한다. 샌드박스 안에서 쓴 파일은 사라지므로 `-o`·`-d`·파일을 쓰는 하위 명령·MCP 서버·protocol 2 `transport.images: "files"` 는 오류로 거절한다(이런 경로는 `docker --runtime=runsc` 로 격리). 끄면(기본) 동작·출력은 그대로. 재사용 워커의 문서당 처리 시간은 일반 컨테이너의 1.08배(문서 5개 합계 2,613ms → 2,817ms, GitHub Actions 실측). 배포 가이드 [docs/sandbox.md](docs/sandbox.md)
