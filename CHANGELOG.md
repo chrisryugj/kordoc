@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- 공문서 프리셋 정규화(`normalizeGongmunPreset`)가 별칭 표를 프로토타입까지 뒤져, 프리셋에 "toString"·"constructor" 같은 이름을 주면 문자열 대신 함수를 돌려 `markdownToHwpx`(`gongmun.preset`)와 `lintBlocks`(`preset`)가 `preset.trim is not a function` 으로 죽었다. CLI·MCP·protocol 2 는 이미 자기 키만 받았고, 라이브러리로 부르는 쪽만 걸렸다. 표의 자기 키만 보고 모르면 종전대로 `official`, 문자열이 아닌 값도 `official`
+
 - PDF 수식 OCR 긴 여러 줄 식: 인식기는 영역을 384×384 로 늘려 넣어 열 줄 넘는 증명식이 뭉개져 쓰레기("\displaystyle\frac{8}{4}[\left[a=…")가 나왔다 — 정답 식 500자 넘는 것 106개 중 26개를 놓쳤다(그 밖은 1~2%). 다섯 줄 이상인 display 영역은 줄 사이 빈 띠에서 갈라 줄마다 읽고 `aligned` 로 잇는다. 줄 띠는 여러 줄에 걸친 큰 괄호(세로 획 22.5pt 이상)를 빼고 행을 세며, 합 기호 위아래 첨자처럼 작은 띠(가장 큰 띠의 절반 미만)나 줄 사이 틈보다 좁게(가장 큰 틈의 60% 미만) 붙은 띠는 이웃 줄에 붙인다. 넉 줄 이하는 통째로 읽는다(넉 줄 식까지 가르면 오른쪽 조건 열 "for 0≤s≤r²"·굵은 기호·정렬 기호가 빠져 10개가 나빠졌다) — 수식 벤치(20편 621쪽, 혼자 실행) 재현율 0.9723 → 0.9758, NED≤.3 재현율 0.9425 → 0.9494, 정밀도 0.9682 → 0.9699, BLEU-4 0.8997 → 0.9045(2609.15723 .864 → .903), 종전 짝 중 빠지거나 NED 가 나빠진 것 0
 
 ## [4.24.56] - 2026-11-09

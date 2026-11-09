@@ -307,10 +307,12 @@ export const PRESET_ALIAS: Record<string, GongmunPreset> = {
   bangchim: "bangchim", 서울방침: "bangchim", 방침서: "bangchim", 방침: "bangchim",
 }
 
-/** 프리셋 입력(영문 키 또는 한글 별칭)을 내부 GongmunPreset로 정규화. 미상은 'official' */
+/** 프리셋 입력(영문 키 또는 한글 별칭)을 내부 GongmunPreset로 정규화. 미상은 'official'.
+ *  자기 키만 본다 — "toString"·"constructor" 같은 프로토타입 이름이 함수로 새어 나가 생성·검수가 죽지 않게 */
 export function normalizeGongmunPreset(preset?: string): GongmunPreset {
-  if (!preset) return "official"
-  return PRESET_ALIAS[preset.trim()] ?? "official"
+  if (typeof preset !== "string") return "official"
+  const key = preset.trim()
+  return Object.hasOwn(PRESET_ALIAS, key) ? PRESET_ALIAS[key] : "official"
 }
 
 /**
