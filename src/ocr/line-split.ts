@@ -349,8 +349,25 @@ export function inkBounds(
   const ruleCol = new Uint8Array(w), ruleRow = new Uint8Array(h)
   for (let x = 0; x < w; x++) if (colInk[x] >= h * 0.85) ruleCol[x] = 1
   for (let y = 0; y < h; y++) if (rowInk[y] >= w * 0.85) ruleRow[y] = 1
+  // 점선 칸 괘선 너머의 이웃 칸 글자 끝자락 — 점선은 잉크가 절반쯤이라 85% 문턱에 안 걸려, 숫자 상자 외곽이 윗행 쉼표 꼬리까지 늘어나
+  // 이웃 행 값과 한 칸에 몰렸다(성남시 혼인 건수 표 "1,605<br>3,388"). 상자 위아래 30% 띠의 점선(짧고 고른 조각이 폭 85% 넘게)
+  // 너머에 잉크가 있을 때만 그 점선과 너머를 뺀다 — 너머가 비면 그대로 둔다(외곽이 줄면 띄어 쓴 머리 "전  세" 가 글자마다 갈렸다)
+  let top = 0, bottom = h
+  const inkRow = (y: number) => { for (let x = 0, off = y * w; x < w; x++) if (!ruleCol[x] && isInk(gray[off + x])) return true; return false }
+  for (let y = Math.floor(h * 0.3); y >= 1; y--) {
+    if (ruleRow[y] || !dottedRow(gray, w, h, y, isInk)) continue
+    let beyond = false
+    for (let k = 0; k < y && !beyond; k++) if (!ruleRow[k] && inkRow(k) && !dottedRow(gray, w, h, k, isInk)) beyond = true
+    if (beyond) { top = y + 1; break }
+  }
+  for (let y = Math.ceil(h * 0.7); y < h - 1; y++) {
+    if (ruleRow[y] || !dottedRow(gray, w, h, y, isInk)) continue
+    let beyond = false
+    for (let k = y + 1; k < h && !beyond; k++) if (!ruleRow[k] && inkRow(k) && !dottedRow(gray, w, h, k, isInk)) beyond = true
+    if (beyond) { bottom = y; break }
+  }
   let x0 = w, x1 = -1, y0 = h, y1 = -1
-  for (let y = 0; y < h; y++) {
+  for (let y = top; y < bottom; y++) {
     if (ruleRow[y]) continue
     const off = y * w
     for (let x = 0; x < w; x++) {
@@ -364,6 +381,45 @@ export function inkBounds(
   if (x1 < x0 || y1 < y0) return { x0: 0, y0: 0, x1: w, y1: h }
   return { x0, y0, x1: x1 + 1, y1: y1 + 1 }
 }
+
+/**
+ * 한 줄이 점선인가 — 조각 6개 이상이 길이 85% 넘게 걸치고, 조각·틈이 짧고(중앙값 4px 이하) 고르며(틈 최대가 중앙값의 2.5배 이하),
+ * 얇다(3px 옆 줄의 같은 자리 잉크가 조각 픽셀의 30% 미만). 작은 대문자 글줄("DEPARTMENT STORE" 로고)을 가로지르는 행도
+ * 짧고 고른 조각이지만 획이 옆 줄로 이어진다. at(i) = 줄의 i 번째 픽셀이 잉크인가, side(d, i) = d 만큼 옆 줄의 i 번째(없으면 null)
+ */
+function dottedLine(n: number, at: (i: number) => boolean, side: (d: number, i: number) => boolean | null): boolean {
+  const runs: Array<[number, number]> = []
+  for (let i = 0; i < n;) {
+    if (!at(i)) { i++; continue }
+    let e = i
+    while (e < n && at(e)) e++
+    runs.push([i, e])
+    i = e
+  }
+  if (runs.length < 6 || runs[runs.length - 1][1] - runs[0][0] < n * 0.85) return false
+  const med = (v: number[]) => [...v].sort((p, q) => p - q)[v.length >> 1]
+  const lens = runs.map(([a, b]) => b - a), gaps = runs.slice(1).map(([a], i) => a - runs[i][1])
+  const ml = med(lens), mg = med(gaps)
+  if (!(ml <= 4 && mg <= 4 && Math.max(...lens) <= Math.max(3, ml * 2.5) && Math.max(...gaps) <= Math.max(3, mg * 2.5))) return false
+  let px = 0
+  for (const [a, b] of runs) px += b - a
+  for (const d of [-3, 3]) {
+    let n = 0, seen = false
+    for (const [a, b] of runs) for (let i = a; i < b; i++) {
+      const v = side(d, i)
+      if (v === null) break
+      seen = true
+      if (v) n++
+    }
+    if (seen && n >= px * 0.3) return false
+  }
+  return true
+}
+
+function dottedRow(gray: Uint8Array, w: number, h: number, y: number, isInk: (v: number) => boolean): boolean {
+  return dottedLine(w, x => isInk(gray[y * w + x]), (d, x) => (y + d < 0 || y + d >= h ? null : isInk(gray[(y + d) * w + x])))
+}
+
 
 /**
  * 괄호 조각 모양 — 윗·아랫 띠(높이 15%)의 가로 획 길이(폭 대비)와 기울기 줄 비율(taper: 획 폭과 전체 폭 사이 폭인 줄 / 높이).

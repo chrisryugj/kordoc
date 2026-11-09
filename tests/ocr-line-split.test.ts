@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, slantedPair, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
+import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkBounds, inkStats, ringBullet, serifOne, slantedPair, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
 
 function canvas(w: number, h: number, bg = 255): Uint8Array {
   return new Uint8Array(w * h).fill(bg)
@@ -657,5 +657,33 @@ describe("leadingBullet — 큰 속 찬 네모 ■", () => {
     assert.deepEqual(leadingBullet(big, W, H, inkStats(big), 50), { mark: "■", covers: false })
     const small = canvas(W, H); rect(small, W, 14, 16, 24, 26); rect(small, W, 60, 6, 110, 34)
     assert.equal(leadingBullet(small, W, H, inkStats(small), 50)?.mark, "▪")
+  })
+})
+
+describe("inkBounds 점선 칸 괘선 너머 이웃 칸 글자 끝자락", () => {
+  // 폭 60·높이 40 흰 상자: 위 0~3행에 윗행 글자 끝자락(쉼표 꼬리), 8행에 점선(2px 잉크·2px 틈), 14~34행에 이 칸 글자
+  const box = (withTail: boolean) => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    if (withTail) for (let y = 0; y < 4; y++) for (let x = 20; x < 24; x++) g[y * w + x] = 0
+    for (let x = 0; x < w; x++) if (x % 4 < 2) g[8 * w + x] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 50; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    return g
+  }
+  it("점선 너머에 잉크가 있으면 점선과 너머를 빼고 칸 글자만 잰다", () => {
+    const g = box(true)
+    const b = inkBounds(g, 60, 40, inkStats(g))
+    assert.equal(b.y0, 14)
+  })
+  it("작은 글자 줄(획이 위아래로 이어지는 짧고 고른 조각)은 점선으로 보지 않는다", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < 2; y++) for (let x = 20; x < 24; x++) g[y * w + x] = 0
+    for (let y = 2; y < 10; y++) for (let x = 0; x < w; x++) if (x % 4 < 2) g[y * w + x] = 0
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 50; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    assert.equal(inkBounds(g, w, h, inkStats(g)).y0, 0)
+  })
+  it("점선 너머가 비면 종전대로 점선까지 잰다 (띄어 쓴 머리 칸 높이를 바꾸지 않는다)", () => {
+    const g = box(false)
+    const b = inkBounds(g, 60, 40, inkStats(g))
+    assert.equal(b.y0, 8)
   })
 })
