@@ -65,7 +65,12 @@ function splitTable(t: IRTable): boolean {
       : ls.some(l => /^[○◦]/.test(l)) && ls.every(l => !isNum(l) && l.replace(/\s+/g, "").length <= 12) ? "label" : "other"
     const kinds = stacked.map(kind)
     const valueRows = numericShare >= 0.6 || (kinds.includes("num") && kinds.includes("label") && !kinds.includes("other"))
-    const ok = spanOk && k >= 2 && n >= 2 && (stacked.length * 2 >= nonEmpty || shares) && lines.every(ls => ls.length <= 1 || near(ls)) && valueRows
+    // 예산서 한 칸의 항목 + 산출 내역(이름표 둘째 줄부터 금액을 적은 줄 "○전기요금 / -취수정 경정 80,000,000원")과 재원 내역
+    // ("526,657 / 균 395,010")은 원본 한 칸이다 — 펼치면 자체 OCR 예산서 표 일치가 2/2 → 0/2 였다(부천·괴산). 금액 없는 갈래 이름
+    // ("○사업비 / -사회보험성 / -사업성", 관보 기금 운용)은 행으로 펼친다
+    const breakdown = lines.some(ls => ls.length >= 2 && !isNum(ls[0]) && ls.slice(1).some(l => !isNum(l) && /\d\s*원/.test(l)))
+      || lines.some(ls => ls.some(l => /^[국도균시군구]\s*[\d,]+$/.test(l)))
+    const ok = spanOk && k >= 2 && n >= 2 && (stacked.length * 2 >= nonEmpty || shares) && lines.every(ls => ls.length <= 1 || near(ls)) && valueRows && !breakdown
     if (!ok) { newRows.push(row); continue }
     const sub: IRCell[][] = Array.from({ length: k }, () => Array.from({ length: row.length }, blank))
     anchors.forEach(({ c, cell }, idx) => {
