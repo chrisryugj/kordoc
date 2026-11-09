@@ -39,7 +39,7 @@
 | 시간 및 상태 | 자원 고갈(압축 폭탄 등) | 모든 압축 항목을 스트리밍으로 풀며, 선언 크기를 넘으면 그 자리에서 멈춘다. 누적 상한은 형식별 100~256MB, 항목 500개, HWP5 스트림 100MB, PDF 5,000쪽 |
 | 에러처리 | 오류 메시지 정보 노출 | MCP 오류는 kordoc 오류만 그대로 내고, 나머지는 파일 경로·스택 없이 분류 문구로 바꾼다 |
 | 코드오류 | 무한 재귀·중첩 | XML 깊이 200, 렌더 중첩 16 상한 |
-| 캡슐화 | 샌드박스 | 인쇄·PDF용 Chromium은 JS를 끄고 외부 요청을 모두 막는다. 이번에 샌드박스를 기본으로 켰다(root Linux 컨테이너와 `KORDOC_CHROMIUM_NO_SANDBOX=1`만 예외) |
+| 캡슐화 | 샌드박스 | 인쇄·PDF용 Chromium은 JS를 끄고 외부 요청을 모두 막는다. 이번에 샌드박스를 기본으로 켰다(root Linux 컨테이너와 `KORDOC_CHROMIUM_NO_SANDBOX=1`만 예외) |<br>파서 전체는 gVisor 안에서 돌릴 수 있다. 컨테이너 런타임(`docker --runtime=runsc`, 쿠버네티스 RuntimeClass)이나 `KORDOC_SANDBOX=gvisor` 로 켠다. 네이티브 라이브러리가 악성 문서로 장악되어도 호스트 커널·파일·네트워크에 직접 닿지 못한다. CI 가 매번 gVisor 안에서 테스트를 돌리고 격리를 확인한다([sandbox.md](sandbox.md))
 | API 오용 | `eval`·동적 코드 | `eval`·`new Function`을 쓰지 않는다. PDF.js 스크립트 실행을 끈다 |
 
 ## 4. 오픈소스 라이선스·취약점
@@ -55,10 +55,12 @@
 | `KORDOC_OFFLINE=1` | 모든 아웃바운드 요청 차단 |
 | `KORDOC_ROOT=<작업 폴더>` | MCP 서버의 읽기·쓰기를 그 폴더 안으로 한정(다중 사용자·AI 에이전트 연동 시 필수 권장) |
 | 버전 고정 설치 | `npm install kordoc@<버전>` 또는 `kordoc setup`(자동 고정). `npx -y kordoc`처럼 버전 없이 등록하지 않는다 |
+| gVisor 로 실행 | 서버는 kordoc 컨테이너·파드를 `runsc` 런타임으로 띄우고 네트워크를 끊는다. 워커는 띄워 두고 여러 문서를 처리한다. 클라우드 키·토큰은 파싱 워커 환경에 넣지 않는다. CPU·메모리 고갈은 컨테이너 자원 제한으로 막는다([sandbox.md](sandbox.md) 서버 운영) |
 | Chromium 샌드박스 유지 | `KORDOC_CHROMIUM_NO_SANDBOX`를 설정하지 않는다. 컨테이너는 root가 아닌 사용자로 실행한다 |
 
 ## 6. 남은 한계
 
-- 의존성(cfb·jszip·xmldom·pdfjs-dist·onnxruntime-node·sharp·pdfium) 내부 취약점은 업데이트로 대응한다.
+- 의존성(cfb·jszip·xmldom·pdfjs-dist·onnxruntime-node·sharp·pdfium) 내부 취약점은 업데이트로 대응한다. gVisor 로 실행하면 이런 취약점이 터져도 피해가 샌드박스 안에 머문다. gVisor 는 Linux 전용이다.
+- gVisor 는 kordoc 이 장악됐을 때 호스트를 지킨다. 한 워커가 처리하는 문서끼리의 격리는 지금과 같다.
 - `KORDOC_ROOT`를 정하지 않으면 MCP 서버는 허용 확장자 파일을 어디서든 읽을 수 있다(5절 설정 권장).
 - 선택 의존성 onnxruntime-node·protobufjs에 설치 스크립트가 있다. 폐쇄망 설치는 [offline-deployment.md](offline-deployment.md) 절차를 따른다.

@@ -169,6 +169,7 @@ Yes. `KORDOC_OFFLINE=1` blocks all outbound traffic, and OCR runs on the local C
 - [Java SDK](sdk/java/README.md) · [Python SDK](sdk/python/README.md): parse from Java and Python systems through a resident engine worker ([worker protocol](docs/parse-worker-protocol.md), Korean)
 - [Government-document generation](docs/gongmunseo-engine-spec.md) · [Architecture](docs/architecture.md)
 - [Offline deployment](docs/offline-deployment.md): `KORDOC_OFFLINE=1`; MCP file scope with `KORDOC_ROOT`
+- [gVisor sandbox](docs/sandbox.md): run the parser inside gVisor to protect the host (Linux; `KORDOC_SANDBOX=gvisor` or `docker --runtime=runsc`, Korean)
 - [Security policy](SECURITY.md) · [MIT license](LICENSE) · [Third-party notices](NOTICE)
 
 ## About the Author
