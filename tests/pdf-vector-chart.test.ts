@@ -5,7 +5,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import { chartBandGap } from "../src/pdf/xy-cut.js"
 import type { NormItem } from "../src/pdf/text-line.js"

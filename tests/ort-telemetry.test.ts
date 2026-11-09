@@ -32,7 +32,6 @@ before(async () => {
     `,
     "@huggingface/tokenizers": checked("@huggingface/tokenizers") + "export class Tokenizer {}",
     "sharp": "export default function sharp() { throw new Error('unexpected image inference'); }",
-    "@hyzyla/pdfium": "export const PDFiumLibrary = { async init() { return { destroy() {} }; } };",
   }
   await writeFile(join(fixture, "loader.mjs"), `
     const modules = ${JSON.stringify(modules)};

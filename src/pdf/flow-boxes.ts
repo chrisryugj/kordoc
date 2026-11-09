@@ -2,7 +2,7 @@
 import type { IRBlock } from "../types.js"
 import type { TableGrid, LineSegment } from "./line-types.js"
 import type { ImageRegion } from "./image-regions.js"
-import { ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { ImageKind } from "./ops.js"
 import { smallVisibleImagePaints, resolveImagePixels, type PageObjects, type Pixels } from "./image-bullets.js"
 
 const contains = (outer: ImageRegion, inner: ImageRegion, tolerance = 1) =>

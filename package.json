@@ -96,9 +96,7 @@
   },
   "optionalDependencies": {
     "@huggingface/tokenizers": "^0.2.0",
-    "@hyzyla/pdfium": "^2.1.0",
     "onnxruntime-node": "^1.24.0",
-    "pdfjs-dist": "^4.10.38",
     "sharp": "^0.35.5",
     "zxing-wasm": "^3.1.6"
   },
@@ -110,13 +108,11 @@
   },
   "devDependencies": {
     "@huggingface/tokenizers": "^0.2.0",
-    "@hyzyla/pdfium": "^2.1.0",
     "@rhwp/core": "^0.9.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^18.19.130",
     "libheif-js": "^1.23.5",
     "onnxruntime-node": "^1.24.0",
-    "pdfjs-dist": "^4.10.38",
     "puppeteer-core": "^25.16.0",
     "sharp": "^0.35.5",
     "tsup": "^8.4.0",

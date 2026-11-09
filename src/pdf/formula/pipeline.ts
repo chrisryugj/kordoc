@@ -1,11 +1,11 @@
 /**
- * 수식 OCR 파이프라인 — PDFium 렌더 + MFD + MFR 통합
+ * 수식 OCR 파이프라인 — 쪽 렌더(hayro) + MFD + MFR 통합
  *
  * 한 번 생성된 FormulaPipeline 인스턴스는 ONNX 세션을 재사용해 여러 PDF 에 적용 가능.
  * Docufinder 는 CLI 프로세스 단위로 새로 띄우기 때문에 세션 재사용은 PDF 내부 페이지 루프에만 적용됨.
  */
 
-import type { PDFiumLibrary, PDFiumDocument } from "@hyzyla/pdfium"
+import { openHayro, rasterPage, type RasterPage } from "../hayro.js"
 import type { InferenceSession } from "onnxruntime-node"
 import type { Tokenizer } from "@huggingface/tokenizers"
 
@@ -60,7 +60,7 @@ export interface PageFormulaResult {
  * 수식 OCR 실행 컨텍스트. 처음 호출 시 무겁게 초기화 (ONNX 세션 로드),
  * 이후 runOnBuffer / runOnPages 를 여러 번 호출해 재사용 가능.
  *
- * 모든 의존성(onnxruntime-node, @huggingface/tokenizers, @hyzyla/pdfium, sharp)은
+ * 모든 의존성(onnxruntime-node, @huggingface/tokenizers, sharp)은
  * optional 이므로 dynamic import. 미설치 시 초기화에서 명확한 에러 메시지 반환.
  */
 /**
@@ -80,7 +80,6 @@ export class FormulaPipeline {
   private tokenizer: Tokenizer
   private ort: typeof import("onnxruntime-node")
   private sharp: SharpFactory
-  private pdfium: PDFiumLibrary
   private opts: Required<FormulaPipelineOptions>
 
   private constructor(parts: {
@@ -90,7 +89,6 @@ export class FormulaPipeline {
     tokenizer: Tokenizer
     ort: typeof import("onnxruntime-node")
     sharp: SharpFactory
-    pdfium: PDFiumLibrary
     opts: Required<FormulaPipelineOptions>
   }) {
     this.mfd = parts.mfd
@@ -99,7 +97,6 @@ export class FormulaPipeline {
     this.tokenizer = parts.tokenizer
     this.ort = parts.ort
     this.sharp = parts.sharp
-    this.pdfium = parts.pdfium
     this.opts = parts.opts
   }
 
@@ -115,7 +112,7 @@ export class FormulaPipeline {
       pageTimeoutMs: options?.pageTimeoutMs ?? 60_000,
     }
 
-    const [ortMod, sharpModRaw, hfMod, pdfiumMod] = await Promise.all([
+    const [ortMod, sharpModRaw, hfMod] = await Promise.all([
       tryImport<typeof import("onnxruntime-node")>(
         "onnxruntime-node",
         () => import("onnxruntime-node"),
@@ -127,10 +124,6 @@ export class FormulaPipeline {
       tryImport<typeof import("@huggingface/tokenizers")>(
         "@huggingface/tokenizers",
         () => import("@huggingface/tokenizers"),
-      ),
-      tryImport<typeof import("@hyzyla/pdfium")>(
-        "@hyzyla/pdfium",
-        () => import("@hyzyla/pdfium"),
       ),
     ])
     // CJS `export =` + ESM interop → default 속성에 래핑될 때도, 안 될 때도 있음.
@@ -164,8 +157,6 @@ export class FormulaPipeline {
     const tokenizerJson = JSON.parse(await readFile(tokPath, "utf-8"))
     const tokenizer = new hfMod.Tokenizer(tokenizerJson, {})
 
-    const pdfium = await pdfiumMod.PDFiumLibrary.init()
-
     return new FormulaPipeline({
       mfd,
       encoder,
@@ -173,7 +164,6 @@ export class FormulaPipeline {
       tokenizer,
       ort: ortMod,
       sharp: sharpMod,
-      pdfium,
       opts,
     })
   }
@@ -185,11 +175,6 @@ export class FormulaPipeline {
       if (typeof rel === "function") {
         try { await rel.call(s) } catch { /* ignore */ }
       }
-    }
-    try {
-      this.pdfium.destroy()
-    } catch {
-      // ignore
     }
   }
 
@@ -205,18 +190,17 @@ export class FormulaPipeline {
     onPageProgress?: (pageNumber: number, total: number) => void,
   ): Promise<PageFormulaResult[]> {
     const view = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
-    const doc: PDFiumDocument = await this.pdfium.loadDocument(view)
+    const doc = await openHayro(view)
     try {
       const pages: PageFormulaResult[] = []
-      // 대상 쪽만 연다 — doc.pages() 는 모든 쪽을 불러오고 render() 가 끝에서만 닫아, 필터 밖 쪽이 문서를 닫을 때까지 남았다
-      // (ocr/pdf-ocr.ts runPdfOcr 와 같은 수정). pdfium 쪽 번호는 0-based — pdfjs 블록/pageFilter 는 1-based.
+      // 대상 쪽만 그린다. 쪽 번호는 0-based — 블록/pageFilter 는 1-based.
       // 환산 없이는 필터가 한 페이지 밀리고 수식이 이전 페이지 블록에 붙는다 (off-by-one).
-      const count = doc.getPageCount()
+      const count = doc.pageCount()
       const pageNos = pageFilter
         ? [...pageFilter].filter(p => p >= 1 && p <= count).sort((a, b) => a - b)
         : Array.from({ length: count }, (_, i) => i + 1)
       for (const pageNo of pageNos) {
-        const page = doc.getPage(pageNo - 1)
+        const page = rasterPage(doc, pageNo - 1)
         onPageProgress?.(pageNo, count)
 
         try {
@@ -235,13 +219,13 @@ export class FormulaPipeline {
       }
       return pages
     } finally {
-      doc.destroy()
+      doc.close()
     }
   }
 
   private async processPage(
     pageNumber: number,
-    page: import("@hyzyla/pdfium").PDFiumPage,
+    page: RasterPage,
   ): Promise<PageFormulaResult | null> {
     const { originalWidth: pdfWidth, originalHeight: pdfHeight } = page.getOriginalSize()
 
@@ -355,7 +339,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Pro
   }
 }
 
-/** pdfium 의 BGRA 버퍼를 RGBA 로 변환 (Red ↔ Blue 스왑). */
+/** 렌더 버퍼의 R·B 자리를 바꾼다 — 종전 PDFium 래퍼 경로와 같은 바이트 (Red ↔ Blue 스왑). */
 function bgraToRgba(bgra: Uint8Array): Uint8Array {
   const out = new Uint8Array(bgra.length)
   for (let i = 0; i < bgra.length; i += 4) {

@@ -32,15 +32,17 @@ const args = process.argv.slice(2)
 const GATE_MODE = args.includes("--gate")
 const VERBOSE = args.includes("--verbose")
 
-/** PDF 장수는 독립 경로로 읽는다 — kordoc PDF 파서를 정답지로 쓰면 자기채점이 된다 */
+/** PDF 장수는 독립 경로로 읽는다 — kordoc PDF 파서(쪽 나누기·쪽 거르기)를 정답지로 쓰면 자기채점이 된다.
+ *  PDF 엔진(dist/hayro-pdf.wasm)의 쪽 트리 수를 직접 묻는다 */
+let pdfEngine
 async function pdfPageCount(path) {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
-  const doc = await pdfjs.getDocument({
-    data: new Uint8Array(readFileSync(path)),
-    useSystemFonts: false,
-    verbosity: 0,
-  }).promise
-  return doc.numPages
+  pdfEngine ??= await WebAssembly.compile(readFileSync(new URL("../dist/hayro-pdf.wasm", import.meta.url)))
+  const w = new WebAssembly.Instance(pdfEngine).exports
+  const data = readFileSync(path)
+  const p = w.alloc(data.length) >>> 0
+  new Uint8Array(w.memory.buffer, p, data.length).set(data)
+  if (w.open(p, data.length) !== 0) throw new Error(`PDF 를 열 수 없음: ${path}`)
+  return w.page_count()
 }
 
 const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"))

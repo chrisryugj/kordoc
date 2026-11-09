@@ -1,5 +1,5 @@
 /**
- * PDF OCR 브릿지 — 대상 페이지를 pdfium 으로 래스터해 내장 엔진 또는
+ * PDF OCR 브릿지 — 대상 페이지를 hayro 로 래스터해 내장 엔진 또는
  * 사용자 OcrProvider 로 인식하고, 페이지별 IRBlock[] 을 돌려준다.
  *
  * - 내장 엔진: OcrItem 좌표를 PDF 포인트로 환산해 기존 블록 파이프라인
@@ -32,6 +32,7 @@ import { splitOcrJoinedHeaders } from "./ocr-header-split.js"
 import { splitOcrProseRows } from "./ocr-prose-rows.js"
 import { rescueEmptyCells } from "./empty-cell-rescue.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
+import { openHayro, rasterPage, type RasterPage } from "../pdf/hayro.js"
 
 /** OCR 렌더 스케일 (72dpi × 3 = 216dpi) — 10pt 본문이 rec 입력 높이(48px)에 근접 */
 const OCR_RENDER_SCALE = 3
@@ -211,23 +212,18 @@ export async function runPdfOcr(
   if (targets.size === 0) return result
 
   // 환경 준비 — 실패는 그대로 throw (호출자가 NEEDS_OCR 폴백)
-  const pdfiumMod = await tryImport<typeof import("@hyzyla/pdfium")>(
-    "@hyzyla/pdfium",
-    () => import("@hyzyla/pdfium"),
-  )
   if (mode === "builtin") await ensureOcrModelsFor(config.models, reportModelDownload)
   if (mode === "builtin" && config.handwriting && !config.autoRec?.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = mode === "builtin" ? await getOcrEngine(config.models) : null
 
-  const pdfium = await pdfiumMod.PDFiumLibrary.init()
-  const doc = await pdfium.loadDocument(new Uint8Array(buffer))
+  // 쪽 래스터는 hayro 렌더(흰 바탕 RGBA)
+  const doc = await openHayro(new Uint8Array(buffer))
   try {
     let done = 0
-    // 대상 쪽만 연다 — doc.pages() 는 모든 쪽을 불러오고, 쪽은 render() 가 끝에서만 닫아 대상 밖 쪽이 문서를 닫을 때까지 남았다
-    // (changwon 328쪽 문서의 한 쪽 OCR: 6ms·26MB → 전 쪽 순회 970ms·330MB). pdfium 쪽 번호는 0-based — 대외 계약(1-based)으로 환산
-    const count = doc.getPageCount()
+    // 대상 쪽만 그린다. 쪽 번호는 0-based — 대외 계약(1-based)으로 환산
+    const count = doc.pageCount()
     for (const pageNo of [...targets].filter(p => p >= 1 && p <= count).sort((a, b) => a - b)) {
-      const page = doc.getPage(pageNo - 1)
+      const page = rasterPage(doc, pageNo - 1)
       onProgress?.(++done, targets.size)
       try {
         const { blocks, lines } = await withTimeout(
@@ -247,14 +243,13 @@ export async function runPdfOcr(
       }
     }
   } finally {
-    doc.destroy()
-    pdfium.destroy()
+    doc.close()
   }
   return result
 }
 
 export async function ocrOnePage(
-  page: import("@hyzyla/pdfium").PDFiumPage,
+  page: RasterPage,
   pageNo: number,
   mode: OcrMode,
   engine: Awaited<ReturnType<typeof getOcrEngine>> | null,
@@ -270,7 +265,6 @@ export async function ocrOnePage(
     warnings.push({ page: pageNo, code: "PARTIAL_PARSE", message: `OCR 래스터 픽셀 상한으로 렌더 해상도를 축소했습니다 (작은 글자 인식 결손 가능)` })
   }
   // 그림 영역만 읽는 쪽은 두 배로 한 번 그려 영역 다시 읽기(closer)에 쓰고, 쪽 배율 래스터는 2×2 평균으로 줄여 만든다
-  // (pdfium 은 같은 쪽을 두 번 그리면 wasm 서명 오류가 난다)
   const closer = regions && mode === "builtin" && renderScale * 2 <= Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH))
   const rendered = await page.render({
     scale: closer ? renderScale * 2 : renderScale,
@@ -696,7 +690,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Pro
   }
 }
 
-/** pdfium BGRA → RGBA */
+/** 렌더 버퍼의 R·B 자리를 바꾼다 — 종전 PDFium 래퍼 경로와 같은 바이트를 OCR 에 준다(렌더 설정은 OCR 쪽에서 다시 맞춘다) */
 function bgraToRgba(bgra: Uint8Array): Uint8Array {
   const out = new Uint8Array(bgra.length)
   for (let i = 0; i < bgra.length; i += 4) {

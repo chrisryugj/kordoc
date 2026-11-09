@@ -8,7 +8,7 @@
  * 일반 숫자는 가려 읽지 못해 그대로 둔다. 별도로 원본 문자표와 모든 윤곽·폭이 일치한 글꼴 기호만 known-font-glyphs에서 식별한다.
  */
 
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "./ops.js"
 import type { PdfTextItem } from "./text-line.js"
 import { knownFontPua, type OutlinePoint, type GlyphOutline } from "./known-font-glyphs.js"
 import { mapPuaText, pairedNumber } from "../shared/pua.js"

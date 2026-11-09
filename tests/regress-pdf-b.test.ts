@@ -15,7 +15,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, ImageKind } from "../src/pdf/ops.js"
 import { parsePdfDocument } from "../src/pdf/parser.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import { extractWithColumns } from "../src/pdf/columns.js"

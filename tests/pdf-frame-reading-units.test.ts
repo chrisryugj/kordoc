@@ -1,6 +1,6 @@
 import {describe, it} from "node:test"
 import assert from "node:assert/strict"
-import {OPS} from "pdfjs-dist/legacy/build/pdf.mjs"
+import {OPS} from "../src/pdf/ops.js"
 import {extractPageBlocksWithLines} from "../src/pdf/page-blocks.js"
 import {groupFrameParagraphUnits, FRAME_READING_UNITS, recordFrameReadingUnit} from "../src/pdf/frame-cell-blocks.js"
 import type {IRBlock} from "../src/types.js"

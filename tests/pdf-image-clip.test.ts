@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { extractImageRegions } from "../src/pdf/image-regions.js"
 
 describe("PDF 이미지 가시 영역", () => {

@@ -1,8 +1,5 @@
 /**
- * PDF 텍스트 추출 (pdfjs-dist static import 기반)
- *
- * polyfill을 먼저 import해야 DOMMatrix/Path2D/pdfjsWorker가 주입됨.
- * ES 모듈 호이스팅 때문에 별도 파일로 분리되어 있음.
+ * PDF 텍스트 추출 — PDF 엔진은 hayro(wasm, hayro.ts). 글 조각·연산자 목록·글꼴·그림은 hayro 어댑터(hayro-text·hayro-ops)가 만든다.
  *
  * 이 파일은 엔트리(파이프라인 오케스트레이션)와 메타데이터 추출만 담당한다.
  * 세부 단계는 모듈로 분리: text-line(아이템/줄), xy-cut(읽기 순서),
@@ -20,14 +17,17 @@ import { unframeLayoutTables, CONTENT_CELLS, CELL_BASELINES } from "../table/lay
 import { CELL_LINES, CLIP_TABLES, IMAGE_CELLS } from "./table-meta.js"
 import { extractImageRegions, extractLines } from "./line-detector.js"
 import { mergeOcrImageRegions, type ImageRegion } from "./ocr-region-merge.js"
-import { blankLargeImageStreams } from "./image-blank.js"
-import { openPdfiumImages } from "./pdfium-images.js"
+import { openHayro, HayroOpenError, type HayroDoc } from "./hayro.js"
+import { hayroTextPage, hayroFontInfo } from "./hayro-text.js"
+import { hayroOps, hayroFontData } from "./hayro-ops.js"
+import { pdfInfo, pdfLinkAnnotations } from "./hayro-meta.js"
+import { OPS } from "./ops.js"
 import { createPdfImageState, extractPageImages, flushPdfImages, injectPageImageBlocks, moveImagesInFlow } from "./image-extract.js"
 import { loadWebpEncoder, WEBP_UNAVAILABLE } from "../image/webp.js"
 import { loadQrReader, QR_UNAVAILABLE } from "../qr.js"
 import { computePageQuality, summarizeDocumentQuality, type PageQuality } from "./quality.js"
 import { scanVectorGlyphs, ocrVectorOps } from "./vector-glyphs.js"
-import { type PdfTextItem, type NormItem, normalizeItems, filterHiddenText } from "./text-line.js"
+import { type NormItem, normalizeItems, filterHiddenText } from "./text-line.js"
 import { extractPageBlocksWithLines, type PageCarry } from "./page-blocks.js"
 import { WrapLexicon, joinPageBreakWraps, splitPageBreakWraps } from "./line-wrap.js"
 import { mergeCrossPageTables } from "./table-parts.js"
@@ -56,11 +56,6 @@ import { collectPdfOutline } from "./outline.js"
 import { sanitizeBlockControlChars, cleanPdfText, splitSingleCellTables, joinLatinCellWraps } from "./text-clean.js"
 import { applyLinkAnnotations, mergeLinkRuns } from "./links.js"
 import { applyFormulaOcr } from "./formula-ocr.js"
-// polyfill 먼저 (ES 모듈 호이스팅되므로 별도 파일 필수)
-import "./polyfill.js"
-import { getDocument, GlobalWorkerOptions, OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
-import { createRequire } from "node:module"
-import { dirname, join } from "node:path"
 import { handwritingFallbackModels, ocrModelsCached, resolveOcrModels } from "../ocr/models.js"
 import { validateOcrOptions } from "../ocr/options.js"
 import { splitContactTables } from "./contact-table.js"
@@ -85,81 +80,22 @@ export { mergeCrossPageTables }
 export { cleanPdfText }
 export { detectTableCaptions, detectKoreanListBlocks, removeHeaderFooterBlocks }
 
-// worker 비활성화 (polyfill에서 pdfjsWorker를 이미 주입했으므로)
-GlobalWorkerOptions.workerSrc = ""
-
 // ─── 안전 한계값 (구조적 파싱과 무관) ────────────────
 const MAX_PAGES = 5000
 const MAX_TOTAL_TEXT = 100 * 1024 * 1024 // 100MB
-/** 문서 글꼴 캐시를 비우는 기준 — 마지막으로 비운 뒤 쪽들이 불러온 글꼴 사전 수. pdf.js 는 글꼴을 사전 단위로 문서 끝까지 쥔다
- *  (사전당 약 1.5MB, #137 제안요청서 30쪽 글꼴 사전 2,965개 = 힙 4.2GB). 코퍼스 PDF 1,911개의 문서당 글꼴 사전은 최대 155개라
- *  보통 문서는 비우지 않는다(비우면 다음 쪽 글꼴을 다시 변환한다) */
-const FONT_CACHE_LIMIT = 256
-
-/** PDF 로딩 타임아웃 (30초) — 악성/대용량 PDF 무한 대기 방지 */
-const PDF_LOAD_TIMEOUT_MS = 30_000
-
-// CID 폰트 자산(cmaps/standard_fonts) 경로 — 미지정이면 CMap 필요 폰트의 텍스트가
-// "loadFont failed: cMapUrl 필요" 경고와 함께 통째로 소실된다 (성과계획서류 숫자 전멸).
-// pdfjs-dist 패키지 위치에서 해석하고, 실패 시 미지정(기존 동작) 유지.
-const pdfjsAssets: { cMapUrl?: string; cMapPacked?: boolean; standardFontDataUrl?: string } = {}
-try {
-  const _require = createRequire(import.meta.url)
-  const pkgDir = dirname(_require.resolve("pdfjs-dist/package.json"))
-  pdfjsAssets.cMapUrl = join(pkgDir, "cmaps") + "/"
-  pdfjsAssets.cMapPacked = true
-  pdfjsAssets.standardFontDataUrl = join(pkgDir, "standard_fonts") + "/"
-} catch { /* optional dep — 경로 해석 실패 시 cMap 없이 진행 */ }
-
-/**
- * 글꼴을 받기만 하는 문서 (#137) — pdf.js 는 FontFace 를 못 쓰면(disableFontFace, Node 의 FontFace 부재) 글자마다 글리프 윤곽 경로를
- * 만들고, 그 렌더러가 글꼴 프로그램의 글리프를 전부 쪼개 글꼴 사전마다 따로 쥔다. kordoc 은 pdf.js 로 그리지 않아(OCR·수식 래스터는
- * pdfium) 경로가 필요 없다. 이 문서를 ownerDocument 로 주면 FontLoader 가 @font-face 규칙을 넣고(버림) Node 의 동기 글꼴 적재로
- * 끝나 경로를 만들지 않는다. Bullzip PDF Printer 공시 첨부(글꼴 파일 2개를 글꼴 사전 400여 개가 나눠 씀, 글리프 6.5만 개): 1쪽
- * getOperatorList 힙 3.6GB → 0.6GB. 쓰는 멤버는 FontLoader.insertRule·clear 뿐이다(pdfjs 4.10)
- */
-const HEADLESS_FONT_DOCUMENT = {
-  createElement: () => ({ sheet: { cssRules: [], insertRule() {} }, remove() {} }),
-  documentElement: { getElementsByTagName: () => [{ append() {} }] },
-} as unknown as HTMLDocument
-
-/** getDocument 옵션 (data 제외) */
-export const PDFJS_DOCUMENT_OPTIONS = {
-  useSystemFonts: true,
-  // 글꼴 /Differences 글리프 이름 — ToUnicode 없는 옛 숫자·작은 대문자 복원(glyph-names.ts)
-  fontExtraProperties: true,
-  disableFontFace: false,
-  ownerDocument: HEADLESS_FONT_DOCUMENT,
-  isEvalSupported: false,
-  verbosity: 0, // 오류만 — 경고("Warning: Indexing all PDF objects")를 console.log 로 stdout 에 찍어 MCP·CLI JSON 을 깼다
-  ...pdfjsAssets,
-}
-
-/** getDocument + 타임아웃 래퍼 */
-async function loadPdfWithTimeout(buffer: ArrayBuffer, data?: Uint8Array) {
-  const loadingTask = getDocument({
-    // pdfjs transfers its input to the worker; retain the caller's buffer for reuse.
-    data: data ?? new Uint8Array(buffer.slice(0)),
-    ...PDFJS_DOCUMENT_OPTIONS,
-  })
-  let timer: ReturnType<typeof setTimeout> | undefined
+/** PDF 를 연다 — 읽을 수 없거나 암호가 걸린 PDF 는 KordocError */
+async function loadPdf(buffer: ArrayBuffer): Promise<HayroDoc> {
   try {
-    return await Promise.race([
-      loadingTask.promise.catch((e: unknown) => {
-        if (e instanceof Error && e.name === "PasswordException") throw new KordocError("암호로 보호된 PDF 파일입니다 (PDF 열기 암호는 지원하지 않습니다)")
-        throw e
-      }),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => { loadingTask.destroy(); reject(new KordocError("PDF 로딩 타임아웃 (30초 초과)")) }, PDF_LOAD_TIMEOUT_MS)
-      }),
-    ])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
+    return await openHayro(new Uint8Array(buffer))
+  } catch (e) {
+    if (!(e instanceof HayroOpenError)) throw e
+    throw new KordocError(e.reason === "password" ? "암호로 보호된 PDF 파일입니다 (PDF 열기 암호는 지원하지 않습니다)"
+      : e.reason === "encryption" ? "지원하지 않는 PDF 암호화입니다" : "PDF 파일을 읽을 수 없습니다")
   }
 }
 
 export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
-  // pdfjs receives a copy; both OCR paths can reuse the caller's original bytes.
+  // The engine copies its input; both OCR paths can reuse the caller's original bytes.
   const formulaBuffer: ArrayBuffer | null = options?.formulaOcr ? buffer : null
   // ocr 을 지정하지 않으면(false 아님) 텍스트층 없는 쪽과 큰 그림 속 글을 자동 OCR — 내장 모델이 이미 캐시에 있을 때만(다운로드하지 않는다)
   // 모델을 골랐으면(ocrDet·ocrRec·ocrRecDict) 자동 OCR 은 고른 모델 파일이 있을 때만
@@ -168,21 +104,35 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
   const autoOcr = options?.ocr === undefined && await ocrModelsCached(resolveOcrModels(options)) &&
     (options?.ocrRec !== "auto" || await ocrModelsCached(handwritingFallbackModels(resolveOcrModels(options))))
   const ocrBuffer: ArrayBuffer | null = options?.ocr || autoOcr ? buffer : null
-  // 큰 그림은 pdfjs 사본에서 표본을 지우고 PDFium 이 원본에서 디코딩한다 (#186) — PDFium 이 없거나 못 열면 지우지 않은 사본
-  const pdfjsData = new Uint8Array(buffer.slice(0))
-  const blanked = blankLargeImageStreams(pdfjsData)
-  const pdfium = blanked.byRaw.size > 0 ? await openPdfiumImages(buffer, blanked) : null
-  const doc = await loadPdfWithTimeout(buffer, blanked.byRaw.size === 0 || pdfium ? pdfjsData : undefined).catch(e => { pdfium?.close(); throw e })
-  // PDFium 이 못 찾는 지운 그림은 지우지 않은 pdfjs 문서로 — 필요할 때만 연다
-  let pristine: ReturnType<typeof loadPdfWithTimeout> | undefined
+  const doc = await loadPdf(buffer)
+  // 그림 화소는 hayro 가 디코딩한다 — 그림을 읽는 판정 모듈(글머리 그림·화살표·그림 추출)은 쪽 객체의 objs 로 받는다
+  const imageObjs = { get(id: string, cb?: (data: unknown) => void) { const v = doc.image(id); cb?.(v); return v } }
+  const imagePage = { objs: imageObjs, commonObjs: imageObjs }
+  // 글꼴 객체 — 판정 모듈이 쓰는 필드(이름·Type3·복합·/Differences·ToUnicode·글리프 윤곽 글꼴)만
+  const fontObjs = new Map<string, Record<string, unknown> | null>()
+  const fontObj = (key: string) => {
+    if (!key.startsWith("hy_")) return undefined
+    if (!fontObjs.has(key)) {
+      const info = hayroFontInfo(doc, key)
+      if (!info) fontObjs.set(key, null)
+      else {
+        const differences: string[] = [], map: string[] = []
+        for (const [c, n] of info.differences) differences[c] = n
+        for (const [c, u] of info.toUnicode) map[c] = u
+        fontObjs.set(key, { name: info.name, isType3Font: info.subtype === "Type3", composite: info.composite, differences, toUnicode: { _map: map }, data: hayroFontData(doc.fontFile(key)) })
+      }
+    }
+    return fontObjs.get(key) as { name?: string; isType3Font?: boolean } | null | undefined
+  }
 
   try {
-    const pageCount = doc.numPages
+    const pageCount = doc.pageCount()
     if (pageCount === 0) throw new KordocError("PDF에 페이지가 없습니다.")
 
     // 메타데이터 추출 (best-effort) — PDF는 항상 실제 페이지 단위 (#66)
     const metadata: DocumentMetadata = { pageCount, pageMode: "layout" }
-    await extractPdfMetadata(doc, metadata)
+    const info = pdfInfo(doc)
+    extractPdfMetadata(info, metadata)
 
     const blocks: IRBlock[] = []
     const warnings: ParseWarning[] = []
@@ -217,7 +167,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const wantWebp = options?.imageFormat === "webp" && options.images !== false
     const encodeWebp = wantWebp ? await loadWebpEncoder() : null
     if (wantWebp && !encodeWebp) warnings.push(WEBP_UNAVAILABLE)
-    const imageState = createPdfImageState(pdfium ? { decoder: pdfium, sizes: blanked.sizes, pristine: () => (pristine ??= loadPdfWithTimeout(buffer)) } : undefined, encodeWebp ?? undefined, options?.imagePlacement === "flow", !!options?.dropBlankImages && options?.images !== false)
+    const imageState = createPdfImageState(encodeWebp ?? undefined, options?.imagePlacement === "flow", !!options?.dropBlankImages && options?.images !== false)
     const readQr = options?.qrCodes ? await loadQrReader() : null
     if (options?.qrCodes && !readQr) warnings.push(QR_UNAVAILABLE)
     const imageBulletShapes = new Map<string, boolean>()
@@ -229,8 +179,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 반올림 전 좌표(NormItem.fx·fw)로 공백을 가리는 규칙(자간 보정·공백 힌트 틈)은 한컴 PDF 실측 — 다른 제작기 PDF(ODL)는 반올림 좌표 그대로.
     // 한글 문서를 "Microsoft: Print To PDF" 로 찍은 보도자료도 한컴 조판 그대로라 같다 — 폭 0 공백 글리프("지원(1 인당"·"(5 천원")를 반올림 틈 1pt 로
     // 재 거짓 공백을 냈다(전통시장 보도자료 어절 F1 .962 → .993)
-    const hancomPdf = await isHancomPdf(doc)
-    const preciseGaps = hancomPdf || await isPreciseGapProducer(doc)
+    const hancomPdf = isHancomPdf(info)
+    const preciseGaps = hancomPdf || isPreciseGapProducer(info)
     // OCR 로 갈 벡터 글자 쪽의 그래픽(글자 경로·클립 뺀 연산자 목록) — OCR 글자에 이 쪽의 실제 괘선을 붙인다
     const vectorPageOps = new Map<number, { fnArray: number[]; argsArray: unknown[][] }>()
     // 줄 꺾임 이음의 문서 어휘 증거 — 쪽을 처리할 때마다 그 쪽 줄 글이 더해진다 (line-wrap.ts)
@@ -243,40 +193,29 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const headerContext: IRBlock[] = []
     if (pageFilter && options?.removeHeaderFooter !== false && pageFilter.size < effectivePageCount) {
       for (const number of selectionContextPages(pageFilter, effectivePageCount)) {
-        let contextPage: Awaited<ReturnType<typeof doc.getPage>> | undefined
         try {
-          contextPage = await doc.getPage(number)
-          const content = await contextPage.getTextContent()
-          pageHeights.set(number, contextPage.view[3] - contextPage.view[1])
-          headerContext.push(...marginContextBlocks(content.items as PdfTextItem[], number, contextPage.view))
+          const view = doc.pageView(number - 1)
+          const content = hayroTextPage(doc, number)
+          pageHeights.set(number, view[3]! - view[1]!)
+          headerContext.push(...marginContextBlocks(content.items, number, view))
         } catch { /* unavailable context leaves selected content intact */ }
-        finally { contextPage?.cleanup() }
       }
     }
 
     let parsedPages = 0
-    const loadedFonts = new Set<string>()
     for (let i = 1; i <= effectivePageCount; i++) {
       if (pageFilter && !pageFilter.has(i)) continue
-      let loadedPage: Awaited<ReturnType<typeof doc.getPage>> | undefined
       try {
-        const page = await doc.getPage(i)
-        loadedPage = page
-        const tc = await page.getTextContent()
+        const page = hayroTextPage(doc, i)
+        const rotate = doc.pageRotate(i - 1)
         // Text and paths use unrotated user coordinates, including the CropBox origin.
-        const [viewX1, viewY1, viewX2, viewY2] = page.view
+        const [viewX1, viewY1, viewX2, viewY2] = doc.pageView(i - 1) as [number, number, number, number]
         const pageW = viewX2 - viewX1, pageH = viewY2 - viewY1
         pageHeights.set(i, pageH)
         pageWidths.set(i, pageW)
-        const rawItems = tc.items as PdfTextItem[]
-        // 선 기반 테이블 감지를 위한 operatorList — 글리프 이름 복원(restoreNamedGlyphs)이 공백 정리 전에 써서 먼저 받는다
-        const rawOps = await page.getOperatorList()
-        for (let k = 0; k < rawOps.fnArray.length; k++) if (rawOps.fnArray[k] === OPS.setFont) loadedFonts.add(rawOps.argsArray[k][0])
-        // 폰트 실명·/Differences 는 operatorList 로드 뒤에야 commonObjs 에 있다
-        const fontObj = (loadedName: string) => {
-          try { return page.commonObjs.has(loadedName) ? page.commonObjs.get(loadedName) as { name?: string; isType3Font?: boolean } | null : undefined }
-          catch { return undefined }
-        }
+        const rawItems = page.items
+        // 선 기반 테이블 감지를 위한 연산자 목록 — 글리프 이름 복원(restoreNamedGlyphs)이 공백 정리 전에 써서 먼저 만든다
+        const rawOps = hayroOps(page.events, page.strings)
         const differencesOf = (loadedName: string) => (fontObj(loadedName) as { differences?: ArrayLike<string | undefined> } | null | undefined)?.differences
         // 가림 판정은 복원 전 원시 글리프 흐름으로 맞춘다. 집합은 복원 후에도 같은 아이템을 가리킨다.
         const occluded = occludedTextItems(rawItems, rawOps.fnArray, rawOps.argsArray)
@@ -322,8 +261,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
 
         // 링크 어노테이션(/Annots /URI) → [text](url) 래핑 — 실패해도 텍스트 파싱 진행
         try {
-          const annots = await page.getAnnotations()
-          applyLinkAnnotations(visible, annots)
+          applyLinkAnnotations(visible, pdfLinkAnnotations(doc, i - 1))
         } catch { /* 어노테이션 파싱 실패 무시 */ }
 
         // Downstream table/header/page-break geometry assumes an origin of (0,0).
@@ -339,7 +277,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 심볼 폰트(Wingdings) 글리프 복원
         remapSymbolFontItems(visible, (loadedName) => fontObj(loadedName)?.name)
         remapControlGlyphs(visible, differencesOf)
-        await restoreImageBullets(visible, page, opList.fnArray, opList.argsArray, imageBulletShapes)
+        await restoreImageBullets(visible, imagePage, opList.fnArray, opList.argsArray, imageBulletShapes)
         // 글꼴 id(g_d0_fN)는 글꼴 객체마다 다르다. 크롬은 한 서체를 Type3 글꼴 객체 여러 개(256자마다 새 객체)로 쪼개
         // 같은 본문이 "다른 서체"로 보여 제목으로 승격된다(#89). Type3 는 서브셋 접두(ABCDEF+)를 뗀 서체 이름으로 맞춘다.
         // 다른 글꼴은 같은 이름의 서브셋 객체 차이가 굵게 흉내 낸 제목의 유일한 증거일 수 있어 그대로 둔다(ODL 181 Calibri).
@@ -388,7 +326,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
             })
             if (!hasText) {
               if (large) uncovered++
-              if (page.rotate % 360 === 0 && viewX1 === 0 && viewY1 === 0) {
+              if (rotate % 360 === 0 && viewX1 === 0 && viewY1 === 0) {
                 const regions = uncoveredImageRegions.get(i) ?? []
                 regions.push(r)
                 uncoveredImageRegions.set(i, regions)
@@ -405,7 +343,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         const stamp = marginStamp(visible)
         const flow = stamp.length ? visible.filter(it => !stamp.includes(it)) : visible
         // 가로 쪽 두 쪽 모아찍기는 왼쪽 쪽 → 오른쪽 쪽
-        const rightArrows = options?.tables !== false ? await detectRightArrowRegions(page, opList.fnArray, opList.argsArray, imageArrowDirections) : []
+        const rightArrows = options?.tables !== false ? await detectRightArrowRegions(imagePage, opList.fnArray, opList.argsArray, imageArrowDirections) : []
         const pageBlocks = orderTwoUpPage(extractPageBlocksWithLines(flow, i, opList, pageW, pageH, undefined, options?.tables !== false, carry, wrapLexicon, rightArrows), pageW, pageH)
         if (stamp.length) pageBlocks.unshift({ type: "paragraph", text: [...stamp].sort((a, b) => a.y - b.y).map(it => it.text).join(" "), pageNumber: i })
         for (const b of pageBlocks) blocks.push(b)
@@ -413,7 +351,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 이미지 XObject 바이트 추출 — 블록 주입은 표 병합 후(injectPageImageBlocks)
         // images:false 면 PNG 인코딩을 건너뛰고 자리 표시 블록만 받는다
         try {
-          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(page, opList.fnArray, opList.argsArray, i, imageState, warnings, options?.images !== false, readQr ?? undefined)
+          const { blocks: imgBlocks, images: pageImages } = await extractPageImages(imagePage, opList.fnArray, opList.argsArray, i, imageState, warnings, options?.images !== false, readQr ?? undefined)
           if (imgBlocks.length > 0) pageImageBlocks.set(i, imgBlocks)
           extractedImages.push(...pageImages)
         } catch { /* 이미지 추출 실패가 텍스트 파싱을 막지 않도록 */ }
@@ -437,8 +375,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         const vector = scanVectorGlyphs(opList.fnArray, opList.argsArray, visible)
         const quality = computePageQuality(i, pageText, vector.glyphs)
         pageQuality.push(quality)
-        // 회전·원점 이동 쪽은 pdfium 래스터 좌표가 사용자 공간과 어긋나 종전대로(래스터 괘선) 둔다
-        if (options?.ocr && quality.ocrReason === "vector_text" && page.rotate % 360 === 0 && page.view[0] === 0 && page.view[1] === 0) {
+        // 회전·원점 이동 쪽은 OCR 래스터 좌표가 사용자 공간과 어긋나 종전대로(래스터 괘선) 둔다
+        if (options?.ocr && quality.ocrReason === "vector_text" && rotate % 360 === 0 && viewX1 === 0 && viewY1 === 0) {
           vectorPageOps.set(i, ocrVectorOps(opList, vector.paths))
         }
         if (totalTextBytes > MAX_TOTAL_TEXT) throw new KordocError("텍스트 추출 크기 초과")
@@ -448,14 +386,6 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         // 크기 초과는 전체 중단
         if (pageErr instanceof KordocError) throw pageErr
         warnings.push({ page: i, message: `페이지 ${i} 파싱 실패: ${pageErr instanceof Error ? pageErr.message : "알 수 없는 오류"}`, code: "PARTIAL_PARSE" })
-      } finally {
-        // Release page-local decoded images/operators on success and failure.
-        // commonObjs (shared fonts/images) remains available to later pages.
-        loadedPage?.cleanup()
-      }
-      if (loadedFonts.size > FONT_CACHE_LIMIT) {
-        await doc.cleanup()
-        loadedFonts.clear()
       }
     }
 
@@ -677,7 +607,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 클립 격자 풀기는 한컴 PDF 만 — 다른 제작기 클립 표는 테두리 없는 머리 행이 글로 풀려 표가 깨진다
     // (ODL 064 "PORT | SHIPCALLS" 머리 행: 한컴 원본 그림이 아니라 이 규칙의 정답이 없다)
     if (options?.layoutTables !== "keep") {
-      const hancom = await isHancomPdf(doc)
+      const hancom = isHancomPdf(info)
       const shown = new Map<IRBlock, IRBlock[]>()
       // 그림 칸(IMAGE_CELLS)은 글이 비어도 내용이 있다 — 빈 여백 행으로 접히지 않게 (칸 안 표까지). 칸 글줄 기준선은 목차 행 짝짓기가 본다
       const markContent = (bs: IRBlock[] | undefined): void => {
@@ -723,54 +653,34 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
       ...(options?.ocrLines ? { ocrLines: [...ocrLinesOut.values()].sort((a, b) => a.pageNumber - b.pageNumber) } : {}),
     }
   } finally {
-    await doc.destroy().catch(() => {})
-    pdfium?.close()
-    await pristine?.then(d => d.destroy()).catch(() => {})
+    doc.close()
   }
 }
 
 // ─── PDF 메타데이터 추출 ────────────────────────────
 
-async function extractPdfMetadata(doc: { getMetadata(): Promise<unknown> }, metadata: DocumentMetadata): Promise<void> {
-  try {
-    const result = await doc.getMetadata() as { info?: Record<string, unknown> } | null
-    if (!result?.info) return
-    const info = result.info
-
-    if (typeof info.Title === "string" && info.Title.trim()) metadata.title = info.Title.trim()
-    if (typeof info.Author === "string" && info.Author.trim()) metadata.author = info.Author.trim()
-    if (typeof info.Creator === "string" && info.Creator.trim()) metadata.creator = info.Creator.trim()
-    if (typeof info.Subject === "string" && info.Subject.trim()) metadata.description = info.Subject.trim()
-    if (typeof info.Keywords === "string" && info.Keywords.trim()) {
-      metadata.keywords = info.Keywords.split(/[,;]/).map((k: string) => k.trim()).filter(Boolean)
-    }
-    if (typeof info.CreationDate === "string") metadata.createdAt = parsePdfDate(info.CreationDate)
-    if (typeof info.ModDate === "string") metadata.modifiedAt = parsePdfDate(info.ModDate)
-  } catch {
-    // best-effort
+function extractPdfMetadata(info: Record<string, string>, metadata: DocumentMetadata): void {
+  if (info.Title?.trim()) metadata.title = info.Title.trim()
+  if (info.Author?.trim()) metadata.author = info.Author.trim()
+  if (info.Creator?.trim()) metadata.creator = info.Creator.trim()
+  if (info.Subject?.trim()) metadata.description = info.Subject.trim()
+  if (info.Keywords?.trim()) {
+    metadata.keywords = info.Keywords.split(/[,;]/).map((k: string) => k.trim()).filter(Boolean)
   }
+  if (typeof info.CreationDate === "string") metadata.createdAt = parsePdfDate(info.CreationDate)
+  if (typeof info.ModDate === "string") metadata.modifiedAt = parsePdfDate(info.ModDate)
 }
 
 /** 한컴 PDF — Producer "Hancom PDF 1.3.0.xxx" 또는 Creator "Hwp 2018·2020 …" (법령 별표 273건 271건·표 정답 세트 한컴 산출물 실측).
- *  정보 사전을 못 읽거나 다른 제작기면 아니다 */
-/** 반올림 전 좌표 공백 규칙을 같이 쓰는 제작기 — 한글 문서를 Windows "Microsoft: Print To PDF" 로 찍은 PDF(글 자리는 한컴 조판 그대로),
- *  LibreOffice PDF(낱말 사이 공백 글리프를 따로 찍고 글 아이템 폭이 정확하다 — lo-pairs 5문서 어절 F1 상승·하락 0) */
-export async function isPreciseGapProducer(doc: { getMetadata(): Promise<unknown> }): Promise<boolean> {
-  try {
-    const info = (await doc.getMetadata() as { info?: Record<string, unknown> } | null)?.info
-    return [info?.Producer, info?.Creator].some(v => typeof v === "string" && /^\s*(?:microsoft: print to pdf|libreoffice)\b/i.test(v))
-  } catch {
-    return false
-  }
+ *  정보 사전이 없거나 다른 제작기면 아니다 */
+function isHancomPdf(info: Record<string, string>): boolean {
+  return [info.Producer, info.Creator].some(v => typeof v === "string" && /^\s*(?:hancom\b|hwp\b)/i.test(v))
 }
 
-async function isHancomPdf(doc: { getMetadata(): Promise<unknown> }): Promise<boolean> {
-  try {
-    const info = (await doc.getMetadata() as { info?: Record<string, unknown> } | null)?.info
-    return [info?.Producer, info?.Creator].some(v => typeof v === "string" && /^\s*(?:hancom\b|hwp\b)/i.test(v))
-  } catch {
-    return false
-  }
+/** 반올림 전 좌표 공백 규칙을 같이 쓰는 제작기 — 한글 문서를 Windows "Microsoft: Print To PDF" 로 찍은 PDF(글 자리는 한컴 조판 그대로),
+ *  LibreOffice PDF(낱말 사이 공백 글리프를 따로 찍고 글 아이템 폭이 정확하다 — lo-pairs 5문서 어절 F1 상승·하락 0) */
+export function isPreciseGapProducer(info: Record<string, string>): boolean {
+  return [info.Producer, info.Creator].some(v => typeof v === "string" && /^\s*(?:microsoft: print to pdf|libreoffice)\b/i.test(v))
 }
 
 /** PDF 날짜 형식 (D:YYYYMMDDHHmmSS) → ISO 8601 변환 */
@@ -783,14 +693,13 @@ function parsePdfDate(dateStr: string): string | undefined {
 
 /** 메타데이터만 추출 (전체 파싱 없이) — MCP parse_metadata용 */
 export async function extractPdfMetadataOnly(buffer: ArrayBuffer): Promise<DocumentMetadata> {
-  const doc = await loadPdfWithTimeout(buffer)
-
+  const doc = await loadPdf(buffer)
   try {
-    const metadata: DocumentMetadata = { pageCount: doc.numPages }
-    await extractPdfMetadata(doc, metadata)
+    const metadata: DocumentMetadata = { pageCount: doc.pageCount() }
+    extractPdfMetadata(pdfInfo(doc), metadata)
     return metadata
   } finally {
-    await doc.destroy().catch(() => {})
+    doc.close()
   }
 }
 

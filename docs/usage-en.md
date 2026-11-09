@@ -33,7 +33,7 @@ npm install kordoc        # CLI only? no install needed: npx kordoc <file>
 
 PDF and OCR dependencies are installed by default (`--omit=optional` slims the install but drops PDF and OCR). Only PDF print rendering (`markdownToPdf`) needs `puppeteer-core` installed separately.
 
-Embedding kordoc as a library in an app (Electron etc.): the only required packages `import "kordoc"` actually loads are `jszip` and `markdown-it` (`cfb` and the XML parser wasm are bundled). `@modelcontextprotocol/sdk` (plus the 92 packages, about 11MB, it pulls in such as express and hono), `commander` and `zod` serve only `kordoc mcp` and the CLI, so they can be left out of an app installer. Optional dependencies (`sharp`, `onnxruntime-node`, `@huggingface/tokenizers`, `@hyzyla/pdfium`, `pdfjs-dist`) can be dropped for the features you do not use (PNG render, OCR, PDF). The MCP SDK is not an optional dependency because, as in #99 below, npm drops optional dependencies together when one of them fails to install, which would remove the MCP server entirely.
+Embedding kordoc as a library in an app (Electron etc.): the only required packages `import "kordoc"` actually loads are `jszip` and `markdown-it` (`cfb` and the XML parser wasm are bundled). `@modelcontextprotocol/sdk` (plus the 92 packages, about 11MB, it pulls in such as express and hono), `commander` and `zod` serve only `kordoc mcp` and the CLI, so they can be left out of an app installer. Optional dependencies (`sharp`, `onnxruntime-node`, `@huggingface/tokenizers`) can be dropped for the features you do not use (PNG render, OCR). The PDF engine (hayro wasm) ships inside the package. The MCP SDK is not an optional dependency because, as in #99 below, npm drops optional dependencies together when one of them fails to install, which would remove the MCP server entirely.
 
 <details>
 <summary>Troubleshooting</summary>
@@ -430,7 +430,7 @@ Conversion failures emit the JSON below to stdout in every `--format` and exit 1
 | `ZIP_BOMB` / `DECOMPRESSION_BOMB` | decompression-bomb guard triggered |
 | `NO_SECTIONS` | no body sections |
 | `OUTPUT_TOO_LARGE` | output serialization exceeds the runtime string limit |
-| `MISSING_DEPENDENCY` | optional dependency not installed (pdfjs-dist, …) |
+| `MISSING_DEPENDENCY` | optional dependency not installed (onnxruntime-node, …) |
 | `EMPTY_INPUT` | empty input |
 | `FILE_NOT_FOUND` | input path does not exist (ENOENT) |
 | `PARSE_ERROR` | any other parse failure |
@@ -583,7 +583,7 @@ import type {
 | **HWP 5.x** (Hancom legacy) | OLE2 + CFB | distribution-copy decryption, open passwords, corrupted-CFB recovery, footnotes/hyperlinks, 21 control chars, image extraction, real page boundaries |
 | **HWP 3.x** (1996–2002) | single binary | Johab → Unicode, 5,893 Hanja/symbol lookup, nested paragraphs, arae-a (archaic Hangul), open passwords |
 | **HWPML 2.x** (XML-based HWP) | XML DOM | HeadingType-based headings, merged cells, DoS guards |
-| **PDF** | pdfjs-dist | ruled, clip-based and borderless tables, XY-Cut reading order, two-column pages, headings, footnotes/endnotes, math-font recovery, OCR, underline/links, image extraction, text-quality signals |
+| **PDF** | hayro (wasm) | ruled, clip-based and borderless tables, XY-Cut reading order, two-column pages, headings, footnotes/endnotes, math-font recovery, OCR, underline/links, image extraction, text-quality signals |
 | **XLSX** (Excel) | ZIP + XML DOM | shared strings, merged cells, multiple sheets, formula display, date cells to ISO, large-sheet streaming |
 | **XLS** (Excel 97–2003) | OLE2 + BIFF8 | Workbook stream, SST shared strings, cell/sheet extraction |
 | **DOCX** (Word) | ZIP + XML DOM | style-based headings, numbering (real number labels), footnotes, hyperlinks, image extraction |
@@ -610,7 +610,8 @@ import type {
 - **PaddleOCR** (Apache 2.0, PaddlePaddle) — derived text OCR engine (PP-OCRv5 korean)
 - **Pix2Text** (MIT, breezedeus) — formula OCR (MFD/MFR) algorithm port. Models are downloaded at runtime and not redistributed — the MFD weights are based on Ultralytics YOLOv8 (AGPL-3.0), so commercial or closed products relying on formula OCR should check those terms separately
 - **cfb** (Apache 2.0, SheetJS) — HWP5 OLE2 container parsing
-- **pdfjs-dist** (Apache 2.0, Mozilla) — PDF text extraction
+- **hayro** (Apache 2.0 OR MIT, The Hayro Authors) — PDF engine (shipped as wasm; crate notices in `THIRD_PARTY/hayro-pdf.txt`)
+- **PDF.js** (Apache 2.0, Mozilla) — text-chunk rules, operator numbering and PDF string decoding re-implemented
 - **JSZip** (MIT, Stuart Knightley et al.) — ZIP-based format parsing
 
 Full notices are in [NOTICE](../NOTICE) and license texts in `THIRD_PARTY/` — both ship in the npm package.

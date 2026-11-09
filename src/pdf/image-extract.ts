@@ -1,20 +1,15 @@
 /**
  * PDF 이미지 XObject 바이트 추출 — 페이지 operatorList의 paint 이미지를
- * page.objs/commonObjs에서 디코딩된 픽셀로 받아 PNG(imageFormat "webp" 면 WebP)로 인코딩한다.
- *
- * getOperatorList()가 이미 디코딩 비용을 지불하므로(선 감지용으로 항상 호출)
- * 여기서는 RGBA 변환 + PNG deflate만 추가된다. 순수 JS (node:zlib) 전용.
+ * page.objs/commonObjs(hayro 가 디코딩한 화소)로 받아 PNG(imageFormat "webp" 면 WebP)로 인코딩한다.
  */
 
 import { createHash } from "node:crypto"
-import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, ImageKind } from "./ops.js"
 import { encodePng } from "../image/transcode.js"
 import { isBlankRgba } from "../image/blank.js"
 import type { ExtractedImage, IRBlock, ParseWarning } from "../types.js"
 import type { QrReader } from "../qr.js"
 import type { WebpEncoder } from "../image/webp.js"
-import type { PdfiumImage, PdfiumImages } from "./pdfium-images.js"
-import { SMALL_IMAGE_DIM } from "./image-blank.js"
 import { extractImageRegions, type ImageRegion } from "./image-regions.js"
 
 /** 디코딩된 이미지 픽셀 (pdfjs page.objs 반환 형태의 최소 부분) */
@@ -79,12 +74,6 @@ export interface PdfImageState {
   /** 문서 공용 객체 id("g_…") → 내용 해시 키. 같은 id 는 늘 같은 디코딩 객체(commonObjs)라 다시 훑지 않는다 */
   globalKeys: Map<string, string>
   capWarned: boolean
-  /** pdfjs 사본에서 표본을 지운 큰 그림 처리 (#186, image-blank.ts) */
-  blanked?: BlankedImageSource
-  /** 지운 그림 원본 스트림 해시 → 내용 해시 키. 같은 원본은 다시 디코딩하지 않는다 */
-  rawKeys: Map<string, string>
-  /** 문서 공용 객체 id("g_…") → 짝지은 PDFium 그림. 같은 id 는 같은 XObject 라 다음 쪽은 PDFium 쪽을 열지 않아도 된다 */
-  pdfiumGlobal: Map<string, PdfiumImage>
   /** imageFormat "webp" (#188) — 없으면 PNG */
   webp?: WebpEncoder
   /** 건 순서대로 기다릴 WebP 인코딩과 그 RGBA 바이트 */
@@ -100,16 +89,8 @@ export interface PdfImageState {
   dropBlank: boolean
 }
 
-/** 지운 그림을 디코딩하는 길 — PDFium 이 기본, PDFium 이 못 찾는 그림은 지우지 않은 pdfjs 문서 */
-export interface BlankedImageSource {
-  decoder: PdfiumImages
-  /** 지운 그림 크기 "가로x세로" */
-  sizes: Set<string>
-  pristine(): Promise<{ getPage(n: number): Promise<PdfPageObjs & { getOperatorList(): Promise<{ fnArray: Uint32Array | number[]; argsArray: unknown[][] }>; cleanup(): void }> }>
-}
-
-export function createPdfImageState(blanked?: BlankedImageSource, webp?: WebpEncoder, placement = false, dropBlank = false): PdfImageState {
-  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, blanked, rawKeys: new Map(), pdfiumGlobal: new Map(), webp, pending: [], pendingRaw: 0, renamed: new Map(), oversize: 0, placement, dropBlank }
+export function createPdfImageState(webp?: WebpEncoder, placement = false, dropBlank = false): PdfImageState {
+  return { imageIndex: 0, totalBytes: 0, seen: new Map(), globalKeys: new Map(), capWarned: false, webp, pending: [], pendingRaw: 0, renamed: new Map(), oversize: 0, placement, dropBlank }
 }
 
 /** 픽셀 버퍼 내용 해시 — 네이티브 SHA-1. 종전 FNV-1a JS 루프는 맥미니에서 0.93GB/s(SHA-1 2.97GB/s)라, 쪽마다 같은 그림을
@@ -183,31 +164,6 @@ export async function extractPageImages(
   const blocks: IRBlock[] = []
   const images: ExtractedImage[] = []
   const pageSeenIds = new Set<string>()
-  // 큰 그림 op 를 PDFium 큰 그림과 그리는 순서·크기로 짝짓는다. 지운 그림은 pdfjs 가 검게 디코딩하기도 해서 pdfjs 결과로는 못 가린다.
-  // 같은 그림을 다시 그린 op 도 PDFium 쪽 하나를 먹는다. 쪽에서 크기별 개수가 다르면(소프트 마스크 그룹·패턴 안 그림은
-  // PDFium 객체로 나오지 않는다) 그 크기는 짝짓지 않는다
-  let pdfiumQueue: PdfiumImage[] | undefined
-  let unpairedSizes: Set<string> | undefined
-  const pdfiumById = new Map<string, PdfiumImage | null>()
-  const takePdfium = (match: (image: PdfiumImage) => boolean): PdfiumImage | undefined => {
-    const k = pdfiumQueue!.findIndex(match)
-    return k < 0 ? undefined : pdfiumQueue!.splice(k, 1)[0]
-  }
-  // 공용 id 로 앞 쪽 짝을 그대로 쓴 그림 — PDFium 쪽을 나중에 열면 그 몫을 먼저 뺀다
-  const reusedRaws: string[] = []
-  const consume = (raw: string) => { if (pdfiumQueue) takePdfium(x => x.raw === raw); else reusedRaws.push(raw) }
-  const pairable = (w: number | undefined, h: number | undefined): boolean => {
-    if (!pdfiumQueue) {
-      pdfiumQueue = state.blanked!.decoder.page(pageNumber)
-      unpairedSizes = pairingCounts(fnArray, argsArray, pdfiumQueue)
-      for (const raw of reusedRaws) takePdfium(x => x.raw === raw)
-    }
-    return w !== undefined && !unpairedSizes!.has(`${w}x${h}`) && !unpairedSizes!.has("repeat")
-  }
-
-  let pristine: { page: PdfPageObjs & { cleanup(): void }; ids: unknown[] } | undefined
-  /** 그림 op 순번 — 지우지 않은 문서와 짝짓는다(쪽 원점 이동 op 가 앞에 붙기도 해서 op 인덱스는 다르다) */
-  let paintIndex = -1
   // 그림 op 의 쪽 위 자리 — 글 블록 bbox 와 같은 좌표(쪽 원점 이동 op 까지 따라간다)
   const regions = state.placement ? new Map<number, ImageRegion>() : undefined
   if (regions) extractImageRegions(fnArray, argsArray, false, regions)
@@ -221,47 +177,13 @@ export async function extractPageImages(
     const op = fnArray[i]
     let imgData: PdfImgData | null = null
     let dedupeId: string | null = null
-    let fromPristine = false
 
     if (op === OPS.paintImageXObject || op === OPS.paintImageXObjectRepeat) {
-      paintIndex++
-      // paintImageXObjectRepeat 는 같은 그림 여러 번 — 인자 [objId, scaleX, scaleY, positions(x,y 쌍)]
-      const paints = op === OPS.paintImageXObjectRepeat ? ((argsArray[i]?.[3] as ArrayLike<number> | undefined)?.length ?? 2) / 2 : 1
       const objId = argsArray[i]?.[0]
       if (typeof objId !== "string") continue
-      if (pageSeenIds.has(objId)) {
-        const first = pdfiumById.get(objId)
-        if (first) for (let k = 0; k < paints; k++) consume(first.raw)
-        continue
-      }
-      // 상한 뒤에는 PDFium 쪽도 열지 않는다
+      if (pageSeenIds.has(objId)) continue
+      // 상한 뒤에는 디코딩하지 않는다
       if (await capReached(state, pageNumber, warnings)) continue
-      if (state.blanked) {
-        const w = op === OPS.paintImageXObject ? argsArray[i]?.[1] as number : undefined
-        const h = op === OPS.paintImageXObject ? argsArray[i]?.[2] as number : undefined
-        const large = w === undefined || h === undefined || w > SMALL_IMAGE_DIM || h > SMALL_IMAGE_DIM
-        // 앞 쪽에서 짝지은 공용 그림 — 이미 내보낸 지운 그림이거나 pdfjs 가 그리는 그림이면 PDFium 쪽을 열지 않는다
-        const known = state.pdfiumGlobal.get(objId)
-        const reuse = known && (!known.blanked || (known.sameRawSamePixels && state.rawKeys.has(known.raw)))
-        let image: PdfiumImage | null
-        if (reuse) {
-          image = known
-          for (let k = 0; k < paints; k++) consume(known.raw)
-        } else {
-          image = large && pairable(w, h) ? takePdfium(x => x.width === w && x.height === h) ?? null : null
-          if (image) for (let k = 1; k < paints; k++) consume(image.raw)
-          if (image && objId.startsWith("g_")) state.pdfiumGlobal.set(objId, image)
-        }
-        pdfiumById.set(objId, image)
-        const block = image?.blanked ? await extractPdfiumImage(image, pageNumber, state, warnings, withBytes, images, readQr) : UNDECODED
-        if (block !== UNDECODED) {
-          pageSeenIds.add(objId)
-          if (block) blocks.push(placed(block, i))
-          continue
-        }
-        // PDFium 이 못 찾거나 못 그린 지운 그림은 pdfjs 사본으로는 못 그린다 — 지우지 않은 문서로
-        fromPristine = large && (!!image?.blanked || (!image && (w === undefined || state.blanked.sizes.has(`${w}x${h}`))))
-      }
       pageSeenIds.add(objId)
       dedupeId = objId
     } else if (op !== OPS.paintInlineImageXObject) {
@@ -272,17 +194,7 @@ export async function extractPageImages(
     // 상한 이후 이미지들이 페이지마다 디코딩 대기 시간만 소모하지 않는다
     if (await capReached(state, pageNumber, warnings)) continue
 
-    if (fromPristine) {
-      if (!pristine) {
-        const p = await (await state.blanked!.pristine()).getPage(pageNumber)
-        const ops = await p.getOperatorList()
-        pristine = { page: p, ids: paintImageIds(ops.fnArray, ops.argsArray) }
-      }
-      // 지운 사본과 그림 op 순서가 같다 — 객체 id 만 다르다
-      dedupeId = pristine.ids[paintIndex] as string
-      if (typeof dedupeId !== "string") continue
-      imgData = await resolveImgData(pristine.page, dedupeId)
-    } else if (dedupeId) {
+    if (dedupeId) {
       imgData = await resolveImgData(page, dedupeId)
     } else {
       imgData = argsArray[i]?.[0] as PdfImgData
@@ -318,30 +230,7 @@ export async function extractPageImages(
     blocks.push(placed({ type: "image", text: filename, pageNumber, ...(qr.length ? { qr } : {}) }, i))
   }
 
-  pristine?.page.cleanup()
   return { blocks, images }
-}
-
-/** 그림 op(paintImageXObject·Repeat)의 객체 id 를 순서대로 */
-function paintImageIds(fnArray: Uint32Array | number[], argsArray: unknown[][]): unknown[] {
-  const ids: unknown[] = []
-  for (let i = 0; i < fnArray.length; i++) if (fnArray[i] === OPS.paintImageXObject || fnArray[i] === OPS.paintImageXObjectRepeat) ids.push(argsArray[i]?.[0])
-  return ids
-}
-
-/** pdfjs 큰 그림 op 와 PDFium 큰 그림의 크기별 개수가 다른 크기 — 같은 그림을 여러 번 그린 op(repeat)가 있으면 "repeat" */
-function pairingCounts(fnArray: Uint32Array | number[], argsArray: unknown[][], pdfium: PdfiumImage[]): Set<string> {
-  const count = new Map<string, number>()
-  const unpaired = new Set<string>()
-  for (let i = 0; i < fnArray.length; i++) {
-    if (fnArray[i] === OPS.paintImageXObjectRepeat) unpaired.add("repeat")
-    if (fnArray[i] !== OPS.paintImageXObject) continue
-    const w = argsArray[i]?.[1] as number, h = argsArray[i]?.[2] as number
-    if (w > SMALL_IMAGE_DIM || h > SMALL_IMAGE_DIM) count.set(`${w}x${h}`, (count.get(`${w}x${h}`) ?? 0) + 1)
-  }
-  for (const x of pdfium) count.set(`${x.width}x${x.height}`, (count.get(`${x.width}x${x.height}`) ?? 0) - 1)
-  for (const [size, n] of count) if (n !== 0) unpaired.add(size)
-  return unpaired
 }
 
 /** 문서당 상한(개수·바이트) — 처음 닿을 때 한 번 경고 */
@@ -405,41 +294,6 @@ export async function flushPdfImages(state: PdfImageState, warnings: ParseWarnin
 const WEBP_MAX_DIM = 16_383
 const webpable = (state: PdfImageState, w: number, h: number) => !!state.webp && w <= WEBP_MAX_DIM && h <= WEBP_MAX_DIM
 const imageFilename = (state: PdfImageState, w: number, h: number) => `image_${String(state.imageIndex).padStart(3, "0")}.${webpable(state, w, h) ? "webp" : "png"}`
-
-/** PDFium 이 디코딩하지 못했다 — 호출자가 지우지 않은 pdfjs 문서로 다시 그린다 */
-const UNDECODED = Symbol("undecoded")
-
-/** 지운 그림 하나 — 거르기·중복·번호·QR 은 pdfjs 경로와 같다. 같은 원본 스트림은 디코딩하지 않고 앞 판정을 쓴다 */
-async function extractPdfiumImage(
-  image: PdfiumImage,
-  pageNumber: number,
-  state: PdfImageState,
-  warnings: ParseWarning[],
-  withBytes: boolean,
-  images: ExtractedImage[],
-  readQr?: QrReader,
-): Promise<IRBlock | null | typeof UNDECODED> {
-  const { width: w, height: h } = image
-  if (w < MIN_DIM || h < MIN_DIM) return null // 괘선 장식 — pdfjs 경로와 같다
-  if (w * h > MAX_PIXELS) {
-    warnings.push({ page: pageNumber, message: `이미지 크기 초과로 추출 생략 (${w}×${h})`, code: "SKIPPED_IMAGE" })
-    return null
-  }
-  // 원본·사전이 같은 그림은 이미 내보냈다
-  if (image.sameRawSamePixels && state.rawKeys.has(image.raw)) return null
-  const rgba = state.blanked!.decoder.decode(image)
-  if (!rgba) return UNDECODED
-  const hash = `${w}x${h}kPh${contentHash(rgba)}`
-  state.rawKeys.set(image.raw, hash)
-  if (state.seen.has(hash)) return null
-  if (state.dropBlank && isBlankRgba(rgba)) { state.seen.set(hash, ""); return null }
-  state.imageIndex++
-  const filename = imageFilename(state, w, h)
-  state.seen.set(hash, filename)
-  if (withBytes) await pushImage(state, filename, w, h, rgba, images)
-  const qr = readQr ? await readQr({ data: rgba, width: w, height: h }) : []
-  return { type: "image", text: filename, pageNumber, ...(qr.length ? { qr } : {}) }
-}
 
 /**
  * 페이지별 image 블록을 본문 블록 열에 주입 — 각 페이지의 마지막 블록 뒤.

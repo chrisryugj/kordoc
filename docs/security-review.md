@@ -60,7 +60,7 @@
 
 ## 6. 남은 한계
 
-- 의존성(cfb·jszip·quick-xml·pdfjs-dist·onnxruntime-node·sharp·pdfium) 내부 취약점은 업데이트로 대응한다. quick-xml은 wasm으로 묶어 실으므로 올릴 때 `rust/xml-flat/Cargo.lock`을 고치고 다시 빌드한다. gVisor 로 실행하면 이런 취약점이 터져도 피해가 샌드박스 안에 머문다. gVisor 는 Linux 전용이다.
+- 의존성(cfb·jszip·quick-xml·hayro·onnxruntime-node·sharp) 내부 취약점은 업데이트로 대응한다. quick-xml·hayro 는 wasm으로 묶어 실으므로 올릴 때 `rust/xml-flat/Cargo.lock`·`rust/hayro-pdf/Cargo.lock`을 고치고 다시 빌드한다. gVisor 로 실행하면 이런 취약점이 터져도 피해가 샌드박스 안에 머문다. gVisor 는 Linux 전용이다.
 - gVisor 는 kordoc 이 장악됐을 때 호스트를 지킨다. 한 워커가 처리하는 문서끼리의 격리는 지금과 같다.
 - `KORDOC_ROOT`를 정하지 않으면 MCP 서버는 허용 확장자 파일을 어디서든 읽을 수 있다(5절 설정 권장).
 - 선택 의존성 onnxruntime-node·protobufjs에 설치 스크립트가 있다. 폐쇄망 설치는 [offline-deployment.md](offline-deployment.md) 절차를 따른다.

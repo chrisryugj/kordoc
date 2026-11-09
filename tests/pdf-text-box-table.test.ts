@@ -3,7 +3,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { extractLines } from "../src/pdf/line-extract.js"
 import { detectTextBoxTables } from "../src/pdf/text-box-table.js"
 import type { NormItem } from "../src/pdf/text-line.js"

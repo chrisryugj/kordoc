@@ -125,7 +125,7 @@ trailer << /Root 1 0 R >>`
       async (_img, pageNumber) => { seen.push(pageNumber); return `p${pageNumber}` },
       warnings,
     )
-    assert.deepEqual(seen, [1, 2], "pdfium 0-based index 가 그대로 새면 [0,1]")
+    assert.deepEqual(seen, [1, 2], "엔진의 0-based 쪽 번호가 그대로 새면 [0,1]")
     assert.equal(result.get(1)?.[0]?.text, "p1")
     assert.equal(result.get(2)?.[0]?.text, "p2")
   })
@@ -158,29 +158,6 @@ describe("OCR resource bounds", () => {
       assert.equal(stats.truncatedBoxes, Math.max(0, count - 3000))
     }
   })
-  it("대상 쪽만 연다 — 전 쪽 순회(doc.pages())는 대상 밖 쪽을 불러 닫지 않았다", async () => {
-    const { PDFiumDocument } = await import("@hyzyla/pdfium")
-    const proto = PDFiumDocument.prototype as unknown as { getPage(i: number): unknown; pages(): unknown }
-    const origGet = proto.getPage, origPages = proto.pages
-    const opened: number[] = []
-    let iterated = false
-    proto.getPage = function (this: unknown, i: number) { opened.push(i); return origGet.call(this, i) }
-    proto.pages = function (this: unknown) { iterated = true; return origPages.call(this) }
-    try {
-      await runPdfOcr(new TextEncoder().encode(`%PDF-1.4
-1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
-2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj
-3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] >> endobj
-4 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] >> endobj
-trailer << /Root 1 0 R >>`).buffer, new Set([2, 7]), async () => "x", [])
-    } finally {
-      proto.getPage = origGet
-      proto.pages = origPages
-    }
-    assert.equal(iterated, false)
-    assert.deepEqual(opened, [1], "0-based 1 = 2쪽만, 문서 밖 7쪽은 건너뜀")
-  })
-
   it("큰 쪽은 래스터 픽셀 상한 안으로 줄여 그린다", async () => {
     // 4000pt 정사각 쪽 — ×3 이면 12000² (1.44억 픽셀, 사본·마스크까지 2.38GB)
     const src = `%PDF-1.4

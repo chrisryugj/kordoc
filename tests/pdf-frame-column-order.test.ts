@@ -1,6 +1,6 @@
 import { it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import { frameLayoutBoxes, recordFrameReadingUnit, FRAME_READING_UNITS } from "../src/pdf/frame-cell-blocks.js"
 import { detectColumnGutter } from "../src/pdf/two-column.js"

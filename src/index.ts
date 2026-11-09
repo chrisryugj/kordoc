@@ -17,7 +17,7 @@ import { parseHwp5Document } from "./hwp5/parser.js"
 import { parseHwp3Document } from "./hwp3/parser.js"
 import { isComFallbackAvailable, extractTextViaCom, comResultToParseResult } from "./hwpx/com-fallback.js"
 import { isDistributionSentinel } from "./hwp5/sentinel.js"
-// pdfjs-dist는 optional peer dep (37MB) — PDF 안 쓰는 사용자를 위해 dynamic import
+// PDF 파서(hayro wasm 엔진)는 PDF 를 열 때만 불러온다 — dynamic import
 // import { parsePdfDocument } from "./pdf/parser.js"
 import { parseXlsxDocument } from "./xlsx/parser.js"
 import { parseXlsDocument } from "./xls/parser.js"
@@ -359,12 +359,8 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
   try {
     const mod = await import("./pdf/parser.js")
     parsePdfDocument = mod.parsePdfDocument
-  } catch {
-    return {
-      success: false, fileType: "pdf",
-      error: "PDF 파싱에 pdfjs-dist가 필요합니다. 설치: npm install pdfjs-dist",
-      code: "MISSING_DEPENDENCY",
-    }
+  } catch (err) {
+    return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err) }
   }
   try {
     const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, ocrLines } = await parsePdfDocument(buffer, options)

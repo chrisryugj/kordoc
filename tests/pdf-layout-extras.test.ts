@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { glyphNameText, remapControlGlyphs, restoreNamedGlyphs, restoreUnmappedCidSpaces } from "../src/pdf/glyph-names.js"
 import { detectPanelGutters, orderByPanels } from "../src/pdf/two-column.js"
 import { splitSingleCellTables } from "../src/pdf/text-clean.js"

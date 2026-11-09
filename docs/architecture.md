@@ -109,7 +109,8 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/text-clean.ts` | PDF 마크다운 최종 정리 — 쪽번호 제거·균등배분·`mergeKoreanLines`(한글 줄 병합). v4.12.3: `normalizeAraea`(한컴 PDF 의 ㆍ→U+119E 되돌림, 셀 blocks 포함)·`splitSingleCellTables`(중첩 없는 1×1 표는 줄마다 문단 — 1×1 줄 결합의 원인은 builder 가 아니라 mergeKoreanLines). v4.14.4: 본문 줄 이음은 line-wrap(블록 조립 단계)으로 옮겨 `mergeKoreanLines` 는 블록 안 `\n`(강등 표 글·글상자)만 |
 | `src/pdf/symbol-fonts.ts` | Wingdings 글리프 코드 → 유니코드 복원 (v4.12.1) — pdfjs 가 심볼 폰트 코드를 Latin-1 로 돌려주는 것(`è`=0xE8 ➔)을 `page.commonObjs` 폰트 실명으로 판별해 되돌림. Windows 양식 선택 상자(Marlett g·f·e·d·c 겹침 + 체크 b)는 ☐·☑ 한 글자로 |
 | `src/pdf/cluster-detector.ts` | 클러스터 기반 테이블 감지 (선 없는 PDF용). 칸 글은 선 표와 같은 공백 규칙(`joinCellItems`, 글자 단위 제작기의 "2 0 , 7 7 5" 방지) |
-| `src/pdf/polyfill.ts` | pdfjs-dist 호환 심 (DOMMatrix, Path2D) |
+| `src/pdf/hayro.ts` | PDF 엔진 — hayro wasm(`rust/hayro-pdf`, `src/pdf/hayro-pdf.wasm`) 로더, 문서마다 인스턴스 |
+| `src/pdf/hayro-text.ts`·`hayro-ops.ts`·`hayro-meta.ts` | hayro 사건열 → 글 조각·연산자 목록·정보 사전·링크 (판정 모듈이 읽는 모양) |
 | `src/pdf/quality.ts` | PDF 페이지별 텍스트 품질 신호 계산 (한글/제어문자/PUA 비율, needsOcr 판정). 사유 `vector_text`: 글자를 곡선으로 그린 쪽(vector-glyphs) |
 | `src/pdf/vector-glyphs.ts` | 벡터 글자 감지: 글자를 채운 곡선 경로로 그린 쪽(rhwp cairo·윤곽 인쇄): 음절 모양 채움 경로의 글줄 → quality `vector_text`(코퍼스 16,775쪽 한컴 PDF 오탐 0), OCR 쪽 그래픽 추림(글자 경로·클립 제외, cairo 는 음영 칸에만 클립) |
 | `src/pdf/line-wrap.ts` | PDF 줄 꺾임 이음: 본문 줄을 문단으로 복원(찬 줄·새 항목 아님), 칸 안 어절 중간 꺾임, 쪽 넘김 꺾임(`joinPageBreakWraps`). 한컴 텍스트층은 줄 끝 공백을 싣지 않아 어절 중간/경계는 기하로 못 가르고 글로 판정: 조사·어미, 문서 어휘 증거(`WrapLexicon`), 한 음절 조각, 날짜 줄(HWPX 정답 22,911곳 92.9%) |
@@ -188,7 +189,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 - **IR 패턴**: 파서가 직접 마크다운을 생성하지 않고, `IRBlock[]`로 정규화 후 `blocksToMarkdown()`에서 일괄 변환
 - **2-pass 테이블**: Pass 1에서 colSpan/rowSpan 고려한 그리드 크기 계산, Pass 2에서 셀 배치
 - **깨진 ZIP 복구**: HWPX Central Directory 손상 시 Local File Header(PK\x03\x04) 직접 스캔
-- **pdfjs-dist 외부 의존**: `external`로 번들에서 제외, 사용자가 선택적 설치. cfb는 `noExternal`로 번들에 포함
+- **PDF 엔진 wasm**: `src/pdf/hayro-pdf.wasm` 을 빌드가 `dist/` 로 복사하고 `import.meta.url` 옆에서 읽는다(재생성: `node rust/hayro-pdf/build.mjs`). cfb는 `noExternal`로 번들에 포함
 - **HWP5 레코드 구조**: 4바이트 헤더(tagId 10bit, level 10bit, size 12bit), FLAG_COMPRESSED 시 inflateRawSync
 - **공문서 항목부호 뒤는 탭**: 부호 run(부호 + `<hp:tab/>`) + 내용 run, 문단은 `tabPrIDRef="1"`(autoTabLeft). 공백을 쓰면
   양쪽 정렬이 부호 뒤 공백을 늘려 첫 줄 내용이 둘째 줄보다 오른쪽에 선다(실결재 99%가 가진 결함). 헤더는 공문서 모드에서
@@ -199,7 +200,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 ## 빌드 설정 (tsup)
 
 두 개의 빌드 파이프라인:
-1. **라이브러리** (`src/index.ts`): ESM + CJS, dts 생성, `pdfjs-dist` external / `cfb` bundled
+1. **라이브러리** (`src/index.ts`): ESM + CJS, dts 생성, hayro wasm 은 dist/ 에 파일로 / `cfb` bundled
 2. **바이너리** (`src/cli.ts`, `src/mcp.ts`): ESM only, shebang 자동 삽입
 
 ## 구현 주의 (상세)

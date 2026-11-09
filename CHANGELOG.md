@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- PDF 엔진을 pdf.js(`pdfjs-dist`)·PDFium(`@hyzyla/pdfium`)에서 hayro(Rust PDF 해석기)로 바꿨다. hayro 를 wasm 으로 빌드해 패키지에 싣고(`dist/hayro-pdf.wasm` 5.1MB, 크레이트 `rust/hayro-pdf`, 다시 만들기 `node rust/hayro-pdf/build.mjs`), 글 조각·그리기 연산자 목록·글꼴·그림 화소·쪽 상자·정보 사전·링크 주석과 OCR·수식 래스터를 모두 hayro 가 낸다. 판정 모듈은 그대로이고, 어댑터(`src/pdf/hayro*.ts`)가 판정 모듈이 읽던 모양(pdf.js 글 조각 규칙·연산자 번호)으로 맞춘다. 글자 자리는 엔진이 pdf.js 의 글 상태 셈(f64)으로 따로 내, 틈이 문턱에 딱 걸리는 글(TJ −0.2em 등)도 pdf.js 와 같은 곳에서 끊는다. 두 선택 의존성이 빠져 PDF 를 읽으려고 따로 설치할 것이 없다(설치 크기: kordoc 33.0MB + pdfjs-dist 37.4MB + @hyzyla/pdfium 11.2MB → kordoc 38.2MB). 결과: rhwp 표 정답 607쌍은 pdf.js 와 모두 같고, 글 정답 596쌍은 595쌍 같고 1쌍 높다. 891개 문서 가운데 마크다운이 pdf.js 와 같은 문서는 867개다(종전 hayro 실험 경로 792개, 나머지 24개는 아래 "pdf.js 와 다른 곳"). ODL 200 은 OCR 을 끄면 0.93903 → 0.93904(내려간 문서 0)다. 내장 OCR 모델로 자동 OCR 할 때는 OCR 쪽 래스터가 PDFium 렌더에서 hayro 렌더로 바뀌어 0.96491 → 0.96184(내려간 문서 28·오른 문서 20)다 — OCR 래스터 설정은 따로 맞춘다
+  - hayro 는 upstream main 360f4a23 에 LaurenzV/hayro#1810(표준 글꼴의 `h.smcp` 같은 접미사 글리프 이름 폭)을 더한 커밋으로 고정했다. #1810 이 합쳐지면 upstream 커밋으로 바꾼다
+  - 그림 색: ICC 색 공간·DeviceCMYK 그림은 hayro 의 색 관리(ICC 프로파일)로 바꾼다(종전 pdf.js 는 ICC 를 무시하고 CMYK 를 다항식으로 바꿨다). 화소가 달라진 문서 891개 중 26개, 화소 차 그림별 ΔE 중앙값 2.1(90분위 5.1) — 색 관리 엔진에 더 가깝다(PDFium 대비 ΔE 중앙값 3.46 → 1.48, Ghostscript 3.52 → 1.33, Poppler 4.32 → 3.50, 그림 1,126개). 국토교통부 문서 하나는 1/255 다른 CMYK 단색 견본의 화소 같음 판정이 바뀌어 그림 자리 다섯 곳이 옮겨졌다(원본 견본 6개 중 남는 수 4 → 5)
+  - pdf.js 와 다른 곳(891개 중 24개): CID 글꼴에 ToUnicode 가 없을 때 hayro 는 CID 순서(Adobe-Korea1 등)로 유니코드를 찾지 않아 그 글이 빠진다(예: kakao-enterprise 2·3쪽). 그림 색·자리(위)도 여기에 든다
+  - 암호 걸린 PDF·읽을 수 없는 PDF 는 종전처럼 KordocError(암호: "암호로 보호된 PDF 파일입니다 …"). PDF 로딩 30초 타임아웃은 없앴다(엔진이 동기로 연다)
+  - 내부: `src/pdf/polyfill.ts`·`pdfium-images.ts`·`image-blank.ts`(PDFium 큰 그림 경로 #186·#190)를 지웠다. `PDFJS_DOCUMENT_OPTIONS` 내보내기는 없다
+
 ### Fixed
 
 - 마크다운 이스케이프: 일반 문단이 줄 첫 `>`(「> 50% 이상」)나 하이픈만 든 줄(「---」)이면 마크다운 출력에 그대로 나가 렌더·`markdownToHwpx` 왕복에서 인용문·가로줄이 되고 글자가 사라지던 것(#212). 문단 자리에서(새 `escapeBlockStart`. 표 칸에는 블록 문법이 없어 그대로) 줄 첫 `>`·하이픈 3개 이상만 든 줄·윗줄 아래 `=`·`-` 만 든 줄(setext 밑줄)의 첫 글자를 `\` 로 이스케이프하고(홀로 선 「====」 문단은 마크다운에서도 글자라 그대로), 패치·생성 쪽 역변환(`unescapeGfm`·`unescapeGfmCell`·패치 강조 파서·생성기 인라인 파서)이 `\>`·`\-`·`\=` 를 글자로 되돌린다. `patchHwpx` 도 「---」 문단을 구분선으로 보지 않고 고친다
