@@ -1,6 +1,6 @@
 /** HWPML 2.x 파서 — XML 기반 한컴 문서 (.hwp with XML content) */
 
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../xml/dom.js"
 import type { IRBlock, IRCell, IRTable, InternalParseResult, ParseOptions, ParseWarning, DocumentMetadata, OutlineItem } from "../types.js"
 import { blocksToMarkdown, buildTable } from "../table/builder.js"
 import { escapeLiteralTags } from "../script-tags.js"

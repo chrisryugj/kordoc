@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
-import { DOMParser, XMLSerializer } from "@xmldom/xmldom"
+import { DOMParser } from "../src/xml/dom.js"
 import { markdownToHwpx, parseHwpx, patchHwpx } from "../src/index.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 import { parseHtmlTable, replicateTableToHtml } from "../src/roundtrip/markdown-units.js"
@@ -23,7 +23,7 @@ async function fixture(kind: "footNote" | "endNote", merged = false): Promise<Ar
     const span = Array.from(cells[0].childNodes).find(n => n.nodeName === "hp:cellSpan") as typeof row
     span.setAttribute("colSpan", "2")
     row.removeChild(cells[1])
-    result = new XMLSerializer().serializeToString(dom)
+    result = String(dom)
   }
   zip.file("Contents/section0.xml", result)
   return zip.generateAsync({ type: "arraybuffer" })

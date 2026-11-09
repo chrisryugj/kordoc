@@ -22,7 +22,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../src/xml/dom.js"
 import { parseXlsx, parseDocx } from "../src/index.js"
 import { classifyDateFormat, dateSerialToIso } from "../src/xlsx/parser.js"
 import { decodeSST } from "../src/xls/sst.js"

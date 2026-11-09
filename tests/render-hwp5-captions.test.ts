@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../src/xml/dom.js"
 import { buildHwp5RenderStyles, hwp5SectionToXml, renderHwp5Records, renderHwp5Pages } from "../src/render/hwp5-scene.js"
 import { reflowSection } from "../src/render/reflow.js"
 import { indexHwp5Tables } from "../src/hwp5/table-ids.js"

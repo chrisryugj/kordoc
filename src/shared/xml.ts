@@ -1,7 +1,7 @@
 /**
  * XML DOM 공용 헬퍼 — hwpx(parser-shared)·hwpml(parser)·docx(equation)가 공유.
  *
- * xmldom Element를 네임스페이스 접두사 무시(localName 기준)로 다루는 최소 유틸.
+ * DOM Element를 네임스페이스 접두사 무시(localName 기준)로 다루는 최소 유틸.
  * 정본은 이 모듈 — hwpx/parser-shared.ts는 하위호환 재수출만 유지한다.
  */
 

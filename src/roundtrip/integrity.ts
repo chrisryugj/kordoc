@@ -6,7 +6,7 @@
  *  3. 태그를 건드리지 않은 글 편집만 있는 섹션은 줄 레이아웃 캐시(linesegarray)를 뺀 태그 순서·속성이 원본 그대로
  */
 
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../xml/dom.js"
 import { inflateRawSync } from "zlib"
 import { readZipEntries } from "./zip-patch.js"
 import type { SpliceEdit } from "./source-map.js"
@@ -17,7 +17,7 @@ const TAG_RE = /<[^>]+>/g
 
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => Buffer.compare(a, b) === 0
 
-/** 엄격 XML 파싱 — 경고 말고 오류·치명 오류가 하나라도 있으면 그 메시지 (치명 오류는 xmldom 이 알린 뒤 던진다) */
+/** 엄격 XML 파싱 — 경고 말고 오류·치명 오류가 하나라도 있으면 그 메시지 (치명 오류는 파서가 알린 뒤 던진다) */
 function xmlError(xml: string): string | null {
   let error: string | null = null
   try {

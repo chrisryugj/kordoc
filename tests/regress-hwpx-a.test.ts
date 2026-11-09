@@ -20,7 +20,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../src/xml/dom.js"
 
 import { blocksToMarkdown, MAX_COLS, MAX_ROWS } from "../src/table/builder.js"
 import { parseMarkdownToBlocks } from "../src/hwpx/md-runs.js"

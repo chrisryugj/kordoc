@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 const REPO = fileURLToPath(new URL("../..", import.meta.url))
 const at = (p: string) => pathToFileURL(REPO + p).href
 const JSZip = (await import(at("node_modules/jszip/lib/index.js"))).default
-const { DOMParser } = await import(at("node_modules/@xmldom/xmldom/lib/index.js"))
+const { DOMParser } = await import(at("src/xml/dom.ts"))
 const { parseRenderStyles } = await import(at("src/render/head-styles.ts"))
 const { reflowSection } = await import(at("src/render/reflow.ts"))
 const { measureTableRowHeights } = await import(at("src/render/para-model.ts"))

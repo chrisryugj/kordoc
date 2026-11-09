@@ -8,7 +8,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../src/xml/dom.js"
 import JSZip from "jszip"
 import { parseHwpx } from "../src/index.js"
 import { detectHwpxSectionPages } from "../src/hwpx/page-boundary.js"

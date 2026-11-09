@@ -1,7 +1,7 @@
 /**
  * DOCX (Office Open XML Document) 파서
  *
- * ZIP + XML 구조를 jszip + xmldom으로 파싱하여 IRBlock[]로 변환.
+ * ZIP + XML 구조를 jszip + XML 파서(src/xml/dom)로 파싱하여 IRBlock[]로 변환.
  * w:p → paragraph/heading, w:tbl → table, w:drawing → image.
  */
 
@@ -9,7 +9,7 @@ import { escapeLiteralTags, wrapScript, tidyScriptTags } from "../script-tags.js
 import JSZip from "jszip"
 import { ListCounter } from "./numbering.js"
 import { symbolChar } from "./symbol-font.js"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser, warnInto } from "../xml/dom.js"
 import type {
   CellContext, IRBlock, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage, InlineStyle,
@@ -101,8 +101,8 @@ function getAttr(el: Element, localName: string): string | null {
   return null
 }
 
-function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(stripDtd(text), "text/xml") as unknown as Document
+function parseXml(text: string, warnings?: ParseWarning[], part = ""): Document {
+  return new DOMParser(warnInto(warnings, `DOCX ${part}`)).parseFromString(stripDtd(text), "text/xml") as unknown as Document
 }
 
 // ─── 스타일 파싱 ────────────────────────────────────────
@@ -116,8 +116,8 @@ interface StyleInfo {
   ilvl?: number
 }
 
-function parseStyles(xml: string): Map<string, StyleInfo> {
-  const doc = parseXml(xml)
+function parseStyles(xml: string, warnings?: ParseWarning[]): Map<string, StyleInfo> {
+  const doc = parseXml(xml, warnings, "word/styles.xml")
   const styles = new Map<string, StyleInfo>()
   const styleElements = findElements(doc, "style")
 
@@ -200,8 +200,8 @@ interface NumberingInfo {
   pStyle?: string
 }
 
-function parseNumbering(xml: string): Map<string, Map<number, NumberingInfo>> {
-  const doc = parseXml(xml)
+function parseNumbering(xml: string, warnings?: ParseWarning[]): Map<string, Map<number, NumberingInfo>> {
+  const doc = parseXml(xml, warnings, "word/numbering.xml")
   const abstractNums = new Map<string, Map<number, NumberingInfo>>()
 
   // abstractNum 파싱
@@ -256,8 +256,8 @@ function parseNumbering(xml: string): Map<string, Map<number, NumberingInfo>> {
 
 // ─── 관계 파싱 ─────────────────────────────────────────
 
-function parseRels(xml: string): Map<string, string> {
-  const doc = parseXml(xml)
+function parseRels(xml: string, warnings?: ParseWarning[], part?: string): Map<string, string> {
+  const doc = parseXml(xml, warnings, part)
   const map = new Map<string, string>()
   const rels = findElements(doc, "Relationship")
   for (const rel of rels) {
@@ -270,8 +270,8 @@ function parseRels(xml: string): Map<string, string> {
 
 // ─── 각주 파싱 ─────────────────────────────────────────
 
-function parseFootnotes(xml: string): Map<string, string> {
-  const doc = parseXml(xml)
+function parseFootnotes(xml: string, warnings?: ParseWarning[]): Map<string, string> {
+  const doc = parseXml(xml, warnings, "word/footnotes.xml")
   const notes = new Map<string, string>()
   const fnElements = findElements(doc, "footnote")
   for (const fn of fnElements) {
@@ -918,6 +918,7 @@ async function parseHeaderFooterBlocks(
   styles: Map<string, StyleInfo>,
   numbering: Map<string, Map<number, NumberingInfo>>,
   footnotes: Map<string, string>,
+  warnings: ParseWarning[],
 ): Promise<IRBlock[]> {
   const out: IRBlock[] = []
   const seenParts = new Set<string>()
@@ -930,9 +931,9 @@ async function parseHeaderFooterBlocks(
     seenParts.add(path)
     if (!file) continue
     const xml = await readZipEntry(file, "text")
-    const partDoc = parseXml(xml)
+    const partDoc = parseXml(xml, warnings, path)
     const relsFile = zip.file(path.replace(/([^/]+)$/, "_rels/$1.rels"))
-    const partRels = relsFile ? parseRels(await readZipEntry(relsFile, "text")) : new Map<string, string>()
+    const partRels = relsFile ? parseRels(await readZipEntry(relsFile, "text"), warnings, relsFile.name) : new Map<string, string>()
     const found: IRBlock[] = []
     for (const el of partDoc.documentElement ? effectiveChildElements(partDoc.documentElement) : []) {
       if (matchesLocal(el, "p")) {
@@ -980,7 +981,7 @@ export async function parseDocxDocument(
   let rels = new Map<string, string>()
   const relsFile = zip.file("word/_rels/document.xml.rels")
   if (relsFile) {
-    rels = parseRels(await readZipEntry(relsFile, "text"))
+    rels = parseRels(await readZipEntry(relsFile, "text"), warnings, "word/_rels/document.xml.rels")
   }
 
   // 2. 스타일 로드
@@ -988,7 +989,7 @@ export async function parseDocxDocument(
   const stylesFile = zip.file("word/styles.xml")
   if (stylesFile) {
     try {
-      styles = parseStyles(await readZipEntry(stylesFile, "text"))
+      styles = parseStyles(await readZipEntry(stylesFile, "text"), warnings)
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -1002,7 +1003,7 @@ export async function parseDocxDocument(
   const numFile = zip.file("word/numbering.xml")
   if (numFile) {
     try {
-      numbering = parseNumbering(await readZipEntry(numFile, "text"))
+      numbering = parseNumbering(await readZipEntry(numFile, "text"), warnings)
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -1016,7 +1017,7 @@ export async function parseDocxDocument(
   const fnFile = zip.file("word/footnotes.xml")
   if (fnFile) {
     try {
-      footnotes = parseFootnotes(await readZipEntry(fnFile, "text"))
+      footnotes = parseFootnotes(await readZipEntry(fnFile, "text"), warnings)
     } catch (err) {
       warnings.push({
         code: "PARTIAL_PARSE",
@@ -1027,7 +1028,7 @@ export async function parseDocxDocument(
 
   // 5. 본문 파싱
   const docXml = await readZipEntry(docFile, "text")
-  const doc = parseXml(docXml)
+  const doc = parseXml(docXml, warnings, "word/document.xml")
   const body = findElements(doc, "body")
   if (body.length === 0) {
     throw new KordocError("DOCX 본문(w:body)을 찾을 수 없습니다")
@@ -1099,8 +1100,8 @@ export async function parseDocxDocument(
   }
 
   // 머리글은 본문 앞, 바닥글은 문서 끝 (HWPX 머리말·꼬리말 배치와 같다)
-  blocks.unshift(...await parseHeaderFooterBlocks(zip, doc, rels, "header", styles, numbering, footnotes))
-  const footerBlocks = await parseHeaderFooterBlocks(zip, doc, rels, "footer", styles, numbering, footnotes)
+  blocks.unshift(...await parseHeaderFooterBlocks(zip, doc, rels, "header", styles, numbering, footnotes, warnings))
+  const footerBlocks = await parseHeaderFooterBlocks(zip, doc, rels, "footer", styles, numbering, footnotes, warnings)
   // 바닥글은 남은 본문의 마지막 쪽에 — 쪽 번호가 없으면 직전 블록(문서 끝 그림)의 쪽으로 붙는다
   const lastPage = blocks.reduce((m, b) => Math.max(m, b.pageNumber ?? 0), 0)
   if (lastPage > 0) for (const b of footerBlocks) b.pageNumber ??= lastPage
@@ -1117,7 +1118,7 @@ export async function parseDocxDocument(
   if (coreFile) {
     try {
       const coreXml = await readZipEntry(coreFile, "text")
-      const coreDoc = parseXml(coreXml)
+      const coreDoc = parseXml(coreXml, warnings, "docProps/core.xml")
       const getFirst = (tag: string) => {
         const els = coreDoc.getElementsByTagName(tag)
         return els.length > 0 ? (els[0].textContent ?? "").trim() : undefined

@@ -3,7 +3,7 @@
  * ZIP 한도, 섹션 공유 상태(SectionShared), walk 컨텍스트(WalkCtx), XML 유틸.
  */
 
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../xml/dom.js"
 import type JSZip from "jszip"
 import { KordocError, unzipLimitBytes } from "../utils.js"
 import type { CellContext, IRBlock, MemoNote, ParseWarning } from "../types.js"
@@ -168,7 +168,7 @@ export interface WalkCtx {
   pageBase?: number
 }
 
-/** xmldom DOMParser 생성 — onError 콜백으로 malformed XML 경고 수집 */
+/** XML DOMParser 생성 — onError 콜백으로 고쳐 읽은 XML 경고 수집 */
 export function createXmlParser(warnings?: ParseWarning[]): DOMParser {
   return new DOMParser({
     onError(level: "warning" | "error" | "fatalError", msg: string) {

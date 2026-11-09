@@ -718,7 +718,6 @@ describe("render: 쪽을 넘는 표 뒤 문단", () => {
   it("표가 쪽을 넘으면 뒤 문단은 표가 끝나는 쪽에 — 표 끝보다 위에 저장돼 있으면(쪽 나누기 등) 그다음 쪽", async () => {
     const { reflowSection } = await import("../src/render/reflow.js")
     const { parseRenderStyles } = await import("../src/render/head-styles.js")
-    const { XMLSerializer } = await import("@xmldom/xmldom")
     const rows = Array.from({ length: 130 }, (_, i) => `| 행${i} | 값 |`).join("\n")
     const src = await JSZip.loadAsync(await markdownToHwpx(`| 머리 | 값 |\n| --- | --- |\n${rows}\n\n뒤문단`))
     const secName = Object.keys(src.files).find(n => /section0\.xml$/.test(n))!
@@ -731,7 +730,7 @@ describe("render: 쪽을 넘는 표 뒤 문단", () => {
       const tops = Array.from(root.childNodes as unknown as Element[]).filter(c => c.nodeName === "hp:p")
       ;(tops[tops.length - 1].getElementsByTagName("hp:lineseg")[0] as unknown as Element).setAttribute("vertpos", String(lastV))
       const zip = await JSZip.loadAsync(await src.generateAsync({ type: "nodebuffer" }))
-      zip.file(secName, new XMLSerializer().serializeToString(doc as never))
+      zip.file(secName, String(doc))
       const r = await renderHwpxPages(new Uint8Array(await zip.generateAsync({ type: "nodebuffer" })))
       const pagesWith = (needle: string) => [...r.pageSvgs].filter(([, svg]) => svg.includes(needle)).map(([n]) => n)
       return { lastRow: pagesWith(">행129<")[0], after: pagesWith(">뒤문단<") }
