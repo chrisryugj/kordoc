@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.57: Long aligned equations read line by line, budget breakdown cells, security dependency floors · 2026-11-09
+
+Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): recall 0.9723 → **0.9758**, NED≤.3 recall 0.9425 → **0.9494**, precision 0.9682 → **0.9699**, BLEU-4 0.8997 → **0.9045**; no earlier pair lost or worse. In-house OCR table structure 28/65 → **31/65** (cell F1 0.613 → 0.617). KoOCR-Bench 0.90370 unchanged. No per-document drops on in-house OCR, OCR robust and ODL-OCR.
+
+- Formulas: the recognizer stretches each region to 384×384, so proofs of ten or more lines came out as junk (26 of 106 ground-truth equations over 500 characters were missed). Only regions of five or more lines are read line by line; splitting four-line equations too lost the right-hand condition column, bold symbols and alignment marks on ten pairs. A large under-script band ("K∈𝒯_h", 58% of the line height) is joined to its line because it sits closer than the gap between lines.
+- OCR tables: the README listed table structure as 34/66, but the measured value was 28/65. The 2 Nov change that splits stacked rows under row spans also split budget cells holding an item with its amount and fund-source breakdown, so two budget documents went from 2/2 to 0/2 exact tables; the suite's per-document comparison only looked at CER and missed it (it now checks table exact and cell F1 too). The truth count went from 66 to 65 because the parser stopped emitting one page table that day. topik and web067 remain: their truth (`layoutTables: "keep"`) puts the borderless "※"/"□" note lines under the table into table rows, which OCR has no evidence for.
+- Security: `@xmldom/xmldom` ^0.9.12, `@modelcontextprotocol/sdk` ^1.32.0, `sharp` ^0.35.5, `adm-zip` ^0.6.1 (the lock file already used these versions; installs and output are unchanged).
+
 ## 4.24.56: Re-reading pages with many dropped lines at a larger detection size, stacked "○ item | amount" rows · 2026-11-09
 
 External KoOCR-Bench v2.0c, 877 public pages (official scorer unchanged): total 0.90023 → **0.90370** (handwriting .90750 → **.92120**, tables .91054 → **.91196**, order .91284 → .91305). No per-document drops on in-house OCR, OCR robust and ODL-OCR; HWPX, PDF and HWP5-pair score gates PASS.

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.57] - 2026-11-09
+
 ### Security
 
 - 의존성 최소 버전을 보안 권고가 고쳐진 버전으로 올림. 종전 선언 범위는 취약한 버전을 허용해, 잠금 파일 없이 설치하거나 오래된 잠금 파일을 쓰는 설치가 권고에 노출될 수 있었다. 잠금 파일은 이미 고쳐진 버전을 고르고 있어 설치 버전·출력은 그대로(npm test 4,981건, Python SDK 86건(pytest 9.0.3), Java SDK 72건 통과, `npm audit` 0건)
