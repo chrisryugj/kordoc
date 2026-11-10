@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.60: XML parser swap, multi-line formulas, deskew-smeared rules · 2026-11-10
+
+Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): recall 0.9758 → **0.9775**, NED≤.3 recall 0.9494 → **0.9507**, precision 0.9699 → **0.9725**, exact 0.615 unchanged, BLEU-4 0.9045 → 0.9021 (newly paired long multi-line equations); no earlier pair lost or worse. OCR robust: skew+1 0.0457 → **0.0431**, skew-2 0.0503 → **0.0474**, skew+3 0.0481 → **0.0444**, scan 0.0550 → **0.0542**, one drop (web068 org-chart vertical text order, skew-2 0.248 → 0.254). The XML parser swap (#202) has no per-document drop on score, PDF text, PDF tables, ODL, annex tables, formats, roundtrip, generation replay or the release gate, and the wasm rebuilds byte-identical from source. No drops on in-house OCR and ODL-OCR; KoOCR-Bench 0.90439 unchanged.
+
+- Rejected: the smeared-edge rule on horizontal rules (form table rows reshuffled), two-row union rules (a map figure became a table), trimming box-edge column clusters with re-measured heights (handwriting; KoOCR 0.90439 → 0.90247), trimming thin edge bands (table rows rely on consistently padded boxes, p032 0.982 → 0.907), faint-rule recovery (blur 0.159 → 0.336).
+
 ## 4.24.59: OCR dotted cell rules, smudged box borders · 2026-11-10
 
 External KoOCR-Bench v2.0c, 877 public pages: 0.90378 → **0.90439** (tables 0.91212 → 0.91333 — nine pages up such as a marriage-count table .890 → .982 and a statistics table .543 → .857; one page down: a two-row "total" header cell lands in another row, .935 → .876). OCR robust: Yeosu org-chart page scan CER 0.266 → **0.090**, noise 0.194 → 0.082, blur 0.170 → 0.054, scan overall 0.0591 → **0.0557**. The two drops are reference limits — Bucheon budget skew+1 (the text layer glues "균 450,726도" and OCR reads it line by line, 0 → 0.027) and ODL-OCR 131 (order of chart-axis tick fragments, 0.900 → 0.898). No per-document drops on in-house OCR; PDF table, PDF text and ODL text-layer benchmarks unchanged.
