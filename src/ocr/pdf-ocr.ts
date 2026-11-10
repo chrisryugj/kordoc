@@ -579,6 +579,22 @@ export function ocrItemsToBlocks(
     copyOcrTextGaps(it, normalized, 1 / scale)
     return normalized
   }).filter(it => it.text)
+  // 글자 획이 이은 가짜 세로 괘선 — 줄 간격 좁은 두 줄 칸에서 위아래 줄 글자의 세로 획이 이어져 최소 괘선 길이를 넘었고(60px), 그 칸 열이
+  // 다섯 칸으로 갈렸다(복지사업 우수기관 표 "자치단체명"). 진짜 칸 경계는 검출 상자를 미리 가르므로 아이템 상자 안쪽을 지나지 않는다 —
+  // 글자 높이 중앙값의 2.5배 이하인 세로선이 아이템 상자 안쪽(좌우 끝 3px 안)을 세로로 절반 넘게 지나가면 뺀다
+  if (extraLines?.verticals.length && items.length) {
+    const hs = items.map(it => it.h).sort((p, q) => p - q)
+    const maxLen = hs[hs.length >> 1] * 2.5 / scale
+    const boxes = items.map(it => ({ x0: (it.x + 3) / scale, x1: (it.x + it.w - 3) / scale, yTop: pdfH - it.y / scale, yBot: pdfH - (it.y + it.h) / scale }))
+    extraLines = {
+      ...extraLines,
+      verticals: extraLines.verticals.filter(v => {
+        const lo = Math.min(v.y1, v.y2), hi = Math.max(v.y1, v.y2)
+        if (hi - lo > maxLen) return true
+        return !boxes.some(b => v.x1 > b.x0 && v.x1 < b.x1 && Math.min(hi, b.yTop) - Math.max(lo, b.yBot) > (hi - lo) * 0.5)
+      }),
+    }
+  }
   const laid = unframeOcrLayoutTables(splitOcrJoinedHeaders(splitOcrContactColumns(splitOcrNameValueColumns(splitStackedOcrRows(extractPageBlocksWithLines(norm, pageNumber, opList, pdfW, pdfH, extraLines, detectTables))))), pdfH)
   // 표 속 산문 행 꺼내기는 쪽 OCR 에만 — 그림 영역 OCR 은 조각을 위치로 다시 늘어놓아 표 상자를 받은 문단이 앞으로 간다
   const blocks = figureRegion ? laid : splitOcrProseRows(laid)
