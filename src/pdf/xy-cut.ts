@@ -69,6 +69,18 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
   if (items.length === 0) return []
   const newRegion = wrapped === undefined
   wrapped ??= inheritedWrapBands(items)
+  // 두 조각도 멀리(절단 문턱의 3배 넘게) 떨어졌으면 가른다 — 제목과 쪽 아래 한 줄만 남은 무리가 한 잎이 되어, 그 사이 표들보다 먼저
+  // 읽혔다(처방전 서식, 틈 343pt). 문턱 언저리 틈은 표 칸 무리 안의 위아래 칸 글이라 그대로 둔다(허가신청서 서식 칸이 다시 묶였다).
+  // 꺾인 두 줄 문단 보호(wrapped)는 그대로
+  const farGap = Math.max(XYCUT_MIN_GAP, gapThreshold) * 3
+  if (items.length === 2 && depth < MAX_XYCUT_DEPTH) {
+    const sortedY = [...items].sort((a, b) => b.y - a.y)
+    if (findHorizontalCut(sortedY, wrapped).gap >= farGap) {
+      if (newRegion) wrapped = wrappedLineBands(items, wrapped)
+      const cut = findHorizontalCut(sortedY, wrapped)
+      if (cut.gap >= farGap) return [...leaf([sortedY[0]], wrapped), ...leaf([sortedY[1]], wrapped)]
+    }
+  }
   if (items.length <= 2 || depth >= MAX_XYCUT_DEPTH) return leaf(items, wrapped)
 
   // Phase 1 (최상위에서만): cross-layout 전폭 요소 마스크

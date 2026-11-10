@@ -202,3 +202,11 @@ describe("side index tab glyphs leave the page text flow", () => {
     assert.ok(rest.every(b => !tab.some(t => b.text?.includes(t.text) && b.text.length === 1)))
   })
 })
+
+describe("XY-cut splits a far-apart pair", () => {
+  it("keeps a page title and a lone bottom note in separate groups", () => {
+    // 처방전 서식: 표를 뺀 나머지가 제목과 맨 아래 한 줄뿐 — 한 잎이면 그 사이 표보다 먼저 읽힌다
+    const title = item("처방전", 249, 774, 91, 20), note = item("사용기간: 교부일부터 3일간", 44, 431, 304)
+    assert.deepEqual(xyCutOrder([note, title], 22).map(g => g.map(i => i.text)), [["처방전"], ["사용기간: 교부일부터 3일간"]])
+  })
+})
