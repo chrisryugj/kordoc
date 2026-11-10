@@ -253,6 +253,7 @@ await parse(buffer, {                   // 외부 OCR (Claude Vision, Tesseract 
 })
 ```
 
+- 외부 OCR 완전 예제: [`examples/minicpm-ocr`](../examples/minicpm-ocr) — 자체 호스팅 MiniCPM-OCR(vLLM·SGLang·llama.cpp·Ollama)을 `OcrProvider` 로 연결합니다. 네트워크 호출은 예제 코드가 맡고 kordoc 본체는 통신하지 않습니다. 처리 시간·쪽 단위 CER 실측 스크립트도 들어 있습니다.
 - API 키 없이 로컬 CPU 로 읽습니다(PP-OCRv5 korean ONNX — 완성형 한글 11,172자 전량).
 - 텍스트층이 없거나 깨진 쪽만 OCR 하고, 스캔본의 표 구조도 복원합니다.
 - 모델 관리: `kordoc models --status` (폐쇄망은 `--export`/`--import`).
