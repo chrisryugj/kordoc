@@ -883,6 +883,13 @@ describe("v5 실무 요청 (2026-09-06)", () => {
     assert.ok(ts.includes("※ 출처: KOSIS e-지방지표 「1인가구비율(시도/시/군/구)」") && ts.includes("□ 건축HUB 화양동 표제부 집계"), `${ts}`)
   })
 
+  it("본문의 MCP 낱말은 도구 흔적으로 지우지 않는다", async () => {
+    const ts = await sectionTexts(await markdownToHwpx("### MCP 서버 5종\n\n- 직원이 개발한 공개 MCP 서버를 이전\n- (전환) 공공 MCP 5종을 이전\n- 하이퍼클로바X에서 MCP를 호출하는 연동\n- 건축물 집계(건축허브 MCP 조회)", { gongmun: { preset: "보고서" } }))
+    const all = ts.join(" ")
+    for (const s of ["MCP 서버 5종", "공개 MCP 서버를", "공공 MCP 5종을", "하이퍼클로바X에서 MCP를 호출"]) assert.ok(all.includes(s), `${s} 누락: ${all}`)
+    assert.ok(all.includes("건축물 집계") && !all.includes("건축허브 MCP"), `괄호 도구 흔적 잔존: ${all}`)
+  })
+
   it("고아 줄 — 마지막 줄이 짧은(≤22%) 항목은 자간·장평을 줄여 한 줄 줄이고, 둘째 줄이 넉넉하면 그대로", async () => {
     // 15pt 한컴돋움 ㅇ 항목(left 750, 부호 뒤 탭) — 내용 폭 = 본문폭 − left − 내어쓰기. 실측 폭표로 어절 줄바꿈을 재현해
     // 둘째 줄에 짧은 꼬리 한 어절만 남는 길이를 만든다
