@@ -694,6 +694,13 @@ describe("inkBounds 점선 칸 괘선 너머 이웃 칸 글자 끝자락", () =>
     for (let y = 14; y < 34; y++) for (let x = 10; x < 58; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
     assert.equal(inkBounds(g, w, h, inkStats(g)).x1, 58)
   })
+  it("기울기 보정으로 옆 열로 번진 세로 괘선 가장자리는 괘선으로 뺀다 (세로 범위가 부풀지 않는다)", () => {
+    const w = 60, h = 40, g = new Uint8Array(w * h).fill(255)
+    for (let y = 0; y < h; y++) { g[y * w + 59] = 0; if (y % 3) g[y * w + 58] = 0 }
+    for (let y = 14; y < 34; y++) for (let x = 10; x < 40; x++) if ((x + y) % 3 === 0) g[y * w + x] = 0
+    const b = inkBounds(g, w, h, inkStats(g))
+    assert.deepEqual([b.y0, b.y1, b.x1], [14, 34, 40])
+  })
   it("점선 너머가 비면 종전대로 점선까지 잰다 (띄어 쓴 머리 칸 높이를 바꾸지 않는다)", () => {
     const g = box(false)
     const b = inkBounds(g, 60, 40, inkStats(g))
