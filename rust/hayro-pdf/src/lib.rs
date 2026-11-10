@@ -5,6 +5,7 @@
 //! JS 는 f64_ptr·f64_len·bytes_ptr·bytes_len 으로 읽는다. 오류는 음수를 돌려주고 BYTES 에 문구를 담는다.
 //! 내보내기 이름(no_mangle)은 wasm 에서만 — 호스트 cargo test 에서 libc open 과 부딪히지 않게.
 mod doc;
+mod raster;
 mod shadow;
 
 use doc::Doc;

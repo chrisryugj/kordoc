@@ -558,15 +558,13 @@ impl Doc {
     pub fn page_size(&self, index: usize) -> Vec<f32> {
         self.pdf.pages().get(index).map(|p| { let (w, h) = p.render_dimensions(); vec![w, h] }).unwrap_or_default()
     }
-    /// 쪽을 배율 scale 로 흰 바탕에 그린 RGBA. 크기는 이어서 renderedSize() 로 받는다
+    /// 쪽을 배율 scale 로 흰 바탕에 그린 RGBA(raster.rs). 크기는 이어서 renderedSize() 로 받는다
     pub fn render(&mut self, index: usize, scale: f32) -> Vec<u8> {
         let pages = self.pdf.pages();
         let Some(page) = pages.get(index) else { return Vec::new() };
-        let cache = hayro::RenderCache::new();
-        let pixmap = hayro::render(page, &cache, &InterpreterSettings::default(), &hayro::RenderSettings::default(),
-            &hayro::PixmapSettings { x_scale: scale, y_scale: scale, bg_color: hayro::vello_cpu::color::palette::css::WHITE });
-        self.rendered = (pixmap.width() as u32, pixmap.height() as u32);
-        pixmap.data_as_u8_slice().to_vec()
+        let (px, w, h) = crate::raster::render(&self.pdf, page, scale);
+        self.rendered = (w, h);
+        px
     }
     pub fn rendered_size(&self) -> (u32, u32) { self.rendered }
     /// 글꼴 열쇠(FONT_KEY 사건의 문자열)의 정보 JSON

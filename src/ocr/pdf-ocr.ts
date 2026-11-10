@@ -216,7 +216,7 @@ export async function runPdfOcr(
   if (mode === "builtin" && config.handwriting && !config.autoRec?.lazy) await ensureOcrModelsFor(config.handwriting, reportModelDownload)
   const engine = mode === "builtin" ? await getOcrEngine(config.models) : null
 
-  // 쪽 래스터는 hayro 렌더(흰 바탕 RGBA)
+  // 쪽 래스터는 hayro 렌더(흰 바탕 RGBA) — 픽셀 크기·얇은 사각형 채우기를 종전 PDFium 래스터에 맞춘다(rust/hayro-pdf/src/raster.rs)
   const doc = await openHayro(new Uint8Array(buffer))
   try {
     let done = 0
@@ -690,7 +690,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Pro
   }
 }
 
-/** 렌더 버퍼의 R·B 자리를 바꾼다 — 종전 PDFium 래퍼 경로와 같은 바이트를 OCR 에 준다(렌더 설정은 OCR 쪽에서 다시 맞춘다) */
+/** 렌더 버퍼의 R·B 자리를 바꾼다 — 종전 PDFium 래퍼 경로(RGBA 를 BGRA 로 여겨 바꿨다)와 같은 바이트를 OCR 에 준다 */
 function bgraToRgba(bgra: Uint8Array): Uint8Array {
   const out = new Uint8Array(bgra.length)
   for (let i = 0; i < bgra.length; i += 4) {
