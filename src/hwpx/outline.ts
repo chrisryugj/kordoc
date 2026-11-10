@@ -65,7 +65,9 @@ export function stripLawCodes(text: string): string {
     .replace(LAW_CODE_RE, "$1")
     .replace(/[,，]?\s*\(?\bDT_[A-Z0-9_]+\)?/g, "")
     .replace(/\s*\((?:법정동|행정동|시군구|지역)?\s*코드\s*[\d-]+\)/g, "")
-    .replace(/[,，]?\s*[가-힣A-Za-z·]*\s*MCP\s*(?:조회|호출|응답)?/g, "")
+    // 도구 흔적은 쉼표 뒤 "○○ MCP 조회"로 끝나는 꼴과 괄호 "(○○ MCP 조회)"만 — 본문의 "공개 MCP 서버" 같은 낱말은 남긴다
+    .replace(/[,，]\s*[가-힣A-Za-z·]*\s*MCP\s*(?:조회|호출|응답)(?=\s*(?:[),，.;]|$))/gm, "")
+    .replace(/\s*\(\s*[가-힣A-Za-z·]*\s*MCP\s*(?:조회|호출|응답)\s*\)/g, "")
     .replace(/\s+([,，.])/g, "$1")
     .replace(/[,，]\s*$/g, "")
     .replace(/ {2,}/g, " ")
