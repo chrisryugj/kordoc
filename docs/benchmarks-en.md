@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.61: OCR fake vertical rules, line boxes covering two lines · 2026-11-11
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90439 → **0.90509** (tables 0.91336 → 0.91464 — a welfare-award table .655 → .994, one suneung math page CER .396 → .263; three suneung Korean pages drop .003 on chart-legend order). In-house OCR table structure 32/65 → **33/65** (cell F1 0.617 → 0.634). OCR robust: building-permit form blur 0.159 → 0.124, org-chart page skew+1 0.258 → 0.264 and skew+3 0.207 → 0.200 (vertical text order). No drops on ODL-OCR.
+
+- Rejected: trimming thin edge bands (table rows rely on consistently padded boxes, p032 0.982 → 0.907), splitting book spreads at the gutter (the reference is PDF stream order, so the order score does not rise).
+
 ## 4.24.60: XML parser swap, multi-line formulas, deskew-smeared rules · 2026-11-10
 
 Formula OCR benchmark (20 arXiv papers, 621 pages; report only, run alone): recall 0.9758 → **0.9775**, NED≤.3 recall 0.9494 → **0.9507**, precision 0.9699 → **0.9725**, exact 0.615 unchanged, BLEU-4 0.9045 → 0.9021 (newly paired long multi-line equations); no earlier pair lost or worse. OCR robust: skew+1 0.0457 → **0.0431**, skew-2 0.0503 → **0.0474**, skew+3 0.0481 → **0.0444**, scan 0.0550 → **0.0542**, one drop (web068 org-chart vertical text order, skew-2 0.248 → 0.254). The XML parser swap (#202) has no per-document drop on score, PDF text, PDF tables, ODL, annex tables, formats, roundtrip, generation replay or the release gate, and the wasm rebuilds byte-identical from source. No drops on in-house OCR and ODL-OCR; KoOCR-Bench 0.90439 unchanged.
