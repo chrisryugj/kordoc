@@ -96,7 +96,7 @@ impl<'a> SFont<'a> {
 }
 
 /// ToUnicode 없는 복합 글꼴의 유니코드(pdf.js buildToUnicode) — 글꼴 CMap 으로 코드 → CID, Adobe-<Ordering>-UCS2 로 CID → 유니코드.
-/// hayro 는 글꼴을 싣지 않은(대체) 글꼴에서만 이렇게 찾는다
+/// hayro 는 글꼴을 싣지 않은(대체) 글꼴에서만 이렇게 찾는다. shortcut: hayro 가 실은 글꼴에도 UCS2 를 쓰게 되면(upstream PR 준비) 이 대응을 지운다
 pub struct Ucs2 { enc: CMap, map: CMap }
 
 impl Ucs2 {

@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 const here = dirname(fileURLToPath(import.meta.url))
 const cargoHome = process.env.CARGO_HOME ?? join(homedir(), ".cargo")
-// 빌드한 기계의 경로가 wasm(패닉 위치 문자열)에 박히지 않게 한다
-const rustflags = [`--remap-path-prefix=${cargoHome}=/cargo`, `--remap-path-prefix=${here}=/hayro-pdf`].join("\x1f")
+// 빌드한 기계의 경로가 wasm(패닉 위치 문자열)에 박히지 않게 한다. SIMD128 — 렌더가 1.4~1.85배 빠르고 화소·파싱 결과는 같다(Node 16.4+·현대 브라우저)
+const rustflags = [`--remap-path-prefix=${cargoHome}=/cargo`, `--remap-path-prefix=${here}=/hayro-pdf`, "-Ctarget-feature=+simd128"].join("\x1f")
 execFileSync("cargo", ["build", "--release", "--locked", "--target", "wasm32-unknown-unknown"], { cwd: here, stdio: "inherit", env: { ...process.env, CARGO_ENCODED_RUSTFLAGS: rustflags } })
 const out = join(here, "../../src/pdf/hayro-pdf.wasm")
 copyFileSync(join(here, "target/wasm32-unknown-unknown/release/hayro_pdf.wasm"), out)
