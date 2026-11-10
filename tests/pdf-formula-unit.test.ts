@@ -521,6 +521,11 @@ describe("formula continuation lines (mergeContinuationLines)", () => {
     assert.equal(out[0].latex, "\\begin{aligned}A=B+C \\\\ \\leq D+E \\\\ +F\\end{aligned}")
     assert.deepEqual(out[0].bbox, { x1: 100, y1: 100, x2: 500, y2: 240 })
   })
+  it("여러 줄 상자를 읽은 조각(aligned)도 관계 기호로 시작하면 바깥 aligned 를 벗겨 잇는다", () => {
+    const out = mergeContinuationLines([r(100, 240, "\\begin{aligned}&{E[u]} \\\\ {=}&{E[v]}\\end{aligned}"), r(260, 380, "\\begin{aligned}{\\leq}&{(1-\\beta)E[w]}\\end{aligned}")])
+    assert.equal(out.length, 1)
+    assert.equal(out[0].latex, "\\begin{aligned}&{E[u]} \\\\ {=}&{E[v]} \\\\ {\\leq}&{(1-\\beta)E[w]}\\end{aligned}")
+  })
   it("기호로 시작하지 않거나 멀리 떨어진 식·inline 은 그대로", () => {
     const regions = [r(100, 140, "A=B"), r(150, 190, "x^2+y^2=1"), r(400, 440, "=C"), r(450, 470, "=D", 100, 200, "inline")]
     assert.equal(mergeContinuationLines(regions).length, 4)

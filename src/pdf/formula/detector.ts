@@ -7,7 +7,7 @@
  *   - class 1 = isolated (display 수식)
  *
  * 전처리: letterbox (긴 변 비율 유지 + 회색 패딩 114)
- * 후처리: conf ≥ 0.25 → class-per-class NMS (IoU ≥ 0.45)
+ * 후처리: conf ≥ 0.25 → class-per-class NMS (IoU ≥ 0.45) → 여러 줄 display 넓히기(growDisplays)
  */
 
 import type { InferenceSession, Tensor } from "onnxruntime-node"
@@ -21,6 +21,11 @@ const MFD_CONF_INLINE = 0.30
 /** display 수식 임계값 — diagram/figure 오탐 감소 목적으로 inline 보다 높게 */
 const MFD_CONF_DISPLAY = 0.40
 const MFD_IOU_THRESHOLD = 0.45
+/**
+ * 여러 줄 display 식으로 넓힐 낮은 점수 후보 하한 — 검출기는 정렬식("E[…]" 다음 "=E[…]"·"≤…" 줄들)에서 첫 줄·끝 줄만 문턱을 넘기고
+ * 식 전체 상자는 .1~.37 로 냈다(arXiv 2609.15723 p24: 여섯 줄 중 넷을 놓침)
+ */
+const MFD_CONF_DISPLAY_GROW = 0.10
 /** 최소 bbox 면적 (px²) — 이보다 작으면 OCR noise 가능성 높음 */
 const MFD_MIN_AREA = 80
 const PAD_VALUE = 114 / 255
@@ -85,7 +90,7 @@ export async function detectFormulaRegions(
       }
     }
     // 클래스별 임계값 — display 쪽은 diagram/figure 오탐 감소 목적으로 inline 보다 엄격.
-    const threshold = bestCls === 1 ? MFD_CONF_DISPLAY : MFD_CONF_INLINE
+    const threshold = bestCls === 1 ? MFD_CONF_DISPLAY_GROW : MFD_CONF_INLINE
     if (bestScore < threshold) continue
 
     // letterbox → 원본 좌표
@@ -116,18 +121,51 @@ export async function detectFormulaRegions(
   // 클래스별 NMS (혼합 클래스 bbox 간 중복은 허용 — Pix2Text 원본 동작)
   const kept: RawDetection[] = []
   for (const kind of ["inline", "display"] as FormulaKind[]) {
-    const subset = candidates.filter((c) => c.kind === kind)
+    const subset = candidates.filter((c) => c.kind === kind && (kind === "inline" || c.score >= MFD_CONF_DISPLAY))
     kept.push(...nms(subset, MFD_IOU_THRESHOLD))
   }
+  const grown = growDisplays(kept, candidates)
 
   // 읽기 순서 정렬 (위→아래, 왼→오른쪽)
-  kept.sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1)
+  grown.sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1)
 
-  return kept.map((d) => ({
+  return grown.map((d) => ({
     bbox: { x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2 },
     kind: d.kind,
     score: d.score,
   }))
+}
+
+/**
+ * 문턱을 넘은 display 상자를 85% 넘게 품고 1.5~5 배 높은 낮은 점수(MFD_CONF_DISPLAY_GROW 이상) display 후보가 있으면 그 상자로
+ * 넓힌다 — 여러 줄 식 전체를 덮는 상자. 넓힌 뒤 display 끼리 NMS 를 다시 한다
+ */
+function growDisplays(kept: RawDetection[], candidates: RawDetection[]): RawDetection[] {
+  const low = nms(candidates.filter(c => c.kind === "display" && c.score < MFD_CONF_DISPLAY), MFD_IOU_THRESHOLD)
+  const area = (a: RawDetection) => (a.x2 - a.x1) * (a.y2 - a.y1)
+  for (const d of kept) {
+    if (d.kind !== "display") continue
+    const h = d.y2 - d.y1
+    let best: RawDetection | null = null
+    for (const c of low) {
+      const ch = c.y2 - c.y1
+      if (ch < h * 1.5 || ch > h * 5) continue
+      const iw = Math.min(d.x2, c.x2) - Math.max(d.x1, c.x1), ih = Math.min(d.y2, c.y2) - Math.max(d.y1, c.y1)
+      if (iw <= 0 || ih <= 0 || iw * ih < (d.x2 - d.x1) * h * 0.85) continue
+      if (!best || c.score > best.score) best = c
+    }
+    if (!best) continue
+    const b = best
+    // 넓힐 영역이 다른 확정 display 상자와 겹치면 두지 않는다 — 이미 식 전체를 덮은 상자를 비슷한 상자로 갈아 끼워 다르게 읽거나
+    // (2609.15723 p25 맞던 식 NED 0 → .005), 한 줄 식이 위 식과 겹친 상자가 되어 NMS 에 지워졌다(2609.15095 p8 "P₂ ≝ Id + …")
+    const clash = kept.some(o => {
+      if (o === d || o.kind !== "display") return false
+      const iw = Math.min(o.x2, b.x2) - Math.max(o.x1, b.x1), ih = Math.min(o.y2, b.y2) - Math.max(o.y1, b.y1)
+      return iw > 0 && ih > 0 && iw * ih > Math.min(area(o), area(b)) * 0.2
+    })
+    if (!clash) Object.assign(d, { x1: b.x1, y1: b.y1, x2: b.x2, y2: b.y2 })
+  }
+  return [...kept.filter(d => d.kind === "inline"), ...nms(kept.filter(d => d.kind === "display"), MFD_IOU_THRESHOLD)]
 }
 
 /**

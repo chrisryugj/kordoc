@@ -520,6 +520,13 @@ export function dropNestedDisplays<T extends { bbox: { x1: number; y1: number; x
  * 붙고(틈이 두 상자 중 낮은 높이 이하) 가로로 겹치며(좁은 쪽 폭의 절반 이상) 관계·연산 기호로 시작하는 조각은 위 식의 다음 줄로
  * 잇는다(aligned 줄바꿈). 기호로 시작하지 않는 줄과 "−" 로 시작하는 줄("−Ct² ≤ …" 따로 선 식, 2609.14837)은 그대로 둔다
  */
+/** 바깥 \begin{aligned}…\end{aligned} 한 겹을 벗긴 식 (여러 줄 상자를 읽은 조각을 다른 식의 줄로 이을 때) */
+function unwrapAligned(latex: string): string {
+  const t = latex.trim()
+  const m = /^\\begin\{aligned\}([\s\S]*)\\end\{aligned\}$/.exec(t)
+  return m ? m[1].trim() : t
+}
+
 export function mergeContinuationLines<T extends { bbox: { x1: number; y1: number; x2: number; y2: number }; kind: string; latex: string }>(regions: T[]): T[] {
   const CONT = /^\s*(?:=|<|>|\+|\\(?:leq?|geq?|leqslant|geqslant|approx|sim|simeq|equiv|cdot|times|neq?|lesssim|gtrsim|propto|qquad|quad)(?![A-Za-z]))/
   const display = regions.filter(r => r.kind === "display" && r.latex.trim()).sort((a, b) => a.bbox.y1 - b.bbox.y1)
@@ -533,15 +540,15 @@ export function mergeContinuationLines<T extends { bbox: { x1: number; y1: numbe
       const minH = Math.min(r.bbox.y2 - r.bbox.y1, head.bbox.y2 - head.bbox.y1)
       const overlap = Math.min(r.bbox.x2, h.bbox.x2) - Math.max(r.bbox.x1, h.bbox.x1)
       const narrow = Math.min(r.bbox.x2 - r.bbox.x1, h.bbox.x2 - h.bbox.x1)
-      if (gap >= -minH * 0.3 && gap <= minH && overlap >= narrow * 0.5 && CONT.test(r.latex)) {
-        h.lines.push(r.latex.trim())
+      if (gap >= -minH * 0.3 && gap <= minH && overlap >= narrow * 0.5 && CONT.test(unwrapAligned(r.latex).replace(/^[\s{&]+/, ""))) {
+        h.lines.push(unwrapAligned(r.latex))
         h.bbox = { x1: Math.min(h.bbox.x1, r.bbox.x1), y1: h.bbox.y1, x2: Math.max(h.bbox.x2, r.bbox.x2), y2: Math.max(h.bbox.y2, r.bbox.y2) }
         drop.add(r)
         continue
       }
     }
     head = r
-    merged.set(r, { bbox: { ...r.bbox }, lines: [r.latex.trim()] })
+    merged.set(r, { bbox: { ...r.bbox }, lines: [unwrapAligned(r.latex)] })
   }
   if (!drop.size) return regions
   return regions.filter(r => !drop.has(r)).map(r => {
