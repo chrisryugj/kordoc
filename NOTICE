@@ -97,7 +97,7 @@ Used in:
   compiled to wasm32 together with hayro and its dependencies. src/pdf/hayro.ts loads it.
 
 Modifications:
-- Built from a pinned git commit (rust/hayro-pdf/Cargo.toml): upstream main 360f4a23 plus
+- Built from a pinned git commit (rust/hayro-pdf/Cargo.toml): upstream main 79ff2985 plus
   LaurenzV/hayro#1810 (a suffixed glyph name in a standard font, such as h.smcp, takes the
   width and outline of its base glyph). No other changes.
 

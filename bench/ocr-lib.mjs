@@ -141,42 +141,29 @@ const WIDE = /[\u1100-\u11ff\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef
 
 /**
  * 래스터 글자 검사 — 텍스트층 글자(문자·숫자) 중심 주변에 대비(최대-최소 휘도 ≥ 60)가 있는
- * 비율. 래스터가 텍스트층을 실제로 그렸는지의 OCR 무관 객관 신호: 비내장 글꼴을 pdfium 이
- * 대체하지 못하면 한글이 통째로 안 그려진다(코퍼스 82쪽 실측: nanet-seoul-minutes 0.088/0.071, 나머지 ≥ 0.971).
+ * 비율. 래스터가 텍스트층을 실제로 그렸는지의 OCR 무관 객관 신호: 비내장 글꼴을 래스터 엔진이
+ * 대체하지 못하면 한글이 통째로 안 그려진다(코퍼스 82쪽 pdfium 실측: nanet-seoul-minutes 0.088/0.071, 나머지 ≥ 0.971). 래스터는 kordoc OCR 과 같은 hayro 렌더.
  * 그런 페이지는 OCR 정확도의 표본이 아니다.
  * @returns page → 비율 (글자 없으면 1). `.hidden` 은 page → 그려지지 않은 글 조각(검사 글자 둘 이상 중 20% 미만에만 잉크 —
  *   흰 글·투명 글·그림에 덮인 글) 목록
 
  */
 export async function rasterGlyphCoverage(raw, pages, scale = 2) {
-  const { createRequire } = await import("node:module")
-  const { dirname, join } = await import("node:path")
-  const require = createRequire(import.meta.url)
-  const pkgDir = dirname(require.resolve("pdfjs-dist/package.json"))
-  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs")
-  const { PDFiumLibrary } = await import("@hyzyla/pdfium")
-  const doc = await getDocument({
-    data: new Uint8Array(raw), useSystemFonts: true, disableFontFace: true, isEvalSupported: false,
-    cMapUrl: join(pkgDir, "cmaps") + "/", cMapPacked: true, standardFontDataUrl: join(pkgDir, "standard_fonts") + "/",
-  }).promise
-  const lib = await PDFiumLibrary.init()
-  const fdoc = await lib.loadDocument(new Uint8Array(raw))
+  const { openPdf, toGray } = await import("./lib/pdf-engine.mjs")
+  const doc = await openPdf(raw)
   const out = new Map()
   out.hidden = new Map()
   try {
-    for (const p of fdoc.pages()) {
-      const pn = p.number + 1
+    for (let pn = 1; pn <= doc.numPages; pn++) {
       if (!pages.includes(pn)) continue
-      const page = await doc.getPage(pn)
-      const vpH = page.getViewport({ scale: 1 }).height
-      const tc = await page.getTextContent()
-      const r = await p.render({ scale, colorSpace: "Gray", render: async ({ data }) => data })
+      const { items, view } = doc.page(pn)
+      const vpH = view[3] - view[1]
+      const r = toGray(doc.render(pn, scale))
       const W = r.width, H = r.height, px = r.data
-      const bpp = px.length / (W * H) // Gray = 1, 방어적으로 BGRA 도 허용
-      const lum = (x, y) => px[(y * W + x) * bpp]
+      const lum = (x, y) => px[y * W + x]
       let n = 0, ok = 0
       const hidden = []
-      for (const it of tc.items) {
+      for (const it of items) {
         let ni = 0, oki = 0
         if (typeof it.str !== "string" || !it.str.trim()) continue
         const [, b, c, d, e, f] = it.transform
@@ -208,9 +195,7 @@ export async function rasterGlyphCoverage(raw, pages, scale = 2) {
       out.hidden.set(pn, hidden)
     }
   } finally {
-    fdoc.destroy()
-    lib.destroy()
-    await doc.destroy()
+    doc.close()
   }
   return out
 }
@@ -238,17 +223,16 @@ export function inlineGlyphImages(rs) {
  * 둘레에 흰 여백 8px 을 둔다 (OCR 채점 v3: 본문 글과 한 블록에 섞인 그림 글을 따로 읽는 데 쓴다)
  */
 export async function renderRectPngs(raw, rectsByPage, scale = 3) {
-  const { PDFiumLibrary } = await import("@hyzyla/pdfium")
+  const { openPdf, toGray } = await import("./lib/pdf-engine.mjs")
   const sharp = (await import("sharp")).default
-  const lib = await PDFiumLibrary.init()
-  const fdoc = await lib.loadDocument(new Uint8Array(raw))
+  const doc = await openPdf(raw)
   const out = []
   try {
-    for (const p of fdoc.pages()) {
-      const rs = rectsByPage.get(p.number + 1)
+    for (let pn = 1; pn <= doc.numPages; pn++) {
+      const rs = rectsByPage.get(pn)
       if (!rs?.length) continue
-      const img = await p.render({ scale, colorSpace: "Gray", render: async ({ data }) => data })
-      const W = img.width, H = img.height, bpp = img.data.length / (W * H), Hpt = H / scale
+      const img = toGray(doc.render(pn, scale))
+      const W = img.width, H = img.height, bpp = 1, Hpt = H / scale
       for (const r of rs) {
         const x0 = Math.max(0, Math.floor(r.x1 * scale)), x1 = Math.min(W, Math.ceil(r.x2 * scale))
         const y0 = Math.max(0, Math.floor((Hpt - r.y2) * scale)), y1 = Math.min(H, Math.ceil((Hpt - r.y1) * scale))
@@ -260,8 +244,7 @@ export async function renderRectPngs(raw, rectsByPage, scale = 3) {
       }
     }
   } finally {
-    fdoc.destroy()
-    lib.destroy()
+    doc.close()
   }
   return out
 }
@@ -290,22 +273,15 @@ export function dropExplainedExtras(a, b, extra) {
  * OCR 채점에서 텍스트층 글이 하나도 없는 그림 영역 안의 OCR 글(인포그래픽·스캔 삽화)을 가르는 데만 쓴다.
  */
 export async function imageRects(raw, pages) {
-  const { createRequire } = await import("node:module")
-  const { dirname, join } = await import("node:path")
-  const require = createRequire(import.meta.url)
-  const pkgDir = dirname(require.resolve("pdfjs-dist/package.json"))
-  const { getDocument, OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs")
-  const doc = await getDocument({
-    data: new Uint8Array(raw), useSystemFonts: true, disableFontFace: true, isEvalSupported: false,
-    cMapUrl: join(pkgDir, "cmaps") + "/", cMapPacked: true, standardFontDataUrl: join(pkgDir, "standard_fonts") + "/",
-  }).promise
+  const { openPdf, OPS } = await import("./lib/pdf-engine.mjs")
+  const doc = await openPdf(raw)
   const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
     m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]]
   const out = new Map()
   try {
     for (const pn of pages) {
-      const page = await doc.getPage(pn)
-      const { fnArray, argsArray } = await page.getOperatorList()
+      if (pn < 1 || pn > doc.numPages) continue
+      const { fnArray, argsArray, items } = doc.page(pn)
       const rects = []
       let ctm = [1, 0, 0, 1, 0, 0]
       const stack = []
@@ -323,16 +299,15 @@ export async function imageRects(raw, pages) {
         }
       }
       // 텍스트층 글자 자리(글 조각 가운데) — 그림 안에 텍스트층 글자가 있는지 가른다
-      const tc = await page.getTextContent()
-      rects.textPts = tc.items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4] + (it.width || 0) / 2, y: it.transform[5] + Math.abs(it.transform[3] || it.height || 0) * 0.3 }))
-      rects.textItems = tc.items.filter(it => it.str && it.str.trim()).map(it => {
+      rects.textPts = items.filter(it => it.str && it.str.trim()).map(it => ({ x: it.transform[4] + (it.width || 0) / 2, y: it.transform[5] + Math.abs(it.transform[3] || it.height || 0) * 0.3 }))
+      rects.textItems = items.filter(it => it.str && it.str.trim()).map(it => {
         const fs = Math.abs(it.transform[3] || it.height || 0)
         return { x1: it.transform[4], x2: it.transform[4] + (it.width || 0), y1: it.transform[5], y2: it.transform[5] + fs, fs }
       })
       out.set(pn, rects)
     }
   } finally {
-    await doc.destroy()
+    doc.close()
   }
   return out
 }

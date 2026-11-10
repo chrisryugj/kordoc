@@ -9,6 +9,7 @@
 interface Engine {
   memory: WebAssembly.Memory
   alloc(len: number): number
+  dealloc(ptr: number, len: number): void
   f64_ptr(): number
   f64_len(): number
   bytes_ptr(): number
@@ -98,11 +99,11 @@ export async function openHayro(buffer: ArrayBuffer | Uint8Array): Promise<Hayro
   const bytes = () => bytesView().slice()
   const f64 = () => { const p = w.f64_ptr() >>> 0; return new Float64Array(w.memory.buffer.slice(p, p + (w.f64_len() >>> 0) * 8)) }
   const text = () => decoder.decode(bytesView())
-  /** 글 인자 — alloc 한 자리에 UTF-8 로(Rust 가 읽기만 한다. 문서 수명 동안 열쇠 몇 KB) */
+  /** 글 인자 — alloc 한 자리에 UTF-8 로(Rust 는 호출 동안 읽기만 한다) */
   const withStr = (s: string, fn: (ptr: number, len: number) => number): number => {
     const b = encoder.encode(s), q = w.alloc(b.length) >>> 0
     new Uint8Array(w.memory.buffer, q, b.length).set(b)
-    return fn(q, b.length)
+    try { return fn(q, b.length) } finally { w.dealloc(q, b.length) }
   }
   const call = <T>(fn: () => T): T => {
     if (!alive) throw new Error("닫힌 PDF 문서입니다")

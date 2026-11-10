@@ -105,7 +105,7 @@ if (!existsSync(pdfDir) || !["det.onnx", "rec_korean.onnx", "rec_korean.yml"].ev
   process.exit(0)
 }
 const sharp = (await import("sharp")).default
-const { PDFiumLibrary } = await import("@hyzyla/pdfium")
+const { openPdf } = await import("./lib/pdf-engine.mjs")
 let files = readdirSync(pdfDir).filter(f => f.endsWith(".pdf")).sort()
 if (docFilter) files = files.filter(f => f.includes(docFilter))
 if (Number.isFinite(limit)) files = files.slice(0, limit)
@@ -124,19 +124,15 @@ for (const f of files) {
   const pages = cand.filter(p => (cov.get(p) ?? 1) >= 0.8)
   if (!pages.length) continue
 
-  const lib = await PDFiumLibrary.init()
-  const fdoc = await lib.loadDocument(new Uint8Array(raw))
+  const pdf = await openPdf(raw)
   const renders = new Map()
   try {
-    for (const pg of fdoc.pages()) {
-      const pn = pg.number + 1
-      if (!pages.includes(pn)) continue
-      const r = await pg.render({ scale: SCALE, render: async ({ data }) => data })
-      const rgba = new Uint8Array(r.data.length)
-      for (let i = 0; i < r.data.length; i += 4) { rgba[i] = r.data[i + 2]; rgba[i + 1] = r.data[i + 1]; rgba[i + 2] = r.data[i]; rgba[i + 3] = 255 }
-      renders.set(pn, { rgba, w: r.width, h: r.height })
+    for (const pn of pages) {
+      // kordoc OCR 과 같은 hayro 렌더(흰 바탕 RGBA)
+      const r = pdf.render(pn, SCALE)
+      renders.set(pn, { rgba: r.data, w: r.width, h: r.height })
     }
-  } finally { fdoc.destroy(); lib.destroy() }
+  } finally { pdf.close() }
 
   for (const pn of pages) {
     const gt = await parse(buf(), { pages: String(pn), removeHeaderFooter: false })

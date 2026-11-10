@@ -146,7 +146,7 @@ fn decode_raster(r: &hayro_interpret::RasterImage<'_>) -> Option<ImageEntry> {
 }
 
 /// 그림만 디코딩하는 Device — kordoc 이 그림을 요청할 때 그 쪽을 다시 해석한다
-struct Decoder<'f> { images: &'f mut HashMap<String, ImageEntry>, page: usize, inline_n: usize }
+struct Decoder<'f> { images: &'f HashMap<String, ImageEntry>, got: HashMap<String, ImageEntry>, page: usize, inline_n: usize }
 
 impl Device<'_> for Decoder<'_> {
     fn draw_path(&mut self, _: &BezPath, _: DrawProps<'_>, _: &DrawMode) {}
@@ -157,8 +157,8 @@ impl Device<'_> for Decoder<'_> {
         if let Image::Raster(r) = &img {
             let id = image_id(r, self.page, &mut self.inline_n);
             // 화소 3,600만 이하(image-extract MAX_PIXELS)
-            if !self.images.contains_key(&id) && (r.width() as f64) * (r.height() as f64) <= 36_000_000.0 {
-                if let Some(e) = decode_raster(r) { self.images.insert(id, e); }
+            if !self.images.contains_key(&id) && !self.got.contains_key(&id) && (r.width() as f64) * (r.height() as f64) <= 36_000_000.0 {
+                if let Some(e) = decode_raster(r) { self.got.insert(id, e); }
             }
         }
     }
@@ -366,7 +366,7 @@ impl<'a> Device<'a> for Events<'_, 'a> {
             let t: Affine = props.transform * g.transform();
             let c = t.as_coeffs();
             let cp = if p.nul { 1114112.0 } else {
-                match g.as_unicode() {
+                match g.as_unicode().or_else(|| p.uni.clone()) {
                     Some(BfString::Char(ch)) => if ch == '\0' { 1114112.0 } else { ch as u32 as f64 },
                     Some(BfString::String(s)) => -(self.s(s) + 1.0),
                     None => 0.0,
@@ -415,37 +415,33 @@ impl<'a> Device<'a> for Events<'_, 'a> {
     }
 }
 
-pub struct Doc { pdf: Pdf, strs: String, fonts: HashMap<String, FontEntry>, images: HashMap<String, ImageEntry>, image_pages: HashMap<String, usize>, rendered: (u32, u32), pages: Option<Vec<Result<(Vec<f64>, String), String>>> }
+/// 디코딩한 그림을 쥐는 상한(바이트) — 넘으면 앞 쪽들의 그림부터 놓는다(다시 물으면 그 쪽을 다시 해석한다). 방금 디코딩한 쪽은 모두 둔다
+const IMAGE_BUDGET: usize = 128 << 20;
+
+pub struct Doc {
+    /// 문서는 인스턴스와 수명이 같다(JS 가 문서마다 인스턴스를 만들고 버린다) — 'static 로 두어 해석 캐시·사전 해석기를 쪽 사이에 쥔다
+    pdf: &'static Pdf, cache: InterpreterCache<'static>, shadow: Shadow<'static>, strs: String, fonts: HashMap<String, FontEntry>, images: HashMap<String, ImageEntry>, image_pages: HashMap<String, usize>,
+    /// 화소를 쥔 그림의 디코딩 순서와 그 바이트 합
+    held: std::collections::VecDeque<String>, held_bytes: usize,
+    rendered: (u32, u32) }
 
 impl Doc {
     pub fn new(data: Vec<u8>) -> Result<Doc, hayro_syntax::LoadPdfError> {
-        let pdf = Pdf::new(data)?;
-        Ok(Doc { pdf, strs: String::new(), fonts: HashMap::new(), images: HashMap::new(), image_pages: HashMap::new(), rendered: (0, 0), pages: None })
+        let pdf: &'static Pdf = Box::leak(Box::new(Pdf::new(data)?));
+        Ok(Doc { pdf, cache: InterpreterCache::new(), shadow: Shadow::new(pdf.xref()), strs: String::new(), fonts: HashMap::new(), images: HashMap::new(), image_pages: HashMap::new(), held: Default::default(), held_bytes: 0, rendered: (0, 0) })
     }
-    /// 쪽(0부터)의 사건열. 문자열 표는 이어서 strings() 로 받는다. 첫 호출 때 문서 전체를 글꼴·자원 캐시 하나로 해석해 둔다
+    /// 쪽(0부터)의 사건열. 문자열 표는 이어서 strings() 로 받는다. 쪽마다 그때 해석한다 — 글꼴·자원 캐시는 문서 하나로 쪽 사이에 쥔다
     pub fn events(&mut self, index: usize) -> Result<Vec<f64>, String> {
-        if self.pages.is_none() {
-            let cache = InterpreterCache::new();
-            let pages = self.pdf.pages();
-            let mut shadow = Shadow::new(self.pdf.xref());
-            let mut out = Vec::with_capacity(pages.len());
-            for (i, page) in pages.iter().enumerate() {
-                let plan = shadow.page(page);
-                let mut ctx = Context::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), &cache, self.pdf.xref(), InterpreterSettings::default());
-                let mut ev = Events { fonts: &mut self.fonts, image_pages: &mut self.image_pages, page: i, inline_n: 0, buf: Vec::with_capacity(4096), strs: Vec::new(), last_fill: None,
-                    masks: std::collections::HashSet::new(), shadow: &mut shadow, plans: vec![plan.into_iter()], err: None };
-                interpret_page(page, &mut ctx, &mut ev);
-                ev.finish();
-                out.push(match ev.err { None => Ok((ev.buf, ev.strs.join("\u{1}"))), Some(e) => Err(e) });
-            }
-            self.pages = Some(out);
-        }
-        let Some(pages) = self.pages.as_mut() else { return Ok(Vec::new()) };
-        let Some(slot) = pages.get_mut(index) else { return Ok(Vec::new()) };
-        // 한 번 건넨 쪽은 비운다 — 문서 전체 사건열을 끝까지 쥐지 않는다
-        match slot {
-            Ok(slot) => { self.strs = std::mem::take(&mut slot.1); Ok(std::mem::take(&mut slot.0)) }
-            Err(e) => Err(format!("hayro event alignment: {}", e)),
+        let Some(page) = self.pdf.pages().get(index) else { return Ok(Vec::new()) };
+        let plan = self.shadow.page(page);
+        let mut ctx = Context::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), &self.cache, self.pdf.xref(), InterpreterSettings::default());
+        let mut ev = Events { fonts: &mut self.fonts, image_pages: &mut self.image_pages, page: index, inline_n: 0, buf: Vec::with_capacity(4096), strs: Vec::new(), last_fill: None,
+            masks: std::collections::HashSet::new(), shadow: &mut self.shadow, plans: vec![plan.into_iter()], err: None };
+        interpret_page(page, &mut ctx, &mut ev);
+        ev.finish();
+        match ev.err {
+            None => { self.strs = ev.strs.join("\u{1}"); Ok(ev.buf) }
+            Some(e) => Err(format!("hayro event alignment: {}", e)),
         }
     }
     pub fn strings(&self) -> &str { &self.strs }
@@ -454,10 +450,17 @@ impl Doc {
         let Some(&page) = self.image_pages.get(id) else { return };
         let pages = self.pdf.pages();
         let Some(p) = pages.get(page) else { return };
-        let cache = InterpreterCache::new();
-        let mut ctx = Context::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), &cache, self.pdf.xref(), InterpreterSettings::default());
-        let mut dec = Decoder { images: &mut self.images, page, inline_n: 0 };
+        let mut ctx = Context::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), &self.cache, self.pdf.xref(), InterpreterSettings::default());
+        let mut dec = Decoder { images: &self.images, got: HashMap::new(), page, inline_n: 0 };
         interpret_page(p, &mut ctx, &mut dec);
+        let got = dec.got;
+        // 상한을 넘으면 앞서 디코딩한 쪽들의 그림부터 놓는다
+        let new_bytes: usize = got.iter().map(|(_, e)| e.data.len()).sum();
+        while self.held_bytes + new_bytes > IMAGE_BUDGET {
+            let Some(k) = self.held.pop_front() else { break };
+            if let Some(e) = self.images.remove(&k) { self.held_bytes -= e.data.len() }
+        }
+        for (k, e) in got { self.held_bytes += e.data.len(); self.held.push_back(k.clone()); self.images.insert(k, e); }
         // 이 쪽 그림을 다시 해석하지 않게, 못 그린 그림도 빈 자리로 기록
         let ids: Vec<String> = self.image_pages.iter().filter(|(_, &pg)| pg == page).map(|(k, _)| k.clone()).collect();
         for k in ids { self.images.entry(k).or_insert(ImageEntry { width: 0, height: 0, kind: 0, data: Vec::new() }); }
