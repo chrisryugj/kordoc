@@ -108,7 +108,7 @@ function align(a, b) {
 export function digest(buf) {
   const dir = mkdtempSync(join(tmpdir(), "kordoc-repro-"))
   writeFileSync(join(dir, "a.hwpx"), buf)
-  execFileSync(process.execPath, [join(root, "..", "scripts", "style-digest.mjs"), join(dir, "a.hwpx"), join(dir, "a.json")], { stdio: "ignore" })
+  execFileSync(process.execPath, ["--import", "tsx", join(root, "..", "scripts", "style-digest.mjs"), join(dir, "a.hwpx"), join(dir, "a.json")], { stdio: "ignore" })
   return JSON.parse(readFileSync(join(dir, "a.json"), "utf8"))
 }
 
