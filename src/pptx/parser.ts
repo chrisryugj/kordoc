@@ -1,14 +1,14 @@
 /**
  * PPTX (Office Open XML Presentation) 파서
  *
- * ZIP + XML 구조를 jszip + xmldom으로 파싱하여 IRBlock[]로 변환.
+ * ZIP + XML 구조를 jszip + XML 파서(src/xml/dom)로 파싱하여 IRBlock[]로 변환.
  * 슬라이드 1장 = 1쪽(pageNumber, presentation.xml 의 p:sldIdLst 순서).
  * p:sp → heading(제목 개체 틀)/list(본문 개체 틀·글머리표)/paragraph, a:tbl → table, p:pic → image,
  * 발표자 노트 → 인용(quote) 문단. 쪽 번호·날짜·바닥글 개체 틀은 내용이 아니라 버린다.
  */
 
 import JSZip from "jszip"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser, warnInto } from "../xml/dom.js"
 import type {
   CellContext, IRBlock, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage,
@@ -50,8 +50,8 @@ const IMAGE_MIME: Record<string, string> = {
 
 // ─── XML 헬퍼 ──────────────────────────────────────────
 
-function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(stripDtd(text), "text/xml") as unknown as Document
+function parseXml(text: string, warnings?: ParseWarning[], part = ""): Document {
+  return new DOMParser(warnInto(warnings, `PPTX ${part}`)).parseFromString(stripDtd(text), "text/xml") as unknown as Document
 }
 
 /** 네임스페이스 접두사 무시 속성 조회 — r:id·r:embed 등 */
@@ -99,13 +99,13 @@ function resolvePart(baseDir: string, target: string): string {
 interface Rel { type: string; target: string }
 
 /** 파트의 관계(.rels) — rId → { type, 절대 경로 }. 외부 링크는 뺀다 */
-async function readRels(zip: JSZip, part: string): Promise<Map<string, Rel>> {
+async function readRels(zip: JSZip, part: string, warnings?: ParseWarning[]): Promise<Map<string, Rel>> {
   const map = new Map<string, Rel>()
   const slash = part.lastIndexOf("/")
   const dir = slash >= 0 ? part.slice(0, slash) : ""
   const file = zip.file(`${dir ? dir + "/" : ""}_rels/${part.slice(slash + 1)}.rels`)
   if (!file) return map
-  const doc = parseXml(await readZipEntry(file, "text"))
+  const doc = parseXml(await readZipEntry(file, "text"), warnings, file.name)
   for (const rel of childrenByLocalName(doc.documentElement, "Relationship")) {
     const id = getAttr(rel, "Id")
     const target = getAttr(rel, "Target")
@@ -116,12 +116,12 @@ async function readRels(zip: JSZip, part: string): Promise<Map<string, Rel>> {
 }
 
 /** 발표 순서대로 슬라이드 파트 — presentation.xml 이 없거나 비면 파일 번호 순 */
-async function slideParts(zip: JSZip): Promise<string[]> {
+async function slideParts(zip: JSZip, warnings: ParseWarning[]): Promise<string[]> {
   const ordered: string[] = []
   const presFile = zip.file("ppt/presentation.xml")
   if (presFile) {
-    const pres = parseXml(await readZipEntry(presFile, "text"))
-    const rels = await readRels(zip, "ppt/presentation.xml")
+    const pres = parseXml(await readZipEntry(presFile, "text"), warnings, "ppt/presentation.xml")
+    const rels = await readRels(zip, "ppt/presentation.xml", warnings)
     const list = findChildByLocalName(pres.documentElement, "sldIdLst")
     for (const sld of list ? childrenByLocalName(list, "sldId") : []) {
       const target = rels.get(getRelId(sld) ?? "")?.target
@@ -325,11 +325,11 @@ async function walkShapes(tree: Element, ctx: SlideContext, out: IRBlock[], dept
 }
 
 /** 발표자 노트 — 노트 슬라이드의 본문 개체 틀 글 */
-async function notesText(zip: JSZip, rels: Map<string, Rel>): Promise<string> {
+async function notesText(zip: JSZip, rels: Map<string, Rel>, warnings: ParseWarning[]): Promise<string> {
   const rel = [...rels.values()].find(r => r.type.endsWith(REL_NOTES))
   const file = rel ? zip.file(rel.target) : null
   if (!file) return ""
-  const tree = findPath(parseXml(await readZipEntry(file, "text")).documentElement, "cSld", "spTree")
+  const tree = findPath(parseXml(await readZipEntry(file, "text"), warnings, file.name).documentElement, "cSld", "spTree")
   const texts: string[] = []
   for (const sp of tree ? childrenByLocalName(tree, "sp") : []) {
     const txBody = findChildByLocalName(sp, "txBody")
@@ -357,22 +357,22 @@ export async function parsePptxDocument(
   const imageNames = new Map<string, string>()
   const images: ExtractedImage[] = []
 
-  const slides = await slideParts(zip)
+  const slides = await slideParts(zip, warnings)
   // 쪽 범위(-p·pages) — 슬라이드 1장 = 1쪽. 종전엔 범위를 무시하고 모든 슬라이드를 냈다
   const pageFilter = options?.pages ? parsePageRange(options.pages, slides.length) : null
   for (let i = 0; i < slides.length; i++) {
     const page = i + 1
     if (pageFilter && !pageFilter.has(page)) continue
-    const root = parseXml(await readZipEntry(zip.file(slides[i])!, "text")).documentElement
+    const root = parseXml(await readZipEntry(zip.file(slides[i])!, "text"), warnings, slides[i]).documentElement
     // 숨긴 슬라이드(show="0")는 발표에 나오지 않는다 — 쪽 번호는 유지하고 글만 뺀다
     if (getAttr(root, "show") === "0") {
       warnings.push({ page, code: "HIDDEN_TEXT_FILTERED", message: `PPTX 숨긴 슬라이드 ${page}쪽을 건너뜁니다` })
       continue
     }
-    const rels = await readRels(zip, slides[i])
+    const rels = await readRels(zip, slides[i], warnings)
     const tree = findPath(root, "cSld", "spTree")
     if (tree) await walkShapes(tree, { zip, rels, page, warnings, options, imageNames, images }, blocks)
-    const notes = await notesText(zip, rels)
+    const notes = await notesText(zip, rels, warnings)
     if (notes) blocks.push({ type: "paragraph", text: `발표자 노트: ${notes}`, quote: true, pageNumber: page })
   }
 
@@ -382,7 +382,7 @@ export async function parsePptxDocument(
   const coreFile = zip.file("docProps/core.xml")
   if (coreFile) {
     try {
-      const coreDoc = parseXml(await readZipEntry(coreFile, "text"))
+      const coreDoc = parseXml(await readZipEntry(coreFile, "text"), warnings, "docProps/core.xml")
       const getFirst = (tag: string) => {
         const els = coreDoc.getElementsByTagName(tag)
         return els.length > 0 ? (els[0].textContent ?? "").trim() || undefined : undefined

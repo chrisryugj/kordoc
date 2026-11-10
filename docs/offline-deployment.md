@@ -147,9 +147,9 @@ SDK 에서 엔진을 쓸 때는 번들 안의 `node_modules/kordoc/dist/cli.js` 
 
 ## 7. 의존성
 
-런타임 필수 의존성은 5개(`@modelcontextprotocol/sdk`, `@xmldom/xmldom`, `jszip`,
-`markdown-it`, `zod`)이다. `cfb` 도 `dependencies` 에 선언되어 있으나 빌드 시 번들에
-인라인되어 배포본에는 모듈 참조가 남지 않는다. OCR·PDF·인쇄 기능은
+런타임 필수 의존성은 4개(`@modelcontextprotocol/sdk`, `jszip`, `markdown-it`, `zod`)이다.
+`cfb` 도 `dependencies` 에 선언되어 있으나 빌드 시 번들에 인라인되어 배포본에는 모듈 참조가
+남지 않는다. XML 파서(quick-xml)는 wasm 으로 빌드해 배포본에 실려 있어 따로 설치하지 않는다. OCR·PDF·인쇄 기능은
 optional dependency 로 분리되어, 쓰지 않으면 설치할 필요가 없다
 (`pack-offline.mjs` 기본값이 이를 제외한다).
 

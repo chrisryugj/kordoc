@@ -32,7 +32,7 @@
 | 〃 | 크로스사이트 스크립트(XSS) | SVG·HTML 출력의 문서 글은 전부 이스케이프한다. 이번에 `htmlTables` 칸의 `<img onerror>` 통과, Markdown의 `javascript:` 링크·참조 정의·코드 스팬 탈출·각주 미이스케이프를 막았다. 레이아웃 HTML에 CSP를 넣었다 |
 | 〃 | 경로 조작 | 압축 파일 항목의 `..`·절대 경로·드라이브 문자를 거부하고, MCP 입출력은 realpath·심볼릭 링크 차단·`KORDOC_ROOT` 범위 검사를 한다. 이번에 MCP 쓰기 도구가 숨김 경로(`.claude` 등)와 에이전트 지침 파일(`CLAUDE.md`·`AGENTS.md` 등)에 쓰지 못하게 했다 |
 | 〃 | 서버사이드 요청 위조(SSRF) | 웹훅 사설 대역 거부(2절). 이번에 198.18/15·192.0.0/24·멀티캐스트·예약·IPv6 멀티캐스트 대역을 더했다 |
-| 〃 | XML 외부 개체(XXE) | DOCTYPE을 지우고 파싱하며 xmldom은 외부 개체를 가져오지 않는다 |
+| 〃 | XML 외부 개체(XXE) | DOCTYPE을 지우고 파싱한다. XML 파서(quick-xml wasm)는 DOCTYPE을 건너뛰고 미리 정한 개체 5개(`&lt;` 등)와 문자 참조만 푼다. 외부 개체를 가져오지 않는다 |
 | 〃 | 위험한 형식 파일 처리 | 추출 그림은 그림 확장자로만 저장한다(그 밖은 `.bin`). 스크립트가 든 SVG는 `.svg`로 저장하지 않는다 |
 | 보안기능 | 하드코드된 중요정보 | 소스·워크플로에 비밀번호·토큰이 없다(CI 토큰은 GitHub Secrets) |
 | 〃 | 무결성 검사 없는 코드 다운로드 | 모델 파일 SHA-256을 코드에 고정해 다운로드·반입 때 검증한다. `kordoc setup`은 MCP 서버를 설치한 버전으로 고정해 등록한다(`kordoc@버전`). GitHub Actions는 커밋 SHA로 고정했다 |
@@ -60,7 +60,7 @@
 
 ## 6. 남은 한계
 
-- 의존성(cfb·jszip·xmldom·pdfjs-dist·onnxruntime-node·sharp·pdfium) 내부 취약점은 업데이트로 대응한다. gVisor 로 실행하면 이런 취약점이 터져도 피해가 샌드박스 안에 머문다. gVisor 는 Linux 전용이다.
+- 의존성(cfb·jszip·quick-xml·pdfjs-dist·onnxruntime-node·sharp·pdfium) 내부 취약점은 업데이트로 대응한다. quick-xml은 wasm으로 묶어 실으므로 올릴 때 `rust/xml-flat/Cargo.lock`을 고치고 다시 빌드한다. gVisor 로 실행하면 이런 취약점이 터져도 피해가 샌드박스 안에 머문다. gVisor 는 Linux 전용이다.
 - gVisor 는 kordoc 이 장악됐을 때 호스트를 지킨다. 한 워커가 처리하는 문서끼리의 격리는 지금과 같다.
 - `KORDOC_ROOT`를 정하지 않으면 MCP 서버는 허용 확장자 파일을 어디서든 읽을 수 있다(5절 설정 권장).
 - 선택 의존성 onnxruntime-node·protobufjs에 설치 스크립트가 있다. 폐쇄망 설치는 [offline-deployment.md](offline-deployment.md) 절차를 따른다.

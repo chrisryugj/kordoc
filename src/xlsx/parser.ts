@@ -1,12 +1,12 @@
 /**
  * XLSX (Office Open XML Spreadsheet) 파서
  *
- * ZIP + XML 구조를 jszip + xmldom으로 파싱하여 IRBlock[]로 변환.
+ * ZIP + XML 구조를 jszip + XML 파서(src/xml/dom)로 파싱하여 IRBlock[]로 변환.
  * 각 시트 → heading(시트명) + table(데이터) 블록.
  */
 
 import JSZip from "jszip"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser, warnInto } from "../xml/dom.js"
 import type {
   IRBlock, IRTable, IRCell, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage,
@@ -75,8 +75,8 @@ function getTextContent(el: Element): string {
   return el.textContent?.trim() ?? ""
 }
 
-function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(stripDtd(text), "text/xml") as unknown as Document
+function parseXml(text: string, warnings?: ParseWarning[], part = ""): Document {
+  return new DOMParser(warnInto(warnings, `XLSX ${part}`)).parseFromString(stripDtd(text), "text/xml") as unknown as Document
 }
 
 // ─── 공유 문자열 파싱 ──────────────────────────────────
@@ -99,8 +99,8 @@ function collectRichText(root: Element): string {
   return out
 }
 
-function parseSharedStrings(xml: string): string[] {
-  const doc = parseXml(xml)
+function parseSharedStrings(xml: string, warnings?: ParseWarning[]): string[] {
+  const doc = parseXml(xml, warnings, "xl/sharedStrings.xml")
   const strings: string[] = []
   const siList = getElements(doc.documentElement, "si")
   for (const si of siList) {
@@ -164,8 +164,8 @@ export function dateSerialToIso(serial: number, date1904: boolean, kind: DateKin
 }
 
 /** styles.xml → cellXfs 인덱스별 날짜 서식 종류 (날짜 아닌 xf는 미포함) */
-function parseStyleDateXfs(xml: string): Map<number, DateKind> {
-  const doc = parseXml(xml)
+function parseStyleDateXfs(xml: string, warnings?: ParseWarning[]): Map<number, DateKind> {
+  const doc = parseXml(xml, warnings, "xl/styles.xml")
   const customFormats = new Map<number, string>()
   for (const el of getElements(doc.documentElement, "numFmt")) {
     const id = parseInt(el.getAttribute("numFmtId") ?? "", 10)
@@ -193,8 +193,8 @@ interface SheetInfo {
   rId: string
 }
 
-function parseWorkbook(xml: string): { sheets: SheetInfo[]; date1904: boolean } {
-  const doc = parseXml(xml)
+function parseWorkbook(xml: string, warnings?: ParseWarning[]): { sheets: SheetInfo[]; date1904: boolean } {
+  const doc = parseXml(xml, warnings, "xl/workbook.xml")
   const sheets: SheetInfo[] = []
   const sheetElements = getElements(doc.documentElement, "sheet")
   for (const el of sheetElements) {
@@ -211,8 +211,8 @@ function parseWorkbook(xml: string): { sheets: SheetInfo[]; date1904: boolean } 
 }
 
 /** workbook.xml.rels 파싱 → rId → target 매핑 */
-function parseRels(xml: string): Map<string, string> {
-  const doc = parseXml(xml)
+function parseRels(xml: string, warnings?: ParseWarning[]): Map<string, string> {
+  const doc = parseXml(xml, warnings, "xl/_rels/workbook.xml.rels")
   const map = new Map<string, string>()
   const rels = getElements(doc.documentElement, "Relationship")
   for (const rel of rels) {
@@ -268,6 +268,8 @@ function parseWorksheet(
   sharedStrings: string[],
   dateXfs: Map<number, DateKind>,
   date1904: boolean,
+  warnings?: ParseWarning[],
+  part?: string,
 ): { rows: Map<number, string[]>; merges: SheetMerge[]; maxCol: number } {
   const rows = new Map<number, string[]>()
   let maxCol = -1
@@ -276,7 +278,7 @@ function parseWorksheet(
 
   // 데이터 행 파싱 (행 묶음마다)
   for (const chunk of sheetXmlChunks(xml)) {
-    doc = parseXml(chunk)
+    doc = parseXml(chunk, warnings, part)
     const rowEls = getElements(doc.documentElement, "row")
     for (const rowEl of rowEls) {
       const rAttr = rowEl.getAttribute("r")
@@ -386,11 +388,11 @@ export async function parseXlsxDocument(
   let sharedStrings: string[] = []
   const ssFile = zip.file("xl/sharedStrings.xml")
   if (ssFile) {
-    sharedStrings = parseSharedStrings(await readZipEntry(ssFile, "text"))
+    sharedStrings = parseSharedStrings(await readZipEntry(ssFile, "text"), warnings)
   }
 
   // 2. 시트 목록 로드
-  const { sheets, date1904 } = parseWorkbook(await readZipEntry(workbookFile, "text"))
+  const { sheets, date1904 } = parseWorkbook(await readZipEntry(workbookFile, "text"), warnings)
   if (sheets.length === 0) {
     throw new KordocError("XLSX 파일에 시트가 없습니다")
   }
@@ -400,7 +402,7 @@ export async function parseXlsxDocument(
   const stylesFile = zip.file("xl/styles.xml")
   if (stylesFile) {
     try {
-      dateXfs = parseStyleDateXfs(await readZipEntry(stylesFile, "text"))
+      dateXfs = parseStyleDateXfs(await readZipEntry(stylesFile, "text"), warnings)
     } catch {
       // 날짜 판정 실패해도 파싱은 계속 — 대신 날짜 셀이 시리얼 숫자로 노출됨을 경고로 남긴다
       warnings.push({
@@ -414,7 +416,7 @@ export async function parseXlsxDocument(
   let relsMap = new Map<string, string>()
   const relsFile = zip.file("xl/_rels/workbook.xml.rels")
   if (relsFile) {
-    relsMap = parseRels(await readZipEntry(relsFile, "text"))
+    relsMap = parseRels(await readZipEntry(relsFile, "text"), warnings)
   }
 
   // 4. 페이지 필터
@@ -459,7 +461,7 @@ export async function parseXlsxDocument(
 
     try {
       const sheetXml = await readZipEntry(sheetFile, "text")
-      const { rows, merges, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904)
+      const { rows, merges, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904, warnings, sheetPath)
       const sheetBlocks = sheetToBlocks(sheet.name, rows, maxCol, merges, i, warnings, options?.keepTrailingEmptyCols)
       blocks.push(...sheetBlocks)
     } catch (err) {
@@ -479,7 +481,7 @@ export async function parseXlsxDocument(
   if (coreFile) {
     try {
       const coreXml = await readZipEntry(coreFile, "text")
-      const doc = parseXml(coreXml)
+      const doc = parseXml(coreXml, warnings, "docProps/core.xml")
       const getFirst = (tag: string) => {
         const els = doc.getElementsByTagName(tag)
         return els.length > 0 ? (els[0].textContent ?? "").trim() : undefined

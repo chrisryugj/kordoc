@@ -265,3 +265,25 @@ Modifications:
 
 You may obtain a copy of the Apache License at:
 http://www.apache.org/licenses/LICENSE-2.0
+
+================================================================================
+
+quick-xml · memchr (rust/xml-flat 의 wasm 으로 배포)
+https://github.com/tafia/quick-xml
+https://github.com/BurntSushi/memchr
+
+Copyright (c) 2016 Johann Tuffe (quick-xml) · Copyright (c) 2015 Andrew Gallant (memchr)
+Licensed under the MIT License (quick-xml) · Unlicense OR MIT License (memchr — MIT 를 고른다)
+
+Used in:
+- src/xml/xml-flat-wasm.ts — rust/xml-flat(quick-xml 0.38 로 XML 을 읽는 Rust 코드)을 wasm32 로 빌드해 base64 로 실은
+  생성 파일. src/xml/dom.ts 가 이 wasm 으로 XML 을 읽는다. Rust 표준 라이브러리(core·alloc, MIT OR Apache-2.0)도
+  함께 컴파일된다
+
+Modifications:
+- 없음(crates.io 배포본을 그대로 컴파일한다. 버전은 rust/xml-flat/Cargo.lock)
+
+라이선스 전문: THIRD_PARTY/quick-xml.LICENSE · THIRD_PARTY/memchr.LICENSE
+
+You may obtain a copy of the MIT License at:
+https://opensource.org/licenses/MIT

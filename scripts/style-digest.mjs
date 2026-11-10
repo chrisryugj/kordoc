@@ -1,13 +1,13 @@
 // HWPX 요소 전수 다이제스트 (styleDigest) — 문서 스타일·구조를 압축 JSON으로 덤프.
 // 실측 대조·회귀 검증·스타일 역분석의 기반 도구 (2026-07 공문서 전수 학습 세션에서 검증).
-// 사용: node scripts/style-digest.mjs <in.hwpx> <out.json>
+// 사용: npx tsx scripts/style-digest.mjs <in.hwpx> <out.json>  (XML 파서가 src/xml/dom.ts 라 tsx 로 돌린다)
 // 출력: { meta, fonts, charPrs, paraPrs, borderFills, sections:[{secPr, headers, footers, body:[...]}] }
 // body 항목: {p:{pr,runs:[[charPr,text]...],ctrl?}} | {tbl:{rows,cols,w,h,cells:[...]}} | {shape...}
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
-const { DOMParser } = require("@xmldom/xmldom");
+const { DOMParser } = await import("../src/xml/dom.ts");
 
 const [src, out] = process.argv.slice(2);
 const zip = await JSZip.loadAsync(await readFile(src));

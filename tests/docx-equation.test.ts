@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../src/xml/dom.js"
 import { ommlElementToLatex, isOmmlRoot, isDisplayMath } from "../src/docx/equation.js"
 
 /** <m:xxx> 래퍼 XML 을 파싱해 최상위 Element 반환 (공백 텍스트 노드 스킵) */

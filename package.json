@@ -72,7 +72,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.0",
-    "@xmldom/xmldom": "^0.9.12",
     "cfb": "1.2.2",
     "commander": "^13.0.0",
     "jszip": "^3.10.1",

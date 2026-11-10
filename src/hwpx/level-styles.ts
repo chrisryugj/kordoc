@@ -10,7 +10,7 @@
  */
 
 import JSZip from "jszip"
-import type { Element as XmlElement } from "@xmldom/xmldom"
+type XmlElement = Element
 import { extractHwpxStyles } from "./styles.js"
 import { resolveSectionPaths } from "./zip-sections.js"
 import { parseLeadingMarker } from "./outline.js"

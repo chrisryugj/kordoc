@@ -14,7 +14,7 @@ import { reflowSection } from "../src/render/reflow.js"
 import { faceClassOf } from "../src/hwpx/text-metrics.js"
 import { resolveGongmun, mmToHwpunit } from "../src/hwpx/gongmun.js"
 import { MINISTRY } from "../src/hwpx/gen-frame-ministry.js"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "../src/xml/dom.js"
 
 async function parts(buf: ArrayBuffer): Promise<{ sec: string; head: string }> {
   const z = await JSZip.loadAsync(buf)

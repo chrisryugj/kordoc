@@ -33,7 +33,7 @@ npm install kordoc        # CLI 만 쓸 거면 설치 없이 npx kordoc <파일>
 
 PDF·OCR 의존성은 기본으로 설치됩니다(줄이려면 `--omit=optional` — 대신 PDF·OCR 이 빠짐). PDF 인쇄 렌더(`markdownToPdf`)만 `puppeteer-core` 를 따로 설치하세요.
 
-앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `@xmldom/xmldom`·`jszip`·`markdown-it` 뿐입니다(`cfb` 는 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`·`pdfjs-dist`)은 쓰지 않는 기능(PNG 렌더·OCR·PDF)만큼 뺄 수 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
+앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `jszip`·`markdown-it` 뿐입니다(`cfb` 와 XML 파서 wasm 은 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`·`pdfjs-dist`)은 쓰지 않는 기능(PNG 렌더·OCR·PDF)만큼 뺄 수 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
 
 <details>
 <summary>설치 문제 해결</summary>

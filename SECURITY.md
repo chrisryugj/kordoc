@@ -133,8 +133,8 @@ kordoc processes untrusted binary files. The following defenses are in place:
 ## Scope
 
 kordoc is a **document parser library**, not a sandbox. It trusts the Node.js runtime
-and its dependencies (cfb, jszip, @xmldom/xmldom, markdown-it, and — when OCR or PDF
-features are used — pdfjs-dist, onnxruntime-node, sharp, @hyzyla/pdfium).
+and its dependencies (cfb, jszip, markdown-it, the bundled quick-xml WebAssembly build,
+and — when OCR or PDF features are used — pdfjs-dist, onnxruntime-node, sharp, @hyzyla/pdfium).
 Vulnerabilities in these dependencies are outside kordoc's control but are addressed
 via dependency updates.
 

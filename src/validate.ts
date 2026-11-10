@@ -11,7 +11,7 @@
  */
 
 import JSZip from "jszip"
-import { DOMParser } from "@xmldom/xmldom"
+import { DOMParser } from "./xml/dom.js"
 import { readZipEntry } from "./hwpx/parser-shared.js"
 
 /** 검증에서 발견된 문제 하나 */
@@ -86,7 +86,7 @@ export async function validateHwpx(buffer: ArrayBuffer | Uint8Array): Promise<Va
     try {
       new DOMParser({
         onError(level, msg) {
-          // xmldom ErrorHandlerFunction의 level은 "warning" | "error" | "fatalError"
+          // onError 의 level 은 "warning" | "error" | "fatalError" (src/xml/dom.ts)
           if (level !== "warning" && firstError === null) firstError = String(msg)
         },
       }).parseFromString(text, "text/xml")
