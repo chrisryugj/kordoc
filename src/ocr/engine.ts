@@ -185,6 +185,9 @@ const ORIENT_GAIN = 0.1
 const KEEP_MARGIN = 0.06
 /** 두 줄로 갈라 다시 읽은 줄(recognizePage 재시도)을 받을 신뢰도 하한 */
 const RETRY_SCORE = 0.9
+/** 되살릴 한 글자 표시 기호와 그 최소 신뢰도 (같은 열·행에 같은 기호·크기의 확신 상자가 있을 때만 — engine 버림 단계) */
+const MARK_GLYPH = /^[\u25cb\u25cf\u25ce\u00d7\u25b3\u25b2\u25a1\u25a0\u25c7\u25c6]$/
+const LOW_MARK_SCORE = 0.3
 /** 세로로 쌓인 글자 띠를 한 낱말로 붙일 띠 사이 틈 상한 (글자 높이 대비) */
 const STACK_WORD_GAP = 0.3
 /** 리더로 볼 최소 점 수 — 말줄임표 "…"(3점)보다 많이. 목차 쪽번호 박스가 무는 점은 코퍼스 실측 4~9개가 대부분 */
@@ -777,6 +780,8 @@ export class OcrEngine {
     const boxOf = new Map<OcrItem, Box>()
     /** 신뢰도에 걸려 버린 상자 — 줄 띠가 둘 이상이면 띠마다 다시 읽는다(아래) */
     const retry: Box[] = []
+    /** 신뢰도 문턱 아래로 버린 한 글자 표시 기호(○·× 등) — 같은 쪽에서 같은 기호를 같은 크기로 확신한 상자가 있으면 되살린다 */
+    const lowMarks: OcrItem[] = []
     // 원문자 고리 속 글자만 따로 다시 읽는다(glyph-restore ringAsks) — 사전 밖 ㉠·ⓐ 를 모델이 빠뜨리거나 ①~⑨ 로 바꿔 읽은 자리
     const ringReads = new Map<LineJob, RingRead[]>()
     if (tuning.postprocess) {
@@ -846,6 +851,9 @@ export class OcrEngine {
       // 모양으로 정한 ◎ 하나만 든 상자(목차 ◎ 열)는 인식 신뢰도와 상관없이 받는다 — 기울기 보정 뒤 "◎" 를 0.27~0.43 으로 읽어 열 절반이 빠졌다
       if (confidence < tuning.textScore && !(ringByShape && text.trim() === "\u25ce")) {
         if (tuning.postprocess && job.rot === 0 && job.join === undefined && !job.footer) retry.push(job.box)
+        if (tuning.postprocess && job.rot === 0 && job.join === undefined && !job.footer && MARK_GLYPH.test(text.trim()) && confidence >= LOW_MARK_SCORE) {
+          lowMarks.push({ text: text.trim(), ...this.itemBox(rgba, width, job.box, tuning), confidence })
+        }
         if (stats) {
           stats.droppedLowConf++
           stats.dropped?.push({ text, ...this.itemBox(rgba, width, job.box, tuning), confidence })
@@ -938,6 +946,14 @@ export class OcrEngine {
         if (st.word) items.push({ text: rs.map(r => r!.text.trim()).join(""), ...this.itemBox(rgba, width, st.box, tuning), confidence: Math.min(...rs.map(r => r!.confidence)) })
         else st.parts.forEach((box, i) => items.push({ text: rs[i]!.text.trim(), ...this.itemBox(rgba, width, box, tuning), confidence: rs[i]!.confidence }))
       }
+    }
+    // 표 칸 하나만 든 "○" 를 .44 로 읽어 버려 칸이 비었다(topik 신분증 표 — 같은 열 다른 칸 "○" 는 같은 25px 상자로 .88~.94). 같은 기호를
+    // 문턱 넘게 읽은 상자가 같은 크기(±20%)로 같은 열이나 같은 행에 있고 그 자리에 다른 아이템이 없을 때만 받는다
+    for (const m of lowMarks) {
+      const aligned = (o: OcrItem) => Math.abs(o.x + o.w / 2 - (m.x + m.w / 2)) <= m.w / 2 || Math.abs(o.y + o.h / 2 - (m.y + m.h / 2)) <= m.h / 2
+      const peer = items.some(o => o.text.trim() === m.text && o.confidence >= tuning.textScore && Math.abs(o.w - m.w) <= m.w * 0.2 && Math.abs(o.h - m.h) <= m.h * 0.2 && aligned(o))
+      const taken = items.some(o => Math.min(m.x + m.w, o.x + o.w) > Math.max(m.x, o.x) && Math.min(m.y + m.h, o.y + o.h) > Math.max(m.y, o.y))
+      if (peer && !taken) items.push(m)
     }
     const leaderEnds = new Map<OcrItem, { lead: boolean; trail: boolean }>()
     for (const j of joins) {
