@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { closingParens, footerInkBox, joinGapLeaders, midBlankRow, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
+import { closingParens, footerInkBox, joinGapLeaders, midBlankRow, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes, valleyRow } from "../src/ocr/engine.js"
 import { inkStats, stackedGlyphBands } from "../src/ocr/line-split.js"
 
 const W = 400, H = 600
@@ -159,6 +159,24 @@ describe("midBlankRow — 두 줄 상자 가운데 빈 행", () => {
     const g = crop(true)
     assert.equal(midBlankRow(g, W7, H7, inkStats(g)), null)
     assert.equal(midBlankRow(g.subarray(0, W7 * 20), W7, 20, inkStats(g.subarray(0, W7 * 20))), null)
+  })
+})
+
+describe("valleyRow — 맞닿은 두 줄 상자의 가를 자리", () => {
+  const W = 120, H = 60
+  it("빈 행 없이 획 하나만 두 줄을 이어도 잉크가 가장 적은 가운데 행을 낸다", () => {
+    const g = new Uint8Array(W * H).fill(255)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) g[y * W + x] = 0 }
+    for (let x = 10; x < 110; x += 8) rect(x, 6, x + 3, 29)
+    for (let x = 10; x < 90; x += 8) rect(x, 31, x + 3, 54)
+    rect(40, 29, 42, 31)
+    const cut = valleyRow(g, W, H, inkStats(g))
+    assert.ok(cut && cut[0] >= 29 && cut[0] <= 30, String(cut))
+  })
+  it("한 줄짜리 상자(가운데도 잉크가 많음)는 null", () => {
+    const g = new Uint8Array(W * H).fill(255)
+    for (let y = 10; y < 50; y++) for (let x = 10; x < 110; x += 8) for (let k = 0; k < 3; k++) g[y * W + x + k] = 0
+    assert.equal(valleyRow(g, W, H, inkStats(g)), null)
   })
 })
 

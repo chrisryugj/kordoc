@@ -185,6 +185,9 @@ const ORIENT_GAIN = 0.1
 const KEEP_MARGIN = 0.06
 /** 두 줄로 갈라 다시 읽은 줄(recognizePage 재시도)을 받을 신뢰도 하한 */
 const RETRY_SCORE = 0.9
+/** 문턱은 넘었지만 두 줄을 덮은 상자 — 쪽 상자 높이 중앙값 대비 높이 배율·이보다 확신이 낮을 때만 갈라 다시 읽는다 */
+const TALL_LINE_RATIO = 1.1
+const TALL_LINE_SCORE = 0.9
 /** 되살릴 한 글자 표시 기호와 그 최소 신뢰도 (같은 열·행에 같은 기호·크기의 확신 상자가 있을 때만 — engine 버림 단계) */
 const MARK_GLYPH = /^[\u25cb\u25cf\u25ce\u00d7\u25b3\u25b2\u25a1\u25a0\u25c7\u25c6]$/
 const LOW_MARK_SCORE = 0.3
@@ -401,6 +404,20 @@ export function rowHeadBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
  * 두 줄 상자의 가운데 빈 행 — 높이 30~70% 안에서 잉크가 폭 2% 이하인 행이 이어진 구간 중 가운데에 가장 가까운 것 [시작, 끝). 세로 괘선
  * (높이 85% 이상 잉크인 열)은 세지 않는다. splitRowBands 는 띠 잉크 폭을 글자 크기로 보아(세로쓰기 칸) 가로로 긴 두 줄을 한 띠로 합친다
  */
+/** 두 줄이 맞닿아 빈 행이 없는 상자의 가를 자리 — 가운데 30~70% 띠에서 잉크가 가장 적은 행이 잉크 있는 행 중앙값의 20% 이하일 때 그 행 */
+export function valleyRow(gray: Uint8Array, w: number, h: number, ink: InkStats): [number, number] | null {
+  if (h < 24) return null
+  const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+  const rows: number[] = []
+  for (let y = 0; y < h; y++) { let n = 0; for (let x = 0; x < w; x++) if (isInk(gray[y * w + x])) n++; rows.push(n) }
+  const nz = rows.filter(n => n > 0).sort((p, q) => p - q)
+  if (!nz.length) return null
+  const med = nz[nz.length >> 1]
+  let best = -1
+  for (let y = Math.floor(h * 0.3); y < Math.ceil(h * 0.7); y++) if (best < 0 || rows[y] < rows[best]) best = y
+  return best >= 0 && rows[best] <= med * 0.2 ? [best, best + 1] : null
+}
+
 export function midBlankRow(gray: Uint8Array, w: number, h: number, ink: InkStats): [number, number] | null {
   if (h < 24) return null
   const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
@@ -903,6 +920,37 @@ export class OcrEngine {
           return false
         })
       }
+    }
+    // 두 줄을 한 상자로 잡았지만 문턱은 넘긴 줄 — 줄 간격 좁은 여러 줄 칸에서 윗줄 상자가 아랫줄까지 덮어(높이 60px, 쪽 상자 높이 중앙값 51 의
+    // 1.1배 넘게) "서울특별시 은평구, 대전광역시 …" 를 "서울시은평구대전광역시…" 0.60 으로 읽었다(복지사업 우수기관 표). 가운데 빈 행에서
+    // 두 줄로 갈라 다시 읽고, 두 줄 모두 원래보다 0.1 넘게 확신하고 0.85 이상일 때만 바꾼다(한글 두 자 넘게 읽힌 줄만 — 영문 손글씨 그림은 갈라도 쓰레기였다)
+    if (tuning.postprocess) {
+      const hs = [...boxOf.values()].map(b => b.h).sort((x, y) => x - y)
+      const medH = hs.length ? hs[hs.length >> 1] : 0
+      const tall = items.filter(it => {
+        const b = boxOf.get(it)
+        return b && medH && b.h >= medH * TALL_LINE_RATIO && it.confidence < TALL_LINE_SCORE && b.w >= b.h * 3 && (it.text.match(/[가-힣]/g) ?? []).length >= 2
+      })
+      const halves: Array<{ it: OcrItem; top: Box; bottom: Box }> = []
+      for (const it of tall) {
+        const b = boxOf.get(it)!
+        const gray = grayCrop(rgba, width, b)
+        const cut = midBlankRow(gray, b.w, b.h, inkStats(gray)) ?? valleyRow(gray, b.w, b.h, inkStats(gray))
+        if (cut) halves.push({ it, top: { ...b, h: cut[0] }, bottom: { ...b, y: b.y + cut[1], h: b.h - cut[1] } })
+      }
+      const res = halves.length ? await this.recognizeJobs(rgba, width, halves.flatMap((hv, k) => [{ box: hv.top, rot: 0 as const, group: 2 * k }, { box: hv.bottom, rot: 0 as const, group: 2 * k + 1 }]), tuning.recBatch) : []
+      halves.forEach((hv, k) => {
+        const a = res[2 * k], c = res[2 * k + 1]
+        const need = Math.max(hv.it.confidence + 0.1, 0.85)
+        // 확신 못 한 조각은 그 자리를 다른 아이템이 반 넘게 덮을 때만 버린다 — 앞뒤 줄 글자 끝자락을 또 읽은 조각이다
+        const covered = (bx: Box) => items.some(o => o !== hv.it && Math.max(0, Math.min(bx.x + bx.w, o.x + o.w) - Math.max(bx.x, o.x)) * Math.max(0, Math.min(bx.y + bx.h, o.y + o.h) - Math.max(bx.y, o.y)) * 2 > bx.w * bx.h)
+        const parts: OcrItem[] = []
+        for (const [r, box] of [[a, hv.top], [c, hv.bottom]] as const) {
+          if (r && r.confidence >= need && r.text.trim()) parts.push({ text: restoreSymbols(restoreGlyphs(rgba, width, box, r.text, r.steps, r.stepPx).trim()), ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
+          else if (!covered(box)) return
+        }
+        if (parts.length) items.splice(items.indexOf(hv.it), 1, ...parts)
+      })
     }
     // 두 줄을 한 상자로 잡아 인식이 무너진 표 칸 — 상자가 넓어 세로로 긴 상자 가르기(splitTall)에 안 걸린다(여수 인원표 "산 단 환 경 /
     // 관 리 과" 가 "살다까" 로 읽혀 버려짐). 버려질 상자만 가운데 빈 행에서 두 줄로 갈라 다시 읽어 신뢰도를 넘는 줄을 받는다
