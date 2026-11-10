@@ -253,6 +253,7 @@ await parse(buffer, {                   // external OCR (Claude Vision, Tesserac
 })
 ```
 
+- Full external OCR example: [`examples/minicpm-ocr`](../examples/minicpm-ocr) — wires a self-hosted MiniCPM-OCR server (vLLM, SGLang, llama.cpp, Ollama) into `OcrProvider`. The example code owns the network call; kordoc itself never talks to the endpoint. It also ships a timing / page-level CER script.
 - Runs on local CPU with no API key (PP-OCRv5 korean ONNX — all 11,172 precomposed Hangul syllables).
 - Only pages without a text layer or with a broken one are OCR'd, and table structure is recovered from scans.
 - Model management: `kordoc models --status` (`--export`/`--import` for air-gapped networks).
