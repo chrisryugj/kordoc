@@ -171,6 +171,8 @@ const REC_MIN_WIDTH = 320
 const REC_BATCH_MAX_PIXELS = 48 * 16000
 /** 키 큰 박스 판정 (공식 파이프라인의 세로 판정 h/w ≥ 1.5 와 같은 문턱) */
 const TALL_RATIO = 1.5
+/** 세로로 긴 상자에서 띠가 하나만 남았을 때 그 띠만 읽는 높이 비율 상한(나머지는 이웃 줄 조각) */
+const SOLE_BAND_RATIO = 0.7
 /** 밴드로 갈라지지 않는 키 큰 박스 중 이 비율 이상은 90° 회전 글자 후보 */
 const ROTATE_RATIO = 3
 /** 눕힌 쪽 판정 — 검출 상자가 이만큼 이상이고 그 가운데 키 큰(TALL_RATIO) 상자가 이 비율 이상일 때만 본다 */
@@ -727,6 +729,22 @@ export class OcrEngine {
         const bands = splitRowBands(gray, b.w, b.h, ink, 0.45)
         if (bands.length >= 2) {
           for (const sub of bandBoxes(b, bands, height)) jobs.push({ box: sub, rot: 0, group: group++ })
+          continue
+        }
+        // 글자 하나가 위아래 이웃 줄 글자 조각을 문 상자 — 띠 나누기가 끝의 조각을 버려 띠 하나만 남으면 그 띠만 읽는다. 기울기 보정한
+        // 자간 넓은 목차에서 "보" 상자(높이 106)가 윗줄 "산" 아래끝·아랫줄 "농" 위끝을 물어 "본" 으로 읽혔다. 글자 꼴(폭이 높이의 절반
+        // 이상, 높이 12px·상자의 25% 이상)이고 띠 밖에 버린 조각 잉크가 있을 때만 — 가는 세로 조각·점 무리를 읽으면 "4" 같은
+        // 잡음이 됐고(손글씨 줄), 진한 원 속 흰 장 번호 "6" 처럼 채운 도형(잉크 35% 이상)은 띠가 바탕을 가리켜 종전대로 읽어야 남았다(정보화 계획 목차)
+        const bh = bands.length === 1 ? bands[0].y1 - bands[0].y0 : 0
+        const outside = (y0: number, y1: number) => {
+          const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+          for (let y = 0; y < b.h; y++) if (y < y0 || y >= y1) for (let x = 0; x < b.w; x++) if (isInk(gray[y * b.w + x])) return true
+          return false
+        }
+        const sole = bh && bh < b.h * SOLE_BAND_RATIO && bh >= Math.max(12, b.h * 0.25) && bands[0].x1 - bands[0].x0 >= bh * 0.5 && ink.inkRatio < 0.35 && outside(bands[0].y0, bands[0].y1)
+          ? bandBoxes(b, bands, height)[0] : undefined
+        if (sole) {
+          jobs.push({ box: sole, rot: 0, group: group++ })
           continue
         }
         if (b.h >= b.w * ROTATE_RATIO) {
