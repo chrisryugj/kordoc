@@ -147,11 +147,23 @@ export function chartPlotItems(items: OcrItem[]): Set<number> {
     const bottom = hz ? hz.y2 + 2.5 * v.h : Math.max(...cats.map(c => c.y + c.h)) + 0.5 * v.h
     const right = hz ? hz.x2 + 2 * v.h : Math.max(...cats.map(c => c.x + c.w)) + v.h
     // 막대 차트는 맨 위 눈금 위로 한 눈금 간격(OCR 이 놓친 윗눈금·막대 위 값 표지)까지
-    const x1 = v.x1 - 5 * v.h, x2 = right, y1 = v.y1 - (hz ? 1.5 * v.h : Math.max(1.5 * v.h, v.gap ?? 0)), y2 = bottom
+    // 맨 위 눈금 위로 한 눈금 간격까지 — 큰 상자로 읽은 윗눈금("100", 오른끝 맞춤에서 빠짐)도 판이다(생존 곡선)
+    const x1 = v.x1 - 5 * v.h, x2 = right, y1 = v.y1 - Math.max(1.5 * v.h, v.gap ?? 0), y2 = bottom
     items.forEach((it, i) => {
       const cx = it.x + it.w / 2, cy = it.y + it.h / 2
       if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2 && it.x >= x1 - v.h && it.x + it.w <= x2 + v.h) drop.add(i)
     })
+    // 판 바로 밑 위험 인원 표("Number at Risk" 와 군마다 인원 줄)도 그림이다 — 이름표부터 줄 사이가 줄 높이 2.5배 안으로 이어지는 데까지
+    // (그림 설명 줄 앞에서 멈춘다). 군 이름이 판 왼쪽 밖에서 시작해 판 폭으로는 못 잡는다
+    const cyOf = (it: OcrItem) => it.y + it.h / 2
+    const risk = items.find(it => cyOf(it) > y2 - v.h && cyOf(it) < y2 + 4 * v.h && /at\s*risk|위험\s*(대상|인원)/i.test(it.text))
+    if (risk) {
+      const rows = [...new Set(items.map(cyOf))].sort((a, b) => a - b)
+      let end = cyOf(risk)
+      for (let k = rows.indexOf(end); k + 1 < rows.length && rows[k + 1] - rows[k] <= 2.5 * v.h
+        && !items.some(it => Math.abs(cyOf(it) - rows[k + 1]) < v.h * 0.5 && /^(그림|Figure|Fig\.|표)\s*\d/.test(it.text.trim())); k++) end = rows[k + 1]
+      items.forEach((it, i) => { if (cyOf(it) >= cyOf(risk) - v.h * 0.5 && cyOf(it) <= end + v.h * 0.5) drop.add(i) })
+    }
   }
   return drop
 }

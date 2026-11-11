@@ -24,6 +24,16 @@ describe("OCR 쪽 차트 판 글 (chartPlotItems)", () => {
     assert.deepEqual(kept, ["그림 46. 무사건생존 Kaplan-Meier 곡선", "이 연구는 사전 지정된 분석에서 개선을 입증하였다."])
   })
 
+  it("판 바로 밑 위험 인원 표(Number at Risk)와 큰 상자로 읽은 맨 위 눈금도 뺀다 — 다음 그림 설명은 둔다", () => {
+    const items = survivalChart()
+    items.push(box("100", 400, 610, 48, 30))
+    items.push(box("Number at Risk", 149, 1375, 116), box("KEYTRUDA + Chemo/KEYTRUDA", 149, 1395, 252), box("784 769 728 702 581", 444, 1395, 600),
+      box("Placebo + Chemo/Placebo", 149, 1415, 230), box("390 382 358 330 312", 444, 1415, 600))
+    items.push(box("그림 47. 전체 생존 Kaplan-Meier 곡선", 160, 1440, 1000))
+    const kept = items.filter((_, i) => !chartPlotItems(items).has(i)).map(it => it.text)
+    assert.deepEqual(kept, ["그림 46. 무사건생존 Kaplan-Meier 곡선", "이 연구는 사전 지정된 분석에서 개선을 입증하였다.", "그림 47. 전체 생존 Kaplan-Meier 곡선"])
+  })
+
   it("가로 눈금이 없으면(숫자 열만 있는 표) 차트가 아니다", () => {
     const items = survivalChart().filter(it => !/^(0|6|12|54|18  24 .*|60  66|72  78 84)$/.test(it.text))
     assert.equal(chartPlotItems(items).size, 0)
