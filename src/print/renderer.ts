@@ -98,7 +98,8 @@ const md = new MarkdownIt({
 // Markdown can come from documents. Keep only the small HTML vocabulary emitted by
 // blocksToMarkdown for merged/nested tables and underlining; render other raw tags as text.
 // Image cells may point into the CLI's per-document folder images/<document>/ (#98).
-const SAFE_RAW_TAG = /^(?:<\/?(?:table|thead|tbody|tfoot|tr|th|td|u)>|<br\s*\/?>|<(?:th|td)(?: (?:colspan|rowspan)="[1-9]\d*"){1,2}>|<img src="(?:images\/(?:[^"'<>\/\s]+\/)?)?image_\d+\.(?:png|jpe?g|gif|webp|bmp)" alt="image">)$/i
+// htmlCellLinks emits <a href> with a safe scheme in HTML table cells (src/html-cell-links.ts).
+const SAFE_RAW_TAG = /^(?:<\/?(?:table|thead|tbody|tfoot|tr|th|td|u)>|<br\s*\/?>|<(?:th|td)(?: (?:colspan|rowspan)="[1-9]\d*"){1,2}>|<img src="(?:images\/(?:[^"'<>\/\s]+\/)?)?image_\d+\.(?:png|jpe?g|gif|webp|bmp)" alt="image">|<a href="(?:https?:|mailto:|tel:|#)[^"<>\s]*">|<\/a>)$/i
 function sanitizeRawHtml(raw: string): string {
   return raw.replace(/<[^>]*>|</g, tag => SAFE_RAW_TAG.test(tag) ? tag : escapeHtml(tag))
 }

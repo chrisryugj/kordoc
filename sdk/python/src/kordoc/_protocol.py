@@ -14,6 +14,7 @@ PROTOCOL = 2
 OPTION_NAMES: dict[str, str] = {
     "table_format": "tableFormat",
     "html_tables": "htmlTables",
+    "html_cell_links": "htmlCellLinks",
     "layout_tables": "layoutTables",
     "classify_tables": "classifyTables",
     "tables": "tables",

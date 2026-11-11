@@ -10,7 +10,7 @@
 
 import type { IRTable } from "../types.js"
 import { MAX_COLS, MAX_ROWS, cellToMarkdown, escapeGfm, gfmCellMarkdown, escapeHtmlCellText, hasInlineCellBlocks, noteSuffix, noteTableHtml, sanitizeText, visibleText } from "../table/builder.js"
-import { escapeHtml, unescapeHtml } from "../utils.js"
+import { escapeHtml, gfmUrlEnd, gfmUrlHref, sanitizeHref, unescapeHtml } from "../utils.js"
 import { clampSpan } from "../hwpx/parser-shared.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
 
@@ -509,6 +509,12 @@ export function htmlCellInnerToLines(inner: string): { lines: string[]; hadNonTe
       return ""
     })
   }
+  // htmlCellLinks 가 낸 링크 <a href="H">T</a> → 원래 셀 텍스트: URL 그대로 링크한 것이면 T, 아니면 [T](H).
+  // URL 로 링크하면 끝의 ) . 등은 링크 밖이라, T 가 그런 문자로 끝나면 원래 [T](H) 였다
+  work = work.replace(/<a href="([^"]*)">([\s\S]*?)<\/a>/g, (_, h: string, t: string) => {
+    const text = unescapeHtml(t)
+    return gfmUrlEnd(text) === text.length && sanitizeHref(gfmUrlHref(text)) === unescapeHtml(h) ? t : `[${t}](${h})`
+  })
   const lines = work.split(/<br\s*\/?>/gi).map(s => unescapeHtml(s).trim()).filter(s => s.length > 0)
   return { lines, hadNonText, imgSrcs }
 }

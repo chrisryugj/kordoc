@@ -54,6 +54,8 @@ public final class ParseOptions {
         /** "gfm": 모든 표를 GFM 파이프 표로 — 중첩 표는 부모·자식 트리로 펼치고 관계 표지를 남긴다 */
         public Builder tableFormat(String format) { wire.put("tableFormat", format); return this; }
         public Builder htmlTables(boolean v) { return put("htmlTables", v); }
+        /** HTML 표 셀의 링크·URL 을 <a href> 로 (기본 꺼짐) */
+        public Builder htmlCellLinks(boolean v) { return put("htmlCellLinks", v); }
         /** "visual"(기본) | "keep" */
         public Builder layoutTables(String mode) { wire.put("layoutTables", mode); return this; }
         public Builder classifyTables(boolean v) { return put("classifyTables", v); }

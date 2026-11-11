@@ -9,6 +9,7 @@ import { toArrayBuffer, sanitizeError, classifyError } from "../utils.js"
 import { detectImageMime } from "../hwp5/images.js"
 import { toPlainMarkdown } from "../plain-markdown.js"
 import { toHtmlTables } from "../html-tables.js"
+import { htmlCellLinks } from "../html-cell-links.js"
 import { createOutputGuard } from "./output-path.js"
 
 /** --ocr-lines·--ocr-det·--ocr-rec… → ParseOptions. 값 검증은 parse() 가 한다(잘못이면 실패 JSON). 로컬 경로는 현재 디렉터리 기준 절대 경로로 */
@@ -75,6 +76,7 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
       if (opts.plain) parseOptions.plain = true
       if (opts.scriptTags !== undefined) parseOptions.scriptTags = opts.scriptTags as boolean
       if (opts.htmlTables) parseOptions.htmlTables = true
+      if (opts.htmlCellLinks) parseOptions.htmlCellLinks = true
       if (opts.tableFormat === "gfm") parseOptions.tableFormat = "gfm"
       if (opts.keepLayoutTables) parseOptions.layoutTables = "keep"
       if (!opts.silent) {
@@ -146,6 +148,7 @@ export async function convertFiles(files: string[], opts: OptionValues, writeOut
           let text = c.text
           if (opts.plain) text = toPlainMarkdown(text)
           if (opts.htmlTables) text = toHtmlTables(text)
+          if (opts.htmlCellLinks) text = htmlCellLinks(text)
           return { ...c, text: linkImages(text) }
         })
         output = JSON.stringify(chunks, null, 2)

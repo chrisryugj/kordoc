@@ -213,6 +213,11 @@ export function isGfmUrl(url: string, text: string, end: number): boolean {
   return !LINK_LABEL_REST.test(text) && /^(?:[Hh][Tt][Tt][Pp][Ss]?:\/\/|www\.)[A-Za-z0-9.\-\u0080-\uffff]+(?:[/?#:]|$)/.test(url.slice(0, gfmUrlEnd(url)))
 }
 
+/** GFM 자동 링크의 href — www. 로 시작하면 http:// 를 붙인다 (GitHub 과 같다) */
+export function gfmUrlHref(url: string): string {
+  return /^www\./.test(url) ? "http://" + url : url
+}
+
 /** URL 후보 중 GFM 이 링크로 잡는 길이 — 끝의 ?!.,:*_~'" 와 짝 없는 ) 는 링크 밖 (HTML 로 링크를 낼 때 같은 경계) */
 export function gfmUrlEnd(url: string): number {
   let n = url.length

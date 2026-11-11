@@ -89,6 +89,7 @@ if (result.success) {
 | `images` | `--no-images` | `false` skips image bytes (placeholders remain; PDF skips PNG encoding) |
 | `plain` | `--plain` | text-first Markdown without image placeholders, link URLs, underline or bold (headings, lists and table structure kept; `blocks` unchanged). `<sup>`/`<sub>` become `10^4`/`H_2O` |
 | `htmlTables` | `--html-tables` | every table as HTML, one tag per indented line (first row `<th>`) |
+| `htmlCellLinks` | `--html-cell-links` | `[text](url)` and URLs in HTML table cells as `<a href>` (clickable in viewers). Off by default: it writes each address twice for LLM/RAG consumers |
 | `tableFormat` | `--table-format gfm` | `"gfm"`: every table as a GFM pipe table, no HTML (vertically merged values repeat on every covered row; horizontally merged values stay in the first cell). Nested tables move out after their parent, linked by `<!-- <table id="t2" parent_id="t1" /> -->` markers (for RAG indexing; not combinable with `htmlTables`) |
 | `password` | `--password` | open password (HWPX · HWP3 · HWP5; not Hancom DRM) |
 | `tables` | `--no-tables` | `false` turns off PDF table detection (two-column exam sheets whose boxes read as tables and flip the order) |

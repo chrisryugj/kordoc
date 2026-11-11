@@ -8,6 +8,7 @@ import { stripScriptTags } from "./script-tags.js"
 import { toPlainMarkdown } from "./plain-markdown.js"
 import { parsePageRange } from "./page-range.js"
 import { toHtmlTables } from "./html-tables.js"
+import { htmlCellLinks } from "./html-cell-links.js"
 import { memosMarkdown } from "./memo-notes.js"
 import { readFile } from "fs/promises"
 import { detectFormat, detectOle2Format, detectZipFormat, isHwpxFile, isOldHwpFile, isPdfFile, isZipFile } from "./detect.js"
@@ -115,6 +116,10 @@ export async function parse(input: string | ArrayBuffer | Buffer, options?: Pars
   // htmlTables: 모든 표를 태그마다 한 줄씩 들여쓴 HTML 로 (파이프 표 포함)
   if (out.success && opts?.htmlTables) {
     out = { ...out, markdown: toHtmlTables(out.markdown), ...(out.pages ? { pages: out.pages.map(p => ({ ...p, markdown: toHtmlTables(p.markdown) })) } : {}) }
+  }
+  // htmlCellLinks: HTML 표 셀의 링크를 <a href> 로 (htmlTables 로 HTML 이 된 표 포함)
+  if (out.success && opts?.htmlCellLinks) {
+    out = { ...out, markdown: htmlCellLinks(out.markdown), ...(out.pages ? { pages: out.pages.map(p => ({ ...p, markdown: htmlCellLinks(p.markdown) })) } : {}) }
   }
   return out
 }

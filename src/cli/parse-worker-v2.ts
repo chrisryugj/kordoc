@@ -41,6 +41,7 @@ const modelFileSchema = z.object({ path: z.string(), sha256: z.string() }).stric
 const optionsSchema = z.object({
   tableFormat: z.literal("gfm"),
   htmlTables: z.boolean(),
+  htmlCellLinks: z.boolean(),
   layoutTables: z.enum(["visual", "keep"]),
   classifyTables: z.boolean(),
   tables: z.boolean(),
