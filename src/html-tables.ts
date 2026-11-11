@@ -9,13 +9,19 @@ const TABLE_TAG = /(<\/?(?:table|tr|th|td)\b[^>]*>)/i
 const KORDOC_IMG = String.raw`<img src="(?:images\/(?:[^"'<>\/\s]+\/)?)?image_\d+\.(?:png|jpe?g|gif|webp|bmp)" alt="image">`
 const KEEP_TAG = new RegExp(String.raw`((?<!\\)<br>|(?<!\\)<\/?(?:u|sup|sub)>|(?<!\\)${KORDOC_IMG})`, "i")
 
-/** 파이프 칸 글 → HTML 칸 글: Markdown 이스케이프를 풀고 &·<·> 를 이스케이프하되 kordoc 이 칸에 넣는 태그는 둔다 */
+const escapeText = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+
+/**
+ * 파이프 칸 글 → HTML 칸 글: Markdown 이스케이프를 풀고 &·<·> 를 이스케이프하되 kordoc 이 칸에 넣는 태그는 둔다.
+ * 자동 링크 <주소>(QR 값)는 꺾쇠를 걷어 주소 글로 — 자동 링크 안은 이스케이프가 없고, 칸 구분자 \| 만 GFM 이 칸을 나눌 때 푼다
+ */
 function pipeCellToHtml(cell: string): string {
   return cell
     .split(KEEP_TAG)
     .map((part, i) => i % 2 ? part : part
-      .replace(/\\([\\`*_{}[\]()#+\-.!|~<>$])/g, "$1")
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
+      .split(/(?<!\\)<(https?:\/\/[^\s<>]*)>/i)
+      .map((seg, k) => escapeText(k % 2 ? seg.replace(/\\\|/g, "|") : seg.replace(/\\([\\`*_{}[\]()#+\-.!|~<>$])/g, "$1")))
+      .join(""))
     .join("")
 }
 

@@ -2,7 +2,8 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
 import MarkdownIt from "markdown-it"
-import { blocksToMarkdown, parse } from "../src/index.js"
+import { blocksToMarkdown, markdownToHwpx, parse } from "../src/index.js"
+import { toHtmlTables } from "../src/html-tables.js"
 import { encodePng } from "../src/image/transcode.js"
 import { imagePixelCount } from "../src/qr.js"
 import type { IRBlock } from "../src/types.js"
@@ -80,8 +81,8 @@ describe("QR 코드 읽기 (#187, qrCodes)", () => {
     assert.deepEqual(offFalse, off)
     assert.deepEqual(qrOf(off.blocks), [])
     assert.deepEqual(qrOf(on.blocks), [[URL_]])
-    assert.ok(on.markdown.includes(`![image](image_001.png)\n${URL_}\n`), on.markdown)
-    assert.equal(on.markdown.replace(`\n${URL_}`, ""), off.markdown)
+    assert.ok(on.markdown.includes(`![image](image_001.png)\n<${URL_}>\n`), on.markdown)
+    assert.equal(on.markdown.replace(`\n<${URL_}>`, ""), off.markdown)
     // images: false — DOCX·PPTX 는 이때 그림 파일을 안 읽었다. QR 을 켜면 읽고 바이트만 뗀다
     const noImages = await parse(buf, { qrCodes: true, images: false })
     assert.ok(noImages.success)
@@ -98,7 +99,7 @@ describe("QR 코드 읽기 (#187, qrCodes)", () => {
     ] } })
     // 값 안 줄바꿈(명함 vCard)도 칸을 깨지 않는다
     const gfm = blocksToMarkdown([table(1)], { tableFormat: "gfm" })
-    assert.ok(gfm.includes(`![image](image_001.png)<br>${URL_}<br>BEGIN:VCARD<br>N:Kim<br>END:VCARD |`), gfm)
+    assert.ok(gfm.includes(`![image](image_001.png)<br><${URL_}><br>BEGIN:VCARD<br>N:Kim<br>END:VCARD |`), gfm)
     assert.ok(blocksToMarkdown([table(2)]).includes(`<img src="image_001.png" alt="image"><br>${URL_}<br>BEGIN:VCARD<br>N:Kim<br>END:VCARD`))
   })
 
@@ -107,13 +108,38 @@ describe("QR 코드 읽기 (#187, qrCodes)", () => {
     const md = blocksToMarkdown([{ type: "paragraph", text: "앞" }, { type: "image", text: "image_001.png", qr }, { type: "paragraph", text: "뒤" }])
     assert.ok(md.includes([
       "![image](image_001.png)", "BEGIN:VCARD", "N:홍길동", "\\# 제목", "\\- 항목", "END:VCARD",
-      "\\- 목록", "\\+ 목록", "\\> 인용", "1\\. 번호", "1\\) 번호", "\\===", "\\---", URL_,
+      "\\- 목록", "\\+ 목록", "\\> 인용", "1\\. 번호", "1\\) 번호", "\\===", "\\---", `<${URL_}>`,
     ].join("\n") + "\n\n뒤"), md)
     // GFM 파서로 읽어도 문단 셋(앞·그림+값·뒤)뿐이고 값 글자는 그대로다
     const tokens = new MarkdownIt({ html: true }).parse(md, {})
     assert.deepEqual(tokens.map(t => t.type), Array(3).fill(["paragraph_open", "inline", "paragraph_close"]).flat())
     const html = new MarkdownIt({ html: true }).render(md)
     for (const v of ["- 목록", "+ 목록", "&gt; 인용", "1. 번호", "1) 번호", "===", "---", "# 제목", "- 항목"]) assert.ok(html.includes(v), v)
+  })
+
+  it("http(s) 주소 값은 GFM 자동 링크 <…> — 링크 주소에 이스케이프 \\ 가 섞이지 않는다", () => {
+    const url = "https://m.site.kr/~user/_next/v?id=1|2&x=*y*", qr = [url, "javascript:alert(1)"]
+    const line = blocksToMarkdown([{ type: "image", text: "image_001.png", qr }])
+    const cell = blocksToMarkdown([{ type: "table", table: { rows: 1, cols: 2, hasHeader: false, cells: [[
+      { text: "안내", colSpan: 1, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1, blocks: [{ type: "image", text: "image_001.png", qr }] },
+    ]] } }], { tableFormat: "gfm" })
+    for (const md of [line, cell]) {
+      const links = new MarkdownIt().parse(md, {}).flatMap(t => t.children ?? []).filter(t => t.type === "link_open")
+      assert.deepEqual(links.map(t => decodeURI(t.attrGet("href")!)), [url], md)
+      assert.ok(!md.includes("<javascript:"), md)
+    }
+  })
+
+  it("후속 처리 — htmlTables·마크다운→HWPX 는 주소 글만(꺾쇠 없음)", async () => {
+    const md = (await parse(await docxWithQr(), { qrCodes: true })).markdown
+    const xml = await (await JSZip.loadAsync(await markdownToHwpx(md))).file("Contents/section0.xml")!.async("string")
+    assert.ok(xml.includes(`>${URL_}<`) && !xml.includes("&lt;http"), xml)
+    const cell = (blocks: IRBlock[]) => ({ text: "", colSpan: 1, rowSpan: 1, blocks })
+    const gfm = blocksToMarkdown([{ type: "table", table: { rows: 1, cols: 2, hasHeader: false, cells: [[cell([{ type: "paragraph", text: "안내" }]), cell([{ type: "image", text: "image_001.png", qr: [URL_ + "?a=1|2"] }])]] } }], { tableFormat: "gfm" })
+    // GFM 표 셀 안 URL 의 | 는 %7C (remark 는 링크 안의 \| 를 풀지 않는다)
+    assert.ok(gfm.includes(`<${URL_}?a=1%7C2>`), gfm)
+    const html = toHtmlTables(gfm)
+    assert.ok(html.includes(`${URL_}?a=1%7C2`) && !html.includes("&lt;http"), html)
   })
 
   it("그림 화소 수는 헤더로 — 상한을 넘는 그림은 디코딩하지 않는다", () => {
@@ -133,8 +159,8 @@ describe("QR 코드 읽기 (#187, qrCodes)", () => {
       if (!off.success || !on.success) return
       assert.deepEqual(qrOf(off.blocks), [])
       assert.deepEqual(qrOf(on.blocks), [[URL_]])
-      assert.ok(on.markdown.includes(`![image](image_001.png)\n${URL_}`), on.markdown)
-      assert.equal(on.markdown.replace(`\n${URL_}`, ""), off.markdown)
+      assert.ok(on.markdown.includes(`![image](image_001.png)\n<${URL_}>`), on.markdown)
+      assert.equal(on.markdown.replace(`\n<${URL_}>`, ""), off.markdown)
     }
   })
 })

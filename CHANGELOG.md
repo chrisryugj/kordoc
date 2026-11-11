@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- 본문 URL 이 마크다운 뷰어에서 틀린 주소로 열렸다. `~`·`_`·`*` 앞에 넣은 이스케이프 `\` 가 GFM 자동 링크의 주소에 그대로 들어갔다(`http://a.kr/\~u` → href `http://a.kr/%5C~u`). GFM 이 링크로 인식하는 URL 은 이스케이프하지 않는다. 인식 조건은 GitHub(cmark-gfm)과 같다: `http(s)://` 는 앞이 영문자가 아닐 때, `www.` 는 줄 맨 앞·공백·`(` 뒤의 소문자일 때, 호스트에 `_` 가 없고 링크 텍스트 `[…](` 밖일 때. 원문이 `<…>` 나 따옴표로 감싼 URL 은 이전처럼 이스케이프한다. GFM 표 셀 안 URL 의 `|` 는 `%7C` 로 쓴다(remark 는 링크 안의 `\|` 를 풀지 않는다)
+- QR 값(`qrCodes`)이 http(s) URL 하나면 자동 링크 `<URL>` 로 낸다. 값 전체가 링크라 끝의 `.`·`*` 도 들어간다. `htmlTables` 로 HTML 표가 되면 꺾쇠 없는 URL 텍스트다
+- 마크다운→HWPX 가 본문 URL 을 기울임 등 강조로 해석했다(`https://a.kr/_x_/`). URL 은 텍스트 그대로 넣고, 자동 링크 `<URL>` 은 하이퍼링크로 넣는다(꺾쇠까지 텍스트로 들어갔다). 라운드트립 역변환(`unescapeGfm`)은 자동 링크를 URL 로 푼다
+- 위 세 건 검증: 실제 문서 4,395개(HWP·HWPX 3,533 · PDF 862) 중 바뀐 문서 27개(ODL 200 은 0), 바뀐 88줄은 URL 속 `\` 만 빠진다. GitHub·markdown-it·marked·remark-gfm 렌더에서 주소에 `\` 가 든 링크 88 → 0. 마크다운→HWPX→마크다운에서 URL 247개 그대로
+
 ## [4.24.62] - 2026-11-11
 
 ### Fixed
