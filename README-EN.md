@@ -119,14 +119,14 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
 | HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.21%** · exact **69/232** · text **264/264** · 80 documents checked side by side in Hangul |
-| PDF text | 744 pairs | Character recall **99.885%** · precision **99.682%** · reading order **99.363%** · word-boundary F1 **99.103%** |
+| PDF text | 744 pairs | Character recall **99.885%** · precision **99.682%** · reading order **99.363%** · word-boundary F1 **99.108%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 65 tables | CER **0.0237** · character recall **99.33%** · table structure **33/65** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.906** by default · tables **0.915** · handwriting **0.921** · order **0.914** · heading recall 0.930 (4.24.65) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.906** by default · tables **0.915** · handwriting **0.921** · order **0.914** · heading recall 0.930 (4.24.66) |
 | opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.967** with `ocr: true` · 0.939 with OCR off (4.22.14) |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.65](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.65)** · 2026-11-12
+Latest release: **[4.24.66](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.66)** · 2026-11-12
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.66 | OCR: row rules next to filled columns and faint column rules · PDF word spacing (rounded-coordinate spaces, "영 및 이", wrapped statute citations) | KoOCR-Bench 0.90568 → **0.90590** · PDF text word-boundary F1 99.103% → **99.108%** · no per-document drops on in-house benchmarks |
 | 4.24.65 | OCR figure text: forest-plot panels and the number-at-risk table under survival curves were emitted as tables and paragraphs | KoOCR-Bench 0.90517 → **0.90568** (text 0.861 → **0.864**) · no per-document drops on in-house benchmarks |
 | 4.24.64 | Official-document HWPX "-" items indented four spaces became Markdown code blocks · PDF formula OCR: norms read as `||x||` become `\|x\|` · OCR: row rules of dark header columns | formula OCR exact 0.615 → **0.617** (report only) · no per-document drops on in-house benchmarks |
 | 4.24.63 | Body URLs and QR URLs open the original address in Markdown viewers; `htmlCellLinks` option (off by default) emits `<a href>` in HTML table cells (#204) · OCR: row boundaries of dark-filled header columns | no per-document drops on in-house benchmarks · KoOCR-Bench 0.90517 unchanged |
 | 4.24.62 | HWPX generated without a template was missing `version.xml` (#207) · PDF/OCR: a page title and a lone bottom line were grouped and read before the tables between them · OCR: glyph boxes that bit into fragments of neighbouring lines | KoOCR-Bench 0.90509 → **0.90517** (order 0.913 → **0.914**) · OCR robust skew-2 CER 0.0475 → **0.0463** · no per-document drops on in-house benchmarks |
-| 4.24.61 | OCR: fake vertical rules formed by glyph strokes split table columns · OCR: line boxes covering two lines were misread · MiniCPM-OCR OcrProvider example (#205) | KoOCR-Bench 0.90439 → **0.90509** (tables 0.913 → **0.915**) · in-house OCR table structure 32 → **33**/65 |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

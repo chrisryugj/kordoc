@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.66: OCR rules next to filled columns · PDF word spacing · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90568 → **0.90590** (tables 0.91464 → 0.91507 — a recruitment-result table TEDS 0.706 → 0.786, a statistics table 0.695 → 0.733, no drops). PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99103 → **0.99108** (13 documents up, none down); ODL 200 default, best, fast and OCR: one document up. No per-document drops on in-house OCR, OCR robust, tables, annex tables or score.
+
+- Rejected: adding isolated vertical rules (rows merged in open form tables without outer verticals — a building-permit form CER 6.3% → 16.3%), applying the rounded-space rule to every space item (zero-width spaces in math PDFs and spaces before superscripts — 6 ODL and 3 in-house documents down).
+- Left as ground-truth limits: ODL 184 footnotes (text-line strip images), 197 (ground truth makes a one-column list a 1×2 table), 122 (garbled ground-truth glyphs), 200 (ground-truth rowspan differs from the page), 165 (formulas drawn as glyph outlines).
+
 ## 4.24.65: OCR figure text (forest plots, number-at-risk tables) · 2026-11-12
 
 External KoOCR-Bench v2.0c, 877 public pages: 0.90517 → **0.90568** (text 0.86118 → 0.86376 — drug-label forest-plot pages CER 1.0 → 0.0 and 1.0 → 0.547, a survival-curve page 0.437 → 0.034, no drops). No per-document drops on in-house OCR, OCR robust or ODL-OCR.
