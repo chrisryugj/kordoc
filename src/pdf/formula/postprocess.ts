@@ -7,6 +7,7 @@
  * 4) \cmd 뒤 영문자 공백 분리 (\cdotd → \cdot d, \timesd → \times d)
  * 5) isTrivialFormula — 다이어그램 단일 글자/반복/장식 오탐 제거
  * 6) 짝 없는 \left·\right 제거 (Pix2Text fix_latex) — 남으면 KaTeX 등이 수식 전체를 못 그린다
+ * 7) 막대 둘 노름 ||x|| → \|x\|
  */
 
 const TRAILING_WHITESPACE_CMDS = [
@@ -32,6 +33,8 @@ export function postProcessLatex(latex: string): string {
   s = stripUnpairedLeftRight(s)
   s = fixLatexSpacing(s)
   s = normalizeFormulaSpacing(s)
+  // 디코더 원문은 토큰 사이가 띄어져 있다("| | a | |") — 공백을 정리한 뒤에
+  s = doubleBarNorms(s)
   s = s.trim()
   // 길이 한도에서 잘린 인식 결과는 홑 역슬래시로 끝나기도 한다(…\tau} 뒤에 \ 하나) — 감싼 "$$" 의 "$" 를 이스케이프해 수식 스팬이
   // 닫히지 않고 식 전체가 마크다운 이스케이프됐다(U_{h} 가 U\_{h}). 짝 없는 끝 역슬래시는 LaTeX 로도 무효라 뗀다
@@ -39,6 +42,14 @@ export function postProcessLatex(latex: string): string {
   // trivial 이면 빈 문자열 반환 — 상위(pipeline/parser) 에서 latex.trim() 비었을 때 skip.
   if (isTrivialFormula(s)) return ""
   return s
+}
+
+/**
+ * 노름 이중 막대 — 인식기는 `\|x\|` 를 막대 둘 `||x||` 로도 낸다(수식 정답지 30번). 안에 막대가 없는 `||…||` 짝만 `\|…\|` 로 —
+ * 절댓값 곱 `|a||b|` 는 `||` 가 하나뿐이라 그대로
+ */
+export function doubleBarNorms(s: string): string {
+  return s.replace(/(?<![\\|])\|\|([^|]+?)(?<!\\)\|\|(?!\|)/g, "\\|$1\\|")
 }
 
 /**

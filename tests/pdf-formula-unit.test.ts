@@ -18,6 +18,7 @@ import {
   hasHighRepetition,
   mergeContinuationLines,
   dropNestedDisplays,
+  doubleBarNorms,
 } from "../src/pdf/formula/postprocess.js"
 import { __internal } from "../src/pdf/formula/detector.js"
 import { repeatingTail } from "../src/pdf/formula/recognizer.js"
@@ -585,3 +586,18 @@ describe("lineBands — 여러 줄 정렬식 줄 띠", () => {
   })
 })
 
+
+describe("doubleBarNorms", () => {
+  it("막대 둘로 읽은 노름을 \\| 로", () => {
+    assert.equal(doubleBarNorms("\\int||a(s)||_{op}ds"), "\\int\\|a(s)\\|_{op}ds")
+    assert.equal(doubleBarNorms("(||W||^{2})"), "(\\|W\\|^{2})")
+  })
+  it("디코더 원문(토큰 사이 공백)도 postProcessLatex 에서 바뀐다", () => {
+    assert.equal(postProcessLatex("\\int _ { 0 } ^ { t } | | a ( s ) | | _ { o p } d s"), "\\int_{0}^{t}\\|a(s)\\|_{op}ds")
+  })
+  it("절댓값 곱 |a||b| 와 이미 \\| 인 노름은 그대로", () => {
+    assert.equal(doubleBarNorms("|a||b|"), "|a||b|")
+    assert.equal(doubleBarNorms("\\|x\\|"), "\\|x\\|")
+    assert.equal(doubleBarNorms("1-|x||y|+||z||"), "1-|x||y|+\\|z\\|")
+  })
+})
