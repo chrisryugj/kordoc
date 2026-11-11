@@ -63,7 +63,7 @@ def fault(mode: str, **env: str) -> dict:
 
 
 SNAKE = {
-    "tableFormat": "table_format", "htmlTables": "html_tables", "layoutTables": "layout_tables",
+    "tableFormat": "table_format", "htmlTables": "html_tables", "htmlCellLinks": "html_cell_links", "layoutTables": "layout_tables",
     "classifyTables": "classify_tables", "scriptTags": "script_tags", "removeHeaderFooter": "remove_header_footer",
     "dedupeRunningHeaders": "dedupe_running_headers", "keepTrailingEmptyCols": "keep_trailing_empty_cols",
     "keepEmptyParagraphs": "keep_empty_paragraphs", "includeFieldPlaceholders": "include_field_placeholders",

@@ -127,6 +127,17 @@ function profileColWidths(tp: TableRemap | null, colCnt: number): number[] | nul
 const CELL_PAD = 1200
 
 /** GFM 셀 표시문자 — XML 방출과 같은 인라인 파서. 이미지는 별도 pic run이라 폭에서 제외. */
+/** HTML 칸 줄의 링크 [글](주소) — 파서가 칸 글에 넣는 꼴, htmlCellInnerToLines 가 <a href> 를 되돌린 꼴 */
+const HTML_CELL_LINK = /(?<!!)(\[[^[\]\n]*\]\((?:https?:|mailto:|tel:|#)[^)\s]*\))/gi
+const escapeMarkdown = (s: string): string => s.replace(/[\\`*_{}[\]()#+\-.!|~<>$]/g, "\\$&")
+
+/** HTML 칸 줄 → 런. 칸 글은 마크다운이 아니라 링크만 하이퍼링크로, 나머지는 글 그대로 */
+function htmlCellRuns(text: string, charPr: number): string {
+  const parts = text.split(HTML_CELL_LINK)
+  if (parts.length === 1) return `<hp:run charPrIDRef="${charPr}"><hp:t>${escapeTextXml(text)}</hp:t></hp:run>`
+  return generateRuns(parts.map((p, i) => i % 2 ? p.replace(/^\[([^[\]\n]*)\]/, (_, l: string) => `[${escapeMarkdown(l)}]`) : escapeMarkdown(p)).join(""), charPr)
+}
+
 function markdownCellLines(text: string): string[] {
   return text.split(/<br\s*\/?>/i).map((seg) => {
     // 평문은 인라인 파서의 모든 전처리·강조·링크 패턴과 무관하다.
@@ -646,7 +657,7 @@ export function generateHtmlTableXml(rawHtml: string, theme: ResolvedTheme, tota
       }
       // 이미지 참조만으로 구성된 라인은 텍스트 문단 생략 — 아래 pic 문단이 대체
       if (!images || text.trim() || picUrls.length === 0) {
-        paras.push(`<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0"><hp:run charPrIDRef="${charPrId}"><hp:t>${escapeTextXml(text)}</hp:t></hp:run></hp:p>`)
+        paras.push(`<hp:p paraPrIDRef="${paraPrId}" styleIDRef="0">${htmlCellRuns(text, charPrId)}</hp:p>`)
       }
     }
     // 텍스트 조각·중첩표를 원문 배치 순서대로 방출 (#49) — 종전 텍스트 전량 선방출은

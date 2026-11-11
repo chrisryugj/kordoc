@@ -82,6 +82,8 @@ kordoc processes untrusted binary files. The following defenses are in place:
 - HTML table-cell text escaped; Chromium printing/rendering disables JavaScript and external requests
 - `htmlTables` output keeps only kordoc's own `<br>`, `<u>`, `<sup>`, `<sub>` and image tags in cells. Any
   other tag from a document, such as `<img onerror>`, is escaped
+- `htmlCellLinks` (off by default) adds `<a href>` in HTML table cells only for `http:`, `https:`, `mailto:`,
+  `tel:` and `#` addresses; the attribute value is escaped and the print renderer allows only that form
 - Markdown output escapes link syntax written in document text. `[x](javascript:…)` and `[x]: url`
   definitions do not become links. Code-span fences are longer than any backtick run inside them
 - Layout HTML (`render --format html`) carries a Content-Security-Policy that forbids scripts and external loads

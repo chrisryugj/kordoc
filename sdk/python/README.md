@@ -65,7 +65,7 @@ asyncio.run(main())
 
 키워드 인자로 줍니다. 빼면 엔진 기본값이고, `False` 를 주면 실제로 끕니다(`ocr=False` 는 OCR 끔).
 
-`table_format`(`"gfm"`) · `html_tables` · `layout_tables`(`"visual"`·`"keep"`) · `classify_tables` · `tables` · `plain` · `script_tags` ·
+`table_format`(`"gfm"`) · `html_tables` · `html_cell_links` · `layout_tables`(`"visual"`·`"keep"`) · `classify_tables` · `tables` · `plain` · `script_tags` ·
 `remove_header_footer` · `dedupe_running_headers` · `keep_trailing_empty_cols` · `keep_empty_paragraphs` · `include_field_placeholders` ·
 `pages`(`"1-3"` 또는 `[1, 3]`) · `images` · `inline_images` · `qr_codes` · `image_format`(`"png"`·`"webp"`) · `image_placement`(`"page-end"`·`"flow"`) · `drop_blank_images` · `ocr`(`True`·`False`·`"force"`) · `formula_ocr` · `password` ·
 `ocr_lines`(`True`·`"all"`) · `ocr_det`(`"mobile"`·`"server"`·`OcrModelFile`) · `ocr_det_long_side` · `ocr_rec`(`"handwriting"`·`"auto"`·`OcrModelFile`) · `ocr_rec_dict`(`OcrModelFile`)

@@ -1,7 +1,7 @@
 /** 2-pass colSpan/rowSpan 테이블 빌더 및 Markdown 변환 */
 
 import type { CellContext, IRBlock, IRCell, IRSpan, IRTable } from "../types.js"
-import { sanitizeHref, escapeHtml } from "../utils.js"
+import { sanitizeHref, escapeHtml, BARE_URL, isGfmUrl } from "../utils.js"
 import { mapPuaText } from "../shared/pua.js"
 
 /** 테이블 열 수 상한 — 한국 공공문서 기준 충분한 값 */
@@ -222,6 +222,20 @@ function escapeItemHead(text: string): string {
   return text.replace(/^([-+*])(?=\s|$)/, "\\$1").replace(/^(\d{1,9})([.)])(?=\s|$)/, "$1\\$2").replace(/^>/, "\\>")
 }
 
+/** GFM 표 셀 안의 URL·링크 주소 — | 를 %7C 로 쓸 범위 */
+const CELL_URL = new RegExp(String.raw`(?:(?<![A-Za-z])https?:\/\/|(?<![^\s(])www\.)[^\s<>\\[\]()]+`, "gi")
+
+/**
+ * GFM 표 셀 마크다운 — 줄바꿈은 <br>, 파이프는 \| (코드 span 등 escapeGfm 밖의 파이프만, 이중 이스케이프 방지).
+ * URL 속 | 는 %7C — 링크 안의 \| 를 remark(micromark)는 풀지 않아 주소에 \ 가 남는다. 라운드트립 GFM 표 재현과 공용
+ */
+export function gfmCellMarkdown(text: string): string {
+  return text.replace(/\r\n|\r|\n/g, "<br>").replace(CELL_URL, u => u.replace(/\|/g, "%7C")).replace(/(?<!\\)\|/g, "\\|")
+}
+
+/** escapeGfm 이 이스케이프하지 않는 스팬 — 그림 참조·링크 주소·수식, 맨 http(s) 주소(1번 묶음) */
+const GFM_PROTECTED = new RegExp(/!\[[^\]<>\n]*\]\([^)\s<>"'\x60:]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\s<>"'\x60]*\)|(?<!\\)\$\$(?:\\[\s\S]|[^\\$])*\$\$|(?<!\\)\$(?:\\[^\n]|[^\\$\n])*\$/.source + `|(${BARE_URL})`, "gi")
+
 /**
  * 마크다운 GFM 특수문자 이스케이프 — remark-gfm 오해석 방지. 라운드트립(markdown-units)이 표 재현
  * 드리프트 검사에 같은 함수를 쓰는 SSOT — 규칙을 바꾸면 그쪽 역변환(unescapeGfm·unescapeGfmCell)도
@@ -244,9 +258,11 @@ export function escapeGfm(text: string): string {
   // 스킴 한정 — 우연한 "[라벨](식별자)" 평문은 제외)도 동일 보호 — _ 이스케이프 시 문법 파괴.
   // 보호는 공백·<>"'` 없는 목적지만 (sanitizeHref 가 인코딩해 내는 모양) — 종전 [^)\n]* 는 문서 글
   // "](https://a <img src=x onerror=…>)" 의 날 태그까지 통째 보호해 이스케이프를 비켜 갔다 (v4.14.4 리뷰 재현)
+  // 글 속 맨 http(s) 주소도 GFM 이 링크로 잡는 만큼 보호 — 자동 링크 안 \ 는 글자라 "https://a.kr/\~u" 가 주소에 \ 를 넣었다
   const NUL = String.fromCharCode(0) // 마크다운 본문에 없는 안전한 필러 (소스에 raw NUL 미기입)
   const spans: string[] = []
-  const masked = text.replace(/!\[[^\]<>\n]*\]\([^)\s<>"'\x60:]*\)|\]\((?:https?:|mailto:|tel:|#)[^)\s<>"'\x60]*\)|(?<!\\)\$\$(?:\\[\s\S]|[^\\$])*\$\$|(?<!\\)\$(?:\\[^\n]|[^\\$\n])*\$/gi, (m) => {
+  const masked = text.replace(GFM_PROTECTED, (m: string, url: string | undefined, at: number, s: string) => {
+    if (url && !isGfmUrl(url, s, at + url.length)) return m
     spans.push(m)
     return NUL + (spans.length - 1) + NUL
   })
@@ -846,20 +862,33 @@ export function hasInlineCellBlocks(cell: IRCell): boolean {
 }
 
 /**
+ * 값 전체가 http(s) 주소 하나인 QR 값의 주소 — 마크다운 자동 링크 `<주소>` 로 낸다. 맨 주소면 GFM 이 링크 밖으로
+ * 떼는 끝 글자(. * _ ~ 등)까지 링크에 넣는다. 다른 스킴(javascript: 등)은 null — 글로 둔다
+ */
+function qrUrl(value: string): string | null {
+  const v = value.trim()
+  return /^https?:\/\/[^\s<>\x00-\x1f\x7f]+$/i.test(v) ? v : null
+}
+
+/**
  * 표 밖 QR 값의 줄들(#187) — 그림 자리 문단의 이어지는 줄로 남긴다. 값의 줄 경계(Python splitlines 와 같은 문자)마다
  * 한 줄, 앞뒤 공백을 걷고 빈 줄은 뺀다(빈 줄은 문단을 끝낸다). 문단을 끊는 줄머리 표지는 \ 로 지운다:
  * 목록 "- "·"+ "·"1. "·"1) ", 인용 ">", setext 밑줄 "==="·"---" (#·*·_·`·~·<·| 는 escapeGfm 이 맡는다)
  */
 function qrLines(value: string): string[] {
+  const url = qrUrl(value)
+  if (url) return [`<${url}>`]
   return value.split(/\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]/).map(l => l.trim()).filter(Boolean).map(l => escapeGfm(l)
     .replace(/^(?:[-+](?=[ \t]|$)|>|(?=(?:=+|-+)[ \t]*$))/, m => "\\" + m)
     .replace(/^(0{0,8}1)([.)])(?=[ \t]|$)/, "$1\\$2"))
 }
 
 function cellBlockToMarkdown(b: IRBlock): string {
-  return b.type === "image" && b.text
-    ? `![image](${b.text})` + (b.qr ?? []).map(v => "<br>" + escapeGfm(v).replace(/\r?\n/g, "<br>")).join("")
-    : b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b))
+  if (b.type === "image" && b.text) return `![image](${b.text})` + (b.qr ?? []).map(v => {
+    const url = qrUrl(v)
+    return "<br>" + (url ? `<${url}>` : escapeGfm(v).replace(/\r?\n/g, "<br>"))
+  }).join("")
+  return b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b))
 }
 
 export function cellToMarkdown(cell: IRCell, separator: string): string {
@@ -992,10 +1021,9 @@ function pipeTable(table: IRTable, cellText: (cell: IRCell) => string, rowSpanFi
       // 왕복 채널 셀 spans (v4.0.4) — 강조 마커 재방출 (문단별, 개행은 <br> 규약).
       // 이미지 블록이 있는 셀도 blocks 순서대로 직렬화 — text 평탄화에 참조가 없어도 `![image](src)` 가 남는다 (#76)
       // 문단 안 줄바꿈(span 글의 \n)도 <br> — 종전엔 blocks 경로만 빠져 GFM 행이 칸 중간에서 끊겼다(issue6143 5×2 → 3×2)
-      const cellMd = (text: string) => text.replace(/\r\n|\r|\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|") // 코드 span 등 escapeGfm 밖의 파이프만 (이중 이스케이프 방지)
       const text = cellText(cell)
-      display[r][c] = cellMd(text)
-      const fill = rowSpanFill ? cellMd(rowSpanFill(cell, text)) : ""
+      display[r][c] = gfmCellMarkdown(text)
+      const fill = rowSpanFill ? gfmCellMarkdown(rowSpanFill(cell, text)) : ""
 
       // colSpan/rowSpan: 병합된 열은 빈 칸으로 유지 (텍스트 중복 방지)
       for (let dr = 0; dr < cell.rowSpan; dr++) {

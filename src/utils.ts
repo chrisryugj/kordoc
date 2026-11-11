@@ -192,6 +192,44 @@ export function sanitizeHref(href: string): string | null {
 }
 
 /**
+ * 본문 URL 후보 — GFM 확장 자동 링크(cmark-gfm)와 같은 시작 조건: http(s):// 는 앞이 영문자가 아닐 때("xhttps:" 는 링크가 아니다),
+ * www. 는 줄 맨 앞이나 공백·"(" 뒤일 때. escapeGfm 은 링크가 될 URL 을 이스케이프하지 않고(자동 링크 안의 \ 는 글자로 읽혀 주소에 섞인다),
+ * md-runs 는 강조로 읽지 않는다
+ */
+export const BARE_URL = String.raw`(?:(?<![A-Za-z])https?:\/\/|(?<![^\s(])www\.)[^\s<>\\[\]\x00]+`
+const LINK_LABEL_REST = /[^[\]\n]*\]\(/y
+
+/**
+ * URL 후보(`text` 의 `end` 앞에서 끝남)를 GFM 이 링크로 읽는지 — 호스트에 _ 등이 섞이거나, 링크 텍스트 "[ … ](" 안이거나,
+ * 대문자 "WWW." 면 아니다. 원문이 이미 <…> 나 따옴표로 감싼 URL("<출처: …, https://…>"·xmlns="http://…")도 손대지 않는다.
+ * 후보 전체를 그대로 둔다: GFM 이 링크 밖으로 빼는 끝 문자(?!.,:*_~'" 와 짝 없는 ))는 뒤가 공백이나 텍스트 끝이라 강조를 열지 못하고,
+ * 이스케이프하면 그 \ 가 링크에 붙는다
+ */
+export function isGfmUrl(url: string, text: string, end: number): boolean {
+  const start = end - url.length
+  const line = text.slice(text.lastIndexOf("\n", start - 1) + 1, start)
+  if (/["']$/.test(line) || line.lastIndexOf("<") > line.lastIndexOf(">")) return false
+  LINK_LABEL_REST.lastIndex = end
+  return !LINK_LABEL_REST.test(text) && /^(?:[Hh][Tt][Tt][Pp][Ss]?:\/\/|www\.)[A-Za-z0-9.\-\u0080-\uffff]+(?:[/?#:]|$)/.test(url.slice(0, gfmUrlEnd(url)))
+}
+
+/** GFM 자동 링크의 href — www. 로 시작하면 http:// 를 붙인다 (GitHub 과 같다) */
+export function gfmUrlHref(url: string): string {
+  return /^www\./.test(url) ? "http://" + url : url
+}
+
+/** URL 후보 중 GFM 이 링크로 잡는 길이 — 끝의 ?!.,:*_~'" 와 짝 없는 ) 는 링크 밖 (HTML 로 링크를 낼 때 같은 경계) */
+export function gfmUrlEnd(url: string): number {
+  let n = url.length
+  for (let c = url[n - 1]; `?!.,:*_~'")`.includes(c); c = url[n - 1]) {
+    const head = url.slice(0, n)
+    if (c === ")" && head.split("(").length >= head.split(")").length) break
+    n--
+  }
+  return n
+}
+
+/**
  * HTML 엔티티 이스케이프 — 글은 `& < >`, 속성값(attr)은 `"` 까지. HTML 표 경로(builder tableToHtml)와
  * 인쇄 렌더러가 같이 쓰는 한 벌. 읽는 쪽은 unescapeHtml 로 푼다
  */

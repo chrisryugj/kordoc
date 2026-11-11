@@ -60,7 +60,7 @@ try (KordocClient client = KordocClient.start(KordocConfig.defaults())) {
 
 `ParseOptions.builder()` 로 줍니다. 지정하지 않으면 엔진 기본값이고, `false` 를 주면 실제로 끕니다(`ocr(false)` 는 OCR 끔).
 
-`tableFormat("gfm")` · `htmlTables` · `layoutTables("visual"|"keep")` · `classifyTables` · `tables` · `plain` · `scriptTags` ·
+`tableFormat("gfm")` · `htmlTables` · `htmlCellLinks` · `layoutTables("visual"|"keep")` · `classifyTables` · `tables` · `plain` · `scriptTags` ·
 `removeHeaderFooter` · `dedupeRunningHeaders` · `keepTrailingEmptyCols` · `keepEmptyParagraphs` · `includeFieldPlaceholders` ·
 `pages("1-3")`·`pages(List.of(1, 3))` · `images` · `inlineImages` · `qrCodes` · `imageFormat("png"|"webp")` · `imagePlacement("page-end"|"flow")` · `dropBlankImages` · `ocr(boolean)`·`ocrForce()` · `formulaOcr` · `password` · `timeout(Duration)` ·
 `ocrLines(boolean)`·`ocrLinesAll()` · `ocrDet("mobile" | "server")`·`ocrDet(OcrModelFile)` · `ocrDetLongSide(int)` · `ocrRec("handwriting")`·`ocrRec(OcrModelFile)` · `ocrRecDict(OcrModelFile)`

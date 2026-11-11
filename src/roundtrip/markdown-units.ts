@@ -9,8 +9,8 @@
  */
 
 import type { IRTable } from "../types.js"
-import { MAX_COLS, MAX_ROWS, cellToMarkdown, escapeGfm, escapeHtmlCellText, hasInlineCellBlocks, noteSuffix, noteTableHtml, sanitizeText, visibleText } from "../table/builder.js"
-import { escapeHtml, unescapeHtml } from "../utils.js"
+import { MAX_COLS, MAX_ROWS, cellToMarkdown, escapeGfm, gfmCellMarkdown, escapeHtmlCellText, hasInlineCellBlocks, noteSuffix, noteTableHtml, sanitizeText, visibleText } from "../table/builder.js"
+import { escapeHtml, gfmUrlEnd, gfmUrlHref, sanitizeHref, unescapeHtml } from "../utils.js"
 import { clampSpan } from "../hwpx/parser-shared.js"
 import { normalizedSimilarity } from "../diff/text-diff.js"
 
@@ -208,8 +208,11 @@ export function normForMatch(text: string): string {
 
 /** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환 — \| \# \< \$ \\ 포함, 없으면 hp:t 에 백슬래시가 샌다) */
 export function unescapeGfm(text: string): string {
-  return text.replace(/\\([~*_`|#<$\\])/g, "$1")
+  return text.replace(AUTOLINK, "$1").replace(/\\([~*_`|#<$\\])/g, "$1")
 }
+
+/** 자동 링크 <http(s) 주소> — 마크다운에는 꺾쇠 없이 주소로 보인다 (QR 값은 <주소> 로 나간다) */
+const AUTOLINK = /(?<!\\)<(https?:\/\/[^\s<>]*)>/gi
 
 /** 스킵 보고용 내용 요약 (최대 80자) */
 export function summarize(text: string): string {
@@ -247,7 +250,7 @@ export function replicateGfmTable(table: IRTable): MappedCell[][] | null {
       if (!cell) continue
       // builder pipeTable 과 같은 칸 글 — 칸 블록의 강조 표지·그림·미기입 누름틀 안내문(뺌)까지 builder 함수 그대로
       display[r][c] = {
-        text: cellToMarkdown(cell, "<br>").replace(/\r\n|\r|\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|"),
+        text: gfmCellMarkdown(cellToMarkdown(cell, "<br>")),
         gridR: r,
         gridC: c,
       }
@@ -313,7 +316,7 @@ export function parseGfmTable(lines: string[]): string[][] {
 
 /** GFM 셀 텍스트 → 평문 */
 export function unescapeGfmCell(text: string): string {
-  return text.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|").replace(/\\([~*_`#<$\\])/g, "$1")
+  return text.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(AUTOLINK, "$1").replace(/\\\|/g, "|").replace(/\\([~*_`#<$\\])/g, "$1")
 }
 
 // ─── HTML 표 — 좌표 추적 렌더 재현 + 파서 ───────────
@@ -506,6 +509,12 @@ export function htmlCellInnerToLines(inner: string): { lines: string[]; hadNonTe
       return ""
     })
   }
+  // htmlCellLinks 가 낸 링크 <a href="H">T</a> → 원래 셀 텍스트: URL 그대로 링크한 것이면 T, 아니면 [T](H).
+  // URL 로 링크하면 끝의 ) . 등은 링크 밖이라, T 가 그런 문자로 끝나면 원래 [T](H) 였다
+  work = work.replace(/<a href="([^"]*)">([\s\S]*?)<\/a>/g, (_, h: string, t: string) => {
+    const text = unescapeHtml(t)
+    return gfmUrlEnd(text) === text.length && sanitizeHref(gfmUrlHref(text)) === unescapeHtml(h) ? t : `[${t}](${h})`
+  })
   const lines = work.split(/<br\s*\/?>/gi).map(s => unescapeHtml(s).trim()).filter(s => s.length > 0)
   return { lines, hadNonText, imgSrcs }
 }

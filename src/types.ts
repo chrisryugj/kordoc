@@ -275,6 +275,9 @@ export interface ParseOptions {
   /** 모든 표를 HTML 로 — 파이프 표도 HTML 표로 옮기고, 표마다 태그를 한 줄씩 들여써 낸다(BeautifulSoup prettify 모양, 첫 행 `<th>`).
    *  HTML 표만 다루는 소비자·채점기용. 기본 false(병합·중첩 없는 표는 GFM 파이프 표) */
   htmlTables?: boolean
+  /** HTML 표 셀의 `[텍스트](URL)`·URL 을 `<a href>` 로 — GFM 은 HTML 블록 안의 마크다운을 해석하지 않아 병합·중첩 표 셀의 링크가 뷰어에서
+   *  눌리지 않는다. 안전한 스킴(http·https·mailto·tel, `#`)만. 기본 false — LLM·RAG 에는 주소를 두 번 싣는 표기라서 */
+  htmlCellLinks?: boolean
   /** `"gfm"`: 모든 표를 HTML 없이 GFM 파이프 표로 — 세로 병합 칸은 덮인 행마다 같은 값, 가로 병합 칸은 시작 칸에만 값, 셀 안 표는 부모 표 뒤 독립 표로 꺼내고
    *  부모·자식 관계를 `<!-- <table id="t2" parent_id="t1" /> -->` 표지로 남긴다(RAG 색인용). `htmlTables` 와 함께 쓸 수 없다. 기본: 병합·중첩 표는 HTML */
   tableFormat?: "gfm"

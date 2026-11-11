@@ -8,7 +8,7 @@ import {
   PARA_NORMAL, PARA_CODE,
   escapeXml, escapeTextXml,
 } from "./gen-ids.js"
-import { sanitizeHref } from "../utils.js"
+import { sanitizeHref, BARE_URL, isGfmUrl } from "../utils.js"
 import { generateEquationXml, latexLikeToEqEdit } from "./equation-generate.js"
 
 // ─── 인라인 문서 컨텍스트 — 하이퍼링크·각주 (v4.5.0) ──
@@ -342,6 +342,7 @@ interface InlineSpan {
 // 인라인 수식 `$…$` (Pandoc tex_math_dollars 규칙) — 여는 $ 뒤·닫는 $ 앞은 공백 아님, 닫는 $ 뒤는 숫자 아님,
 // $$ 는 어느 쪽에도 붙지 않는다. 이스케이프 \$ 는 이미 센티널로 가려져 여닫이가 못 된다. 인라인 코드·링크 대상 `](…)` 이
 // 먼저 서면 그대로 둔다(URL 안 $a$ 보호 — 앵커 글의 수식은 `]` 앞이라 그대로 잡힌다).
+const BARE_URL_IN_MARKDOWN = new RegExp("`[^`]+`|\\]\\([^)]*\\)|<(https?:\\/\\/[^\\s<>\\x00]*)>|(" + BARE_URL + ")", "gi")
 const INLINE_MATH_REGEX = /`[^`]+`|\]\([^)]*\)|(?<!\$)\$(?![\s$])([^$\n]*?[^\s$])\$(?![\d$])/g
 /** 수식 센티널 \x00mN\x00 — 앞 이스케이프 센티널(\x00N\x00)의 닫는 \x00 에 'mN' 글이 이어진 꼴은 제외 */
 const MATH_SENTINEL = /(?<!\x00\d+)\x00m(\d+)\x00/
@@ -354,6 +355,17 @@ export function parseInlineMarkdown(text: string): InlineSpan[] {
   text = text.replace(/\x00/g, "").replace(/\\([\\`*_{}[\]()#+\-.!|<>~$])/g, (_, c: string) => {
     literals.push(c)
     return `\x00${literals.length - 1}\x00`  // 인덱스 내장 — 전처리가 일부 구간을 버려도 정렬 유지
+  })
+  // 맨 http(s) 주소(GFM 자동 링크)도 글자로 — escapeGfm 이 이스케이프하지 않고 내는 "https://a.kr/_x_/" 를 강조로 읽지 않는다.
+  // 자동 링크 <주소>(QR 값 등)는 [주소](주소) 링크로 — 꺾쇠가 글에 남지 않는다. 인라인 코드·링크 대상 `](…)` 은 그대로
+  text = text.replace(BARE_URL_IN_MARKDOWN, (m: string, auto: string | undefined, url: string | undefined, at: number, s: string) => {
+    if (auto) {
+      literals.push(auto)
+      return `[\x00${literals.length - 1}\x00](${sanitizeHref(auto)})`
+    }
+    if (!url || !isGfmUrl(url, s, at + url.length)) return m
+    literals.push(url)
+    return `\x00${literals.length - 1}\x00`
   })
   // 인라인 수식(opt-in) — 강조·링크 정규식보다 먼저 센티널로 떼어 낸다(수식 안 _·*·[ 보호). 강조 플래그는 span 분할로 물려받는다
   const maths: string[] = []
