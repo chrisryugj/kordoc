@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.64: official-document "-" items, formula norms, OCR filled-column rules · 2026-11-11
+
+Formula OCR ground truth (20 arXiv papers, 621 pages, report only, run alone): exact 0.615 → **0.6171**, meanNED 0.0366 → 0.0365, nedAll 0.0582 → 0.0581, BLEU-4 0.9021 → 0.9022, recall and precision unchanged; 7 pairs improved, none worse. The official-document "-" item output change: no per-document drops on score 5,465, roundtrip 75, generation repro 5, formats 146 and annexes 544. OCR filled-column rules: KoOCR-Bench 0.90517 unchanged (pass-roster table 0.703 → 0.706); no drops on in-house OCR, OCR robust or ODL-OCR.
+
+- Held back: adding isolated OCR rule lines (tables 0.9146 → 0.9156, KoOCR 0.90566) still drops a weather table and the pass-roster table.
+
 ## 4.24.63: URL links (#204), OCR dark header columns · 2026-11-11
 
 #204 (body URLs, QR URLs, `htmlCellLinks` option) was merged onto the previous main and compared per document against main on score 5,465, PDF text 744, PDF tables 730, ODL 200 (default, HTML tables, OCR off), annexes 544, formats 146, roundtrip 75, generation repro 5 and OCR 56 — all identical. OCR row boundaries in dark-filled header columns: KoOCR-Bench 0.90517 unchanged (statistics table 0079_445161_p069 TEDS 0.692 → 0.695, no drops); no per-document drops on in-house OCR, OCR robust or ODL-OCR.

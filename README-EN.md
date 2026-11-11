@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.63](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.63)** · 2026-11-11
+Latest release: **[4.24.64](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.64)** · 2026-11-11
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.64 | Official-document HWPX "-" items indented four spaces became Markdown code blocks · PDF formula OCR: norms read as `||x||` become `\|x\|` · OCR: row rules of dark header columns | formula OCR exact 0.615 → **0.617** (report only) · no per-document drops on in-house benchmarks |
 | 4.24.63 | Body URLs and QR URLs open the original address in Markdown viewers; `htmlCellLinks` option (off by default) emits `<a href>` in HTML table cells (#204) · OCR: row boundaries of dark-filled header columns | no per-document drops on in-house benchmarks · KoOCR-Bench 0.90517 unchanged |
 | 4.24.62 | HWPX generated without a template was missing `version.xml` (#207) · PDF/OCR: a page title and a lone bottom line were grouped and read before the tables between them · OCR: glyph boxes that bit into fragments of neighbouring lines | KoOCR-Bench 0.90509 → **0.90517** (order 0.913 → **0.914**) · OCR robust skew-2 CER 0.0475 → **0.0463** · no per-document drops on in-house benchmarks |
 | 4.24.61 | OCR: fake vertical rules formed by glyph strokes split table columns · OCR: line boxes covering two lines were misread · MiniCPM-OCR OcrProvider example (#205) | KoOCR-Bench 0.90439 → **0.90509** (tables 0.913 → **0.915**) · in-house OCR table structure 32 → **33**/65 |
 | 4.24.60 | XML parser replaced with quick-xml (wasm) (#202 — one dependency fewer, broken XML recovered) · PDF formula OCR: middle lines of multi-line equations were missed · OCR: vertical rules smeared by deskew · OCR: low-confidence ○ marks in table cells were dropped · Gongmun: body words "○○ MCP" were deleted (#203) | formula OCR recall 0.9758 → **0.9775**, precision 0.9699 → **0.9725** (report only) · OCR robust skew+3 CER 0.0481 → **0.0444**, scan 0.0550 → **0.0542** · one per-document drop on in-house benchmarks (org-chart vertical text order) |
-| 4.24.59 | OCR: the tail of a neighbouring row beyond a dotted cell rule stuck to number boxes and pulled the next row's value into the same cell · OCR: the smudged band beside box borders in scans let org-chart text leak out of its box | KoOCR-Bench 0.90378 → **0.90439** (tables 0.912 → **0.913**) · OCR robust scan CER 0.0591 → **0.0557** |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
