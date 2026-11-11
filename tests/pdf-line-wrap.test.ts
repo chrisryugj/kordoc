@@ -576,3 +576,23 @@ describe("bodyLineJoins — 줄 둘뿐인 묶음의 넓은 줄 간격", () => {
     assert.equal(bodyLineJoins(two)[0], "\n")
   })
 })
+
+describe("wrapJoiner — 조문 인용 꺾임 (행정업무운영 편람 부칙 칸)", () => {
+  it("줄 끝 홀로 선 \"제\" 는 다음 줄 조문 번호와 한 어절이다", () => {
+    assert.equal(wrapJoiner("협업 촉진에 관한 규정」 제", "41조제1항”을"), "")
+  })
+  it("인용 사이 꺾임은 문서가 줄 안에서 쓴 표기를 따른다", () => {
+    const joined = lexOf("제9조제9항제6호 중 다음과 같이", "영 제13조제4항에 따른 사항")
+    assert.equal(wrapJoiner("관한 규정」 제42조", "제1항”으로 한다.", joined), "")
+    const spaced = lexOf("법 제3조 제1항에 따라 다음과", "같은 법 제5조 제2항 및 제3항")
+    assert.equal(wrapJoiner("관한 규정」 제42조", "제1항”으로 한다.", spaced), " ")
+    // 단위마다 따로 — 조·항은 붙이고 항·호는 띄운 문서(퇴직공직자 취업심사 보도자료 "제17조제2항 제8호")
+    const mixed = lexOf("공직자윤리법 제17조제2항 제8호에 따른", "같은 법 제17조제2항 제7호 및")
+    assert.equal(wrapJoiner("공직자윤리법 제17조제2항", "제5호, 제8호", mixed), " ")
+    assert.equal(wrapJoiner("공직자윤리법 제17조", "제2항 제8호", mixed), "")
+  })
+  it("인용으로 끝난 줄 뒤 하위 단위는 새 항목이 아니다 — 새 조 머리는 그대로 항목", () => {
+    assert.equal(startsNewItem("관한 규정」 제42조", "제1항”으로 한다."), false)
+    assert.equal(startsNewItem("공포한 날부터 시행한다.", "제2조(다른 법령의 개정)"), true)
+  })
+})

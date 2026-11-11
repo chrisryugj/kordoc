@@ -23,6 +23,8 @@ import type { BoundingBox, IRBlock } from "../types.js"
 const MARKUP = /<\/?u>|~~/g
 /** 줄마다 감싼 링크 표기 `[글](주소)` (links.ts applyLinkAnnotations) — 판정용 글에선 글만 남긴다 */
 const LINK_MARKUP = /(?<!!)\[([^\]\n]*)\]\([^)\s]+\)/g
+/** 조문 인용 이음 자리 — "제3조(의2)·제1항·제2호"(1군 단위) 뒤에 "제N항·호·목" 이 붙거나(빈 2군) 띄어(2군 " ") 온다 */
+const CITE_LINK = /제\d+(조|항|호)(?:의\d+)?( ?)(?=제\d+(?:항|호|목))/g
 const bump = <K>(m: Map<K, number>, k: K): void => { m.set(k, (m.get(k) ?? 0) + 1) }
 /** 두 글자(UTF-16 단위) → 수 키 — 문자열 키를 만들지 않아 쪽마다 모든 글을 훑는 비용을 줄인다 */
 const pairKey = (a: number, b: number): number => a * 0x10000 + b
@@ -51,6 +53,9 @@ export class WrapLexicon {
   private readonly heads = new Set<string>()
   /** 줄 안 이웃 어절의 앞 어절 한글 꼬리 + 뒤 어절 첫 음절("지식재산 보") — 어절 머리 증거의 거부권 */
   private readonly spacedHeads = new Set<string>()
+  /** 줄 안 조문 인용 이음 — 앞 단위(조·항·호)별 붙여 쓴 "제3조제1항"·띄운 "제3조 제1항" 수. 문서마다, 단위마다 표기가 갈린다
+   *  ("제17조제2항 제8호" — 조·항은 붙이고 항·호는 띄움, 퇴직공직자 취업심사 보도자료) */
+  private readonly cites = new Map<string, { joined: number; spaced: number }>()
   /** 쪽 줄 흐름에서 넓은 줄 사이 기준선 간격(글자 크기별) — 줄 둘뿐인 묶음은 묶음 안에 견줄 간격이 없어 넓은 줄 간격 본문을 문단 경계로 봤다 */
   private readonly pitches: Array<{ fs: number; pitch: number }> = []
 
@@ -68,6 +73,11 @@ export class WrapLexicon {
   /** 줄 글 한 줄을 증거로 더한다 — 탭(큰 갭)으로 나뉜 조각은 다른 칸·단이라 조각 사이는 어절 경계 증거로 쓰지 않는다 */
   addLine(text: string): void {
     for (const seg of text.replace(MARKUP, "").split("\t")) {
+      for (const m of seg.matchAll(CITE_LINK)) {
+        const c = this.cites.get(m[1]) ?? { joined: 0, spaced: 0 }
+        if (m[2]) c.spaced++; else c.joined++
+        this.cites.set(m[1], c)
+      }
       const toks = seg.split(" ").filter(t => t && !t.includes("]("))
       for (let i = 0; i < toks.length; i++) {
         const t = toks[i], n = t.length
@@ -93,6 +103,12 @@ export class WrapLexicon {
         }
       }
     }
+  }
+
+  /** 이 단위(조·항·호) 뒤 조문 인용 꺾임을 붙일까 — 문서 줄 안에서 붙여 쓴 쪽이 많으면 true, 띄운 쪽이 많으면 false, 증거 없으면 null */
+  citationJoins(unit: string): boolean | null {
+    const c = this.cites.get(unit)
+    return !c || c.joined === c.spaced ? null : c.joined > c.spaced
   }
 
   /** 문서 줄 안에서 홀로 선 어절로 나온 적 있나 */
@@ -230,8 +246,10 @@ const ITEM_HEAD = /^(?:[□■◆◇○●◎◦▪▫•※▶▷►❍❏❑�
 export function startsNewItem(prevText: string, nextText: string): boolean {
   const t = nextText.replace(MARKUP, "").trimStart()
   const prev = prevText.replace(MARKUP, "").trimEnd()
-  // 괄호 안 수에서 꺾인 줄("공모전’(4.1⏎6.~5.16.)")의 "6." 은 항목 번호가 아니라 수의 뒷자리다
+  // 괄호 안 수에서 꺾인 줄("공모전’(4.1⏎6.~5.16.)")의 "6." 은 항목 번호가 아니라 수의 뒷자리다.
+  // 조문 인용으로 끝난 줄 뒤 하위 단위("제42조⏎제1항”으로")는 인용이 이어진 것이다
   return ITEM_HEAD.test(t) && !(/^다\./.test(t) && /[가-힣]$/.test(prev)) && !(/\(\d+\.\d*$/.test(prev) && /^\d/.test(t))
+    && !(/제\d+(?:조(?:의\d+)?|항)$/.test(prev) && /^제\d+[항호]/.test(t))
 }
 
 /**
@@ -268,6 +286,14 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   // 영어 낱말은 한컴 영문 줄나눔 기본(단어)이라 줄에서 잘리지 않는다 — 한 글자 증거(data 의 "a|t")가 속이지 않게 먼저.
   // 숫자끼리도 한 글자 증거는 숫자 안 이웃(2026 의 "0|2")이라 믿지 않는다(11:00⏎2026. 9. 2)
   if ((/[A-Za-z]/.test(a) && /[A-Za-z]/.test(b)) || (/\d/.test(a) && /\d/.test(b))) return " "
+  // 조문 번호 "제⏎41조" — 앞 줄이 홀로 선 "제" 로 끝나면 번호와 한 어절이다
+  if (/(?:^|[^가-힣])제$/.test(left) && /^\d+(?:조|항|호|목|장|절|편|관)/.test(right)) return ""
+  // 조문 인용 사이 "제42조⏎제1항" — 문서가 줄 안에서 인용을 붙여 쓰는지 띄워 쓰는지 따른다(행정업무운영 편람 "제42조제1항")
+  const cite = left.match(/제\d+(조|항|호)(?:의\d+)?$/)
+  if (cite && /^제\d+(?:항|호|목)/.test(right)) {
+    const joins = lex?.citationJoins(cite[1])
+    if (joins != null) return joins ? "" : " "
+  }
   const ev = lex?.evidence(left, right)
   if (ev != null) return ev
   // 이어 붙인 꼴이 문서 줄 안에 한 어절로 나왔고 두 조각을 띄어 쓴 이웃 어절로는 나온 적 없으면 붙인다 — 글자 쌍 증거가 갈리는(한 문서에

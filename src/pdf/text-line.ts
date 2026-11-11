@@ -33,6 +33,8 @@ export interface NormItem {
   hasSpaceBefore?: boolean
   /** 직전 공백이 pdfjs 가 글자 틈으로 만든 것뿐(글리프 흐름에 공백 글리프 없음, tracked-text markSyntheticSpaces) — 균등배분 run 을 끊지 않는다 */
   syntheticSpace?: boolean
+  /** 직전 낱말 폭(0.2em 이상) 공백 글리프의 시작 x(반올림 전) — 반올림 좌표뿐인 PDF 에서 틈이 0 이 된 자리를 낱말 경계로 본다(mergeLineSimple) */
+  wideSpace?: number
   /** 줄 끝 아이템 뒤 글리프가 공백 글리프인가(tracked-text markTrailingSpaceGlyphs) — true 면 이 줄의 꺾임은 어절 경계, false 는 줄 끝 공백을
    *  찍는 쪽에서 공백이 없던 줄 끝, 없으면 모름 */
   spaceAfter?: boolean
@@ -149,7 +151,10 @@ export function collapseEvenSpacing(text: string, whole = true): string {
       const before = text.slice(0, offset).replace(/(?:<\/?u>|~~)+$/, "")
       const after = text.slice(offset + match.length).replace(/^(?:<\/?u>|~~)+/, "")
       if (/\S$/.test(before) || /^\S/.test(after)) return match
-      return isDateUnitBlank(match.split(" ")) ? match : match.replace(/ /g, "")
+      if (isDateUnitBlank(match.split(" "))) return match
+      // 가운데 홀로 선 "및" 은 접속어다 — 그 앞뒤 조각만 붙이고 "및" 은 띄운다("영 및 이 규칙" 이 "영및이 규칙", 행정업무운영 편람 위원회 규칙)
+      const parts = match.split(/ 및 (?=[가-힣\d])/)
+      return parts.length > 1 ? parts.map(p => p.replace(/ /g, "")).join(" 및 ") : match.replace(/ /g, "")
     },
   )
 }
@@ -197,7 +202,7 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
   /** 반올림 전 x·폭 — 가짜 볼드 판정용(자간을 줄인 "129.9" 의 두 "9" 는 3.72pt 떨어졌는데 반올림하면 3 이 되어 덧찍기로 지워졌다, 해외직접투자 보도자료) */
   const rawX = new Map<NormItem, [number, number]>()
   // pdfjs 공백 아이템 위치 수집 — 단어 경계 힌트로 활용
-  const spacePositions: { x: number; y: number; synthetic?: boolean }[] = []
+  const spacePositions: { x: number; y: number; synthetic?: boolean; wide?: { start: number; end: number; w: number } }[] = []
 
   let seq = 0
   for (const i of rawItems) {
@@ -208,7 +213,8 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
 
     if (!i.str.trim()) {
       // 공백 전용 아이템: 위치만 기록 (단어 구분 힌트)
-      spacePositions.push({ x, y, synthetic: (i as { synthetic?: boolean }).synthetic })
+      const fs = Math.hypot(i.transform[0], i.transform[1])
+      spacePositions.push({ x, y, synthetic: (i as { synthetic?: boolean }).synthetic, ...(i.width >= fs * 0.2 ? { wide: { start: i.transform[4], end: i.transform[4] + i.width, w: i.width } } : {}) })
       continue
     }
 
@@ -309,6 +315,8 @@ export function normalizeItems(rawItems: PdfTextItem[]): NormItem[] {
         // 진짜 공백이 하나라도 닿으면 진짜 경계
         nearest.syntheticSpace = (nearest.hasSpaceBefore ? nearest.syntheticSpace === true : true) && sp.synthetic === true
         nearest.hasSpaceBefore = true
+        // 다음 글자와 공백 폭 절반 넘게 겹치는 공백은 거꾸로 찍은 글리프 틈이다(수식 "(" 뒤 4.87pt 공백이 "N" 을 덮음, ODL 031)
+        if (sp.wide && nearest.fx !== undefined && sp.wide.end - nearest.fx <= sp.wide.w * 0.5) nearest.wideSpace = sp.wide.start
       }
     }
   }
@@ -631,7 +639,14 @@ export function mergeLineSimple(items: TextItem[]): string {
     }
     // pdfjs 공백 아이템이 있었으면 단어 경계 — 갭 크기 무관하게 공백 삽입. 틈은 반올림 전 좌표로 — 공백 글리프 위에 덧찍은 쉼표가
     // 반올림으로 1pt 떨어져 보여 "55만원 ," 가 됐다(실제 −0.06pt, 청년 종합투자 보도자료)
-    if (sorted[i].hasSpaceBefore && exactGap(sorted[i - 1], sorted[i], gap) >= avgFs * 0.05) {
+    // 반올림 좌표뿐인 PDF(한컴 외)는 틈이 반올림으로 0 이 된다 — 합성 아닌 낱말 폭 공백 글리프가 끼어 있으면 반올림 오차(1pt) 안 틈도 낱말 경계다
+    // (글꼴 바뀌는 자리 " " 아이템 1.69pt 뒤 1.26pt 틈이 52.5→53·154.5→155 반올림으로 0 이 돼 "Universalmodel", ODL 199). 폭 0.1pt 안팎
+    // 공백 아이템(LaTeX 수식 "N"·"LL" 사이, ODL 029~031)은 낱말 경계가 아니다. 공백이 앞 아이템 끝 뒤에서 시작해야 한다 — 위첨자("Hong ⁎")는
+    // 기준선이 달라 그 앞 공백이 다음 조각(", Gil-Dong")에 붙었다(LibreOffice 논문 양식). 반올림 전 좌표가 있는 쪽(한컴)은 위 규칙대로
+    const ws = sorted[i].wideSpace
+    const roundedSpace = sorted[i - 1].fx === undefined && sorted[i].fx === undefined && sorted[i].syntheticSpace === false && ws !== undefined
+      && ws >= sorted[i - 1].x + sorted[i - 1].w - 1 && gap >= 0
+    if (sorted[i].hasSpaceBefore && (exactGap(sorted[i - 1], sorted[i], gap) >= avgFs * 0.05 || roundedSpace)) {
       result += " "
       result += sorted[i].text
       continue

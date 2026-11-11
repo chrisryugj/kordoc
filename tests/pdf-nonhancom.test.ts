@@ -27,6 +27,16 @@ describe("normalizeItems — 자간 숫자 공백 접기", () => {
     // 자간을 벌린 숫자열은 그대로 접는다
     assert.equal(mergeLineSimple(normalizeItems([ti("45 0 -7 3 40 )", 10, 100, 80, 10)])), "450-7340)")
   })
+  it("반올림으로 틈이 0 이 된 자리의 공백 글리프는 낱말 경계다 — \"Universal\" + \" \" + \"model\" (ODL 199 각주)", () => {
+    const items = normalizeItems([ti("B: Universal", 52.5, 11.7, 154.5, 5), ti(" ", 207, 11.7, 1.69, 5), ti("model of leading", 208.26, 11.7, 88.83, 5)])
+    // 한컴 외 PDF 는 반올림 좌표만 쓴다(parser preciseGaps)
+    for (const it of items) { delete it.fx; delete it.fw }
+    assert.equal(mergeLineSimple(items), "B: Universal model of leading")
+    // 공백 글리프 없이 붙은 조각은 그대로 붙인다
+    const plain = normalizeItems([ti("B: Universal", 52.5, 11.7, 154.5, 5), ti("model", 208.26, 11.7, 20, 5)])
+    for (const it of plain) { delete it.fx; delete it.fw }
+    assert.equal(mergeLineSimple(plain), "B: Universalmodel")
+  })
 
   it("소수 덩어리가 둘 이상이면 따로 선 수들이다 — 표 한 행 값을 담은 조각 (평가 기준 별표2 \"2 100 1.0 2.0 … 10.0\")", () => {
     assert.equal(normalizeItems([ti("2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0", 385, 135, 151.4, 8)])[0].text, "2 100 1.0 2.0 3.0 4.0 5.0 6.0 10.0")
