@@ -53,3 +53,36 @@ describe("OCR 쪽 차트 판 글 (chartPlotItems)", () => {
     assert.equal(chartPlotItems(items).size, 0)
   })
 })
+
+/** 숲 그림 — 하위군 이름·HR(95% CI)·n(%) 줄 아래 가로 눈금, 그 밑 "Favours …" 이름표, 그 아래 약어 풀이와 그림 설명·본문 */
+function forestPlot(): OcrItem[] {
+  const items = [box("본문 첫 문단입니다.", 100, 40, 900)]
+  const rows = [["Hazard Ratio", "Dulaglutide,", "Placebo,"], ["Primary CV Endpoints", "0.88", "594"], ["Nonfatal Stroke", "0.76", "135"], ["CV Death", "0.91", "317"], ["All Death", "0.90", "536"]]
+  rows.forEach((r, k) => { items.push(box(r[0], 100, 100 + k * 30, 200), box(r[1], 580, 100 + k * 30, 60), box(r[2], 700, 100 + k * 30, 40)) })
+  ;["0.6", "0.7", "0.8", "0.9", "1.0", "1.1"].forEach((t, k) => items.push(box(t, 290 + k * 30, 250, 20)))
+  items.push(box("Favours Dulaglutide", 300, 275, 120), box("Favours Placebo", 440, 275, 100))
+  items.push(box("CI - confidence interval", 100, 300, 160))
+  items.push(box("그림 7: 하위군 분석의 Forest plot", 100, 380, 600), box("표준 치료에 추가로 투여하였을 때 감소하였다.", 100, 420, 900))
+  return items
+}
+
+describe("OCR 쪽 숲 그림 글 (chartPlotItems)", () => {
+  it("가로 눈금 + Favours 이름표면 그림 판 글을 빼고 그림 설명·본문은 둔다", () => {
+    const items = forestPlot()
+    const kept = items.filter((_, i) => !chartPlotItems(items).has(i)).map(it => it.text)
+    assert.deepEqual(kept, ["본문 첫 문단입니다.", "그림 7: 하위군 분석의 Forest plot", "표준 치료에 추가로 투여하였을 때 감소하였다."])
+  })
+
+  it("눈금 하나를 놓쳐 간격이 고르지 않아도(-0.25 · 0.25 · 0.5) 값에 비례하면 눈금, 이름표가 위에 있어도 숲 그림", () => {
+    const items = [box("본문입니다.", 100, 40, 900), box("Overall", 100, 100, 80), box("0.13 (0.08, 0.18)", 600, 100, 120), box("≥500", 100, 130, 60), box("0.30 (0.19, 0.42)", 600, 130, 120),
+      box("← Placebo better", 300, 160, 120), box("DUPIXENT better →", 460, 160, 120),
+      box("-0.25", 300, 185, 40), box("0.25", 500, 185, 30), box("0.5", 600, 185, 25), box("그림 7. 천식 시험 2", 100, 260, 500)]
+    const kept = items.filter((_, i) => !chartPlotItems(items).has(i)).map(it => it.text)
+    assert.deepEqual(kept, ["본문입니다.", "그림 7. 천식 시험 2"])
+  })
+
+  it("비교 이름표가 없으면 숫자 줄만으로는 숲 그림이 아니다", () => {
+    const items = forestPlot().filter(it => !/^Favours/.test(it.text))
+    assert.equal(chartPlotItems(items).size, 0)
+  })
+})
