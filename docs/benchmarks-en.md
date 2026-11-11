@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.63: URL links (#204), OCR dark header columns · 2026-11-11
+
+#204 (body URLs, QR URLs, `htmlCellLinks` option) was merged onto the previous main and compared per document against main on score 5,465, PDF text 744, PDF tables 730, ODL 200 (default, HTML tables, OCR off), annexes 544, formats 146, roundtrip 75, generation repro 5 and OCR 56 — all identical. OCR row boundaries in dark-filled header columns: KoOCR-Bench 0.90517 unchanged (statistics table 0079_445161_p069 TEDS 0.692 → 0.695, no drops); no per-document drops on in-house OCR, OCR robust or ODL-OCR.
+
+- Rejected: joining OCR rule bands against the previous scanline run (the cause of row rules fused with filled header cells) — tables 0.9146 → 0.9158 but notice boxes on suneung English pages became tables and the remaining page text was clustered into one table (order 0.988 → 0.82). Adding only isolated horizontal lines gives 0.90540 but the target table falls 0.703 → 0.667 (column boundaries still missing).
+
 ## 4.24.62: XY-Cut far-apart pairs, OCR single-band reads · 2026-11-11
 
 External KoOCR-Bench v2.0c, 877 public pages: 0.90509 → **0.90517** (order 0.91305 → 0.91372 — the "validity period" line on 47 prescription pages now follows the tables, 0.909 → 1.0; one user document CER 0.171 → 0.152. Two suneung Korean pages rise +0.008 CER because the ground truth follows PDF stream order with the bottom page number first). ODL 0.96490 → **0.96493** (NID 0.96435 → 0.96440), PDF text order web070 0.932 → 0.955, in-house OCR CER 0.02378 → **0.02371**, OCR robust skew-2 0.0475 → **0.0463** (Hampyeong TOC 0.107 → 0.073, Yeosu org chart 0.116 → 0.064). No per-document drops on score, PDF text, PDF tables, annexes, formats, roundtrip, generation repro, ODL or ODL-OCR; formula summary unchanged.

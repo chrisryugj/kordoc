@@ -7,16 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.63] - 2026-11-11
+
 ### Added
 
-- `htmlCellLinks` 옵션(CLI `--html-cell-links`, Python `html_cell_links`, Java `htmlCellLinks(boolean)`, 기본 꺼짐): HTML 표 셀의 `[텍스트](URL)`·URL(`www.` 포함)·QR URL 을 `<a href>` 로 낸다. GFM 은 HTML 블록 안의 마크다운을 해석하지 않아 병합·중첩 표 셀의 링크가 뷰어에서 눌리지 않았다. 마크다운을 다 만든 뒤 HTML 표 안의 텍스트에만 적용하고, 안전한 스킴(http·https·mailto·tel, `#`)만 링크로 만든다. 기본 꺼짐인 까닭은 LLM·RAG 에 주소를 두 번 싣는 표기라서다. 라운드트립은 `<a>` 를 원래 셀 텍스트로 되돌리고, 마크다운→HWPX 는 HTML 셀의 링크를 하이퍼링크로 넣는다. 인쇄 렌더러는 이 `<a href>` 만 태그로 둔다
+- `htmlCellLinks` 옵션(CLI `--html-cell-links`, Python `html_cell_links`, Java `htmlCellLinks(boolean)`, 기본 꺼짐): HTML 표 셀의 `[텍스트](URL)`·URL(`www.` 포함)·QR URL 을 `<a href>` 로 낸다. GFM 은 HTML 블록 안의 마크다운을 해석하지 않아 병합·중첩 표 셀의 링크가 뷰어에서 눌리지 않았다. 마크다운을 다 만든 뒤 HTML 표 안의 텍스트에만 적용하고, 안전한 스킴(http·https·mailto·tel, `#`)만 링크로 만든다. 기본 꺼짐인 까닭은 LLM·RAG 에 주소를 두 번 싣는 표기라서다. 라운드트립은 `<a>` 를 원래 셀 텍스트로 되돌리고, 마크다운→HWPX 는 HTML 셀의 링크를 하이퍼링크로 넣는다. 인쇄 렌더러는 이 `<a href>` 만 태그로 둔다 (#204)
 
 ### Fixed
 
 - 본문 URL 이 마크다운 뷰어에서 틀린 주소로 열렸다. `~`·`_`·`*` 앞에 넣은 이스케이프 `\` 가 GFM 자동 링크의 주소에 그대로 들어갔다(`http://a.kr/\~u` → href `http://a.kr/%5C~u`). GFM 이 링크로 인식하는 URL 은 이스케이프하지 않는다. 인식 조건은 GitHub(cmark-gfm)과 같다: `http(s)://` 는 앞이 영문자가 아닐 때, `www.` 는 줄 맨 앞·공백·`(` 뒤의 소문자일 때, 호스트에 `_` 가 없고 링크 텍스트 `[…](` 밖일 때. 원문이 `<…>` 나 따옴표로 감싼 URL 은 이전처럼 이스케이프한다. GFM 표 셀 안 URL 의 `|` 는 `%7C` 로 쓴다(remark 는 링크 안의 `\|` 를 풀지 않는다)
 - QR 값(`qrCodes`)이 http(s) URL 하나면 자동 링크 `<URL>` 로 낸다. 값 전체가 링크라 끝의 `.`·`*` 도 들어간다. `htmlTables` 로 HTML 표가 되면 꺾쇠 없는 URL 텍스트다
 - 마크다운→HWPX 가 본문 URL 을 기울임 등 강조로 해석했다(`https://a.kr/_x_/`). URL 은 텍스트 그대로 넣고, 자동 링크 `<URL>` 은 하이퍼링크로 넣는다(꺾쇠까지 텍스트로 들어갔다). 라운드트립 역변환(`unescapeGfm`)은 자동 링크를 URL 로 푼다
-- 위 세 건 검증: 실제 문서 4,395개(HWP·HWPX 3,533 · PDF 862) 중 바뀐 문서 27개(ODL 200 은 0), 바뀐 88줄은 URL 속 `\` 만 빠진다. GitHub·markdown-it·marked·remark-gfm 렌더에서 주소에 `\` 가 든 링크 88 → 0. 마크다운→HWPX→마크다운에서 URL 247개 그대로
+- 위 세 건 검증: 실제 문서 4,395개(HWP·HWPX 3,533 · PDF 862) 중 바뀐 문서 27개(ODL 200 은 0), 바뀐 88줄은 URL 속 `\` 만 빠진다. GitHub·markdown-it·marked·remark-gfm 렌더에서 주소에 `\` 가 든 링크 88 → 0. 마크다운→HWPX→마크다운에서 URL 247개 그대로 (#204)
+- OCR 짙게 칠한 머리 열의 행 경계: 감색 바탕 흰 글 머리 열은 행 경계가 흰 틈뿐이라 잉크 괘선이 칠한 열 앞에서 끊겨 머리 열 칸들이 한 칸에 몰렸다(지역인재 합격자 표). 칠한 칸 둘이 얇은 틈을 두고 위아래로 붙고 양 끝이 세로선에 닿으면 틈 가운데를 가로 괘선으로 내고, 칠한 칸 변이 본문 행 괘선 끝에 맞닿으면 그 괘선을 잇는다 — KoOCR-Bench 0.90517 그대로(통계표 한 쪽 TEDS 0.692 → 0.695), 자체 OCR·OCR robust·ODL-OCR 문서별 하락 0
 
 ## [4.24.62] - 2026-11-11
 
