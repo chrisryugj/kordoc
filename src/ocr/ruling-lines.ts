@@ -86,6 +86,8 @@ const FILL_DIV_DELTA = 20
 /** 조각 난 채움 변을 이은 범위가 괘선 끝에서 떨어져도 되는 거리 (pt) — 칸 모서리 둥글림·첫 칸 글자 */
 const FILL_CHAIN_END_PT = 8
 const FILL_DIV_SIDE = 2
+/** 칠한 칸 사이 흰 틈 — 본문 괘선 y 에서 칠한 칸 윗변·아랫변까지 거리 (pt) */
+const FILL_GAP_PT = 1.5
 
 /** 픽셀 공간(top-left origin) 선분 — 두께는 밴드 픽셀 수 */
 export interface PxSegment {
@@ -309,6 +311,31 @@ export function detectRulingLines(
     const loose = Math.abs(p.x1 - a.x1) <= tol ? a.x2 : a.x1
     const depthPx = Math.round(FILL_MIN_DEPTH_PT * scale)
     if (fill.verticals.some(v => Math.abs(v.x1 - loose) <= tol * 2 && Math.abs(v.y1 - a.y1) <= tol * 2 && v.y2 - v.y1 >= depthPx * 4)) fillH.push({ ...a, x1: p.x1, x2: p.x2 })
+  }
+  // 짙게 칠한 머리 열(감색 바탕 흰 글)의 행 경계는 흰 틈이라 잉크 괘선이 없다 — 칠한 칸 둘이 얇은 틈(FILL_GAP 2배 안)을 두고 위아래로 붙고, 두 변이
+  // 같은 폭이며 양 끝이 세로선(잉크 괘선이나 칠한 열의 바깥 변)에 닿으면 틈 가운데를 행 경계로 본다(지역인재 합격자 표: 머리 열
+  // "직군·직렬·직류·계·남자·여자" 가 한 칸에 몰렸다)
+  const fillGap = Math.max(2, Math.round(FILL_GAP_PT * scale))
+  const sideV = [...inkV, ...fill.verticals]
+  const onV = (x: number, y: number) => sideV.some(v => Math.abs(v.x1 - x) <= tol * 2 && v.y1 <= y + tol * 2 && v.y2 >= y - tol * 2)
+  for (const a of fill.horizontals) {
+    const b = fill.horizontals.find(b => b !== a && b.y1 > a.y1 && b.y1 - a.y1 <= fillGap * 2 && Math.abs(b.x1 - a.x1) <= tol && Math.abs(b.x2 - a.x2) <= tol)
+    if (!b || a.x2 - a.x1 < tol * 4) continue
+    const y = (a.y1 + b.y1) / 2
+    if (!onV(a.x1, y) || !onV(a.x2, y) || horizontals.some(h => Math.abs(h.y1 - y) <= tol && h.x1 <= a.x1 + tol && h.x2 >= a.x2 - tol)) continue
+    horizontals.push({ x1: a.x1, y1: y, x2: a.x2, y2: y, thicknessPx: 1 })
+  }
+  // 칠한 칸 변이 본문 행 괘선 끝에 맞닿고(흰 틈 위아래, 괘선 y ± FILL_GAP) 다른 끝이 세로선에 닿아도 그 괘선을 잇는다 — 칠한 칸 옆이 연한 칠이라
+  // 위 짝 변의 끝이 세로선에 안 닿는 행(합격자 표 "남자" 위)
+  for (const p of ruleH) {
+    for (const side of [-1, 1] as const) {
+      const end = side < 0 ? p.x1 : p.x2
+      const a = fill.horizontals.find(a => Math.abs(a.y1 - p.y1) <= fillGap && Math.abs((side < 0 ? a.x2 : a.x1) - end) <= tol * 3 && a.x2 - a.x1 >= tol * 4)
+      if (!a) continue
+      const far = side < 0 ? a.x1 : a.x2
+      if (!onV(far, p.y1) || horizontals.some(h => Math.abs(h.y1 - p.y1) <= tol && h.x1 <= Math.min(far, end) + tol && h.x2 >= Math.max(far, end) - tol)) continue
+      horizontals.push({ ...p, x1: Math.min(far, end), x2: Math.max(far, end) })
+    }
   }
   horizontals.push(...fillH)
   const edgeH = [...ruleH, ...fillH]

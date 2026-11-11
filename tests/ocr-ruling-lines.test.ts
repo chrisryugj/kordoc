@@ -287,6 +287,28 @@ describe("detectRulingLines — 채움 경계", () => {
     assert.ok(verticals.some(v => Math.abs(v.x1 - 181) <= 3 && v.y2 - v.y1 > 200), JSON.stringify(verticals))
   })
 
+  it("짙게 칠한 머리 열 칸 사이 흰 틈을 행 경계 가로선으로 낸다 (지역인재 합격자 표)", () => {
+    // 감색 머리 열(흰 글)의 행 경계는 3px 흰 틈뿐이라 잉크 괘선이 칠한 열 앞(x 252)에서 끊겼다
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 250, 120, 60)
+    fillRect(rgba, w, 100, 124, 250, 300, 60)
+    for (const y of [30, 121, 299]) drawHLine(rgba, w, 252, 800, y)
+    for (const x of [252, 800]) drawVLine(rgba, w, x, 30, 300)
+    const { horizontals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(horizontals.some(l => Math.abs(l.y1 - 122) <= 3 && l.x1 <= 103 && l.x2 >= 247), JSON.stringify(horizontals))
+  })
+
+  it("칠한 칸 하나의 위아래 변(흰 틈 짝 없음)은 행 경계를 늘리지 않는다", () => {
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 30, 250, 300, 60)
+    for (const y of [30, 121, 299]) drawHLine(rgba, w, 252, 800, y)
+    for (const x of [252, 800]) drawVLine(rgba, w, x, 30, 300)
+    const { horizontals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(!horizontals.some(l => Math.abs(l.y1 - 122) <= 3 && l.x1 < 240), JSON.stringify(horizontals))
+  })
+
   it("크림색 바탕 쪽(휘도 242)의 흰 상자는 채움이 아니다 — 바탕은 최빈 휘도", () => {
     const w = 900, h = 400
     const rgba = makeCanvas(w, h)
