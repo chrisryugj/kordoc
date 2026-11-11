@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.62: XY-Cut far-apart pairs, OCR single-band reads · 2026-11-11
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90509 → **0.90517** (order 0.91305 → 0.91372 — the "validity period" line on 47 prescription pages now follows the tables, 0.909 → 1.0; one user document CER 0.171 → 0.152. Two suneung Korean pages rise +0.008 CER because the ground truth follows PDF stream order with the bottom page number first). ODL 0.96490 → **0.96493** (NID 0.96435 → 0.96440), PDF text order web070 0.932 → 0.955, in-house OCR CER 0.02378 → **0.02371**, OCR robust skew-2 0.0475 → **0.0463** (Hampyeong TOC 0.107 → 0.073, Yeosu org chart 0.116 → 0.064). No per-document drops on score, PDF text, PDF tables, annexes, formats, roundtrip, generation repro, ODL or ODL-OCR; formula summary unchanged.
+
+- Rejected: splitting two-item XY-Cut groups at 1× the cut threshold (a permit form's receipt cells were regrouped, web047 CER 0.054 → 0.059 — narrowed to 3×), detecting rules on a separately rotated nearest/min-of-four raster (form web050 skew-2 0.123 → 0.082 but Yeosu skew+1 0.024 → 0.420), widening the chart x-axis start allowance (a drug-label forest plot stays a table, one user document 0.515 → 0.573).
+
 ## 4.24.61: OCR fake vertical rules, line boxes covering two lines · 2026-11-11
 
 External KoOCR-Bench v2.0c, 877 public pages: 0.90439 → **0.90509** (tables 0.91336 → 0.91464 — a welfare-award table .655 → .994, one suneung math page CER .396 → .263; three suneung Korean pages drop .003 on chart-legend order). In-house OCR table structure 32/65 → **33/65** (cell F1 0.617 → 0.634). OCR robust: building-permit form blur 0.159 → 0.124, org-chart page skew+1 0.258 → 0.264 and skew+3 0.207 → 0.200 (vertical text order). No drops on ODL-OCR.

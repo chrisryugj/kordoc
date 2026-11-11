@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.62] - 2026-11-11
+
+### Fixed
+
+- HWPX 생성 꾸러미의 `version.xml`: `markdownToHwpx` 가 서식 견본 없이(기본·공문 프리셋 전부) 만든 꾸러미에 OWPML 필수 항목 `version.xml` 이 없어 엄격한 판독기가 거부했다. `mimetype`(무압축) 바로 다음에 `HCFVersion`(xmlVersion 1.4 — header.xml 과 같게, application="kordoc")을 쓰고, `validateHwpx` 도 `version.xml` 누락을 필수 파일 누락으로 알린다. 렌더러는 kordoc 이 쓴 `version.xml` 의 appVersion(kordoc 판)을 한글 판 번호로 읽지 않는다(2024 조판 규칙 그대로) — 생성·왕복·형식·점수 스위트 하락 0 (#207)
+- PDF·OCR 읽기 순서 — 멀리 떨어진 두 줄이 한 덩어리: 표를 빼고 남은 글이 쪽 제목과 맨 아래 한 줄뿐이면 XY-Cut 이 두 조각 무리를 자르지 않아, 아래 줄이 사이의 표들보다 먼저 읽혔다(처방전 서식 "사용기간" 줄). 두 조각도 가로 틈이 절단 문턱의 3배 이상이면 가른다(문턱 언저리 틈은 표 칸 무리 안 위아래 칸 글이라 그대로) — KoOCR-Bench 0.90509 → 0.90517(순서 0.91305 → 0.91372, 처방전 47쪽 순서 0.909 → 1.0), ODL 0.96490 → 0.96493, PDF 글 순서 web070 0.932 → 0.955, 자체 OCR CER 0.02378 → 0.02371, OCR robust 여수 조직도 skew-2 0.116 → 0.064. 수능 국어 2쪽 CER +0.008 은 정답이 PDF 스트림 순서(쪽 아래 쪽번호가 맨 앞)라서 — 출력은 실제 자리대로. 자체 13종 문서별 하락 0, 수식 정답지 요약 같음
+- OCR 이웃 줄 글자 조각을 문 글자 상자: 자간 넓은 목차를 기울기 보정하면 글자 하나의 검출 상자가 윗줄·아랫줄 글자 끝자락까지 물어 "보" 가 "본" 으로 읽혔다. 띠 나누기가 띠 하나만 남기고 그 띠가 상자 높이의 70% 미만인 글자 꼴(폭이 높이의 절반 이상, 높이 12px·상자의 25% 이상, 띠 밖에 조각 잉크, 채운 도형 아님)이면 그 띠만 읽는다 — OCR robust 함평 목차 skew-2 0.107 → 0.073, 자체 OCR·ODL-OCR 하락 0, KoOCR-Bench 그대로
+
+### Changed
+
+- `examples/minicpm-ocr` 설명의 MiniCPM-OCR 언어 범위 바로잡음 (#206)
+
 ## [4.24.61] - 2026-11-11
 
 ### Fixed
