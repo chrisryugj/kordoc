@@ -117,7 +117,7 @@ function literalMarkerDepth(text: string): { depth: number; content: string } | 
   const t = text.trimStart()
   let m: RegExpExecArray | null
   if ((m = /^([가-힣])\.\s+(.*)$/s.exec(t)) && ORDINAL_SYLLABLES.has(m[1])) return { depth: 1, content: m[2] }
-  if ((m = /^(\d{1,3})\)\s+(.*)$/s.exec(t))) return { depth: 2, content: m[2] }
+  if ((m = /^(\d{1,3})\\?\)\s+(.*)$/s.exec(t))) return { depth: 2, content: m[2] }
   if ((m = /^([가-힣])\)\s+(.*)$/s.exec(t)) && ORDINAL_SYLLABLES.has(m[1])) return { depth: 3, content: m[2] }
   if ((m = /^\((\d{1,3})\)\s+(.*)$/s.exec(t))) return { depth: 4, content: m[2] }
   if ((m = /^\(([가-힣])\)\s+(.*)$/s.exec(t)) && ORDINAL_SYLLABLES.has(m[1])) return { depth: 5, content: m[2] }
@@ -126,6 +126,8 @@ function literalMarkerDepth(text: string): { depth: number; content: string } | 
   if ((m = /^□\s+(.*)$/s.exec(t))) return { depth: 0, content: m[1] }
   if ((m = /^[○ㅇ]\s+(.*)$/s.exec(t))) return { depth: 1, content: m[1] }
   if ((m = /^ㆍ\s+(.*)$/s.exec(t))) return { depth: 3, content: m[1] }
+  // 파서가 마크다운 목록과 겹치지 않게 이스케이프해 낸 "\- " (blocksToMarkdown listDepth) — 보고서 □○-ㆍ 의 셋째
+  if ((m = /^\\?-\s+(.*)$/s.exec(t))) return { depth: 2, content: m[1] }
   return null
 }
 

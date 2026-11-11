@@ -102,10 +102,11 @@ describe("v4.0.5 gongmun 인라인 강조 + 리스트 depth 소비", () => {
     assert.match(md2, /□ 대항목 하나/)
   })
 
-  it("'1)' depth2 왕복 — 선행 공백 방출로 2차 생성 depth 보존 (indent 소비)", async () => {
+  it("'1)' depth2 왕복 — 이스케이프 부호(1\\)) 방출로 2차 생성 depth 보존 (indent 소비)", async () => {
     const opt = { gongmun: { preset: "기안문" as const } }
     const md1 = await roundtrip("1. 상위\n  가. 중간\n    1) 세부 하나\n    2) 세부 둘\n  나. 중간 둘\n", opt)
-    assert.match(md1, /^ {4}1\) 세부 하나$/m, `depth2 선행 공백: ${JSON.stringify(md1)}`)
+    // 들여쓰기(4칸)는 위 문단이 목록이 아니라 코드 블록이 된다 — 부호를 이스케이프한 글자 부호로
+    assert.match(md1, /^1\\\) 세부 하나$/m, `depth2 이스케이프 부호: ${JSON.stringify(md1)}`)
     // 2차 생성 수렴 — depth 붕괴('1)' → '2.') 없음
     const md2 = await roundtrip(md1, opt)
     assert.equal(md2, md1, "2차 왕복 고정점")
@@ -115,7 +116,7 @@ describe("v4.0.5 gongmun 인라인 강조 + 리스트 depth 소비", () => {
   it("report '-' depth2 왕복 — □ 승격 없이 2차 생성 수렴", async () => {
     const opt = { gongmun: { preset: "보고서" as const } }
     const md1 = await roundtrip("- 대항목\n  - 중항목\n    - 소항목 **강조**\n", opt)
-    assert.match(md1, /^ {4}- 소항목 \*\*강조\*\*$/m, `depth2 '-' 선행 공백+강조: ${JSON.stringify(md1)}`)
+    assert.match(md1, /^\\- 소항목 \*\*강조\*\*$/m, `depth2 '-' 이스케이프 부호+강조: ${JSON.stringify(md1)}`)
     const md2 = await roundtrip(md1, opt)
     assert.equal(md2, md1, "2차 왕복 고정점 — '-'가 □로 승격되지 않음")
   })
@@ -123,7 +124,7 @@ describe("v4.0.5 gongmun 인라인 강조 + 리스트 depth 소비", () => {
   it("개조식 '-' depth2(반계단 1.5자 들여쓰기) 역산", async () => {
     const opt = { gongmun: { preset: "개조식" as const, cover: false, toc: false } }
     const md1 = await roundtrip("# 제목\n\n- 대항목\n  - 중항목\n    - 소항목\n", opt)
-    assert.match(md1, /^ {4}- 소항목$/m, `개조식 depth2 선행 공백: ${JSON.stringify(md1)}`)
+    assert.match(md1, /^\\- 소항목$/m, `개조식 depth2 이스케이프 부호: ${JSON.stringify(md1)}`)
     const md2 = await roundtrip(md1, opt)
     assert.equal(md2, md1, "2차 왕복 고정점")
   })

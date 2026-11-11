@@ -8,6 +8,7 @@
  *    균등 띄어쓰기·run 경계·글자 모양은 그대로 남는다.
  */
 
+import { unescapeItemHead } from "./markdown-units.js"
 import { paraTText, buildRangeSplices, paraTCharMap, buildMappedRangeSplices, hasPua, puaShownMap, escapeXmlText, type ScanParagraph, type SpliceEdit } from "./source-map.js"
 
 interface Tok {
@@ -34,6 +35,7 @@ export const EMPH_BOLD = 1, EMPH_ITALIC = 2, EMPH_STRIKE = 4, EMPH_UNDERLINE = 8
  * 인정한다(여는 쪽 뒤·닫는 쪽 앞이 공백이 아님). 짝 없는 표지는 글자로 둔다("3 * 4").
  */
 export function parseEmphasis(text: string): { plain: string; segs: string[]; marks: boolean[]; kinds: number[] } {
+  text = unescapeItemHead(text)
   const toks: Tok[] = []
   const pushText = (s: string, code = false): void => {
     const last = toks[toks.length - 1]

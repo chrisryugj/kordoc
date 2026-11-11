@@ -203,12 +203,17 @@ export function noScriptTags(text: string): string {
 }
 
 export function normForMatch(text: string): string {
-  return sanitizeText(text.replace(/\\\$/g, "$").replace(/\\(?=<\/?(?:u|sup|sub)>)/g, "")).replace(/\s+/g, " ").trim()
+  return sanitizeText(unescapeItemHead(text).replace(/\\\$/g, "$").replace(/\\(?=<\/?(?:u|sup|sub)>)/g, "")).replace(/\s+/g, " ").trim()
 }
 
 /** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환 — \| \# \< \$ \\ 포함, 없으면 hp:t 에 백슬래시가 샌다) */
 export function unescapeGfm(text: string): string {
-  return text.replace(AUTOLINK, "$1").replace(/\\([~*_`|#<$\\])/g, "$1")
+  return unescapeItemHead(text).replace(AUTOLINK, "$1").replace(/\\([~*_`|#<$\\])/g, "$1")
+}
+
+/** 줄머리 목록 부호 이스케이프 풀기 — builder escapeItemHead 역(공문 "\- 소항목"·"1\) 세부", 목록 항목 글 "\- …") */
+export function unescapeItemHead(text: string): string {
+  return text.replace(/^([ \t]*)\\([-+*])(?=\s|$)/gm, "$1$2").replace(/^([ \t]*)(\d{1,9})\\([.)])(?=\s|$)/gm, "$1$2$3")
 }
 
 /** 자동 링크 <http(s) 주소> — 마크다운에는 꺾쇠 없이 주소로 보인다 (QR 값은 <주소> 로 나간다) */

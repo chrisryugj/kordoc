@@ -641,9 +641,10 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
         continue
       }
 
-      // gongmun 리스트 depth 선행 공백 (v4.0.5) — sanitizeText가 선두 공백을 지우므로
-      // 텍스트가 아니라 방출 시점에 붙인다. 2칸/단계 = md-runs 리스트 그리드와 동일
-      const listIndent = block.listDepth ? "  ".repeat(block.listDepth) : ""
+      // gongmun 리스트 부호 문단('- '·'1) ', listDepth) — 들여쓰기 대신 부호를 이스케이프해 글자 부호로 낸다. 2칸/단계 들여쓰기는
+      // 위 "○" 가 마크다운 목록이 아니라 4칸부터 코드 블록이 됐다(뷰어에서 항목이 목록으로 안 보임). □·○ 처럼 글자 부호로 두면
+      // 재생성 때 리터럴 부호 재분류(gen-gongmun-fit literalMarkerDepth)가 단계를 다시 매긴다
+      const listHead = (md: string) => block.listDepth ? escapeItemHead(md) : md
       const noteTable = noteTableMarkdown(block, gfm)
 
       // 인라인 강조 run-span (왕복 채널 — 자사 생성 파일 + 외래 실속성 복원) → 마커 재방출.
@@ -655,7 +656,7 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
           if (href) rendered = `[${rendered}](${href})`
         }
         if (block.footnoteText) rendered += noteTable || escapeGfm(` (주: ${block.footnoteText})`)
-        lines.push(block.quote ? "> " + rendered : listIndent + rendered, "")
+        lines.push(block.quote ? "> " + rendered : listHead(rendered), "")
         continue
       }
 
@@ -671,7 +672,7 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
       }
 
       // 여러 줄 인용문(요약 상자 문단 여럿)은 줄마다 "> " — 접두 없는 줄은 md 파서가 인용문에서 떼어 낸다
-      lines.push((block.quote ? escapeGfm(text).split("\n").map(l => "> " + l).join("\n") : listIndent + escapeGfm(text)) + noteTable, "")
+      lines.push((block.quote ? escapeGfm(text).split("\n").map(l => "> " + l).join("\n") : listHead(escapeGfm(text))) + noteTable, "")
     } else if (block.type === "table" && block.table) {
       // 테이블 앞에 빈 줄 보장 (마크다운 렌더링 필수)
       if (lines.length > 0 && lines[lines.length - 1] !== "") {

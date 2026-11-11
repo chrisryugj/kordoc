@@ -66,7 +66,16 @@ describe("patchHwpx 구조 편집: 추가", () => {
     assert.equal(paraShape(after, "기계실·자료실 포함"), paraShape(before, "세부 일정 확정"))
     const r2 = await parseHwpx(toAB(res.data!), { layoutTables: "keep" })
     const lines = r2.markdown.split("\n").filter(l => l.trim())
-    assert.equal(lines[lines.findIndex(l => l.includes("점검대상")) + 1].trim(), "- 기계실·자료실 포함", "추가 위치")
+    assert.equal(lines[lines.findIndex(l => l.includes("점검대상")) + 1].trim(), "\\- 기계실·자료실 포함", "추가 위치 — 공문 '-' 부호는 이스케이프한 글자 부호로 나간다")
+  })
+
+  it("이스케이프한 공문 '-' 줄(\\- …)을 고쳐도 문서 글에 역슬래시가 새지 않는다", async () => {
+    const { original, markdown } = await makeReport()
+    assert.match(markdown, /^\\- 세부 일정 확정$/m, "공문 '-' 는 4칸 들여쓰기(코드 블록) 대신 이스케이프 부호")
+    const res = await patchHwpx(original, markdown.replace("\\- 세부 일정 확정", "\\- 세부 일정 변경"))
+    assert.ok(res.success, res.error)
+    const after = await sectionXml(res.data!)
+    assert.ok(after.includes("세부 일정 변경") && !after.includes("\\"), "글 치환·역슬래시 없음(부호 뒤는 탭)")
   })
 
   it("□ 묶음 통째로 추가 — 부호마다 견본 서식", async () => {
