@@ -323,7 +323,9 @@ export function detectRulingLines(
     if (!b || a.x2 - a.x1 < tol * 4) continue
     const y = (a.y1 + b.y1) / 2
     if (!onV(a.x1, y) || !onV(a.x2, y) || horizontals.some(h => Math.abs(h.y1 - y) <= tol && h.x1 <= a.x1 + tol && h.x2 >= a.x2 - tol)) continue
-    horizontals.push({ x1: a.x1, y1: y, x2: a.x2, y2: y, thicknessPx: 1 })
+    // 본문 행 괘선 끝에 맞닿으면 괘선째 한 선으로 — 맞닿은 두 조각은 표 격자가 한 선으로 잇지 못한다
+    const p = ruleH.find(p => Math.abs(p.y1 - y) <= fillGap && (Math.abs(p.x1 - a.x2) <= tol * 3 || Math.abs(a.x1 - p.x2) <= tol * 3))
+    horizontals.push(p ? { ...p, x1: Math.min(a.x1, p.x1), x2: Math.max(a.x2, p.x2) } : { x1: a.x1, y1: y, x2: a.x2, y2: y, thicknessPx: 1 })
   }
   // 칠한 칸 변이 본문 행 괘선 끝에 맞닿고(흰 틈 위아래, 괘선 y ± FILL_GAP) 다른 끝이 세로선에 닿아도 그 괘선을 잇는다 — 칠한 칸 옆이 연한 칠이라
   // 위 짝 변의 끝이 세로선에 안 닿는 행(합격자 표 "남자" 위)
@@ -334,7 +336,8 @@ export function detectRulingLines(
       if (!a) continue
       const far = side < 0 ? a.x1 : a.x2
       if (!onV(far, p.y1) || horizontals.some(h => Math.abs(h.y1 - p.y1) <= tol && h.x1 <= Math.min(far, end) + tol && h.x2 >= Math.max(far, end) - tol)) continue
-      horizontals.push({ ...p, x1: Math.min(far, end), x2: Math.max(far, end) })
+      // 틈 조각만 따로 넣으면 격자가 맞닿은 두 조각을 한 선으로 잇지 못해 칠한 열 칸이 행마다 갈리지 않았다 — 괘선째 늘인 한 선으로
+      horizontals.push({ ...p, x1: Math.min(far, p.x1), x2: Math.max(far, p.x2) })
     }
   }
   horizontals.push(...fillH)

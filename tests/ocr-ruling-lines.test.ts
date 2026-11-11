@@ -299,6 +299,18 @@ describe("detectRulingLines — 채움 경계", () => {
     assert.ok(horizontals.some(l => Math.abs(l.y1 - 122) <= 3 && l.x1 <= 103 && l.x2 >= 247), JSON.stringify(horizontals))
   })
 
+  it("칠한 열까지 이은 행 괘선은 맞닿은 두 조각이 아니라 한 선이다", () => {
+    // 틈 조각만 따로 넣으면 표 격자가 두 조각을 잇지 못해 칠한 열 칸이 행마다 갈리지 않았다(합격자 표 "81 남자")
+    const w = 900, h = 400
+    const rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 100, 40, 250, 120, 60)
+    fillRect(rgba, w, 100, 124, 250, 290, 60)
+    drawHLine(rgba, w, 252, 800, 121)
+    for (const x of [252, 800]) drawVLine(rgba, w, x, 40, 290)
+    const { horizontals } = detectRulingLines(rgba, w, h, SCALE)
+    assert.ok(horizontals.some(l => Math.abs(l.y1 - 122) <= 3 && l.x1 <= 103 && l.x2 >= 797), JSON.stringify(horizontals))
+  })
+
   it("칠한 칸 하나의 위아래 변(흰 틈 짝 없음)은 행 경계를 늘리지 않는다", () => {
     const w = 900, h = 400
     const rgba = makeCanvas(w, h)
