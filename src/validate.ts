@@ -3,7 +3,7 @@
  *
  * 검사 항목 (claw-hwp validate.py의 실측 검사셋 이식 — MIT © DoHyun468/claw-hwp):
  * - 유효한 ZIP인지, mimetype이 첫 엔트리이고 내용이 application/hwp+zip인지
- * - 필수 파일 존재 (META-INF/container.xml, content.hpf, header.xml, section0.xml)
+ * - 필수 파일 존재 (version.xml, META-INF/container.xml, content.hpf, header.xml, section0.xml)
  * - XML/HPF/RDF 엔트리 웰폼드
  * - header.xml secCnt == 실제 Contents/sectionN.xml 수
  *   (한컴독스는 실제 파일 목록이 아니라 secCnt를 신뢰하고, 불일치 시 열기를 거부한다)
@@ -31,6 +31,7 @@ export interface ValidateResult {
 
 const REQUIRED_FILES = [
   "mimetype",
+  "version.xml",
   "META-INF/container.xml",
   "Contents/content.hpf",
   "Contents/header.xml",

@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import JSZip from "jszip"
 import { markdownToHwpx } from "../src/hwpx/generator.js"
 import { validateHwpx } from "../src/validate.js"
+import { hwpxAppMajor } from "../src/render/head-styles.js"
 
 /** 생성기 산출물을 열어 변형을 가한 뒤 다시 zip 버퍼로 */
 async function tamper(buf: ArrayBuffer, mutate: (zip: JSZip) => void | Promise<void>): Promise<ArrayBuffer> {
@@ -20,6 +21,25 @@ describe("validateHwpx", () => {
     assert.deepEqual(result.issues, [], "생성기 산출물에 구조 문제가 없어야 함")
     assert.equal(result.ok, true)
     assert.ok(result.entryCount >= 5, "필수 엔트리 이상 존재")
+  })
+
+  it("서식 견본 없이 만든 꾸러미도 mimetype 다음에 version.xml 을 쓴다(#207)", async () => {
+    for (const gongmun of [undefined, { preset: "report" }, { preset: "plan" }, { preset: "gaejosik" }, { preset: "minutes" }, { preset: "official" }] as const) {
+      const zip = await JSZip.loadAsync(await markdownToHwpx("# 제목\n\n본문", gongmun ? { gongmun } : undefined))
+      const names = Object.keys(zip.files)
+      assert.deepEqual(names.slice(0, 2), ["mimetype", "version.xml"], gongmun?.preset ?? "plain")
+      const ver = await zip.files["version.xml"].async("string")
+      assert.match(ver, /<hv:HCFVersion [^>]*tagetApplication="WORDPROCESSOR"[^>]*xmlVersion="1.4"[^>]*application="kordoc"/)
+      // appVersion 은 kordoc 판이라 한글 판 번호로 읽지 않는다(렌더가 2024 이전 규칙을 쓰지 않게)
+      assert.equal(hwpxAppMajor(ver), undefined)
+    }
+  })
+
+  it("version.xml 누락을 잡는다(#207)", async () => {
+    const broken = await tamper(await markdownToHwpx("본문"), zip => zip.remove("version.xml"))
+    const result = await validateHwpx(broken)
+    assert.equal(result.ok, false)
+    assert.ok(result.issues.some(i => i.message.includes("version.xml")))
   })
 
   it("ZIP이 아닌 버퍼는 즉시 실패", async () => {

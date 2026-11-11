@@ -3,7 +3,7 @@
  */
 
 import { type ResolvedGongmun, levelIndent, levelMarkerHeight, markerWidth, needsGaejosikAssets, usesAsteriskThird, usesReportFonts } from "./gongmun.js"
-import { KordocError } from "../utils.js"
+import { KordocError, VERSION } from "../utils.js"
 import { GJ_CHAR_APPROVAL, GJ_CHAR_TITLE_BAR, GONGMUN_APPROVAL_CHAR, GONGMUN_TBL_PT, GONGMUN_TITLE_BAR_CHAR, charVariantBase } from "./gen-ids.js"
 import { gaejosikSizes, gaejosikSpaceBefore, gaejosikChamIndent, gaejosikTocItemIndent, GAEJOSIK_COLORS } from "./gaejosik.js"
 import {
@@ -18,6 +18,12 @@ import {
 } from "./gen-ids.js"
 
 // ─── HWPX 구조 파일 생성 ─────────────────────────────
+
+/** version.xml — OWPML 꾸러미 필수 항목(mimetype 다음). xmlVersion 은 header.xml <hh:head version> 과 같게 */
+export function generateVersionXml(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="0" buildNumber="1" os="1" xmlVersion="1.4" application="kordoc" appVersion="${VERSION}"/>`
+}
 
 export function generateContainerXml(): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>

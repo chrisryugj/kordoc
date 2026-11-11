@@ -133,14 +133,19 @@ export interface RenderStyles {
   early2024?: boolean
 }
 
+/** kordoc 이 쓴 version.xml — appVersion 이 kordoc 판(4.x)이라 한글 판 번호가 아니다. 한글 판을 모르는 문서로(2024 규칙) */
+const madeByKordoc = (versionXml: string | null | undefined) => !!versionXml && /\bapplication="kordoc"/.test(versionXml)
+
 /** version.xml 의 저장 빌드(appVersion 넷째 수). 없거나 못 읽으면 undefined */
 export function hwpxAppBuild(versionXml: string | null | undefined): number | undefined {
+  if (madeByKordoc(versionXml)) return undefined
   const m = versionXml?.match(/appVersion="\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*(\d+)/)
   return m ? Number(m[1]) : undefined
 }
 
 /** version.xml 의 저장 판 번호(appVersion 첫 수 — 12 = 한글 2022, 13 = 2024). 없거나 못 읽으면 undefined */
 export function hwpxAppMajor(versionXml: string | null | undefined): number | undefined {
+  if (madeByKordoc(versionXml)) return undefined
   const m = versionXml?.match(/appVersion="\s*(\d+)/)
   return m ? Number(m[1]) : undefined
 }

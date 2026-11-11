@@ -22,7 +22,7 @@ import { gaejosikBodyWidth } from "./gaejosik.js"
 import { type HwpxTheme, resolveTheme, charVariantBase, charPr } from "./gen-ids.js"
 import { buildPrvText, parseMarkdownToBlocks, beginInlineDoc, endInlineDoc, extractFootnoteDefs } from "./md-runs.js"
 import { type PageOptions, resolvePage } from "./gen-page.js"
-import { generateContainerXml, generateManifest, generateHeaderXml, staticBorderFillNext, staticFontNext } from "./gen-header.js"
+import { generateContainerXml, generateVersionXml, generateManifest, generateHeaderXml, staticBorderFillNext, staticFontNext } from "./gen-header.js"
 import { computeGongmunFitPlan, precomputeGongmunList } from "./gen-gongmun-fit.js"
 import { blocksToSectionXml, type ChartPart } from "./gen-section.js"
 import { TableBfRegistry } from "./gen-table-bf.js"
@@ -143,6 +143,7 @@ export async function markdownToHwpx(
     }
     const zip = new JSZip()
     zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
+    zip.file("version.xml", generateVersionXml(), { compression: "STORE" })
     zip.file("META-INF/container.xml", generateContainerXml())
     zip.file("Contents/content.hpf", generateManifest(chartParts, images.manifestItems(), "gongmun"))
     for (const part of images.parts) zip.file(part.name, part.data)
@@ -220,6 +221,7 @@ export async function markdownToHwpx(
 
   const zip = new JSZip()
   zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
+  zip.file("version.xml", generateVersionXml(), { compression: "STORE" })
   zip.file("META-INF/container.xml", generateContainerXml())
   zip.file("Contents/content.hpf", generateManifest(chartParts, images.manifestItems(), gongmun ? "gongmun" : "default"))
   for (const part of images.parts) zip.file(part.name, part.data)
