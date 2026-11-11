@@ -288,6 +288,8 @@ export async function ocrOnePage(
     let { rgba: upright, angle } = vectorOps || regions ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
     const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
     let ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
+    // 그림 영역만 읽는 쪽은 표 행 경계 보강선(isolated)을 뺀다 — 도해 상자·화살표 선이 행 경계로 잡혀 이름표 읽기 순서가 흔들렸다(ODL 055 팜유 흐름도)
+    if (ruling && regions) ruling = { ...ruling, horizontals: ruling.horizontals.filter(h => !h.isolated) }
     // 눕힌 쪽 판정은 쪽 래스터 전체를 읽을 때만 — 벡터 글자 쪽은 벡터 괘선, 그림 영역은 PDF 좌표를 그대로 써야 한다
     const tuning = regions ? regionTuning(config.tuning) : vectorOps ? { ...config.tuning, orientPage: false } : config.tuning
     // 검출 박스가 표 칸 경계를 가로지르면 그 선에서 가른다 — 연한 칸 구분선(cellDividers)만이 아니라 진한 칸 경계도. 촘촘한 표에서
