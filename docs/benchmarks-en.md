@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.65: OCR figure text (forest plots, number-at-risk tables) · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90517 → **0.90568** (text 0.86118 → 0.86376 — drug-label forest-plot pages CER 1.0 → 0.0 and 1.0 → 0.547, a survival-curve page 0.437 → 0.034, no drops). No per-document drops on in-house OCR, OCR robust or ODL-OCR.
+
+- Rejected: restoring a leading "ㅇ" lost in blurred scans (false ㅇ on ☑ checkboxes and boxed sources — 6 pages down), handwriting drop threshold 0.35 and 0.6 (both worse; 0.5 kept), extending table verticals through text gutters (header cells split).
+
 ## 4.24.64: official-document "-" items, formula norms, OCR filled-column rules · 2026-11-11
 
 Formula OCR ground truth (20 arXiv papers, 621 pages, report only, run alone): exact 0.615 → **0.6171**, meanNED 0.0366 → 0.0365, nedAll 0.0582 → 0.0581, BLEU-4 0.9021 → 0.9022, recall and precision unchanged; 7 pairs improved, none worse. The official-document "-" item output change: no per-document drops on score 5,465, roundtrip 75, generation repro 5, formats 146 and annexes 544. OCR filled-column rules: KoOCR-Bench 0.90517 unchanged (pass-roster table 0.703 → 0.706); no drops on in-house OCR, OCR robust or ODL-OCR.

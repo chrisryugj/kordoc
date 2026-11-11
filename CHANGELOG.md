@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.65] - 2026-11-12
+
+### Fixed
+
+- OCR 숲 그림(forest plot) 판 글: 약품 설명서 하위군 분석 그림은 세로 눈금 없이 가로 눈금 위아래에 "Favours …"·"… better" 비교 이름표가 붙어 차트 판 판정(두 축)에 걸리지 않았고, 그림 속 하위군 이름·HR(95% CI)·n(%) 줄이 표로 나가 원본(그림)에 없는 글이 됐다. 가로 눈금(고른 간격, 또는 자리가 값에 비례 — 눈금을 놓쳐도)과 비교 이름표가 있으면 눈금 줄 위로 촘촘한 줄들·아래로 그림 설명 앞까지 뺀다 — KoOCR-Bench 0.90517 → 0.90557(글 0.861 → 0.863: 약품 설명서 두 쪽 CER 1.0 → 0.0·0.547)
+- OCR 생존 곡선 아래 위험 인원 표(Number at Risk)와 큰 상자로 읽은 맨 위 눈금도 그림 판으로 뺀다 — KoOCR-Bench 0.90557 → 0.90568(약품 설명서 한 쪽 CER 0.437 → 0.034). 두 건 모두 자체 OCR·OCR robust·ODL-OCR 문서별 하락 0
+
 ## [4.24.64] - 2026-11-11
 
 ### Fixed
