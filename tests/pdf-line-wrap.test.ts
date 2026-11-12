@@ -610,3 +610,17 @@ describe("joinPageBreakWraps — 중·일문 매단 문장부호", () => {
     assert.ok(blocks[1].text!.includes("的银行账号如下"), blocks[1].text)
   })
 })
+
+describe("joinPageBreakWraps — 사이에 낀 쪽 바닥 각주", () => {
+  it("앞 쪽 끝 문단과 다음 쪽 첫 문단 사이 각주(작은 글자·번호로 엶)는 건너뛰어 잇고 각주는 뒤에 남긴다 (일문 계약서)", () => {
+    const a: IRBlock = { type: "paragraph", text: "なお、出版物の具体的な仕様については別途規定するものと", pageNumber: 1, bbox: { page: 1, x: 57, y: 217, width: 481, height: 132 }, style: { fontSize: 10 } }
+    PARA_LAST_LINE.set(a.bbox!, { right: 538, width: 481, fontSize: 10 })
+    const note: IRBlock = { type: "paragraph", text: "1 この契約書のモデルは、韓国出版社の間で有用である。", pageNumber: 1, bbox: { page: 1, x: 57, y: 65, width: 482, height: 129 }, style: { fontSize: 9 } }
+    const b: IRBlock = { type: "paragraph", text: "する。", pageNumber: 2, bbox: { page: 2, x: 68, y: 757, width: 30, height: 10 }, style: { fontSize: 10 } }
+    const blocks = [a, note, b]
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 2)
+    assert.ok(blocks[0].text!.endsWith("規定するものとする。"), blocks[0].text)
+    assert.equal(blocks[1], note)
+  })
+})
