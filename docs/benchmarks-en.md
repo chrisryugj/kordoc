@@ -2,7 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
-## 4.24.68: OCR two-line cells · CJK fill-in forms · white-background frames · 2026-11-12
+## 4.24.69: PDF CJK body text · nested ordered lists · 2026-11-12
+
+PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99111 → **0.99113** (7 documents up — LibreOffice Chinese contract 0.940 → 0.961, Japanese 0.956 → 0.962), two annex documents up. No per-document drops on tables, annex tables, score, the four ODL runs, OCR, formats, roundtrip or gen. One drop (pii word F1 0.94235 → 0.94222) is a benchmark artifact: the two changed lines now match the ground-truth HWPX lines character for character and precision rose 0.99339 → 0.99357 — the old duplicated "1\." happened to offset "1." tokens the PDF side lacks elsewhere. KoOCR 0.90633 unchanged after merging #209.
+
+- Rejected: choosing HWPX textDir by the Hangul version recorded in the HWP summary (55 pairs saved as HWP by 2022 and later as HWPX by 2024 cannot be told apart — exact matches 69 → 37), strikeout NONE under centre underline (only one 2022-saved ground truth; 92 documents reversed), joining side-by-side table grids (indistinguishable from one table split in half — 5 KoOCR pages down).
+
+ · CJK fill-in forms · white-background frames · 2026-11-12
 
 External KoOCR-Bench v2.0c, 877 public pages: 0.90623 → **0.90633** (tables 0.91574 → 0.91594, five table pages up). Two pages dropped (a figure label inside a drug-label table cell and an "exit" label on a booth map): visible figure text is now read, while the ground truth omits figure text — a ground-truth limit (scoring unchanged). PDF text Japanese contract word-boundary F1 0.944 → 0.956. No per-document drops on in-house OCR, OCR robust, ODL-OCR, text, tables, annex tables, score or the four ODL runs.
 
