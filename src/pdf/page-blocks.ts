@@ -154,7 +154,8 @@ export function extractPageBlocksWithLines(
   wrapStrikethroughRuns(items)
 
   // 1.555단계: 선으로 그은 분수 막대 — 막대 위·아래에 붙은 글을 `$\frac{}{}$` 한 아이템으로 접고 막대는 선에서 뺀다 (fraction-bars.ts)
-  const folded = foldFractionBars(items, horizontals, verticals)
+  // OCR 쪽은 건너뛴다 — raster ruling 은 cell rule 도 1pt 아래로 나와 fraction bar 와 못 가른다(OCR 벤치 web051: 표 cell 두 줄이 분수로 접힘)
+  const folded = items.some(i => i.fontName !== "ocr") ? foldFractionBars(items, horizontals, verticals) : { items, bars: new Set<LineSegment>() }
   if (folded.bars.size) { items = folded.items; horizontals = horizontals.filter(l => !folded.bars.has(l)) }
 
   // 1.56단계: 밑줄 — 합성 테두리를 만들기 전에 원본 선으로 판정.
