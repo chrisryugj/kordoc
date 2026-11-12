@@ -5,6 +5,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
 import { normalizeItems, mergeLineSimple, type PdfTextItem, type NormItem } from "../src/pdf/text-line.js"
 import { detectColumns } from "../src/pdf/columns.js"
@@ -414,5 +415,14 @@ describe("dropHeadBandClipGrids — 선 표 윗변의 되풀이 머리 행 클�
     assert.equal(dropHeadBandClipGrids([heads[0], heads[2]], [stat]).length, 2)
     const bodyClip = clip([58.1, 125, 199], [620.4, 600])
     assert.equal(dropHeadBandClipGrids([...heads, bodyClip], [stat]).length, 4)
+  })
+})
+
+describe("detectClusterTables — 틈 없는 중·일문 줄", () => {
+  it("양쪽 맞춤 중문 본문 ①②③ 항목은 표가 아니다 — 은행 기입란만 남는다 (LibreOffice 중문 계약서 4쪽 실측 아이템)", () => {
+    const raw: [string, number, number, number, number, number][] = JSON.parse(readFileSync(new URL("./fixtures/cjk-justified-prose-items.json", import.meta.url), "utf8"))
+    const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))
+    const prose = (t: { usedItems: Set<ClusterItem> }) => [...t.usedItems].some(i => i.text === "本著作物的翻译应" || i.text === "自本合同")
+    assert.equal(detectClusterTables(items, 4).filter(prose).length, 0)
   })
 })

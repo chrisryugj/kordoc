@@ -168,7 +168,7 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
   // 산문 역할의 후보도 표가 아니다 (table-roles.ts). 목차·차트는 호출 측이 그 영역의 글로 바꾼다
   return results.filter(r => {
     const twoColumns = isTwoColumnProse(r)
-    const prose = twoColumns || isProseTable(r.table) ||
+    const prose = twoColumns || isProseTable(r.table) || gaplessCjkLines(r) ||
       [...r.usedItems].every(it => it.fontName === "ocr") && isProseFragmentTable(r.table)
     if (prose && rejected) rejected.prose++
     // OCR 두 단 본문은 단 경계(군집 상자들 사이 빈 x 띠 가운데 양쪽 글이 고른 가장 넓은 것)를 알린다 — 호출 측이 글 판정으로 못 찾은
@@ -187,6 +187,30 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
     return !prose
   })
 }
+
+/**
+ * 틈 없는 중·일문 줄로 된 후보 — 중·일문은 낱말 사이 공백이 없고 글자 폭이 고른 격자라 양쪽 맞춤 줄의 아이템 경계가 줄마다 같은 x 에
+ * 놓여 열처럼 보였다(LibreOffice 중문 계약서 ①②③ 본문이 4열 표로). 줄 안 아이템 사이 가장 큰 틈(줄머리 부호 뒤 제외)이 글자 크기 절반도
+ * 안 되는(칸 틈이 없는) 중·일문 줄이 셋 이상이고 아이템 둘 이상인 줄의 60% 이상이면 산문
+ */
+function gaplessCjkLines(r: ClusterTableResult): boolean {
+  let lines = 0, gapless = 0
+  for (const row of groupByBaseline([...r.usedItems].filter(i => i.text.trim()))) {
+    const sorted = [...row.items].sort((a, b) => a.x - b.x)
+    if (sorted.length < 2) continue
+    lines++
+    const text = sorted.map(i => i.text).join("").replace(/\s+/g, "")
+    if ([...text].filter(c => CJK_CHAR.test(c)).length < text.length * 0.5) continue
+    // 줄머리 항목 부호("①"·"1.") 뒤 들여쓰기 틈은 칸 틈이 아니다
+    let maxGap = 0
+    for (let k = [...sorted[0].text.trim()].length <= 2 ? 2 : 1; k < sorted.length; k++) maxGap = Math.max(maxGap, sorted[k].x - (sorted[k - 1].x + sorted[k - 1].w))
+    if (maxGap < sorted[0].fontSize * 0.5) gapless++
+  }
+  return gapless >= 3 && gapless >= lines * 0.6
+}
+
+/** 한자·가나·전각 문장부호 한 글자 (띄어쓰기 없는 중·일문 글) */
+const CJK_CHAR = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/
 
 /** 세로 색인 탭 기둥으로 볼 최소 글자 수 */
 const SIDE_TAB_MIN = 6
