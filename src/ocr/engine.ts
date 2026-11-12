@@ -982,8 +982,11 @@ export class OcrEngine {
         const gray = grayCrop(rgba, width, b)
         const ink = inkStats(gray)
         const cut = retry.includes(b) ? midBlankRow(gray, b.w, b.h, ink) : null
-        // 가로 글줄만 — 좁은 세로쓰기 조직도 칸("중앙노동위원회")의 두 글자 조각("원회")은 순서가 섞여 들어갔다(web068)
-        if (cut && b.w >= 3 * Math.max(cut[0], b.h - cut[1])) { subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] }); continue }
+        // 가로 글줄만 — 좁은 세로쓰기 조직도 칸("중앙노동위원회")의 두 글자 조각("원회")은 순서가 섞여 들어갔다(web068). 표 칸 안(양옆에 칸
+        // 세로 괘선) 상자는 줄 폭이 줄 높이 두 배면 가로 글줄이다 — 세 배를 요구하면 머리 칸 두 줄 "연금 / 수급자"(줄 높이 36·상자 폭 105)가
+        // 갈리지 않고 "주자"로 읽혀 버려졌다. 칸 밖(그림 이름표 "주사바늘")은 정답이 그림 글을 빼므로 종전대로 세 배
+        const inCell = cellRules.some(r => r.x1 <= b.x + 2 && r.y1 <= b.y && r.y2 >= b.y + b.h) && cellRules.some(r => r.x1 >= b.x + b.w - 2 && r.y1 <= b.y && r.y2 >= b.y + b.h)
+        if (cut && b.w >= (inCell ? 2 : 3) * Math.max(cut[0], b.h - cut[1])) { subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] }); continue }
         const bands = stackedGlyphBands(gray, b.w, b.h, ink)
         // 띠 사이 틈이 글자 높이 0.3배 안이면 세로쓰기 낱말("서/울" 틈 4px·글자 21px) — 한 아이템으로. 더 벌어지면 위아래 두 줄 끝 글자
         // ("자주식 대 / 기계식 대" 틈 8px·글자 22px)라 띠마다 아이템으로 둔다(붙이면 "대대" 가 한 줄에 갔다)
