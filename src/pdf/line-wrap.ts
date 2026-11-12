@@ -372,7 +372,10 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
     if (!a.pageNumber || b.pageNumber !== a.pageNumber + 1 || !a.text || !b.text) continue
     if ((a.type !== "paragraph" && a.type !== "list") || b.type !== "paragraph") continue
     const last = a.bbox && PARA_LAST_LINE.get(a.bbox), fs = last ? last.fontSize : 0
-    if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs) continue
+    // 중·일문은 줄 끝 문장부호를 판 밖으로 한 자 매달아(，。、) 쪽 오른끝이 그만큼 늘어 있다 — 한글 없는 중·일문 끝줄은 1em 더 봐 준다
+    // (중문 계약서 쪽 끝 "…规定款项的银" 523pt ↔ 매단 "，" 줄 534pt)
+    const hang = !/[가-힣]/.test(a.text) && CJK.test(a.text.replace(MARKUP, "").trimEnd().slice(-1)) ? fs : 0
+    if (!last || fs <= 0 || (pageRight.get(a.pageNumber) ?? Infinity) - last.right >= BODY_FULL_TOL * fs + hang) continue
     if (last.width < BODY_MIN_WIDTH_EM * fs || Math.abs((b.style?.fontSize ?? 0) - fs) > 0.15 * fs) continue
     // 쪽 사이에는 줄 간격 근거가 없다 — HWPX 쌍 대조(한컴 PDF 쌍의 잇기 후보 325곳, 원문 문단 경계와 비교)로 정한 가드:
     // · 목차 줄·항목 기호·용어 행·조항 번호로 여는 블록은 새 줄. 단 앞 문단 안에 같은 사각 기호가 이미 있으면 문장 속 나열이 이어진 것

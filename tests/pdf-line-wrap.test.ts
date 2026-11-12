@@ -596,3 +596,17 @@ describe("wrapJoiner — 조문 인용 꺾임 (행정업무운영 편람 부칙 
     assert.equal(startsNewItem("공포한 날부터 시행한다.", "제2조(다른 법령의 개정)"), true)
   })
 })
+
+describe("joinPageBreakWraps — 중·일문 매단 문장부호", () => {
+  it("줄 끝 문장부호를 판 밖으로 매단 중문은 1em 짧은 끝줄도 꽉 찬 줄이다 (중문 계약서 \"…规定款项的银\" ⏎ \"行账号如下…\")", () => {
+    const mk = (text: string, page: number, x: number, w: number): IRBlock => ({ type: "paragraph", text, pageNumber: page, bbox: { page, x, y: 100, width: w, height: 10 }, style: { fontSize: 11 } })
+    const hung = mk("出版社应在发行前向著作权人发送译本的封面设计，", 1, 72, 462) // 매단 "，" 까지 534
+    const a = mk("第五条（版税的支付方法）出版社向著作权人支付上述第二条、第三条、第四条规定款项的银", 1, 72, 451)
+    PARA_LAST_LINE.set(a.bbox!, { right: 523, width: 451, fontSize: 11 })
+    const b = mk("行账号如下，或日后向著作权人书面告知出版社的指定账号进行支付。", 2, 72, 300)
+    const blocks = [hung, a, b]
+    joinPageBreakWraps(blocks)
+    assert.equal(blocks.length, 2)
+    assert.ok(blocks[1].text!.includes("的银行账号如下"), blocks[1].text)
+  })
+})
