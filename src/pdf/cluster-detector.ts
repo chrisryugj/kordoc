@@ -403,37 +403,60 @@ function detectCompactStatisticalTables(rows: RowGroup[], pageNum: number): Clus
   return found
 }
 
+/**
+ * 줄을 칸 조각으로 — 아이템 둘이면 그대로 두 칸, 셋 이상이면 1.2em 넘는 틈에서만 가른다("1) 사업 방식 | 학부생들의 유대감과 결 MT 를 진행함" 이
+ * 아이템 다섯). 조각 글은 아이템 사이 틈이 0.2em 넘거나 공백 힌트가 있으면 띄운다. 가른 줄은 왼쪽 칸이 이름표처럼 짧아야(20자 안) 두 칸이다 —
+ * 두 단 본문 줄("ing merged model ‘SFT v3+v4’ retains the high | for GSM8K is 58.83, …")도 단 사이 틈으로 두 조각이 된다(ODL 189)
+ */
+function twoColumnCells(row: RowGroup): Array<{ x: number; y: number; fontSize: number; text: string }> {
+  const items = [...row.items].sort((a, b) => a.x - b.x)
+  if (items.length <= 2) return items.map(c => ({ x: c.x, y: c.y, fontSize: c.fontSize, text: c.text }))
+  const out: Array<{ x: number; y: number; fontSize: number; text: string; end: number }> = []
+  for (const c of items) {
+    const last = out.at(-1), gap = last ? c.x - last.end : Infinity
+    if (last && gap <= c.fontSize * 1.2) { last.text += (gap > c.fontSize * 0.2 || c.hasSpaceBefore ? " " : "") + c.text; last.end = Math.max(last.end, c.x + c.w) }
+    else out.push({ x: c.x, y: c.y, fontSize: c.fontSize, text: c.text, end: c.x + c.w })
+  }
+  // "❍ 기 간 : 연중"·"- 생계급여\t: 1,716가구" 처럼 띄운 쌍점으로 잇는 줄은 이름표·값 칸이 아니라 한 줄 글이다(균등배분 이름표 틈에서 갈리기도 한다)
+  if (out.length === 2 && (out[0].text.length > 20 || out.some(c => /^\s*[:：]|[:：]\s*$|\s[:：]\s/.test(c.text)))) return []
+  return out.map(({ end: _end, ...cell }) => cell)
+}
+
 /** Recover compact, borderless tables from repeated cell starts, even when
  * the inter-column whitespace is narrower than the generic gap threshold. */
 function detectAlignedTwoColumnTables(rows: RowGroup[], pageNum: number): ClusterTableResult[] {
   const found: ClusterTableResult[] = []
   let i = 0
   while (i < rows.length - 2) {
-    const first = [...rows[i].items].sort((a, b) => a.x - b.x)
+    const first = twoColumnCells(rows[i])
     if (first.length !== 2 || first.some(c => !c.text.trim() || c.text.length > 48) ||
         first[1].x - first[0].x < 45 || first[1].x - first[0].x > 260 ||
         /[.!?]$/.test(first[0].text)) { i++; continue }
-    const body: RowGroup[] = []
+    const body: Array<{ rows: RowGroup[]; left: string; right: string[] }> = []
     let j = i
     for (; j < rows.length; j++) {
-      const cells = [...rows[j].items].sort((a, b) => a.x - b.x)
+      const cells = twoColumnCells(rows[j])
       const previous = body.at(-1)
+      if (previous && previous.rows.at(-1)!.y - rows[j].y > Math.max(24, first[0].fontSize * 2.8)) break
+      // 값 칸이 꺾인 줄 — 오른쪽 열에 맞춰 선 한 조각은 앞 행 값에 잇는다(LibreOffice 테두리 없는 표 "…함께하며 ⏎ 이야기를 나누는 자리를 마련")
+      if (previous && cells.length === 1 && Math.abs(cells[0].x - first[1].x) <= 5 && cells[0].text.trim()) {
+        previous.rows.push(rows[j]); previous.right.push(cells[0].text); continue
+      }
       if (cells.length !== 2 || cells.some(c => !c.text.trim() || c.text.length > 48) ||
-          Math.abs(cells[0].x - first[0].x) > 5 || Math.abs(cells[1].x - first[1].x) > 5 ||
-          (previous && previous.y - rows[j].y > Math.max(24, first[0].fontSize * 2.8))) break
-      body.push(rows[j])
+          Math.abs(cells[0].x - first[0].x) > 5 || Math.abs(cells[1].x - first[1].x) > 5) break
+      body.push({ rows: [rows[j]], left: cells[0].text, right: [cells[1].text] })
     }
-    if (body.length < 3) { i++; continue }
+    // 값 열 절반 넘게 글자·숫자가 없으면(신구조문 대비표 "------ 제4항----" 줄표) 값 칸이 아니다
+    if (body.length < 3 || body.filter(b => !/[\p{L}\p{N}]/u.test(b.right.join(""))).length * 2 >= body.length) { i++; continue }
     const top = rows[i - 1]
     const title = top?.items.length === 1 && Math.abs(top.items[0].x - first[0].x) <= 5 &&
       top.items[0].text.length <= 65 && top.y - first[0].y <= Math.max(24, first[0].fontSize * 2.8)
       ? top : undefined
-    const tableRows = title ? [title, ...body] : body
-    const cells: IRCell[][] = tableRows.map((row, idx) => {
-      if (title && idx === 0) return [{ text: row.items[0].text, colSpan: 2, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1 }]
-      const [left, right] = [...row.items].sort((a, b) => a.x - b.x)
-      return [{ text: left.text, colSpan: 1, rowSpan: 1 }, { text: right.text, colSpan: 1, rowSpan: 1 }]
-    })
+    const tableRows = [...(title ? [title] : []), ...body.flatMap(b => b.rows)]
+    const cells: IRCell[][] = [
+      ...(title ? [[{ text: title.items[0].text, colSpan: 2, rowSpan: 1 }, { text: "", colSpan: 1, rowSpan: 1 }]] : []),
+      ...body.map(b => [{ text: b.left, colSpan: 1, rowSpan: 1 }, { text: b.right.join(" "), colSpan: 1, rowSpan: 1 }]),
+    ]
     const usedItems = new Set(tableRows.flatMap(row => row.items))
     const all = [...usedItems]
     const minX = Math.min(...all.map(c => c.x)), minY = Math.min(...all.map(c => c.y))
