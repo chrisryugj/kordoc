@@ -11,6 +11,9 @@ describe("isCjkLatinAutospace", () => {
     // 0.3em 공백 글리프로 찍힌 자동 간격도 ("第⏎3者" 3.00pt/10pt)
     assert.equal(isCjkLatinAutospace("第", "3", 3.0, 10), true)
     assert.equal(isCjkLatinAutospace("前払金", "USD", 3.0, 10), true)
+    // 전각 문장부호 옆·밑줄 표지 너머도 같은 자동 간격 (kpipa 일문 "したり、 e-Book" 1.17pt, "ごとに <u>2部ずつ</u>")
+    assert.equal(isCjkLatinAutospace("出版したり、", "e-Book(", 1.17, 10), true)
+    assert.equal(isCjkLatinAutospace("各刷ごとに", "<u>2部ずつ</u>", 2.0, 10), true)
   })
   it("keeps real spaces and leaves Hangul alone", () => {
     assert.equal(isCjkLatinAutospace("鐘路区", "1", 5.6, 10), false)
