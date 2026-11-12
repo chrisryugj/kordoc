@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.67: closed box tables · CJK body text · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90590 → **0.90623** (tables 0.91507 → 0.91574 — a press-release page whose "release date" and "contact" boxes were merged into one table: TEDS 0.678 → 0.847, no drops). PDF text (744 pairs) word-boundary F1 0.99108 → **0.99111** (Chinese contract 0.867 → 0.940, Japanese contract 0.930 → 0.944), reading order one document up. No per-document drops on in-house OCR, tables, annex tables, score or the four ODL runs.
+
+- Rejected: pre-joining touching kanji/kana fragments before table detection (combined with fill-in fields on other lines into a new false table), applying the closed-box rule to one-cell frames (the frame-unwrapping path changed and box lines stopped joining).
+- Left as ground-truth limits: KoOCR 156759247_p003 (ground truth is a different page's table), 156760717_p001 (three side-by-side tables as one), 156728866_p046 (hidden empty rows under every value row), ODL 187 and 189 (text layer "✗" written as "X").
+
 ## 4.24.66: OCR rules next to filled columns · PDF word spacing · 2026-11-12
 
 External KoOCR-Bench v2.0c, 877 public pages: 0.90568 → **0.90590** (tables 0.91464 → 0.91507 — a recruitment-result table TEDS 0.706 → 0.786, a statistics table 0.695 → 0.733, no drops). PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99103 → **0.99108** (13 documents up, none down); ODL 200 default, best, fast and OCR: one document up. No per-document drops on in-house OCR, OCR robust, tables, annex tables or score.
