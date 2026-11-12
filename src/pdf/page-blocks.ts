@@ -955,7 +955,7 @@ function extractBlocksWithGrids(
       const textBlocks: IRBlock[] = []
       for (const side of sides) {
         if (side.length === 0) continue
-        for (const group of xyCutOrder(side, gapThreshold)) {
+        for (const group of xyCutOrder(side, gapThreshold, 0, undefined, 0, lex)) {
           if (group.length === 0) continue
           const groupBlocks = extractPageBlocksFallback(group, pageNum, false, true, lex, [], chartBandGap(group, gapThreshold, charts))
           for (const b of groupBlocks) textBlocks.push(b)
@@ -968,7 +968,7 @@ function extractBlocksWithGrids(
       const allY = remaining.map(i => i.y)
       const pageH = safeMax(allY) - safeMin(allY)
       const gapThreshold = Math.max(15, pageH * 0.03)
-      const groups = xyCutOrder(remaining, gapThreshold)
+      const groups = xyCutOrder(remaining, gapThreshold, 0, undefined, 0, lex)
       const textBlocks: IRBlock[] = []
       for (const group of groups) {
         if (group.length === 0) continue
@@ -1435,7 +1435,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
 
       const orderedGroups = proseCutX !== null
         ? splitTwoColumnProse(items, proseCutX)
-        : xyCutOrder(items, gapThreshold, 0, undefined, minGap)
+        : xyCutOrder(items, gapThreshold, 0, undefined, minGap, lex)
 
       for (const group of orderedGroups) {
         if (group.length === 0) continue

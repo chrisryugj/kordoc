@@ -530,7 +530,7 @@ export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
     const wraps = fs > 0
       && (full(a) || wordWrap)
       && a.right - a.left >= BODY_MIN_WIDTH_EM * fs
-      && a.y - b.y > 0 && a.y - b.y < maxPitch
+      && a.y - b.y > 0 && (a.y - b.y < maxPitch || indentedCjkFirstLine(a, b, fs))
       && Math.abs(b.fontSize - fs) <= 0.15 * fs
       && !startsNewItem(a.text, b.text)
       // 문장이 끝난 찬 줄 뒤 다단계 번호 줄도 새 조항 — "…참조할 수 있다." ⏎ "7.3.4 명명법" (KS 표준안)
@@ -539,6 +539,18 @@ export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
     out.push(!wraps ? "\n" : wordWrap ? (unspacedCjkBoundary(a.text, b.text) ? "" : " ") : wrapJoiner(a.text, b.text, lex))
   }
   return out
+}
+
+/**
+ * 들여 쓴 중·일문 첫 줄이 찬 줄로 끝나고 다음 줄이 그보다 왼쪽(문단 여백)에서 시작하면 넓은 줄 간격이어도 같은 문단이다 — 쪽의 견줄 줄 간격이
+ * 각주(22pt)에 끌려 255% 본문(28pt) 두 줄 "上述著作物…（Proprietor） ，与海外 ⏎ 出版社(Publisher)…" 를 문단 경계로 봤다(kpipa 계약서 중문 1쪽).
+ * 한글 없는 줄만 — 한글 문서는 들여 쓴 첫 줄 뒤 내어 쓴 다음 항목이 흔하다
+ */
+function indentedCjkFirstLine(a: WrapLine, b: WrapLine, fs: number): boolean {
+  const cjk = (t: string) => !/[가-힣]/.test(t) && /[\u3040-\u30ff\u3400-\u9fff]/.test(t)
+  // 쪽 바닥 각주("1 この契約書…", 글자 작음)는 앞 쪽 끝 문단의 꺾인 줄이 아니다
+  return cjk(a.text) && cjk(b.text) && b.left < a.left - fs && a.y - b.y < BODY_MAX_PITCH_ABS_EM * fs &&
+    b.fontSize >= 0.95 * a.fontSize && !/^(?:\d{1,2}\)?\s|[*※])/.test(b.text.trimStart())
 }
 
 /** 칸 안쪽 오른 여백 상한(pt) — 왼 여백(가장 왼쪽 줄 시작 − 칸 왼끝)과 같다고 보되, 가운데 정렬 칸에서 부풀지 않게 한컴 기본

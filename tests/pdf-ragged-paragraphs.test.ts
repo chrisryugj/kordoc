@@ -86,3 +86,15 @@ describe("bodyLineJoins — 표시 서식과 무관한 줄 경계", () => {
     })
   }
 })
+
+describe("bodyLineJoins — 중·일문 들여 쓴 첫 줄", () => {
+  it("들여 쓴 첫 줄이 찬 줄이고 다음 줄이 왼쪽 여백에서 시작하면 넓은 줄 간격이어도 잇는다", () => {
+    const a: WrapLine = { text: "上述著作物（以下称“本著作物”）的著作权人（Proprietor） ，与海外", left: 92, right: 523, y: 379, fontSize: 11 }
+    const b: WrapLine = { text: "出版社(Publisher) 对本著作物授权事宜达成如下协议：", left: 72, right: 439, y: 351, fontSize: 11 }
+    assert.deepEqual(bodyLineJoins([a, b]), [""])
+    // 쪽 바닥 각주(작은 글자·번호 표지)는 잇지 않는다
+    const note: WrapLine = { text: "1 この契約書のモデルは、韓国出版社または著者権", left: 57, right: 300, y: 347, fontSize: 9 }
+    const end: WrapLine = { text: "なお、出版物の具体的な仕様については別途規定するものと", left: 68, right: 538, y: 379, fontSize: 10 }
+    assert.deepEqual(bodyLineJoins([end, note]), ["\n"])
+  })
+})

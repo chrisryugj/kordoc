@@ -12,7 +12,7 @@
  */
 
 import { groupByY, mergeLineSimple, dominantStyle, computeBBox, type NormItem } from "./text-line.js"
-import { bodyLineJoins } from "./line-wrap.js"
+import { bodyLineJoins, type WrapLexicon } from "./line-wrap.js"
 
 /** 재귀 깊이 제한 — 수천 아이템의 pathological 레이아웃에서 스택 오버플로 방지 */
 const MAX_XYCUT_DEPTH = 50
@@ -65,7 +65,8 @@ export function chartBandGap(group: NormItem[], gap: number, charts: { x1: numbe
   return charts.some(c => x1 >= c.x1 - 2 && x2 <= c.x2 + 2 && top <= c.y1 + 2 && c.y1 - top <= 2 * em) ? gap : 0
 }
 
-export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, wrapped?: WrapBand[], columnGap = 0): NormItem[][] {
+/** lex — 쪽 줄 흐름 줄 간격 근거. 줄 둘뿐인 영역의 꺾인 줄 보호가 넓은 줄 간격 본문(255% 중문 계약서)을 문단 경계로 보지 않게 */
+export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, wrapped?: WrapBand[], columnGap = 0, lex?: WrapLexicon): NormItem[][] {
   if (items.length === 0) return []
   const newRegion = wrapped === undefined
   wrapped ??= inheritedWrapBands(items)
@@ -76,7 +77,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
   if (items.length === 2 && depth < MAX_XYCUT_DEPTH) {
     const sortedY = [...items].sort((a, b) => b.y - a.y)
     if (findHorizontalCut(sortedY, wrapped).gap >= farGap) {
-      if (newRegion) wrapped = wrappedLineBands(items, wrapped)
+      if (newRegion) wrapped = wrappedLineBands(items, wrapped, lex)
       const cut = findHorizontalCut(sortedY, wrapped)
       if (cut.gap >= farGap) return [...leaf([sortedY[0]], wrapped), ...leaf([sortedY[1]], wrapped)]
     }
@@ -89,7 +90,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
     if (cross.size > 0 && cross.size <= items.length * CROSS_MAX_MASK_RATIO) {
       const rest = items.filter(i => !cross.has(i))
       if (rest.length > 0) {
-        const groups = xyCutOrder(rest, gapThreshold, 1, undefined, columnGap)
+        const groups = xyCutOrder(rest, gapThreshold, 1, undefined, columnGap, lex)
         return mergeCrossLayoutGroups(groups, [...cross])
       }
     }
@@ -102,7 +103,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
   // Text assembly cannot affect a horizontal cut below its minimum gap.
   // Reuse the sorted projection when a fresh region needs wrap protection.
   if (newRegion && hCut.gap >= minGap) {
-    wrapped = wrappedLineBands(items, wrapped)
+    wrapped = wrappedLineBands(items, wrapped, lex)
     hCut = findHorizontalCut(sortedY, wrapped)
   }
   // 단(세로) 절단만 물려받은 최소 틈을 쓴다 — 가로 절단(쌓인 줄 사이)은 이 무리 문턱 그대로 (shortBandGap)
@@ -122,19 +123,19 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
     !gapInsideLongerColumn(items, hCut.position, hCut.gap, vCut.position)
   else if (hValid) useHorizontal = true
   else if (vValid) useHorizontal = false
-  else return splitEdgeSpannedColumns(items, gapThreshold, depth) ?? leaf(items, wrapped) // 분할 불가 → 리프 노드
+  else return splitEdgeSpannedColumns(items, gapThreshold, depth, lex) ?? leaf(items, wrapped) // 분할 불가 → 리프 노드
 
   if (useHorizontal) {
     const upper = items.filter(i => i.y > hCut.position)
     const lower = items.filter(i => i.y <= hCut.position)
     if (upper.length > 0 && lower.length > 0 && upper.length < items.length) {
-      return [...xyCutOrder(upper, gapThreshold, depth + 1, wrapped, columnGap), ...xyCutOrder(lower, gapThreshold, depth + 1, wrapped, columnGap)]
+      return [...xyCutOrder(upper, gapThreshold, depth + 1, wrapped, columnGap, lex), ...xyCutOrder(lower, gapThreshold, depth + 1, wrapped, columnGap, lex)]
     }
   } else {
     const left = items.filter(i => i.x + i.w / 2 < vCut.position)
     const right = items.filter(i => i.x + i.w / 2 >= vCut.position)
     if (left.length > 0 && right.length > 0 && left.length < items.length) {
-      return [...xyCutOrder(left, gapThreshold, depth + 1, undefined, columnGap), ...xyCutOrder(right, gapThreshold, depth + 1, undefined, columnGap)]
+      return [...xyCutOrder(left, gapThreshold, depth + 1, undefined, columnGap, lex), ...xyCutOrder(right, gapThreshold, depth + 1, undefined, columnGap, lex)]
     }
   }
 
@@ -322,12 +323,16 @@ function splitsLoneRowTail(items: NormItem[], x: number): boolean {
   if (!head) return false
   // 빈칸 틈은 좁고(3em 안) 꼬리가 줄 끝까지 차며 머리는 영역 폭 절반을 넘는다 — 가로 쪽 두 면·이름표 칸과 가른다
   const headBox = computeBBox(head, 0), fs = dominantStyle(tail)?.fontSize ?? 10
-  return tailBox.x - (headBox.x + headBox.width) <= fs * 3 && tailBox.x + tailBox.width >= box.x + box.width - fs &&
-    headBox.width >= box.width / 2
+  const gap = tailBox.x - (headBox.x + headBox.width), fills = tailBox.x + tailBox.width >= box.x + box.width - fs
+  if (gap <= fs * 3 && fills && headBox.width >= box.width / 2) return true
+  // 한글 없는 중·일문 기입란 줄은 빈칸이 여럿이라 머리가 짧다("②印税率：紙の本： ___ 部販売まで図書定価の ___ %、 ___ 部以上は…") —
+  // 머리가 영역 왼쪽 끝에서 시작해 꼬리까지 한 줄을 채우면 4em 빈칸까지 같은 줄로 본다
+  const text = [...head, ...tail].map(i => i.text).join("")
+  return !/[가-힣]/.test(text) && /[\u3040-\u30ff\u3400-\u9fff]/.test(text) && gap <= fs * 4 && fills && headBox.x <= box.x + fs
 }
 
 /** Fresh wrap evidence is needed only for a region with a possible horizontal cut. */
-function wrappedLineBands(items: NormItem[], inherited: WrapBand[]): WrapBand[] {
+function wrappedLineBands(items: NormItem[], inherited: WrapBand[], lex?: WrapLexicon): WrapBand[] {
   // Reuse the paragraph assembler's width, pitch, font and new-item guards before
   // cutting a wide line-spacing band (e.g. 30pt pitch in a 10pt body).
   const rows = groupByY(items)
@@ -338,7 +343,7 @@ function wrappedLineBands(items: NormItem[], inherited: WrapBand[]): WrapBand[] 
       y: row.reduce((n, i) => n + i.y, 0) / row.length, fontSize: dominantStyle(row)?.fontSize ?? 0,
       sources: row.map(item => ({ item, state: { ...item } })) }
   })
-  const joins = bodyLineJoins(lines)
+  const joins = bodyLineJoins(lines, lex)
   const fresh = lines.slice(0, -1).flatMap((line, i) => joins[i] === "\n" || records.has(i) || line.text.trim() === lines[i + 1].text.trim() ? [] :
     [{ top: line.y, bottom: lines[i + 1].y, sources: [...line.sources, ...lines[i + 1].sources] }])
   const freshKeys = new Set(fresh.map(b => `${b.top}:${b.bottom}`))
@@ -454,7 +459,7 @@ function isProseGutter(items: NormItem[], x: number): boolean {
 /** Two prose columns whose band starts or ends with a line crossing the gutter
  * (a caption or title under/over both columns): set that line apart at its edge
  * and read the columns left then right. Lines crossing in the middle keep the leaf. */
-function splitEdgeSpannedColumns(items: NormItem[], gapThreshold: number, depth: number): NormItem[][] | null {
+function splitEdgeSpannedColumns(items: NormItem[], gapThreshold: number, depth: number, lex?: WrapLexicon): NormItem[][] | null {
   let minX = Infinity, maxX = -Infinity
   for (const i of items) { minX = Math.min(minX, i.x); maxX = Math.max(maxX, i.x + i.w) }
   const narrow = items.filter(i => i.w < (maxX - minX) * 0.5)
@@ -469,8 +474,8 @@ function splitEdgeSpannedColumns(items: NormItem[], gapThreshold: number, depth:
   const left = rest.filter(i => i.x + i.w / 2 < cut.position), right = rest.filter(i => i.x + i.w / 2 >= cut.position)
   return [
     ...(above.length ? [above] : []),
-    ...xyCutOrder(left, gapThreshold, depth + 1),
-    ...xyCutOrder(right, gapThreshold, depth + 1),
+    ...xyCutOrder(left, gapThreshold, depth + 1, undefined, 0, lex),
+    ...xyCutOrder(right, gapThreshold, depth + 1, undefined, 0, lex),
     ...(below.length ? [below] : []),
   ]
 }
