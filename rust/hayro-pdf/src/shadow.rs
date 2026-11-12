@@ -3,7 +3,7 @@
 // hayro-interpret 의 interpret/mod.rs·path.rs·text.rs·state.rs·stack.rs·form.rs·image.rs·ocg.rs 를 그대로 따른다.
 // 어긋나면 장치가 오류를 낸다(events.rs) — 여기서 조용히 맞추지 않는다.
 use hayro_font::{Font, FontCache, FontGlyph, GlyphId, StandardFont};
-use hayro_interpret::hayro_cmap::{BfString, CMap, CMapName, CidFamily};
+use hayro_interpret::hayro_cmap::{BfString, CMap, CMapName};
 use hayro_interpret::kurbo::{Affine, BezPath, PathEl, Point, Rect, Shape};
 use hayro_interpret::util::Float64Ext;
 use hayro_interpret::{CacheKey, Function, InterpreterSettings};
@@ -36,8 +36,6 @@ pub struct GlyphPlan {
     pub raw: f32,
     /// ToUnicode 가 U+0000 으로 매긴 글자(type1·type3 에서 hayro 가 버리는 경우)
     pub nul: bool,
-    /// hayro 가 유니코드를 못 준 글자의 UCS2 값(Ucs2)
-    pub uni: Option<BfString>,
     /// pdf.js 셈의 자리 — Pj::glyph
     pub pj: [f64; PJ_LEN],
 }
@@ -89,18 +87,10 @@ pub const RUN_STROKE: u8 = 1;
 pub const RUN_INVISIBLE: u8 = 2;
 
 #[derive(Clone)]
-enum SFont<'a> { Font(Font<'a>, Option<Rc<CMap>>, Option<Rc<Ucs2>>), Fallback(Font<'a>) }
+enum SFont<'a> { Font(Font<'a>, Option<Rc<CMap>>), Fallback(Font<'a>) }
 
 impl<'a> SFont<'a> {
     fn font(&self) -> &Font<'a> { match self { SFont::Font(f, ..) | SFont::Fallback(f) => f } }
-}
-
-/// ToUnicode 없는 복합 글꼴의 유니코드(pdf.js buildToUnicode) — 글꼴 CMap 으로 코드 → CID, Adobe-<Ordering>-UCS2 로 CID → 유니코드.
-/// hayro 는 글꼴을 싣지 않은(대체) 글꼴에서만 이렇게 찾는다. shortcut: hayro 가 실은 글꼴에도 UCS2 를 쓰게 되면(upstream PR 준비) 이 대응을 지운다
-pub struct Ucs2 { enc: CMap, map: CMap }
-
-impl Ucs2 {
-    fn lookup(&self, code: u32, len: usize) -> Option<BfString> { self.map.lookup_bf_string(self.enc.lookup_cid_code(code, len as u8)?) }
 }
 
 #[derive(Clone)]
@@ -403,7 +393,6 @@ pub struct Shadow<'a> {
     fonts: FontCache<'a>,
     inactive: HashSet<ObjectIdentifier>,
     tounicode: HashMap<ObjectIdentifier, Option<Rc<CMap>>>,
-    ucs2: HashMap<ObjectIdentifier, Option<Rc<Ucs2>>>,
 }
 
 impl<'a> Shadow<'a> {
@@ -424,7 +413,7 @@ impl<'a> Shadow<'a> {
                 }
             }
         }
-        Self { _xref: xref, settings: InterpreterSettings::default(), fonts: FontCache::new(), inactive, tounicode: HashMap::new(), ucs2: HashMap::new() }
+        Self { _xref: xref, settings: InterpreterSettings::default(), fonts: FontCache::new(), inactive, tounicode: HashMap::new() }
     }
 
     /// interpret_page — 쪽 내용과 주석 appearance
@@ -546,7 +535,7 @@ impl<'a> Shadow<'a> {
 
     fn resolve_font(&mut self, fd: &Dict<'a>) -> Option<SFont<'a>> {
         match self.fonts.font(fd, &self.settings.font_resolver, &self.settings.cmap_resolver) {
-            Some(f) => { let nul = self.nul_map(fd); let u = self.ucs2_map(fd); Some(SFont::Font(f, nul, u)) }
+            Some(f) => { let nul = self.nul_map(fd); Some(SFont::Font(f, nul)) }
             None => self.fallback(),
         }
     }
@@ -567,57 +556,25 @@ impl<'a> Shadow<'a> {
         cmap
     }
 
-    /// 복합 글꼴에 ToUnicode 가 없고 글꼴 CMap 이 이름 있는 CMap(Identity 아님)이거나 CIDSystemInfo 가 Adobe-GB1·CNS1·Japan1·Korea1 이면 UCS2 CMap
-    fn ucs2_map(&mut self, fd: &Dict<'a>) -> Option<Rc<Ucs2>> {
-        if fd.get::<Name<'_>>(SUBTYPE).as_deref() != Some(b"Type0") || fd.contains_key(TO_UNICODE) { return None }
-        let id = fd.obj_id();
-        if let Some(id) = id { if let Some(c) = self.ucs2.get(&id) { return c.clone() } }
-        let r = self.settings.cmap_resolver.clone();
-        let enc = match fd.get::<Object<'_>>(ENCODING) {
-            Some(Object::Name(n)) => match CMapName::from_bytes(n.as_ref()) {
-                CMapName::IdentityH => Some(CMap::identity_h()),
-                CMapName::IdentityV => Some(CMap::identity_v()),
-                name => (r)(name).and_then(|d| { let r2 = r.clone(); CMap::parse(d, move |n| (r2)(n)) }),
-            },
-            Some(Object::Stream(st)) => st.decoded_data().ok().and_then(|d| { let r2 = r.clone(); CMap::parse(&d, move |n| (r2)(n)) }),
-            _ => None,
-        };
-        let family = fd.get::<Array<'_>>(DESCENDANT_FONTS).and_then(|a| a.iter::<Dict<'_>>().next())
-            .and_then(|d| d.get::<Dict<'_>>(CIDSYSTEMINFO))
-            .and_then(|i| Some(CidFamily::from_registry_ordering(i.get::<hayro_syntax::object::String<'_>>(REGISTRY)?.as_ref(), i.get::<hayro_syntax::object::String<'_>>(ORDERING)?.as_ref())))
-            .or_else(|| enc.as_ref().and_then(|e| e.metadata().character_collection.as_ref().map(|c| c.family.clone())));
-        let out = (|| {
-            let enc = enc?;
-            let data = (r)(family?.ucs2_cmap()?)?;
-            let r2 = r.clone();
-            Some(Rc::new(Ucs2 { enc, map: CMap::parse(data, move |n| (r2)(n))? }))
-        })();
-        if let Some(id) = id { self.ucs2.insert(id, out.clone()); }
-        out
-    }
-
     /// text.rs append_text_string — 글자마다 다음 자리·폭을 계산해 둔다(바꾼 hayro 의 PositionedGlyph 와 같은 셈)
     fn append(&self, cx: &mut Cx<'a>, bytes: &[u8], glyphs: &mut Vec<GlyphPlan>) {
         let Some(font) = cx.st().text.font.clone() else { return };
         let show = matches!(font, SFont::Font(..)) || bytes.is_ascii();
         let f = font.font();
-        let (nul, ucs2) = match &font { SFont::Font(_, n, u) => (n.clone(), u.clone()), _ => (None, None) };
+        let nul = match &font { SFont::Font(_, n) => n.clone(), _ => None };
         let mut i = 0;
         while i < bytes.len() {
             let (code, adv) = f.read_code(bytes, i);
             i += adv;
             let gid = f.map_code(code);
             let is_nul = nul.as_ref().map(|c| c.lookup_bf_string(code) == Some(BfString::Char('\0'))).unwrap_or(false);
-            // hayro 가 유니코드를 못 준 글자의 UCS2 값
-            let mut uni = None;
             // pdf.js 셈의 자리는 보이지 않는 글자도 센다
             let pj = {
                 let h = cx.st().text.horizontal();
                 let ga = f.code_advance(code);
                 let u = if is_nul { Some("\0".to_string()) } else {
                     let g = match f.glyph(gid, code) { FontGlyph::Outline(g) => g.as_unicode(), FontGlyph::Type3(g) => g.as_unicode() };
-                    if g.is_none() { uni = ucs2.as_ref().and_then(|m| m.lookup(code, adv)) }
-                    g.or_else(|| uni.clone()).map(|b| match b { BfString::Char(c) => c.to_string(), BfString::String(s) => s })
+                    g.map(|b| match b { BfString::Char(c) => c.to_string(), BfString::String(s) => s })
                 };
                 let ctm = cx.ctm().as_coeffs();
                 cx.ts().pj.glyph(&ctm, if h { ga.x } else { ga.y }, h, u.as_deref())
@@ -635,7 +592,7 @@ impl<'a> Shadow<'a> {
                 let (aw, at) = (w * scale, (w + ts.tc + word) * scale);
                 cx.ts().advance(code, adv);
                 let next = cx.st().text.full() * Point::ZERO;
-                glyphs.push(GlyphPlan { code, gid: gid.to_u32(), t, next, aw, at, raw, nul: is_nul, uni, pj });
+                glyphs.push(GlyphPlan { code, gid: gid.to_u32(), t, next, aw, at, raw, nul: is_nul, pj });
             } else {
                 cx.ts().advance(code, adv);
             }
@@ -1050,18 +1007,4 @@ fn adobe_cmyk(c: u8, m: u8, y: u8, k: u8) -> [u8; 3] {
         + y * (0.03296041114873217 * y + 115.60384449646641 * k + -193.58209356861505)
         + k * (-22.33816807309886 * k - 180.12613974708367);
     [r.clamp(0.0, 255.0).round_ties_even() as u8, g.clamp(0.0, 255.0).round_ties_even() as u8, b.clamp(0.0, 255.0).round_ties_even() as u8]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ucs2_maps_identity_h_codes_through_the_korea1_cids() {
-        let r = InterpreterSettings::default().cmap_resolver;
-        let data = (r)(CMapName::AdobeKorea1Ucs2).unwrap();
-        let u = Ucs2 { enc: CMap::identity_h(), map: CMap::parse(data, |_| None).unwrap() };
-        assert_eq!(u.lookup(1, 2), Some(BfString::Char(' ')));
-        assert_eq!(u.lookup(1086, 2), Some(BfString::Char('가')));
-    }
 }

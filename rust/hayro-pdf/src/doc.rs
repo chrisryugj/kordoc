@@ -366,7 +366,7 @@ impl<'a> Device<'a> for Events<'_, 'a> {
             let t: Affine = props.transform * g.transform();
             let c = t.as_coeffs();
             let cp = if p.nul { 1114112.0 } else {
-                match g.as_unicode().or_else(|| p.uni.clone()) {
+                match g.as_unicode() {
                     Some(BfString::Char(ch)) => if ch == '\0' { 1114112.0 } else { ch as u32 as f64 },
                     Some(BfString::String(s)) => -(self.s(s) + 1.0),
                     None => 0.0,

@@ -78,7 +78,7 @@ kordoc processes untrusted binary files. The following defenses are in place:
 - XXE / Billion Laughs: DOCTYPE fully stripped before XML parsing
 - No `eval()` or `new Function()` anywhere
 - No shell command construction from user input
-- PDF JavaScript evaluation disabled (`isEvalSupported: false`)
+- PDF JavaScript never runs: the PDF engine (hayro, a bundled WebAssembly build) has no JavaScript interpreter
 - HTML table-cell text escaped; Chromium printing/rendering disables JavaScript and external requests
 - `htmlTables` output keeps only kordoc's own `<br>`, `<u>`, `<sup>`, `<sub>` and image tags in cells. Any
   other tag from a document, such as `<img onerror>`, is escaped
@@ -135,8 +135,8 @@ kordoc processes untrusted binary files. The following defenses are in place:
 ## Scope
 
 kordoc is a **document parser library**, not a sandbox. It trusts the Node.js runtime
-and its dependencies (cfb, jszip, markdown-it, the bundled quick-xml WebAssembly build,
-and — when OCR or PDF features are used — pdfjs-dist, onnxruntime-node, sharp, @hyzyla/pdfium).
+and its dependencies (cfb, jszip, markdown-it, the bundled quick-xml and hayro WebAssembly builds,
+and — when OCR features are used — onnxruntime-node, sharp).
 Vulnerabilities in these dependencies are outside kordoc's control but are addressed
 via dependency updates.
 
