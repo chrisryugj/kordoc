@@ -64,3 +64,20 @@ describe("양식 선택 상자", () => {
     assert.ok(!res.markdown.includes("선택 상자"), res.markdown)
   })
 })
+
+describe("buildTableGrids — 떨어진 상자 둘", () => {
+  // 보도자료 머리: "보도 일시" 상자(1행)와 14pt 아래 "담당 부서" 상자(2행) — 열 경계가 같다
+  const xs = [59, 122, 273, 334, 536]
+  const box = (top: number, rows: number[]) => ({
+    hs: [top, ...rows].map(y => h(y, 59, 536)),
+    vs: xs.map(x => v(x, rows[rows.length - 1], top)),
+  })
+  it("10pt 넘게 떨어진 같은 열 구조의 닫힌 상자는 따로 선 표다", () => {
+    const a = box(722, [694]), b = box(679, [660, 641])
+    assert.equal(buildTableGrids([...a.hs, ...b.hs], [...a.vs, ...b.vs]).length, 2)
+  })
+  it("맞닿은(5pt 안) 같은 열 구조 격자는 종전대로 잇는다", () => {
+    const a = box(722, [694]), b = box(690, [660, 641])
+    assert.equal(buildTableGrids([...a.hs, ...b.hs], [...a.vs, ...b.vs]).length, 1)
+  })
+})

@@ -22,6 +22,8 @@ interface Vertex {
 
 /** 두 선이 같은 테이블에 속하는지 판별하는 거리 */
 const CONNECT_TOL = 5
+/** 같은 열 구조의 닫힌 상자 둘을 위아래로 이을 최대 틈 (pt) */
+const CLOSED_BOX_GAP = 10
 /** 최소 열 폭 (pt) — 이보다 좁은 열은 인접 열과 병합 */
 const MIN_COL_WIDTH = 15
 /** 좁은 열 무리의 최소 열 폭 (pt) — 20pt 안 열이 셋 넘게 이어진 숫자 칸 무리(평가 기준 별표2 "참여업체수에 따른 배분업체수" 2~20 열,
@@ -338,7 +340,13 @@ export function buildTableGrids(
       x2: validColXs[validColXs.length - 1], y2: validRowYs[0],
     }
 
-    grids.push({ rowYs: validRowYs, colXs: validColXs, bbox, vertexRadius: groupRadius, ...(nested ? { lineNested: true } : {}) })
+    // 네 변이 모두 괘선으로 닫혔나 — 바깥 세로선이 양옆에서 위아래 끝까지, 바깥 가로선이 위아래에서 양옆 세로선까지(넘어 뻗으면 양옆이 열린
+    // 표의 안쪽 세로선이 격자 가장자리가 된 것이다)
+    const edgeTol = Math.max(CONNECT_TOL, coordMergeTol)
+    const sideClosed = (x: number) => vLines.some(l => Math.abs(l.x1 - x) <= edgeTol && Math.min(l.y1, l.y2) <= bbox.y1 + edgeTol && Math.max(l.y1, l.y2) >= bbox.y2 - edgeTol)
+    const capClosed = (y: number) => hLines.some(l => Math.abs(l.y1 - y) <= edgeTol && Math.abs(Math.min(l.x1, l.x2) - bbox.x1) <= edgeTol && Math.abs(Math.max(l.x1, l.x2) - bbox.x2) <= edgeTol)
+    const closedBox = sideClosed(bbox.x1) && sideClosed(bbox.x2) && capClosed(bbox.y1) && capClosed(bbox.y2)
+    grids.push({ rowYs: validRowYs, colXs: validColXs, bbox, vertexRadius: groupRadius, ...(nested ? { lineNested: true } : {}), ...(closedBox ? { closedBox: true as const } : {}) })
   }
 
   // 중첩표는 제자리에 둔다 — 같은 열 수로 위아래 붙은 칸 안 표 둘을 한 표로 잇지 않는다
@@ -536,7 +544,11 @@ function mergeAdjacentGrids(grids: TableGrid[]): TableGrid[] {
       const mergeTol = Math.max(VERTEX_MERGE_FACTOR * Math.max(prev.vertexRadius, curr.vertexRadius), 6) * 3
       const colMatch = prev.colXs.every((x, ci) => Math.abs(x - curr.colXs[ci]) <= mergeTol)
       const verticalGap = prev.bbox.y1 - curr.bbox.y2
-      if (colMatch && verticalGap >= -CONNECT_TOL && verticalGap <= 20) {
+      // 네 변이 닫힌 상자 둘이 10pt 넘게 떨어졌으면 따로 선 표다 — 보도자료 머리 "보도 일시" 상자와 "담당 부서" 상자(14pt 틈)가 한 표로
+      // 묶였다. 양옆이 열린 표의 칸 선 없는 절 제목 행("제2절 …", 14pt)이 끊은 조각은 종전대로 20pt 까지 잇는다
+      // 1칸 틀(설명 상자)은 종전대로 — 떼면 틀 풀기 경로가 달라져 상자 글 줄이 이어지지 않았다(의료비 환급 보도자료 사례 상자)
+      const maxGap = prev.closedBox && curr.closedBox && prev.colXs.length > 2 ? CLOSED_BOX_GAP : 20
+      if (colMatch && verticalGap >= -CONNECT_TOL && verticalGap <= maxGap) {
         const allRowYs = [...new Set([...prev.rowYs, ...curr.rowYs])].sort((a, b) => b - a)
         merged[merged.length - 1] = {
           rowYs: allRowYs,

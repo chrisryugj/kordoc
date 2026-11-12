@@ -30,6 +30,8 @@ export interface TableGrid {
    *  `IRCell.blocks` 에 표로 넣는다 (v4.12.2, HWP 파서의 중첩표 IR 과 같은 모양) */
   clipParent?: { x1: number; y1: number; x2: number; y2: number }
   /** 칸 안에 떠 있는 닫힌 선 격자(중첩표, table-grid splitNestedBoxes) — 소비측이 그 bbox 를 품는 칸의 blocks 에 넣는다 */
+  /** 네 변이 모두 괘선으로 닫힌 상자 — 같은 열 구조여도 떨어진 닫힌 상자 둘은 잇지 않는다(mergeAdjacentGrids) */
+  closedBox?: true
   lineNested?: true
   /** 앞 쪽 칸의 이어짐인 1칸 조각이면 그 앞 쪽 칸의 클립 사각형 (clip-cells) — 문서 단계가 앞 쪽 표의 그 칸에 붙인다 */
   continues?: { x1: number; y1: number; x2: number; y2: number }
