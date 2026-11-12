@@ -1343,7 +1343,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
   // A page with two justified prose columns must be partitioned before
   // cluster-table detection. Otherwise paired footnotes and body lines can
   // become a single false table, and their source coordinates are lost.
-  const textRects = items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))
+  const textRects: ColRect[] = items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize, ...(i.fontName === "ocr" && [...i.text.trim()].length === 1 ? { ocrGlyph: true } : {}) }))
   const imagePanels = fullPage ? splitImagePanels(items, figures) : null
   if (imagePanels) return imagePanels.flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
   // 한 단 위쪽을 그림이 차지하면 글만으로는 거터가 끊겨 보인다 — 그림 사각형을 더해 쪽 전체 거터를 확정한다
