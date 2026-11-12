@@ -425,6 +425,12 @@ describe("detectClusterTables — 틈 없는 중·일문 줄", () => {
     const prose = (t: { usedItems: Set<ClusterItem> }) => [...t.usedItems].some(i => i.text === "本著作物的翻译应" || i.text === "自本合同")
     assert.equal(detectClusterTables(items, 4).filter(prose).length, 0)
   })
+  it("기입 빈칸이 낀 중문 본문 ①②③ 항목은 표가 아니다 (LibreOffice 중문 계약서 6쪽 \"但出版社在 ____ 日内未履行…\" 실측 아이템)", () => {
+    const raw: [string, number, number, number, number, number][] = JSON.parse(readFileSync(new URL("./fixtures/cjk-fill-blank-prose-items.json", import.meta.url), "utf8"))
+    const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))
+    const tables = detectClusterTables(items, 6)
+    assert.ok(!tables.some(t => [...t.usedItems].map(i => i.text).join("").includes("日内未履行")), "기입 빈칸 본문은 표 밖")
+  })
   it("기입란 2열 표 위 본문 세 줄은 표의 첫 행이 아니다 (LibreOffice 일문 계약서 4쪽 은행 기입란 실측 아이템)", () => {
     const raw: [string, number, number, number, number, number][] = JSON.parse(readFileSync(new URL("./fixtures/cjk-form-above-prose-items.json", import.meta.url), "utf8"))
     const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))

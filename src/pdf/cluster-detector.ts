@@ -211,10 +211,20 @@ function gaplessCjkRow(items: ClusterItem[]): boolean {
   if (sorted.length < 2) return false
   const text = sorted.map(i => i.text).join("").replace(/\s+/g, "")
   if ([...text].filter(c => CJK_CHAR.test(c)).length < text.length * 0.5) return false
-  // 줄머리 항목 부호("①"·"1.") 뒤 들여쓰기 틈은 칸 틈이 아니다
-  let maxGap = 0
-  for (let k = [...sorted[0].text.trim()].length <= 2 ? 2 : 1; k < sorted.length; k++) maxGap = Math.max(maxGap, sorted[k].x - (sorted[k - 1].x + sorted[k - 1].w))
-  return maxGap < sorted[0].fontSize * 0.5
+  // 줄머리 항목 부호("①"·"1.") 뒤 들여쓰기 틈은 칸 틈이 아니다. 양쪽이 모두 여섯 자 넘는 글인 틈은 본문 속 기입 빈칸이다
+  // ("但出版社在 ____ 日内未履行合同义务" — 기입란 칸 글은 "银 行 名："처럼 짧다)
+  const fs = sorted[0].fontSize
+  const start = [...sorted[0].text.trim()].length <= 2 ? 2 : 1
+  const chars = (from: number, to: number) => sorted.slice(from, to).reduce((n, i) => n + i.text.trim().length, 0)
+  for (let k = start; k < sorted.length; k++) {
+    if (sorted[k].x - (sorted[k - 1].x + sorted[k - 1].w) < fs * 0.5) continue
+    // 틈 앞뒤 글 — 앞쪽 틈·뒤쪽 틈까지
+    let p = k - 1, q = k
+    while (p > 0 && sorted[p].x - (sorted[p - 1].x + sorted[p - 1].w) < fs * 0.5) p--
+    while (q + 1 < sorted.length && sorted[q + 1].x - (sorted[q].x + sorted[q].w) < fs * 0.5) q++
+    if (chars(p, k) <= 6 || chars(k, q + 1) <= 6) return false
+  }
+  return true
 }
 
 /** 영역 위아래 끝의 틈 없는 중·일문 본문 줄을 떼어 낸다 — 기입란 2열 표 위 본문 세 줄이 첫 행으로 붙었다(LibreOffice 일문 계약서 은행 기입란) */
