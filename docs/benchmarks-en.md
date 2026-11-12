@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.68: OCR two-line cells · CJK fill-in forms · white-background frames · 2026-11-12
+
+External KoOCR-Bench v2.0c, 877 public pages: 0.90623 → **0.90633** (tables 0.91574 → 0.91594, five table pages up). Two pages dropped (a figure label inside a drug-label table cell and an "exit" label on a booth map): visible figure text is now read, while the ground truth omits figure text — a ground-truth limit (scoring unchanged). PDF text Japanese contract word-boundary F1 0.944 → 0.956. No per-document drops on in-house OCR, OCR robust, ODL-OCR, text, tables, annex tables, score or the four ODL runs.
+
+- Rejected: relaxing the two-line re-read outside table cells (5 figure-label pages down), dropping white fill outlines that touch no visible line (also used for paragraph separation — 13 documents down), discarding white-fill grids (ODL 157, which uses them as column frames, dropped).
+
 ## 4.24.67: closed box tables · CJK body text · 2026-11-12
 
 External KoOCR-Bench v2.0c, 877 public pages: 0.90590 → **0.90623** (tables 0.91507 → 0.91574 — a press-release page whose "release date" and "contact" boxes were merged into one table: TEDS 0.678 → 0.847, no drops). PDF text (744 pairs) word-boundary F1 0.99108 → **0.99111** (Chinese contract 0.867 → 0.940, Japanese contract 0.930 → 0.944), reading order one document up. No per-document drops on in-house OCR, tables, annex tables, score or the four ODL runs.

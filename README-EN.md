@@ -126,7 +126,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 65 tables | CER **0.0237** · character recall **99.33%** · table structure **33/65** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.906** by default · tables **0.916** · handwriting **0.921** · order **0.914** · heading recall 0.930 (4.24.67) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.906** by default · tables **0.916** · handwriting **0.921** · order **0.914** · heading recall 0.930 (4.24.68) |
 | opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.967** with `ocr: true` · 0.939 with OCR off (4.22.14) |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.67](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.67)** · 2026-11-12
+Latest release: **[4.24.68](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.68)** · 2026-11-12
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.68 | OCR: short two-line header cells were dropped · CJK fill-in form tables swallowed body lines above · white paragraph-background grids became tables | KoOCR-Bench 0.90623 → **0.90633** · PDF text Japanese contract word F1 0.944 → **0.956** · drops: 2 KoOCR pages (figure labels — ground-truth limit) |
 | 4.24.67 | Two separate closed box tables were merged into one · Chinese/Japanese body text became tables · CJK auto-spacing next to fullwidth punctuation | KoOCR-Bench 0.90590 → **0.90623** (tables 0.915 → **0.916**) · PDF text word-boundary F1 99.108% → **99.111%** · no per-document drops on in-house benchmarks |
 | 4.24.66 | OCR: row rules next to filled columns and faint column rules · PDF word spacing (rounded-coordinate spaces, "영 및 이", wrapped statute citations) | KoOCR-Bench 0.90568 → **0.90590** · PDF text word-boundary F1 99.103% → **99.108%** · no per-document drops on in-house benchmarks |
 | 4.24.65 | OCR figure text: forest-plot panels and the number-at-risk table under survival curves were emitted as tables and paragraphs | KoOCR-Bench 0.90517 → **0.90568** (text 0.861 → **0.864**) · no per-document drops on in-house benchmarks |
 | 4.24.64 | Official-document HWPX "-" items indented four spaces became Markdown code blocks · PDF formula OCR: norms read as `||x||` become `\|x\|` · OCR: row rules of dark header columns | formula OCR exact 0.615 → **0.617** (report only) · no per-document drops on in-house benchmarks |
-| 4.24.63 | Body URLs and QR URLs open the original address in Markdown viewers; `htmlCellLinks` option (off by default) emits `<a href>` in HTML table cells (#204) · OCR: row boundaries of dark-filled header columns | no per-document drops on in-house benchmarks · KoOCR-Bench 0.90517 unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
