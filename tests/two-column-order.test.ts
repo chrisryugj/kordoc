@@ -155,6 +155,19 @@ describe("detectColumnGutter", () => {
     assert.notEqual(detectPersistentColumnGutter(rects), null)
   })
 
+  it("좌우 같은 높이의 OCR 한 글자 box(장식 원을 읽은 \"0\")는 pair row 가 아니다 — 텍스트층 rect 는 그대로 pair 로 센다", () => {
+    // ODL 141 포스터: 두 단 카드 본문 줄은 높이가 어긋나고, 카드를 잇는 장식 원만 좌우 같은 높이에 있다
+    const rects = (ocrGlyph: boolean): ColRect[] => {
+      const out: ColRect[] = []
+      for (let i = 0; i < 8; i++) out.push(rect(60, 900 - i * 40, 250, 12), rect(420, 880 - i * 40, 250, 12))
+      for (let i = 0; i < 16; i++) out.push({ ...rect(100, 891 - i * 20, 10, 10), ocrGlyph }, { ...rect(500, 891 - i * 20, 10, 10), ocrGlyph })
+      return out
+    }
+    const gx = detectColumnGutter(rects(true))
+    assert.ok(gx !== null && gx > 310 && gx < 420, String(gx))
+    assert.equal(detectColumnGutter(rects(false)), null)
+  })
+
   it("우측 상단 작은 사이드바(서명란류) → null", () => {
     const rects: ColRect[] = []
     for (let i = 0; i < 14; i++) rects.push(rect(60, 900 - i * 40, 300, 12)) // 본문 좌측

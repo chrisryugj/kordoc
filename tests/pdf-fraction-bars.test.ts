@@ -3,6 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { foldFractionBars } from "../src/pdf/fraction-bars.js"
+import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 import type { LineSegment } from "../src/pdf/line-types.js"
 
@@ -22,6 +23,13 @@ describe("foldFractionBars", () => {
     assert.ok(bars.has(bar))
     assert.deepEqual(texts(items), ["배출량", "=", "$\\frac{\\text{할당 오염부하량}}{\\text{기준배출수질}}$", "×10"])
     assert.equal(items.find(i => i.text.startsWith("$"))!.y, 623, "기준선 = 막대 − 0.3em — 수식 앞뒤 글과 한 줄")
+  })
+
+  it("OCR 쪽은 접지 않는다 — raster ruling 은 표 칸 rule 도 1pt 아래로 나와 막대와 못 가른다", () => {
+    const md = (fontName: string) => extractPageBlocksWithLines(eq().map(i => ({ ...i, fontName })), 1, { fnArray: [], argsArray: [] }, 595, 842,
+      { horizontals: [hl(229.2, 321.1, 626.4)], verticals: [] }).map(b => b.text ?? "").join("\n")
+    assert.ok(md("F").includes("\\frac"), md("F"))
+    assert.ok(!md("ocr").includes("\\frac"), md("ocr"))
   })
 
   it("분자 위첨자는 제 크기 창 밖이라도 분자로 — ｛…｝²", () => {

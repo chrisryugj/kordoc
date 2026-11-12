@@ -17,6 +17,8 @@ export interface ColRect {
   y: number
   w: number
   h: number
+  /** OCR 한 글자 box — 그림의 장식 원을 "0" 으로 읽은 noise 일 수 있어 pair row 증거로 치지 않는다 */
+  ocrGlyph?: boolean
 }
 
 /** 거터 스캔 범위 (콘텐츠 폭 비율) */
@@ -169,7 +171,12 @@ export function detectColumnGutter(rects: ColRect[]): number | null {
     }
     if (lRowCount < SIDE_MIN_TEXT_ROWS || rRowCount < SIDE_MIN_TEXT_ROWS) return null
     if (tinyGapRows > MAX_TINY_GAP_ROWS) return null
-    if (bothRows / Math.min(lRowCount, rRowCount) > MAX_BOTH_SIDE_ROW_RATIO && !sameIndentColumns(rows, L, R)) return null
+    // 좌우 모두 OCR 한 글자 box 뿐인 행은 pair row 가 아니다 — 포스터 두 단 카드의 장식 원을 OCR 이 "0" 으로 읽은 box 가 좌우 같은
+    // 높이에 늘어서 pair row 로 세졌다(ODL 141: 비율이 noise box 하나에 0.63 ↔ 0.71). 텍스트층 rect 에는 표시가 없어 그대로다
+    const textRows = new Set([...lText, ...rText].filter(r => !r.ocrGlyph).map(r => rowKey(r.y)))
+    let pairRows = 0
+    for (const [k, e] of rows) if (e.lEnd > -Infinity && e.rStart < Infinity && textRows.has(k)) pairRows++
+    if (pairRows / Math.min(lRowCount, rRowCount) > MAX_BOTH_SIDE_ROW_RATIO && !sameIndentColumns(rows, L, R)) return null
     // (c) 거터를 가로지르는 전폭 글줄이 적은 쪽 단의 줄 수만큼 있으면 한 단 본문이다 — 전폭 줄을 빼고 남은 낱말 조각(작은 대문자·글꼴이
     //     바뀐 낱말)만으로 거터가 보였다(ODL 003: 38줄 중 26줄이 가로질러 3pt 낱말 틈에서 한 줄이 찢겼다). ODL 의 나머지 거터 검출은
     //     전폭 줄(제목·캡션·표 머리)이 7줄 이하로 적은 쪽 단 줄 수의 0.6 미만

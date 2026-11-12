@@ -154,7 +154,8 @@ export function extractPageBlocksWithLines(
   wrapStrikethroughRuns(items)
 
   // 1.555단계: 선으로 그은 분수 막대 — 막대 위·아래에 붙은 글을 `$\frac{}{}$` 한 아이템으로 접고 막대는 선에서 뺀다 (fraction-bars.ts)
-  const folded = foldFractionBars(items, horizontals, verticals)
+  // OCR 쪽은 건너뛴다 — raster ruling 은 cell rule 도 1pt 아래로 나와 fraction bar 와 못 가른다(OCR 벤치 web051: 표 cell 두 줄이 분수로 접힘)
+  const folded = items.some(i => i.fontName !== "ocr") ? foldFractionBars(items, horizontals, verticals) : { items, bars: new Set<LineSegment>() }
   if (folded.bars.size) { items = folded.items; horizontals = horizontals.filter(l => !folded.bars.has(l)) }
 
   // 1.56단계: 밑줄 — 합성 테두리를 만들기 전에 원본 선으로 판정.
@@ -1343,7 +1344,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
   // A page with two justified prose columns must be partitioned before
   // cluster-table detection. Otherwise paired footnotes and body lines can
   // become a single false table, and their source coordinates are lost.
-  const textRects = items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize }))
+  const textRects: ColRect[] = items.map(i => ({ x: i.x, y: i.y, w: i.w, h: i.h > 0 ? i.h : i.fontSize, ...(i.fontName === "ocr" && [...i.text.trim()].length === 1 ? { ocrGlyph: true } : {}) }))
   const imagePanels = fullPage ? splitImagePanels(items, figures) : null
   if (imagePanels) return imagePanels.flatMap(group => extractPageBlocksFallback(group, pageNum, false, detectTables, lex))
   // 한 단 위쪽을 그림이 차지하면 글만으로는 거터가 끊겨 보인다 — 그림 사각형을 더해 쪽 전체 거터를 확정한다
