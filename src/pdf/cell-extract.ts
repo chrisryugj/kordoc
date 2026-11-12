@@ -9,7 +9,8 @@
 
 import type { LineSegment, TableGrid, ExtractedCell } from "./line-types.js"
 import { VERTEX_MERGE_FACTOR } from "./line-types.js"
-import { recordOpenEndCellEdges } from "./cell-edges.js"
+import { recordOpenEndCellEdges, CLIP_CELL_EDGES, NO_EDGES } from "./cell-edges.js"
+import { isWhiteFillEdge } from "./line-extract.js"
 
 // ─── 셀 구조 추출 (Vertex 기반 정밀 병합 셀 감지) ─────
 
@@ -96,6 +97,9 @@ export function extractCells(
   }
 
   recordOpenEndCellEdges(grid, cells, horizontals)
+  // 격자 안 선이 모두 흰 채움 윤곽이면 칸 변은 보이지 않는다 — 문단마다 흰 배경을 깐 문서(LibreOffice 영문 계약서)의 산문 격자는
+  // 보이지 않는 틀로 풀린다(layout-frames). 버리면 그 격자로 단을 가르던 쪽(ODL 157)이 무너졌다
+  if (!grid.cells && invisibleFillGrid(grid, horizontals, verticals)) for (const c of cells) CLIP_CELL_EDGES.set(c, NO_EDGES)
   return cells
 }
 
@@ -159,3 +163,12 @@ function hasHorizontalLine(
   return false
 }
 
+/** 격자 상자 안 선이 모두 흰 채움 윤곽인가 */
+function invisibleFillGrid(grid: TableGrid, horizontals: LineSegment[], verticals: LineSegment[]): boolean {
+  const tol = 2, { x1, x2, y1, y2 } = grid.bbox
+  const inside = [...horizontals.filter(l => l.y1 >= y1 - tol && l.y1 <= y2 + tol && Math.max(l.x1, l.x2) >= x1 - tol && Math.min(l.x1, l.x2) <= x2 + tol),
+    ...verticals.filter(l => l.x1 >= x1 - tol && l.x1 <= x2 + tol && Math.max(l.y1, l.y2) >= y1 - tol && Math.min(l.y1, l.y2) <= y2 + tol)]
+  // 본문 폭(300pt 이상)·세 행 이상 격자만 — 서식 견본의 흰 설명 말풍선 상자(LibreOffice 논문 양식)는 풀면 줄이 조각났고, 도해 두 상자
+  // (KS 표준안 마우스 그림)는 표가 글 한 덩이로 바뀌었다
+  return x2 - x1 >= 300 && grid.rowYs.length >= 4 && inside.length > 0 && inside.every(isWhiteFillEdge)
+}

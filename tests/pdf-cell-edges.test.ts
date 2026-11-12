@@ -280,3 +280,17 @@ describe("쪽 잇기 — 복사·이은 칸에 보이는 변을 옮긴다", () =
     assert.deepEqual(CELL_EDGES.get(a), NO_EDGES)
   })
 })
+
+describe("선 격자 — 보이지 않는 흰 채움 윤곽만으로 된 격자", () => {
+  const fillColor = (r: number, g: number, b: number): Ops => ({ fn: [OPS.setFillRGBColor], args: [[r, g, b]] })
+  const fillRect = (x: number, y: number, w: number, h: number): Ops => ({ fn: [OPS.constructPath, OPS.eoFill], args: [[[OPS.rectangle], [x, y, w, h]], []] })
+  it("문단마다 흰 배경을 깐 산문은 표로 나가지 않는다 (LibreOffice 영문 계약서 1쪽 실측 사각형)", () => {
+    const ops = concat(fillColor(255, 255, 255), fillRect(72, 380, 468, 63), fillRect(47, 363, 493, 18), fillRect(61, 344, 479, 19), fillRect(79, 199, 461, 145), fillColor(0, 0, 0))
+    const items = [item("This Agreement is hereby concluded between the PROPRIETOR", 80, 425, 400), item("copyrighted material and the PUBLISHER for", 72, 404, 400),
+      item("1. RIGHTS GRANTED", 47, 368, 120), item("(a) The PROPRIETOR grants to the PUBLISHER", 61, 349, 400), item("WORK into the language, translate and publish", 79, 330, 400),
+      item("specified language for online and offline bookstores", 79, 310, 400)]
+    const md = blocksToMarkdown(unframeLayoutTables(extractPageBlocksWithLines(items, 1, ops, 595, 842)))
+    assert.ok(!/<table|^\|/m.test(md), md)
+    assert.ok(md.includes("1. RIGHTS GRANTED"))
+  })
+})
