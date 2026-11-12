@@ -235,4 +235,16 @@ describe("blocksToMarkdown — 마스킹 별표 보호 (리뷰 #9)", () => {
     assert.ok(md.includes("홍\\*\\*"), md)
     assert.ok(md.includes("\\*\\*\\*\\*-1234"), md)
   })
+
+  it("번호를 담은 번호 목록 자식은 제 번호를 표지로 쓴다 — \"1. 1\\. …\" 처럼 번호가 두 번 찍히지 않는다 (중문 계약서)", () => {
+    const md = blocksToMarkdown([{
+      type: "list", listType: "unordered", text: "① 著作权人在下列情况下，可单方面解除合同。",
+      children: [{ type: "list", listType: "ordered", text: "1. 出版社无法翻译并出版本著作物。" }, { type: "list", listType: "ordered", text: "2. 出版社宣告破产。" },
+        { type: "list", listType: "ordered", text: "번호 없는 항목" }],
+    } as IRBlock])
+    assert.ok(md.includes("  1. 出版社无法翻译并出版本著作物。"), md)
+    assert.ok(md.includes("  2. 出版社宣告破产。"), md)
+    assert.ok(md.includes("  1. 번호 없는 항목"), md)
+    assert.ok(!md.includes("1\\."), md)
+  })
 })

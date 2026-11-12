@@ -612,7 +612,10 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
       if (block.children) {
         for (const child of block.children) {
           const childPrefix = child.listType === "ordered" ? "1." : "-"
-          lines.push(`  ${childPrefix} ${escapeItemHead(escapeGfm(child.text || ""))}`)
+          // 글이 이미 제 번호·부호로 시작하면 그것을 표지로 쓴다(부모 항목과 같은 규칙) — "1. 1\\. 出版社无法…" 처럼 번호가 두 번 찍혔다(중문 계약서)
+          const ct = child.text || "", own = /^(\d{1,3}\.|-)\s+/.exec(ct)
+          const mine = own && (child.listType === "ordered") === (own[1] !== "-")
+          lines.push(mine ? `  ${own![0]}${escapeItemHead(escapeGfm(ct.slice(own![0].length)))}` : `  ${childPrefix} ${escapeItemHead(escapeGfm(ct))}`)
         }
       }
       continue
