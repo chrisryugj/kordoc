@@ -102,7 +102,9 @@ export function isCjkLatinAutospace(prevText: string, nextText: string, gap: num
   // 여는 괄호는 그 안 글자로 본다("請求内訳書 (Invoice)" — 괄호 앞 자동 간격)
   const a = prevText.replace(/(?:<\/?u>|~~)+$/, "").slice(-1), b = nextText.replace(/^(?:<\/?u>|~~)+/, "").replace(/^\(/, "")[0] ?? ""
   const cjk = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/, latin = /[A-Za-z0-9]/
-  return (cjk.test(a) && latin.test(b)) || (latin.test(a) && cjk.test(b))
+  // 중·일문 글자·전각 부호·곡선 따옴표끼리도 — 낱말 사이 공백이 없는 글이라 좁은 틈은 조판 간격이다("（Proprietor） ，"·"附属权 ”）")
+  const cjkOrQuote = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef\u2018-\u201f]/
+  return (cjk.test(a) && latin.test(b)) || (latin.test(a) && cjk.test(b)) || (cjkOrQuote.test(a) && cjkOrQuote.test(b) && (cjk.test(a) || cjk.test(b)))
 }
 
 export function filterHiddenText(items: NormItem[], pageWidth: number, pageHeight: number, originX = 0, originY = 0): { visible: NormItem[]; hiddenCount: number } {
