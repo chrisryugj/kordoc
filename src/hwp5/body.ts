@@ -480,7 +480,11 @@ function applyCtrlEffect(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
         const attr = ctrl.data.readUInt32LE(4)
         const type = attr & 0x0f
         const format = (attr >>> 4) & 0xff
-        const num = ctx.doc.autoCounters.get(type) ?? 1
+        // 각주·미주·그림·표·수식 번호는 한/글이 저장해 둔 값(u16@8, HWPX hp:autoNum num 과 같은 값)을 쓴다 — 문서 차례로 세면 세는
+        // 경로를 타지 않는 앞 캡션만큼 모자랐다(tac-img-02 "<그림 5> 싱크홀 맵" 이 그림 3). 0 이면(저장 안 한 파일) 센다.
+        // 쪽 번호(0)는 조판 때 정해지는 값이라 저장값이 그 쪽 번호가 아니다(편람 본문 "－346－")
+        const stored = type !== 0 && ctrl.data.length >= 10 ? ctrl.data.readUInt16LE(8) : 0
+        const num = stored || (ctx.doc.autoCounters.get(type) ?? 1)
         ctx.doc.autoCounters.set(type, num + 1)
         const prefix = ctrl.data.length >= 14 ? wcharAt(ctrl.data, 12) : ""
         const suffix = ctrl.data.length >= 16 ? wcharAt(ctrl.data, 14) : ""

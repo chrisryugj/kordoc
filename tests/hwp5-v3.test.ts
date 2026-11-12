@@ -532,6 +532,26 @@ describe("자동번호 (atno/nwno)", () => {
     assert.equal(blocks[0].text, "표 1")
     assert.equal(blocks[1].text, "표 10")
   })
+
+  it("atno 에 저장된 번호가 있으면 그 번호를 쓴다 (tac-img-02 \"<그림 5> 싱크홀 맵\" — 세면 앞 캡션만큼 모자랐다)", () => {
+    const atnoData = (num: number): Buffer => {
+      const b = Buffer.alloc(16)
+      b.write("onta", 0, "ascii")
+      b.writeUInt32LE(3, 4) // type 3 = 그림
+      b.writeUInt16LE(num, 8)
+      return b
+    }
+    const { blocks } = parse([
+      rec(TAG_PARA_HEADER, 0, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 1, Buffer.concat([utf16("그림 "), extCtrlChar(18, "onta")])),
+      rec(TAG_CTRL_HEADER, 1, atnoData(5)),
+      rec(TAG_PARA_HEADER, 0, paraHeaderData()),
+      rec(TAG_PARA_TEXT, 1, Buffer.concat([utf16("그림 "), extCtrlChar(18, "onta")])),
+      rec(TAG_CTRL_HEADER, 1, atnoData(6)),
+    ], null, createHwp5DocState())
+    assert.equal(blocks[0].text, "그림 5")
+    assert.equal(blocks[1].text, "그림 6")
+  })
 })
 
 // ─── STYLE off-by-one ────────────────────────────────
