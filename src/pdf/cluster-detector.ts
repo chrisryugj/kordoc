@@ -219,10 +219,16 @@ function gaplessCjkRow(items: ClusterItem[]): boolean {
 
 /** 영역 위아래 끝의 틈 없는 중·일문 본문 줄을 떼어 낸다 — 기입란 2열 표 위 본문 세 줄이 첫 행으로 붙었다(LibreOffice 일문 계약서 은행 기입란) */
 function trimCjkProseEdges(rows: RowGroup[]): RowGroup[] {
+  // 영역 전체가 틈 없는 본문 줄 위주면 떼지 않는다 — 통째로 산문 판정(gaplessCjkLines)을 받아야 한다. 끝만 떼면 빈칸 밑줄 틈이 있는
+  // 남은 본문 몇 줄이 작은 표로 살아났다(중문 계약서 1쪽 "出版社(Publisher) ____ 对本著作物")
+  const multi = rows.filter(r => r.items.filter(i => i.text.trim()).length >= 2)
+  const gapless = multi.filter(r => gaplessCjkRow(r.items)).length
+  if (gapless >= 3 && gapless >= multi.length * 0.6) return rows
   let a = 0, b = rows.length
   while (a < b && gaplessCjkRow(rows[a].items)) a++
   while (b > a && gaplessCjkRow(rows[b - 1].items)) b--
-  return a === 0 && b === rows.length ? rows : rows.slice(a, b)
+  // 본문 두 줄 이상이 붙었을 때만 — 제목 한 줄만 떼면 빈칸 밑줄 틈이 있는 남은 계약서 문장들이 작은 표로 살아났다(중문 계약서 1쪽)
+  return a + rows.length - b >= 2 ? rows.slice(a, b) : rows
 }
 
 /** 한자·가나·전각 문장부호 한 글자 (띄어쓰기 없는 중·일문 글) */
