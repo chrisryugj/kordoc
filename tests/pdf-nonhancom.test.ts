@@ -425,4 +425,11 @@ describe("detectClusterTables — 틈 없는 중·일문 줄", () => {
     const prose = (t: { usedItems: Set<ClusterItem> }) => [...t.usedItems].some(i => i.text === "本著作物的翻译应" || i.text === "自本合同")
     assert.equal(detectClusterTables(items, 4).filter(prose).length, 0)
   })
+  it("기입란 2열 표 위 본문 세 줄은 표의 첫 행이 아니다 (LibreOffice 일문 계약서 4쪽 은행 기입란 실측 아이템)", () => {
+    const raw: [string, number, number, number, number, number][] = JSON.parse(readFileSync(new URL("./fixtures/cjk-form-above-prose-items.json", import.meta.url), "utf8"))
+    const items: ClusterItem[] = raw.map(([text, x, y, w, fs, sp]) => ({ text, x, y, w, h: fs, fontSize: fs, fontName: "f", hasSpaceBefore: sp === 1 }))
+    const tables = detectClusterTables(items, 4)
+    assert.ok(tables.some(t => [...t.usedItems].some(i => i.text === "銀")), "기입란 표는 남는다")
+    assert.ok(!tables.some(t => [...t.usedItems].some(i => i.text.startsWith("い。ただし"))), "본문 줄은 표 밖")
+  })
 })

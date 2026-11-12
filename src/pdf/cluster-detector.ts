@@ -132,7 +132,9 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
       const columns = extractColumnClusters(suspiciousRows)
       if (columns.length >= MIN_COLS) {
         const tableRegions = findTableRegions(rows, columns)
-        for (const region of tableRegions) {
+        for (const found of tableRegions) {
+          const region = { ...found, rows: trimCjkProseEdges(found.rows) }
+          if (region.rows.length < MIN_ROWS) continue
           // 열은 영역 안 행으로 다시 세운다 — 같은 쪽 다른 표의 열 x 가 섞이면 가짜 사이 열이 생긴다.
           // 영역 열이 더 적을 때만(섞인 열을 걷어낼 때만), 그 표의 몸통 칸 글이 모두 짧고 글꼴 사용자 영역(수식 기호) 문자가 없을 때만 쓴다 — 행이 적은 영역은 기준 수가
           // 낮아 기호 줄·문장 줄에서 가짜 표가 살아난다(수학 시험지·보도자료 본문)
@@ -196,17 +198,31 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
 function gaplessCjkLines(r: ClusterTableResult): boolean {
   let lines = 0, gapless = 0
   for (const row of groupByBaseline([...r.usedItems].filter(i => i.text.trim()))) {
-    const sorted = [...row.items].sort((a, b) => a.x - b.x)
-    if (sorted.length < 2) continue
+    if (row.items.length < 2) continue
     lines++
-    const text = sorted.map(i => i.text).join("").replace(/\s+/g, "")
-    if ([...text].filter(c => CJK_CHAR.test(c)).length < text.length * 0.5) continue
-    // 줄머리 항목 부호("①"·"1.") 뒤 들여쓰기 틈은 칸 틈이 아니다
-    let maxGap = 0
-    for (let k = [...sorted[0].text.trim()].length <= 2 ? 2 : 1; k < sorted.length; k++) maxGap = Math.max(maxGap, sorted[k].x - (sorted[k - 1].x + sorted[k - 1].w))
-    if (maxGap < sorted[0].fontSize * 0.5) gapless++
+    if (gaplessCjkRow(row.items)) gapless++
   }
   return gapless >= 3 && gapless >= lines * 0.6
+}
+
+/** 칸 틈 없는 중·일문 줄 — 아이템 둘 이상, 한자·가나가 절반 이상, 줄머리 부호 뒤를 뺀 가장 큰 틈이 글자 크기 절반 미만 */
+function gaplessCjkRow(items: ClusterItem[]): boolean {
+  const sorted = [...items].filter(i => i.text.trim()).sort((a, b) => a.x - b.x)
+  if (sorted.length < 2) return false
+  const text = sorted.map(i => i.text).join("").replace(/\s+/g, "")
+  if ([...text].filter(c => CJK_CHAR.test(c)).length < text.length * 0.5) return false
+  // 줄머리 항목 부호("①"·"1.") 뒤 들여쓰기 틈은 칸 틈이 아니다
+  let maxGap = 0
+  for (let k = [...sorted[0].text.trim()].length <= 2 ? 2 : 1; k < sorted.length; k++) maxGap = Math.max(maxGap, sorted[k].x - (sorted[k - 1].x + sorted[k - 1].w))
+  return maxGap < sorted[0].fontSize * 0.5
+}
+
+/** 영역 위아래 끝의 틈 없는 중·일문 본문 줄을 떼어 낸다 — 기입란 2열 표 위 본문 세 줄이 첫 행으로 붙었다(LibreOffice 일문 계약서 은행 기입란) */
+function trimCjkProseEdges(rows: RowGroup[]): RowGroup[] {
+  let a = 0, b = rows.length
+  while (a < b && gaplessCjkRow(rows[a].items)) a++
+  while (b > a && gaplessCjkRow(rows[b - 1].items)) b--
+  return a === 0 && b === rows.length ? rows : rows.slice(a, b)
 }
 
 /** 한자·가나·전각 문장부호 한 글자 (띄어쓰기 없는 중·일문 글) */
