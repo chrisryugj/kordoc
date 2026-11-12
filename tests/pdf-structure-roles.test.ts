@@ -254,3 +254,15 @@ describe("PDF column that goes on below a gap after the other column ended", () 
     assert.equal(order(page(20)), "LRM")
   })
 })
+
+describe("XY-Cut — 한 줄 속 빈칸 틈", () => {
+  it("쪽 끝 두 줄 문단의 빈칸 틈에서 세로로 자르지 않는다 (중문 계약서 \"…之日起 ____ 日内，未向…第二 ⏎ 条规定的预付款…\")", () => {
+    const item = (text: string, x: number, y: number, w: number): NormItem =>
+      ({ text, x, y, w, h: 11, fontSize: 11, fontName: "Body", isHidden: false })
+    const items = [item("第十一条（合同失去效力）出版社自本合同签订之日起", 72, 153, 264), item("日内，未向韩国著作权人支付第二", 358, 153, 165),
+      item("条规定的预付款，本合同将失去效力。", 72, 125, 187)]
+    const groups = xyCutOrder(items, 20)
+    const order = groups.flat().map(i => i.text)
+    assert.deepEqual(order, items.map(i => i.text))
+  })
+})

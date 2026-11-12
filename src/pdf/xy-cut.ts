@@ -111,7 +111,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
 
   const hValid = hCut.gap >= minGap
   const vValid = (vCut.gap >= vMinGap || (vCut.gap >= PROSE_GUTTER_MIN_GAP && isProseGutter(items, vCut.position))) &&
-    !splitsSpacedLabel(items, vCut.position)
+    !splitsSpacedLabel(items, vCut.position) && !splitsLoneRowTail(items, vCut.position)
 
   // 축 선택: 기본 Y 우선 (한국 공문서는 단일 컬럼 위주 — 코퍼스 검증 결과 Y 우선이 안정적).
   // 단, 수직 갭이 수평 갭보다 명백히 크면(1.5×) 컬럼 분리로 보고 X 우선
@@ -308,6 +308,22 @@ export function tocRecordBoundaries(rows: NormItem[][]): Set<number> {
     }
   }
   return out
+}
+
+/**
+ * 한쪽이 한 줄뿐이고 그 줄이 반대쪽 줄과 같은 기준선인 세로 컷 — 단이 아니라 한 줄 속 빈칸 틈을 가른 것이다(중문 계약서 쪽 끝
+ * "…之日起 ____ 日内，未向…第二 ⏎ 条规定的预付款…" 이 "之日起条规定的…" + "日内，未向…" 로 갈렸다). 단 나눔은 양쪽에 줄이 여럿 선다
+ */
+function splitsLoneRowTail(items: NormItem[], x: number): boolean {
+  const left = groupByY(items.filter(i => i.x + i.w / 2 < x)), right = groupByY(items.filter(i => i.x + i.w / 2 >= x))
+  if (right.length !== 1 || left.length < 2) return false
+  const tail = right[0], box = computeBBox(items, 0), tailBox = computeBBox(tail, 0)
+  const head = left.find(r => Math.abs(r[0].y - tail[0].y) <= 2)
+  if (!head) return false
+  // 빈칸 틈은 좁고(3em 안) 꼬리가 줄 끝까지 차며 머리는 영역 폭 절반을 넘는다 — 가로 쪽 두 면·이름표 칸과 가른다
+  const headBox = computeBBox(head, 0), fs = dominantStyle(tail)?.fontSize ?? 10
+  return tailBox.x - (headBox.x + headBox.width) <= fs * 3 && tailBox.x + tailBox.width >= box.x + box.width - fs &&
+    headBox.width >= box.width / 2
 }
 
 /** Fresh wrap evidence is needed only for a region with a possible horizontal cut. */
