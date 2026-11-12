@@ -154,8 +154,12 @@ export function extractPageBlocksWithLines(
   wrapStrikethroughRuns(items)
 
   // 1.555단계: 선으로 그은 분수 막대 — 막대 위·아래에 붙은 글을 `$\frac{}{}$` 한 아이템으로 접고 막대는 선에서 뺀다 (fraction-bars.ts)
-  // OCR 쪽은 건너뛴다 — raster ruling 은 cell rule 도 1pt 아래로 나와 fraction bar 와 못 가른다(OCR 벤치 web051: 표 cell 두 줄이 분수로 접힘)
-  const folded = items.some(i => i.fontName !== "ocr") ? foldFractionBars(items, horizontals, verticals) : { items, bars: new Set<LineSegment>() }
+  // OCR 쪽은 양끝이 세로 괘선에 닿는 선(표 칸 rule)을 막대 후보에서 뺀다 — raster ruling 은 cell rule 도 1pt 아래로 나와 굵기로 fraction bar 와
+  // 못 가른다(OCR 벤치 web051: 표 cell 두 줄이 분수로 접힘). 통째로 끄면 시험지 수식의 진짜 분수 막대까지 안 접혔다(수능 수학 lim 분수)
+  const ocrPage = !items.some(i => i.fontName !== "ocr")
+  const onRule = (x: number, y: number) => verticals.some(v => Math.abs(v.x1 - x) <= 3 && Math.min(v.y1, v.y2) <= y + 3 && Math.max(v.y1, v.y2) >= y - 3)
+  const barCandidates = ocrPage ? horizontals.filter(h => !(onRule(h.x1, h.y1) && onRule(h.x2, h.y1))) : horizontals
+  const folded = foldFractionBars(items, barCandidates, verticals)
   if (folded.bars.size) { items = folded.items; horizontals = horizontals.filter(l => !folded.bars.has(l)) }
 
   // 1.56단계: 밑줄 — 합성 테두리를 만들기 전에 원본 선으로 판정.
