@@ -242,7 +242,7 @@ function particleContinues(left: string, rightWord: string): boolean {
 
 /** 줄 머리가 새 항목(글머리표·번호·조항)인가 — 번호 뒤 숫자(9.8%)·"-" 뒤 글자(생산-가공)는 이어진 글.
  *  앞 줄이 한글로 끝나면 "다." 는 줄을 넘어온 문장 끝이다(…하였⏎다. 본문 꺾임 136곳 전부) */
-const ITEM_HEAD = /^(?:[□■◆◇○●◎◦▪▫•※▶▷►❍❏❑✓✔➢➤☞]|[①-⑳]|[-–·∙ㆍ*](?=\s)|\(?\d{1,2}[.)](?!\d)|\(?[가-하][.)]|\([가-하\d]{1,2}\)|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|제\d+[조항호장절])/
+const ITEM_HEAD = /^(?:[□■◆◇○●◎◦▪▫•※▶▷►❍❏❑✓✔➢➤☞]|[①-⑳]|[-–·∙ㆍ*#](?=\s)|\(?\d{1,2}[.)](?!\d)|\(?[가-하][.)]|\([가-하\d]{1,2}\)|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|제\d+[조항호장절])/
 export function startsNewItem(prevText: string, nextText: string): boolean {
   const t = nextText.replace(MARKUP, "").trimStart()
   const prev = prevText.replace(MARKUP, "").trimEnd()

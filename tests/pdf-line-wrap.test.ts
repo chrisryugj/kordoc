@@ -182,6 +182,9 @@ describe("wrapJoiner — 어절 머리 증거", () => {
 describe("startsNewItem — 줄 머리 새 항목", () => {
   it("글머리표·번호·조항은 새 항목", () => {
     assert.equal(startsNewItem("앞 줄", "○ 통계분야에 대한 지식"), true)
+    // "# " 도 글머리다(위험물 사용 신청서 "…제출 필요" ⏎ "# 화기․위험물의 예") — 붙은 "#3" 은 아니다
+    assert.equal(startsNewItem("[별지 서식 제4호] 제출 필요", "# 화기․위험물의 예"), true)
+    assert.equal(startsNewItem("부스 번호는", "#3 입니다"), false)
     assert.equal(startsNewItem("앞 줄", "- 일급: 80,240원"), true)
     assert.equal(startsNewItem("앞 줄", "2.개인정보 보호책임자 지정"), true)
     assert.equal(startsNewItem("앞 줄", "제3조(목적) 이 법은"), true)
