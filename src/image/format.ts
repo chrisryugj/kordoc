@@ -36,7 +36,7 @@ async function convert(sharp: () => Promise<SharpFactory | null>, img: Extracted
   // sharp 가 못 읽는 BMP·PCX·DCX·HEIC·WMF 내 비트맵은 kordoc 디코더·libheif-js 로 RGBA 디코딩
   const wmf = kind ? null : wmfBitmap(img.data)
   if (wmf || kind === "bmp" || kind === "heic" || kind === "pcx" || kind === "dcx") {
-    const px = kind === "heic" ? await heicToRgba(img.data).catch(() => null)
+    const px = kind === "heic" ? await heicToRgba(img.data, MAX_PIXELS).catch(() => null)
       : kind === "pcx" ? pcxToRgba(img.data) : kind === "dcx" ? pcxToRgba(dcxPages(img.data)[0] ?? new Uint8Array(0)) : bmpToRgba(wmf ?? img.data)
     if (!px) return null
     if (format === "png") return encodePng(px.width, px.height, px.data)

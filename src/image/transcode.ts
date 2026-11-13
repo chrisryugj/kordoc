@@ -180,8 +180,10 @@ function decodeRle(b: Uint8Array, start: number, four: boolean, width: number, h
   while (i + 1 < b.length && y < height) {
     const n = b[i], v = b[i + 1]
     i += 2
+    // 너비를 넘는 run 은 픽셀 루프 없이 x 만 옮긴다 — 반복 횟수 255 로 입력 2바이트당 작업이 부풀지 않게
     if (n > 0) {
-      for (let k = 0; k < n; k++, x++) set(x, y, four ? (k & 1 ? v & 15 : v >> 4) : v)
+      for (let k = 0, m = Math.min(n, width - x); k < m; k++) set(x + k, y, four ? (k & 1 ? v & 15 : v >> 4) : v)
+      x += n
     } else if (v === 0) {
       x = 0; y++
     } else if (v === 1) {
@@ -189,7 +191,8 @@ function decodeRle(b: Uint8Array, start: number, four: boolean, width: number, h
     } else if (v === 2) {
       x += b[i] ?? 0; y += b[i + 1] ?? 0; i += 2
     } else {
-      for (let k = 0; k < v; k++, x++) set(x, y, four ? ((b[i + (k >> 1)] ?? 0) >> (k & 1 ? 0 : 4)) & 15 : b[i + k] ?? 0)
+      for (let k = 0, m = Math.min(v, width - x); k < m; k++) set(x + k, y, four ? ((b[i + (k >> 1)] ?? 0) >> (k & 1 ? 0 : 4)) & 15 : b[i + k] ?? 0)
+      x += v
       const bytes = four ? (v + 1) >> 1 : v
       i += bytes + (bytes & 1)
     }

@@ -9,7 +9,8 @@
 
 import { KordocError } from "../utils.js"
 
-/** sharp 기본 limitInputPixels(16383²) 와 같은 상한 — 헤더에 큰 크기만 적힌 파일이 RGBA 버퍼를 수 GB 잡지 않게 */
+/** 기본 상한은 sharp 기본 limitInputPixels(16383²) — 이미지 파일 입력이 PNG·JPEG 와 같은 크기까지 받게(아이폰 48MP 사진 포함).
+ *  문서 내 이미지 변환은 다른 포맷과 같은 MAX_PIXELS 를 넘긴다. 상한은 RGBA 버퍼를 할당하기 전에 헤더 크기로 확인한다 */
 const MAX_HEIC_PIXELS = 0x3fff * 0x3fff
 
 interface HeifImage {
@@ -38,7 +39,7 @@ function loadLibheif(): Promise<LibheifFactory> {
 export const hasLibheif = (): Promise<boolean> => loadLibheif().then(() => true, () => false)
 
 /** HEIC·HEIF primary 이미지 → RGBA8. 회전(irot)·반전(imir)은 libheif 가 적용한다 */
-export async function heicToRgba(bytes: Uint8Array): Promise<{ data: Uint8Array; width: number; height: number }> {
+export async function heicToRgba(bytes: Uint8Array, maxPixels = MAX_HEIC_PIXELS): Promise<{ data: Uint8Array; width: number; height: number }> {
   const libheif = (await loadLibheif())()
   // libheif-js 는 오류를 console.log 로 출력한다 — CLI stdout·MCP stdio 가 깨지지 않게 디코딩하는 동안 끈다
   const log = console.log
@@ -49,7 +50,7 @@ export async function heicToRgba(bytes: Uint8Array): Promise<{ data: Uint8Array;
     const img = images.find(i => i.is_primary()) ?? images[0]
     if (!img) throw new KordocError("HEIC·HEIF 디코딩 실패: 이미지가 없습니다")
     const width = img.get_width(), height = img.get_height()
-    if (width * height > MAX_HEIC_PIXELS) throw new KordocError(`HEIC·HEIF 이미지가 너무 큽니다 (${width}×${height})`)
+    if (width * height > maxPixels) throw new KordocError(`HEIC·HEIF 이미지가 너무 큽니다 (${width}×${height})`)
     const data = new Uint8ClampedArray(width * height * 4)
     await new Promise<void>((resolve, reject) => img.display({ data, width, height }, out => out ? resolve() : reject(new KordocError("HEIC·HEIF 디코딩 실패"))))
     return { data: new Uint8Array(data.buffer), width, height }
