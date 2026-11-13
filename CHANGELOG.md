@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PDF 중·일문 자동 간격: 따로 선 ASCII 괄호 아이템("表記面" "(" "版権") 옆 좁은 틈이 공백이 됐다. 위 둘: PDF 글 어절 F1 0.99114 → 0.99117(일문 계약서 0.975 → 0.987, 중문 0.982 → 0.988)
 - PDF 줄 머리 "# " 도 새 항목 글머리로 본다("…제출 필요" ⏎ "# 화기․위험물의 예" 가 한 문단이 됐다). 넷 모두 자체 글·표·별표·score·ODL 4종·OCR 문서별 하락 0, KoOCR-Bench 0.90643 → 0.90644
 
+### Security
+
+- MCP SDK 하위 의존성 @hono/node-server 2.1.5 → 2.1.8(GHSA-qv5m-9pm6-hqp3·GHSA-jpvv-r467-5p4w). npm audit 0건
+
 ## [4.24.70] - 2026-11-13
 
 ### Fixed
