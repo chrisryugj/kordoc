@@ -6,6 +6,7 @@
  */
 
 import { bmpToRgba } from "./transcode.js"
+import { isEmptyWmf, wmfBitmap } from "./wmf.js"
 import { loadSharp, toBuffer } from "./webp.js"
 import type { ExtractedImage, IRBlock, ParseWarning } from "../types.js"
 
@@ -28,7 +29,7 @@ export function isBlankRgba(rgba: Uint8Array): boolean {
 
 /**
  * 원본 그림 파일(HWP·HWPX·HWP3·DOCX·PPTX)에서 빈 그림을 뺀다 — `images`, 그 이름을 쓴 그림 블록, 글에 박힌 참조("![image](이름)").
- * BMP 는 kordoc 디코더, 그 밖은 sharp 로 푼다. 풀지 못한 그림(WMF·EMF·손상)은 남긴다. 하나라도 뺐으면 true
+ * BMP·WMF 속 비트맵은 kordoc 디코더, 그 밖은 sharp 로 푼다. 아무것도 그리지 않는 WMF 는 빈 그림이다. 풀지 못한 그림(벡터 WMF·EMF·손상)은 남긴다. 하나라도 뺐으면 true
  */
 export async function dropBlankImages(blocks: IRBlock[], images: ExtractedImage[], warnings: ParseWarning[]): Promise<boolean> {
   const sharp = await loadSharp()
@@ -36,7 +37,9 @@ export async function dropBlankImages(blocks: IRBlock[], images: ExtractedImage[
   let undecided = 0
   for (const img of images) {
     let rgba: Uint8Array | null = null
-    if (img.data[0] === 0x42 && img.data[1] === 0x4d) rgba = bmpToRgba(img.data)?.data ?? null
+    const wmf = wmfBitmap(img.data)
+    if (wmf || (img.data[0] === 0x42 && img.data[1] === 0x4d)) rgba = bmpToRgba(wmf ?? img.data)?.data ?? null
+    else if (isEmptyWmf(img.data)) { blank.add(img.filename); continue }
     else if (sharp && /^image\/(?:png|jpeg|gif|tiff|webp)$/.test(img.mimeType)) {
       rgba = await sharp(toBuffer(img.data), { limitInputPixels: 36_000_000 }).ensureAlpha().raw().toBuffer().then((b: Buffer) => new Uint8Array(b.buffer, b.byteOffset, b.byteLength), () => null)
     } else if (!sharp && /^image\/(?:png|jpeg|gif|tiff|webp)$/.test(img.mimeType)) undecided++

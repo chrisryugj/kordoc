@@ -17,9 +17,9 @@ const program = new Command()
 
 program
   .name("kordoc")
-  .description("모두 파싱해버리겠다 — HWP, HWPX, PDF, XLSX, DOCX, 이미지(PNG/JPG/WebP) → Markdown")
+  .description("모두 파싱해버리겠다 — HWP, HWPX, PDF, XLSX, DOCX, 이미지(PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) → Markdown")
   .version(VERSION)
-  .argument("<files...>", "변환할 파일 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP — 이미지는 OCR 자동 적용)")
+  .argument("<files...>", "변환할 파일 경로 (HWP, HWPX, PDF, XLSX, DOCX, PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX — 이미지는 OCR 자동 적용)")
   .option("-o, --output <path>", "출력 파일 경로 (단일 파일 시)")
   .option("--jobs <count>", "병렬 변환 프로세스 수 (기본 1, 다중 파일은 -d 필요)", "1")
   .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")

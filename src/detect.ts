@@ -46,18 +46,60 @@ export function isPdfFile(buffer: ArrayBuffer): boolean {
   return b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46
 }
 
-/** 래스터 이미지 (PNG/JPEG/WebP) — OCR 파싱 경로로 라우팅 */
-export function isImageFile(buffer: ArrayBuffer): boolean {
-  if (buffer.byteLength < 12) return false
-  const b = new Uint8Array(buffer, 0, 12)
+/** OCR 경로로 보내는 이미지 형식 */
+export type ImageKind = "png" | "jpeg" | "webp" | "tiff" | "gif" | "avif" | "heic" | "bmp" | "pcx" | "dcx"
+
+/** BMP info header 크기 — OS/2(12)·BITMAPINFOHEADER(40)·V2·V3·OS/2 2.x·V4·V5 */
+const BMP_HEADER_SIZES = new Set([12, 40, 52, 56, 64, 108, 124])
+
+/**
+ * 매직 바이트로 이미지 형식을 판별 — PNG·JPEG·WebP·TIFF·GIF·AVIF·HEIC/HEIF·BMP·PCX·DCX. 아니면 null.
+ * AVIF 와 HEIC 는 둘 다 ISOBMFF `ftyp` box 라 brand 로 구분한다(avif 가 있으면 AVIF). TGA 처럼 시그니처가 없는 형식은 판별하지 못한다
+ */
+export function imageFormat(buffer: ArrayBuffer): ImageKind | null {
+  if (buffer.byteLength < 12) return null
+  const b = new Uint8Array(buffer, 0, Math.min(128, buffer.byteLength))
+  const at = (o: number, s: string) => o + s.length <= b.length && [...s].every((c, i) => b[o + i] === c.charCodeAt(0))
   // PNG: \x89PNG
-  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return true
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "png"
   // JPEG: \xFF\xD8\xFF
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return true
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpeg"
   // WebP: RIFF....WEBP
-  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
-      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return true
-  return false
+  if (at(0, "RIFF") && at(8, "WEBP")) return "webp"
+  // TIFF·BigTIFF (II little / MM big endian)
+  if (at(0, "II*\0") || at(0, "MM\0*") || at(0, "II+\0") || at(0, "MM\0+")) return "tiff"
+  if (at(0, "GIF87a") || at(0, "GIF89a")) return "gif"
+  if (at(0, "BM") && buffer.byteLength >= 26 && BMP_HEADER_SIZES.has(new DataView(buffer).getUint32(14, true))) return "bmp"
+  if (b[0] === 0xb1 && b[1] === 0x68 && b[2] === 0xde && b[3] === 0x3a) return "dcx"
+  // PCX 시그니처는 첫 바이트 0x0A 하나뿐이라 헤더 128바이트(버전·RLE·비트 수·예약 0·plane 수)까지 확인한다
+  if (b.length >= 128 && b[0] === 0x0a && [0, 2, 3, 4, 5].includes(b[1]) && b[2] === 1 && [1, 2, 4, 8].includes(b[3]) && b[64] === 0 && [1, 2, 3, 4].includes(b[65])) return "pcx"
+  if (at(4, "ftyp")) {
+    const size = Math.min(new DataView(buffer).getUint32(0), b.length)
+    const brands: string[] = []
+    for (let o = 8; o + 4 <= size; o += o === 8 ? 8 : 4) brands.push(String.fromCharCode(...b.subarray(o, o + 4)))
+    if (brands.some(x => x === "avif" || x === "avis")) return "avif"
+    if (brands.some(x => /^(?:hei[cxms]|hev[cxms]|mif1|msf1)$/.test(x))) return "heic"
+  }
+  return null
+}
+
+/** 래스터 이미지 — OCR 파싱 경로로 라우팅 */
+export function isImageFile(buffer: ArrayBuffer): boolean {
+  return imageFormat(buffer) !== null
+}
+
+/** 판별은 되지만 지원하지 않는 이미지 형식의 이름 — "지원하지 않는 파일 형식" 대신 이 이름을 오류에 담는다 */
+export function unsupportedImageName(buffer: ArrayBuffer): string | null {
+  const b = new Uint8Array(buffer, 0, Math.min(48, buffer.byteLength))
+  const at = (o: number, s: string) => o + s.length <= b.length && [...s].every((c, i) => b[o + i] === c.charCodeAt(0))
+  if (at(0, "\0\0\0\x0CjP  \r\n\x87\n") || (b[0] === 0xff && b[1] === 0x4f && b[2] === 0xff && b[3] === 0x51)) return "JPEG 2000"
+  if (at(0, "\0\0\0\x0CJXL \r\n\x87\n") || (b[0] === 0xff && b[1] === 0x0a)) return "JPEG XL"
+  if (at(0, "8BPS")) return "PSD"
+  if (b[0] === 0xd7 && b[1] === 0xcd && b[2] === 0xc6 && b[3] === 0x9a) return "WMF"
+  if (b[0] === 1 && b[1] === 0 && b[2] === 0 && b[3] === 0 && at(40, " EMF")) return "EMF"
+  if (at(0, "%!PS") || (b[0] === 0xc5 && b[1] === 0xd0 && b[2] === 0xd3 && b[3] === 0xc6)) return "PostScript·EPS"
+  if (at(0, "AT&TFORM")) return "DjVu"
+  return null
 }
 
 /** HWPML (XML 기반 한컴 문서): <?xml ... <HWPML */

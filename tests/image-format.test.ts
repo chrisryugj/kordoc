@@ -54,15 +54,20 @@ const isPng = (b: Uint8Array) => b[0] === 0x89 && b[1] === 0x50
 const isWebp = (b: Uint8Array) => Buffer.from(b.subarray(8, 12)).toString("latin1") === "WEBP"
 
 describe("원본 그림 파일 형식 맞추기 (#188, imageFormat — HWP·HWPX·HWP3·DOCX·PPTX)", () => {
-  it("명시하면 모든 그림이 그 형식 — 파일명·MIME·바이트·블록·마크다운이 한 이름. 바꿀 수 없는 그림(WMF)은 원본·경고. 기본은 원본 그대로", async () => {
+  it("기본은 PNG·JPEG·WebP 가 아닌 그림만 PNG, 명시하면 모든 그림이 그 형식 — 파일명·MIME·바이트·블록·마크다운이 한 이름. 바꿀 수 없는 그림(WMF)은 원본·경고", async () => {
     const { buf, media } = await docx()
     assert.equal((await sharp(media[4], { pages: -1 }).metadata()).pages, 2, "움직이는 GIF 표본")
     const def = await parse(buf)
     assert.ok(def.success)
     if (!def.success) return
     const names = ["image_001.bmp", "image_002.png", "image_003.jpeg", "image_004.png", "image_005.gif", "image_006.wmf"]
-    assert.deepEqual(def.images!.map(i => i.filename), names)
-    for (const [k, m] of media.entries()) assert.deepEqual(def.images![k].data, m)
+    // 기본: 주요 LLM API 가 모두 받는 PNG·JPEG 는 바이트 그대로, BMP·GIF 는 PNG, WMF 는 원본·경고
+    const llm = ["image_001.png", "image_002.png", "image_003.jpeg", "image_004.png", "image_005.png", "image_006.wmf"]
+    assert.deepEqual(def.images!.map(i => i.filename), llm)
+    for (const k of [1, 2, 3, 5]) assert.deepEqual(def.images![k].data, media[k])
+    assert.deepEqual(await rgbaOf(def.images![0].data), bmpToRgba(media[0])!.data)
+    assert.ok(isPng(def.images![4].data))
+    assert.ok(def.warnings?.some(w => w.message.includes("그림 1개는 PNG 로 바꾸지 못해") && w.message.includes("image/wmf")))
     for (const format of ["png", "webp"] as const) {
       const r = await parse(buf, { imageFormat: format })
       assert.ok(r.success)
@@ -80,13 +85,26 @@ describe("원본 그림 파일 형식 맞추기 (#188, imageFormat — HWP·HWPX
       if (format === "png") { assert.deepEqual(r.images![1].data, media[1]); assert.deepEqual(r.images![3].data, media[3]) }
       assert.deepEqual(r.blocks.filter(b => b.type === "image").map(b => b.text), want)
       let md = def.markdown
-      for (const [k, n] of names.entries()) md = md.replace(`(${n})`, `(${want[k]})`)
+      for (const [k, n] of llm.entries()) md = md.replace(`(${n})`, `(${want[k]})`)
       assert.equal(r.markdown, md)
       assert.ok(r.warnings?.some(w => w.message.includes(`그림 1개는 ${format.toUpperCase()} 로 바꾸지 못해`) && w.message.includes("image/wmf")), format)
     }
-    // images: false 면 바꾸지 않는다
+    // images: false 면 바꾸지 않는다 — 자리 표시는 원본 이름
     const none = await parse(buf, { imageFormat: "webp", images: false })
-    assert.ok(none.success && none.markdown === def.markdown)
+    assert.ok(none.success && names.every(n => none.markdown.includes(`(${n})`)))
+  })
+
+  it("libtiff 경고만 있는 TIFF(한글이 저장한 null 없는 ImageDescription)도 PNG 로", async () => {
+    // 2×2 8비트 회색, ImageDescription 1바이트 "x"(null 없음)
+    const tif = new Uint8Array(8 + 4 + 2 + 9 * 12 + 4), v = new DataView(tif.buffer)
+    tif.set([0x49, 0x49, 42, 0]); v.setUint32(4, 12, true); tif.set([0, 64, 128, 255], 8)
+    const tags: [number, number, number][] = [[256, 3, 2], [257, 3, 2], [258, 3, 8], [259, 3, 1], [262, 3, 1], [270, 2, 0x78], [273, 4, 8], [278, 3, 2], [279, 4, 4]]
+    v.setUint16(12, tags.length, true)
+    tags.forEach(([tag, type, val], k) => { const e = 14 + k * 12; v.setUint16(e, tag, true); v.setUint16(e + 2, type, true); v.setUint32(e + 4, 1, true); if (type === 3) v.setUint16(e + 8, val, true); else v.setUint32(e + 8, val, true) })
+    await assert.rejects(sharp(Buffer.from(tif)).png().toBuffer(), "sharp 기본은 경고를 실패로 본다")
+    const images: ExtractedImage[] = [{ filename: "image_001.tif", data: tif, mimeType: "image/tiff" }]
+    assert.equal(await convertImages([], images, undefined, []), true)
+    assert.deepEqual([images[0].filename, [...(await rgbaOf(images[0].data))].filter((_, i) => i % 4 === 0)], ["image_001.png", [0, 64, 128, 255]])
   })
 
   it("글에 박힌 참조(표 칸 글·머리말 문단·각주·캡션의 \"![image](이름)\")도 바꾼 이름으로 고친다", async () => {

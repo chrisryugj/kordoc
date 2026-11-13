@@ -3,7 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { inflateSync } from "node:zlib"
-import { bmpToPng, inlineImagesIntoMarkdown } from "../src/image/transcode.js"
+import { bmpToPng, bmpToRgba, inlineImagesIntoMarkdown } from "../src/image/transcode.js"
 
 /** 24bpp BI_RGB(bottom-up) BMP 합성 — pixelsTopDown 은 [r,g,b] 배열(행 우선, 0행=최상단) */
 function makeBmp24(width: number, height: number, pixelsTopDown: number[][]): Uint8Array {
@@ -92,10 +92,44 @@ describe("bmpToPng", () => {
   it("미지원/깨진 입력은 null 을 반환한다", () => {
     assert.equal(bmpToPng(new Uint8Array([1, 2, 3])), null, "너무 짧음")
     assert.equal(bmpToPng(new Uint8Array(54)), null, "'BM' 시그니처 아님")
-    // 유효 헤더지만 8bpp(팔레트) → 미지원
-    const bmp8 = Buffer.from(makeBmp24(2, 2, [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]))
-    bmp8.writeUInt16LE(8, 28) // biBitCount = 8
-    assert.equal(bmpToPng(new Uint8Array(bmp8)), null, "8bpp 미지원")
+    // 유효 헤더지만 BI_JPEG(JPEG 를 담은 BMP) → 미지원
+    const jpeg = Buffer.from(makeBmp24(2, 2, [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]))
+    jpeg.writeUInt32LE(4, 30) // biCompression = BI_JPEG
+    assert.equal(bmpToPng(new Uint8Array(jpeg)), null, "BI_JPEG 미지원")
+  })
+
+  it("팔레트(1·8비트)·RLE8·16비트 BITFIELDS 를 읽는다", () => {
+    const RED = [255, 0, 0, 255], GREEN = [0, 255, 0, 255], BLUE = [0, 0, 255, 255], WHITE = [255, 255, 255, 255], BLACK = [0, 0, 0, 255]
+    const pal = (colors: number[][]) => colors.flatMap(([r, g, b]) => [b, g, r, 0])
+    // 54바이트 헤더 + (BITFIELDS 마스크) + 팔레트 + 픽셀. 픽셀은 아래 줄부터
+    const make = (width: number, height: number, bits: number, compression: number, extra: number[], pixels: number[]) => {
+      const off = 54 + extra.length
+      const buf = Buffer.alloc(off + pixels.length)
+      buf.write("BM", 0, "latin1")
+      buf.writeUInt32LE(buf.length, 2)
+      buf.writeUInt32LE(off, 10)
+      buf.writeUInt32LE(40, 14)
+      buf.writeInt32LE(width, 18)
+      buf.writeInt32LE(height, 22)
+      buf.writeUInt16LE(1, 26)
+      buf.writeUInt16LE(bits, 28)
+      buf.writeUInt32LE(compression, 30)
+      Buffer.from(extra).copy(buf, 54)
+      Buffer.from(pixels).copy(buf, off)
+      return new Uint8Array(buf)
+    }
+    const rgba = (b: Uint8Array) => [...bmpToRgba(b)!.data]
+    const colors = [RED, GREEN, BLUE, WHITE]
+    // 8비트 2×2 — 줄마다 4바이트
+    assert.deepEqual(rgba(make(2, 2, 8, 0, pal(colors), [2, 3, 0, 0, 0, 1, 0, 0])), [RED, GREEN, BLUE, WHITE].flat())
+    // 1비트 2×1 — 0b01 = 검정·흰색
+    assert.deepEqual(rgba(make(2, 1, 1, 0, pal([BLACK, WHITE]), [0b0100_0000, 0, 0, 0])), [BLACK, WHITE].flat())
+    // RLE8 4×2 — 아래 줄: 파랑 4개, EOL / 위 줄: absolute 3개(빨강·초록·빨강, 2바이트 패딩) + 흰색 1개, EOB
+    const rle = [4, 2, 0, 0, 0, 3, 0, 1, 0, 0, 1, 3, 0, 1]
+    assert.deepEqual(rgba(make(4, 2, 8, 1, pal(colors), rle)), [RED, GREEN, RED, WHITE, BLUE, BLUE, BLUE, BLUE].flat())
+    // 16비트 565 BITFIELDS 1×1 — 0xF800 = 빨강
+    const masks = [0x00, 0xf8, 0, 0, 0xe0, 0x07, 0, 0, 0x1f, 0, 0, 0]
+    assert.deepEqual(rgba(make(1, 1, 16, 3, masks, [0x00, 0xf8, 0, 0])), RED)
   })
 
   it("W×H 가 픽셀 상한(36MP)을 넘으면 할당 전에 null 을 반환한다", () => {

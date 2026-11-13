@@ -312,14 +312,20 @@ function patchNestedTables(
 }
 
 export function extractImgTags(inner: string): string {
-  return (inner.match(/<img\s(?:"[^"]*"|'[^']*'|[^>"'])*?>/gi) || []).join(" ")
+  return sameImageNames((inner.match(/<img\s(?:"[^"]*"|'[^']*'|[^>"'])*?>/gi) || []).join(" "))
 }
 
 /** GFM 셀의 비텍스트 토큰 — 이미지 참조/추출실패 플레이스홀더 */
 const CELL_TOKEN_RE = /!\[image\]\([^)]*\)|\[이미지: [^\]]*\]/g
 
 export function extractCellTokens(text: string): string {
-  return (text.match(CELL_TOKEN_RE) || []).join(" ")
+  return sameImageNames((text.match(CELL_TOKEN_RE) || []).join(" "))
+}
+
+/** 이미지 참조의 확장자는 비교에서 뺀다 — parse 가 BMP·TIFF 등을 PNG 로 바꿔 넘긴 마크다운("image_001.png")과
+ *  패치가 원본에서 다시 읽은 이름("image_001.bmp")은 같은 그림이다 */
+function sameImageNames(tokens: string): string {
+  return tokens.replace(/(\.[A-Za-z0-9]{2,5})(?=\)|["'\s>])/g, "")
 }
 
 export function stripCellTokens(text: string): string {

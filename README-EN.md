@@ -8,7 +8,7 @@
 
 > *Korea's document hell is second to none. Built by a civil servant who survived seven years in it.*
 
-Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and PNG/JPG/WebP to Markdown and structured data. Use it as a library, CLI or MCP server.
+Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and images (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) to Markdown and structured data. Use it as a library, CLI or MCP server.
 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 

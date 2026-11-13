@@ -14,6 +14,7 @@ const OPTIONAL_EXTERNAL = [
   "@hyzyla/pdfium",
   "sharp",
   "zxing-wasm",
+  "libheif-js",
 ]
 
 export default defineConfig([

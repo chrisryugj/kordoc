@@ -1,14 +1,19 @@
 /**
- * 원본 그림 파일(HWP·HWPX·HWP3·DOCX·PPTX)을 `imageFormat` 으로 명시한 형식으로 바꾼다 (#188).
+ * 원본 그림 파일(HWP·HWPX·HWP3·DOCX·PPTX·이미지 파일)을 LLM 이 읽는 형식으로 정규화한다 (#188).
  *
- * 명시하면 모든 그림이 그 형식이다 — 뒤 단계가 파일명·MIME 을 믿고 돌기 때문이다. 명시하지 않으면 원본 그대로다.
+ * `imageFormat` 을 명시하면 모든 그림이 그 형식이다 — 뒤 단계가 파일명·MIME 을 믿고 돌기 때문이다. 명시하지 않으면
+ * 주요 LLM API(Claude·OpenAI·Gemini)가 공통으로 받는 PNG·JPEG·WebP 는 그대로 두고, 나머지(BMP·GIF·TIFF·AVIF·HEIC·PCX·SVG, 비트맵 하나만 그리는 WMF)만 PNG 로 변환한다.
  * PNG 는 PNG, WebP 는 무손실 WebP. 보이는 그림을 맞춘다: EXIF 회전을 적용하고, ICC 프로필·CMYK 는 sRGB 로,
  * 움직이는 GIF 는 첫 장, SVG 는 그린 그림이다. 바꿀 수 없는 그림(WMF·EMF, kordoc·sharp 가 못 읽는 BMP 변형, 손상)은
  * 원본 그대로 두고 경고한다. 이미 그 형식인 그림은 바이트를 그대로 두고 이름·MIME 만 맞춘다.
  */
 
-import { bmpToPng, bmpToRgba, MAX_PIXELS } from "./transcode.js"
-import { loadSharp, toBuffer, WEBP_OPTIONS, type SharpFactory } from "./webp.js"
+import { imageFormat } from "../detect.js"
+import { hasLibheif, heicToRgba } from "./heic.js"
+import { dcxPages, pcxToRgba } from "./pcx.js"
+import { bmpToRgba, encodePng, MAX_PIXELS } from "./transcode.js"
+import { flushHeifCache, loadSharp, toBuffer, WEBP_OPTIONS, type SharpFactory } from "./webp.js"
+import { wmfBitmap } from "./wmf.js"
 import type { ExtractedImage, IRBlock, ParseWarning } from "../types.js"
 
 export type ImageFormat = "png" | "webp"
@@ -24,40 +29,57 @@ function isFormat(b: Uint8Array, format: ImageFormat): boolean {
 /** sharp 는 Buffer 를 돌려준다 — 결과 JSON(워커 protocol)에서 Buffer 는 {type, data} 로 바뀌어 순수 Uint8Array 로 */
 const plain = (b: Buffer | null) => b && new Uint8Array(b.buffer, b.byteOffset, b.byteLength)
 
-/** 그 형식 바이트 — 못 바꾸면 null */
-async function convert(sharp: SharpFactory | null, img: ExtractedImage, format: ImageFormat): Promise<Uint8Array | null> {
+/** 그 형식 바이트 — 못 바꾸면 null. sharp 는 필요할 때만 읽는다(PNG·JPEG·WebP 만 든 문서는 sharp 를 띄우지 않는다) */
+async function convert(sharp: () => Promise<SharpFactory | null>, img: ExtractedImage, format: ImageFormat): Promise<Uint8Array | null> {
   if (isFormat(img.data, format)) return img.data
-  // BMP 는 sharp 가 읽지 못한다 — kordoc 디코더(24/32bpp BI_RGB)
-  if (img.data[0] === 0x42 && img.data[1] === 0x4d) {
-    if (format === "png") return bmpToPng(img.data)
-    const px = bmpToRgba(img.data)
-    if (!px || !sharp) return null
-    return plain(await sharp(toBuffer(px.data), { raw: { width: px.width, height: px.height, channels: 4 } }).webp(WEBP_OPTIONS).toBuffer().catch(() => null))
+  const kind = imageFormat(img.data.slice(0, 128).buffer)
+  // sharp 가 못 읽는 BMP·PCX·DCX·HEIC·WMF 내 비트맵은 kordoc 디코더·libheif-js 로 RGBA 디코딩
+  const wmf = kind ? null : wmfBitmap(img.data)
+  if (wmf || kind === "bmp" || kind === "heic" || kind === "pcx" || kind === "dcx") {
+    const px = kind === "heic" ? await heicToRgba(img.data, MAX_PIXELS).catch(() => null)
+      : kind === "pcx" ? pcxToRgba(img.data) : kind === "dcx" ? pcxToRgba(dcxPages(img.data)[0] ?? new Uint8Array(0)) : bmpToRgba(wmf ?? img.data)
+    if (!px) return null
+    if (format === "png") return encodePng(px.width, px.height, px.data)
+    const s = await sharp()
+    if (!s) return null
+    return plain(await s(toBuffer(px.data), { raw: { width: px.width, height: px.height, channels: 4 } }).webp(WEBP_OPTIONS).toBuffer().catch(() => null))
   }
-  if (!sharp) return null
-  const out = sharp(toBuffer(img.data), { limitInputPixels: MAX_PIXELS }).rotate()
-  return plain(await (format === "png" ? out.png() : out.webp(WEBP_OPTIONS)).toBuffer().catch(() => null))
+  const s = await sharp()
+  if (!s) return null
+  // 경고는 무시한다 — 한글이 저장한 TIFF 는 ImageDescription 이 null 로 끝나지 않아 libtiff 경고가 뜨고, sharp 기본값(failOn "warning")은 이를 실패로 처리한다
+  const out = s(toBuffer(img.data), { limitInputPixels: MAX_PIXELS, failOn: "error" }).rotate()
+  const data = plain(await (format === "png" ? out.png() : out.webp(WEBP_OPTIONS)).toBuffer().catch(() => null))
+  if (kind === "avif") flushHeifCache(s)
+  return data
 }
 
+/** 주요 LLM API 가 모두 받는 형식(PNG·JPEG·WebP)인가 */
+const llmReadable = (b: Uint8Array) => isFormat(b, "png") || isFormat(b, "webp") || (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff)
+
 /**
- * `images` 를 모두 `format` 으로 바꾼다. 바꾼 그림은 파일명(`.png`·`.webp`)·바이트·MIME 과 그 이름을 쓴 그림 블록의
+ * `images` 를 모두 `format` 으로 바꾼다. `format` 이 없으면 PNG·JPEG·WebP 가 아닌 그림만 PNG 로. 바꾼 그림은 파일명(`.png`·`.webp`)·바이트·MIME 과 그 이름을 쓴 그림 블록의
  * `text`·`imageData`, 글에 박힌 참조(표 칸 글·머리말·각주·캡션의 "![image](이름)")를 함께 바꾼다. 이름을 바꿨으면 true
  */
-export async function convertImages(blocks: IRBlock[], images: ExtractedImage[], format: ImageFormat, warnings: ParseWarning[]): Promise<boolean> {
-  const sharp = await loadSharp()
+export async function convertImages(blocks: IRBlock[], images: ExtractedImage[], format: ImageFormat | undefined, warnings: ParseWarning[]): Promise<boolean> {
+  const sharp = loadSharp
   const names = new Set(images.map(i => i.filename))
   const renamed = new Map<string, ExtractedImage>()
-  const kept: string[] = []
+  const kept: ExtractedImage[] = []
   for (const img of images) {
-    const name = img.filename.replace(/\.[^./]*$/, "") + "." + format
-    const data = await convert(sharp, img, format)
-    if (!data || (name !== img.filename && names.has(name))) { kept.push(img.mimeType); continue }
+    const target = format ?? (llmReadable(img.data) ? null : "png")
+    if (!target) continue
+    const name = img.filename.replace(/\.[^./]*$/, "") + "." + target
+    const data = await convert(sharp, img, target)
+    if (!data || (name !== img.filename && names.has(name))) { kept.push(img); continue }
     if (name !== img.filename) { renamed.set(img.filename, img); names.add(name) }
-    Object.assign(img, { filename: name, data, mimeType: MIME[format] })
+    Object.assign(img, { filename: name, data, mimeType: MIME[target] })
   }
   if (kept.length) {
-    const byMime = [...new Set(kept)].map(m => `${m} ${kept.filter(k => k === m).length}`).join(", ")
-    warnings.push({ code: "SKIPPED_IMAGE", message: `그림 ${kept.length}개는 ${format.toUpperCase()} 로 바꾸지 못해 원본 형식으로 냈습니다 (${byMime})${sharp ? "" : " — optional dependency 'sharp' 가 없습니다"}` })
+    const mimes = kept.map(i => i.mimeType)
+    const byMime = [...new Set(mimes)].map(m => `${m} ${mimes.filter(k => k === m).length}`).join(", ")
+    const heic = kept.some(i => imageFormat(i.data.slice(0, 128).buffer) === "heic") && !(await hasLibheif())
+    const why = !(await sharp()) ? " — optional dependency 'sharp' 가 없습니다" : heic ? " — HEIC 는 optional dependency 'libheif-js' 가 필요합니다" : ""
+    warnings.push({ code: "SKIPPED_IMAGE", message: `그림 ${kept.length}개는 ${(format ?? "png").toUpperCase()} 로 바꾸지 못해 원본 형식으로 냈습니다 (${byMime})${why}` })
   }
   // 바이트만 바꾼 그림(이름 그대로)도 블록 imageData 는 맞춘다
   const byName = new Map(images.map(i => [i.filename, i]))
