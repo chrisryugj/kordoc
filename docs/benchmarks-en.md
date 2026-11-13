@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.73: middle-dot line wraps · particles after footnote stars · 2026-11-13
+
+PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99125 → **0.99131** (28 documents up). One document down (fiscal strategy agenda 0.99399 → 0.99385) is a ground-truth limit: the source wrote "설계-제작 -검증-인증" with a stray space before a hyphen, which falls at a PDF line end and cannot be told apart. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90644 unchanged.
+
+- Rejected: joining bracket wraps by default when the document gives no evidence (10 up, 3 down), joining line-start middle dots inside table cells (cell bullets such as "·수질변화시" — 4 documents down).
+
 ## 4.24.72: line wraps before brackets · HWP3 figure numbers · formula post-processing · 2026-11-13
 
 PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99117 → **0.99125** (35 press releases up, none down). Formula ground truth (20 arXiv papers, 621 pages, run alone) exact match 0.6171 → **0.6266** (recall 0.9775 and precision 0.9725 unchanged, no paper down). HWP↔HWPX pair (score) hwp3-sample similarity → 1. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90644 unchanged.
