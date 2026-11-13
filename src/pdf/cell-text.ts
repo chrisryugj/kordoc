@@ -327,8 +327,12 @@ function mergeSuperscriptRows(lines: TextItem[][]): TextItem[][] {
     // 글자마다 붙은 첨자 여럿(서식 칸 "□예 □아니오" 의 작은 "예"·"아니오" 가 한 줄에 여섯)도 본문 줄과 같은 규칙으로 (isAttachedScripts)
     const prevIsFrag = (isFrag(prev) || isAttachedScripts(prev, curr)) && a.height <= b.height * 0.8 && overlap >= a.height * 0.5
     const currIsFrag = (isFrag(curr) || isAttachedScripts(curr, prev)) && b.height <= a.height * 0.8 && overlap >= b.height * 0.5
-    // 위아래로 쌓인 OCR 줄(가로로 절반 넘게 겹침)은 첨자가 아니다 — 첨자는 본문 글 옆에 붙는다 (cellTextToString 의 줄 묶기와 같은 가드)
-    const stacked = prev.some(o => o.fontName === "ocr" && curr.some(it => it.fontName === "ocr" && Math.min(it.x + it.w, o.x + o.w) - Math.max(it.x, o.x) > Math.min(it.w, o.w) * 0.5))
+    // 위아래로 쌓인 OCR 줄(가로로 절반 넘게 겹침)은 첨자가 아니다 — 첨자는 본문 글 옆에 붙는다 (cellTextToString 의 줄 묶기와 같은 가드).
+    // 텍스트층 글은 글자 크기까지 같을 때만 — 두 줄 이름표 "특 정 분 야 / 근 무 경 력" 사이 높이의 옆 이름표("특기")가 윗줄에 묶여 띠가
+    // 부풀자 아랫줄이 첨자로 흡수돼 글자가 엇갈렸다("특근정무분경야력", 법령 별지 신고서). 덧말·첨자는 글자가 작다
+    const sameSize = (a: TextItem, b: TextItem) => Math.abs(a.fontSize - b.fontSize) <= Math.max(a.fontSize, b.fontSize) * 0.1
+    const stacked = prev.some(o => curr.some(it => (o.fontName === "ocr" ? it.fontName === "ocr" : it.fontName !== "ocr" && sameSize(o, it)) &&
+      Math.min(it.x + it.w, o.x + o.w) - Math.max(it.x, o.x) > Math.min(it.w, o.w) * 0.5))
     if ((prevIsFrag || currIsFrag) && !stacked) {
       result[result.length - 1] = [...prev, ...curr]
     } else {
