@@ -104,6 +104,9 @@ export function isCjkLatinAutospace(prevText: string, nextText: string, gap: num
   const cjk = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/, latin = /[A-Za-z0-9]/
   // 중·일문 글자·전각 부호·곡선 따옴표끼리도 — 낱말 사이 공백이 없는 글이라 좁은 틈은 조판 간격이다("（Proprietor） ，"·"附属权 ”）")
   const cjkOrQuote = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef\u2018-\u201f]/
+  // 따로 선 ASCII 괄호 아이템("面" "(" "版権", "ページ" ")" "及び") — 괄호를 떼면 이웃 글자가 없다. 중·일문 글자와 맞닿은 괄호 쪽 틈도 자동 간격이다
+  const bare = nextText.replace(/^(?:<\/?u>|~~)+/, "")[0] ?? ""
+  if ((bare === "(" && cjk.test(a)) || (a === ")" && cjk.test(b))) return true
   return (cjk.test(a) && latin.test(b)) || (latin.test(a) && cjk.test(b)) || (cjkOrQuote.test(a) && cjkOrQuote.test(b) && (cjk.test(a) || cjk.test(b)))
 }
 

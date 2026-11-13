@@ -15,6 +15,9 @@ describe("isCjkLatinAutospace", () => {
     assert.equal(isCjkLatinAutospace("出版したり、", "e-Book(", 1.17, 10), true)
     assert.equal(isCjkLatinAutospace("各刷ごとに", "<u>2部ずつ</u>", 2.0, 10), true)
     assert.equal(isCjkLatinAutospace("請求内訳書", "(Invoice)に", 1.0, 10), true)
+    // 따로 선 괄호 아이템 — "著作権の表記面" "(" "版権ページ" ")" "及び"
+    assert.equal(isCjkLatinAutospace("著作権の表記面", "(", 1.0, 10), true)
+    assert.equal(isCjkLatinAutospace(")", "及び公衆配信物", 1.0, 10), true)
     // 중·일문 글자·전각 부호·곡선 따옴표끼리 좁은 틈 (중문 계약서 "（Proprietor） ，与海外"·"附属权 ”）")
     assert.equal(isCjkLatinAutospace("（Proprietor）", "，与海外", 2.0, 11), true)
     assert.equal(isCjkLatinAutospace("（以下称“附属权", "”）产生的收入", 2.0, 11), true)
