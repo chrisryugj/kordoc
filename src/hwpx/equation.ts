@@ -105,6 +105,8 @@ export const CONVERT_MAP: Record<string, string> = {
   PHI: "\\Phi", CHI: "X", PSI: "\\Psi", OMEGA: "\\Omega",
 
   "⌈": "\\lceil", "⌉": "\\rceil",
+  // 네모 기호 — 글자 그대로 쓴다(HWP5 앞단 normalizeOperators 와 같은 뜻, 생성 \square 의 되읽기)
+  "□": "\\square",
   "⌊": "\\lfloor", "⌋": "\\rfloor",
   "∥": "\\|",
   "⊐": "\\sqsupset", "⊒": "\\sqsupseteq",

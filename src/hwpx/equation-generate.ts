@@ -8,6 +8,7 @@
 
 import { CHAR_NORMAL, PARA_NORMAL, escapeXml } from "./gen-ids.js"
 import { CONVERT_MAP, MIDDLE_CONVERT_MAP } from "./equation.js"
+import { measureEquation } from "./equation-metrics.js"
 
 // 비신뢰 입력 가드 — markdownToHwpx는 MCP/CLI로 임의 입력을 받는다 (리뷰 #39 ·2).
 const MAX_EQUATION_SOURCE = 10_000
@@ -99,6 +100,10 @@ export const COMMAND_MAP: Record<string, string> = {
   ldots: "LDOTS",
   vdots: "VDOTS",
   ddots: "DDOTS",
+  // 수직 ⊥ 은 BOT(되읽기 \bot — 같은 기호), 네모 □ 는 글자 그대로(HWP5 실문서 스크립트, 되읽기 \square).
+  // 없으면 따옴표 폴백 "perp"·"square" 로 글자가 찍혔다(시험지 수식 생성 왕복)
+  perp: "BOT",
+  square: "□",
 }
 
 /**
@@ -156,6 +161,8 @@ export const ACCENT_COMMANDS: Record<string, string> = {
   dot: "dot",
   ddot: "ddot",
   underline: "under",
+  // 네모 상자 — 빈칸 문제의 ㈎·㈏ 칸(시험지 해설). 없으면 "boxed" 글자로 찍혔다
+  boxed: "BOX",
 }
 
 // EqEdit이 명령으로 해석하는 어휘 = 읽기 맵 키 + 구조 키워드. 첨자/위첨자의
@@ -384,24 +391,22 @@ export function latexLikeToEqEdit(input: string): string {
   return convertLatexFragment(quoteReservedKeywords(src), 0)
 }
 
+const EQ_BASE_UNIT = 1200
+
 interface EquationMetrics {
   width: number
   height: number
   baseline: number
 }
 
+/** 상자 크기는 스크립트 구조로 잰다(equation-metrics) — baseUnit 1200 기준 HWPUNIT, 기준선은 높이 % */
 function estimateEquationMetrics(script: string): EquationMetrics {
-  const cleaned = script.replace(/[{}\\^_]/g, "").replace(/\s+/g, " ").trim()
-  const width = Math.min(Math.max(cleaned.length, 5) * 700 + 2000, 40000)
-  const rowCount = Math.max(1, (script.match(/#/g) ?? []).length + 1)
-
-  if (/\bmatrix\b|#/.test(script)) {
-    if (rowCount >= 4) return { width, height: 5500, baseline: 55 }
-    if (rowCount === 3) return { width, height: 4500, baseline: 60 }
-    return { width, height: 3260, baseline: 63 }
+  const { w, a, d } = measureEquation(script)
+  return {
+    width: Math.min(Math.max(Math.round(w * EQ_BASE_UNIT), 200), 40000),
+    height: Math.max(Math.round((a + d) * EQ_BASE_UNIT), 200),
+    baseline: Math.round((100 * a) / (a + d)),
   }
-  if (/\bover\b|\broot\b|\bsqrt\b/.test(script)) return { width, height: 3010, baseline: 69 }
-  return { width, height: 1450, baseline: 71 }
 }
 
 /** eqId 기본값은 블록 수식(zOrder=블록 순번) 규약 — 인라인 수식(md-runs)은 따로 매긴 id 를 넘긴다 */
@@ -411,7 +416,7 @@ export function generateEquationXml(script: string, zOrder: number = 0, eqId: nu
   return `<hp:equation id="${eqId}" zOrder="${zOrder}" numberingType="EQUATION" ` +
     `textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" ` +
     `version="Equation Version 60" baseLine="${baseline}" textColor="#000000" ` +
-    `baseUnit="1200" lineMode="CHAR" font="HYhwpEQ">` +
+    `baseUnit="${EQ_BASE_UNIT}" lineMode="CHAR" font="HYhwpEQ">` +
     `<hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>` +
     `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" ` +
     `vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>` +

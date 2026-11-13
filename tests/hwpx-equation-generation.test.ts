@@ -33,6 +33,12 @@ describe("latexLikeToEqEdit", () => {
     assert.equal(out, "{matrix{a & b # c & d}}")
   })
 
+  it("\\perp·\\square 는 기호 토큰으로 — 따옴표 폴백 글자(\"perp\")가 아니다 (시험지 수식 생성 왕복)", () => {
+    assert.equal(latexLikeToEqEdit("\\overline{CE} \\perp \\overline{AB}"), "bar{CE} BOT bar{AB}")
+    assert.equal(latexLikeToEqEdit("\\square ABCD"), "□ ABCD")
+    assert.equal(latexLikeToEqEdit("\\boxed{2}"), "BOX{2}")
+  })
+
   it("pmatrix/bmatrix는 EqEdit 네이티브 토큰으로 낸다 (LEFT/RIGHT 합성 금지 — 리뷰 ·4)", () => {
     assert.equal(
       latexLikeToEqEdit("\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}"),
