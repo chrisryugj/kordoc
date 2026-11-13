@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.73](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.73)** · 2026-11-13
+Latest release: **[4.24.74](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.74)** · 2026-11-13
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.74 | Images inside documents and image files normalised to PNG/JPEG/WebP that LLM APIs accept; TIFF, GIF, AVIF, BMP, HEIC, PCX and DCX image input (#210, @VerifiedIdiot) | images rejected by LLM APIs 46% → **3.8%** · no per-document change on in-house benchmarks or KoOCR |
 | 4.24.73 | PDF line wraps around middle dots (halfwidth ･, one-dot leader ․, lines starting with a middle dot or hyphen) · particles after footnote stars and closing quotes | PDF text word-boundary F1 99.125% → **99.131%** · no per-document drops on in-house benchmarks (one ground-truth limit — see CHANGELOG) |
 | 4.24.72 | PDF line wraps before an opening bracket follow the document's own bracket spacing · HWP3 figure numbers · formula post-processing (norm bars, italic capital Greek, text-mode commands) | PDF text word-boundary F1 99.117% → **99.125%** · formula exact match 0.617 → **0.627** · no per-document drops on in-house benchmarks |
 | 4.24.71 | PDF borderless label/value two-column tables (fragmented lines, wrapped values) · CJK fill-in lines and widely spaced first lines · auto-spacing next to standalone brackets · "# " bullets | PDF text reading order 99.366% → **99.398%** · word-boundary F1 99.114% → **99.117%** (Japanese contract 0.975 → **0.987**) · no per-document drops on in-house benchmarks |
 | 4.24.70 | PDF CJK page-break paragraphs split by a footnote · CJK auto-spacing around brackets and fullwidth punctuation · vertical cuts through end-of-page fill-in blanks · HWP 5.x figure/table auto numbers | PDF text word-boundary F1 99.113% → **99.114%** (Chinese contract 0.961 → **0.982**) · KoOCR-Bench 0.90633 → **0.90643** · no per-document drops on in-house benchmarks |
-| 4.24.69 | PDF CJK body text with fill-in blanks became tables · CJK page-break paragraphs · doubled numbers in nested ordered lists · OCR two-column and fraction checks stabilized (#209) | PDF text word-boundary F1 99.111% → **99.113%** (Chinese contract 0.940 → **0.961**) · no per-document drops on in-house benchmarks (one bench artifact — see CHANGELOG) |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

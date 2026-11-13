@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.74] - 2026-11-13
+
 ### Added
 
 - 이미지 정규화: 문서 내 이미지와 이미지 파일을 LLM API 가 받는 포맷으로 출력한다. `imageFormat` 을 지정하지 않아도 주요 LLM API(Claude·OpenAI·Gemini)가 공통으로 받는 PNG·JPEG·WebP 는 원본 바이트 그대로 두고, 나머지(BMP·GIF·TIFF·AVIF·HEIC·PCX·SVG, 비트맵 하나만 그리는 WMF)는 PNG 로 변환한다(지정하면 기존처럼 모든 이미지를 그 포맷으로). 변환 못 한 이미지(벡터 WMF·EMF 등)는 원본을 유지하고 SKIPPED_IMAGE 로 알린다. 빈 WMF 는 `dropBlankImages` 대상이다. BMP 디코더를 1·4·8비트 팔레트·RLE8·RLE4·16비트·V4·V5·OS/2 까지 확장했고, HEIC 는 optional dependency `libheif-js` 가 필요하다(HEVC 특허·LGPL 때문에 자동 설치하지 않음)
