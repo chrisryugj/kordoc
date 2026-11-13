@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HWP3 그림 캡션 자동 번호: 저장값(1~4) 대신 그림 개체 순번으로 — 한컴은 캡션 없는 그림도 세어 2~5 로 그린다(hwp3-sample 한컴 PDF·변환 HWPX). HWP↔HWPX 쌍 유사도 0.9996 → 1
 - PDF 수식 인식 후처리: 여는 쪽만 막대 하나로 읽은 노름 `|\, … \|` → `\|…\|`, 기울인 대문자 그리스 `\varSigma` → `\Sigma`(정답지 2,314식에 0회, 예측 43회), 수식 모드에서 무효인 본문 명령(`\mathrm{\boldmath~P~}` → `\mathbf{P}`, 식 끝 `\.` → `.`). 정규화는 쓰레기 판정 뒤에 건다(앞에 두면 여러 줄 식이 반복 쓰레기로 사라졌다). 수식 정답지 정확 일치 0.6171 → 0.6266(재현율·정밀도 그대로, 논문별 하락 0). 넷 모두 자체 글·표·별표·score·ODL 4종·OCR 문서별 하락 0, KoOCR-Bench 0.90644 그대로
 
+### Security
+
+- MCP SDK 하위 의존성 hono 4.13.15 → 4.13.18(GHSA-4m76-xfj5-7975 외 4건). npm audit 0건
+
 ## [4.24.71] - 2026-11-13
 
 ### Fixed
