@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- HWP·HWPX 수식 → LaTeX, 한컴 수식 편집기처럼 읽기: 붙여 쓴 명령("12 over13"·"4times2"·"(sqrt"·"prime(x)"·"costheta"·"rmAB")을 떼고, 중괄호 없는 항목(over 앞뒤·sqrt·막대·root…of)을 한 항목으로 감싼다. "5 over 13" 이 `\frac{5} 13`(LaTeX 로는 5/1 다음 3), "bar AB" 가 표지째, 분자 "{bar{AB}}" 가 `\frac\overline{AB}` 로 깨지던 것. of 없는 root 는 제곱근(한컴 PDF "3 root5" → 3√5). 코퍼스 고유 수식 4,361종 기준 맨 분모 112 → 0, 변환 표지 누출 63 → 6(원문 괄호 짝이 안 맞는 식), 남은 over 58 → 0·root 16 → 0. 시험지 두 문서 수식을 생성(`inlineMath`)한 뒤 다시 읽으면 1,371종 중 1,363종·1,100종 중 1,093종이 그대로 돌아온다
+- HWPX 수식을 HWP5·HWP3·렌더와 같은 변환으로: HWPX 만 소문자 명령(le·left·sin)·글꼴 지시(rm·it, 792종)를 글자로 흘리고 맨 첨자를 한 글자만 잡았다("2^3-1" — 한컴 PDF 는 2^{3-1}). 같은 시험지의 HWP·HWPX 가 같은 LaTeX 를 낸다. PDF 글 3-09월 교육 통합 2023 spaceF1 0.98501 → 0.98417 은 벤치 처리 흠 — 미주 풀기(unwrapNotes)가 정답 수식 안 " |"(`\left |`, 소문자 left 가 명령이 되며 3 → 5곳)를 칸 경계로 읽어 미주를 자른다(정답 글자는 수식 밖 그대로)
+
 ## [4.24.74] - 2026-11-13
 
 ### Added

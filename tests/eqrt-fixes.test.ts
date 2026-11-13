@@ -20,8 +20,8 @@ describe("수식·왕복 이스케이프 회귀 (eqrt-1~4)", () => {
     assert.match(blocksToMarkdown([P("일반 홍** 별표")]), /홍\\\*\\\*/)
   })
   it("eqrt-2: replaceFrac 분자 인접 토큰 — 비인접 콘텐츠 미삭제", () => {
-    assert.equal(hmlToLatex("sqrt {x} + 1 over 2"), "\\sqrt { x } + \\frac{1} 2")
-    assert.equal(hmlToLatex("{a} over {b} + x over y"), "\\frac{ a } { b } + \\frac{x} y")
+    assert.equal(hmlToLatex("sqrt {x} + 1 over 2"), "\\sqrt { x } + \\frac{ 1 } { 2 }")
+    assert.equal(hmlToLatex("{a} over {b} + x over y"), "\\frac{ a } { b } + \\frac{ x } { y }")
     assert.equal(hmlToLatex("{a} over {b}"), "\\frac{ a } { b }") // 대조군 무회귀
   })
   it("eqrt-3: findKeywordToken 이 개행/탭 경계 예약어를 인식", () => {

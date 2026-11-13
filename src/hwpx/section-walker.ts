@@ -11,7 +11,7 @@ import { KordocError, sanitizeHref, stripDtd } from "../utils.js"
 import { escapeLiteralTags, wrapScript, tidyScriptTags } from "../script-tags.js"
 import { captionedText, convertTableToText, escapeLiteralDollar, MAX_COLS, MAX_ROWS } from "../table/builder.js"
 import type { IRBlock, IRCell, IRSpan, IRTable, InlineStyle, MemoNote, ParseWarning } from "../types.js"
-import { hmlToLatex } from "./equation.js"
+import { hwpEquationToLatex } from "../hwp5/equation.js"
 import {
   clampSpan,
   createSectionShared,
@@ -1012,7 +1012,8 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           const raw = script ? extractTextFromNode(script) : ""
           if (raw.trim()) {
             try {
-              const latex = hmlToLatex(raw).trim()
+              // HWP5·HWP3·렌더와 같은 변환 — 같은 한컴 수식 언어라 소문자 명령(le·left·sin)·맨 첨자("2^3-1" = 2^{3-1})도 같게 읽는다
+              const latex = hwpEquationToLatex(raw).trim()
               if (latex) text += " $" + latex.replace(/\$/g, "\\$") + "$ "
             } catch {
               // 변환 실패 시 드롭 — 깨진 대체 텍스트 누출 방지. 드롭 사실은 경고로 남긴다

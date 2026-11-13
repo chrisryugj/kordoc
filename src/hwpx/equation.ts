@@ -310,11 +310,15 @@ function replaceRootOf(eqString: string): string {
     if (rootCursor === -1) break
     try {
       const elem1 = findBrackets(eqString, rootCursor)
-      // of는 root의 지수 그룹 뒤에서만 유효 — 전역 첫 매치는 리터럴/선행 텍스트를 오인한다
-      const ofCursor = findKeywordToken(eqString, "of", elem1[1])
-      if (ofCursor === -1) return eqString
-      const elem2 = findBrackets(eqString, ofCursor)
       const e1 = eqString.slice(elem1[0] + 1, elem1[1] - 1)
+      // of는 root의 지수 그룹 바로 뒤에서만 유효 — 전역 첫 매치는 리터럴/선행 텍스트를 오인한다.
+      // of 없는 root 는 제곱근이다(한컴 PDF: "3 root5" → 3√5, "(2a,~ root3 )" → (2a,√3))
+      const ofCursor = findKeywordToken(eqString, "of", elem1[1])
+      if (ofCursor === -1 || eqString.slice(elem1[1], ofCursor).trim()) {
+        eqString = eqString.slice(0, rootCursor) + "\\sqrt" + "{" + e1 + "}" + eqString.slice(elem1[1])
+        continue
+      }
+      const elem2 = findBrackets(eqString, ofCursor)
       const e2 = eqString.slice(elem2[0] + 1, elem2[1] - 1)
       eqString =
         eqString.slice(0, rootCursor) +
@@ -380,7 +384,11 @@ function replaceAllBar(eqString: string): string {
         const [eStart, eEnd] = findBrackets(input, cursor)
         const elem = input.slice(eStart, eEnd)
         const outer = findEnclosingBrackets(input, cursor)
-        const [replaceStart, replaceEnd] = outer && outer[1] >= eEnd ? outer : [cursor, eEnd]
+        // 바깥 묶음은 막대와 그 인자만 담고, 분수·첨자·근호의 인자 자리가 아닐 때만 벗긴다 — 분자 "{bar{AB}} over {t}" 를 벗기면
+        // \frac\overline{AB}{t}(분수 인자가 명령 하나), "{bar{AH} - bar{CH}}" 를 벗기면 "- bar{CH}" 가 사라졌다
+        const pure = outer && outer[1] >= eEnd && !input.slice(outer[0] + 1, cursor).trim() && !input.slice(eEnd, outer[1] - 1).trim() &&
+          !/(?:\\frac|\\sqrt|[}\]^_])\s*$/.test(input.slice(0, outer[0]))
+        const [replaceStart, replaceEnd] = pure ? outer : [cursor, eEnd]
         const beforeBar = input.slice(0, replaceStart)
         const afterBar = input.slice(replaceEnd)
         input = beforeBar + barElem + elem + afterBar
@@ -424,6 +432,187 @@ function replaceAllBrace(eqString: string): string {
   return eqString
 }
 
+// ─── 붙여 쓴 명령·맨 항목 (한컴 수식 편집기 읽기) ─────────────────────────────
+
+/** 함수 이름 — CONVERT_MAP 에 없지만 한컴이 명령으로 읽어 붙여 써도 떼어 그린다("costheta" → cos θ) */
+const FUNCTION_WORDS = ["sin", "cos", "tan", "cot", "sec", "csc", "log", "ln", "exp"]
+/** 글꼴 지시(로만체·이탤릭) — 글자가 아니라 서식이라 LaTeX 에선 뺀다(hwp5 경로도 같다) */
+const FONT_WORDS = new Set(["rm", "it"])
+const GLUE_WORDS = new Set(
+  [...Object.keys(CONVERT_MAP), ...Object.keys(MIDDLE_CONVERT_MAP), "over", "root", "of", ...FUNCTION_WORDS, ...FONT_WORDS]
+    .filter(w => /^[A-Za-z]{2,}$/.test(w)),
+)
+
+/** 아직 LaTeX 로 옮기지 않는 한컴 예약어 — 쪼개면 다른 명령이 된다("pile" → pi·le = π ≤) */
+const KEEP_WORDS = new Set(["pile", "lpile", "rpile"])
+
+/** 글자 덩어리를 명령들로만 쪼갠다("costheta" → cos·theta, "timesrmbar" → times·rm·bar). 안 되면 null */
+function splitIntoWords(w: string, has: (w: string) => boolean): string[] | null {
+  const memo = new Map<number, string[] | null>()
+  const go = (i: number): string[] | null => {
+    if (i === w.length) return []
+    if (memo.has(i)) return memo.get(i)!
+    let found: string[] | null = null
+    for (let j = w.length; j > i + 1 && !found; j--) {
+      if (!has(w.slice(i, j))) continue
+      const rest = go(j)
+      if (rest) found = [w.slice(i, j), ...rest]
+    }
+    memo.set(i, found)
+    return found
+  }
+  return go(0)
+}
+
+/**
+ * 붙여 쓴 명령을 떼어 낸다 — 한컴은 "4times2"·"over13"·"(sqrt"·"prime(x)"·"=LEFT"·"costheta" 의 명령을 그대로 읽는다(3-09월 교육 통합
+ * 시험지: 한컴 PDF 가 "12 over13" 을 12/13, "costheta" 를 cos θ 로 그림). 공백 단위 토큰화는 이걸 글자로 흘렸다.
+ * 덩어리가 명령 하나이거나 명령들로만 쪼개질 때만 떼고(뒤에 대문자 점 이름이 붙은 "rmAB" 는 rm·AB), 따옴표 글·백슬래시 명령은 그대로 둔다.
+ */
+export function splitGluedWords(s: string, extra?: ReadonlySet<string>): string {
+  const has = (w: string) => GLUE_WORDS.has(w) || !!extra?.has(w)
+  return s.replace(/"[^"]*"|(?<![\\A-Za-z])[A-Za-z]+/g, w => {
+    if (w[0] === '"' || KEEP_WORDS.has(w)) return w
+    if (has(w)) return ` ${w} `
+    // 소문자 명령 뒤 대문자 점 이름("rmAB"·"barAR"·"itE")은 명령과 이름으로
+    const tail = /^([a-z]+)([A-Z]+)$/.exec(w)
+    const head = tail ? splitIntoWords(tail[1], has) : null
+    const parts = splitIntoWords(w, has) ?? (head ? [...head, tail![2]] : null)
+    return parts ? ` ${parts.join(" ")} ` : w
+  })
+}
+
+/** 인자 하나를 받는 앞 연산자 — 맨 인자("sqrt 17"·"bar AB")를 감싸야 뒤 단계가 그 항목만 본다 */
+const PREFIX_OPS = new Set(["\\sqrt", ...Object.keys(BAR_CONVERT_MAP)])
+
+function matchForward(t: string[], i: number): number {
+  for (let d = 0, k = i; k < t.length; k++) {
+    if (t[k] === "{") d++
+    else if (t[k] === "}" && --d === 0) return k
+  }
+  return -1
+}
+function matchBackward(t: string[], j: number): number {
+  for (let d = 0, k = j; k >= 0; k--) {
+    if (t[k] === "}") d++
+    else if (t[k] === "{" && --d === 0) return k
+  }
+  return -1
+}
+/** 항목이 될 수 없는 토큰 — 구조 예약어·괄호·첨자 기호·행렬 구분 */
+const NOT_ATOM = /^(?:over|root|of|[{}^_&#]|\\right)$/
+const endsWithScript = (tok: string) => tok.length > 1 && /[\^_]$/.test(tok)
+
+/** i 에서 시작하는 원자(중괄호 묶음·\left…\right·앞 연산자+인자·토큰 하나)의 끝. 없으면 -1 */
+function atomEnd(t: string[], i: number): number {
+  const tok = t[i]
+  if (tok === "{") return matchForward(t, i)
+  if (tok === "root") {
+    // "root {5}" 또는 "root {3} of {x}" — 근호도 한 항목("2 over root5" = 2/√5)
+    const e = atomEnd(t, i + 1)
+    return e >= 0 && t[e + 1] === "of" ? atomEnd(t, e + 2) : e
+  }
+  if (tok === undefined || NOT_ATOM.test(tok)) return -1
+  if (tok === "\\left") {
+    for (let d = 0, k = i; k < t.length; k++) {
+      if (t[k] === "\\left") d++
+      else if (t[k] === "\\right" && --d === 0) return k + 1 < t.length ? k + 1 : -1
+    }
+    return -1
+  }
+  if (PREFIX_OPS.has(tok)) return atomEnd(t, i + 1)
+  return i
+}
+/** j 에서 끝나는 원자의 시작. 없으면 -1 */
+function atomStart(t: string[], j: number): number {
+  const tok = t[j]
+  if (tok === undefined) return -1
+  if (tok === "}") {
+    const s = matchBackward(t, j)
+    if (s > 0 && (PREFIX_OPS.has(t[s - 1]) || t[s - 1] === "root")) return s - 1
+    if (s > 1 && t[s - 1] === "of" && t[s - 2] === "}") {
+      const g = matchBackward(t, s - 2)
+      if (g > 0 && t[g - 1] === "root") return g - 1
+    }
+    return s
+  }
+  if (j > 0 && t[j - 1] === "\\right") {
+    for (let d = 0, k = j - 1; k >= 0; k--) {
+      if (t[k] === "\\right") d++
+      else if (t[k] === "\\left" && --d === 0) return k
+    }
+    return -1
+  }
+  if (NOT_ATOM.test(tok) || tok === "\\left" || PREFIX_OPS.has(tok)) return -1
+  return j
+}
+/** i 에서 시작하는 항목(원자 + 위·아래 첨자 사슬)의 끝 — 첨자는 over 보다 단단히 붙는다(x^2 over a^2 = x²/a²) */
+function elemEnd(t: string[], i: number): number {
+  let e = atomEnd(t, i)
+  while (e >= 0) {
+    const k = t[e + 1] === "^" || t[e + 1] === "_" ? e + 2 : endsWithScript(t[e]) ? e + 1 : -1
+    const e2 = k < 0 ? -1 : atomEnd(t, k)
+    if (e2 < 0) break
+    e = e2
+  }
+  return e
+}
+/** j 에서 끝나는 항목의 시작 */
+function elemStart(t: string[], j: number): number {
+  let s = atomStart(t, j)
+  while (s > 0) {
+    const p = t[s - 1]
+    if (p === "^" || p === "_") {
+      const s2 = s >= 2 ? atomStart(t, s - 2) : -1
+      if (s2 < 0) break
+      s = s2
+    } else if (endsWithScript(p) && !NOT_ATOM.test(p)) s = s - 1
+    else break
+  }
+  return s
+}
+const isGroup = (t: string[], s: number, e: number) => t[s] === "{" && matchForward(t, s) === e
+
+/**
+ * 맨 항목을 중괄호로 감싼다 — 한컴은 over 앞뒤·sqrt·막대(bar 등)·root…of 의 인자를 중괄호 없이도 한 항목으로 읽는데
+ * 뒤 단계는 {…} 묶음만 찾는다. "5 over 13" 이 \frac{5} 13(LaTeX 로는 5/1 다음 3), "bar AB" 가 HULKBAR 표지째 새던 것.
+ */
+function braceBareOperands(t: string[]): string[] {
+  // 공백 있는 따옴표 글("sum over items")은 여러 토큰에 걸친다 — 그 안 over·root 는 글자다(replaceFrac 의 maskLiteralSpans 와 같은 뜻)
+  const inQuote: boolean[] = []
+  for (let i = 0, open = false; i < t.length; i++) {
+    inQuote.push(open)
+    if ((t[i].match(/"/g) ?? []).length % 2) open = !open
+  }
+  const quoted = (k: number) => inQuote[k]
+  const wrap = (s: number, e: number) => {
+    t.splice(e + 1, 0, "}"); t.splice(s, 0, "{")
+    inQuote.splice(e + 1, 0, false); inQuote.splice(s, 0, false)
+  }
+  for (let i = 0; i < t.length; i++) {
+    if (quoted(i)) continue
+    if (PREFIX_OPS.has(t[i]) && t[i + 1] !== "{") {
+      const e = atomEnd(t, i + 1)
+      if (e >= 0) wrap(i + 1, e)
+    } else if (t[i] === "root") {
+      let e = atomEnd(t, i + 1)
+      if (e >= 0 && !isGroup(t, i + 1, e)) { wrap(i + 1, e); e += 2 }
+      if (e >= 0 && t[e + 1] === "of") {
+        const e2 = atomEnd(t, e + 2)
+        if (e2 >= 0 && !isGroup(t, e + 2, e2)) wrap(e + 2, e2)
+      }
+    }
+  }
+  for (let k = t.length - 1; k > 0; k--) {
+    if (t[k] !== "over" || quoted(k)) continue
+    const e = elemEnd(t, k + 1)
+    if (e >= 0 && !isGroup(t, k + 1, e)) wrap(k + 1, e)
+    const s = elemStart(t, k - 1)
+    if (s >= 0 && !isGroup(t, s, k - 1)) wrap(s, k - 1)
+  }
+  return t
+}
+
 /** After single-token pass, fix `\left {` → `\left \{` and `\right }` → `\right \}`. */
 function replaceBracket(strList: string[]): string[] {
   for (let i = 0; i < strList.length; i++) {
@@ -442,7 +631,7 @@ export function hmlToLatex(hmlEqStr: string): string {
 
   // 스크립트 안 줄바꿈·탭은 공백 — HULK 행 구분은 `#` 이고 개행은 서식일 뿐이다. 남기면 토큰에
   // 붙어 LaTeX 로 새고(`5x+a \\ ⏎ }`), 인라인 수식 `$…$` 이 줄을 넘어 수식으로 인식되지 않는다 (math-001 cases)
-  let s = hmlEqStr.replace(/[\r\n\t]+/g, " ").replace(/`/g, " ")
+  let s = splitGluedWords(hmlEqStr.replace(/[\r\n\t]+/g, " ").replace(/`/g, " "))
   s = s.replace(/\{/g, " { ").replace(/\}/g, " } ").replace(/&/g, " & ")
 
   let tokens = s.split(" ")
@@ -450,7 +639,8 @@ export function hmlToLatex(hmlEqStr: string): string {
     const t = tokens[i]
     // hasOwn 필수 — `in`은 Object.prototype 키(constructor·toString 등)에도 걸려
     // 수식 토큰이 그 이름이면 함수가 치환값이 된다 (출력에 native code 주입/무음 삭제)
-    if (Object.hasOwn(CONVERT_MAP, t)) tokens[i] = CONVERT_MAP[t]
+    if (FONT_WORDS.has(t)) tokens[i] = ""
+    else if (Object.hasOwn(CONVERT_MAP, t)) tokens[i] = CONVERT_MAP[t]
     else if (Object.hasOwn(MIDDLE_CONVERT_MAP, t)) tokens[i] = MIDDLE_CONVERT_MAP[t]
     else {
       // EqEdit 리터럴 따옴표("int" 등 — 명령 해석 차단용) → \text{...}로 복원.
@@ -461,7 +651,7 @@ export function hmlToLatex(hmlEqStr: string): string {
     }
   }
   tokens = tokens.filter(tok => tok.length !== 0)
-  tokens = replaceBracket(tokens)
+  tokens = braceBareOperands(replaceBracket(tokens))
 
   let out = tokens.join(" ")
   out = replaceFrac(out)

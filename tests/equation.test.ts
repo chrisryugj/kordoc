@@ -13,7 +13,7 @@ describe("hwpEquationToLatex", () => {
     assert.equal(hwpEquationToLatex("sum_{k=1}^{n} a_{k}"), "\\sum _ { k=1 } ^ { n } a _ { k }")
     assert.equal(hwpEquationToLatex("SMALLSUM_{k=1}^{n} a_{k}"), "\\sum _ { k=1 } ^ { n } a _ { k }")
     assert.equal(hwpEquationToLatex("LEFT {a_{n} RIGHT}"), "\\left \\{ a _ { n } \\right \\}")
-    assert.equal(hwpEquationToLatex("left[ a,`b right]"), "\\left[ a, b \\right]")
+    assert.equal(hwpEquationToLatex("left[ a,`b right]"), "\\left [ a, b \\right ]")
   })
 
   it("분수 구조를 변환", () => {

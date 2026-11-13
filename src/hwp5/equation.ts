@@ -8,7 +8,7 @@
  * 인식할 수 있는 형태로 정규화하는 호환 프리패스만 담당한다.
  */
 
-import { CONVERT_MAP, MIDDLE_CONVERT_MAP, hmlToLatex } from "../hwpx/equation.js"
+import { CONVERT_MAP, MIDDLE_CONVERT_MAP, hmlToLatex, splitGluedWords } from "../hwpx/equation.js"
 
 /**
  * 정본 CONVERT_MAP에 (해당 표기로는) 없는 hwp5 지원 어휘 → LaTeX 직접 치환.
@@ -35,6 +35,9 @@ const WORD_ALIASES: Record<string, string> = {
   // 글꼴 지시자 — 제거
   rm: "", it: "",
 }
+
+/** 붙여 쓴 별칭도 뗀다("lnx" 는 아님 — 명령으로만 쪼개질 때만) — 별칭 치환보다 먼저여야 "costheta" 의 cos 도 \cos 가 된다 */
+const ALIAS_WORDS: ReadonlySet<string> = new Set(Object.keys(WORD_ALIASES).filter(w => w.length >= 2))
 
 /** 구조 예약어 — hmlToLatex가 소문자만 인식하므로 대소문자 무관 입력을 접는다 */
 const STRUCTURAL_FOLD = new Set(["over", "root", "of"])
@@ -82,6 +85,7 @@ export function hwpEquationToLatex(equation: string): string {
   let s = equation.replace(/\0/g, "").replace(/\s+/g, " ").trim()
   if (!s) return ""
 
+  s = splitGluedWords(s.replace(/`/g, " "), ALIAS_WORDS).replace(/\s+/g, " ").trim()
   s = normalizeScripts(s)
   s = normalizeOperators(s)
   s = normalizeWords(s)
