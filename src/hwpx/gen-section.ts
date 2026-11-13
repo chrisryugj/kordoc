@@ -81,7 +81,7 @@ export function generateSecPr(gongmun: ResolvedGongmun | null, page: ResolvedPag
   // 넓은 treatAsChar 표(제목박스·데이터표·목차박스)는 우측 여백을 침범한다
   // (v4.1.0 GAP-01 — COM 실렌더 실측: colPr 주입만으로 본문 190mm 정합·초과 0 확인).
   // columns=1이면 columnColPrXml이 종전 하드코딩과 동일 바이트를 방출한다.
-  const colPr = columnColPrXml(page?.columns ?? 1)
+  const colPr = columnColPrXml(page?.columns ?? 1, page?.columnGap, page?.columnLine)
   // 머리말/꼬리말 (v4.5.0) — 첫 문단 첫 run에 ctrl로 방출 (rhwp 형상)
   const hf = (page?.header ? headerFooterCtrl("header", page.header, 1) : "") +
     (page?.footer ? headerFooterCtrl("footer", page.footer, 2) : "")

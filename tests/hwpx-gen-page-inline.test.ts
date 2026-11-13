@@ -54,6 +54,15 @@ describe("페이지 옵션 (v4.5.0)", () => {
     assert.ok(sec.includes('colCount="3" sameSz="1" sameGap="2268"'))
   })
 
+  it("단 간격·단 구분선 — 시험지 실측(2단·3mm=850·SOLID 0.12 mm)", async () => {
+    const sec = await sectionOf(await markdownToHwpx("본문", { page: { columns: 2, columnGapMm: 3, columnLine: true } }))
+    assert.ok(sec.includes('colCount="2" sameSz="1" sameGap="850"><hp:colLine type="SOLID" width="0.12 mm" color="#000000"/></hp:colPr>'), sec.slice(0, 2000))
+    // 1단이면 구분선·간격을 내지 않는다
+    const one = await sectionOf(await markdownToHwpx("본문", { page: { columnLine: true } }))
+    assert.ok(one.includes('colCount="1" sameSz="1" sameGap="0"/>'))
+    await assert.rejects(() => markdownToHwpx("x", { page: { columns: 2, columnGapMm: -1 } }))
+  })
+
   it("머리말/꼬리말 — rhwp 형상 ctrl + 재파싱 시 본문 앞/뒤 배치", async () => {
     const buf = await markdownToHwpx("본문 문단", { page: { header: "기관 **머리말**", footer: "쪽 꼬리말" } })
     const sec = await sectionOf(buf)

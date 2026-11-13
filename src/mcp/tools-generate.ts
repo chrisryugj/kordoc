@@ -104,18 +104,20 @@ export function registerGenerateTools(server: McpServer): void {
       paper: z.enum(["A4", "A3", "B4", "B5", "Letter"]).optional().describe("용지 크기 (v4.5.0). 기본 A4"),
       landscape: z.boolean().optional().describe("용지 가로 방향 (v4.5.0). 기본 세로"),
       columns: z.number().int().min(1).max(8).optional().describe("다단 개수 (v4.5.0). 기본 1단"),
+      column_gap_mm: z.number().min(0).max(100).optional().describe("단 사이 간격 mm (다단일 때). 기본 8 — 시험지 2단은 3"),
+      column_line: z.boolean().optional().describe("단 구분선 (다단일 때) — 시험지처럼 가는 검은 실선"),
       header: z.string().optional().describe("머리말 텍스트 — 모든 쪽 상단, 인라인 마크다운 허용 (v4.5.0)"),
       footer: z.string().optional().describe("꼬리말 텍스트 — 모든 쪽 하단 (v4.5.0)"),
       image_dir: z.string().optional().describe("마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드 (v4.5.0, PNG/JPEG/GIF/BMP). 미지정 시 참조만 placeholder로 보존"),
       inline_math: z.boolean().optional().describe("본문·표 셀의 인라인 수식 $…$ 를 한글 수식 개체로 생성 (블록 $$…$$ 는 늘 수식). 미지정 시 글자 그대로 — 가격 표기 같은 일반 $ 오인 방지. 켜도 짝이 맞는 $…$ 만(공백으로 시작·끝나거나 \\$ 이스케이프면 제외)"),
       gate: z.boolean().optional().describe("공문서 게이트 — 표기법·문체 error 와 윤문(생성형 AI 문체)·구성(왜→무엇→어떻게, 문제점↔방안 짝, 배경 사실·기대효과 목표치) 지적이 하나라도 있으면 파일을 만들지 않고 지적 목록을 돌려준다. 결재용 원고는 켜고, 지적을 고쳐 쓴 뒤 다시 호출"),
     },
-    async ({ markdown, output_path, profile_path, template_path, pack_path, pack_kind, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, total_row, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math, gate }) => {
+    async ({ markdown, output_path, profile_path, template_path, pack_path, pack_kind, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, total_row, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, column_gap_mm, column_line, header, footer, image_dir, inline_math, gate }) => {
       try {
         // 부서 서식 견본 — 서식은 견본이 정한다. 함께 준 서식 옵션은 조용히 버리지 않고 오류
         if (template_path && pack_path) return { content: [{ type: "text", text: "오류: template_path 와 pack_path 는 함께 쓸 수 없습니다 — 하나만 주세요" }], isError: true }
         if (template_path || pack_path) {
-          const given: Record<string, unknown> = { profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math }
+          const given: Record<string, unknown> = { profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, column_gap_mm, column_line, header, footer, image_dir, inline_math }
           const clash = Object.keys(given).filter((k) => given[k] !== undefined)
           if (clash.length) return { content: [{ type: "text", text: `오류: ${templateConflictMessage(clash)}` }], isError: true }
           const out = safeOutputPath(output_path, new Set([".hwpx"]))
@@ -174,11 +176,13 @@ export function registerGenerateTools(server: McpServer): void {
           }
         }
         // 페이지 옵션 (v4.5.0)
-        const page = paper || landscape || columns || header || footer
+        const page = paper || landscape || columns || column_gap_mm !== undefined || column_line || header || footer
           ? {
             ...(paper ? { size: paper } : {}),
             ...(landscape ? { orientation: "landscape" as const } : {}),
             ...(columns ? { columns } : {}),
+            ...(column_gap_mm !== undefined ? { columnGapMm: column_gap_mm } : {}),
+            ...(column_line ? { columnLine: true } : {}),
             ...(header ? { header } : {}),
             ...(footer ? { footer } : {}),
           }

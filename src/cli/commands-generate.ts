@@ -19,7 +19,7 @@ const TEMPLATE_CLI_CONFLICTS = [
   "preset", "font", "pt", "lineSpacing", "profile", "org", "date", "toc", "cover", "approval", "pageNumbers", "endMark",
   "bodyTitleBox", "chapterFit", "h2Marker", "bandColor", "bandTextColor", "summary", "docInfo", "dept", "checklist", "coverLabel",
   "fonts", "sizes", "levels", "levelsFrom", "bullet2", "agency", "suppressSingle", "docHead", "docFoot", "reportInfo",
-  "noticeHead", "pressHead", "pressSub", "pressPeople", "plain", "paper", "landscape", "columns", "header", "footer",
+  "noticeHead", "pressHead", "pressSub", "pressPeople", "plain", "paper", "landscape", "columns", "columnGap", "columnLine", "header", "footer",
   "imageDir", "inlineMath",
 ]
 
@@ -77,6 +77,8 @@ export function registerGenerateCommands(program: Command): void {
     .option("--paper <size>", "용지: A4·A3·B4·B5·Letter 또는 '210x297'(mm)")
     .option("--landscape", "용지 가로 방향")
     .option("--columns <n>", "다단 개수 (1~8)")
+    .option("--column-gap <mm>", "단 사이 간격 mm (기본 8, 시험지 2단은 3)")
+    .option("--column-line", "단 구분선 — 시험지처럼 가는 검은 실선")
     .option("--header <text>", "머리말 텍스트 (모든 쪽, 인라인 마크다운 허용)")
     .option("--footer <text>", "꼬리말 텍스트")
     .option("--image-dir <dir>", "마크다운 이미지 참조(![](x.png))를 이 디렉토리에서 읽어 실데이터 임베드")
@@ -307,7 +309,7 @@ export function registerGenerateCommands(program: Command): void {
 
         // 페이지 옵션 (v4.5.0) — 용지·방향·다단·머리말/꼬리말
         let page: import("../index.js").PageOptions | undefined
-        if (opts.paper || opts.landscape || opts.columns || opts.header || opts.footer) {
+        if (opts.paper || opts.landscape || opts.columns || opts.columnGap || opts.columnLine || opts.header || opts.footer) {
           let size: import("../index.js").PageOptions["size"]
           if (opts.paper) {
             const wh = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/i.exec(String(opts.paper).trim())
@@ -317,6 +319,8 @@ export function registerGenerateCommands(program: Command): void {
             ...(size !== undefined ? { size } : {}),
             ...(opts.landscape ? { orientation: "landscape" as const } : {}),
             ...(opts.columns ? { columns: Number(opts.columns) } : {}),
+            ...(opts.columnGap ? { columnGapMm: Number(opts.columnGap) } : {}),
+            ...(opts.columnLine ? { columnLine: true } : {}),
             ...(opts.header ? { header: String(opts.header) } : {}),
             ...(opts.footer ? { footer: String(opts.footer) } : {}),
           }

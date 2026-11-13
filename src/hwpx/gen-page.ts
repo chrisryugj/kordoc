@@ -22,6 +22,10 @@ export interface PageOptions {
   orientation?: "portrait" | "landscape"
   /** 다단 개수 (1~8). 기본 1 */
   columns?: number
+  /** 단 사이 간격 mm (다단일 때). 기본 8 (한컴 기본) — 시험지 2단은 3 */
+  columnGapMm?: number
+  /** 단 구분선 (다단일 때) — true 면 시험지처럼 가는 검은 실선 */
+  columnLine?: boolean
   /** 머리말 텍스트 — 모든 쪽, 인라인 마크다운(굵게 등) 허용 */
   header?: string
   /** 꼬리말 텍스트 */
@@ -33,6 +37,9 @@ export interface ResolvedPage {
   heightHU: number
   landscape: "WIDELY" | "NARROWLY"
   columns: number
+  /** 단 간격 HWPUNIT */
+  columnGap: number
+  columnLine: boolean
   header: string | null
   footer: string | null
 }
@@ -52,9 +59,9 @@ const PAPER_MM: Record<string, [number, number]> = {
  */
 export function resolvePage(opts?: PageOptions): ResolvedPage | null {
   if (!opts) return null
-  const { size, orientation, columns, header, footer } = opts
-  if (size === undefined && orientation === undefined && columns === undefined
-    && header === undefined && footer === undefined) return null
+  const { size, orientation, columns, columnGapMm, columnLine, header, footer } = opts
+  if (size === undefined && orientation === undefined && columns === undefined && columnGapMm === undefined
+    && columnLine === undefined && header === undefined && footer === undefined) return null
 
   let wMm = 210, hMm = 297
   if (size !== undefined) {
@@ -74,6 +81,9 @@ export function resolvePage(opts?: PageOptions): ResolvedPage | null {
   if (!Number.isInteger(cols) || cols < 1 || cols > 8) {
     throw new Error(`다단 개수는 1~8 정수여야 합니다: ${columns}`)
   }
+  if (columnGapMm !== undefined && !(columnGapMm >= 0 && columnGapMm <= 100)) {
+    throw new Error(`단 간격은 0~100mm 여야 합니다: ${columnGapMm}`)
+  }
   // 용지 치수는 내림 — 한컴 정준값과 일치 (A4 210→59528·297→84188, 반올림이면 84189로 어긋남)
   const paperHU = (mm: number) => Math.floor((mm * 7200) / 25.4)
   return {
@@ -82,15 +92,21 @@ export function resolvePage(opts?: PageOptions): ResolvedPage | null {
     // 실측: 용지 치수는 방향과 무관하게 유지, 방향은 landscape 속성만 바뀐다
     landscape: orientation === "landscape" ? "NARROWLY" : "WIDELY",
     columns: cols,
+    columnGap: columnGapMm === undefined ? 2268 : Math.round((columnGapMm * 7200) / 25.4),
+    columnLine: columnLine === true,
     header: header?.trim() ? header.trim() : null,
     footer: footer?.trim() ? footer.trim() : null,
   }
 }
 
-/** 다단 colPr ctrl — rhwp render_col_pr_ctrl 형상 (간격 8mm = 한컴 기본) */
-export function columnColPrXml(columns: number): string {
-  const gap = columns > 1 ? 2268 : 0
-  return `<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="${columns}" sameSz="1" sameGap="${gap}"/></hp:ctrl>`
+/**
+ * 다단 colPr ctrl — rhwp render_col_pr_ctrl 형상 (간격 8mm = 한컴 기본).
+ * 구분선은 colPr 자식 colLine — 실측(3-09월_교육_통합_2022 시험지): 2단·간격 850(3mm)·SOLID 0.12 mm #000000
+ */
+export function columnColPrXml(columns: number, gap = 2268, line = false): string {
+  const g = columns > 1 ? gap : 0
+  const open = `<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="${columns}" sameSz="1" sameGap="${g}"`
+  return columns > 1 && line ? `${open}><hp:colLine type="SOLID" width="0.12 mm" color="#000000"/></hp:colPr></hp:ctrl>` : `${open}/></hp:ctrl>`
 }
 
 /**
