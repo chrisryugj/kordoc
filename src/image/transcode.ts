@@ -36,6 +36,10 @@ function crc32(bytes: Uint8Array): number {
 // ─── BMP 디코드 ──────────────────────────────────────
 
 const BI_RGB = 0
+const BI_RLE8 = 1
+const BI_RLE4 = 2
+const BI_BITFIELDS = 3
+const BI_ALPHABITFIELDS = 6
 /** 폭·높이 상한 — 비정상 헤더에 의한 과대 할당 방지 */
 const MAX_DIM = 0x7fff
 /**
@@ -47,11 +51,7 @@ const MAX_DIM = 0x7fff
 export const MAX_PIXELS = 36_000_000
 
 /**
- * 비압축 BMP(24/32bpp, BI_RGB) → PNG(8bit RGBA).
- *
- * 지원: BITMAPFILEHEADER + BITMAPINFOHEADER(biSize>=40), biBitCount 24/32,
- * biCompression BI_RGB, bottom-up(양수 biHeight)/top-down(음수), 24bpp 4바이트 행 패딩.
- * 미지원 변형(팔레트/8bpp·RLE·BITFIELDS·OS/2 헤더 등)은 null 을 반환하여
+ * BMP → PNG(8bit RGBA). 지원 범위는 bmpToRgba 와 같다. 읽지 못하면 null 을 반환하여
  * 호출부가 원본 바이트로 폴백하게 한다.
  */
 export function bmpToPng(bmp: Uint8Array): Uint8Array | null {
@@ -59,64 +59,141 @@ export function bmpToPng(bmp: Uint8Array): Uint8Array | null {
   return px && encodePng(px.width, px.height, px.data)
 }
 
-/** 비압축 BMP(24/32bpp, BI_RGB) → 8bit RGBA 픽셀. 미지원 변형은 null (bmpToPng 와 같은 조건) */
+/**
+ * BMP → 8bit RGBA 픽셀 (Microsoft BMP 공개 명세). 지원: OS/2 BITMAPCOREHEADER(12)·BITMAPINFOHEADER(40) 이상(V4·V5),
+ * 1·4·8비트 팔레트, 16비트(555·BITFIELDS)·24·32비트(BI_RGB·BITFIELDS), BI_RLE8·BI_RLE4, bottom-up(양수 높이)/top-down(음수).
+ * 그 밖(BI_JPEG·BI_PNG 등)·잘린 파일·상한을 넘는 크기는 null
+ */
 export function bmpToRgba(bmp: Uint8Array): { data: Uint8Array; width: number; height: number } | null {
-  // BITMAPFILEHEADER(14) + BITMAPINFOHEADER(40)
-  if (bmp.length < 54) return null
-  if (bmp[0] !== 0x42 || bmp[1] !== 0x4d) return null // "BM"
-
+  if (bmp.length < 26 || bmp[0] !== 0x42 || bmp[1] !== 0x4d) return null // "BM"
   const dv = new DataView(bmp.buffer, bmp.byteOffset, bmp.byteLength)
   const dataOffset = dv.getUint32(10, true)
   const headerSize = dv.getUint32(14, true)
-  if (headerSize < 40) return null // OS/2 BITMAPCOREHEADER 등 미지원
+  const core = headerSize === 12
+  if ((!core && headerSize < 40) || bmp.length < 14 + headerSize) return null
 
-  const width = dv.getInt32(18, true)
-  const rawHeight = dv.getInt32(22, true)
-  const bitCount = dv.getUint16(28, true)
-  const compression = dv.getUint32(30, true)
-
-  if (compression !== BI_RGB) return null // RLE / BITFIELDS 미지원
-  if (bitCount !== 24 && bitCount !== 32) return null // 팔레트 / 8bpp 등 미지원
+  const width = core ? dv.getUint16(18, true) : dv.getInt32(18, true)
+  const rawHeight = core ? dv.getInt16(20, true) : dv.getInt32(22, true)
+  const bitCount = dv.getUint16(core ? 24 : 28, true)
+  const compression = core ? BI_RGB : dv.getUint32(30, true)
   if (width <= 0 || rawHeight === 0) return null
   if (width > MAX_DIM || Math.abs(rawHeight) > MAX_DIM) return null
-
   const topDown = rawHeight < 0
   const height = Math.abs(rawHeight)
   // 총 픽셀 상한 검사 — rgba/raw 할당·deflate 전에 조기 차단 (각 변은 MAX_DIM 이하여도 곱은 폭주 가능)
   if (width * height > MAX_PIXELS) return null
-  const bytesPerPixel = bitCount >> 3
-  // 행 스트라이드 — 4바이트 경계 패딩 (24bpp 에서 유효)
-  const rowStride = (width * bytesPerPixel + 3) & ~3
-  if (dataOffset + rowStride * height > bmp.length) return null // 잘린 파일
+
+  const rle = compression === BI_RLE8 || compression === BI_RLE4
+  if (rle && (topDown || bitCount !== (compression === BI_RLE8 ? 8 : 4))) return null
+  // 16·32비트 채널 마스크 — 16비트 BI_RGB 는 555. 마스크는 40바이트 헤더 바로 뒤든 V2 이상 헤더 안이든 항상 파일 오프셋 54 에 있다
+  const fields = compression === BI_BITFIELDS || compression === BI_ALPHABITFIELDS
+  let masks: number[] | null = null
+  if (fields) {
+    if ((bitCount !== 16 && bitCount !== 32) || bmp.length < 70) return null
+    const alpha = compression === BI_ALPHABITFIELDS || headerSize >= 56
+    masks = [dv.getUint32(54, true), dv.getUint32(58, true), dv.getUint32(62, true), alpha ? dv.getUint32(66, true) : 0]
+  } else if (compression === BI_RGB && bitCount === 16) masks = [0x7c00, 0x03e0, 0x001f, 0]
+  else if (compression !== BI_RGB && !rle) return null
+  if (![1, 4, 8, 16, 24, 32].includes(bitCount)) return null
+
+  // 팔레트(1·4·8비트) — 헤더 뒤(40바이트 헤더의 BITFIELDS 마스크 뒤). 항목은 BGR(core) 또는 BGRx
+  let palette: Uint8Array | null = null
+  if (bitCount <= 8) {
+    const start = 14 + headerSize + (headerSize === 40 && fields ? (compression === BI_ALPHABITFIELDS ? 16 : 12) : 0)
+    const entry = core ? 3 : 4
+    const want = (core ? 0 : dv.getUint32(46, true)) || 1 << bitCount
+    const count = Math.min(want, 256, Math.floor((Math.min(dataOffset, bmp.length) - start) / entry))
+    if (count <= 0) return null
+    palette = new Uint8Array(256 * 3) // 범위 밖 인덱스는 검정
+    for (let k = 0; k < count; k++) {
+      const o = start + k * entry
+      palette[k * 3] = bmp[o + 2]; palette[k * 3 + 1] = bmp[o + 1]; palette[k * 3 + 2] = bmp[o]
+    }
+  }
 
   const rgba = new Uint8Array(width * height * 4)
-  let anyAlpha = 0
+  const putIndex = (dst: number, k: number) => {
+    rgba[dst] = palette![k * 3]; rgba[dst + 1] = palette![k * 3 + 1]; rgba[dst + 2] = palette![k * 3 + 2]; rgba[dst + 3] = 255
+  }
+  if (rle) {
+    if (dataOffset >= bmp.length) return null
+    decodeRle(bmp, dataOffset, compression === BI_RLE4, width, height, (x, y, k) => putIndex(((height - 1 - y) * width + x) * 4, k))
+    return { data: rgba, width, height }
+  }
 
+  // 행 스트라이드 — 4바이트 경계 패딩
+  const rowStride = ((width * bitCount + 31) >>> 5) * 4
+  if (dataOffset + rowStride * height > bmp.length) return null // 잘린 파일
+  const channels = masks?.map(maskChannel)
+  let anyAlpha = 0
   for (let y = 0; y < height; y++) {
     // bottom-up 은 첫 행이 이미지 맨 아래 → 뒤집어 읽는다
-    const srcRow = topDown ? y : height - 1 - y
-    let src = dataOffset + srcRow * rowStride
+    const row = dataOffset + (topDown ? y : height - 1 - y) * rowStride
     let dst = y * width * 4
-    for (let x = 0; x < width; x++) {
-      // BMP 픽셀은 BGR(A) 순
-      rgba[dst] = bmp[src + 2]     // R
-      rgba[dst + 1] = bmp[src + 1] // G
-      rgba[dst + 2] = bmp[src]     // B
-      const a = bitCount === 32 ? bmp[src + 3] : 255
-      rgba[dst + 3] = a
-      anyAlpha |= a
-      src += bytesPerPixel
-      dst += 4
+    for (let x = 0; x < width; x++, dst += 4) {
+      if (palette) {
+        const bit = x * bitCount
+        putIndex(dst, (bmp[row + (bit >>> 3)] >> (8 - bitCount - (bit & 7))) & ((1 << bitCount) - 1))
+      } else if (channels) {
+        const v = bitCount === 16 ? dv.getUint16(row + x * 2, true) : dv.getUint32(row + x * 4, true)
+        for (let c = 0; c < 4; c++) rgba[dst + c] = channels[c](v)
+      } else {
+        // BMP 픽셀은 BGR(A) 순
+        const src = row + x * (bitCount >> 3)
+        rgba[dst] = bmp[src + 2]     // R
+        rgba[dst + 1] = bmp[src + 1] // G
+        rgba[dst + 2] = bmp[src]     // B
+        const a = bitCount === 32 ? bmp[src + 3] : 255
+        rgba[dst + 3] = a
+        anyAlpha |= a
+      }
     }
   }
 
   // 32bpp BI_RGB 의 4번째 바이트는 "미정의" — 전부 0 이면 전면 투명으로 오해되므로
   // 불투명(255)으로 승격한다. 실제 알파가 있으면(anyAlpha!=0) 그대로 보존.
-  if (bitCount === 32 && anyAlpha === 0) {
+  if (bitCount === 32 && !channels && anyAlpha === 0) {
     for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255
   }
 
   return { data: rgba, width, height }
+}
+
+/** 마스크 하나 → 8비트 채널 값. 마스크가 0 이면(알파 없음) 255 */
+function maskChannel(mask: number): (v: number) => number {
+  if (!mask) return () => 255
+  let shift = 0
+  while (!((mask >>> shift) & 1)) shift++
+  const max = mask >>> shift
+  return v => Math.round((((v & mask) >>> shift) * 255) / max)
+}
+
+/**
+ * BI_RLE8·BI_RLE4 — (반복 수, 값) 쌍. 반복 수 0 은 escape: 0 EOL(줄 끝) · 1 EOB(비트맵 끝) · 2 delta(dx, dy) · 3 이상은
+ * absolute mode(그 수만큼 픽셀을 그대로 저장, 2바이트 경계까지 패딩). RLE4 는 한 바이트에 픽셀 둘(상위 4비트 먼저). 건너뛴 픽셀은 팔레트 0번.
+ * y 는 아래에서 위로 센다
+ */
+function decodeRle(b: Uint8Array, start: number, four: boolean, width: number, height: number, put: (x: number, y: number, k: number) => void): void {
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) put(x, y, 0)
+  const set = (x: number, y: number, k: number) => { if (x < width && y < height) put(x, y, k) }
+  let x = 0, y = 0, i = start
+  while (i + 1 < b.length && y < height) {
+    const n = b[i], v = b[i + 1]
+    i += 2
+    if (n > 0) {
+      for (let k = 0; k < n; k++, x++) set(x, y, four ? (k & 1 ? v & 15 : v >> 4) : v)
+    } else if (v === 0) {
+      x = 0; y++
+    } else if (v === 1) {
+      return
+    } else if (v === 2) {
+      x += b[i] ?? 0; y += b[i + 1] ?? 0; i += 2
+    } else {
+      for (let k = 0; k < v; k++, x++) set(x, y, four ? ((b[i + (k >> 1)] ?? 0) >> (k & 1 ? 0 : 4)) & 15 : b[i + k] ?? 0)
+      const bytes = four ? (v + 1) >> 1 : v
+      i += bytes + (bytes & 1)
+    }
+  }
 }
 
 // ─── PNG 인코드 (8bit RGBA, color type 6) ────────────
