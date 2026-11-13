@@ -52,6 +52,17 @@ const doc = (paras: Buffer[], extra: Buffer[] = []) =>
   buildHwp3(Buffer.concat([PREAMBLE, ...paras, END, ...extra, Buffer.alloc(4)]))
 
 describe("HWP3 그림", () => {
+  it("그림 캡션 자동 번호는 그림 개체 순번 — 캡션 없는 그림도 센다(한컴은 저장값 1 을 2 로 그린다, hwp3-sample)", () => {
+    const atno = Buffer.alloc(8)
+    atno.writeUInt16LE(18, 0); atno.writeUInt16LE(3, 2); atno.writeUInt16LE(1, 4); atno.writeUInt16LE(18, 6)
+    const caption = para(text("Fig "), { bytes: atno, hchars: 4 }, text(". arch"))
+    const captioned = picture("E$$00001.png")
+    captioned.bytes = Buffer.concat([captioned.bytes.subarray(0, captioned.bytes.length - END.length), caption, END])
+    const r = parseHwp3Document(doc([para(picture("E$$00000.png")), para(captioned)]))
+    assert.match(r.markdown, /Fig 2\. arch/)
+  })
+
+
   it("포함 그림 바이트를 이름으로 짝지어 image 블록·result.images 로", async () => {
     const buf = doc([para(text("보고")), para(picture("E$$00000.png"))], [embedded("E$$00000.png", PNG)])
     const r = parseHwp3Document(buf)

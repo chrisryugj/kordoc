@@ -128,6 +128,8 @@ interface ParaContext {
   depth: number
   /** 그림 내부 이름("E$$00000.jpg") → 그림 블록 id — 추가 정보 블록 #1 의 그림 바이트와 이름으로 짝짓는다 */
   picIds: Map<string, number>
+  /** 지금까지 만난 그림 개체(ch=11, 그리기 개체 제외) 수 — 그림 캡션 자동 번호는 이 순번이다 */
+  pictures: number
 }
 
 /** 문단 1개의 파싱 누적 — 파싱이 중간에 깨져도 모은 만큼 방출한다 */
@@ -191,7 +193,7 @@ export function parseHwp3Document(
   }
 
   const bodyReader = new Reader(body)
-  const ctx: ParaContext = { warnings, headerBlocks: [], footerBlocks: [], headerTexts: new Set(), pageNumbers: 0, noteSeq: [0, 0], depth: 0, picIds: new Map() }
+  const ctx: ParaContext = { warnings, headerBlocks: [], footerBlocks: [], headerTexts: new Set(), pageNumbers: 0, noteSeq: [0, 0], depth: 0, picIds: new Map(), pictures: 0 }
   const bodyBlocks: IRBlock[] = []
   let binData = new Map<number, { data: Buffer; name: string }>()
   try {
@@ -551,14 +553,16 @@ function parseCharStream(reader: Reader, charCount: number, ctx: ParaContext, pa
 }
 
 /**
- * 자동 번호(ch=18) 표시 글자 — 각주·미주 번호는 "N)"(한컴 PDF 실측, 각주 내용 첫머리의 번호), 그림·표·수식
- * 번호는 저장된 번호(HWP5 CTRL_ATNO 가 번호를 내는 것과 같다). 쪽 번호는 조판 시점 값이라 내지 않는다
+ * 자동 번호(ch=18) 표시 글자 — 각주·미주 번호는 "N)"(한컴 PDF 실측, 각주 내용 첫머리의 번호), 표·수식
+ * 번호는 저장된 번호(HWP5 CTRL_ATNO 가 번호를 내는 것과 같다). 쪽 번호는 조판 시점 값이라 내지 않는다.
+ * 그림 번호는 그림 개체 순번이다 — 한컴은 캡션 없는 그림도 하나로 세어 저장값 1~4 를 2~5 로 그린다(hwp3-sample 한컴 PDF·변환 HWPX 실측)
  */
 function autoNumberText(type: number, num: number, ctx: ParaContext): string {
   if (type === 0) {
     ctx.pageNumbers++
     return ""
   }
+  if (type === 3 && ctx.pictures > 0) return String(ctx.pictures)
   if (num <= 0) return " "
   return type === 1 || type === 2 ? `${num})` : String(num)
 }
@@ -686,6 +690,7 @@ function parsePicture(reader: Reader, ctx: ParaContext): IRBlock[] {
   const blocks: IRBlock[] = []
   if (ext && info[74] === PIC_TYPE_DRAWING) parseDrawingObject(ext, ctx, blocks)
   else {
+    ctx.pictures++ // 캡션 자동 번호보다 먼저 — 캡션 문단 리스트는 아래에서 읽는다
     // 그림(0 외부 파일·1 OLE·2 포함) — 내부 이름(info[83..339])으로 추가 정보 블록 #1 의 바이트와 짝짓는다
     const name = decodeHwp3String(info.subarray(83, 83 + 256))
     let id = ctx.picIds.get(name)
