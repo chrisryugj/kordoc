@@ -46,6 +46,13 @@ export function latexToPlain(latex: string): string {
       if (/[A-Za-z]/.test(s[i] ?? "")) while (/[A-Za-z]/.test(s[i] ?? "")) name += s[i++]
       else name = s[i++] ?? ""
       if (name === "frac") { const a = arg(), b = arg(); return `${wrap(a.trim())}/${wrap(b.trim())}` }
+      // 행렬·경우 환경 — 행은 "; ", 칸 구분(&)은 빈칸, 경우는 앞에 "{" (종전엔 "begincases…&…\\…endcases" 가 그대로 샜다)
+      if (name === "begin") {
+        const env = arg().trim(), end = s.indexOf(`\\end{${env}}`, i), body = s.slice(i, end < 0 ? s.length : end)
+        i = end < 0 ? s.length : end + env.length + 6
+        const rows = body.split(/\\\\/).map(r => latexToPlain(r.replace(/&/g, "\\ "))).filter(Boolean)
+        return (env === "cases" ? "{" : "") + rows.join("; ")
+      }
       if (name === "sqrt") { skipWs(); let root = ""; if (s[i] === "[") { i++; root = seq("]"); i++ } const a = arg(); return `${root ? script(root, SUP, "") : ""}√${wrap(a.trim())}` }
       if (name === "left" || name === "right" || name === "big" || name === "Big" || name === "bigg" || name === "Bigg") { skipWs(); const d = s[i] === "\\" ? atom() : s[i++] ?? ""; return d === "." ? "" : d }
       if (name === "overline" || name === "bar" || name === "hat" || name === "vec" || name === "dot" || name === "tilde") {
