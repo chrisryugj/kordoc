@@ -20,6 +20,10 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("문화(공연･전시･영화･", "도서) 지원"), "")
     assert.equal(wrapJoiner("국민건강보험공단․", "국세청 등"), "")
     assert.equal(wrapJoiner("다음을 참고․․", "자료"), " ")
+    // 다음 줄이 가운뎃점·붙임표로 바로 이어지면 한 어절, 띄어 쓴 글머리는 아니다
+    assert.equal(wrapJoiner("공동 해결", "‧대응이 필요하다"), "")
+    assert.equal(wrapJoiner("‘생산-가공", "-유통’ 전 과정"), "")
+    assert.equal(wrapJoiner("다음과 같다", "- 첫째 항목"), " ")
   })
 
   it("한글 낱말 뒤 여는 괄호로 꺾인 줄 — 문서가 줄 안에서 붙여 쓰면 붙이고 띄워 쓰면 띄운다 (공동주택⏎(아파트))", () => {
