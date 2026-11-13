@@ -137,13 +137,13 @@ fn decode_raster(r: &hayro_interpret::RasterImage<'_>) -> Option<ImageEntry> {
     let mut entry: Option<ImageEntry> = None;
     r.with_rgba(|data, alpha| {
         let (iw, ih) = (data.width(), data.height());
-        let n = (iw * ih) as usize;
         let rgb: Vec<u8> = match data {
             hayro_interpret::ImageData::Rgb(d) => d.data,
             hayro_interpret::ImageData::Luma(d) => d.data.iter().flat_map(|&v| [v, v, v]).collect(),
         };
-        if rgb.len() != n * 3 { return }
-        entry = Some(match alpha.filter(|a| a.data.len() == (a.width * a.height) as usize) {
+        // 0 크기·u32 곱 넘침은 아래 index 를 벗어난다 — u64 로 견준다
+        if iw == 0 || ih == 0 || rgb.len() as u64 != iw as u64 * ih as u64 * 3 { return }
+        entry = Some(match alpha.filter(|a| a.width > 0 && a.height > 0 && a.data.len() as u64 == a.width as u64 * a.height as u64) {
             // 마스크 크기가 다르면 pdf.js 처럼 큰 쪽 크기로 둘 다 가까운 화소로 늘린다(PDFImage drawWidth·resizeRgbImage)
             Some(a) => {
                 let (w, h) = (iw.max(a.width), ih.max(a.height));
