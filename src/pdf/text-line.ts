@@ -504,6 +504,14 @@ export const PREFIX_SCRIPT = /^[^A-Za-z+=×÷<>≤≥∫∑∏√∞^_{}\\/]+$/
  *  부처 첨자 "행안부급경사지, 국토부도로비탈면"·원문자 "①디스플레이, ②항공" 이 한 줄에 여럿. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 뺀다.
  *  글자 상자가 겹치는 폭은 0.25em 까지 — 좌표를 정수로 반올림하면(normalizeItems) 0.8pt 겹친 첨자가 2pt 로 늘어 한 줄 열둘 가운데 하나가
  *  0.1em 허용을 넘었고 첨자 줄이 통째로 따로 남았다(특별교통대책 보도자료 "부산(‘22년10:00"). 본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
+/** 위첨자 덩어리가 붙는 글자에 맞나 — 덩어리 글자 크기가 고르고(1.15배 안) 붙는 글자보다 작으며(0.85배), 붙는 글자가 괄호만은 아니다.
+ *  분수 분모 줄("예정 가 격의 80% 상 당 가격 …")은 9pt·12pt 가 섞였고 늘인 괄호 ")]" 앞에 놓인다(hwp3-sample16). 쉼표 앞 덩어리는 붙는다
+ *  ("젖소 160두 ⁽착유 ⁷⁰두 (쿼터 ².⁵톤)⁾, 한우" — 156782262) */
+export function scriptRunFits(run: ReadonlyArray<{ fontSize?: number }>, h: { fontSize: number; text?: string }): boolean {
+  const sizes = run.map(r => r.fontSize ?? Infinity)
+  return !/^[()[\]{}<>]*$/.test(h.text ?? "") && Math.max(...sizes) <= h.fontSize * 0.85 && Math.max(...sizes) <= Math.min(...sizes) * 1.15
+}
+
 export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number; w: number; fontSize?: number }>, host: ReadonlyArray<{ x: number; w: number; fontSize: number }>): boolean {
   if (line.length <= 1 || line.length > 16) return false
   const short = (i: { text: string }) => { const n = i.text.trim().length; return n > 0 && n <= 8 }
@@ -511,7 +519,7 @@ export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number;
     host.some(h => {
       const before = h.x - (i.x + i.w)
       return before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.25 &&
-        (!smaller || /[\p{L}\p{N}]/u.test((h as { text?: string }).text ?? "") && smaller.every(r => r.fontSize !== undefined && r.fontSize <= h.fontSize * 0.85))
+        (!smaller || scriptRunFits(smaller, h))
     })
   const attached = (i: { text: string; x: number; w: number }) => short(i) && (prefixBefore(i) || host.some(h => {
     const after = i.x - (h.x + h.w)
@@ -525,7 +533,7 @@ export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number;
     const next = sorted[k + 1]
     if (next && next.x - (sorted[k].x + sorted[k].w) <= (sorted[k].fontSize ?? host[0]?.fontSize ?? 10) * 0.7) continue
     const run = sorted.slice(start, k + 1)
-    // 덩어리는 붙는 글자(글자·숫자)보다 작아야 한다 — 분수 분모 줄("예정 가 격의 80% 상 당 가격 …")은 본문 크기 글자가 섞였고 붙는 글자도 늘인 괄호 ")]" 다(hwp3-sample16)
+    // 덩어리는 붙는 글자보다 작고 고른 크기여야 한다(scriptRunFits)
     const runOk = run.length > 1 && run.every(i => short(i) && PREFIX_SCRIPT.test(i.text.trim())) && prefixBefore(run[run.length - 1], run)
     for (const i of run) if (runOk || attached(i)) ok++
     start = k + 1

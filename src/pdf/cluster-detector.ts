@@ -16,7 +16,7 @@
  */
 
 import type { IRTable, IRCell, BoundingBox } from "../types.js"
-import { PREFIX_SCRIPT } from "./text-line.js"
+import { PREFIX_SCRIPT, scriptRunFits } from "./text-line.js"
 import { isProseFragmentTable, isProseTable } from "./table-roles.js"
 import { clusterCellLines, joinClusterCellLines, type ClusterCellLine } from "./cluster-cell-text.js"
 import type { WrapLexicon } from "./line-wrap.js"
@@ -848,10 +848,10 @@ function isFragmentRow(row: RowGroup, host: RowGroup): boolean {
     if (next && next.x - (sorted[k].x + sorted[k].w) <= sorted[k].fontSize * 0.7) continue
     const run = sorted.slice(start, k + 1)
     const end = run[run.length - 1]
-    // 덩어리는 붙는 글자(글자·숫자)보다 작아야 한다 — 분수 분모 줄은 본문 크기 글자가 섞였고 붙는 글자도 늘인 괄호다(hwp3-sample16)
+    // 덩어리는 붙는 글자보다 작고 고른 크기여야 한다(text-line scriptRunFits)
     const runOk = run.length > 1 && host.items.some(h => {
       const before = h.x - (end.x + end.w)
-      return before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1 && /[\p{L}\p{N}]/u.test(h.text) && run.every(i => i.fontSize <= h.fontSize * 0.85)
+      return before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1 && scriptRunFits(run, h)
     })
     if (!runOk && !run.every(i => host.items.some(h => scriptAttached(i, h)))) return false
     start = k + 1
