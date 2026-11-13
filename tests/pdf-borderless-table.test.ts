@@ -43,6 +43,13 @@ describe("borderless two-column tables", () => {
   })
 })
 
+describe("각주 목록", () => {
+  it("쪽 아래 \"78) 제19장 … 참조\" 줄들(번호가 차례로 느는 각주)은 표가 아니다 — 본문 각주 잇기가 받는다 (task1725 209쪽)", () => {
+    const items: ClusterItem[] = JSON.parse(readFileSync(new URL("./fixtures/footnote-list-items.json", import.meta.url), "utf8"))
+    assert.deepEqual(detectClusterTables(items, 209), [])
+  })
+})
+
 describe("borderless two-column label/value tables split into items", () => {
   it("joins item fragments into the label and value cells (LibreOffice 사업 개요 표, 쪽 전체 아이템)", () => {
     const items: ClusterItem[] = JSON.parse(readFileSync(new URL("./fixtures/label-value-borderless-items.json", import.meta.url), "utf8"))

@@ -504,16 +504,33 @@ export const PREFIX_SCRIPT = /^[^A-Za-z+=×÷<>≤≥∫∑∏√∞^_{}\\/]+$/
  *  부처 첨자 "행안부급경사지, 국토부도로비탈면"·원문자 "①디스플레이, ②항공" 이 한 줄에 여럿. 적분 위끝("3a+x")은 다음 글자 앞에 붙어 있어 뺀다.
  *  글자 상자가 겹치는 폭은 0.25em 까지 — 좌표를 정수로 반올림하면(normalizeItems) 0.8pt 겹친 첨자가 2pt 로 늘어 한 줄 열둘 가운데 하나가
  *  0.1em 허용을 넘었고 첨자 줄이 통째로 따로 남았다(특별교통대책 보도자료 "부산(‘22년10:00"). 본문 줄(mergeSuperscriptLines)과 칸 글(cellTextToString)이 같이 쓴다 */
-export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number; w: number }>, host: ReadonlyArray<{ x: number; w: number; fontSize: number }>): boolean {
-  return line.length > 1 && line.length <= 16 && line.every(i => {
-    const t = i.text.trim(), n = t.length
-    if (n > 8 || !n) return false
-    return host.some(h => {
-      const after = i.x - (h.x + h.w), before = h.x - (i.x + i.w)
-      return (n <= 3 && after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.25) ||
-        (PREFIX_SCRIPT.test(t) && before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.25)
+export function isAttachedScripts(line: ReadonlyArray<{ text: string; x: number; w: number; fontSize?: number }>, host: ReadonlyArray<{ x: number; w: number; fontSize: number }>): boolean {
+  if (line.length <= 1 || line.length > 16) return false
+  const short = (i: { text: string }) => { const n = i.text.trim().length; return n > 0 && n <= 8 }
+  const prefixBefore = (i: { text: string; x: number; w: number }, smaller?: ReadonlyArray<{ fontSize?: number }>) => PREFIX_SCRIPT.test(i.text.trim()) &&
+    host.some(h => {
+      const before = h.x - (i.x + i.w)
+      return before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.25 &&
+        (!smaller || /[\p{L}\p{N}]/u.test((h as { text?: string }).text ?? "") && smaller.every(r => r.fontSize !== undefined && r.fontSize <= h.fontSize * 0.85))
     })
-  })
+  const attached = (i: { text: string; x: number; w: number }) => short(i) && (prefixBefore(i) || host.some(h => {
+    const after = i.x - (h.x + h.w)
+    return i.text.trim().length <= 3 && after <= h.fontSize * 0.35 && after >= -h.fontSize * 0.25
+  }))
+  // 아이템 여럿으로 찍힌 위첨자 덩어리("2023.7|월|~|12|월" — 사이 0.7em 안)는 덩어리 끝만 다음 글자 앞에 붙는다. 끝이 붙었으면 덩어리째 첨자다
+  // (새마을금고 보도자료 "【금고합병 현황】 ²⁰²³·⁷월 ~ ¹²월5개 → ²⁰²⁴년12개" — 이름표 줄이 따로 남아 값 줄과 열처럼 맞물려 문단까지 표가 됐다)
+  const sorted = [...line].sort((a, b) => a.x - b.x)
+  let ok = 0
+  for (let k = 0, start = 0; k < sorted.length; k++) {
+    const next = sorted[k + 1]
+    if (next && next.x - (sorted[k].x + sorted[k].w) <= (sorted[k].fontSize ?? host[0]?.fontSize ?? 10) * 0.7) continue
+    const run = sorted.slice(start, k + 1)
+    // 덩어리는 붙는 글자(글자·숫자)보다 작아야 한다 — 분수 분모 줄("예정 가 격의 80% 상 당 가격 …")은 본문 크기 글자가 섞였고 붙는 글자도 늘인 괄호 ")]" 다(hwp3-sample16)
+    const runOk = run.length > 1 && run.every(i => short(i) && PREFIX_SCRIPT.test(i.text.trim())) && prefixBefore(run[run.length - 1], run)
+    for (const i of run) if (runOk || attached(i)) ok++
+    start = k + 1
+  }
+  return ok === line.length
 }
 /** 첨자 조각 줄 — 덩어리 ≤8개·글자 ≤10자. 덩어리는 글자 크기 0.3배 안으로 붙은 아이템 무리다 — 한컴이 첨자를 글자마다 따로 찍은 줄
  *  ("근우,인프라 삼동,미래형운송수단" 의 첨자 10자가 아이템 10개)이 아이템 수 상한에 걸려 따로 남아 본문 줄 위로 올라갔다(국민성장펀드 표 칸).

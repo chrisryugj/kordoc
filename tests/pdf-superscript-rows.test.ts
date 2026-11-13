@@ -10,7 +10,7 @@ import assert from "node:assert/strict"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
 import { cellTextToString } from "../src/pdf/cell-text.js"
-import type { NormItem } from "../src/pdf/text-line.js"
+import { isAttachedScripts, type NormItem } from "../src/pdf/text-line.js"
 
 type Row = [y: number, fontSize: number, items: Array<[text: string, x: number, w: number]>]
 // 여성경제활동지원센터 공모전 보도자료 2쪽 (pdf.js 좌표, 연도 위첨자 7.7pt · 본문 12pt)
@@ -71,6 +71,28 @@ describe("첨자 행", () => {
       ["(", 387, 4], ["10:30", 406, 26], [",", 435, 3], ["11:45", 455, 26], ["/", 483, 5], ["10:45)", 506, 29]]]
     const text = extractPageBlocksFallback(items(sup, line), 2).map(b => b.text.replace(/<\/?sup>/g, "")).join(" ")
     for (const s of ["부산(‘22년10:00", "’23년11:05", "목포(‘22년10:30"]) assert.ok(text.includes(s), text)
+  })
+
+  it("아이템 여럿으로 찍힌 위첨자 덩어리는 끝이 다음 글자 앞에 붙으면 덩어리째 붙는다 (새마을금고 보도자료 \"【금고합병 현황】\")", () => {
+    // "2023.7|월|~|12|월" 은 덩어리 끝 "월" 만 "5개" 앞에 붙는다 — 종전엔 이름표 줄이 따로 남아 값 줄과 열처럼 맞물려 사이 문단까지 6×6 표가 됐다
+    const sup: Row = [237, 8, [["2023.7", 171, 22], ["월", 193, 8], ["~", 204, 5], ["12", 212, 8], ["월", 220, 8], ["2024", 274, 17], ["년", 290, 8],
+      ["2025", 351, 17], ["년", 367, 8], ["2026", 422, 17], ["년", 438, 8], ["상반기", 451, 23]]]
+    const line: Row = [232, 12, [["【", 69, 6], ["금고합병", 75, 48], ["현황", 129, 24], ["】", 153, 6], ["5", 233, 7], ["개", 240, 12], ["→", 257, 11],
+      ["12", 304, 13], ["개", 316, 12], ["→", 334, 11], ["25", 380, 13], ["개", 393, 12], ["→", 405, 11], ["21", 479, 13], ["개", 492, 12]]]
+    const text = extractPageBlocksFallback(items(sup, line), 2).map(b => b.text.replace(/<\/?sup>/g, "")).join(" ")
+    assert.equal(text, "【금고합병 현황】 2023.7월 ~ 12월 5개 → 2024년 12개 → 2025년 25개→ 2026년 상반기 21개")
+    assert.deepEqual(detectClusterTables(items(sup, line) as unknown as ClusterItem[], 2), [])
+  })
+
+  it("본문 크기 글자가 섞인 분수 분모 줄은 늘인 괄호 앞에 붙어도 첨자가 아니다 (hwp3-sample16 입찰가격 평점산식)", () => {
+    const t = (text: string, x: number, w: number, fontSize: number) => ({ text, x, w, fontSize })
+    const den = [t("예정 가 격의", 172, 46.7, 9), t("80%", 220, 26, 12), t("상 당 가격", 246, 37.7, 9), t("-", 283, 10, 12),
+      t("예 정가 격의", 290, 46.7, 9), t("60%", 338, 26, 12), t("상당 가격", 365, 36.7, 9)]
+    assert.equal(isAttachedScripts(den, [t(")]", 406, 10, 24)]), false)
+    // 같은 덩어리라도 작은 글자만이면 글자·숫자 앞에서 붙는다
+    const small = [t("2023.7", 171, 22, 8), t("월", 193, 8, 8), t("~", 204, 5, 8), t("12", 212, 8, 8), t("월", 220, 8, 8)]
+    assert.equal(isAttachedScripts(small, [t("5", 233, 7, 12)]), true)
+    assert.equal(isAttachedScripts(small, [t(")]", 233, 7, 24)]), false)
   })
 
   it("첨자는 본문 줄 제자리에 붙는다 (빈칸 하나 뒤 첨자 포함)", () => {

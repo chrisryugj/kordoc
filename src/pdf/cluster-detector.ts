@@ -170,7 +170,7 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
   // 산문 역할의 후보도 표가 아니다 (table-roles.ts). 목차·차트는 호출 측이 그 영역의 글로 바꾼다
   return results.filter(r => {
     const twoColumns = isTwoColumnProse(r)
-    const prose = twoColumns || isProseTable(r.table) || gaplessCjkLines(r) ||
+    const prose = twoColumns || isProseTable(r.table) || gaplessCjkLines(r) || isFootnoteList(r.table) ||
       [...r.usedItems].every(it => it.fontName === "ocr") && isProseFragmentTable(r.table)
     if (prose && rejected) rejected.prose++
     // OCR 두 단 본문은 단 경계(군집 상자들 사이 빈 x 띠 가운데 양쪽 글이 고른 가장 넓은 것)를 알린다 — 호출 측이 글 판정으로 못 찾은
@@ -188,6 +188,16 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
     }
     return !prose
   })
+}
+
+/**
+ * 각주 목록 — 쪽 아래 "78) 제19장 … 참조" 줄들은 번호와 글 사이가 벌어져 2열 후보가 된다. 채워진 행이 (하나 빼고) 모두 첫 칸에 각주 번호
+ * "N)" 만 들고 번호가 하나씩 차례로 늘면 표가 아니다 — 본문 글로 돌려 각주 잇기(본문 "78)" 참조 ↔ 각주 줄)가 받는다(task1725 209쪽)
+ */
+function isFootnoteList(table: IRTable): boolean {
+  const filled = table.cells.map(row => row.filter(cell => cell.text.trim())).filter(row => row.length)
+  const marks = filled.map(row => /^(\d{1,3})\)$/.exec(row[0].text.trim())).filter(m => m !== null).map(m => Number(m![1]))
+  return marks.length >= 3 && marks.length >= filled.length - 1 && marks.every((v, i) => i === 0 || v === marks[i - 1] + 1)
 }
 
 /**
@@ -829,7 +839,24 @@ function mergeOverlappingRows(rows: RowGroup[]): RowGroup[] {
  *  한다(연도 위첨자 "(’10)10.2만건 → (’25)17.1만건" 이 한 줄에 넷 — 넓은 간격의 넷 칸 행이 되어 본문 쪽이 통째로 4열 표가 됐다) */
 function isFragmentRow(row: RowGroup, host: RowGroup): boolean {
   if (!row.items.every(i => i.text.length <= 8)) return false
-  return row.items.length <= 3 || (row.items.length <= 16 && row.items.every(i => PREFIX_SCRIPT.test(i.text.trim()) && host.items.some(h => scriptAttached(i, h))))
+  if (row.items.length <= 3) return true
+  if (row.items.length > 16 || !row.items.every(i => PREFIX_SCRIPT.test(i.text.trim()))) return false
+  // 아이템 여럿으로 찍힌 위첨자 덩어리("2023.7|월|~|12|월", 사이 0.7em 안)는 덩어리 끝만 다음 글자 앞에 붙는다 — 끝이 붙으면 덩어리째 (text-line isAttachedScripts 와 같은 뜻)
+  const sorted = [...row.items].sort((a, b) => a.x - b.x)
+  for (let k = 0, start = 0; k < sorted.length; k++) {
+    const next = sorted[k + 1]
+    if (next && next.x - (sorted[k].x + sorted[k].w) <= sorted[k].fontSize * 0.7) continue
+    const run = sorted.slice(start, k + 1)
+    const end = run[run.length - 1]
+    // 덩어리는 붙는 글자(글자·숫자)보다 작아야 한다 — 분수 분모 줄은 본문 크기 글자가 섞였고 붙는 글자도 늘인 괄호다(hwp3-sample16)
+    const runOk = run.length > 1 && host.items.some(h => {
+      const before = h.x - (end.x + end.w)
+      return before <= h.fontSize * 0.6 && before >= -h.fontSize * 0.1 && /[\p{L}\p{N}]/u.test(h.text) && run.every(i => i.fontSize <= h.fontSize * 0.85)
+    })
+    if (!runOk && !run.every(i => host.items.some(h => scriptAttached(i, h)))) return false
+    start = k + 1
+  }
+  return true
 }
 
 /** 첨자 조각이 본문 글자 뒤에 맞붙었거나(틈 −0.1em ~ 0.35em) 앞에 빈칸 하나 안(0.6em)으로 붙었나 */
