@@ -16,6 +16,21 @@ function lexOf(...lines: string[]): WrapLexicon {
 }
 
 describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)", () => {
+  it("한글 낱말 뒤 여는 괄호로 꺾인 줄 — 문서가 줄 안에서 붙여 쓰면 붙이고 띄워 쓰면 띄운다 (공동주택⏎(아파트))", () => {
+    // 같은 글자 쌍("택(")이 없어도 문서의 괄호 표기 습관으로 정한다
+    const joined = lexOf("국민연금(노령연금)과 기초연금(국비)을", "시설(경로당) 대상", "청년(19~34세) 대상")
+    assert.equal(wrapJoiner("층간소음 예방 공동주택", "(아파트) 구조로 연출한", joined), "")
+    const spaced = lexOf("국민연금 (노령연금)과 기초연금 (국비)을", "시설 (경로당) 대상", "청년 (19~34세) 대상")
+    assert.equal(wrapJoiner("층간소음 예방 공동주택", "(아파트) 구조로 연출한", spaced), " ")
+    // 서술 끝 뒤 괄호는 따로 선 덧말 — 증거와 무관하게 띄운다
+    assert.equal(wrapJoiner("지원을 확대한다", "(붙임 참조)", joined), " ")
+    // 다음 줄 전체가 괄호 하나(제목 줄바꿈)·띄어 쓴 괄호 이름표·줄 안에서 띄어 쓴 그 두 어절은 띄운다
+    assert.equal(wrapJoiner("외국정부 초청 장학생 카드", "(유학국 도착신고서)", joined), " ")
+    assert.equal(wrapJoiner("참여수당 등 제공", "(성장 유형) 미취업 청년에게", joined), " ")
+    const product = lexOf("국민연금(노령연금)과 기초연금(국비)을", "시설(경로당) 대상", "섬유탈취제 강력탈취 (상쾌한향-에이) 제품")
+    assert.equal(wrapJoiner("섬유탈취제 강력탈취", "(상쾌한향-에이) 제품", product), " ")
+  })
+
   it("다음 줄 첫 어절이 조사·어미뿐이면 붙인다 (또⏎는, 제7조의9⏎에, 박물관’⏎으로)", () => {
     assert.equal(wrapJoiner("사망자 또는 행방불명자의 배우자 또", "는 자녀"), "")
     assert.equal(wrapJoiner("법률」 제7조의9", "에 따라 아래와 같이"), "")

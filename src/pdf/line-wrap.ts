@@ -58,6 +58,8 @@ export class WrapLexicon {
   private readonly cites = new Map<string, { joined: number; spaced: number }>()
   /** 쪽 줄 흐름에서 넓은 줄 사이 기준선 간격(글자 크기별) — 줄 둘뿐인 묶음은 묶음 안에 견줄 간격이 없어 넓은 줄 간격 본문을 문단 경계로 봤다 */
   private readonly pitches: Array<{ fs: number; pitch: number }> = []
+  /** 줄 안 한글 바로 뒤 여는 괄호 — 붙여 쓴 "주택(아파트)" 수와 띄운 "주택 (아파트)" 수 */
+  private readonly parens = { joined: 0, spaced: 0 }
 
   /** 줄 흐름의 이웃한 넓은 두 줄(같은 글자 크기) 사이 간격 하나를 더한다 */
   addPitch(fontSize: number, pitch: number): void {
@@ -73,6 +75,8 @@ export class WrapLexicon {
   /** 줄 글 한 줄을 증거로 더한다 — 탭(큰 갭)으로 나뉜 조각은 다른 칸·단이라 조각 사이는 어절 경계 증거로 쓰지 않는다 */
   addLine(text: string): void {
     for (const seg of text.replace(MARKUP, "").split("\t")) {
+      this.parens.joined += seg.match(/[가-힣]\(/g)?.length ?? 0
+      this.parens.spaced += seg.match(/[가-힣] \(/g)?.length ?? 0
       for (const m of seg.matchAll(CITE_LINK)) {
         const c = this.cites.get(m[1]) ?? { joined: 0, spaced: 0 }
         if (m[2]) c.spaced++; else c.joined++
@@ -111,6 +115,14 @@ export class WrapLexicon {
     return !c || c.joined === c.spaced ? null : c.joined > c.spaced
   }
 
+  /** 한글 뒤 여는 괄호로 꺾인 줄을 붙일까 — 문서 줄 안에서 붙여 쓴 쪽이 셋 넘고 띄운 쪽의 네 배 넘으면 true, 거꾸로면 false, 그 밖 null */
+  parenJoins(): boolean | null {
+    const { joined, spaced } = this.parens
+    if (joined >= 3 && joined >= 4 * spaced) return true
+    if (spaced >= 3 && spaced >= 4 * joined) return false
+    return null
+  }
+
   /** 문서 줄 안에서 홀로 선 어절로 나온 적 있나 */
   isWord(word: string): boolean {
     return (this.words.get(word) ?? 0) > 0
@@ -119,6 +131,11 @@ export class WrapLexicon {
   /** 꺾인 두 조각을 이어 붙인 꼴이 줄 안 한 어절로 나왔고, 두 조각이 줄 안에서 띄어 쓴 이웃 어절로는 나온 적 없나 */
   joinedWord(left: string, right: string): boolean {
     return this.isWord(left + right) && !this.pairs.has(left + " " + right)
+  }
+
+  /** 두 어절을 줄 안에서 띄어 쓴 이웃으로 쓴 적 있나 */
+  spacedPair(left: string, right: string): boolean {
+    return this.pairs.has(left + " " + right)
   }
 
   /** 줄 안 어절이 이 한글로 시작한 적 있나 */
@@ -292,6 +309,16 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const cite = left.match(/제\d+(조|항|호)(?:의\d+)?$/)
   if (cite && /^제\d+(?:항|호|목)/.test(right)) {
     const joins = lex?.citationJoins(cite[1])
+    if (joins != null) return joins ? "" : " "
+  }
+  // 본문에서 한글 낱말 뒤 여는 괄호로 꺾인 줄 — 문서가 줄 안에서 "공동주택(아파트)" 처럼 붙여 쓰면 붙이고 띄워 쓰면 띄운다(보도자료 67문서 83곳이
+  // "공동주택 (아파트)"). 서술 끝(-다·-함 …)·조사로 끝난 어절 뒤 괄호는 따로 선 덧말이라 그대로 둔다. 칸 글(heads=false)은 빼다 —
+  // 머리 칸 "키⏎(cm)"·"2025년⏎(1~7월)" 은 원문도 따로 선 줄이다
+  // 다음 줄 전체가 괄호 하나인 줄바꿈(제목 "…카드 ⏎ (유학국 도착신고서)")·띄어 쓴 괄호 이름표("제공 ⏎ (성장 유형) 미취업…")·줄 안에서
+  // 띄어 쓴 그 두 어절("강력탈취 (상쾌한향-에이)" — 표 칸에 넷)은 원문도 띄운다
+  if (heads && b === "(" && /[가-힣]$/.test(left) && !endsAsWord(left) && !/(?:함|음|됨|임|다)$/.test(left) &&
+    !/^\([^()]*\)\s*$/.test(next) && !/^\([^()]*\s[^()]*\)\s/.test(next) && !lex?.spacedPair(left, right)) {
+    const joins = lex?.parenJoins()
     if (joins != null) return joins ? "" : " "
   }
   const ev = lex?.evidence(left, right)
