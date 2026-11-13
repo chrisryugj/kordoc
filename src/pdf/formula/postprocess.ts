@@ -8,6 +8,8 @@
  * 5) isTrivialFormula — 다이어그램 단일 글자/반복/장식 오탐 제거
  * 6) 짝 없는 \left·\right 제거 (Pix2Text fix_latex) — 남으면 KaTeX 등이 수식 전체를 못 그린다
  * 7) 막대 둘 노름 ||x|| → \|x\|
+ * 8) 기울인 대문자 그리스 \varSigma → \Sigma
+ * 9) 수식 모드에서 무효인 본문 명령 — \mathrm{\boldmath~P~} → \mathbf{P}, 식 끝 마침표 \. → .
  */
 
 const TRAILING_WHITESPACE_CMDS = [
@@ -41,7 +43,9 @@ export function postProcessLatex(latex: string): string {
   if ((s.match(/\\+$/)?.[0].length ?? 0) % 2) s = s.slice(0, -1).trimEnd()
   // trivial 이면 빈 문자열 반환 — 상위(pipeline/parser) 에서 latex.trim() 비었을 때 skip.
   if (isTrivialFormula(s)) return ""
-  return s
+  // 표기 정규화는 쓰레기 판정 뒤에 — 판정 앞에서 `\varSigma`→`\Sigma` 로 맞추면 오독 줄 "\frac{2Kt^{2}\varSigma}{2Kt^{2}\Sigma}" 의
+  // 분자·분모가 같아져 반복 쓰레기로 걸려 여러 줄 식 전체가 사라졌다(2609.13201 (81)식)
+  return textModeCommands(uprightCapitalGreek(s))
 }
 
 /**
@@ -53,6 +57,37 @@ export function doubleBarNorms(s: string): string {
     // 여는 노름을 막대 하나 + 가는 공백 `|\,` 로 읽고 닫는 쪽만 `\|` 로 읽기도 한다(`\sup_{n}|\,g_{n}\|_{\infty}`) — 사이에 다른 막대 없이
     // `\|` 로 닫히는 `|\,` 만 노름으로(수식 정답지 5짝 상승·하락 0). `\left\|\,` 의 막대는 이미 노름이라 건드리지 않는다
     .replace(/(?<!\\)\|\\,((?:(?!\\\||\|).)*?)\\\|/g, "\\|$1\\|")
+}
+
+/**
+ * 대문자 그리스 문자는 바로 선 꼴이 LaTeX 기본이다 — 인식기는 `\Sigma`·`\Gamma` 를 기울인 꼴 `\varSigma`·`\varGamma` 로 내곤 한다
+ * (수식 정답지 2,314식에 기울인 대문자 0, 예측 43). 소문자 `\varepsilon`·`\varphi` 는 다른 글자라 그대로
+ */
+export function uprightCapitalGreek(s: string): string {
+  return s.replace(/\\var(Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega)(?![A-Za-z])/g, "\\$1")
+}
+
+/**
+ * 수식 모드에서 무효인 본문 명령 — 인식기는 굵은 글자를 `\mathrm{\boldmath~P~}` 로(본문용 굵게 전환을 로만 상자에), 식 끝 마침표를
+ * `\.`(본문용 점 악센트)로 내기도 한다. KaTeX 는 둘 다 못 그린다. 굵은 글자는 `\mathbf{P}`, 점 악센트 명령은 마침표로
+ */
+export function textModeCommands(s: string): string {
+  let out = ""
+  for (let i = 0; i < s.length;) {
+    const at = s.indexOf("\\mathrm{\\boldmath", i)
+    if (at < 0) { out += s.slice(i); break }
+    let depth = 0, j = at + "\\mathrm".length
+    for (; j < s.length; j++) {
+      if (s[j] === "\\") { j++; continue }
+      if (s[j] === "{") depth++
+      else if (s[j] === "}" && --depth === 0) break
+    }
+    if (j >= s.length) { out += s.slice(i); break }
+    const inner = s.slice(at + "\\mathrm{\\boldmath".length, j).replace(/^~+|~+$/g, "")
+    out += s.slice(i, at) + `\\mathbf{${inner}}`
+    i = j + 1
+  }
+  return out.replace(/(?<!\\)\\\.(?![A-Za-z])/g, ".")
 }
 
 /**

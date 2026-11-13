@@ -19,6 +19,8 @@ import {
   mergeContinuationLines,
   dropNestedDisplays,
   doubleBarNorms,
+  uprightCapitalGreek,
+  textModeCommands,
 } from "../src/pdf/formula/postprocess.js"
 import { __internal } from "../src/pdf/formula/detector.js"
 import { repeatingTail } from "../src/pdf/formula/recognizer.js"
@@ -604,5 +606,25 @@ describe("doubleBarNorms", () => {
     assert.equal(doubleBarNorms("\\sup_{n}|\\,g_{n}\\|_{\\infty}"), "\\sup_{n}\\|g_{n}\\|_{\\infty}")
     assert.equal(doubleBarNorms("|\\,a|+\\|b\\|"), "|\\,a|+\\|b\\|")
     assert.equal(doubleBarNorms("\\left\\|\\,e^{x}\\right\\|"), "\\left\\|\\,e^{x}\\right\\|")
+  })
+})
+
+describe("uprightCapitalGreek", () => {
+  it("기울인 대문자 그리스를 바로 선 꼴로, 소문자 \\varepsilon·\\varphi 는 그대로", () => {
+    assert.equal(uprightCapitalGreek("(1+\\varepsilon)\\varSigma+\\varGamma_{n}"), "(1+\\varepsilon)\\Sigma+\\Gamma_{n}")
+    assert.equal(uprightCapitalGreek("\\varphi(\\varOmega)"), "\\varphi(\\Omega)")
+  })
+  it("쓰레기 판정은 정규화 앞 글로 — 오독 줄이 맞춰져 분자·분모가 같아져도 여러 줄 식을 버리지 않는다 (2609.13201 (81)식)", () => {
+    const raw = "\\begin{aligned}{N_{Z}}&{\\leq\\frac{2t^{2}}{n^{2}}Kn\\varSigma}\\\\&{=\\frac{2Kt^{2}\\varSigma}{2Kt^{2}\\Sigma}}\\\\&{=\\frac{2Kt^{2}\\Sigma}{n}}\\\\\\end{aligned}"
+    const out = postProcessLatex(raw)
+    assert.ok(out.includes("Kn\\Sigma") && !out.includes("\\varSigma"))
+  })
+})
+
+describe("textModeCommands", () => {
+  it("\\mathrm{\\boldmath~P~} 를 \\mathbf{P} 로, 식 끝 \\. 를 마침표로 (줄바꿈 \\\\ 뒤 . 는 그대로)", () => {
+    assert.equal(textModeCommands("\\left\\|\\mathrm{\\boldmath~P_{i^{*}}~}\\widehat{\\mathrm{\\boldmath~w~}}"), "\\left\\|\\mathbf{P_{i^{*}}}\\widehat{\\mathbf{w}}")
+    assert.equal(textModeCommands("x\\leq y\\."), "x\\leq y.")
+    assert.equal(textModeCommands("a\\\\.b"), "a\\\\.b")
   })
 })
