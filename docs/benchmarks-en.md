@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.75: exam papers and formulas · 2026-11-14
+
+- PDF exam page borders: box rules inside questions split the page-frame grid and the page body became a table (text-layer pages). PDF text reading order 0.99398 → 0.99463 (two exam papers .877 → .952 and .889 → .963, another .800 → .865, hwp3-sample16 .990 → 1), PDF table exact 0.98241 → 0.98284, score pdfCoverage up on six documents. The four small drops on the same documents (−0.0001 to −0.0008) are explained in the CHANGELOG (page-header text the false table held on one page, the benchmark's note unwrapping treating " |" inside reference formulas as a cell boundary, an ambiguous line wrap). Annex, the four ODL runs, OCR, formats and roundtrip unchanged; KoOCR 0.90644 unchanged
+- Reading HWP/HWPX equations: over 4,361 distinct corpus formulas, bare denominators 112 → 0, leaked conversion markers 63 → 6, literal over 58 → 0, root 16 → 0, HWPX rm/it leaks 792 → 0
+- Generated equation boxes: against 22,130 Hancom-saved formulas the median relative width error falls from 2.235 to 0.079 (p90 8.17 → 0.33); median height and baseline error 0. Generating and re-reading the formulas of four exam papers returns 4,502 of 4,521 unchanged
+- Rejected: a wrap guard that keeps a space before a whole parenthetical line (spaceF1 down on four documents whose source glues it), removing box rules on OCR pages too (a unit line joined the header cell on one KoOCR gazette table page)
+
 ## 4.24.74: image normalisation and image-file input (#210) · 2026-11-13
 
 Images inside documents and image files are normalised to formats LLM APIs accept (public HWP/HWPX samples: images rejected by LLM APIs 5,109 (46%) → 416 (3.8%), PR #210). No per-document change on text, tables, annex tables, score, the four ODL runs, OCR, formats or roundtrip; KoOCR-Bench 0.90644 with no page changed.

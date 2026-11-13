@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.75] - 2026-11-14
+
 ### Added
 
 - HWPX 생성 단 간격·단 구분선: `page.columnGapMm`·`page.columnLine`(CLI `--column-gap`·`--column-line`, MCP `column_gap_mm`·`column_line`). 시험지 2단 실물(간격 3mm·가는 검은 실선 0.12 mm) 그대로 낸다
