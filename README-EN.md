@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.75](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.75)** · 2026-11-14
+Latest release: **[4.24.76](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.76)** · 2026-11-14
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.76 | PDF superscript runs split into several items (year labels, footnote references) · footnote lists at the page foot no longer read as tables · interleaved glyphs of two-line labels in cells | PDF text word-boundary F1 on two press releases 0.989 → **0.996** and → **1** · PDF coverage up on 11 documents (one form 0.981 → **1**) · no per-document drops on in-house benchmarks or KoOCR |
 | 4.24.75 | Exam papers and formulas — Hancom equation scripts with glued commands and bare operands, HWPX equations converted like HWP5, generated equation box sizes and ⊥/□/box symbols, column gap and column rule, PDF exam page frames no longer read as tables | PDF text reading order 99.398% → **99.463%** (exam paper 0.877 → **0.952**) · generated equation width error 223% → **7.9%** · exam formula generate-and-reparse **99.6%** |
 | 4.24.74 | Images inside documents and image files normalised to PNG/JPEG/WebP that LLM APIs accept; TIFF, GIF, AVIF, BMP, HEIC, PCX and DCX image input (#210, @VerifiedIdiot) | images rejected by LLM APIs 46% → **3.8%** · no per-document change on in-house benchmarks or KoOCR |
 | 4.24.73 | PDF line wraps around middle dots (halfwidth ･, one-dot leader ․, lines starting with a middle dot or hyphen) · particles after footnote stars and closing quotes | PDF text word-boundary F1 99.125% → **99.131%** · no per-document drops on in-house benchmarks (one ground-truth limit — see CHANGELOG) |
 | 4.24.72 | PDF line wraps before an opening bracket follow the document's own bracket spacing · HWP3 figure numbers · formula post-processing (norm bars, italic capital Greek, text-mode commands) | PDF text word-boundary F1 99.117% → **99.125%** · formula exact match 0.617 → **0.627** · no per-document drops on in-house benchmarks |
-| 4.24.71 | PDF borderless label/value two-column tables (fragmented lines, wrapped values) · CJK fill-in lines and widely spaced first lines · auto-spacing next to standalone brackets · "# " bullets | PDF text reading order 99.366% → **99.398%** · word-boundary F1 99.114% → **99.117%** (Japanese contract 0.975 → **0.987**) · no per-document drops on in-house benchmarks |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

@@ -2,6 +2,14 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.76: superscript runs, footnote lists, two-line cell labels · 2026-11-14
+
+- Superscript runs printed as several items (run end right before the next glyph, uniform and smaller size) attach as one superscript: PDF text spaceF1 on four documents up (.967 → .976, .989 → .996, .997 → 1, .984 → .985), one reading order .9942 → .9945
+- Footnote lists at the page foot ("78) … see", consecutive numbers) are not tables — footnotes 78) to 81) on one page now join the body notes
+- Two-line labels in a cell (same size, horizontally overlapping) are not absorbed as superscripts: coverage .981 → 1 on one form
+- score pdfCoverage up on 11 documents; tables, annex, the four ODL runs, OCR, formats and roundtrip unchanged per document; KoOCR 0.90644 unchanged
+- Rejected: cutting gap-free word lines out of cluster regions (one exam paper's order .913 → .716, ODL 117 TEDS 1 → .76, seven drops)
+
 ## 4.24.75: exam papers and formulas · 2026-11-14
 
 - PDF exam page borders: box rules inside questions split the page-frame grid and the page body became a table (text-layer pages). PDF text reading order 0.99398 → 0.99463 (two exam papers .877 → .952 and .889 → .963, another .800 → .865, hwp3-sample16 .990 → 1), PDF table exact 0.98241 → 0.98284, score pdfCoverage up on six documents. The four small drops on the same documents (−0.0001 to −0.0008) are explained in the CHANGELOG (page-header text the false table held on one page, the benchmark's note unwrapping treating " |" inside reference formulas as a cell boundary, an ambiguous line wrap). Annex, the four ODL runs, OCR, formats and roundtrip unchanged; KoOCR 0.90644 unchanged
