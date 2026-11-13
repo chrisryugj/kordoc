@@ -6,6 +6,7 @@ import { DEFAULT_CHAR, type RenderStyles } from "./head-styles.js"
 import { glyphWidth, joinsJamo } from "./reflow.js"
 import { mapPuaText } from "../shared/pua.js"
 import { latexToPlain } from "./equation-text.js"
+import { layoutFractions } from "./equation-layout.js"
 import { hwpEquationToLatex } from "../hwp5/equation.js"
 import { RegionCollector, type PageBBox } from "./scene.js"
 import { nextParaNumber, type NumberCounters } from "./para-number.js"
@@ -662,8 +663,25 @@ function drawObject(o: ParaObj, x: number, y: number, baseV: number, areaW: numb
   } else if (o.tag === "equation") {
     // 수식 — 수식 조판 대신 스크립트를 한 줄 유니코드 글(a/b·√·첨자)로 상자 폭에 맞춰 그린다. 기준선 = 상자 위 + 높이 × baseLine%
     const script = findChildByLocalName(o.el, "script")?.textContent ?? ""
-    const text = script ? latexToPlain(hwpEquationToLatex(script)) : ""
-    if (text && o.width > 0) {
+    const latex = script ? hwpEquationToLatex(script) : ""
+    const text = latex ? latexToPlain(latex) : ""
+    const frac = text && o.width > 0 && o.height > 0 ? layoutFractions(latex) : null
+    if (frac) {
+      // 분수가 든 수식 — 분자·가로선·분모로 쌓아 상자에 맞춘다(배율은 폭·높이 가운데 작은 쪽, 기준선은 상자의 baseLine)
+      const bl = Number(o.el.getAttribute("baseLine")), size = num(o.el, "baseUnit", 1000)
+      const k = Math.min(o.width / (frac.w * size), o.height / ((frac.a + frac.d) * size)), em = size * Math.max(0.5, Math.min(1.5, k))
+      const by = y + Math.round(o.height * (Number.isFinite(bl) && bl > 0 ? bl / 100 : frac.a / (frac.a + frac.d)))
+      const x0 = x + Math.max(0, (o.width - frac.w * em) / 2)
+      const color = o.el.getAttribute("textColor"), fill = color && color !== "#000000" ? escapeXml(color) : null
+      for (const op of frac.ops) {
+        const ox = x0 + op.x * em, oy = by - op.y * em
+        if (op.rule) emit(ctx, `<line x1="${pt(ox)}" y1="${pt(oy)}" x2="${pt(ox + op.rule * em)}" y2="${pt(oy)}" stroke="${fill ?? "#000"}" stroke-width="${pt(em * 0.05)}"/>`)
+        else if (op.text) {
+          emit(ctx, `<text x="${pt(ox)}" y="${pt(oy)}" font-size="${pt(em)}" font-family="'Times New Roman','HCR Batang','Noto Serif KR',serif"${fill ? ` fill="${fill}"` : ""}>${escapeXml(op.text)}</text>`)
+          ctx.stats.texts++
+        }
+      }
+    } else if (text && o.width > 0) {
       const bl = Number(o.el.getAttribute("baseLine")), size = num(o.el, "baseUnit", 1000)
       const by = y + Math.round(o.height * (Number.isFinite(bl) && bl > 0 ? bl / 100 : 0.85))
       const color = o.el.getAttribute("textColor")

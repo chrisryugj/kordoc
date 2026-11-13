@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- SVG 렌더(미리보기) 분수: 수식 전체를 한 줄 글("9/2")로 상자 폭에 눌러 그려 분수가 작은 빗금 글이 되던 것. 맨 바깥 분수를 분자·가로선·분모로 쌓고 앞뒤 글은 한 줄로 둔다(높이는 한글 저장 수식 실측 — 분자 위 1.52em·분모 아래 0.78em). 행이 든 수식(행렬·경우)은 종전대로. reflow 게이트 59/59
+
 ## [4.24.76] - 2026-11-14
 
 ### Fixed
