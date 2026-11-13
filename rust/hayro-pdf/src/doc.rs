@@ -147,7 +147,8 @@ fn decode_raster(r: &hayro_interpret::RasterImage<'_>) -> Option<ImageEntry> {
             // 마스크 크기가 다르면 pdf.js 처럼 큰 쪽 크기로 둘 다 가까운 화소로 늘린다(PDFImage drawWidth·resizeRgbImage)
             Some(a) => {
                 let (w, h) = (iw.max(a.width), ih.max(a.height));
-                if (w as f64) * (h as f64) > 36_000_000.0 { return }
+                // 가로로 긴 그림 + 세로로 긴 마스크처럼 두 원본보다 훨씬 큰 출력은 내지 않는다(1×6000 과 6000×1 → 3,600만 화소)
+                if (w as f64) * (h as f64) > 36_000_000.0 || w as u64 * h as u64 > 4 * (iw as u64 * ih as u64 + a.width as u64 * a.height as u64) { return }
                 let at = |sw: u32, sh: u32, x: u32, y: u32| ((y as u64 * sh as u64 / h as u64) * sw as u64 + x as u64 * sw as u64 / w as u64) as usize;
                 let mut o = Vec::with_capacity((w * h) as usize * 4);
                 for y in 0..h { for x in 0..w { let k = at(iw, ih, x, y); o.extend_from_slice(&rgb[k * 3..k * 3 + 3]); o.push(a.data[at(a.width, a.height, x, y)]) } }
@@ -160,7 +161,8 @@ fn decode_raster(r: &hayro_interpret::RasterImage<'_>) -> Option<ImageEntry> {
 }
 
 /// 그림만 디코딩하는 Device — kordoc 이 그림을 요청할 때 그 쪽을 다시 해석한다
-struct Decoder<'f> { images: &'f HashMap<String, ImageEntry>, got: HashMap<String, ImageEntry>, page: usize, inline_n: usize }
+/// 물은 그림(want)은 늘 디코딩하고, 같은 쪽의 다른 그림은 IMAGE_BUDGET 안에서만 미리 디코딩한다 — 넘친 그림(skipped)은 물을 때 다시 해석한다
+struct Decoder<'f> { images: &'f HashMap<String, ImageEntry>, got: HashMap<String, ImageEntry>, page: usize, inline_n: usize, want: &'f str, bytes: usize, skipped: std::collections::HashSet<String> }
 
 impl Device<'_> for Decoder<'_> {
     fn draw_path(&mut self, _: &BezPath, _: DrawProps<'_>, _: &DrawMode) {}
@@ -172,7 +174,8 @@ impl Device<'_> for Decoder<'_> {
             let id = image_id(r, self.page, &mut self.inline_n);
             // 화소 3,600만 이하(image-extract MAX_PIXELS)
             if !self.images.contains_key(&id) && !self.got.contains_key(&id) && (r.width() as f64) * (r.height() as f64) <= 36_000_000.0 {
-                if let Some(e) = decode_raster(r) { self.got.insert(id, e); }
+                if id != self.want && self.bytes as u64 + r.width() as u64 * r.height() as u64 * 4 > IMAGE_BUDGET as u64 { self.skipped.insert(id); return }
+                if let Some(e) = decode_raster(r) { self.bytes += e.data.len(); self.got.insert(id, e); }
             }
         }
     }
@@ -465,9 +468,9 @@ impl Doc {
         let pages = self.pdf.pages();
         let Some(p) = pages.get(page) else { return };
         let mut ctx = Context::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), &self.cache, self.pdf.xref(), InterpreterSettings::default());
-        let mut dec = Decoder { images: &self.images, got: HashMap::new(), page, inline_n: 0 };
+        let mut dec = Decoder { images: &self.images, got: HashMap::new(), page, inline_n: 0, want: id, bytes: 0, skipped: Default::default() };
         interpret_page(p, &mut ctx, &mut dec);
-        let got = dec.got;
+        let (got, skipped) = (dec.got, dec.skipped);
         // 상한을 넘으면 앞서 디코딩한 쪽들의 그림부터 놓는다
         let new_bytes: usize = got.iter().map(|(_, e)| e.data.len()).sum();
         while self.held_bytes + new_bytes > IMAGE_BUDGET {
@@ -476,7 +479,7 @@ impl Doc {
         }
         for (k, e) in got { self.held_bytes += e.data.len(); self.held.push_back(k.clone()); self.images.insert(k, e); }
         // 이 쪽 그림을 다시 해석하지 않게, 못 그린 그림도 빈 자리로 기록
-        let ids: Vec<String> = self.image_pages.iter().filter(|(_, &pg)| pg == page).map(|(k, _)| k.clone()).collect();
+        let ids: Vec<String> = self.image_pages.iter().filter(|(k, &pg)| pg == page && !skipped.contains(*k)).map(|(k, _)| k.clone()).collect();
         for k in ids { self.images.entry(k).or_insert(ImageEntry { width: 0, height: 0, kind: 0, data: Vec::new() }); }
     }
     /// 쪽 보기 상자 [x0,y0,x1,y1] — CropBox∩MediaBox, 겹침이 비면 MediaBox. 상자는 Parent 를 따라 물려받고, 없거나 넓이가 0 이면

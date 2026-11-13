@@ -54,7 +54,10 @@ fn snap(r: Rect) -> (i64, i64, i64, i64) {
 /// 쪽을 배율 scale 로 흰 바탕에 그린 RGBA 와 [가로, 세로]
 pub fn render(pdf: &Pdf, page: &Page<'_>, scale: f32) -> (Vec<u8>, u32, u32) {
     let (pw, ph) = page.render_dimensions();
-    let (w, h) = ((pw.floor() * scale).floor() as u16, (ph.floor() * scale).floor() as u16);
+    // 쪽 상자·배율은 문서와 호출부가 정한다 — 화소 3,600만(그림 상한과 같음)을 넘으면 배율을 줄인다. 넘지 않으면 k 는 1 이라 크기가 그대로다
+    let (fw, fh) = ((pw.floor() * scale).floor() as f64, (ph.floor() * scale).floor() as f64);
+    let k = (36_000_000.0 / (fw * fh).max(1.0)).sqrt().min(1.0);
+    let (w, h) = (((fw * k) as u16).max(1), ((fh * k) as u16).max(1));
     let transform = Affine::scale_non_uniform(w as f64 / pw as f64, h as f64 / ph as f64) * page.initial_transform(true).to_kurbo();
     let cache = hayro::RenderCache::new();
     let mut ctx = RenderContext::new(w, h);
