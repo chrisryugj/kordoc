@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.71: borderless label/value tables · CJK fill-in lines · bracket auto-spacing · 2026-11-13
+
+PDF text (744 hwpx↔pdf pairs) reading order 0.99366 → **0.99398** (two LibreOffice student-council reports 0.965 → 0.998 and 0.972 → 0.993), word-boundary F1 0.99114 → **0.99117** (Japanese contract 0.975 → 0.987, Chinese 0.982 → 0.988), precision 0.99683 → 0.99685. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90643 → 0.90644.
+
+- Rejected: splitting label/value fragments without guards (two-column paper lines became a 2-column table — ODL 189 TEDS 0.966 → 0.889; "❍ 기 | 간 : 연중" colon lines became tables — Jangheung plan coverage down; dash-only revision columns — issue2019 order down), a median right edge for CJK full lines (treated ragged left-aligned lines as full, four tests failed, no gain on the target documents).
+
 ## 4.24.70: CJK page breaks and auto-spacing · vertical cuts through fill-in blanks · HWP auto numbers · 2026-11-13
 
 PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99113 → **0.99114** (LibreOffice Chinese contract 0.961 → 0.982, Japanese 0.962 → 0.975), recall 0.99885 → 0.99886. External KoOCR-Bench v2.0c, 877 public pages: 0.90633 → **0.90643** (four CSAT math pages up, none down — reading-order fix). HWP↔HWPX pairs (score): tac-img-02 and footnote_tail similarity → 1. No per-document drops on tables, annex tables, score, the four ODL runs or OCR.

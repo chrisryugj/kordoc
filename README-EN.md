@@ -119,7 +119,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
 | HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.21%** · exact **69/232** · text **264/264** · 80 documents checked side by side in Hangul |
-| PDF text | 744 pairs | Character recall **99.886%** · precision **99.683%** · reading order **99.366%** · word-boundary F1 **99.114%** |
+| PDF text | 744 pairs | Character recall **99.887%** · precision **99.685%** · reading order **99.398%** · word-boundary F1 **99.117%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.70](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.70)** · 2026-11-13
+Latest release: **[4.24.71](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.71)** · 2026-11-13
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.71 | PDF borderless label/value two-column tables (fragmented lines, wrapped values) · CJK fill-in lines and widely spaced first lines · auto-spacing next to standalone brackets · "# " bullets | PDF text reading order 99.366% → **99.398%** · word-boundary F1 99.114% → **99.117%** (Japanese contract 0.975 → **0.987**) · no per-document drops on in-house benchmarks |
 | 4.24.70 | PDF CJK page-break paragraphs split by a footnote · CJK auto-spacing around brackets and fullwidth punctuation · vertical cuts through end-of-page fill-in blanks · HWP 5.x figure/table auto numbers | PDF text word-boundary F1 99.113% → **99.114%** (Chinese contract 0.961 → **0.982**) · KoOCR-Bench 0.90633 → **0.90643** · no per-document drops on in-house benchmarks |
 | 4.24.69 | PDF CJK body text with fill-in blanks became tables · CJK page-break paragraphs · doubled numbers in nested ordered lists · OCR two-column and fraction checks stabilized (#209) | PDF text word-boundary F1 99.111% → **99.113%** (Chinese contract 0.940 → **0.961**) · no per-document drops on in-house benchmarks (one bench artifact — see CHANGELOG) |
 | 4.24.68 | OCR: short two-line header cells were dropped · CJK fill-in form tables swallowed body lines above · white paragraph-background grids became tables | KoOCR-Bench 0.90623 → **0.90633** · PDF text Japanese contract word F1 0.944 → **0.956** · drops: 2 KoOCR pages (figure labels — ground-truth limit) |
 | 4.24.67 | Two separate closed box tables were merged into one · Chinese/Japanese body text became tables · CJK auto-spacing next to fullwidth punctuation | KoOCR-Bench 0.90590 → **0.90623** (tables 0.915 → **0.916**) · PDF text word-boundary F1 99.108% → **99.111%** · no per-document drops on in-house benchmarks |
-| 4.24.66 | OCR: row rules next to filled columns and faint column rules · PDF word spacing (rounded-coordinate spaces, "영 및 이", wrapped statute citations) | KoOCR-Bench 0.90568 → **0.90590** · PDF text word-boundary F1 99.103% → **99.108%** · no per-document drops on in-house benchmarks |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
