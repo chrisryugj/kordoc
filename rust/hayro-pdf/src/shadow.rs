@@ -574,7 +574,8 @@ impl<'a> Shadow<'a> {
                 let ga = f.code_advance(code);
                 let u = if is_nul { Some("\0".to_string()) } else {
                     let g = match f.glyph(gid, code) { FontGlyph::Outline(g) => g.as_unicode(), FontGlyph::Type3(g) => g.as_unicode() };
-                    g.map(|b| match b { BfString::Char(c) => c.to_string(), BfString::String(s) => s })
+                    // 유니코드 없음은 pdf.js 처럼 글자 코드를 글자로 셈한다(String.fromCharCode). 공백으로 두면 폭이 0 이 되어 조각이 버려진다
+                    g.map(|b| match b { BfString::Char(c) => c.to_string(), BfString::String(s) => s }).or_else(|| char::from_u32(code & 0xFFFF).map(String::from))
                 };
                 let ctm = cx.ctm().as_coeffs();
                 cx.ts().pj.glyph(&ctm, if h { ga.x } else { ga.y }, h, u.as_deref())

@@ -1,6 +1,6 @@
 //! kordoc 어댑터용 문서 — 쪽마다 사건열(f64 배열)과 문자열 표(\u{1} 구분), 글꼴·그림·렌더·정보 사전·링크 주석
 use hayro_interpret::font::GlyphRun;
-use hayro_interpret::hayro_cmap::BfString;
+use hayro_interpret::hayro_cmap::{load_embedded, BfString, CMap, CidFamily};
 use hayro_interpret::kurbo::{Affine, BezPath, PathEl, Rect, Shape};
 use hayro_interpret::{
     interpret_page, BlendMode, ClipPath, Context, Device, DrawMode, DrawProps, Image,
@@ -38,22 +38,28 @@ fn font_entry(fd: &Dict<'_>) -> FontEntry {
             }
         }
     }
+    let desc_font = if composite { fd.get::<Array<'_>>(b"DescendantFonts").and_then(|a| a.iter::<Dict<'_>>().next()) } else { Some(fd.clone()) };
     // ToUnicode 표 — 코드 공간을 훑어 있는 것만
     let mut tu: Vec<(u32, String)> = Vec::new();
-    if let Some(data) = fd.get::<Stream<'_>>(b"ToUnicode").and_then(|s| s.decoded().ok()) {
-        if let Some(cmap) = hayro_interpret::hayro_cmap::CMap::parse(&data, |_| None) {
-            let max = if composite { 0xffff } else { 0xff };
-            for code in 0..=max {
-                match cmap.lookup_bf_string(code) {
-                    Some(BfString::Char(c)) => tu.push((code, c.to_string())),
-                    Some(BfString::String(s)) => tu.push((code, s)),
-                    None => {}
-                }
-            }
+    let fill = |tu: &mut Vec<(u32, String)>, cmap: &CMap, max: u32| for code in 0..=max {
+        match cmap.lookup_bf_string(code) {
+            Some(BfString::Char(c)) => tu.push((code, c.to_string())),
+            Some(BfString::String(s)) => tu.push((code, s)),
+            None => {}
         }
+    };
+    if let Some(cmap) = fd.get::<Stream<'_>>(b"ToUnicode").and_then(|s| s.decoded().ok()).and_then(|d| CMap::parse(&d, |_| None)) {
+        fill(&mut tu, &cmap, if composite { 0xffff } else { 0xff });
+    }
+    // ToUnicode 가 없는 Adobe 문자 모음(Korea1 등) CID 글꼴은 pdf.js 처럼 UCS2 CMap 을 표로 — 판정 모듈이 표에 없는 코드를 가린다.
+    // shortcut: Identity 인코딩(코드 = CID)만, 다른 미리 정의된 인코딩 문서가 나오면 코드 → CID 를 거쳐 셈
+    if tu.is_empty() && composite && matches!(name_of(fd, b"Encoding").as_str(), "Identity-H" | "Identity-V") {
+        let info = desc_font.as_ref().and_then(|d| d.get::<Dict<'_>>(b"CIDSystemInfo"));
+        let field = |k: &[u8]| info.as_ref().and_then(|i| i.get::<hayro_syntax::object::String<'_>>(k)).map(|s| s.to_vec()).unwrap_or_default();
+        let family = CidFamily::from_registry_ordering(&field(b"Registry"), &field(b"Ordering"));
+        if let Some(cmap) = family.ucs2_cmap().and_then(load_embedded).and_then(|d| CMap::parse(d, load_embedded)) { fill(&mut tu, &cmap, 0xffff) }
     }
     // TrueType 글꼴 파일(FontFile2) — 복합 글꼴은 자손 글꼴의 서술자
-    let desc_font = if composite { fd.get::<Array<'_>>(b"DescendantFonts").and_then(|a| a.iter::<Dict<'_>>().next()) } else { Some(fd.clone()) };
     let file = desc_font.as_ref().and_then(|d| d.get::<Dict<'_>>(b"FontDescriptor")).and_then(|fdesc| fdesc.get::<Stream<'_>>(b"FontFile2")).and_then(|s| s.decoded().ok()).map(|c| c.to_vec()).unwrap_or_default();
     let mut info = format!("{{\"name\":{},\"subtype\":{},\"composite\":{},\"differences\":[", json_str(&base), json_str(&subtype), composite);
     for (k, (c, n)) in diffs.iter().enumerate() { if k > 0 { info.push(',') } info.push_str(&format!("[{},{}]", c, json_str(n))) }
@@ -137,8 +143,16 @@ fn decode_raster(r: &hayro_interpret::RasterImage<'_>) -> Option<ImageEntry> {
             hayro_interpret::ImageData::Luma(d) => d.data.iter().flat_map(|&v| [v, v, v]).collect(),
         };
         if rgb.len() != n * 3 { return }
-        entry = Some(match alpha.filter(|a| a.data.len() == n && a.width == iw && a.height == ih) {
-            Some(a) => { let mut o = Vec::with_capacity(n * 4); for k in 0..n { o.extend_from_slice(&rgb[k * 3..k * 3 + 3]); o.push(a.data[k]) } ImageEntry { width: iw, height: ih, kind: 3, data: o } }
+        entry = Some(match alpha.filter(|a| a.data.len() == (a.width * a.height) as usize) {
+            // 마스크 크기가 다르면 pdf.js 처럼 큰 쪽 크기로 둘 다 가까운 화소로 늘린다(PDFImage drawWidth·resizeRgbImage)
+            Some(a) => {
+                let (w, h) = (iw.max(a.width), ih.max(a.height));
+                if (w as f64) * (h as f64) > 36_000_000.0 { return }
+                let at = |sw: u32, sh: u32, x: u32, y: u32| ((y as u64 * sh as u64 / h as u64) * sw as u64 + x as u64 * sw as u64 / w as u64) as usize;
+                let mut o = Vec::with_capacity((w * h) as usize * 4);
+                for y in 0..h { for x in 0..w { let k = at(iw, ih, x, y); o.extend_from_slice(&rgb[k * 3..k * 3 + 3]); o.push(a.data[at(a.width, a.height, x, y)]) } }
+                ImageEntry { width: w, height: h, kind: 3, data: o }
+            }
             None => ImageEntry { width: iw, height: ih, kind: 2, data: rgb },
         });
     }, None);

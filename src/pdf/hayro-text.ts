@@ -158,7 +158,8 @@ function buildItems(ev: ArrayLike<number>, strs: string[], view: number[]): Omit
     else if (type === EV.FORM_END) { flush(); resetLastChars(); tci = tciStack.pop() ?? freshTci() }
     else if (type === GLYPH) {
       const cp = ev[i + 1]!
-      const u = cp === 0x110000 ? "\u0000" : cp > 0 ? String.fromCodePoint(cp) : cp < 0 ? strs[-cp - 1] ?? "" : ""
+      // 유니코드 없음(cp 0)은 pdf.js 처럼 글자 코드를 글자로(크레이트 shadow.rs 의 폭 셈과 같게). 이 글자로 quality 가 NEEDS_OCR 을 판정한다
+      const u = cp === 0x110000 ? "\u0000" : cp > 0 ? String.fromCodePoint(cp) : cp < 0 ? strs[-cp - 1] ?? "" : String.fromCharCode(ev[i + 2]!)
       // 자리·배율은 pdf.js 셈 값(hayro 의 글 상태는 f32 라 끝자리가 다르다)
       const t = [ev[i + PJ]!, ev[i + PJ + 1]!, ev[i + PJ + 2]!, ev[i + PJ + 3]!, ev[i + PJ + 4]!, ev[i + PJ + 5]!]
       const x = t[4]!, y = t[5]!, endX = ev[i + PJ + 6]!, endY = ev[i + PJ + 7]!
@@ -169,7 +170,7 @@ function buildItems(ev: ArrayLike<number>, strs: string[], view: number[]): Omit
         if (sc !== tci.scale) { tci.totalWidth += tci.width * tci.scale; tci.width = 0; tci.scale = sc }
         tmLive = false
       }
-      // pdfjs getCharUnicodeCategory — 첫 글자가 공백이면 공백 글자, 서식 문자(\p{Cf})는 자리째 건너뛴다. 유니코드 없음(cp 0)은 공백처럼.
+      // pdfjs getCharUnicodeCategory — 첫 글자가 공백이면 공백 글자, 서식 문자(\p{Cf})는 자리째 건너뛴다.
       // ToUnicode 가 U+0000 으로 매긴 글자(cp 0x110000)는 pdfjs 처럼 글자로 둔다
       const cat = SPECIAL_CHAR.exec(u)
       if (!u || cat?.[1]) { saveLastChar(" "); continue }

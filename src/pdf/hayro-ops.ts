@@ -65,7 +65,8 @@ export function hayroOps(ev: ArrayLike<number>, strs: string[]): OpList {
       case EV.TEXT_MATRIX: pendingTm = true; break
       case EV.GLYPH: {
         const cp = ev[i + 1]!, code = ev[i + 2]!
-        const unicode = cp === 0x110000 ? "\u0000" : cp > 0 ? String.fromCodePoint(cp) : cp < 0 ? strs[-cp - 1] ?? "" : ""
+        // 유니코드 없음(cp 0)은 pdf.js 처럼 글자 코드를 글자로 — hayro-text.ts 와 같다
+        const unicode = cp === 0x110000 ? "\u0000" : cp > 0 ? String.fromCodePoint(cp) : cp < 0 ? strs[-cp - 1] ?? "" : String.fromCharCode(code)
         if (!run.length && pendingTm) {
           // 글 행렬 = 첫 글자 행렬 ÷ 글자 크기 — 소비 쪽은 size × hypot(m[2], m[3]) 로 em 을 다시 구한다
           const k = size ? UNITS_PER_EM / size : UNITS_PER_EM
