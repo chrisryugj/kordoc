@@ -158,7 +158,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**). 벡터 글자 쪽(`vector_text`)은 기울기 보정 없이 그 쪽 실제 벡터 괘선으로 표 복원. `ocrLines` 쪽 줄은 블록과 함께 돌려준다(래스터 px) |
 | `src/ocr/ruling-lines.ts` | 래스터 괘선 감지 — 페이지 픽셀 이진화+런렝스로 표 수평/수직 선 추출 → 선 기반 표 파이프라인 공급 (오탐 방어 3겹: 최소길이 20pt·두께 상한 2.5pt·양측 잉크 포위 제외). 점선 괘선·채움 사각형 변(표 괘선에 맞물린 것만)·흐린 선(잉크 상한 205) |
 | `src/ocr/embedded-image-ocr.ts` | HWP·HWPX 삽입 그림 속 글(#143): `ocr` 가 `true`·`"force"`·함수일 때만 그림 블록 뒤에 image-ocr 결과 블록을 넣음(장식 그림·WMF·EMF 건너뜀, 기본은 산출 불변) |
-| `src/ocr/image-ocr.ts` | 이미지(PNG/JPG/WebP) 직접 입력 OCR: sharp 디코딩 → 기울기 보정 → 내장 엔진 상시 적용 + 괘선 감지 (해상도는 메타데이터·쪽 비율로 추정, 없으면 216dpi) |
+| `src/ocr/image-ocr.ts` | 이미지(PNG/JPG/WebP·TIFF·GIF·AVIF, BMP 는 kordoc 디코더, HEIC 는 libheif-js) 직접 입력 OCR — 멀티페이지 TIFF 는 페이지마다: sharp 디코딩 → 기울기 보정 → 내장 엔진 상시 적용 + 괘선 감지 (해상도는 메타데이터·쪽 비율로 추정, 없으면 216dpi) |
 | `src/ocr/line-split.ts` | 검출 박스 픽셀 분석: 세로로 이어 붙은 키 큰 박스(세로쓰기 머리·균등배분 목차)를 행 밴드로 갈라 따로 인식, 잉크 경계(`inkBounds`)로 박스 좌표 조임. 목차 리더 점 무리(`leaderRuns`)·숫자 앞 △▲ 판정. 글리프 모양 판정(괄호 「」【】·따옴표 머리·원문자 고리·로마 숫자 세로 획·줄 머리 글머리 ◎●▪□)과 한 줄 박스에 걸린 이웃 줄 끝자락·상자 테두리(`edgeTrim` — 엔진이 그 부분을 배경으로 지운 crop 도 인식해 신뢰도 0.06 넘게 높을 때만 씀, 그림 영역 OCR 에선 끔) |
 | `src/ocr/glyph-restore.ts` | 인식 글자열 되살리기 배선(`restoreGlyphs` — CTC 글자와 1:1 배열 한 벌을 도는 단일 패스): 글자 자리(steps)를 박스 픽셀로 옮겨 line-split 모양 판정으로 [ ] → 「」【】, 곧은 따옴표 → ‘“(연도 생략·줄에 하나뿐인 자리만), 숫자 → ①~⑨, 두 글자 사이에서 빠진 · ▲ 「 」 □(`gapGlyphs`, 공백 자리 · 와 0 자리 □ 포함), I·Ⅱ → Ⅰ~Ⅲ(획 수)·"." 로 시작한 제목 줄 앞 로마 숫자 |
 | `src/ocr/postprocess.ts` | OCR 문자열 후처리: 사전에 없는 공문서 기호 복원(○·△·곧은/굽은 따옴표·○○ 자리표시), 쉼표 숫자 붙임, 떠도는 리더 점 제거, 목차 한 줄 잇기(리더 양쪽·쪽번호 열 맞춤), "(cid:)"·배경 도안 환각 제거 |

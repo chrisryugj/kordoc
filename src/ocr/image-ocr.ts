@@ -1,5 +1,5 @@
 /**
- * 이미지 직접 입력 OCR — PNG/JPEG/WebP 를 PDF 래핑 없이 바로 파싱한다.
+ * 이미지 직접 입력 OCR — PNG·JPEG·WebP·TIFF·GIF·AVIF·HEIC·BMP·PCX·DCX 를 PDF 래핑 없이 바로 파싱한다. 멀티페이지 TIFF·DCX 는 페이지마다.
  *
  * 이미지는 텍스트층이 없으므로 OCR 이 항상 필요하다 — `--ocr` 플래그 없이도
  * 내장 엔진(PP-OCRv5 korean)을 기본 적용하고, OcrProvider 가 주어지면 위임한다.
@@ -7,11 +7,12 @@
  * 아니면 216dpi)로 PDF pt 공간에 환산해 기존 블록 파이프라인
  * (괘선 감지 → 선 기반 표 → 클러스터 → xy-cut)을 그대로 태운다.
  *
- * 디코딩은 optional dependency `sharp` — 미설치면 MISSING_DEPENDENCY 안내.
+ * 디코딩은 optional dependency `sharp` — 미설치면 MISSING_DEPENDENCY 안내. sharp 가 못 읽는 BMP·PCX·DCX 는 kordoc 디코더(image/transcode·image/pcx),
+ * HEIC 는 optional dependency `libheif-js`(image/heic)로 RGBA 로 디코딩해 sharp 에 넘긴다.
  */
 
 import { rescueEmptyCells } from "./empty-cell-rescue.js"
-import type { IRBlock, OcrPageLines, ParseOptions, ParseWarning } from "../types.js"
+import type { ExtractedImage, IRBlock, OcrPageLines, ParseOptions, ParseWarning } from "../types.js"
 import { KordocError, OPTIONAL_DEP_INSTALL_HINT } from "../utils.js"
 import { getOcrEngine, type OcrPageStats } from "./engine.js"
 import { ensureOcrModelsFor } from "./models.js"
@@ -19,6 +20,11 @@ import { applyImageFormulas } from "./image-formula.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
 import { deskewPage, rotateQuarter } from "./deskew.js"
+import { imageFormat, type ImageKind } from "../detect.js"
+import { MAX_PIXELS, bmpToRgba, encodePng } from "../image/transcode.js"
+import { heicToRgba } from "../image/heic.js"
+import { dcxPages, pcxToRgba } from "../image/pcx.js"
+import { flushHeifCache, type SharpCache } from "../image/webp.js"
 
 /** 좌표 환산 기본 스케일 (px/pt) — PDF OCR 렌더(216dpi)와 동일 기준 */
 const IMAGE_SCALE = 3
@@ -44,30 +50,38 @@ export function imageScale(width: number, height: number, densityDpi?: number): 
 export interface ImageOcrResult {
   blocks: IRBlock[]
   warnings: ParseWarning[]
-  /** ocrLines 옵션일 때 이미지(1쪽)의 OCR 줄 */
+  /** ocrLines 옵션일 때 해당 페이지의 OCR 줄 */
   lines?: OcrPageLines
 }
 
-/** 이미지 버퍼 → OCR → IRBlock[] (표 괘선 감지 포함) */
+/** 이미지 버퍼 → OCR → IRBlock[] (표 괘선 감지 포함). page 는 1부터 — 멀티페이지 TIFF 만 2 이상 */
 export async function parseImageDocument(
   buffer: ArrayBuffer,
   options?: ParseOptions,
+  page = 1,
 ): Promise<ImageOcrResult> {
   const warnings: ParseWarning[] = []
 
-  // 사용자 OcrProvider — 원본 바이트 그대로 위임 (종전 PDF 경로와 같은 계약)
+  // 사용자 OcrProvider — PNG·JPEG·WebP 는 원본 바이트 그대로, 그 밖은 해당 페이지를 PNG 로 변환해 위임 (종전 PDF 경로와 같은 계약)
   if (typeof options?.ocr === "function") {
-    const text = await options.ocr(new Uint8Array(buffer), 1, detectImageMime(buffer))
+    const kind = imageFormat(buffer)
+    let bytes: Uint8Array = new Uint8Array(buffer), mime = detectImageMime(buffer)
+    if (kind !== "png" && kind !== "jpeg" && kind !== "webp") {
+      const px = await decodeToRgba(buffer, page - 1)
+      bytes = encodePng(px.width, px.height, px.data)
+      mime = "image/png"
+    }
+    const text = await options.ocr(bytes, page, mime)
     if (!text.trim()) {
-      warnings.push({ page: 1, message: "OCR 결과 없음", code: "OCR_FAILED" })
+      warnings.push({ page, message: "OCR 결과 없음", code: "OCR_FAILED" })
       return { blocks: [], warnings }
     }
-    return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: 1 }], warnings }
+    return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: page }], warnings }
   }
 
-  const { data: decoded, width: decodedW, height: decodedH, density, shrink } = await decodeToRgba(buffer)
+  const { data: decoded, width: decodedW, height: decodedH, density, shrink } = await decodeToRgba(buffer, page - 1)
   let width = decodedW, height = decodedH
-  if (shrink < 1) warnings.push({ page: 1, code: "PARTIAL_PARSE", message: "OCR 래스터 픽셀 상한으로 이미지 해상도를 축소했습니다 (작은 글자 인식 결손 가능)" })
+  if (shrink < 1) warnings.push({ page, code: "PARTIAL_PARSE", message: "OCR 래스터 픽셀 상한으로 이미지 해상도를 축소했습니다 (작은 글자 인식 결손 가능)" })
   // 픽셀 상한으로 줄인 이미지는 같은 지면을 낮은 해상도로 본 것 — px/pt 도 같은 비율로
   const scale = imageScale(width / shrink, height / shrink, density) * shrink
   // 스캔·사진 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다
@@ -97,48 +111,43 @@ export async function parseImageDocument(
   if (config.tuning.postprocess) items = [...items, ...await rescueEmptyCells(engine, config.tuning, data, width, height, ruling, items)]
   // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
   if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
-  const lines = config.lines ? pageLines(1, width, height, scale, angle, items, stats.dropped) : undefined
+  const lines = config.lines ? pageLines(page, width, height, scale, angle, items, stats.dropped) : undefined
   if (stats.droppedLowConf > 0) {
     warnings.push({
-      page: 1,
+      page,
       message: `저신뢰 OCR 라인 ${stats.droppedLowConf}개 폐기 (인식 결손 가능)`,
       code: "OCR_LOW_CONF",
     })
   }
   if (stats.truncatedBoxes) {
-    warnings.push({ page: 1, message: `OCR 검출 상자가 너무 많아 ${stats.truncatedBoxes}개는 인식하지 않음 (일부 글 결손)`, code: "PARTIAL_PARSE" })
+    warnings.push({ page, message: `OCR 검출 상자가 너무 많아 ${stats.truncatedBoxes}개는 인식하지 않음 (일부 글 결손)`, code: "PARTIAL_PARSE" })
   }
   if (items.length === 0) {
-    warnings.push({ page: 1, message: "이미지에서 텍스트를 인식하지 못했습니다", code: "OCR_FAILED" })
+    warnings.push({ page, message: "이미지에서 텍스트를 인식하지 못했습니다", code: "OCR_FAILED" })
     return { blocks: [], warnings, lines }
   }
 
   const pdfW = width / scale
   const pdfH = height / scale
   const extraLines = rulingToPdfLines(ruling, scale, pdfH)
-  return { blocks: ocrItemsToBlocks(items, 1, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings, lines }
+  return { blocks: ocrItemsToBlocks(items, page, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings, lines }
 }
 
-/**
- * sharp 로 RGBA 디코딩 — 미설치는 MISSING_DEPENDENCY 로 분류되도록 안내 메시지 throw.
- * EXIF 방향대로 세운다(`rotate()`): 폰으로 세로 촬영한 JPEG 은 픽셀을 눕혀 저장하고 Orientation 6 으로 표시 방향만 적는다 —
- * 무시하면 누운 글을 읽어 한글 131자 쪽이 쓰레기 57자가 됐다. 픽셀이 MAX_OCR_PIXELS 를 넘으면 그 안으로 줄인다(shrink = 줄인 배율).
- * (테스트용 export)
- */
-export async function decodeToRgba(
-  buffer: ArrayBuffer,
-): Promise<{ data: Uint8Array; width: number; height: number; density?: number; shrink: number }> {
-  type Chain = {
-    rotate(): Chain
-    resize(w: number, h: number, opts: { fit: "fill" }): Chain
-    ensureAlpha(): { raw(): { toBuffer(opts: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number } }> } }
-    metadata(): Promise<{ density?: number; width?: number; height?: number; orientation?: number }>
-  }
-  type SharpFactory = (input: Buffer) => Chain
-  let sharp: SharpFactory
+type MetaInfo = { density?: number; width?: number; height?: number; orientation?: number; pages?: number }
+type Chain = {
+  rotate(): Chain
+  png(): { toBuffer(): Promise<Buffer> }
+  resize(w: number, h: number, opts: { fit: "fill" }): Chain
+  ensureAlpha(): { raw(): { toBuffer(opts: { resolveWithObject: true }): Promise<{ data: Buffer; info: { width: number; height: number } }> } }
+  metadata(): Promise<MetaInfo>
+}
+type SharpFactory = ((input: Buffer, opts?: { page?: number; raw?: { width: number; height: number; channels: 4 }; failOn?: "error"; limitInputPixels?: number | false }) => Chain) & SharpCache
+
+/** sharp — 미설치는 MISSING_DEPENDENCY 로 분류되도록 안내 메시지 throw */
+async function loadSharp(): Promise<SharpFactory> {
   try {
     const mod = (await import("sharp")) as unknown as SharpFactory | { default?: SharpFactory }
-    sharp = typeof mod === "function" ? mod : (mod.default ?? (mod as unknown as SharpFactory))
+    return typeof mod === "function" ? mod : (mod.default ?? (mod as unknown as SharpFactory))
   } catch (e) {
     // KordocError + "optional dependency" 문구 → sanitizeError 메시지 보존 + MISSING_DEPENDENCY 분류
     throw new KordocError(
@@ -146,14 +155,81 @@ export async function decodeToRgba(
         `\`npm install sharp\` 후 다시 실행하세요.${OPTIONAL_DEP_INSTALL_HINT} 원인: ${(e as Error).message}`,
     )
   }
+}
+
+/** 이미지의 페이지 수 — 멀티페이지 TIFF·DCX 만 2 이상. 애니메이션 GIF 는 첫 프레임만 읽으므로 1 */
+export async function imagePageCount(buffer: ArrayBuffer): Promise<number> {
+  const kind = imageFormat(buffer)
+  if (kind === "dcx") return Math.max(1, dcxPages(new Uint8Array(buffer)).length)
+  if (kind !== "tiff") return 1
+  // 헤더만 읽는다 — 픽셀 상한을 끄지 않으면 큰 크기가 적힌 TIFF 의 페이지 수를 1 로 잘못 읽는다
+  const meta: MetaInfo = await (await loadSharp())(Buffer.from(buffer), { limitInputPixels: false }).metadata().catch(() => ({}))
+  return Math.max(1, meta.pages ?? 1)
+}
+
+/** 멀티페이지 이미지(TIFF·DCX) page 번째(1부터) 페이지의 픽셀 수 — 헤더만 읽는다(디코딩 전 상한 확인용) */
+export async function imagePagePixels(buffer: ArrayBuffer, page: number): Promise<number> {
+  if (imageFormat(buffer) === "dcx") {
+    const p = dcxPages(new Uint8Array(buffer))[page - 1]
+    if (!p || p.length < 12) return 0
+    const v = new DataView(p.buffer, p.byteOffset, p.byteLength)
+    return Math.max(0, v.getUint16(8, true) - v.getUint16(4, true) + 1) * Math.max(0, v.getUint16(10, true) - v.getUint16(6, true) + 1)
+  }
+  const m: MetaInfo = await (await loadSharp())(Buffer.from(buffer), { page: page - 1, limitInputPixels: false }).metadata().catch(() => ({}))
+  return (m.width ?? 0) * (m.height ?? 0)
+}
+
+const EXT: Record<ImageKind, string> = { png: "png", jpeg: "jpg", webp: "webp", tiff: "tif", gif: "gif", avif: "avif", heic: "heic", bmp: "bmp", pcx: "pcx", dcx: "dcx" }
+
+/** 이미지 파일의 page 번째(1부터) 페이지 — 멀티페이지 TIFF·DCX 는 그 페이지를 PNG 로(문서 내 이미지와 같은 MAX_PIXELS 상한,
+ *  넘거나 손상되면 null), 그 밖은 원본 바이트 그대로(정규화는 convertImages) */
+export async function imagePage(buffer: ArrayBuffer, page: number, pageCount: number): Promise<ExtractedImage | null> {
+  const name = `image_${String(page).padStart(3, "0")}`
+  if (pageCount > 1 && imageFormat(buffer) === "dcx") {
+    const px = pcxToRgba(dcxPages(new Uint8Array(buffer))[page - 1])
+    return px && { filename: `${name}.png`, data: encodePng(px.width, px.height, px.data), mimeType: "image/png" }
+  }
+  if (pageCount > 1) {
+    const png = await (await loadSharp())(Buffer.from(buffer), { page: page - 1, failOn: "error", limitInputPixels: MAX_PIXELS }).rotate().png().toBuffer().catch(() => null)
+    return png && { filename: `${name}.png`, data: new Uint8Array(png.buffer, png.byteOffset, png.byteLength), mimeType: "image/png" }
+  }
+  const kind = imageFormat(buffer) ?? "png"
+  return { filename: `${name}.${EXT[kind]}`, data: new Uint8Array(buffer), mimeType: `image/${kind}` }
+}
+
+/**
+ * sharp 로 RGBA 디코딩 — page 는 0부터(멀티페이지 TIFF).
+ * EXIF 방향대로 세운다(`rotate()`): 폰으로 세로 촬영한 JPEG 은 픽셀을 눕혀 저장하고 Orientation 6 으로 표시 방향만 적는다 —
+ * 무시하면 누운 글을 읽어 한글 131자 쪽이 쓰레기 57자가 됐다. 픽셀이 MAX_OCR_PIXELS 를 넘으면 그 안으로 줄인다(shrink = 줄인 배율).
+ * sharp 가 못 읽는 BMP·HEIC 는 먼저 RGBA 로 디코딩해 raw 입력으로 넘긴다 — 회전·축소는 다른 형식과 같다.
+ * (테스트용 export)
+ */
+export async function decodeToRgba(
+  buffer: ArrayBuffer,
+  page = 0,
+): Promise<{ data: Uint8Array; width: number; height: number; density?: number; shrink: number }> {
+  const sharp = await loadSharp()
   const input = Buffer.from(buffer)
-  const meta: { density?: number; width?: number; height?: number; orientation?: number } = await sharp(input).metadata().catch(() => ({}))
+  const kind = imageFormat(buffer)
+  const pcx = kind === "pcx" ? pcxToRgba(input) : kind === "dcx" ? pcxToRgba(dcxPages(input)[page] ?? new Uint8Array(0)) : null
+  const px = kind === "bmp" ? bmpToRgba(input) : kind === "heic" ? await heicToRgba(input) : pcx
+  if (kind === "bmp" && !px) throw new KordocError(`BMP 디코딩 실패: 손상된 파일, 지원하지 않는 압축 방식(BI_JPEG·BI_PNG 등) 또는 ${MAX_PIXELS / 10_000}만 픽셀 초과`)
+  if ((kind === "pcx" || kind === "dcx") && !px) throw new KordocError(`${kind.toUpperCase()} 디코딩 실패: 손상된 파일, 지원하지 않는 변형 또는 ${MAX_PIXELS / 10_000}만 픽셀 초과`)
+  const open = () => px ? sharp(Buffer.from(px.data.buffer, px.data.byteOffset, px.data.byteLength), { raw: { width: px.width, height: px.height, channels: 4 } })
+    : kind === "tiff" ? sharp(input, { page }) : sharp(input)
+  // BMP 해상도는 info header 의 가로 pixels per meter(오프셋 38)
+  const bmpDpi = kind === "bmp" && input.readUInt32LE(14) >= 40 ? input.readInt32LE(38) * 0.0254 : 0
+  const dpi = pcx ? pcx.dpi : bmpDpi
+  const meta: MetaInfo = px ? { width: px.width, height: px.height, ...(dpi > 0 ? { density: dpi } : {}) } : await open().metadata().catch(() => ({}))
   // 5~8 은 90° 돌린 방향 — 세운 뒤 가로·세로가 바뀐다
   const [w0, h0] = (meta.orientation ?? 1) >= 5 ? [meta.height ?? 0, meta.width ?? 0] : [meta.width ?? 0, meta.height ?? 0]
   const shrink = w0 * h0 > MAX_OCR_PIXELS ? Math.sqrt(MAX_OCR_PIXELS / (w0 * h0)) : 1
-  let chain = sharp(input).rotate()
+  // 이미 RGBA 로 디코딩했고 축소할 필요가 없으면 그대로 반환 — sharp 를 거치면 같은 RGBA 를 한 번 더 복사한다
+  if (px && shrink === 1) return { ...px, density: meta.density, shrink }
+  let chain = open().rotate()
   if (shrink < 1) chain = chain.resize(Math.max(1, Math.floor(w0 * shrink)), Math.max(1, Math.floor(h0 * shrink)), { fit: "fill" })
   const { data, info } = await chain.ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  if (kind === "avif") flushHeifCache(sharp)
   return {
     data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), width: info.width, height: info.height, density: meta.density,
     shrink: w0 ? info.width / w0 : 1,

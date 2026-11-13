@@ -101,7 +101,7 @@ if (result.success) {
 | `memos` | `--memos` | 메모(한글 메모 넣기)를 문서 끝 "메모" 절로 — 메모 목록은 옵션 없이도 결과 `memos`(메모 글·붙은 글·문단·작성자·시각·블록 순번, HWPX·HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | HWP5 레이아웃 표의 쪽마다 반복된 러닝 헤더 제거(붙임별 재번호도 지울 수 있어 opt-in) |
 | `inlineImages` | `--inline-images` | 이미지를 base64 data URI 로 인라인(BMP→PNG, HWP5) |
-| `imageFormat` | `--image-format webp` | 그림 형식. 지정하지 않으면 지금처럼 PDF 는 PNG, 다른 형식은 원본 그림 그대로. 지정하면 모든 그림이 그 형식(파일명·MIME·바이트가 같은 형식, 형식은 바이트로 판정): `"png"` 는 PNG, `"webp"` 는 무손실 WebP(`exact`, PDF 그림 200개 실측 25.5 → 14.8MB·인코딩 CPU 3.25 → 8.6초). EXIF 회전·ICC·CMYK·움직이는 GIF·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식으로 내고 경고. 문서 2,782개 실측: png 4,099 → 775MB, webp 4,099 → 504MB. optional dependency `sharp` 필요 |
+| `imageFormat` | `--image-format webp` | 그림 형식. 지정하지 않으면 LLM 이 읽는 형식으로 정규화: 주요 LLM API(Claude·OpenAI·Gemini)가 모두 받는 PNG·JPEG·WebP 는 원본 그대로, 그 밖(BMP·GIF·TIFF·AVIF·HEIC·SVG)은 PNG, PDF 는 PNG. 지정하면 모든 그림이 그 형식(파일명·MIME·바이트가 같은 형식, 형식은 바이트로 판정): `"png"` 는 PNG, `"webp"` 는 무손실 WebP(`exact`, PDF 그림 200개 실측 25.5 → 14.8MB·인코딩 CPU 3.25 → 8.6초). EXIF 회전·ICC·CMYK·움직이는 GIF·SVG 는 보이는 그림으로 맞춘다. 바꿀 수 없는 그림(WMF·EMF, 못 읽는 BMP·손상, WebP 16,383px 초과)은 원본 형식으로 내고 경고. 문서 2,782개 실측: png 4,099 → 775MB, webp 4,099 → 504MB. optional dependency `sharp` 필요 |
 | `imagePlacement` | `--image-placement flow` | PDF 그림 블록 자리. 기본 `"page-end"`(쪽 끝, `bbox` 없음). `"flow"`: 쪽 위 자리로 글 블록 사이에 — 같은 단(가로로 겹치는 블록)에서 그림 위쪽 변 이상 높이에서 시작하는 마지막 블록 뒤, 없으면 그 단의 첫 블록 앞. 그림 블록에 `bbox` 를 붙인다. 같은 그림의 반복은 처음 자리에만 |
 | `dropBlankImages` | `--drop-blank-images` | 거의 한 색인 그림(흰 바탕 합성 뒤 채널마다 최댓값−최솟값 24 이하: 빈 판·단색 띠·옅은 그러데이션)을 그림 블록·`images`·글 속 참조에서 뺀다(기본 false, 그림 바이트를 낼 때만). 모든 형식 — PDF 는 디코딩한 화소, 다른 형식은 원본을 풀어 본다(BMP 내장 디코더, 그 밖 optional dependency `sharp`, WMF·EMF 는 남김) |
 | `qrCodes` | `--qr-codes` | 그림 속 QR 코드 값을 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에(http(s) URL 은 자동 링크 `<URL>`, 모든 형식, `images: false` 여도 읽음). optional dependency `zxing-wasm` 필요 |
@@ -505,7 +505,7 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `parse(buffer, options?)` | 포맷 자동 감지 → Markdown + `IRBlock[]` (파일 경로 문자열도 받음) |
 | `parseHwpx` · `parseHwp` · `parseHwp3` · `parseHwpml` | HWPX · HWP 5.x · HWP 3.x(1996~2002) · HWPML 전용 — 모두 `(buffer, options?)` |
 | `parsePdf` · `parseDocx` · `parsePptx` · `parseXlsx` · `parseXls` | PDF · DOCX · PPTX · XLSX · XLS(Excel 97~2003, BIFF8) 전용 |
-| `parseImage(buffer, options?)` | 이미지(PNG/JPG/WebP) 전용 — 내장 OCR 상시 적용 |
+| `parseImage(buffer, options?)` | 이미지(PNG/JPG/WebP·TIFF·GIF·BMP·AVIF·HEIC·PCX) 전용 — 내장 OCR 상시 적용 |
 | `detectFormat(buffer)` | 동기 매직 바이트 감지 — 하위 호환을 위해 ZIP 은 `hwpx`, OLE2 는 `hwp` 반환 |
 | `await detectZipFormat(buffer)` | ZIP 내부 구조로 `hwpx`·`xlsx`·`docx`·`pptx`·`unknown` 구분 |
 | `detectOle2Format(buffer)` | OLE2 내부 스트림으로 `hwp`·`xls`·`unknown` 구분 |
@@ -593,7 +593,7 @@ import type {
 | **XLS** (Excel 97~2003) | OLE2 + BIFF8 | Workbook 스트림, SST 공유 문자열, 셀·시트 추출 |
 | **DOCX** (Word) | ZIP + XML DOM | 스타일 헤딩, 번호 매기기(실제 번호 라벨), 각주, 하이퍼링크, 이미지 추출 |
 | **PPTX** (PowerPoint) | ZIP + XML DOM | 발표 순서(sldIdLst), 슬라이드 = 쪽, 제목 개체 틀 헤딩, 본문 글머리 목록(2단), 병합 표, 발표자 노트(인용), 이미지 추출, 숨긴 슬라이드 제외. 차트·SmartArt 글은 경고만 |
-| **이미지** (PNG/JPG/WebP) | sharp + 내장 OCR | 스크린샷·스캔 이미지 직접 입력, 래스터 괘선으로 표 복원 |
+| **이미지** (PNG/JPG/WebP·TIFF·GIF·BMP·AVIF·HEIC·PCX) | sharp + 내장 OCR (BMP·PCX 는 내장 디코더, HEIC 는 `npm install libheif-js`) | 스크린샷·스캔·팩스·휴대폰 사진 직접 입력, 멀티페이지 TIFF·DCX 는 페이지마다, 래스터 괘선으로 표 복원. JPEG 2000·PSD 등은 형식 이름을 담아 거절 |
 
 ---
 

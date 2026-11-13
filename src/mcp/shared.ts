@@ -11,7 +11,7 @@ import { assertWithinRoot } from "../shared/offline.js"
 export const ALLOWED_EXTENSIONS = new Set([".hwp", ".hwpx", ".hml", ".pdf", ".xls", ".xlsx", ".docx", ".pptx"])
 /** 파싱 계열 도구(parse_*·detect_format) 입력 확장자 — 문서 + 이미지(자동 OCR).
  *  이미지 3종은 detect.ts 매직바이트 지원 범위와 동일. 쓰기·패치 계열은 ALLOWED_EXTENSIONS 유지 */
-export const PARSE_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, ".png", ".jpg", ".jpeg", ".webp"])
+export const PARSE_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".gif", ".avif", ".heic", ".heif", ".pcx", ".dcx", ".bmp"])
 /** 도장/서명 이미지 허용 확장자 (place_seal image_path) */
 export const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp"])
 /** 서식 프로필 허용 확장자 (generate_document profile_path) */

@@ -101,7 +101,7 @@ if (result.success) {
 | `memos` | `--memos` | append document memos (Hangul "insert memo") as a final "메모" section — the memo list is always in the result's `memos` (memo text, anchored text, paragraph, author, time, block index; HWPX · HWP5) |
 | `dedupeRunningHeaders` | `--dedupe-headers` | drop running headers repeated per page in HWP5 layout tables (opt-in: may also drop per-attachment renumbering) |
 | `inlineImages` | `--inline-images` | inline images as base64 data URIs (BMP→PNG, HWP5) |
-| `imageFormat` | `--image-format webp` | image format. Unset: as before, PDF images are PNG and other formats keep the original embedded images. Set: every image is in that format (file name, MIME and bytes agree; the format is judged from the bytes): `"png"` gives PNG, `"webp"` lossless WebP (`exact`; 200 PDF images: 25.5 → 14.8MB, encoding CPU 3.25 → 8.6s). EXIF rotation, ICC, CMYK, animated GIF and SVG are matched to what is shown. Images that cannot be converted (WMF/EMF, unreadable BMP or damaged, WebP over 16,383px) keep their original format with a warning. 2,782 documents: png 4,099 → 775MB, webp 4,099 → 504MB. Needs the optional dependency `sharp` |
+| `imageFormat` | `--image-format webp` | image format. Unset: images are normalized to what LLMs read — PNG, JPEG and WebP (accepted by all major LLM APIs: Claude, OpenAI, Gemini) keep their original bytes, others (BMP, GIF, TIFF, AVIF, HEIC, SVG) become PNG, and PDF images are PNG. Set: every image is in that format (file name, MIME and bytes agree; the format is judged from the bytes): `"png"` gives PNG, `"webp"` lossless WebP (`exact`; 200 PDF images: 25.5 → 14.8MB, encoding CPU 3.25 → 8.6s). EXIF rotation, ICC, CMYK, animated GIF and SVG are matched to what is shown. Images that cannot be converted (WMF/EMF, unreadable BMP or damaged, WebP over 16,383px) keep their original format with a warning. 2,782 documents: png 4,099 → 775MB, webp 4,099 → 504MB. Needs the optional dependency `sharp` |
 | `imagePlacement` | `--image-placement flow` | where PDF image blocks go. Default `"page-end"` (page end, no `bbox`). `"flow"`: between text blocks by position on the page — after the last block in the same column (blocks that overlap horizontally) that starts at or above the image's top edge, otherwise before that column's first block. Image blocks get a `bbox`. A repeated image appears only where it is first drawn |
 | `dropBlankImages` | `--drop-blank-images` | drop near-uniform images (after compositing on white, every channel's max − min ≤ 24: blank panels, solid bars, faint gradients) from image blocks, `images` and references in text (default false; only when image bytes are produced). All formats — PDFs use the decoded pixels, other formats decode the original (built-in BMP decoder, otherwise the optional dependency `sharp`; WMF/EMF are kept) |
 | `qrCodes` | `--qr-codes` | read QR codes in images into the image block's `qr` and the line after the Markdown image placeholder (an http(s) URL as the autolink `<url>`; all formats, also with `images: false`). Needs the optional dependency `zxing-wasm` |
@@ -498,7 +498,7 @@ On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": 
 | `parse(buffer, options?)` | auto format detection → Markdown + `IRBlock[]` (a file path string works too) |
 | `parseHwpx` · `parseHwp` · `parseHwp3` · `parseHwpml` | HWPX · HWP 5.x · HWP 3.x (1996–2002) · HWPML only — all `(buffer, options?)` |
 | `parsePdf` · `parseDocx` · `parsePptx` · `parseXlsx` · `parseXls` | PDF · DOCX · PPTX · XLSX · XLS (Excel 97–2003, BIFF8) only |
-| `parseImage(buffer, options?)` | images (PNG/JPG/WebP) only — built-in OCR always on |
+| `parseImage(buffer, options?)` | images (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) only — built-in OCR always on |
 | `detectFormat(buffer)` | synchronous magic-byte detection — returns `hwpx` for ZIP and `hwp` for OLE2 for backward compatibility |
 | `await detectZipFormat(buffer)` | ZIP entries → `hwpx` · `xlsx` · `docx` · `pptx` · `unknown` |
 | `detectOle2Format(buffer)` | OLE2 streams → `hwp` · `xls` · `unknown` |
@@ -586,7 +586,7 @@ import type {
 | **XLS** (Excel 97–2003) | OLE2 + BIFF8 | Workbook stream, SST shared strings, cell/sheet extraction |
 | **DOCX** (Word) | ZIP + XML DOM | style-based headings, numbering (real number labels), footnotes, hyperlinks, image extraction |
 | **PPTX** (PowerPoint) | ZIP + XML DOM | presentation order (sldIdLst), one slide = one page, title placeholders as headings, two-level body bullet lists, merged tables, speaker notes (as quotes), image extraction, hidden slides skipped. Chart/SmartArt text: warning only |
-| **Images** (PNG/JPG/WebP) | sharp + built-in OCR | screenshots and scans as direct input, tables recovered from raster rules |
+| **Images** (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) | sharp + built-in OCR (BMP and PCX via the built-in decoder, HEIC via `npm install libheif-js`) | screenshots, scans, faxes and phone photos as direct input, multi-page TIFF and DCX page by page, tables recovered from raster rules. JPEG 2000, PSD etc. are rejected with the format name |
 
 ---
 

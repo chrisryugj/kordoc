@@ -88,7 +88,7 @@ describe("빈 그림 빼기 dropBlankImages", () => {
     assert.deepEqual(order(drop.markdown), ["Body", "image_001.png"])
   })
 
-  it("DOCX: 빈 BMP 는 images·블록·마크다운에서 빠지고 남은 그림 이름은 그대로", async () => {
+  it("DOCX: 빈 BMP 는 images·블록·마크다운에서 빠지고 남은 그림 번호는 그대로", async () => {
     const bmp = (px: (x: number, y: number) => number[]) => {
       const w = 40, h = 30, stride = (w * 3 + 3) & ~3, out = new Uint8Array(54 + stride * h), v = new DataView(out.buffer)
       out.set([0x42, 0x4d]); v.setUint32(2, out.length, true); v.setUint32(10, 54, true); v.setUint32(14, 40, true)
@@ -108,10 +108,11 @@ describe("빈 그림 빼기 dropBlankImages", () => {
     const def = await parse(buf), drop = await parse(buf, { dropBlankImages: true })
     assert.ok(def.success && drop.success)
     if (!def.success || !drop.success) return
-    assert.deepEqual(def.images!.map(i => i.filename), ["image_001.bmp", "image_002.bmp"])
-    assert.deepEqual(drop.images!.map(i => i.filename), ["image_002.bmp"])
-    assert.deepEqual(drop.blocks.filter(b => b.type === "image").map(b => b.text), ["image_002.bmp"])
-    assert.deepEqual(order(drop.markdown), ["본문", "image_002.bmp"])
+    // BMP 는 기본 정규화로 PNG
+    assert.deepEqual(def.images!.map(i => i.filename), ["image_001.png", "image_002.png"])
+    assert.deepEqual(drop.images!.map(i => i.filename), ["image_002.png"])
+    assert.deepEqual(drop.blocks.filter(b => b.type === "image").map(b => b.text), ["image_002.png"])
+    assert.deepEqual(order(drop.markdown), ["본문", "image_002.png"])
   })
 })
 

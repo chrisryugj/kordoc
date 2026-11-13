@@ -18,7 +18,17 @@ interface SharpImage {
   png(): { toBuffer(): Promise<Buffer> }
   webp(opts: { lossless: true; exact: true; effort: number; quality: number }): { toBuffer(): Promise<Buffer> }
 }
-export type SharpFactory = (input: Buffer, opts?: { raw?: { width: number; height: number; channels: 4 }; limitInputPixels?: number }) => SharpImage
+type CacheLimits = { memory: { max: number }; files: { max: number }; items: { max: number } }
+export type SharpCache = { cache(opts?: boolean | { memory: number; files: number; items: number }): CacheLimits }
+export type SharpFactory = ((input: Buffer, opts?: { raw?: { width: number; height: number; channels: 4 }; limitInputPixels?: number; failOn?: "error" }) => SharpImage) & SharpCache
+
+/** libvips 의 heif 로더(AVIF)는 디코딩한 픽셀을 operation cache 에 남기는데, 이 메모리는 캐시 한도에 포함되지 않는다 — AVIF 12MP
+ *  한 장마다 +37MB, 25장쯤에서 +880MB 까지 쌓였다. 캐시를 비운 뒤 호스트가 설정한 캐시 한도를 다시 적용한다 */
+export function flushHeifCache(sharp: SharpCache): void {
+  const c = sharp.cache()
+  sharp.cache(false)
+  sharp.cache({ memory: c.memory.max, files: c.files.max, items: c.items.max })
+}
 
 let loading: Promise<SharpFactory | null> | undefined
 
