@@ -298,6 +298,19 @@ export function extractPageBlocksWithLines(
 }
 
 /**
+ * 쪽 틀 판정용 선 — 틀 안에 따로 잡힌 작은 격자(문항 안 <보기>·조건 상자)의 선은 뺀다. 상자 선이 틀 격자를 잘게 쪼개 큰 본문 칸이
+ * 사라지면 틀이 표로 서서 두 단 본문이 칸마다 섞였다(3-09월 교육 통합 시험지 2쪽 "문10）…문13）" 9×5 표)
+ */
+function outsideInnerBoxes(grid: TableGrid, grids: TableGrid[], horizontals: LineSegment[], verticals: LineSegment[]): [LineSegment[], LineSegment[]] {
+  const g = grid.bbox, area = (b: TableGrid["bbox"]) => (b.x2 - b.x1) * (b.y2 - b.y1)
+  const boxes = grids.map(o => o.bbox).filter(b => b !== g && b.x1 >= g.x1 - 2 && b.x2 <= g.x2 + 2 && b.y1 >= g.y1 - 2 && b.y2 <= g.y2 + 2 && area(b) < area(g) * 0.5)
+  if (!boxes.length) return [horizontals, verticals]
+  const outside = (l: LineSegment) => !boxes.some(b => Math.min(l.x1, l.x2) >= b.x1 - 2 && Math.max(l.x1, l.x2) <= b.x2 + 2 &&
+    Math.min(l.y1, l.y2) >= b.y1 - 2 && Math.max(l.y1, l.y2) <= b.y2 + 2)
+  return [horizontals.filter(outside), verticals.filter(outside)]
+}
+
+/**
  * OCR 쪽의 단 구분선 — 쪽 가운데(폭 40~60%)를 쪽 높이 45% 넘게 내리긋는 세로 괘선을 가로지르는 가로선이 없으면 두 단을 가르는 선이다.
  * 글이 적은 시험지 쪽(수학 "23. …" | "24. …")은 글만으로 단 틈을 못 찾아 두 단 줄을 이어 읽었다. 선 위(머리글)·두 단·선 아래(꼬리) 차례로
  * 읽는다. 선 양쪽에 글이 셋 이상씩 있을 때만
@@ -516,7 +529,9 @@ function extractBlocksWithGrids(
     // repeated-row candidate is checked again after text is mapped to cells.
     if (!grid.cells && !holdsNested && numGridCols === 1 && numGridRows >= 2 &&
         (numGridRows < 5 || gridW > pageWidth * 0.7)) continue
-    if (!holdsNested && isPageFrameGrid(grid, extractCells(grid, horizontals, verticals), pageWidth, pageHeight, items)) continue
+    // 상자 선 빼기는 텍스트층 쪽만 — OCR 쪽은 틀을 빼면 표 위 단위 줄("(천원)")이 안쪽 표 머리 칸 글에 붙는다(관보 표 p344, 단위 줄 처리 없음)
+    const frameLines = ocrPage ? [horizontals, verticals] as const : outsideInnerBoxes(grid, sortedGrids, horizontals, verticals)
+    if (!holdsNested && isPageFrameGrid(grid, extractCells(grid, ...frameLines), pageWidth, pageHeight, items)) continue
     // 그리드 영역 내 텍스트 아이템 수집
     const tableItems: NormItem[] = []
     const pad = 3
