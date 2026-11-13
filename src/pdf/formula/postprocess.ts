@@ -50,6 +50,9 @@ export function postProcessLatex(latex: string): string {
  */
 export function doubleBarNorms(s: string): string {
   return s.replace(/(?<![\\|])\|\|([^|]+?)(?<!\\)\|\|(?!\|)/g, "\\|$1\\|")
+    // 여는 노름을 막대 하나 + 가는 공백 `|\,` 로 읽고 닫는 쪽만 `\|` 로 읽기도 한다(`\sup_{n}|\,g_{n}\|_{\infty}`) — 사이에 다른 막대 없이
+    // `\|` 로 닫히는 `|\,` 만 노름으로(수식 정답지 5짝 상승·하락 0). `\left\|\,` 의 막대는 이미 노름이라 건드리지 않는다
+    .replace(/(?<!\\)\|\\,((?:(?!\\\||\|).)*?)\\\|/g, "\\|$1\\|")
 }
 
 /**

@@ -600,4 +600,9 @@ describe("doubleBarNorms", () => {
     assert.equal(doubleBarNorms("\\|x\\|"), "\\|x\\|")
     assert.equal(doubleBarNorms("1-|x||y|+||z||"), "1-|x||y|+\\|z\\|")
   })
+  it("여는 쪽만 막대 하나 + 가는 공백으로 읽은 노름 |\\, … \\| 을 \\| 로 (다른 막대가 끼면·\\left\\| 는 그대로)", () => {
+    assert.equal(doubleBarNorms("\\sup_{n}|\\,g_{n}\\|_{\\infty}"), "\\sup_{n}\\|g_{n}\\|_{\\infty}")
+    assert.equal(doubleBarNorms("|\\,a|+\\|b\\|"), "|\\,a|+\\|b\\|")
+    assert.equal(doubleBarNorms("\\left\\|\\,e^{x}\\right\\|"), "\\left\\|\\,e^{x}\\right\\|")
+  })
 })
