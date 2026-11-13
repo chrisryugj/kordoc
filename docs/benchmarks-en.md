@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.72: line wraps before brackets · HWP3 figure numbers · formula post-processing · 2026-11-13
+
+PDF text (744 hwpx↔pdf pairs) word-boundary F1 0.99117 → **0.99125** (35 press releases up, none down). Formula ground truth (20 arXiv papers, 621 pages, run alone) exact match 0.6171 → **0.6266** (recall 0.9775 and precision 0.9725 unchanged, no paper down). HWP↔HWPX pair (score) hwp3-sample similarity → 1. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90644 unchanged.
+
+- Rejected: applying the bracket rule to cell text too (header cells "키⏎(cm)", "2025년⏎(1~7월)" — 10 documents down), only one-word brackets (43 → 14 documents up), formula normalisation before the junk filter (one multi-line formula dropped whole), a closing `\;|` norm rule (2 pairs up, 1 down).
+
 ## 4.24.71: borderless label/value tables · CJK fill-in lines · bracket auto-spacing · 2026-11-13
 
 PDF text (744 hwpx↔pdf pairs) reading order 0.99366 → **0.99398** (two LibreOffice student-council reports 0.965 → 0.998 and 0.972 → 0.993), word-boundary F1 0.99114 → **0.99117** (Japanese contract 0.975 → 0.987, Chinese 0.982 → 0.988), precision 0.99683 → 0.99685. No per-document drops on tables, annex tables, score, the four ODL runs or OCR; KoOCR-Bench 0.90643 → 0.90644.
