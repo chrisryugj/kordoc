@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.77] - 2026-11-14
+
 ### Fixed
 
 - PDF LibreOffice 문서도 반올림 전 좌표 공백 규칙: LibreOffice 쌍 5문서 어절 F1 상승(niied 신고서 0.991 → 1·web019 0.985 → 0.986·kats 0.985 → 0.985 등), 문서별 하락 0

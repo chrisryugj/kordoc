@@ -2,6 +2,11 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.77: PDF false spaces by producer, preview formulas · 2026-11-14
+
+- The unrounded-coordinate space rules now also apply to Microsoft Print To PDF and LibreOffice PDFs: PDF text spaceF1 on four press releases .962 → .993, .974 → .992, .983 → .991, .982 → .986, and five LibreOffice pairs up (one form .991 → 1). Tables, annex, score, the four ODL runs, OCR, formats and roundtrip unchanged per document; KoOCR 0.90644 unchanged
+- SVG preview: fractions are drawn stacked (numerator, rule, denominator); cases and matrices render as one line without leaking environment names. reflow gate 59/59
+
 ## 4.24.76: superscript runs, footnote lists, two-line cell labels · 2026-11-14
 
 - Superscript runs printed as several items (run end right before the next glyph, uniform and smaller size) attach as one superscript: PDF text spaceF1 on four documents up (.967 → .976, .989 → .996, .997 → 1, .984 → .985), one reading order .9942 → .9945
