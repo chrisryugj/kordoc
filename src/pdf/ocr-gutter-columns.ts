@@ -62,8 +62,10 @@ export function ocrGutterVerticals(grids: TableGrid[], items: NormItem[]): Map<T
         const s = line.spans.filter(sp => sp.text).sort((a, b) => a.left - b.left)
         if (!s.every(sp => VALUE_TOKEN.test(sp.text))) return
         for (let k = 1; k < s.length; k++) {
-          // 천 단위 묶음이 틈으로 갈린 것("34,875,1 12,751")은 열 틈이 아니다
-          if (s[k].left - s[k - 1].right >= size * 0.3 && VALUE_TOKEN.test(s[k - 1].text) && VALUE_TOKEN.test(s[k].text) && !/,\d{1,2}$/.test(s[k - 1].text)) {
+          // 천 단위 묶음이 틈으로 갈린 것("34,875,1 12,751")은 열 틈이 아니다. 수와 괄호 백분율 "18 (18.2%)" 은 한 값(n (%))이다 —
+          // 칸 안 두 줄 값이 "1817 | (18.2%) (17.2%)" 로 갈렸다(약 설명서 이상사례 표)
+          if (s[k].left - s[k - 1].right >= size * 0.3 && VALUE_TOKEN.test(s[k - 1].text) && VALUE_TOKEN.test(s[k].text) && !/,\d{1,2}$/.test(s[k - 1].text) &&
+            !(/^\d[\d,]*$/.test(s[k - 1].text) && /^\(\d+(?:\.\d+)?%\)$/.test(s[k].text))) {
             gaps.push({ left: s[k - 1].right, right: s[k].left, line: li })
           }
         }

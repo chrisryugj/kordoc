@@ -59,6 +59,12 @@ it("cuts a value from its bracketed share beside it (\"3,193 (1.7)\" — 구성�
   assert.deepEqual(splitItemsAtGutters([share(150)], lines).map(it => it.text), ["3,193", "(1.7)"])
 })
 
+it("does not cut a count from its percent share (\"18 (18.2%)\" — n (%) 한 값, 약 설명서 이상사례 표)", () => {
+  const g = grid()
+  const np = (y: number) => item("18 (18.2%)", 20, y, 160, [[2, 50, 70]])
+  assert.equal(ocrGutterVerticals([g], [np(150), np(120), np(90)]).get(g), undefined)
+})
+
 it("a spaced header word over the value gap blocks the header row (\"자기 집\" 두 열 걸침 머리)", () => {
   const g = grid()
   const share = (y: number) => item("3,193 (1.7)", 20, y, 260, [[5, 120, 170]])
