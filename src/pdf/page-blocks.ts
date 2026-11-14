@@ -901,9 +901,12 @@ function extractBlocksWithGrids(
 
     // 클러스터 기반 테이블 감지 (XY-Cut 전에 실행 — 테이블이 쪼개지지 않도록)
     const clusterItems: ClusterItem[] = remaining.map(i => {
+      // 반올림 전 x·폭(fx·fw)도 옮긴다 — 표가 안 된 아이템은 이 사본 그대로 본문 줄이 된다. 빠지면 공백 글리프 자리의 실제 틈(0.1pt)을
+      // 반올림 좌표(1pt)로 재 "지원(1 인당"·"(5 천원" 같은 거짓 공백이 났다(전통시장 보도자료, mergeLineSimple exactGap)
       const item: ClusterItem = {
         text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
         fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter,
+        fx: i.fx, fw: i.fw,
       }
       copyOcrTextGaps(i, item)
       return item
@@ -1356,6 +1359,7 @@ export function extractPageBlocksFallback(items: NormItem[], pageNum: number, fu
     const item: ClusterItem = {
       text: i.text, x: i.x, y: i.y, w: i.w, h: i.h,
       fontSize: i.fontSize, fontName: i.fontName, hasSpaceBefore: i.hasSpaceBefore, syntheticSpace: i.syntheticSpace, spaceAfter: i.spaceAfter,
+      fx: i.fx, fw: i.fw,
     }
     copyOcrTextGaps(i, item)
     return item

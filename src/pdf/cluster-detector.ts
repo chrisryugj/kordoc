@@ -34,6 +34,9 @@ export interface ClusterItem {
   fontName: string
   /** pdfjs 공백 아이템이 직전에 있었음 — 단어 경계 힌트 */
   hasSpaceBefore?: boolean
+  /** 반올림 전 x·폭 — 공백 글리프 자리의 실제 틈을 잰다(text-line exactGap) */
+  fx?: number
+  fw?: number
   /** 직전 공백이 pdfjs 가 글자 틈으로 만든 것뿐(글리프 흐름에 공백 글리프 없음, tracked-text markSyntheticSpaces) — 균등배분 run 을 끊지 않는다 */
   syntheticSpace?: boolean
   /** 줄 끝 공백 글리프 (tracked-text markTrailingSpaceGlyphs) — 칸 줄 꺾임이 어절 경계 */

@@ -226,8 +226,10 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const pageImageBlocks = new Map<number, IRBlock[]>()
     // 쪽을 넘는 칸 — 앞 쪽 마지막 칸을 다음 쪽 클립 판정에 넘긴다 (clip-cells continues, 문서 단계 mergeContinuedCells)
     const carry: PageCarry = {}
-    // 반올림 전 좌표(NormItem.fx·fw)로 공백을 가리는 규칙(자간 보정·공백 힌트 틈)은 한컴 PDF 실측 — 다른 제작기 PDF(ODL)는 반올림 좌표 그대로
-    const preciseGaps = await isHancomPdf(doc)
+    // 반올림 전 좌표(NormItem.fx·fw)로 공백을 가리는 규칙(자간 보정·공백 힌트 틈)은 한컴 PDF 실측 — 다른 제작기 PDF(ODL)는 반올림 좌표 그대로.
+    // 한글 문서를 "Microsoft: Print To PDF" 로 찍은 보도자료도 한컴 조판 그대로라 같다 — 폭 0 공백 글리프("지원(1 인당"·"(5 천원")를 반올림 틈 1pt 로
+    // 재 거짓 공백을 냈다(전통시장 보도자료 어절 F1 .962 → .993)
+    const preciseGaps = await isHancomPdf(doc) || await isPrintedToPdf(doc)
     // OCR 로 갈 벡터 글자 쪽의 그래픽(글자 경로·클립 뺀 연산자 목록) — OCR 글자에 이 쪽의 실제 괘선을 붙인다
     const vectorPageOps = new Map<number, { fnArray: number[]; argsArray: unknown[][] }>()
     // 줄 꺾임 이음의 문서 어휘 증거 — 쪽을 처리할 때마다 그 쪽 줄 글이 더해진다 (line-wrap.ts)
@@ -748,6 +750,16 @@ async function extractPdfMetadata(doc: { getMetadata(): Promise<unknown> }, meta
 
 /** 한컴 PDF — Producer "Hancom PDF 1.3.0.xxx" 또는 Creator "Hwp 2018·2020 …" (법령 별표 273건 271건·표 정답 세트 한컴 산출물 실측).
  *  정보 사전을 못 읽거나 다른 제작기면 아니다 */
+/** 한글 문서를 Windows "Microsoft: Print To PDF" 로 찍은 PDF — 글 자리는 한컴 조판 그대로다(반올림 전 좌표 공백 규칙만 같이 쓴다) */
+export async function isPrintedToPdf(doc: { getMetadata(): Promise<unknown> }): Promise<boolean> {
+  try {
+    const info = (await doc.getMetadata() as { info?: Record<string, unknown> } | null)?.info
+    return [info?.Producer, info?.Creator].some(v => typeof v === "string" && /^\s*microsoft: print to pdf\b/i.test(v))
+  } catch {
+    return false
+  }
+}
+
 async function isHancomPdf(doc: { getMetadata(): Promise<unknown> }): Promise<boolean> {
   try {
     const info = (await doc.getMetadata() as { info?: Record<string, unknown> } | null)?.info
