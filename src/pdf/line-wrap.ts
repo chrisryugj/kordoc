@@ -240,7 +240,8 @@ function particleContinues(left: string, rightWord: string): boolean {
   const right = rightWord.replace(/[”’"」』].+$/, "")
   const h = left.replace(CLOSE_TAIL, "")
   const last = h[h.length - 1]
-  if (!last || !/[가-힣A-Za-z0-9]/.test(last)) return false
+  // 한자 낱말 뒤 조사도 붙는다 — 국한문 "대수정규분포(…, 對數正規分布)⏎를 따를"
+  if (!last || !/[가-힣A-Za-z0-9\u4e00-\u9fff]/.test(last)) return false
   if (PARTICLE.test(right)) return true
   if (!/[가-힣]/.test(last)) return false
   // 접미사 -적 이 줄 머리로 넘어온 것 — "자체⏎적으로", "근본⏎적인" ("적은·적게"(적다)는 제외)

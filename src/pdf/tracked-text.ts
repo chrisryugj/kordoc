@@ -10,8 +10,11 @@ import type { PdfTextItem } from "./text-line.js"
 // 한글 균등배분("홍 보 지 원 반")은 normalizeItems·셀 글이 따로 다룬다 — 라틴·숫자·기호만
 const TRACKED = /^(?:[^\s\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3] ){3,}[^\s\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]$/
 
+/** 띄운 숫자·기호 아이템 — normalizeItems 가 자간으로 보고 공백을 지우는 꼴("45 0 -7 3 40 )") */
+export const SPACED_NUMBER = /^(?=[^\d]*\d)(?=\S* )[\d\s\-().·,☎]+$/
+
 export function restoreTrackedSpacing(items: PdfTextItem[], fnArray: ArrayLike<number>, argsArray: ArrayLike<unknown>): number {
-  if (!items.some(it => TRACKED.test(it.str ?? ""))) return 0
+  if (!items.some(it => TRACKED.test(it.str ?? "") || SPACED_NUMBER.test((it.str ?? "").trim()))) return 0
   // 글꼴별 글리프 글 흐름 (공백 글리프 포함)
   const streams = new Map<string, string[]>()
   const saved: string[] = []
@@ -53,6 +56,12 @@ export function restoreTrackedSpacing(items: PdfTextItem[], fnArray: ArrayLike<n
     if (TRACKED.test(it.str)) {
       const rebuilt = text.replace(/\s+/g, " ").trim()
       if (rebuilt.split(" ").length < it.str.split(" ").length) { it.str = rebuilt; changed++ }
+    } else if (SPACED_NUMBER.test(it.str.trim()) && /\S\s+\S/.test(text)) {
+      // 띄운 숫자 아이템에 공백 글리프가 있으면 친 공백이다 — 글자 틈으로 만든 공백만 지우고 자간 정규화를 건너뛴다(normalizeItems).
+      // 라틴·한글 갈래마다 아이템이 갈린 LibreOffice PDF "A|4 2|페이지" 의 "4 2" 가 "42" 가 됐다(정답 "A4 2페이지")
+      it.str = text.replace(/\s+/g, " ").trim()
+      ;(it as PdfTextItem & { glyphSpaced?: boolean }).glyphSpaced = true
+      changed++
     }
   }
   return changed

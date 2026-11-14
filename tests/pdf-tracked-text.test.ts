@@ -24,6 +24,20 @@ describe("restoreTrackedSpacing", () => {
   })
 })
 
+describe("띄운 숫자 아이템 — 글리프 흐름에 공백 글리프가 있으면 친 공백", () => {
+  it("공백 글리프가 있는 \"4 2\" 는 자간 정규화로 붙이지 않고, 없는 \"45 0 -7\" 은 종전대로 붙인다", async () => {
+    const { normalizeItems } = await import("../src/pdf/text-line.js")
+    // LibreOffice PDF "A|4 2|페이지" — 라틴·한글 갈래마다 아이템이 갈리고 가운데 아이템이 공백 글리프를 품는다(web065 "A4 2페이지")
+    const real = [raw("4 2")]
+    restoreTrackedSpacing(real, [OPS.setFont, OPS.showText], [["F1", 11], [glyphs("4 2")]])
+    assert.deepEqual(normalizeItems(real).map(i => i.text), ["4 2"])
+    // 자간을 벌린 번호 — pdfjs 가 글자 틈마다 넣은 공백(흐름에 공백 글리프 없음)
+    const tracked = [raw("45 0 -7 3 40 )")]
+    restoreTrackedSpacing(tracked, [OPS.setFont, OPS.showText], [["F1", 11], [glyphs("450-7340)")]])
+    assert.deepEqual(normalizeItems(tracked).map(i => i.text), ["450-7340)"])
+  })
+})
+
 describe("joinTrackedHangul — 자간 넓힌 한글 줄의 pdfjs 가짜 공백", () => {
   it("공백 글리프 없는 한글 사이 공백만 지운다(\"한 국 정부 가\" → \"한국 정부가\")", () => {
     // 156782429: "한{970}[-106.9]국{970}[-106.9] {300}" — 0.107em 자간 이동마다 pdfjs 가 공백을 넣는다

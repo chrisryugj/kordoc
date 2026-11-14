@@ -126,6 +126,13 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("헌법과", "법 체계", lex), " ")
   })
 
+  it("한자 낱말 뒤 줄 머리 조사도 앞 어절에 붙인다 (對數正規分布)⏎를 따를)", () => {
+    assert.equal(wrapJoiner("대수정규분포(log-normal distribution, 對數正規分布)", "를 따를 경우에는", undefined, false), "")
+    assert.equal(wrapJoiner("국제연합(國際聯合)", "의 결의", new WrapLexicon()), "")
+    // 한자 뒤 새 어절은 종전대로 띄운다
+    assert.equal(wrapJoiner("국제연합(國際聯合)", "결의안 채택", new WrapLexicon()), " ")
+  })
+
   it("닫힌 부류 한 음절(및·등)은 앞 쪽에 아직 안 나왔어도 조각으로 보지 않는다 (첫 쪽 보전⏎및)", () => {
     const empty = new WrapLexicon()
     assert.equal(wrapJoiner("해양자원의 보전", "및 지속가능한 활용", empty), " ")
