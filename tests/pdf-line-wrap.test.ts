@@ -288,6 +288,23 @@ describe("bodyLineJoins — 본문 꺾임 기하", () => {
     assert.equal(joins[0], "\n")
   })
 
+  it("양쪽 정렬 본문과 한 묶음인 왼쪽 정렬 목록 — 번호 뒤 글 자리에 선 다음 줄의 첫 어절이 못 들어간 줄은 잇는다 (ODL 165)", () => {
+    // 본문 오른끝 555.3(양쪽 정렬), 목록 "1." 61.2 · 글 74.7 · 9pt · 줄 간격 14pt
+    const item = (text: string, right: number, y: number, hang?: number) => ({ ...line(text, hang ? 61.2 : 74.7, right, y, 9), hang })
+    const joins = bodyLineJoins([
+      line("Phenolphthalein changes from colorless to faint pink when the quantity of OH- ions added via the NaOH equals the", 56.7, 555.3, 460.7, 9),
+      line("quantity of H+ ions in the solution (that is, when the pH is raised to 7). For this activity, assume the soil samples have", 56.7, 555.3, 446.7, 9),
+      line("been extracted and the filtrates are now available for analysis.", 56.7, 314.3, 432.7, 9),
+      item("1. Place 10 ml of each filtrate into separate 125 ml flasks. This 10 ml quantity is the amount of filtrate from 1.0 gram of", 550.9, 405.9, 74.7),
+      item("soil.", 91.3, 391.9),
+      item("2. Add 10 drops of the phenolphthalein indicator.", 268.3, 377.9, 74.7),
+      item("3. Titrate the extract with the NaOH solution to a faint pink endpoint. The titration must be done very carefully to", 540.6, 363.9, 74.7),
+      item("obtain meaningful results. If you put too much NaOH in the flask and get a bright pink color, discard the solution", 545.3, 349.9),
+      item("and repeat the process. In the table below, record the milliliters of NaOH solution used to achieve the endpoint.", 540.5, 335.9),
+    ])
+    assert.deepEqual(joins, [" ", " ", "\n", " ", "\n", "\n", " ", " "])
+  })
+
   it("양쪽 정렬 묶음의 덜 찬 줄은 문단 끝줄이라 잇지 않는다 (ODL 188 \"e.g., H6.\" ⏎ \"Model merging.\")", () => {
     const joins = bodyLineJoins([
       line("et al., 2021). We utilize these datasets as benchmarks for", 72, 290, 700),

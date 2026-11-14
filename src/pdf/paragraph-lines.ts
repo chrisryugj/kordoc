@@ -8,6 +8,9 @@ import { XY_WRAP_BANDS, tocRecordBoundaries } from "./xy-cut.js"
 /** 문단 블록의 서체별 글자 수 — 앞머리만 굵은 문장("Definition 1. A universe…")은 서체 차이로 제목이 아니다 */
 export const FACE_CHARS = new WeakMap<IRBlock, Map<string, number>>()
 
+/** 따로 찍힌 목록 번호·글머리 아이템 */
+const LIST_LABEL = /^(?:\d{1,2}[.)]|[a-z][.)]|\(\d{1,2}\)|[•▪◦‣·–-])$/
+
 /** A numbered title and its differently styled subtitle precede body prose. */
 function hasNumberedStyledTitle(lines: NormItem[][]): boolean {
   if (lines.length < 4) return false
@@ -27,7 +30,11 @@ export function pushLineParagraphs(out: IRBlock[], yLines: NormItem[][], pageNum
   const lines = attachDropCaps(yLines).map(items => ({ items, text: mergeLineSimple(items) })).filter(l => l.text.trim())
   const geo = lines.map(l => {
     const b = computeBBox(l.items, pageNum)
-    return { text: l.text, left: b.x, right: b.x + b.width, y: l.items.reduce((s, i) => s + i.y, 0) / l.items.length, fontSize: dominantStyle(l.items)?.fontSize ?? 0 }
+    const fontSize = dominantStyle(l.items)?.fontSize ?? 0
+    // 번호·글머리를 따로 찍은 목록 줄("1." | "Place …") — 뒤 글이 시작하는 x 를 내어쓰기 자리로
+    const xs = sortLineByX([...l.items])
+    const hang = xs.length >= 2 && LIST_LABEL.test(xs[0].text.trim()) && xs[1].x - (xs[0].x + xs[0].w) >= 0.3 * fontSize ? xs[1].x : undefined
+    return { text: l.text, left: b.x, right: b.x + b.width, y: l.items.reduce((s, i) => s + i.y, 0) / l.items.length, fontSize, hang }
   })
   const joins = bodyLineJoins(geo, lex)
   // A two-line leaf can lose the other line-pitch samples from its parent region.

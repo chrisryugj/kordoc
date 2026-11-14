@@ -483,7 +483,11 @@ export function splitPageBreakWraps(blocks: IRBlock[]): IRBlock[] {
 }
 
 /** 본문 줄 기하 — 꺾임 판정 입력 (y 는 기준선, PDF 좌표라 아래 줄이 작다) */
-export interface WrapLine { text: string; left: number; right: number; y: number; fontSize: number }
+export interface WrapLine {
+  text: string; left: number; right: number; y: number; fontSize: number
+  /** 따로 찍힌 목록 번호·글머리("1." | "Place …") 뒤 글이 시작하는 x — 내어 쓴 다음 줄이 서는 자리 */
+  hang?: number
+}
 
 /** 여백 밖에 매달리는 줄 끝 전각 구두점 */
 const HANGING = /[，。、：；！？）」』】〕》〉．]\s*$/
@@ -500,6 +504,8 @@ const BODY_MAX_PITCH_EM = 2
  *  한 문단의 줄 간격이다(hwpx↔pdf 752쌍: 2em 이상이면서 이 안인 찬 줄 263곳 중 원문 문단 경계 12곳, 붙음 104·띄움 147).
  *  상한은 글자 크기 3.5배 — 그보다 넓은 간격이 이어진 묶음은 표제·서명란 나열이다 */
 const BODY_PITCH_REL = 1.05
+/** 내어 쓴 목록 항목 글 자리 허용치(pt) */
+const HANG_TOL = 1
 const BODY_MAX_PITCH_ABS_EM = 3.5
 
 /**
@@ -549,16 +555,23 @@ export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
     if (p < p1) { p2 = p1; p1 = p; i1 = k } else if (p < p2) p2 = p
   }
   const out: string[] = []
+  // 내어 쓴 목록 항목의 글 자리 — 번호를 따로 찍은 줄에서 열고, 그 자리에서 시작하지 않는 줄에서 닫는다
+  let hangX: number | undefined
   for (let i = 0; i + 1 < lines.length; i++) {
     const a = lines[i], b = lines[i + 1]
     const fs = a.fontSize
+    if (a.hang !== undefined) hangX = a.hang
+    else if (hangX !== undefined && Math.abs(a.left - hangX) > HANG_TOL) hangX = undefined
     // 다른 쌍이 없으면 쪽 줄 흐름의 본문 줄 간격(lex.bodyPitch), 그것도 없으면 Infinity — 상대 기준 없이 2em
     // (줄 간격 255% 중문 계약서 "…延长⏎合同期限" 두 줄 묶음이 문단 경계로 끊겼다)
     const own = i === i1 ? p2 : p1
     const others = Number.isFinite(own) ? own : lex?.bodyPitch(fs) ?? Infinity
     const maxPitch = Number.isFinite(others) ? Math.min(BODY_MAX_PITCH_ABS_EM * fs, Math.max(BODY_MAX_PITCH_EM * fs, others * BODY_PITCH_REL)) : BODY_MAX_PITCH_EM * fs
     // 다단계 번호("5.1 ", "7.1.2 ")로 여는 줄은 새 조항이다 — ITEM_HEAD 는 한 단계 번호만 본다
-    const wordWrap = ragged && !full(a) && nextWordNoRoom(a, b) && !MULTI_LEVEL_NUMBER.test(b.text.trimStart())
+    // 왼쪽 정렬 목록 항목이 양쪽 정렬 본문과 한 묶음이면 ragged 가 거짓이라 덜 찬 꺾인 줄을 못 잡는다 — 다음 줄이 항목 글 자리(번호 뒤)에
+    // 서고 첫 어절이 이 줄 끝에 못 들어갔으면 꺾임이다(ODL 165 "1. Place … from 1.0 gram of" ⏎ "soil.")
+    const listWrap = !full(a) && hangX !== undefined && Math.abs(b.left - hangX) <= HANG_TOL && nextWordNoRoom(a, b) && !MULTI_LEVEL_NUMBER.test(b.text.trimStart())
+    const wordWrap = (ragged && !full(a) && nextWordNoRoom(a, b) && !MULTI_LEVEL_NUMBER.test(b.text.trimStart())) || listWrap
     const wraps = fs > 0
       && (full(a) || wordWrap)
       && a.right - a.left >= BODY_MIN_WIDTH_EM * fs
