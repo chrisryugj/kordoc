@@ -1079,6 +1079,40 @@ describe("쪽 넘김 3차 — 목록 이어짐·괘선 없는 쪽 경계·칸 �
     assert.ok(res2 && !res2.split)
   })
 
+  it("괘선 없는 쪽 경계에서는 한 줄 이름표와 다음 번호 항목이 갈려도 쪼개진 행이다", () => {
+    // 직무교육기관 기준: "안전 | 9) 안전검사기관의 종사자 | 안전검사" / 다음 쪽 "검사 | 10) 자율안전검사기관의 종사자 | (빈 칸)" —
+    // 두 줄 이름표 "안전 / 검사" 와 칸 안 목록이 쪽 경계에서 갈렸다
+    const xs = [58, 110, 400, 531]
+    const make = () => ({
+      prev: grid(2, 3, [[0, 0, "건설안전"], [0, 1, "8) 건설재해예방전문지도기관의 종사자"], [0, 2, "건설안전"], [1, 0, "안전"], [1, 1, "9) 안전검사기관의 종사자"], [1, 2, "안전검사"]]),
+      curr: grid(2, 3, [[0, 0, "검사"], [0, 1, "10) 자율안전검사기관의 종사자"], [0, 2, ""], [1, 0, "보건"], [1, 1, "11) 보건관리전문기관의 종사자"], [1, 2, "보건"]]),
+    })
+    const mark = (t: { prev: IRTable; curr: IRTable }) => {
+      lines(t.prev.cells[1][0], [[74, 94, 42]])
+      lines(t.prev.cells[1][1], [[114, 250, 42]])
+      lines(t.prev.cells[1][2], [[445, 485, 42]])
+      lines(t.curr.cells[0][0], [[74, 94, 770]])
+      lines(t.curr.cells[0][1], [[114, 262, 770]])
+    }
+    const a = make()
+    mark(a)
+    ROW_RULES.set(a.prev, { top: true, bottom: false, innerRuled: 3, innerOpen: 0 })
+    ROW_RULES.set(a.curr, { top: false, bottom: true, innerRuled: 3, innerOpen: 0 })
+    const res = joinSplitParts(a.prev, xs, a.curr, xs)
+    assert.ok(res?.split)
+    assert.equal(res.table.rows, 3)
+    assert.equal(res.table.cells[1][0].text, "안전\n검사")
+    assert.match(res.table.cells[1][1].text, /9\) 안전검사기관의 종사자\n10\) 자율안전검사기관의 종사자/)
+    // 쪽 경계에 괘선이 있으면 종전대로 새 행이다
+    const b = make()
+    mark(b)
+    ROW_RULES.set(b.prev, { top: true, bottom: true, innerRuled: 3, innerOpen: 0 })
+    ROW_RULES.set(b.curr, { top: true, bottom: true, innerRuled: 3, innerOpen: 0 })
+    const res2 = joinSplitParts(b.prev, xs, b.curr, xs)
+    assert.ok(res2 && !res2.split)
+    assert.equal(res2.table.rows, 4)
+  })
+
   it("칸 조각 이어짐에 글 쌍이 둘 이상이면 뒤 조각 칸이 모두 여러 행을 덮거나, 괘선 없는 쪽 경계에서 줄 넘침이어야 잇는다", () => {
     // 선관위 자격증: "방송 | 통신사 | 기술사" / 다음 쪽 "통신(두 행) | (클립 없음) | (자격증종류는 …)(두 행)", 그 아래 "통신기술"
     const xs = [59.5, 100, 149, 226.9]

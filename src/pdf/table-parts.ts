@@ -634,12 +634,15 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
     // "8. 글자 | …꽉 찬 끝줄" 다음 쪽 "9. 한글과 함께 적는 외국글자 | 가. 단어를 …", 시험기준표 "액성한계·소성한계 | KS F 2303" 다음 쪽
     // "세립토 비율 | KS F 2309"). 같은 글이면 문단마다 붙는 표지다 (신구조문 대비표 "<신 설>" 이 큰 행 두 조각에 하나씩)
     const norm = (c: IRCell): string => flowText(c.text).replace(/\s+/g, "")
-    if (pairs.some(([u, d]) => hasContent(d.cell) && norm(cell(d)) !== norm(cell(u)) && lineEnded(cell(u), colXs[u.c], colXs[u.c + u.cs], cell(d)))) return false
+    // 괘선 없는 쪽 경계(아래 3)에 새 칸 증거도 없으면 아래 두 모순은 보지 않는다 — 두 줄 이름표와 칸 안 목록이 쪽 경계에서 갈린 한 행이다
+    // (직무교육기관 기준 "안전 | 9) 안전검사기관의 종사자 | 안전검사" 다음 쪽 "검사 | 10) 자율안전검사기관의 종사자": 이름표 "안전 / 검사")
+    const openCut = cut.open && !newCell
+    if (!openCut && pairs.some(([u, d]) => hasContent(d.cell) && norm(cell(d)) !== norm(cell(u)) && lineEnded(cell(u), colXs[u.c], colXs[u.c + u.cs], cell(d)))) return false
     // 한 칸은 앞 조각 머리 항목의 바로 다음 항목으로 시작하고("커. …" / "터. …"), 다른 칸은 두 조각 모두 서로 다른 한 줄 값이면("법 제47조" /
     // "법 제45조") 새 행이다 — 좁은 칸 끝줄 "2) 2회 이상 위반" 이 꽉 차 보여 다음 쪽 새 행을 앞 행에 잇고 ○ 표시까지 섞었다(총포화약법
     // 행정처분기준, 4.17.0 회귀). 칸 안 목록이 "가. …" / "나. …" 로 이어지는 대비표는 다른 칸 값이 같거나(<신 설>) 비어 있다
     const oneLine = (c: IRCell): boolean => CELL_LINES.get(c)?.length === 1
-    if (pairs.some(([u, d]) => nextItemHead(cell(u).text, cell(d).text))
+    if (!openCut && pairs.some(([u, d]) => nextItemHead(cell(u).text, cell(d).text))
       && pairs.some(([u, d]) => hasContent(u.cell) && hasContent(d.cell) && oneLine(cell(u)) && oneLine(cell(d)) && norm(cell(u)) !== norm(cell(d)))) return false
     // 앞 조각에서 여러 행을 덮은 칸에 한 줄만 들었으면 칸이 차지 않아 글이 쪽을 넘을 수 없다 — 뒤 조각 같은 열의 다른 한 줄 값은 새 칸이고
     // 행도 새로 시작한다. 가운데 정렬이라 끝난 이름표 판정(lineEnded)에 안 걸리는 값 열이다(시험기준표 "KS F 3218" 3행 칸 / 다음 쪽
