@@ -206,6 +206,7 @@ await markdownToHwpx(md, {
 - 표는 정부 문서 관행(머리행 음영·이중 하변·내용 비례 열폭)을 자동 적용합니다. 테마·참조 문서 표 서식(`hwpxToProfile`)도 받습니다.
 - 보고서·계획서·개조식·서울방침은 `#` 제목 바로 뒤 인용문(`> …하고자 함`)이 요약 상자가 됩니다. 개조식은 표지가 있으면(기본) 본문 첫 쪽 제목 상자 아래에 두고, `cover:false` 면 첫 `#` 이 장 머리라 인용문은 ※ 참고가 됩니다. 보고 목적 한 문장(쉼표 허용) 3줄 이내로 쓰고, 넘거나 두 문장 이상이면 경고합니다. 업무보고는 `> ▪ …` 인용문이 자리와 관계없이 성과 요약 상자가 됩니다.
 - CLI: `kordoc generate 보고서.md -o 보고서.hwpx --preset 개조식 --org 기관명 --approval 담당,팀장,과장`
+- HWP(5.0) 저장: `-o 보고서.hwp`(MCP `generate_document` 는 `output_path` 를 `.hwp` 로). kordoc 이 만든 HWPX 를 optional peer dep `@rhwp/core`(MIT, 풀면 약 32MB)로 옮겨 쓰므로 `npm install @rhwp/core` 가 필요합니다. 라이브러리는 `await hwpxToHwp(await markdownToHwpx(md))`. 옮기며 빠진 내용이 있으면 경고(`warnings`)로 알립니다.
 
 ### 레이아웃 보존 렌더
 
@@ -362,6 +363,7 @@ npx kordoc fill --template gian -j 값.json -o 기안문.hwpx           # 내장
 
 # 생성 · 편집 · 검증
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서        # Markdown → 공문서 HWPX
+npx kordoc generate 보고서.md -o 보고서.hwp --preset 보고서         # HWP(5.0)로 저장 — npm install @rhwp/core 필요
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx                    # 서식 보존 패치 (.hwp 도 자동)
 npx kordoc patch 원본.hwpx 편집.md --json --silent                  # 적용 수·건너뛴 편집·검증 잔차 JSON
 npx kordoc to-hwpx 문서.hwp                                         # HWP → HWPX (5.x 는 서식 그대로, 같은 이름 .hwpx 가 있으면 -o 필요)

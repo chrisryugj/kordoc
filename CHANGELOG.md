@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- HWP(5.0 바이너리) 저장 — `kordoc generate … -o 문서.hwp`, MCP `generate_document` 의 `output_path` `.hwp`, 라이브러리 `hwpxToHwp(hwpx, { warnings })`. kordoc 이 만든 HWPX 를 optional peer dep `@rhwp/core`(0.9.0 이상, MIT)로 옮겨 쓴다. 기본 설치 크기는 그대로고(그 패키지는 풀면 32MB), 없으면 `npm install @rhwp/core` 안내로 멈춘다. 옮기며 빠진 내용(rhwp 손실 보고)은 경고로 낸다. 생성 견본 11종(범용·2단+수식·공문서 프리셋 9종, 표·그림 포함)에서 쪽 수가 그대로고 손실 보고 0건. kordoc 으로 다시 읽은 글자는 범용·2단·기안문·통지·회의록·보도자료가 HWPX 와 같고, 보고서·계획서·개조식·업무보고·서울방침은 HWP 파서가 장 번호(Ⅰ)·차례까지 글로 읽어 그만큼 더 나온다(같은 HWP 를 rhwp 가 HWPX 로 다시 쓰면 생성본 HWPX 와 같은 글)
+
 ## [4.24.79] - 2026-11-14
 
 ### Fixed

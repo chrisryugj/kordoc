@@ -15,6 +15,7 @@ const OPTIONAL_EXTERNAL = [
   "sharp",
   "zxing-wasm",
   "libheif-js",
+  "@rhwp/core",
 ]
 
 export default defineConfig([

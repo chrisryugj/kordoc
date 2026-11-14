@@ -6,7 +6,7 @@ import type { numberBlocksFromIR } from "../hwpx/number-lint.js"
 import { runLintSuite } from "../hwpx/lint-suite.js"
 import { lintBlocks } from "../hwpx/lint-blocks.js"
 import { extractLevelStyles } from "../hwpx/level-styles.js"
-import { detectFormat, markdownToHwpx, loadAgencyPack, packTemplate, resolvePackKind, packRoleWarnings, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings, usesGaejosikMunche, slopLintWarnings, logicLintWarnings, usesLogicStructure, gongmunGate, formatGateFinding } from "../index.js"
+import { detectFormat, markdownToHwpx, hwpxToHwp, loadAgencyPack, packTemplate, resolvePackKind, packRoleWarnings, hwpxToProfile, PRESET_ALIAS, unknownFontWarnings, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings, usesGaejosikMunche, slopLintWarnings, logicLintWarnings, usesLogicStructure, gongmunGate, formatGateFinding } from "../index.js"
 import { parseFormatProfileJson } from "../hwpx/profile-io.js"
 import { loadGenerationImages } from "../shared/generate-images.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, TOTAL_ROWS, parseLevelsSpec, levelFontRecord, templateConflictMessage } from "../hwpx/gongmun-surface.js"
@@ -28,7 +28,7 @@ export function registerGenerateCommands(program: Command): void {
     .command("generate <markdown>")
     .alias("gen")
     .description("마크다운 → 공문서 HWPX 생성 — kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 (markdown에 '-' 지정 시 stdin)")
-    .option("-o, --output <path>", "출력 HWPX 경로 (기본: <입력>.hwpx)")
+    .option("-o, --output <path>", "출력 HWPX 경로 (기본: <입력>.hwpx) — .hwp 로 끝나면 HWP 로 저장 (optional peer dep @rhwp/core 필요)")
     .option("--preset <name>", "공문서 프리셋: 기안문(official)·보고서(report)·계획서(plan)·통지(notice)·회의록(minutes)·개조식(gaejosik — 표지·목차·장헤더 자동)·업무보고(ministry — 중앙부처 업무보고: 장 띠·절 숫자칸·소제목 박스·① 항목 띠·성과 요약박스·별첨 띠)·서울방침(bangchim — 서울시 방침서: 제목표·파랑 부제·요약박스·[Ⅰ] 장 상자·절 띠·❶ 과제)·보도자료(press)", "기안문")
     .option("--font <type>", "본문 글꼴: myeongjo(함초롬바탕) 또는 gothic(맑은 고딕)")
     .option("--pt <size>", "본문 글자 크기(pt)")
@@ -148,7 +148,6 @@ export function registerGenerateCommands(program: Command): void {
             process.exit(1)
           }
           const buf = await markdownToHwpx(md, { template: tplBytes, warnings, ...(opts.totalRow ? { totalRow: opts.totalRow } : {}) })
-          if (!silent) for (const w of warnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
           const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
           // 원고와 견본 이름이 같으면(보고서.md --template 보고서.hwpx) 기본 출력 경로가 견본이 된다
           let sameAsTemplate = outPath === tplPath
@@ -157,10 +156,13 @@ export function registerGenerateCommands(program: Command): void {
             process.stderr.write(`[kordoc] 출력 경로가 견본과 같습니다. 견본을 덮어쓰지 않습니다. -o 로 다른 경로를 지정하세요\n`)
             process.exit(1)
           }
+          const asHwp = /\.hwp$/i.test(outPath)
+          const bytes = asHwp ? await hwpxToHwp(buf, { warnings }) : new Uint8Array(buf)
+          if (!silent) for (const w of warnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
           mkdirSync(dirname(outPath), { recursive: true })
-          writeFileSync(outPath, Buffer.from(buf))
-          if (!silent) process.stderr.write(`[kordoc] HWPX 생성 (${opts.pack ? "기관팩" : "견본"}:${basename(tplPath)}) → ${outPath}\n`)
-          if (opts.json) process.stdout.write(JSON.stringify({ output: outPath, preset: null, ...(opts.pack ? { pack: tplPath, packKind: opts.packKind ?? null } : { template: tplPath }), bytes: buf.byteLength, warnings }) + "\n")
+          writeFileSync(outPath, Buffer.from(bytes))
+          if (!silent) process.stderr.write(`[kordoc] ${asHwp ? "HWP" : "HWPX"} 생성 (${opts.pack ? "기관팩" : "견본"}:${basename(tplPath)}) → ${outPath}\n`)
+          if (opts.json) process.stdout.write(JSON.stringify({ output: outPath, preset: null, ...(opts.pack ? { pack: tplPath, packKind: opts.packKind ?? null } : { template: tplPath }), bytes: bytes.byteLength, warnings }) + "\n")
           return
         }
 
@@ -347,18 +349,20 @@ export function registerGenerateCommands(program: Command): void {
             warnings: genWarnings,
           }
           : undefined)
-        if (!silent) for (const w of genWarnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
         const outPath = resolve(output ?? (markdown === "-" ? `${baseName}.hwpx` : markdown.replace(/\.(md|markdown|txt)$/i, "") + ".hwpx"))
+        const asHwp = /\.hwp$/i.test(outPath)
+        const bytes = asHwp ? await hwpxToHwp(buf, { warnings: genWarnings }) : new Uint8Array(buf)
+        if (!silent) for (const w of genWarnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
         mkdirSync(dirname(outPath), { recursive: true })
-        writeFileSync(outPath, Buffer.from(buf))
+        writeFileSync(outPath, Buffer.from(bytes))
 
         if (!silent) {
           const mode = gongmun ? `공문서:${gongmun.preset}` : "범용"
-          process.stderr.write(`[kordoc] HWPX 생성 (${mode}) → ${outPath}\n`)
+          process.stderr.write(`[kordoc] ${asHwp ? "HWP" : "HWPX"} 생성 (${mode}) → ${outPath}\n`)
         }
         // 다른 프로그램(한/글 실시간 편집 도구 등)이 결과를 받아 이어 쓰도록 — 사람용 메시지는 그대로 stderr
         if (opts.json) {
-          process.stdout.write(JSON.stringify({ output: outPath, preset: gongmun?.preset ?? null, bytes: buf.byteLength, warnings: genWarnings }) + "\n")
+          process.stdout.write(JSON.stringify({ output: outPath, preset: gongmun?.preset ?? null, bytes: bytes.byteLength, warnings: genWarnings }) + "\n")
         }
       } catch (err) {
         process.stderr.write(`[kordoc] 오류: ${sanitizeError(err)}\n`)

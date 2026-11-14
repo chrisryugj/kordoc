@@ -552,6 +552,8 @@ export type { MemoOp, MemoPlacement, AddMemoResult } from "./form/memo.js"
 export { markdownToHwpx } from "./hwpx/generator.js"
 // HWP 5.x → HWPX 서식 그대로 변환
 export { hwpToHwpx, convertToHwpx, type HwpToHwpxOptions, type ConvertToHwpxResult } from "./hwp5/to-hwpx/index.js"
+// HWPX → HWP 5.0 — optional peer dep @rhwp/core 로 저장
+export { hwpxToHwp, type HwpxToHwpOptions } from "./hwpx/to-hwp.js"
 // 기관팩 — 기관 문서(HWPX) 몇 건으로 만든 서식 묶음(.kpack). markdownToHwpx(md, { template: packTemplate(pack, "report") })
 export { buildAgencyPack, loadAgencyPack, packTemplate, resolvePackKind, packRoleWarnings, packSummary } from "./hwpx/agency-pack.js"
 export type { AgencyPack, PackManifest, PackKindInfo, PackSample } from "./hwpx/agency-pack.js"

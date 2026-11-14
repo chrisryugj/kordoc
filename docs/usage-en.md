@@ -206,6 +206,7 @@ await markdownToHwpx(md, {
 - Tables follow government conventions automatically (shaded header, double bottom rule, content-proportional widths). Themes and a reference document's table format (`hwpxToProfile`) are accepted too.
 - For the report, plan, gaejosik and bangchim presets, a blockquote right after the `#` title (`> …하고자 함`) becomes the summary box (gaejosik puts it under the title box on the first body page when the cover is on, the default; with `cover: false` the first `#` is a chapter header and the quote stays a ※ note). Keep it to one sentence (commas allowed) within three lines; longer or multi-sentence summaries produce a warning. For ministry, `> ▪ …` blockquotes become performance summary boxes wherever they appear.
 - CLI: `kordoc generate report.md -o report.hwpx --preset 개조식 --org Agency --approval 담당,팀장,과장`
+- HWP (5.0) output: `-o report.hwp` (for MCP `generate_document`, give `output_path` a `.hwp` extension). kordoc writes HWPX and converts it with the optional peer dependency `@rhwp/core` (MIT, about 32 MB unpacked), so run `npm install @rhwp/core` first. In the library: `await hwpxToHwp(await markdownToHwpx(md))`. Anything dropped in the conversion is reported in `warnings`.
 
 ### Layout-preserving render
 
@@ -359,6 +360,7 @@ npx kordoc fill --template gian -j values.json -o draft.hwpx        # built-in d
 
 # generate · edit · verify
 npx kordoc generate report.md -o report.hwpx --preset 보고서         # Markdown → official HWPX
+npx kordoc generate report.md -o report.hwp --preset 보고서          # save as HWP (5.0) — needs npm install @rhwp/core
 npx kordoc patch original.hwpx edited.md -o patched.hwpx            # format-preserving patch (.hwp auto)
 npx kordoc patch original.hwpx edited.md --json --silent            # applied count, skipped edits, verification residual as JSON
 npx kordoc to-hwpx document.hwp                                     # HWP → HWPX (5.x keeps formatting; -o needed when a same-name .hwpx exists)

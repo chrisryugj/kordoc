@@ -79,10 +79,14 @@
     "zod": "^4.6.7"
   },
   "peerDependencies": {
+    "@rhwp/core": ">=0.9.0",
     "libheif-js": "^1.23.5",
     "puppeteer-core": ">=22.0.0"
   },
   "peerDependenciesMeta": {
+    "@rhwp/core": {
+      "optional": true
+    },
     "libheif-js": {
       "optional": true
     },
@@ -107,6 +111,7 @@
   "devDependencies": {
     "@huggingface/tokenizers": "^0.2.0",
     "@hyzyla/pdfium": "^2.1.0",
+    "@rhwp/core": "^0.9.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^18.19.130",
     "libheif-js": "^1.23.5",

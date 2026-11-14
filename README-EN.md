@@ -101,7 +101,7 @@ await writeFile("report.hwpx", Buffer.from(hwpx))
 | --- | --- |
 | Read | Markdown, IR, page text, RAG chunks, local OCR (handwriting included), QR code values in images (`--qr-codes`), one image format for all images (`--image-format png\|webp`) |
 | Compare and edit | Block/cell diffs, format-preserving HWPX/HWP patches, new content in a sample's format |
-| Create | Markdown → HWPX, government-document presets and department templates (`--template`), tables, equations and charts |
+| Create | Markdown → HWPX or HWP (HWP needs `npm install @rhwp/core`, then `-o doc.hwp`), government-document presets and department templates (`--template`), tables, equations and charts |
 | Convert | HWP → HWPX — HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts; distribution-protected and track-changes documents included). PDF, DOCX and others become HWPX from what was read with `-o document.hwpx` |
 | Agency packs | Build a house-style pack (`.kpack`) from a few of your own agency documents and write new documents in that style — [agency packs](docs/agency-pack-en.md) |
 | Fill forms | Fields, click-here controls, two draft templates and seal placement |
