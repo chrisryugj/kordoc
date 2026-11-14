@@ -132,3 +132,22 @@ describe("flattenLayoutTables — 중첩표 구조 보존", () => {
     assert.equal(kept[0].type, "table")
   })
 })
+
+describe("flattenLayoutTables — 표 캡션 보존", () => {
+  // 줄바꿈 많은 2×1 레이아웃 표(totalNewlines>5) — 풀리는 표
+  const layout = (caption: string, captionBelow?: boolean): IRBlock => ({
+    type: "table", pageNumber: 1,
+    table: {
+      rows: 2, cols: 1, hasHeader: false, caption, ...(captionBelow ? { captionBelow } : {}),
+      cells: [[{ text: "머리", colSpan: 1, rowSpan: 1 }], [{ text: Array.from({ length: 7 }, (_, k) => `줄${k}`).join("\n"), colSpan: 1, rowSpan: 1 }]],
+    },
+  })
+  it("풀린 표의 캡션을 문단으로 남긴다 — 위 캡션은 앞, 아래 캡션은 뒤 (중간진도보고서 \"표 31.\")", () => {
+    const above = flattenLayoutTables([layout("표 1. 위 캡션")]).map(b => b.text)
+    assert.equal(above[0], "표 1. 위 캡션")
+    assert.equal(above.length, 9)
+    const below = flattenLayoutTables([layout("표 2. 아래 캡션", true)]).map(b => b.text)
+    assert.equal(below[below.length - 1], "표 2. 아래 캡션")
+    assert.equal(below[0], "머리")
+  })
+})

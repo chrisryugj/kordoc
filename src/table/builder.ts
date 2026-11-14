@@ -402,7 +402,11 @@ export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
       const hasNested = cells.some(row => row.some(c => c.blocks?.some(b => b.type === "table" && b.table)))
       const isFormFrame = hasNested && totalTextLen <= FORM_FRAME_MAX_TEXT
       if (!isFormFrame && numCols < 4 && (totalNewlines > 5 || (numRows <= 2 && totalTextLen > 300))) {
-        // 레이아웃 테이블 → 각 셀을 paragraph 블록으로 분해
+        // 레이아웃 테이블 → 각 셀을 paragraph 블록으로 분해. 표 캡션은 문단으로 남긴다(아래 캡션은 셀 글 뒤에) — 종전엔 버려
+        // 정책연구용역 중간진도보고서 "표 31. 일본 생존 간이식 실시 체제…" 같은 캡션 글이 사라졌다
+        const caption: IRBlock[] = block.table.captionBlocks?.length ? block.table.captionBlocks
+          : (block.table.caption ?? "").split("\n").map(l => l.trim()).filter(Boolean).map(text => ({ type: "paragraph" as const, text, pageNumber: block.pageNumber }))
+        if (!block.table.captionBelow) result.push(...caption)
         for (let r = 0; r < numRows; r++) {
           for (let c = 0; c < numCols; c++) {
             const cell = cells[r]?.[c]
@@ -425,6 +429,7 @@ export function flattenLayoutTables(blocks: IRBlock[]): IRBlock[] {
             }
           }
         }
+        if (block.table.captionBelow) result.push(...caption)
         continue
       }
     }
