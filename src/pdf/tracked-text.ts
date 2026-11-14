@@ -109,6 +109,87 @@ export function markSyntheticSpaces(items: PdfTextItem[], fnArray: ArrayLike<num
 }
 
 /**
+ * 자간 넓힌 한글 줄의 가짜 공백 — pdfjs 는 글자 사이 TJ 이동이 글자 크기 0.102~0.6배면 아이템 글 안에 공백을 넣는다. 한글 자간을 10% 넘게
+ * 벌린 줄(머리 칸·제목)은 글자마다 이 문턱을 넘어 "한 국 정부 가"·"목 적" 이 된다. 한컴 PDF 는 친 공백을 늘 공백 글리프로 찍으니 글리프
+ * 흐름에 공백 글리프가 없는 자리의 한글–한글 사이 공백은 자간이다(한컴 PDF 짝 1,379곳 실측: 정답이 붙여 씀 1,238·띄어 씀 0, 나머지는
+ * 그림 속 글 등 정답에 없음). 워드·Distiller PDF 는 낱말 사이도 TJ 이동으로 벌려(정답 띄어 씀 57곳) 한컴 PDF 에만 쓴다.
+ * 자간 이동은 같은 TJ 안 글자 사이 이동이 TRACKING_MAX_EM 이하인 자리만 — 균등배분 칸은 글자 사이가 0.16~0.59em 으로 벌어지고 0.6em
+ * 문턱 근처에서 아이템이 갈려("증" | "감 률") 일부만 지우면 균등배분 판정이 깨진다. 자간 넓힌 줄 실측 0.103~0.145em.
+ * 세 글자 넘게 한 글자씩 띄운 아이템("증 감 률", "과 학 · 기 술")은 균등배분 판정(splitEvenSpacedItem·칸 글)이 기호까지 붙여 맞히니
+ * 두고, 섞인 꼴("고 려해", "대테 러")·두 글자("목 적")만 고친다 — 일부만 지우면 그 판정이 깨져 "증 감률" 이 됐다(해외직접투자 표).
+ * 아이템 글을 글자 단위로 제 글꼴 흐름과 맞추고, 어긋나는 글꼴은 손대지 않는다
+ */
+/** 자간으로 볼 글자 사이 TJ 이동 상한(em) — joinTrackedHangul */
+const TRACKING_MAX_EM = 0.15
+
+export function joinTrackedHangul(items: PdfTextItem[], fnArray: ArrayLike<number>, argsArray: ArrayLike<unknown>): void {
+  if (!items.some(it => typeof it.str === "string" && /[가-힣] [가-힣]/.test(it.str))) return
+  // 글꼴별 글리프 흐름 — gap 은 같은 TJ 안 앞 글리프 뒤 이동(em, 연산 첫 글리프는 null)
+  const streams = new Map<string, Array<{ u: string; gap: number | null }>>()
+  const saved: string[] = []
+  let font = ""
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i]
+    const args = (argsArray as unknown[][])[i]
+    if (fn === OPS.setFont) font = String(args[0])
+    else if (fn === OPS.save || fn === OPS.paintFormXObjectBegin) saved.push(font)
+    else if (fn === OPS.restore || fn === OPS.paintFormXObjectEnd) font = saved.pop() ?? font
+    else if (fn === OPS.showText) {
+      let list = streams.get(font)
+      if (!list) streams.set(font, list = [])
+      let gap: number | null = null
+      for (const g of args[0] as unknown[]) {
+        if (typeof g === "number") { if (gap !== null) gap -= g / 1000; continue }
+        if (g && typeof g === "object" && typeof (g as { unicode?: unknown }).unicode === "string") {
+          list.push({ u: normalizeUnicode((g as { unicode: string }).unicode), gap })
+          gap = 0
+        }
+      }
+    }
+  }
+  const isSpace = (g: { u: string } | undefined) => g !== undefined && /^\s+$/.test(g.u)
+  const cursor = new Map<string, number>()
+  const failed = new Set<string>()
+  const edits: Array<[PdfTextItem, Set<number>]> = []
+  for (const it of items) {
+    const f = it.fontName ?? ""
+    const glyphs = streams.get(f)
+    if (!glyphs || failed.has(f) || typeof it.str !== "string" || !it.str) continue
+    let gi = cursor.get(f) ?? 0
+    const s = it.str
+    if (!s.trim()) {
+      while (isSpace(glyphs[gi])) gi++
+      cursor.set(f, gi)
+      continue
+    }
+    while (gi < glyphs.length && /^\s*$/.test(glyphs[gi].u)) gi++
+    const fake = new Set<number>()
+    let ok = true
+    for (let k = 0; k < s.length && ok; k++) {
+      if (/\s/.test(s[k])) {
+        if (isSpace(glyphs[gi])) {
+          while (isSpace(glyphs[gi])) gi++
+          while (k + 1 < s.length && /\s/.test(s[k + 1])) k++
+        } else {
+          const gap = glyphs[gi]?.gap
+          if (gap != null && gap <= TRACKING_MAX_EM && /[가-힣]/.test(s[k - 1] ?? "") && /[가-힣]/.test(s[k + 1] ?? "")) fake.add(k)
+        }
+        continue
+      }
+      // 아이템 글 사이 공백 글리프를 pdfjs 가 지운 자리(줄 끝 등)는 건너뛰고, 글리프 하나가 여러 글자(합자)일 수 있다
+      let g = ""
+      while (gi < glyphs.length && !g) g = glyphs[gi++].u.replace(/\s+/g, "")
+      if (!g || s.slice(k, k + g.length) !== g) ok = false
+      else k += g.length - 1
+    }
+    if (!ok) { failed.add(f); continue }
+    cursor.set(f, gi)
+    if (fake.size && !/^\S(?: \S){2,}$/.test(s)) edits.push([it, fake])
+  }
+  for (const [it, fake] of edits) if (!failed.has(it.fontName ?? "")) it.str = [...it.str].filter((_, k) => !fake.has(k)).join("")
+}
+
+/**
  * 줄 끝 공백 글리프 — 아이템 글 뒤 글리프가 공백 글리프이고 다음 글 아이템이 다른 줄이면 spaceAfter 표시. 한컴 PDF 는 어절마다 뒤
  * 공백 글리프까지 찍어("원활한␣") 어절 경계에서 꺾인 줄 끝에도 공백 글리프가 남고, 어절 가운데서 꺾인 줄 끝("업무⏎수행에")에는 없다.
  * pdfjs 는 줄 끝 공백을 아이템 글에서 지워 이 차이가 글에 안 남는다. hwpx↔pdf 744쌍 줄 잇기 판정 4.4만 곳 실측: 표시된 꺾임 1.2만 곳 중

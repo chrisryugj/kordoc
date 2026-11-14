@@ -43,7 +43,7 @@ import { wrapEquationRuns } from "./equation-runs.js"
 import { remapControlGlyphs, restoreNamedGlyphs, restoreUnmappedCidSpaces, type CidFontInfo } from "./glyph-names.js"
 import { occludedTextItems } from "./occluded-text.js"
 import { joinVerticalColumns } from "./vertical-text.js"
-import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs, softHyphenHeads } from "./tracked-text.js"
+import { restoreTrackedSpacing, markSyntheticSpaces, joinTrackedHangul, markTrailingSpaceGlyphs, softHyphenHeads } from "./tracked-text.js"
 import { relocateEndnotes } from "./endnotes.js"
 import { dropTabLeaderDots } from "./tab-leaders.js"
 import { mergeEnclosedDigits } from "./enclosed-digits.js"
@@ -229,7 +229,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     // 반올림 전 좌표(NormItem.fx·fw)로 공백을 가리는 규칙(자간 보정·공백 힌트 틈)은 한컴 PDF 실측 — 다른 제작기 PDF(ODL)는 반올림 좌표 그대로.
     // 한글 문서를 "Microsoft: Print To PDF" 로 찍은 보도자료도 한컴 조판 그대로라 같다 — 폭 0 공백 글리프("지원(1 인당"·"(5 천원")를 반올림 틈 1pt 로
     // 재 거짓 공백을 냈다(전통시장 보도자료 어절 F1 .962 → .993)
-    const preciseGaps = await isHancomPdf(doc) || await isPreciseGapProducer(doc)
+    const hancomPdf = await isHancomPdf(doc)
+    const preciseGaps = hancomPdf || await isPreciseGapProducer(doc)
     // OCR 로 갈 벡터 글자 쪽의 그래픽(글자 경로·클립 뺀 연산자 목록) — OCR 글자에 이 쪽의 실제 괘선을 붙인다
     const vectorPageOps = new Map<number, { fnArray: number[]; argsArray: unknown[][] }>()
     // 줄 꺾임 이음의 문서 어휘 증거 — 쪽을 처리할 때마다 그 쪽 줄 글이 더해진다 (line-wrap.ts)
@@ -292,6 +293,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         restoreTrackedSpacing(rawItems, rawOps.fnArray, rawOps.argsArray)
         // pdfjs 가 글자 틈으로 만든 공백 아이템 표시 — 균등배분 판정이 진짜 공백 글리프에서만 끊도록
         markSyntheticSpaces(rawItems, rawOps.fnArray, rawOps.argsArray)
+        // 자간 넓힌 한글 줄의 pdfjs 가짜 공백("한 국 정부 가") — 친 공백을 늘 공백 글리프로 찍는 한컴 PDF 만
+        if (hancomPdf) joinTrackedHangul(rawItems, rawOps.fnArray, rawOps.argsArray)
         restoreSoftHyphens()
         // 공백으로 적힌 글머리 점 — 글리프 흐름을 맞대는 위 단계들이 끝난 뒤에 덧붙인다
         rawItems.push(...spaceMappedDots(rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as { data?: Uint8Array } | null | undefined))
