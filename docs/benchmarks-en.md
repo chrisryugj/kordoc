@@ -2,6 +2,10 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.80: HWP output · 2026-11-15
+
+Adds an output that converts generated HWPX to HWP 5.0 (optional dependency `@rhwp/core`). 11 generated samples (plain, two columns with equations, 9 government-document presets, with tables and images) keep their page counts with 0 content-loss reports; re-read text matches the HWPX for plain, two-column, official, notice, minutes and press (for report, plan, gaejosik, ministry and bangchim the HWP parser also reads chapter numbers and the table of contents as text). Parser and scoring code are unchanged.
+
 ## 4.24.79: spaced digits, line-start particles, page-break table rows, OCR value rows · 2026-11-14
 
 - Digits spaced with real space glyphs stay spaced; line-start fragments after Hanja and particle-shaped words, and weekday parentheses after dates, join the previous line: PDF text spaceF1 .99149 → .99159, 19 documents up (.981 → 1, .990 → 1), ODL TEDS .98015 → .98053 (5 documents). One drop: reading order of one form document .86375 → .86241 — its ground truth writes page numbers as "- 10 -", which the new output now matches (spaceF1 .964 → .969), but the scorer strips the leading "- " as a list marker and four page numbers leave the order sample
