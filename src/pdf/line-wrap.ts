@@ -268,6 +268,8 @@ export function startsNewItem(prevText: string, nextText: string): boolean {
   // 조문 인용으로 끝난 줄 뒤 하위 단위("제42조⏎제1항”으로")는 인용이 이어진 것이다
   return ITEM_HEAD.test(t) && !(/^다\./.test(t) && /[가-힣]$/.test(prev)) && !(/\(\d+\.\d*$/.test(prev) && /^\d/.test(t))
     && !(/제\d+(?:조(?:의\d+)?|항)$/.test(prev) && /^제\d+[항호]/.test(t))
+    // 날짜 뒤 요일 괄호("7월 28일⏎(목)부터")는 항목 번호 "(가)" 꼴이지만 날짜에 붙는 글이다
+    && !(/\d일$/.test(prev) && /^\([월화수목금토일]\)/.test(t))
 }
 
 /**
@@ -278,6 +280,8 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const prev = prevText.replace(MARKUP, "").trimEnd(), next = nextText.replace(MARKUP, "").trimStart()
   const a = prev[prev.length - 1], b = next[0]
   if (!a || !b || /[,;:!?]/.test(a) || (DATE_DAY_END.test(prev) && b !== "(")) return " "
+  // 날짜 뒤 요일 괄호는 붙여 쓴다 ("7월 28일⏎(목)부터")
+  if (/\d일$/.test(prev) && /^\([월화수목금토일]\)/.test(next)) return ""
   // 중·일문은 띄어쓰기가 없다 — 한글 없는 두 줄의 한자·가나·전각 문장부호끼리 꺾임은 붙인다(kpipa 계약서 중문 "代⏎理中介商")
   if (unspacedCjkBoundary(prev, next)) return ""
   // 앞 줄 끝 어절 — 뒤에서 공백까지 거꾸로 (칸에서 이어 붙인 긴 글에 /\S+$/ 를 돌리면 어절 길이 제곱이 든다)
@@ -292,7 +296,12 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const yearHead = left.match(/(?:^|[^\d])((?:19|20)\d{0,1})$/), yearTail = right.match(/^(\d{1,2})년/)
   if (yearHead && yearTail && yearHead[1].length + yearTail[1].length === 4) return ""
   if (particleContinues(left, right)) return ""
-  if (endsAsWord(left)) return " "
+  // 다음 줄이 문서 줄 안에 홀로 선 적 없는 한 음절 조각인가 (아래 한 음절 조각 판정)
+  const r1 = right.replace(/[.,)」』’”]+$/, "")
+  const lone = !!lex && /[가-힣]$/.test(left) && /^[가-힣]$/.test(r1) && !STANDALONE_SYLLABLE.test(r1) && !lex.isWord(r1) && !lex.isWord(right)
+  // 받침으로만 가린 조사 꼴(이·과·가·와)로 끝난 어절은 낱말 끝 음절일 때도 많다 — 결재란 부서명 칸 "데이터전략과⏎장", "추가⏎분".
+  // 그 뒤 한 음절 조각은 조사 뒤 새 어절이 아니라 꺾인 조각으로 본다
+  if (endsAsWord(left) && !(lone && /[이과가와]$/.test(left))) return " "
   // Latin line-end hyphens can be typesetting breaks. Preserve the token boundary
   // unless an intact hyphenated compound is attested within this document.
   // Korean prose wraps Latin terms at their real hyphens; retain that policy.
@@ -338,8 +347,7 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   // 앞 조각 한 음절 붙음 0.53 → 이 검사로 "등·및·한·그" 를 거른다). 둘 다 한 음절이면 붙인다(79/91)
   if (lex && /^[가-힣]$/.test(left) && /^[가-힣]/.test(right) && !STANDALONE_SYLLABLE.test(left)
     && ([...right].length === 1 || !lex.isWord(left))) return ""
-  const r1 = right.replace(/[.,)」』’”]+$/, "")
-  if (lex && /[가-힣]$/.test(left) && /^[가-힣]$/.test(r1) && !STANDALONE_SYLLABLE.test(r1) && !lex.isWord(r1) && !lex.isWord(right)) return ""
+  if (lone) return ""
   // 앞 조각 한글 꼬리 + 뒤 조각 첫 두 음절이 문서 줄 안 어절의 머리로 나오고("개⏎최하고" ← "개최하여"), 그 꼬리 뒤에 뒤 조각 첫 음절로
   // 시작하는 어절을 줄 안에서 띄어 쓴 적이 없으면 붙인다. 증거 없는 꺾임을 띄우던 기본값이 보도자료 99쌍에서 22% 틀렸다(낱말 가운데 꺾임).
   // 첫 음절만 보면 다른 복합어가 증거가 됐다("처리⏎방안" ← "처리방법"). 칸 글은 빼고(heads=false) — 세로 이름표 "학⏎위⏎기⏎준" 은 원문도 한 자씩이다

@@ -116,6 +116,16 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("특송화물 · 국제우편 등", "주요 반입경로에", lex), " ")
   })
 
+  it("받침으로 가린 조사 꼴(과·이·가·와)로 끝난 어절 뒤 한 음절 조각은 붙인다 (결재란 데이터전략과⏎장)", () => {
+    const lex = lexOf("수신 인사과장 (경유)", "데이터전략과에서는 아래와 같이 요청합니다", "이 법 시행 전")
+    assert.equal(wrapJoiner("데이터전략과", "장", lex, false), "")
+    assert.equal(wrapJoiner("정산 금액 추가", "분 반영", lex), "")
+    // 조사 뒤 새 어절 — 두 음절 넘는 조각, 홀로 서는 한 음절(및·등), 문서 줄 안에 홀로 선 한 음절(법)은 띄운다
+    assert.equal(wrapJoiner("교육과", "훈련을 강화", lex), " ")
+    assert.equal(wrapJoiner("국민과", "등 관계자", lex), " ")
+    assert.equal(wrapJoiner("헌법과", "법 체계", lex), " ")
+  })
+
   it("닫힌 부류 한 음절(및·등)은 앞 쪽에 아직 안 나왔어도 조각으로 보지 않는다 (첫 쪽 보전⏎및)", () => {
     const empty = new WrapLexicon()
     assert.equal(wrapJoiner("해양자원의 보전", "및 지속가능한 활용", empty), " ")
@@ -140,6 +150,11 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     assert.equal(wrapJoiner("(청장 후보자 윤희근)은 7월 28일", "(목)부터 전국의", lexOf("신청은 7월 29일(금)까지 받는다")), "")
     // 날짜가 아닌 한 음절 조각은 종전대로 ("주시기 바⏎랍니다")
     assert.equal(wrapJoiner("납부하여 주시기 바", "랍니다.", empty), "")
+    // 요일 괄호는 문서가 괄호를 띄워 쓰는 쪽이어도 날짜에 붙인다 — 항목 머리 "(가)" 꼴로 끊지도 않는다
+    const spaced = lexOf("모집 공고 (안) 붙임 (서식) 참조 (예시) 자료", "신청 기간 (1차) 접수 (2차) 심사")
+    assert.equal(wrapJoiner("경찰청은 7월 28일", "(목)부터 전국의", spaced), "")
+    assert.equal(startsNewItem("경찰청은 7월 28일", "(목)부터 전국의"), false)
+    assert.equal(startsNewItem("다음과 같다", "(가) 첫째 항목"), true)
   })
 
   it("되다 활용 앞 주격 '이'·인용 '-라' 뒤 하다는 띄우고, 명사 뒤 하다·되다는 붙인다", () => {
