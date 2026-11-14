@@ -33,10 +33,11 @@ describe("isCjkLatinAutospace", () => {
 })
 
 describe("반올림 전 좌표 공백 규칙 — 제작기", () => {
-  it("한글 문서를 Microsoft Print To PDF 로 찍은 PDF 도 쓴다 (폭 0 공백 글리프 \"지원(1 인당\")", async () => {
-    const { isPrintedToPdf } = await import("../src/pdf/parser.js")
+  it("한글 문서를 Microsoft Print To PDF 로 찍은 PDF·LibreOffice PDF 도 쓴다 (폭 0 공백 글리프 \"지원(1 인당\")", async () => {
+    const { isPreciseGapProducer: isPrintedToPdf } = await import("../src/pdf/parser.js")
     const doc = (Producer: string) => ({ getMetadata: async () => ({ info: { Producer } }) })
     assert.equal(await isPrintedToPdf(doc("Microsoft: Print To PDF")), true)
+    assert.equal(await isPrintedToPdf(doc("LibreOffice 26.2.3.2 (AARCH64)")), true)
     assert.equal(await isPrintedToPdf(doc("Microsoft® Word 2016")), false)
     assert.equal(await isPrintedToPdf({ getMetadata: async () => { throw new Error("x") } }), false)
   })
