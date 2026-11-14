@@ -134,15 +134,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.78](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.78)** · 2026-11-14
+Latest release: **[4.24.79](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.79)** · 2026-11-14
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.79 | PDF spaced digits ("- 10 -"), particles after Hanja at line starts, one-syllable fragments after particle-shaped words, weekday parentheses after dates · table rows split at unruled page breaks (two-line labels, numbered lists in cells) · OCR value rows between unruled section-name rows | PDF text word-boundary F1 99.149% → **99.159%** (19 documents up, an approval document 0.981 → **1**) · ODL table TEDS 98.015% → **98.053%** · annex PDF recall 99.982% → **99.983%** · KoOCR 0.90644 → **0.90653** · 2 per-document drops are scoring artifacts (see CHANGELOG) |
 | 4.24.78 | PDF false spaces in letter-spaced Hangul lines · table captions kept when layout tables are flattened · HWP figure captions below the image · wrapped lines of hanging-indent numbered lists · OCR cells "18 (18.2%)" | PDF text word-boundary F1 99.139% → **99.149%** (20 documents up, one press release 0.925 → **0.954**) · score benchmark **1 on all 5,465 documents** · KoOCR drug-label page CER 0.134 → **0.123** · no per-document drops on in-house benchmarks or KoOCR |
 | 4.24.77 | PDF false spaces (Microsoft Print To PDF and LibreOffice PDFs now judge spaces on unrounded coordinates) · preview draws fractions stacked, cases on one line | PDF text word-boundary F1 up on 9 documents (two press releases 0.962 → **0.993** and 0.974 → **0.992**) · no per-document drops on in-house benchmarks or KoOCR |
 | 4.24.76 | PDF superscript runs split into several items (year labels, footnote references) · footnote lists at the page foot no longer read as tables · interleaved glyphs of two-line labels in cells | PDF text word-boundary F1 on two press releases 0.989 → **0.996** and → **1** · PDF coverage up on 11 documents (one form 0.981 → **1**) · no per-document drops on in-house benchmarks or KoOCR |
 | 4.24.75 | Exam papers and formulas — Hancom equation scripts with glued commands and bare operands, HWPX equations converted like HWP5, generated equation box sizes and ⊥/□/box symbols, column gap and column rule, PDF exam page frames no longer read as tables | PDF text reading order 99.398% → **99.463%** (exam paper 0.877 → **0.952**) · generated equation width error 223% → **7.9%** · exam formula generate-and-reparse **99.6%** |
-| 4.24.74 | Images inside documents and image files normalised to PNG/JPEG/WebP that LLM APIs accept; TIFF, GIF, AVIF, BMP, HEIC, PCX and DCX image input (#210, @VerifiedIdiot) | images rejected by LLM APIs 46% → **3.8%** · no per-document change on in-house benchmarks or KoOCR |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

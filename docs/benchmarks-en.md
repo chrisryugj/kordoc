@@ -2,6 +2,12 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.79: spaced digits, line-start particles, page-break table rows, OCR value rows · 2026-11-14
+
+- Digits spaced with real space glyphs stay spaced; line-start fragments after Hanja and particle-shaped words, and weekday parentheses after dates, join the previous line: PDF text spaceF1 .99149 → .99159, 19 documents up (.981 → 1, .990 → 1), ODL TEDS .98015 → .98053 (5 documents). One drop: reading order of one form document .86375 → .86241 — its ground truth writes page numbers as "- 10 -", which the new output now matches (spaceF1 .964 → .969), but the scorer strips the leading "- " as a list marker and four page numbers leave the order sample
+- Table rows split at an unruled page break (two-line labels, numbered lists inside cells) are joined: annex PDF recall .99982 → .99983 (one annex .99837 → 1). One drop: score PDF cross-coverage of the same document 1 → .99903 — the two-extractor consensus follows physical line order, so merging the cell changes a neighbour pair; the output now matches the HWPX ground truth
+- Short column rules between unruled section-name rows survive in OCR tables: KoOCR 0.90644 → 0.90653 (one audit-report table .901 → 1). Tables, OCR, ODL OCR, formats and roundtrip unchanged per document; the other KoOCR pages unchanged
+
 ## 4.24.78: letter-spacing false spaces, table captions, figure caption order, list wraps · 2026-11-14
 
 - pdfjs false spaces inside letter-spaced Hangul lines in Hancom PDFs (no space glyph in the glyph stream, same-TJ shift ≤ 0.15em) are removed: PDF text spaceF1 .99139 → .99149, 20 documents up (.925 → .954, .949 → .977, .947 → .965), no drops
