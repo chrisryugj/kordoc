@@ -69,3 +69,24 @@ describe("detectRulingLines — 한 행 칸 구분선", () => {
     assert.equal(row(g => { rect(g, 79, 26, 81, 33); text(g) }).length, 0)
   })
 })
+
+describe("detectRulingLines — 칸 없는 구간 행 사이 값 행의 열 괘선", () => {
+  // 위 행(20~50, 세로 괘선 x=60) · 구간 이름 행(50~65, 안쪽 세로선 없음) · 값 행(65~80, x=60 조각 15pt) · 구간 이름 행(80~95) · 아래 행(95~125, x=60)
+  const table = (opts: { above?: boolean; below?: boolean; boxEdge?: boolean }) => {
+    const g = canvas()
+    for (const y of [20, 50, 65, 80, 95, 125]) rect(g, opts.boxEdge && (y === 65 || y === 80) ? 60 : 20, y, 140, y + 2)
+    rect(g, 20, 20, 22, 127); rect(g, 138, 20, 140, 127)
+    if (opts.above !== false) rect(g, 59, 20, 61, 52)
+    if (opts.below !== false) rect(g, 59, 95, 61, 127)
+    rect(g, 59, 65, 61, 82)
+    return detectRulingLines(g, W, H, 1).verticals.filter(v => Math.abs(v.x1 - 60) <= 2 && v.y1 >= 60 && v.y2 <= 86)
+  }
+  it("같은 x 의 긴 세로 괘선이 위아래에 있고 행 괘선 안쪽에 선 조각은 열 괘선으로 받는다 (연결자본변동표 \"당기순손실\")", () => {
+    assert.equal(table({}).length, 1)
+  })
+  it("위나 아래에 같은 열 괘선이 없거나 가로선 끝(상자 옆변)이면 받지 않는다", () => {
+    assert.equal(table({ above: false }).length, 0)
+    assert.equal(table({ below: false }).length, 0)
+    assert.equal(table({ boxEdge: true }).length, 0)
+  })
+})

@@ -308,8 +308,16 @@ export function detectRulingLines(
     && !sides(p.x1, p.y1, q.y1) && !sides(p.x2, p.y1, q.y1)
     && endsAt(p.x1, p.y1) && endsAt(p.x2, p.y1) && startsAt(q.x1, q.y1) && startsAt(q.x2, q.y1)))
   const shortV = detectBands(ink, width, height, maxThickPx, true, (m, base, step, span) => solidRuns(m, base, step, span, bridgeMin)).filter(v => v.y2 - v.y1 + 1 < minLenPx)
+  // 칸 없는 구간 이름 행("총포괄손익"·"기타포괄손익")에 끊긴 열 괘선 — 그 사이 한 행 높이 값 행의 세로 조각은 최소 길이에 못 미쳐 빠졌고,
+  // 행이 통째로 한 칸이 돼 값 9개가 한 줄 글로 뭉쳤다(감사보고서 연결자본변동표 "당기순손실"). 위아래 끝이 모두 가로 괘선 안쪽(양옆으로
+  // 더 뻗은 행 괘선)에 닿고 같은 x 에 긴 세로 괘선(같은 열 선)이 위와 아래 모두 있는 조각만 — 조직도 작은 상자의 옆변은 위아래 가로변의
+  // 끝이라 받지 않는다(여수·창원 계획 조직도가 칸으로 갈렸다). 칸 안 글자 획은 행 괘선 둘에 닿지 않는다
+  const long = verticals.filter(p => p.y2 - p.y1 + 1 >= minLenPx)
+  const inside = (x: number, y: number) => endsOn(x, y).some(h => h.x1 < x - 3 * tol && h.x2 > x + 3 * tol)
   for (const v of shortV) {
-    if (!sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
+    const column = inside(v.x1, v.y1) && inside(v.x1, v.y2) &&
+      long.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y2 <= v.y1 + tol) && long.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 >= v.y2 - tol)
+    if (!column && !sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
     if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
   }
   const allH = [...horizontals, ...dotH], allV = [...verticals, ...dotV]
