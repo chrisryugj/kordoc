@@ -2,6 +2,13 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.78: letter-spacing false spaces, table captions, figure caption order, list wraps · 2026-11-14
+
+- pdfjs false spaces inside letter-spaced Hangul lines in Hancom PDFs (no space glyph in the glyph stream, same-TJ shift ≤ 0.15em) are removed: PDF text spaceF1 .99139 → .99149, 20 documents up (.925 → .954, .949 → .977, .947 → .965), no drops
+- Table captions survive layout-table flattening: the last score document below 1 goes .9995 → 1 — all 5,465 documents at 1
+- HWP figure ($pic) captions below the image follow the image (same order as HWPX); wrapped lines of hanging-indent numbered PDF lists join their item (ODL 165): no per-document change
+- OCR cells "18 (18.2%)" are no longer split into count and percent columns: KoOCR drug_label page CER .134 → .123, KoOCR 0.90644 (text .86431 → .86432). Tables, annex, the four ODL runs, OCR, formats and roundtrip unchanged per document
+
 ## 4.24.77: PDF false spaces by producer, preview formulas · 2026-11-14
 
 - The unrounded-coordinate space rules now also apply to Microsoft Print To PDF and LibreOffice PDFs: PDF text spaceF1 on four press releases .962 → .993, .974 → .992, .983 → .991, .982 → .986, and five LibreOffice pairs up (one form .991 → 1). Tables, annex, score, the four ODL runs, OCR, formats and roundtrip unchanged per document; KoOCR 0.90644 unchanged

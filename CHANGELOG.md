@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.78] - 2026-11-14
+
 ### Fixed
 
 - PDF 왼쪽 정렬 번호 목록이 양쪽 정렬 본문과 한 묶음일 때 꺾인 둘째 줄이 따로 문단이 되던 것("1. Place … from 1.0 gram of" ⏎ "soil."): 번호를 따로 찍은 줄의 글 시작 자리(내어쓰기)에 다음 줄이 서고 그 첫 어절이 앞 줄 끝에 못 들어갔으면 꺾임으로 잇는다(ODL 165). 자체 스위트 문서별 변화 0
