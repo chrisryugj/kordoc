@@ -35,6 +35,7 @@ function cid(s: string): number {
 
 const CTRL_TBL = cid("tbl ")    // 표
 const CTRL_GSO = cid("gso ")    // 그리기 개체 (그림/글상자)
+const CTRL_PIC = cid("$pic")    // 그리기 개체 첫 SHAPE_COMPONENT 의 그림 표지 (묶음은 "$con")
 const CTRL_EQED = cid("eqed")   // 수식
 const CTRL_HEAD = cid("head")   // 머리말
 const CTRL_FOOT = cid("foot")   // 꼬리말
@@ -885,11 +886,17 @@ function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
     }
   }
 
-  // 캡션: SHAPE_COMPONENT 이전의 LIST_HEADER
+  // 캡션: SHAPE_COMPONENT 이전의 LIST_HEADER. 그림 하나($pic)의 캡션 방향(표 캡션과 같은 속성 비트)이 아래면 그림 뒤에 — HWPX 가
+  // hp:pic 캡션을 그림 뒤에 내는 것과 같게(정책연구용역 중간진도보고서 "그림 20." 이 그림 앞에 나와 같은 문서 HWPX 와 순서가 갈렸다).
+  // 묶음($con)·글상자 캡션은 HWPX 도 개체 앞 문단 글로 내니 종전대로 앞에
+  const picture = scIdx >= 0 && records[scIdx].data.length >= 4 && records[scIdx].data.readUInt32LE(0) === CTRL_PIC
+  let captionBlocks: IRBlock[] = []
   if (scIdx > childStart) {
     for (let i = childStart; i < scIdx; i++) {
       if (records[i].tagId === TAG_LIST_HEADER) {
-        blocks.push(...parseParagraphList(records, i + 1, scIdx, { ...ctx, depth: ctx.depth + 1 }))
+        const cap = parseParagraphList(records, i + 1, scIdx, { ...ctx, depth: ctx.depth + 1 })
+        if (picture && records[i].data.length >= 12 && (records[i].data.readUInt32LE(8) & 3) === 3) captionBlocks = cap
+        else blocks.push(...cap)
         break
       }
     }
@@ -918,6 +925,7 @@ function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
   if (textListIdx >= 0) {
     blocks.push(...parseParagraphList(records, textListIdx + 1, childEnd, { ...ctx, depth: ctx.depth + 1, plainText: true }))
   }
+  blocks.push(...captionBlocks)
 
   return blocks
 }
