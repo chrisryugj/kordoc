@@ -23,7 +23,7 @@ interface Tok {
   code?: boolean
 }
 
-const ESCAPABLE = new Set(["~", "*", "_", "`", "|", "#", "<", "$", "\\"])
+const ESCAPABLE = new Set(["~", "*", "_", "`", "|", "#", "<", "$", "\\", ">", "-", "="])
 const isWs = (c: string | undefined): boolean => c !== undefined && /\s/.test(c)
 
 /** 서식 비트 — 강조 표지(parseEmphasis kinds)와 첨자 태그(styledInline) */

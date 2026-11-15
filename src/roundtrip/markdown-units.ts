@@ -208,7 +208,7 @@ export function normForMatch(text: string): string {
 
 /** 편집된 마크다운 텍스트 → 평문 (escapeGfm 역변환 — \| \# \< \$ \\ 포함, 없으면 hp:t 에 백슬래시가 샌다) */
 export function unescapeGfm(text: string): string {
-  return unescapeItemHead(text).replace(AUTOLINK, "$1").replace(/\\([~*_`|#<$\\])/g, "$1")
+  return unescapeItemHead(text).replace(AUTOLINK, "$1").replace(/\\([~*_`|#<$\\>=-])/g, "$1")
 }
 
 /** 줄머리 목록 부호 이스케이프 풀기 — builder escapeItemHead 역(공문 "\- 소항목"·"1\) 세부", 목록 항목 글 "\- …") */
@@ -321,7 +321,7 @@ export function parseGfmTable(lines: string[]): string[][] {
 
 /** GFM 셀 텍스트 → 평문 */
 export function unescapeGfmCell(text: string): string {
-  return text.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(AUTOLINK, "$1").replace(/\\\|/g, "|").replace(/\\([~*_`#<$\\])/g, "$1")
+  return text.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(AUTOLINK, "$1").replace(/\\\|/g, "|").replace(/\\([~*_`#<$\\>=-])/g, "$1")
 }
 
 // ─── HTML 표 — 좌표 추적 렌더 재현 + 파서 ───────────

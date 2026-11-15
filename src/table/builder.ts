@@ -293,6 +293,16 @@ export function escapeGfm(text: string): string {
 }
 
 /**
+ * 문단 줄 첫 블록 표지: 줄 첫 ">"(인용문)·하이픈 3개 이상만 든 줄(가로줄 "---")·윗줄 아래 "="·"-" 만 든 줄(setext 밑줄)의
+ * 첫 글자를 \ 로. 일반 문단 "> 50% 이상"·"---" 가 렌더·markdownToHwpx 왕복에서 인용문·가로줄이 되어 글자가 사라지던 것 (#212).
+ * 홀로 선 "====" 문단은 마크다운에서도 글자라 두고, 표 칸(GFM·HTML)에는 블록 문법이 없어 escapeGfm 에 두지 않고 문단 자리에서만 건다 (escapeGfm 뒤에)
+ */
+export function escapeBlockStart(md: string): string {
+  return md.replace(/^([ \t]*)(?=>|(?:-[ \t]*){3,}$)|(?<=\S[ \t]*\n)([ \t]*)(?=(?:=+|-+)[ \t]*$)/gm,
+    (_m, a: string | undefined, b: string | undefined) => (a ?? b ?? "") + "\\")
+}
+
+/**
  * IR 글 규약: 원문의 리터럴 `$` 는 `\$` 로 담는다. `$…$`·`$$…$$` 는 파서가 넣은 수식 스팬에만 쓴다
  * (HWPX·HWP5·HWP3). 둘이 같은 글자면 셸 변수 "echo $HOME $PATH" 가 마크다운 렌더러·채점에서
  * 수식으로 읽혔다 (v4.14.3). `\$` 는 CommonMark 백슬래시 이스케이프라 렌더 결과는 `$` 그대로다.
@@ -664,7 +674,7 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
           if (href) rendered = `[${rendered}](${href})`
         }
         if (block.footnoteText) rendered += noteTable || escapeGfm(` (주: ${block.footnoteText})`)
-        lines.push(block.quote ? "> " + rendered : listHead(rendered), "")
+        lines.push(block.quote ? "> " + escapeBlockStart(rendered) : listHead(escapeBlockStart(rendered)), "")
         continue
       }
 
@@ -680,7 +690,7 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
       }
 
       // 여러 줄 인용문(요약 상자 문단 여럿)은 줄마다 "> " — 접두 없는 줄은 md 파서가 인용문에서 떼어 낸다
-      lines.push((block.quote ? escapeGfm(text).split("\n").map(l => "> " + l).join("\n") : listHead(escapeGfm(text))) + noteTable, "")
+      lines.push((block.quote ? escapeBlockStart(escapeGfm(text)).split("\n").map(l => "> " + l).join("\n") : listHead(escapeBlockStart(escapeGfm(text)))) + noteTable, "")
     } else if (block.type === "table" && block.table) {
       // 테이블 앞에 빈 줄 보장 (마크다운 렌더링 필수)
       if (lines.length > 0 && lines[lines.length - 1] !== "") {
