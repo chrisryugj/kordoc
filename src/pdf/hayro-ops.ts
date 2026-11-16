@@ -86,6 +86,7 @@ export function hayroOps(ev: ArrayLike<number>, strs: string[]): OpList {
         break
       // 선 굵기는 pdf.js 처럼 콘텐츠의 w 자리에 낸다 — 선 판정은 q/Q 와 무관하게 직전 w 를 채움 괘선에도 쓴다
       case EV.LINE_WIDTH: push(OPS.setLineWidth, [ev[i + 1]!]); break
+      case EV.CTM: push(OPS.transform, [ev[i + 1]!, ev[i + 2]!, ev[i + 3]!, ev[i + 4]!, ev[i + 5]!, ev[i + 6]!]); break
       case EV.PATH: {
         const code = ev[i + 1]!
         // 채움에 딸린 긋기(B) — 바로 앞 채움 묶음(… constructPath·fill·restore)에 선 색을 끼우고 fillStroke 로 바꾼다

@@ -94,3 +94,29 @@ it("연산자가 상한(1,000만)을 넘는 쪽은 해석하지 않고 오류를
   const doc = await openHayro(onePagePdf("n ".repeat(10_000_001), "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"))
   assert.throws(() => doc.events(0), /more than 10000000 content operators/)
 })
+
+it("주석 appearance 의 경로는 pdf.js 연산자 목록처럼 appearance 자체 좌표로 읽힌다", async () => {
+  // pdf.js 는 /Rect 맞춤을 beginAnnotation 인자로만 주고 연산은 그대로 싣는다 — 쪽 좌표로 내면 주석 도형이 표 괘선 자리에 놓인다
+  const ap = "0 0 10 5 re f"
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Annots [5 0 R] >>", "<< /Length 0 >>\nstream\n\nendstream",
+    "<< /Type /Annot /Subtype /Square /Rect [100 100 300 200] /AP << /N 6 0 R >> >>",
+    `<< /Type /XObject /Subtype /Form /BBox [0 0 10 5] /Length ${ap.length} >>\nstream\n${ap}\nendstream`,
+  ]
+  let pdf = "%PDF-1.4\n"
+  const offsets: number[] = []
+  for (let i = 0; i < objects.length; i++) { offsets.push(pdf.length); pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n` }
+  const xref = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map(o => String(o).padStart(10, "0") + " 00000 n \n").join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  const page = hayroTextPage(await openHayro(new Uint8Array(Buffer.from(pdf, "latin1"))), 1)
+  const { fnArray, argsArray } = hayroOps(page.events, page.strings)
+  // 경로 앞 transform 들을 곱하면 항등 — 사각형은 appearance 좌표 (0,0)–(10,5) 그대로
+  let m = [1, 0, 0, 1, 0, 0]
+  for (let i = 0; i < fnArray.indexOf(OPS.constructPath); i++) if (fnArray[i] === OPS.transform) {
+    const t = argsArray[i] as number[]
+    m = [m[0]! * t[0]! + m[2]! * t[1]!, m[1]! * t[0]! + m[3]! * t[1]!, m[0]! * t[2]! + m[2]! * t[3]!, m[1]! * t[2]! + m[3]! * t[3]!, m[0]! * t[4]! + m[2]! * t[5]! + m[4]!, m[1]! * t[4]! + m[3]! * t[5]! + m[5]!]
+  }
+  assert.deepEqual(m.map(v => Math.round(v * 1e6) / 1e6), [1, 0, 0, 1, 0, 0])
+  assert.equal(fnArray.slice(0, fnArray.indexOf(OPS.constructPath)).filter(f => f === OPS.transform).length, 2)
+})

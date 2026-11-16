@@ -71,6 +71,8 @@ pub enum Item<'a> {
     HScale(f32),
     /// w — pdf.js 연산자 목록은 선 굵기를 콘텐츠 순서 그대로 낸다(선 판정은 채움 괘선에도 직전 w 를 쓴다)
     LineWidth(f32),
+    /// 소비 쪽 CTM 에 곱할 행렬 — 주석 appearance 를 pdf.js 연산자 목록처럼 appearance 자체 좌표로 읽게 한다
+    Ctm(Affine),
     // 콜백 자리 (Clip·Pop 의 real=false 는 hayro 가 생략한 덮는 클립 — 장치가 대신 낸다)
     Run { mode: u8, glyphs: Rc<Vec<GlyphPlan>>, mask: Option<Rc<MaskRec<'a>>> },
     /// 경로 칠하기 — 둘째 값은 pdf.js 셈으로 색을 다시 낼 색 공간, 셋째는 콘텐츠가 그린 경로
@@ -466,10 +468,14 @@ impl<'a> Shadow<'a> {
         let sx = ar.width() / tr.width();
         let sy = ar.height() / tr.height();
         let a = Affine::new([sx, 0.0, 0.0, sy, ar.x0 - sx * tr.x0, ar.y0 - sy * tr.y0]);
+        // pdf.js 는 주석 appearance 의 연산을 /Rect 맞춤·/Matrix 없이 그대로 싣는다(beginAnnotation 인자로만 준다) — 판정 모듈은 그 좌표로 읽어 왔다
+        let total = a * apx.matrix;
+        out.push(Item::Ctm(total.inverse()));
         cx.save();
         cx.st_mut().ctm *= a;
         self.draw_form(cx, &apx, res, out);
         cx.restore(out);
+        out.push(Item::Ctm(total));
     }
 
     fn xobject_oc(&self, cx: &mut Cx<'a>, dict: &Dict<'_>) -> bool {
