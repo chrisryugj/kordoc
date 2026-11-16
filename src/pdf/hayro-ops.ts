@@ -51,7 +51,6 @@ export function hayroOps(ev: ArrayLike<number>, strs: string[]): OpList {
   const stack: Array<[string, number]> = []
   let pendingTm = false
   let run: unknown[] = []
-  let nextX = 0, nextY = 0
   let runTm: number[] | null = null
 
   for (let i = 0; i < ev.length; i += eventLength(ev, i)) {
@@ -75,14 +74,8 @@ export function hayroOps(ev: ArrayLike<number>, strs: string[]): OpList {
         }
         // fontChar 는 U+E000 + 글리프 번호 — 글꼴 객체의 합성 cmap(hayroFontData)이 같은 규칙으로 글리프를 찾는다. 폭은 /Widths 값 그대로
         const gid = ev[i + 14]!
-        if (run.length) {
-          // TJ 숫자 — 엔진은 TJ 배열을 한 묶음으로 내고 숫자는 글자 자리에만 남긴다. 앞 글자가 나아간 자리(자간·낱말 간격 포함)와
-          // 이 글자 원점의 차를 글자 행렬 길이(글자 크기 ÷ 1000)로 나눠 되살린다(자간 판정 joinTrackedHangul 이 읽는다)
-          const a = ev[i + 3]!, b = ev[i + 4]!, k2 = a * a + b * b
-          const tj = k2 ? -((ev[i + 7]! - nextX) * a + (ev[i + 8]! - nextY) * b) / k2 : 0
-          if (Math.abs(tj) >= 0.5) run.push(tj)
-        }
-        nextX = ev[i + 9]!; nextY = ev[i + 10]!
+        // TJ 숫자 — 같은 TJ 안 앞 글자와의 사이에 적힌 값 그대로(자간 판정 joinTrackedHangul 이 0.15em 문턱에 견준다)
+        if (run.length && ev[i + 31]) run.push(ev[i + 31]!)
         run.push({ unicode, originalCharCode: code, fontChar: String.fromCodePoint(0xe000 + gid), width: ev[i + 15]!, isSpace: unicode === " " })
         break
       }

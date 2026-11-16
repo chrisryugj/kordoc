@@ -38,6 +38,8 @@ pub struct GlyphPlan {
     pub nul: bool,
     /// pdf.js 셈의 자리 — Pj::glyph
     pub pj: [f64; PJ_LEN],
+    /// 같은 TJ 안 앞 글자와 이 글자 사이에 적힌 숫자의 합(콘텐츠 값 그대로). 없으면 0
+    pub tj: f64,
 }
 
 pub struct MaskRec<'a> {
@@ -598,7 +600,7 @@ impl<'a> Shadow<'a> {
                 let (aw, at) = (w * scale, (w + ts.tc + word) * scale);
                 cx.ts().advance(code, adv);
                 let next = cx.st().text.full() * Point::ZERO;
-                glyphs.push(GlyphPlan { code, gid: gid.to_u32(), t, next, aw, at, raw, nul: is_nul, pj });
+                glyphs.push(GlyphPlan { code, gid: gid.to_u32(), t, next, aw, at, raw, nul: is_nul, pj, tj: 0.0 });
             } else {
                 cx.ts().advance(code, adv);
             }
@@ -775,14 +777,20 @@ impl<'a> Shadow<'a> {
                 TypedInstruction::ShowTexts(s) => {
                     self.ensure_font(cx);
                     let mut g = Vec::new();
+                    let mut tj = 0.0;
                     for obj in s.0.iter::<Object<'_>>() {
                         match obj {
                             Object::Number(n) => {
                                 cx.ts().adjust(n.as_f32());
                                 let h = cx.st().text.horizontal();
                                 cx.ts().pj.number(n.as_f64(), h);
+                                tj += n.as_f64();
                             }
-                            Object::String(text) => self.append(cx, text.as_bytes(), &mut g),
+                            Object::String(text) => {
+                                let at = g.len();
+                                self.append(cx, text.as_bytes(), &mut g);
+                                if g.len() > at { if at > 0 { g[at].tj = tj } tj = 0.0 }
+                            }
                             _ => {}
                         }
                     }

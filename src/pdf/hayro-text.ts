@@ -17,7 +17,7 @@ export const EV = { GLYPH: 1, SAVE: 2, RESTORE: 3, BEGIN_TEXT: 4, END_TEXT: 5, F
   /** w(선 굵기) */
   LINE_WIDTH: 28 } as const
 const { GLYPH, SAVE, RESTORE, FONT, XOBJECT, MARK_BEGIN, MARK_END } = EV
-const FIXED: Record<number, number> = { 1: 31, 6: 4, 7: 2, 8: 3, 21: 11, 22: 11, 24: 2, 27: 2, 28: 2 }
+const FIXED: Record<number, number> = { 1: 32, 6: 4, 7: 2, 8: 3, 21: 11, 22: 11, 24: 2, 27: 2, 28: 2 }
 
 /** 경로 조각 수(또는 사각형 표시 −1)부터 쓰는 수의 개수. 조각: 0 MoveTo·1 LineTo·2 2차 곡선·3 3차 곡선·4 닫기·5 `re` 로 시작한 MoveTo */
 export function pathLength(ev: ArrayLike<number>, at: number): number {

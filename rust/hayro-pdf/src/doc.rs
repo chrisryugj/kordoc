@@ -404,6 +404,7 @@ impl<'a> Device<'a> for Events<'_, 'a> {
             let n = props.transform * p.next;
             self.buf.extend_from_slice(&[GLYPH, cp, g.char_code() as f64, c[0], c[1], c[2], c[3], c[4], c[5], n.x, n.y, p.aw as f64, p.at as f64, invisible, p.gid as f64, p.raw as f64]);
             self.buf.extend_from_slice(&p.pj);
+            self.buf.push(p.tj);
         }
         self.buf.push(RUN_END);
     }
