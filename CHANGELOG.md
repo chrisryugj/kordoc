@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.82] - 2026-11-17
+
+PR #213(@VerifiedIdiot). 4.24.81 대비 자체 벤치(점수 5,465·PDF 글 744·PDF 표 730·별표 544·formats 146·roundtrip 75·ODL 200 4종·OCR 56·견고성 54) 문서별 하락 0, 상승 2(ODL `01030000000007` nid .99441 → .99684, 견고성 web047 기울임 +1° CER .1663 → .1227). KoOCR-Bench 공개 877쪽 .90653 → .90657.
+
 ### Changed
 
 - PDF 텍스트 레이어 엔진을 pdf.js(`pdfjs-dist`)에서 hayro(Rust PDF 해석기)로 바꿨다. OCR·수식 래스터는 그대로 PDFium(`@hyzyla/pdfium`)이 그린다. hayro 를 wasm 으로 빌드해 패키지에 싣고(`dist/hayro-pdf.wasm` 4.1MB, 크레이트 `rust/hayro-pdf`, 다시 만들기 `node rust/hayro-pdf/build.mjs`), 글 조각·그리기 연산자 목록·글꼴·그림 화소·쪽 상자·정보 사전·링크 주석을 hayro 가 낸다. 판정 모듈은 그대로이고, 어댑터(`src/pdf/hayro*.ts`)가 판정 모듈이 읽던 모양(pdf.js 글 조각 규칙·연산자 번호)으로 맞춘다. 글자 자리는 엔진이 pdf.js 의 글 상태 셈(f64)으로 따로 내, 틈이 문턱에 딱 걸리는 글(TJ −0.2em 등)도 pdf.js 와 같은 곳에서 끊는다. `pdfjs-dist` 가 선택 의존성에서 빠져 PDF 를 읽으려고 따로 설치할 것이 없다(설치 크기: kordoc 34.9MB + pdfjs-dist 37MB → kordoc 39.1MB, `@hyzyla/pdfium` 11MB 는 OCR·수식을 쓸 때만). 결과(OCR 끔, main 과 마크다운 비교): rhwp 표본 3,339개 중 3,330개, 실제 문서 742개 중 732개가 같다. 다른 19개는 실제 문서의 그림 색·자리·제목 판정 등 10개, hayro 가 풀지 못하는 progressive JPEG(휘도보다 색차 표본이 많은 것) 그림 5개, 실리지 않은 CID 글꼴에서 매핑 없는 코드 뒤 글자가 밀리는 1개, 0.6em 문턱에 걸린 공백 1개, main 이 못 읽거나 글을 내지 않던 2개다. main 이 메모리 초과로 죽던 순환 패턴 문서 1개는 0.2초에 읽는다. OCR 을 켠 결과는 래스터가 그대로라 텍스트 레이어가 같은 문서에서는 바뀌지 않는다
