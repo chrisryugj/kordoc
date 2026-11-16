@@ -545,7 +545,8 @@ function isTwoColumnProse(r: ClusterTableResult): boolean {
 
   // 두 실질 열 모두 평균 셀 길이가 길어야 함 (진짜 표엔 짧은 라벨/숫자 열 존재)
   for (const c of dense) {
-    const lens = t.cells.map(row => row[c]?.text.replace(/\s+/g, "").length ?? 0).filter(n => n > 0)
+    // OCR 한 글자 셀은 길이 평균에서 뺀다 — 포스터 장식 원을 "0" 으로 읽은 noise 가 단마다 끼어 평균을 깎았다(ODL 141, two-column.ts ocrGlyph 와 같은 noise)
+    const lens = t.cells.map(row => row[c]?.text.replace(/\s+/g, "").length ?? 0).filter(n => n > (ocr ? 1 : 0))
     const avg = lens.reduce((s, v) => s + v, 0) / (lens.length || 1)
     if (avg < (ocr ? 15 : 12)) return false
   }
