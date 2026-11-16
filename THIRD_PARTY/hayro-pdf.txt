@@ -5,7 +5,6 @@ hayro 의 고지(NOTICE.md): 일부 코드는 PDFBox·pdf.js·png crate(Apache-2
 CalRGB·CalGray 변환, Flate 디코더, AES·MD5·SHA·RC4, PNG 예측기 디코딩.
 
 크레이트 | 버전 | 라이선스(SPDX) | 고른 라이선스 | 저장소
-ab_glyph_rasterizer | 0.1.10 | Apache-2.0 | Apache-2.0 | https://github.com/alexheretic/ab-glyph
 adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | Apache-2.0 | https://github.com/oyvindln/adler2
 alloc-no-stdlib | 2.0.4 | BSD-3-Clause | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib
 alloc-stdlib | 0.2.4 | BSD-3-Clause | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib
@@ -14,20 +13,10 @@ bitflags | 2.13.2 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/bitflags
 brotli | 8.0.4 | BSD-3-Clause AND MIT | BSD-3-Clause AND MIT | https://github.com/dropbox/rust-brotli
 brotli-decompressor | 5.0.3 | BSD-3-Clause/MIT | BSD-3-Clause/MIT | https://github.com/dropbox/rust-brotli-decompressor
 bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | Apache-2.0 | https://github.com/Lokathor/bytemuck
-byteorder-lite | 0.1.0 | Unlicense OR MIT | Unlicense OR MIT | https://github.com/image-rs/byteorder-lite
-cfg-if | 1.0.5 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/rust-lang/cfg-if
-color | 0.3.3 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/color
-crc32fast | 1.5.4 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/srijs/rust-crc32fast
 euclid | 0.22.14 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/servo/euclid
-fdeflate | 0.3.7 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/image-rs/fdeflate
 fearless_simd | 1.2.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/fearless_simd
-flate2 | 1.1.11 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/rust-lang/flate2-rs
 foldhash | 0.2.0 | Zlib | Zlib | https://github.com/orlp/foldhash
 font-types | 0.12.7 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
-glifo | 0.5.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
-guillotiere | 0.7.0 | MIT/Apache-2.0 | Apache-2.0 | https://github.com/nical/guillotiere
-hashbrown | 0.17.1 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/rust-lang/hashbrown
-hayro | 0.9.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
 hayro-ccitt | 0.5.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
 hayro-cmap | 0.1.1 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
 hayro-font | 0.5.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
@@ -36,33 +25,22 @@ hayro-jbig2 | 0.4.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/Lauren
 hayro-jpeg2000 | 0.5.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
 hayro-postscript | 0.2.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
 hayro-syntax | 0.9.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
-image | 0.25.10 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/image-rs/image
 kurbo | 0.13.1 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/kurbo
-linebender_resource_handle | 0.1.1 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/raw_resource_handle
-log | 0.4.35 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/rust-lang/log
 memchr | 2.8.3 | Unlicense OR MIT | Unlicense OR MIT | https://github.com/BurntSushi/memchr
 miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 | Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
-miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
 moxcms | 0.8.1 | BSD-3-Clause OR Apache-2.0 | Apache-2.0 | https://github.com/awxkee/moxcms.git
 num-traits | 0.2.19 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/rust-num/num-traits
 once_cell | 1.21.4 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/matklad/once_cell
-peniko | 0.6.1 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/peniko
 phf | 0.13.1 | MIT | MIT | https://github.com/rust-phf/rust-phf
 phf_shared | 0.13.1 | MIT | MIT | https://github.com/rust-phf/rust-phf
-pic-scale | 0.7.12 | BSD-3-Clause OR Apache-2.0 | Apache-2.0 | https://github.com/awxkee/pic-scale
-png | 0.18.1 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/image-rs/image-png
 polycool | 0.4.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/linebender/kurbo
 pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 | Apache-2.0 | https://github.com/awxkee/pxfm
 read-fonts | 0.46.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
 rustc-hash | 2.1.3 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/rust-lang/rustc-hash
-simd-adler32 | 0.3.10 | MIT | MIT | https://github.com/mcountryman/simd-adler32
 siphasher | 1.0.4 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/jedisct1/rust-siphash
 skrifa | 0.49.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
 smallvec | 1.16.5 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/servo/rust-smallvec
 stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/storyyeller/stable_deref_trait
-thiserror | 2.0.21 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/dtolnay/thiserror
-vello_common | 0.4.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
-vello_cpu | 0.4.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
 yoke | 0.8.4 | Unicode-3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x
 zerofrom | 0.1.8 | Unicode-3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x
 zlib-rs | 0.6.8 | Zlib | Zlib | https://github.com/trifectatechfoundation/zlib-rs
@@ -147,32 +125,6 @@ Redistribution and use in source and binary forms, with or without modification,
 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-================================================================================
-byteorder-lite 0.1.0 — LICENSE-MIT
-================================================================================
-
-The MIT License (MIT)
-
-Copyright (c) 2015 Andrew Gallant
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 ================================================================================
 foldhash 0.2.0 — LICENSE
@@ -281,32 +233,6 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-================================================================================
-simd-adler32 0.3.10 — LICENSE.md
-================================================================================
-
-MIT License
-
-Copyright (c) [2021] [Marvin Countryman]
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 
 ================================================================================
 yoke 0.8.4 — LICENSE

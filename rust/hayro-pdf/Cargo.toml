@@ -12,7 +12,6 @@ crate-type = ["cdylib"]
 # 지금 커밋은 upstream main 61f50b42. LaurenzV/hayro#1810(표준 글꼴의 `h.smcp` 같은 접미사 글리프 이름 폭 — pdf.js 처럼 0 이 아니게)이
 # 합쳐지면 그 커밋으로 올리고 tests/pdf-occlusion-parser.test.ts 의 todo 를 뗀다
 [dependencies]
-hayro = { git = "https://github.com/LaurenzV/hayro", rev = "61f50b42a7f7b15764780b9ba534cba91488bb28" }
 hayro-interpret = { git = "https://github.com/LaurenzV/hayro", rev = "61f50b42a7f7b15764780b9ba534cba91488bb28" }
 hayro-syntax = { git = "https://github.com/LaurenzV/hayro", rev = "61f50b42a7f7b15764780b9ba534cba91488bb28" }
 hayro-font = { git = "https://github.com/LaurenzV/hayro", rev = "61f50b42a7f7b15764780b9ba534cba91488bb28" }

@@ -40,17 +40,6 @@ it("SMask 가 그림보다 크면 pdf.js 처럼 큰 쪽 크기로 둘 다 가까
   assert.deepEqual([px(0, 0), px(15, 0), px(0, 15), px(15, 15)], [[255, 0, 0, 0], [0, 255, 0, 255], [0, 0, 255, 0], [255, 255, 255, 255]])
 })
 
-it("쪽 상자가 커도 래스터는 화소 3,600만을 넘지 않게 배율을 줄인다", async () => {
-  // 200인치 쪽 × 배율 3 = 43,200² 화소 — 상한이 없으면 wasm 메모리를 넘겨 trap 한다
-  const doc = await openHayro(buildPdf([
-    "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 14400 14400] /Contents 4 0 R >>", "<< /Length 0 >>\nstream\n\nendstream",
-  ]))
-  const { width, height, data } = doc.render(0, 3)
-  assert.ok(width * height <= 36_000_000 && width * height > 30_000_000, `${width}×${height}`)
-  assert.equal(data.length, width * height * 4)
-})
-
 it("한 쪽 그림이 디코딩 상한(128MB)을 넘어도 그림을 물으면 모두 준다", async () => {
   const z = deflateSync(Buffer.alloc(3000 * 3000 * 3, 0x55)).toString("latin1")
   const img = `<< /Type /XObject /Subtype /Image /Width 3000 /Height 3000 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${z.length} >>\nstream\n${z}\nendstream`

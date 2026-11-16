@@ -128,8 +128,8 @@ for (const f of files) {
   const renders = new Map()
   try {
     for (const pn of pages) {
-      // kordoc OCR 과 같은 hayro 렌더(흰 바탕 RGBA)
-      const r = pdf.render(pn, SCALE)
+      // kordoc OCR 과 같은 PDFium 렌더
+      const r = await pdf.render(pn, SCALE)
       renders.set(pn, { rgba: r.data, w: r.width, h: r.height })
     }
   } finally { pdf.close() }

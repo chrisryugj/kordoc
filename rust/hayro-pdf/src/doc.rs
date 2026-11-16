@@ -448,13 +448,12 @@ pub struct Doc {
     /// 문서는 인스턴스와 수명이 같다(JS 가 문서마다 인스턴스를 만들고 버린다) — 'static 로 두어 해석 캐시·사전 해석기를 쪽 사이에 쥔다
     pdf: &'static Pdf, cache: InterpreterCache<'static>, shadow: Shadow<'static>, strs: String, fonts: HashMap<String, FontEntry>, images: HashMap<String, ImageEntry>, image_pages: HashMap<String, usize>,
     /// 화소를 쥔 그림의 디코딩 순서와 그 바이트 합
-    held: std::collections::VecDeque<String>, held_bytes: usize,
-    rendered: (u32, u32) }
+    held: std::collections::VecDeque<String>, held_bytes: usize }
 
 impl Doc {
     pub fn new(data: Vec<u8>) -> Result<Doc, hayro_syntax::LoadPdfError> {
         let pdf: &'static Pdf = Box::leak(Box::new(Pdf::new(data)?));
-        Ok(Doc { pdf, cache: InterpreterCache::new(), shadow: Shadow::new(pdf.xref()), strs: String::new(), fonts: HashMap::new(), images: HashMap::new(), image_pages: HashMap::new(), held: Default::default(), held_bytes: 0, rendered: (0, 0) })
+        Ok(Doc { pdf, cache: InterpreterCache::new(), shadow: Shadow::new(pdf.xref()), strs: String::new(), fonts: HashMap::new(), images: HashMap::new(), image_pages: HashMap::new(), held: Default::default(), held_bytes: 0 })
     }
     /// 쪽(0부터)의 사건열. 문자열 표는 이어서 strings() 로 받는다. 쪽마다 그때 해석한다 — 글꼴·자원 캐시는 문서 하나로 쪽 사이에 쥔다
     pub fn events(&mut self, index: usize) -> Result<Vec<f64>, String> {
@@ -581,18 +580,6 @@ impl Doc {
         o.push(']');
         o
     }
-    pub fn page_size(&self, index: usize) -> Vec<f32> {
-        self.pdf.pages().get(index).map(|p| { let (w, h) = p.render_dimensions(); vec![w, h] }).unwrap_or_default()
-    }
-    /// 쪽을 배율 scale 로 흰 바탕에 그린 RGBA(raster.rs). 크기는 이어서 renderedSize() 로 받는다
-    pub fn render(&mut self, index: usize, scale: f32) -> Vec<u8> {
-        let pages = self.pdf.pages();
-        let Some(page) = pages.get(index) else { return Vec::new() };
-        let (px, w, h) = crate::raster::render(&self.pdf, page, scale);
-        self.rendered = (w, h);
-        px
-    }
-    pub fn rendered_size(&self) -> (u32, u32) { self.rendered }
     /// 글꼴 열쇠(FONT_KEY 사건의 문자열)의 정보 JSON
     pub fn font_info(&self, key: &str) -> String { self.fonts.get(key).map(|e| e.info.clone()).unwrap_or_default() }
     pub fn page_count(&self) -> usize { self.pdf.pages().len() }

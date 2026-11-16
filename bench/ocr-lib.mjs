@@ -142,14 +142,14 @@ const WIDE = /[\u1100-\u11ff\u3000-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef
 /**
  * 래스터 글자 검사 — 텍스트층 글자(문자·숫자) 중심 주변에 대비(최대-최소 휘도 ≥ 60)가 있는
  * 비율. 래스터가 텍스트층을 실제로 그렸는지의 OCR 무관 객관 신호: 비내장 글꼴을 래스터 엔진이
- * 대체하지 못하면 한글이 통째로 안 그려진다(코퍼스 82쪽 pdfium 실측: nanet-seoul-minutes 0.088/0.071, 나머지 ≥ 0.971). 래스터는 kordoc OCR 과 같은 hayro 렌더.
+ * 대체하지 못하면 한글이 통째로 안 그려진다(코퍼스 82쪽 pdfium 실측: nanet-seoul-minutes 0.088/0.071, 나머지 ≥ 0.971). 래스터는 kordoc OCR 과 같은 PDFium 렌더.
  * 그런 페이지는 OCR 정확도의 표본이 아니다.
  * @returns page → 비율 (글자 없으면 1). `.hidden` 은 page → 그려지지 않은 글 조각(검사 글자 둘 이상 중 20% 미만에만 잉크 —
  *   흰 글·투명 글·그림에 덮인 글) 목록
 
  */
 export async function rasterGlyphCoverage(raw, pages, scale = 2) {
-  const { openPdf, toGray } = await import("./lib/pdf-engine.mjs")
+  const { openPdf } = await import("./lib/pdf-engine.mjs")
   const doc = await openPdf(raw)
   const out = new Map()
   out.hidden = new Map()
@@ -158,7 +158,7 @@ export async function rasterGlyphCoverage(raw, pages, scale = 2) {
       if (!pages.includes(pn)) continue
       const { items, view } = doc.page(pn)
       const vpH = view[3] - view[1]
-      const r = toGray(doc.render(pn, scale))
+      const r = await doc.renderGray(pn, scale)
       const W = r.width, H = r.height, px = r.data
       const lum = (x, y) => px[y * W + x]
       let n = 0, ok = 0
@@ -223,7 +223,7 @@ export function inlineGlyphImages(rs) {
  * 둘레에 흰 여백 8px 을 둔다 (OCR 채점 v3: 본문 글과 한 블록에 섞인 그림 글을 따로 읽는 데 쓴다)
  */
 export async function renderRectPngs(raw, rectsByPage, scale = 3) {
-  const { openPdf, toGray } = await import("./lib/pdf-engine.mjs")
+  const { openPdf } = await import("./lib/pdf-engine.mjs")
   const sharp = (await import("sharp")).default
   const doc = await openPdf(raw)
   const out = []
@@ -231,7 +231,7 @@ export async function renderRectPngs(raw, rectsByPage, scale = 3) {
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const rs = rectsByPage.get(pn)
       if (!rs?.length) continue
-      const img = toGray(doc.render(pn, scale))
+      const img = await doc.renderGray(pn, scale)
       const W = img.width, H = img.height, bpp = 1, Hpt = H / scale
       for (const r of rs) {
         const x0 = Math.max(0, Math.floor(r.x1 * scale)), x1 = Math.min(W, Math.ceil(r.x2 * scale))

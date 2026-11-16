@@ -1,11 +1,10 @@
-//! hayro(Rust PDF 해석기)로 kordoc 이 쓰는 PDF 재료를 낸다 — 쪽 사건열(글자·경로·클립·그림·구조), 글꼴·그림 화소, 쪽 렌더,
+//! hayro(Rust PDF 해석기)로 kordoc 이 쓰는 PDF 재료를 낸다 — 쪽 사건열(글자·경로·클립·그림·구조), 글꼴·그림 화소,
 //! 쪽 상자·회전, 정보 사전, 링크 주석. src/pdf/hayro.ts 가 이 wasm 을 부른다.
 //!
 //! 인스턴스 하나가 문서 하나를 연다(JS 가 문서마다 인스턴스를 만든다). 결과는 두 버퍼에 담는다: F64(수 배열)·BYTES(바이트·UTF-8 글).
 //! JS 는 f64_ptr·f64_len·bytes_ptr·bytes_len 으로 읽는다. 오류는 음수를 돌려주고 BYTES 에 문구를 담는다.
 //! 내보내기 이름(no_mangle)은 wasm 에서만 — 호스트 cargo test 에서 libc open 과 부딪히지 않게.
 mod doc;
-mod raster;
 mod shadow;
 
 use doc::Doc;
@@ -76,18 +75,6 @@ pub extern "C" fn page_view(index: usize) -> i32 { let v = doc().map(|d| d.page_
 /// 쪽 회전(도)
 #[cfg_attr(target_family = "wasm", no_mangle)]
 pub extern "C" fn page_rotate(index: usize) -> i32 { doc().map(|d| d.page_rotate(index)).unwrap_or(0) }
-/// 렌더 크기 [가로, 세로](pt, 회전·CropBox 반영) → F64
-#[cfg_attr(target_family = "wasm", no_mangle)]
-pub extern "C" fn page_size(index: usize) -> i32 { let v = doc().map(|d| d.page_size(index).into_iter().map(f64::from).collect()).unwrap_or_default(); put_f64(v) }
-/// 쪽을 배율 scale 로 흰 바탕에 그린 RGBA → BYTES, [가로, 세로] → F64
-#[cfg_attr(target_family = "wasm", no_mangle)]
-pub extern "C" fn render(index: usize, scale: f32) -> i32 {
-    let Some(d) = doc() else { return 0 };
-    let rgba = d.render(index, scale);
-    let (w, h) = d.rendered_size();
-    put_f64(vec![w as f64, h as f64]);
-    put_bytes(rgba)
-}
 /// 글꼴 열쇠의 정보 JSON → BYTES
 #[cfg_attr(target_family = "wasm", no_mangle)]
 pub unsafe extern "C" fn font_info(p: *const u8, len: usize) -> i32 { let v = doc().map(|d| d.font_info(arg(p, len)).into_bytes()).unwrap_or_default(); put_bytes(v) }

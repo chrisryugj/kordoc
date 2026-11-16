@@ -19,8 +19,6 @@ interface Engine {
   events(page: number): number
   page_view(page: number): number
   page_rotate(page: number): number
-  page_size(page: number): number
-  render(page: number, scale: number): number
   font_info(ptr: number, len: number): number
   font_file(ptr: number, len: number): number
   image(ptr: number, len: number): number
@@ -61,10 +59,6 @@ export interface HayroDoc {
   pageView(page: number): number[]
   /** 쪽 회전(0·90·180·270) */
   pageRotate(page: number): number
-  /** 렌더 크기 [가로, 세로](pt, 회전 반영) */
-  pageSize(page: number): [number, number]
-  /** 흰 바탕 RGBA 렌더 */
-  render(page: number, scale: number): { data: Uint8Array; width: number; height: number }
   /** 글꼴 정보 JSON(없으면 "") */
   fontInfo(key: string): string
   /** 글꼴의 TrueType 파일(없으면 빈 배열) */
@@ -117,12 +111,6 @@ export async function openHayro(buffer: ArrayBuffer | Uint8Array): Promise<Hayro
     }),
     pageView: page => call(() => { w.page_view(page); return Array.from(f64()) }),
     pageRotate: page => call(() => w.page_rotate(page)),
-    pageSize: page => call(() => { w.page_size(page); const v = f64(); return [v[0] ?? 0, v[1] ?? 0] }),
-    render: (page, scale) => call(() => {
-      w.render(page, scale)
-      const [width = 0, height = 0] = f64()
-      return { data: bytes(), width, height }
-    }),
     fontInfo: key => call(() => { withStr(key, (q, l) => w.font_info(q, l)); return text() }),
     fontFile: key => call(() => { withStr(key, (q, l) => w.font_file(q, l)); return bytes() }),
     image: id => call(() => {
@@ -133,19 +121,5 @@ export async function openHayro(buffer: ArrayBuffer | Uint8Array): Promise<Hayro
     info: () => call(() => { w.info(); return JSON.parse(text() || "{}") as Record<string, string> }),
     links: page => call(() => { w.links(page); return JSON.parse(text() || "[]") as HayroLink[] }),
     close: () => { alive = false },
-  }
-}
-
-/** OCR·수식 래스터가 쓰는 쪽 모양 — 원래 크기(pt)와 배율 렌더(RGBA) */
-export interface RasterPage {
-  getOriginalSize(): { originalWidth: number; originalHeight: number }
-  render(o: { scale: number; render?: (r: { data: Uint8Array; width: number; height: number }) => unknown }): Promise<{ data: Uint8Array; width: number; height: number }>
-}
-
-/** 쪽(0부터)을 래스터 쪽으로 */
-export function rasterPage(doc: HayroDoc, index: number): RasterPage {
-  return {
-    getOriginalSize: () => { const [originalWidth, originalHeight] = doc.pageSize(index); return { originalWidth, originalHeight } },
-    render: async ({ scale }) => doc.render(index, scale),
   }
 }
