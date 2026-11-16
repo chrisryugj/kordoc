@@ -5,6 +5,7 @@
  */
 
 import { normalizeUnicode } from "./ops.js"
+import { bidi } from "./bidi.js"
 import type { HayroDoc } from "./hayro.js"
 import type { PdfTextItem } from "./text-line.js"
 import { pdfString } from "./hayro-meta.js"
@@ -140,8 +141,8 @@ function buildItems(ev: ArrayLike<number>, strs: string[], view: number[]): Omit
   const flush = (eol = false) => {
     if (!item) return
     tci.totalWidth += tci.width * tci.scale
-    // pdfjs runBidiTransform 의 normalizeUnicode — 합자(ﬁ ﬂ)·호환 문자를 풀어 쓴다
-    const it: PdfTextItem & { hasEOL?: boolean } = { str: normalizeUnicode(item.str.join("")), transform: item.t, width: tci.totalWidth, height: tci.height, fontName: item.fontName }
+    // pdfjs runBidiTransform — normalizeUnicode 로 합자(ﬁ ﬂ)·호환 문자를 풀고, bidi 로 오른쪽에서 왼쪽으로 쓰는 글자를 논리 순서로 되돌린다
+    const it: PdfTextItem & { hasEOL?: boolean } = { str: bidi(normalizeUnicode(item.str.join(""))).str, transform: item.t, width: tci.totalWidth, height: tci.height, fontName: item.fontName }
     if (eol) it.hasEOL = true
     items.push(it)
     item = null
@@ -212,11 +213,13 @@ function buildItems(ev: ArrayLike<number>, strs: string[], view: number[]): Omit
       const cat = SPECIAL_CHAR.exec(u)
       if (!u || cat?.[1]) { saveLastChar(" "); continue }
       if (cat?.[3]) continue
+      // pdfjs isZeroWidthDiacritic — 결합 문자(\p{Mn})는 자리 비교 없이 지금 조각에 붙이고 폭은 0 이다(크레이트 Pj::glyph 도 나아가지 않는다)
+      const diacritic = !!cat?.[2]
       // pdfjs compareWithLastPosition 첫 검사 — 글자 폭은 텍스트 공간 값 그대로 더한다(pdfjs 와 같은 셈)
-      if (view.length === 4 && (x + sd < view[0]! || x > view[2]! || y < view[1]! || y > view[3]!)) continue
+      if (!diacritic && view.length === 4 && (x + sd < view[0]! || x > view[2]! || y < view[1]! || y > view[3]!)) continue
       // pdfjs compareWithLastPosition — 조각을 끊은 뒤에도 마지막 글자 끝자리(prevTransform)와 비교한다
       const prev = tci.prev
-      if (prev && (x !== prev[4] || y !== prev[5])) {
+      if (!diacritic && prev && (x !== prev[4] || y !== prev[5])) {
         const [px, py, lx, ly] = unrotate(x, y, t, prev[4]!, prev[5]!, prev)
         const advanceX = (px - lx) / tci.scale, advanceY = Math.abs(py - ly)
         const o = Math.sign(tci.width), f = tci.fs

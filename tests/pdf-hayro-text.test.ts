@@ -139,3 +139,26 @@ it("/ActualText 는 묶음의 글자가 모두 사설 영역일 때만 쓴다", 
   const page = hayroTextPage(await openHayro(new Uint8Array(Buffer.from(pdf, "latin1"))), 1)
   assert.equal(page.items.map(it => it.str).join(""), "1B")
 })
+
+it("글 조각은 pdf.js 처럼 bidi 로 되돌리고, 결합 문자는 폭 0 으로 붙인다", async () => {
+  const { bidi } = await import("../src/pdf/bidi.js")
+  // 오른쪽에서 왼쪽으로 쓰는 글은 콘텐츠에 보이는 순서로 찍힌다 — pdf.js getTextContent 는 논리 순서로 되돌린다
+  assert.deepEqual(bidi("\u0629\u0645\u0638\u0646\u0645"), { str: "\u0645\u0646\u0638\u0645\u0629", dir: "rtl" })
+  assert.deepEqual(bidi("abc 123"), { str: "abc 123", dir: "ltr" })
+  // 결합 화살표(U+20D7, 글꼴 폭 500) 뒤의 글자 — pdf.js 는 결합 문자에서 나아가지 않아 조각 폭이 뒤 글자 폭뿐이다
+  const cmap = "/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /T def /CMapType 2 def 1 begincodespacerange <00> <FF> endcodespacerange 1 beginbfchar <41> <20D7> endbfchar endcmap end end"
+  const stream = (d: string) => `<< /Length ${d.length} >>\nstream\n${d}\nendstream`
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 65 /LastChar 66 /Widths [500 700] /ToUnicode 6 0 R >>",
+    stream("BT /F1 10 Tf 100 700 Td (AB) Tj ET"), stream(cmap),
+  ]
+  let pdf = "%PDF-1.4\n"
+  const offsets: number[] = []
+  for (let i = 0; i < objects.length; i++) { offsets.push(pdf.length); pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n` }
+  const xref = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map(o => String(o).padStart(10, "0") + " 00000 n \n").join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  const items = hayroTextPage(await openHayro(new Uint8Array(Buffer.from(pdf, "latin1"))), 1).items.filter(it => it.str)
+  assert.deepEqual(items.map(it => [it.str, it.transform[4], it.width]), [["\u20d7B", 100, 7]])
+})

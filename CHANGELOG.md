@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ToUnicode 없는 복합 글꼴: hayro #1813(합쳐짐)이 실은 글꼴에도 CIDSystemInfo 의 Adobe-<Ordering>-UCS2 CMap 으로 유니코드를 찾아(pdf.js 와 같은 규칙) 실은 Adobe-Korea1 글꼴의 글이 살아난다(kakao-enterprise 2·3쪽). 891개 중 6개 문서의 마크다운이 바뀌어 모두 pdf.js 에 가까워졌다(2개는 pdf.js 와 같아졌다)
   - 메모리: 엔진은 그림을 물을 때 그 쪽만 디코딩하고 128MB 를 넘으면 앞 쪽 그림부터 놓는다. 쪽 사건열은 쪽마다 그때 해석한다. 큰 문서 13개(4,133쪽, OCR 끔, main 과 번갈아 2회): 144~157초 → 95~98초, CPU 182~194초 → 115~119초, 최대 RSS 1.95~2.20GB → 1.15~1.24GB
   - wasm 은 SIMD128 로 빌드한다(Node 16.4+·현대 브라우저)
+  - 글 조각은 pdf.js 처럼 양방향 배열(`src/pdf/bidi.ts`, core/bidi.js 를 그대로 옮김)을 거친다 — 아랍·히브리 글이 논리 순서로 나온다. 결합 문자(\p{Mn})는 pdf.js 처럼 폭 0 으로 지금 조각에 붙인다(식 위 화살표 U+20D7 이 기준 글자 앞에 따로 나오지 않는다)
   - `/ActualText`: 묶음(BDC … EMC)의 글자가 모두 사설 영역(U+E000–F8FF)이면 `/ActualText` 로 바꾼다. Chrome 인쇄 PDF(Skia/PDF)는 Pretendard 고정폭 숫자의 ToUnicode 를 사설 영역으로 적고 실제 숫자를 `/ActualText` 에 둬, 목차 쪽 번호가 사설 영역 글자로 나왔다(321쪽 문서에서 910자 → 0자). 다른 글자는 종전처럼 ToUnicode 그대로다
   - 암호 걸린 PDF·읽을 수 없는 PDF 는 종전처럼 KordocError(암호: "암호로 보호된 PDF 파일입니다 …"). PDF 로딩 30초 타임아웃 대신 일의 양으로 끊는다(엔진이 동기로 연다): 쪽당 콘텐츠 연산자 1,000만 개, wasm 메모리 2GB. 엔진이 trap 하면 그 문서를 닫는다
   - 내부: `src/pdf/polyfill.ts`·`pdfium-images.ts`·`image-blank.ts`(PDFium 큰 그림 경로 #186·#190)를 지웠다. `PDFJS_DOCUMENT_OPTIONS` 내보내기는 없다

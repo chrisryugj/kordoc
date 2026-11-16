@@ -12,10 +12,10 @@ let pdfium
 export async function openPdf(raw) {
   const doc = await openHayro(new Uint8Array(raw))
   let fdoc
-  const render = async (pn, scale, colorSpace) => {
+  const render = async (pn, scale) => {
     pdfium ??= await (await import("@hyzyla/pdfium")).PDFiumLibrary.init()
     fdoc ??= await pdfium.loadDocument(new Uint8Array(raw))
-    return fdoc.getPage(pn - 1).render({ scale, colorSpace, render: async ({ data }) => data })
+    return fdoc.getPage(pn - 1).render({ scale, render: async ({ data }) => data })
   }
   return {
     numPages: doc.pageCount(),
@@ -26,13 +26,11 @@ export async function openPdf(raw) {
     },
     /** RGBA 렌더 { data, width, height } — PDFium 은 BGRA 로 준다 */
     async render(pn, scale) {
-      const r = await render(pn, scale, "BGRA")
+      const r = await render(pn, scale)
       const data = new Uint8Array(r.data.length)
       for (let i = 0; i < data.length; i += 4) { data[i] = r.data[i + 2]; data[i + 1] = r.data[i + 1]; data[i + 2] = r.data[i]; data[i + 3] = 255 }
       return { data, width: r.width, height: r.height }
     },
-    /** 회색 렌더 { data, width, height } */
-    renderGray: (pn, scale) => render(pn, scale, "Gray"),
     close: () => { doc.close(); fdoc?.destroy() },
   }
 }

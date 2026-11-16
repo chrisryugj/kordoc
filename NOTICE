@@ -72,6 +72,7 @@ Used in (rules and tables re-implemented so the PDF engine adapter yields the sa
 text chunks, operator lists, metadata and link targets kordoc was tuned on):
 - src/pdf/ops.ts — operator-list numbering (OPS), image kinds, normalizeUnicode
 - src/pdf/hayro-text.ts — getTextContent text-chunk rules (gaps, line breaks, spaces)
+- src/pdf/bidi.ts — bidirectional text reordering (core/bidi.js), ported as is
 - src/pdf/hayro-meta.ts — PDF string decoding (PDFDocEncoding table, UTF-16/UTF-8 BOM),
   link target selection (parseDestDictionary, createValidAbsoluteUrl, recoverJsURL)
 - rust/hayro-pdf/src/shadow.rs — DeviceCMYK to sRGB polynomial (DeviceCmykCS); text-state
