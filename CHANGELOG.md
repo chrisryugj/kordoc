@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.81] - 2026-11-16
+
 ### Fixed
 
 - 마크다운 이스케이프: 일반 문단이 줄 첫 `>`(「> 50% 이상」)나 하이픈만 든 줄(「---」)이면 마크다운 출력에 그대로 나가 렌더·`markdownToHwpx` 왕복에서 인용문·가로줄이 되고 글자가 사라지던 것(#212). 문단 자리에서(새 `escapeBlockStart`. 표 칸에는 블록 문법이 없어 그대로) 줄 첫 `>`·하이픈 3개 이상만 든 줄·윗줄 아래 `=`·`-` 만 든 줄(setext 밑줄)의 첫 글자를 `\` 로 이스케이프하고(홀로 선 「====」 문단은 마크다운에서도 글자라 그대로), 패치·생성 쪽 역변환(`unescapeGfm`·`unescapeGfmCell`·패치 강조 파서·생성기 인라인 파서)이 `\>`·`\-`·`\=` 를 글자로 되돌린다. `patchHwpx` 도 「---」 문단을 구분선으로 보지 않고 고친다

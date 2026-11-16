@@ -2,6 +2,10 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.81: escaping line-start `>` and `---` in markdown · 2026-11-16
+
+Plain paragraphs now escape a line-start `>`, a line made only of hyphens and a setext underline below a text line with `\`, in paragraph position only (#212). Table cells and IR text are unchanged. Score 5,465, PDF text 744, PDF tables 730, annex 544, formats 146, roundtrip 75 and ODL 200 (all four runs): no per-document change. Scoring code is unchanged.
+
 ## 4.24.80: HWP output · 2026-11-15
 
 Adds an output that converts generated HWPX to HWP 5.0 (optional dependency `@rhwp/core`). 11 generated samples (plain, two columns with equations, 9 government-document presets, with tables and images) keep their page counts with 0 content-loss reports; re-read text matches the HWPX for plain, two-column, official, notice, minutes and press (for report, plan, gaejosik, ministry and bangchim the HWP parser also reads chapter numbers and the table of contents as text). Parser and scoring code are unchanged.
