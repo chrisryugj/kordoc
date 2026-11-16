@@ -65,14 +65,21 @@ const isPrivateUse = (cp: number) => cp >= 0xe000 && cp <= 0xf8ff
  * 글자 수가 같으면 하나씩, 다르면 첫 글자에 통째로 싣고 나머지는 빈 글자로
  */
 function applyActualText(ev: ArrayLike<number> & { [i: number]: number }, strs: string[]): void {
-  const open: Array<{ text: string; glyphs: number[] } | null> = []
+  // 글자는 가장 안쪽 /ActualText 묶음에만 적는다(겹친 깊이 × 글자 수로 불어나지 않게). 안에 /ActualText 묶음을 품은 바깥 묶음은 손대지 않는다
+  const open: Array<{ text: string; glyphs: number[]; nested: boolean } | null> = []
+  const actual: Array<{ text: string; glyphs: number[]; nested: boolean }> = []
   for (let i = 0; i < ev.length; i += eventLength(ev, i)) {
     const t = ev[i]!
-    if (t === MARK_BEGIN) open.push(ev[i + 3] ? { text: pdfString(strs[ev[i + 3]! - 1] ?? ""), glyphs: [] } : null)
-    else if (t === GLYPH) { for (const o of open) o?.glyphs.push(i) }
+    if (t === MARK_BEGIN) {
+      const o = ev[i + 3] ? { text: pdfString(strs[ev[i + 3]! - 1] ?? ""), glyphs: [], nested: false } : null
+      if (o) { const outer = actual[actual.length - 1]; if (outer) outer.nested = true; actual.push(o) }
+      open.push(o)
+    } else if (t === GLYPH) actual[actual.length - 1]?.glyphs.push(i)
     else if (t === MARK_END) {
       const o = open.pop()
-      if (!o || !o.text || !o.glyphs.length || !o.glyphs.every(g => isPrivateUse(ev[g + 1]!))) continue
+      if (!o) continue
+      actual.pop()
+      if (o.nested || !o.text || !o.glyphs.length || !o.glyphs.every(g => isPrivateUse(ev[g + 1]!))) continue
       const chars = [...o.text]
       const whole = chars.length !== o.glyphs.length
       o.glyphs.forEach((g, k) => { const s = whole ? (k ? "" : o.text) : chars[k]!; strs.push(s); ev[g + 1] = -strs.length })
