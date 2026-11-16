@@ -400,7 +400,12 @@ pub struct Shadow<'a> {
     fonts: FontCache<'a>,
     inactive: HashSet<ObjectIdentifier>,
     tounicode: HashMap<ObjectIdentifier, Option<Rc<CMap>>>,
+    /// 이 쪽에서 읽은 콘텐츠 연산자 수(폼·주석·소프트 마스크 포함)
+    ops: usize,
 }
+
+/// 쪽 하나의 콘텐츠 연산자 상한 — 엔진은 동기라 시간으로 끊을 수 없어 일의 양으로 끊는다(실제 문서 8,393쪽의 최대는 23만)
+pub const MAX_PAGE_OPS: usize = 10_000_000;
 
 impl<'a> Shadow<'a> {
     pub fn new(xref: &'a XRef) -> Self {
@@ -420,11 +425,14 @@ impl<'a> Shadow<'a> {
                 }
             }
         }
-        Self { _xref: xref, settings: InterpreterSettings::default(), fonts: FontCache::new(), inactive, tounicode: HashMap::new() }
+        Self { _xref: xref, settings: InterpreterSettings::default(), fonts: FontCache::new(), inactive, tounicode: HashMap::new(), ops: 0 }
     }
 
     /// interpret_page — 쪽 내용과 주석 appearance
+    pub fn over(&self) -> bool { self.ops > MAX_PAGE_OPS }
+
     pub fn page(&mut self, page: &Page<'a>) -> Vec<Item<'a>> {
+        self.ops = 0;
         let mut out = Vec::new();
         let mut cx = Cx::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), Rect::new(0.0, 0.0, 1.0, 1.0), 0);
         let res = page.resources();
@@ -651,6 +659,8 @@ impl<'a> Shadow<'a> {
         let num_states = cx.num_states();
         cx.save();
         while let Some(op) = ops.next() {
+            self.ops += 1;
+            if self.over() { break }
             match op {
                 TypedInstruction::SaveState(_) => { out.push(Item::Save); cx.save() }
                 TypedInstruction::RestoreState(_) => {

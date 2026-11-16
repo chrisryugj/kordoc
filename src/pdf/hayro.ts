@@ -101,7 +101,8 @@ export async function openHayro(buffer: ArrayBuffer | Uint8Array): Promise<Hayro
   }
   const call = <T>(fn: () => T): T => {
     if (!alive) throw new Error("닫힌 PDF 문서입니다")
-    return fn()
+    // trap(panic=abort·메모리 상한) 뒤의 인스턴스 상태는 믿을 수 없다 — 문서를 닫아 다시 부르지 못하게 한다
+    try { return fn() } catch (e) { if (e instanceof WebAssembly.RuntimeError) alive = false; throw e }
   }
   return {
     pageCount: () => call(() => w.page_count()),

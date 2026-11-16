@@ -11,6 +11,7 @@ const onSuccess = async () => copyFileSync("src/pdf/hayro-pdf.wasm", "dist/hayro
 const OPTIONAL_EXTERNAL = [
   "puppeteer-core",
   "onnxruntime-node",
+  "@hyzyla/pdfium",
   "@huggingface/tokenizers",
   "sharp",
   "zxing-wasm",

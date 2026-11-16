@@ -83,17 +83,18 @@ MCP 서버는 기동 시 적용된 제한을 stderr 에 한 줄 남긴다:
 
 ## 5. 아웃바운드 통신 전량 목록
 
-소스 전체에서 `fetch` 를 호출하는 지점은 두 곳뿐이다.
+소스 전체에서 `fetch` 를 호출하는 지점은 세 곳뿐이고, 바깥으로 나가는 것은 앞의 두 곳이다.
 
 | # | 위치 | 목적지 | 발생 조건 | 차단 |
 |---|------|--------|-----------|------|
 | 1 | `src/pdf/formula/models.ts` | `huggingface.co` | OCR/수식 기능 사용 + 모델 미캐시 (최초 1회) | `KORDOC_OFFLINE=1` |
 | 2 | `src/watch.ts` | 운영자가 지정한 URL | `kordoc watch --webhook <url>` 명시 시에만 | `KORDOC_OFFLINE=1` |
+| 3 | `src/pdf/hayro.ts` | 패키지 안 자기 파일(`hayro-pdf.wasm`, 번들과 같은 출처) | 브라우저에서 PDF 를 읽을 때. Node 는 파일로 읽어 `fetch` 를 부르지 않는다 | 바깥 통신 아님 |
 
 검증(재현 가능):
 
 ```bash
-grep -rnE '\bfetch\(' src --include='*.ts'          # 소스 기준 2건
+grep -rnE '\bfetch\(' src --include='*.ts'          # 소스 기준 3건
 grep -rn 'await fetch(' dist/*.js dist/*.cjs        # 빌드 산출물 기준(ESM/CJS 중복 포함)
 ```
 

@@ -4,6 +4,7 @@ import sharp from "sharp"
 import { deflateSync } from "node:zlib"
 import { parse } from "../src/index.js"
 import { openHayro } from "../src/pdf/hayro.js"
+import { encodePng } from "../src/image/transcode.js"
 
 function buildPdf(objs: string[]): Buffer {
   let pdf = "%PDF-1.4\n"; const offsets: number[] = []
@@ -51,4 +52,38 @@ it("한 쪽 그림이 디코딩 상한(128MB)을 넘어도 그림을 물으면 �
   ]))
   doc.events(0)
   assert.deepEqual([5, 6, 7, 8, 9].map(n => doc.image(`g_hy_${n}_0`)?.width), [3000, 3000, 3000, 3000, 3000])
+})
+
+it("그림 번호와 쪽은 처음 그린 순서 — Form XObject 안·여러 쪽 반복·같은 쪽에서 다시 그린 그림", async () => {
+  const stream = (dict: string, data: string) => `${dict.replace(/>>\s*$/, ` /Length ${Buffer.byteLength(data, "latin1")} >>`)}\nstream\n${data}\nendstream`
+  /** 가로 그러데이션 RGB 표본(압축 없음) */
+  const rgb = (w: number, h: number, seed: number) => {
+    const raw = Buffer.alloc(w * h * 3), rgba = new Uint8Array(w * h * 4)
+    for (let i = 0; i < w * h; i++) {
+      const v = [(i % w) * 255 / w, (Math.floor(i / w) * 255) / h, seed].map(Math.round)
+      raw.set(v, i * 3); rgba.set([...v, 255], i * 4)
+    }
+    return { dict: `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 >>`, data: raw.toString("latin1"), png: encodePng(w, h, rgba) }
+  }
+  const a = rgb(200, 150, 10), b = rgb(160, 300, 20), small = rgb(40, 40, 30), last = rgb(48, 48, 40)
+  const draw = (name: string) => `q 100 0 0 80 100 500 cm /${name} Do Q\n`
+  // 쪽 객체 3·5·7·9, 내용 4·6·8·10, 그림 A 11·B 12·S 13, 폼 F 14(안에 B), 그림 T 15
+  const pages = [
+    { content: draw("A") + draw("S"), res: "/A 11 0 R /S 13 0 R" },
+    { content: draw("F") + draw("A"), res: "/A 11 0 R /F 14 0 R" },
+    { content: draw("A") + draw("F"), res: "/A 11 0 R /F 14 0 R" },
+    { content: draw("A") + draw("A") + draw("T"), res: "/A 11 0 R /T 15 0 R" },
+  ]
+  const r = await parse(buildPdf([
+    "<< /Type /Catalog /Pages 2 0 R >>", `<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    ...pages.flatMap((p, i) => [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << ${p.res} >> >> /Contents ${4 + i * 2} 0 R >>`, stream("<< >>", p.content)]),
+    stream(a.dict, a.data), stream(b.dict, b.data), stream(small.dict, small.data),
+    stream("<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << /XObject << /B 12 0 R >> >> >>", "/B Do"),
+    stream(last.dict, last.data),
+  ]), { ocr: false })
+  assert.ok(r.success)
+  if (!r.success) return
+  assert.deepEqual(r.blocks.filter(x => x.type === "image").map(x => [x.pageNumber, x.text]),
+    [[1, "image_001.png"], [1, "image_002.png"], [2, "image_003.png"], [4, "image_004.png"]])
+  assert.deepEqual(r.images?.map(x => Buffer.from(x.data)), [a.png, small.png, b.png, last.png].map(x => Buffer.from(x)))
 })

@@ -113,14 +113,17 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
   const fontObj = (key: string) => {
     if (!key.startsWith("hy_")) return undefined
     if (!fontObjs.has(key)) {
-      const info = hayroFontInfo(doc, key)
-      if (!info) fontObjs.set(key, null)
-      else {
-        const differences: string[] = [], map: string[] = []
-        for (const [c, n] of info.differences) differences[c] = n
-        for (const [c, u] of info.toUnicode) map[c] = u
-        fontObjs.set(key, { name: info.name, isType3Font: info.subtype === "Type3", composite: info.composite, differences, toUnicode: { _map: map }, data: hayroFontData(doc.fontFile(key)) })
-      }
+      // 글꼴 하나가 깨져도 그 쪽을 잃지 않는다 — 글꼴 정보 없이 읽는다
+      try {
+        const info = hayroFontInfo(doc, key)
+        if (!info) fontObjs.set(key, null)
+        else {
+          const differences: string[] = [], map: string[] = []
+          for (const [c, n] of info.differences) differences[c] = n
+          for (const [c, u] of info.toUnicode) map[c] = u
+          fontObjs.set(key, { name: info.name, isType3Font: info.subtype === "Type3", composite: info.composite, differences, toUnicode: { _map: map }, data: hayroFontData(doc.fontFile(key)) })
+        }
+      } catch { fontObjs.set(key, null) }
     }
     return fontObjs.get(key) as { name?: string; isType3Font?: boolean } | null | undefined
   }

@@ -88,3 +88,9 @@ it("칠하기 연산은 콘텐츠 그대로 — 넓이 없는 채움은 채움, 
   assert.deepEqual(argsArray[w], [2])
   assert.ok(fnArray.indexOf(OPS.eoFill) < w && w < at)
 })
+
+it("연산자가 상한(1,000만)을 넘는 쪽은 해석하지 않고 오류를 낸다", async () => {
+  // 엔진은 동기라 시간으로 끊지 못한다 — 쪽 하나가 하는 일의 양으로 끊는다
+  const doc = await openHayro(onePagePdf("n ".repeat(10_000_001), "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"))
+  assert.throws(() => doc.events(0), /more than 10000000 content operators/)
+})

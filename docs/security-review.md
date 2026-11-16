@@ -40,7 +40,7 @@
 | 에러처리 | 오류 메시지 정보 노출 | MCP 오류는 kordoc 오류만 그대로 내고, 나머지는 파일 경로·스택 없이 분류 문구로 바꾼다 |
 | 코드오류 | 무한 재귀·중첩 | XML 깊이 200, 렌더 중첩 16 상한 |
 | 캡슐화 | 샌드박스 | 인쇄·PDF용 Chromium은 JS를 끄고 외부 요청을 모두 막는다. 이번에 샌드박스를 기본으로 켰다(root Linux 컨테이너와 `KORDOC_CHROMIUM_NO_SANDBOX=1`만 예외) |<br>파서 전체는 gVisor 안에서 돌릴 수 있다. 컨테이너 런타임(`docker --runtime=runsc`, 쿠버네티스 RuntimeClass)이나 `KORDOC_SANDBOX=gvisor` 로 켠다. 네이티브 라이브러리가 악성 문서로 장악되어도 호스트 커널·파일·네트워크에 직접 닿지 못한다. CI 가 매번 gVisor 안에서 테스트를 돌리고 격리를 확인한다([sandbox.md](sandbox.md))
-| API 오용 | `eval`·동적 코드 | `eval`·`new Function`을 쓰지 않는다. PDF.js 스크립트 실행을 끈다 |
+| API 오용 | `eval`·동적 코드 | `eval`·`new Function`을 쓰지 않는다. PDF 엔진(hayro)에는 스크립트 실행 기능이 없다 |
 
 ## 4. 오픈소스 라이선스·취약점
 
@@ -60,7 +60,7 @@
 
 ## 6. 남은 한계
 
-- 의존성(cfb·jszip·quick-xml·hayro·onnxruntime-node·sharp) 내부 취약점은 업데이트로 대응한다. quick-xml·hayro 는 wasm으로 묶어 실으므로 올릴 때 `rust/xml-flat/Cargo.lock`·`rust/hayro-pdf/Cargo.lock`을 고치고 다시 빌드한다. gVisor 로 실행하면 이런 취약점이 터져도 피해가 샌드박스 안에 머문다. gVisor 는 Linux 전용이다.
+- 의존성(cfb·jszip·quick-xml·hayro·onnxruntime-node·sharp·pdfium) 내부 취약점은 업데이트로 대응한다. quick-xml·hayro 는 wasm으로 묶어 실으므로 올릴 때 `rust/xml-flat/Cargo.lock`·`rust/hayro-pdf/Cargo.lock`을 고치고 다시 빌드한다. gVisor 로 실행하면 이런 취약점이 터져도 피해가 샌드박스 안에 머문다. gVisor 는 Linux 전용이다.
 - gVisor 는 kordoc 이 장악됐을 때 호스트를 지킨다. 한 워커가 처리하는 문서끼리의 격리는 지금과 같다.
 - `KORDOC_ROOT`를 정하지 않으면 MCP 서버는 허용 확장자 파일을 어디서든 읽을 수 있다(5절 설정 권장).
 - 선택 의존성 onnxruntime-node·protobufjs에 설치 스크립트가 있다. 폐쇄망 설치는 [offline-deployment.md](offline-deployment.md) 절차를 따른다.

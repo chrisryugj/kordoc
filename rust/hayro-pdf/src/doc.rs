@@ -176,8 +176,9 @@ impl Device<'_> for Decoder<'_> {
     fn draw_image(&mut self, img: Image<'_, '_>, _: ImageDrawProps<'_>) {
         if let Image::Raster(r) = &img {
             let id = image_id(r, self.page, &mut self.inline_n);
-            // 화소 3,600만 이하(image-extract MAX_PIXELS)
-            if !self.images.contains_key(&id) && !self.got.contains_key(&id) && (r.width() as f64) * (r.height() as f64) <= 36_000_000.0 {
+            // 화소 3,600만 이하(image-extract MAX_PIXELS). hayro 는 /SMask 까지 함께 디코딩하므로 마스크 크기도 디코딩 전에 사전으로 잰다
+            let mask = r.stream().dict().get::<Stream<'_>>(b"SMask").map(|s| s.dict().get::<f64>(b"Width").unwrap_or(0.0) * s.dict().get::<f64>(b"Height").unwrap_or(0.0)).unwrap_or(0.0);
+            if !self.images.contains_key(&id) && !self.got.contains_key(&id) && (r.width() as f64) * (r.height() as f64) <= 36_000_000.0 && mask <= 36_000_000.0 {
                 if id != self.want && self.bytes as u64 + r.width() as u64 * r.height() as u64 * 4 > IMAGE_BUDGET as u64 { self.skipped.insert(id); return }
                 if let Some(e) = decode_raster(r) { self.bytes += e.data.len(); self.got.insert(id, e); }
             }
@@ -463,6 +464,7 @@ impl Doc {
     pub fn events(&mut self, index: usize) -> Result<Vec<f64>, String> {
         let Some(page) = self.pdf.pages().get(index) else { return Ok(Vec::new()) };
         let plan = self.shadow.page(page);
+        if self.shadow.over() { return Err(format!("page has more than {} content operators", crate::shadow::MAX_PAGE_OPS)) }
         let mut ctx = Context::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), &self.cache, self.pdf.xref(), InterpreterSettings::default());
         let mut ev = Events { fonts: &mut self.fonts, image_pages: &mut self.image_pages, page: index, inline_n: 0, buf: Vec::with_capacity(4096), strs: Vec::new(), last_fill: None, fill_end: 0,
             masks: std::collections::HashSet::new(), shadow: &mut self.shadow, plans: vec![plan.into_iter()], err: None };
