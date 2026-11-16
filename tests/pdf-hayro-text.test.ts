@@ -56,3 +56,19 @@ it("ToUnicode 없는 Adobe-Korea1 글꼴의 ToUnicode 표는 pdf.js 처럼 UCS2 
   const units = hayroTextPage(doc, 1).fonts.map(k => hayroFontInfo(doc, k)!.toUnicode.map(([, u]) => u).join(""))
   assert.ok(units.some(u => u.includes("가") && u.includes("다")))
 })
+
+it("연산자 목록의 showText 는 TJ 숫자를 글자 사이에 둔다 (자간·낱말 간격은 숫자가 아니다)", async () => {
+  // pdf.js 연산자 목록의 모양 — joinTrackedHangul 이 같은 TJ 안 이동으로 자간과 균등배분을 가른다
+  const { hayroOps } = await import("../src/pdf/hayro-ops.js")
+  const { OPS } = await import("../src/pdf/ops.js")
+  const doc = await openHayro(tjPdf())
+  const { events, strings } = doc.events(0)
+  const ops = hayroOps(events, strings)
+  const run = ops.argsArray[ops.fnArray.indexOf(OPS.showText)]![0] as unknown[]
+  assert.deepEqual(run.map(g => typeof g === "number" ? Math.round(g) : (g as { unicode: string }).unicode), ["A", "B", 200, "C", 124, "D"])
+  const spaced = onePagePdf("BT /F1 10 Tf 2 Tc 3 Tw 150 Tz 100 700 Td [(A B) -300 (C)] TJ ET", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+  const ev2 = (await openHayro(spaced)).events(0)
+  const ops2 = hayroOps(ev2.events, ev2.strings)
+  const run2 = ops2.argsArray[ops2.fnArray.indexOf(OPS.showText)]![0] as unknown[]
+  assert.deepEqual(run2.map(g => typeof g === "number" ? Math.round(g) : (g as { unicode: string }).unicode), ["A", " ", "B", -300, "C"])
+})
