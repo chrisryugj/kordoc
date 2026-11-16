@@ -20,12 +20,11 @@ color | 0.3.3 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/c
 crc32fast | 1.5.4 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/srijs/rust-crc32fast
 euclid | 0.22.14 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/servo/euclid
 fdeflate | 0.3.7 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/image-rs/fdeflate
-fearless_simd | 0.7.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/fearless_simd
 fearless_simd | 1.2.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/fearless_simd
 flate2 | 1.1.11 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/rust-lang/flate2-rs
 foldhash | 0.2.0 | Zlib | Zlib | https://github.com/orlp/foldhash
 font-types | 0.12.7 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
-glifo | 0.4.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
+glifo | 0.5.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
 guillotiere | 0.7.0 | MIT/Apache-2.0 | Apache-2.0 | https://github.com/nical/guillotiere
 hashbrown | 0.17.1 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/rust-lang/hashbrown
 hayro | 0.9.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/LaurenzV/hayro
@@ -54,18 +53,16 @@ pic-scale | 0.7.12 | BSD-3-Clause OR Apache-2.0 | Apache-2.0 | https://github.co
 png | 0.18.1 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/image-rs/image-png
 polycool | 0.4.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/linebender/kurbo
 pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 | Apache-2.0 | https://github.com/awxkee/pxfm
-read-fonts | 0.41.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
 read-fonts | 0.46.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
 rustc-hash | 2.1.3 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/rust-lang/rustc-hash
 simd-adler32 | 0.3.10 | MIT | MIT | https://github.com/mcountryman/simd-adler32
 siphasher | 1.0.4 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/jedisct1/rust-siphash
-skrifa | 0.44.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
 skrifa | 0.49.0 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/googlefonts/fontations
 smallvec | 1.16.5 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/servo/rust-smallvec
 stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/storyyeller/stable_deref_trait
 thiserror | 2.0.21 | MIT OR Apache-2.0 | Apache-2.0 | https://github.com/dtolnay/thiserror
-vello_common | 0.3.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
-vello_cpu | 0.3.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
+vello_common | 0.4.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
+vello_cpu | 0.4.0 | Apache-2.0 OR MIT | Apache-2.0 | https://github.com/linebender/vello
 yoke | 0.8.4 | Unicode-3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x
 zerofrom | 0.1.8 | Unicode-3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x
 zlib-rs | 0.6.8 | Zlib | Zlib | https://github.com/trifectatechfoundation/zlib-rs

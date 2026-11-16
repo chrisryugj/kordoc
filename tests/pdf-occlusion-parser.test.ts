@@ -26,7 +26,8 @@ function pdfWithSmallCapAndCover(content = "BT /F1 12 Tf 60 700 Td (h) Tj ET BT 
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 }
 
-it("filters covered text even when an earlier small-cap glyph is restored", async () => {
+// hayro 는 표준 글꼴의 접미사 글리프 이름(h.smcp) 폭을 0 으로 읽어 글자가 빠진다 — LaurenzV/hayro#1810 이 합쳐지고 고정 커밋을 올리면 todo 를 뗀다
+it("filters covered text even when an earlier small-cap glyph is restored", { todo: "LaurenzV/hayro#1810" }, async () => {
   const result = await parsePdfDocument(pdfWithSmallCapAndCover(), { ocr: false, removeHeaderFooter: false })
   const text = result.blocks.map(b => b.text ?? "").join("\n")
   assert.match(text, /H/)
