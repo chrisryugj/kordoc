@@ -3,12 +3,14 @@
 **모두 파싱해버리겠다.** Parse them all.
 
 [![npm version](https://img.shields.io/npm/v/kordoc.svg)](https://www.npmjs.com/package/kordoc)
+[![npm downloads](https://img.shields.io/npm/dm/kordoc.svg)](https://www.npmjs.com/package/kordoc)
+[![GitHub stars](https://img.shields.io/github/stars/chrisryugj/kordoc?style=flat)](https://github.com/chrisryugj/kordoc/stargazers)
 [![license](https://img.shields.io/npm/l/kordoc.svg)](LICENSE)
 [![MCP Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.modelcontextprotocol.io%2Fv0%2Fservers%3Fsearch%3Dio.github.chrisryugj%2Fkordoc%26version%3Dlatest&query=%24.servers%5B0%5D.server.version&label=MCP%20Registry&color=blue)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc)
 
 > *Korea's document hell is second to none. Built by a civil servant who survived seven years in it.*
 
-Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and images (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) to Markdown and structured data. Use it as a library, CLI or MCP server.
+kordoc lets AI read and write Korean government documents. It converts HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and images (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) to Markdown and structured data, and writes HWPX or HWP government documents from Markdown. Use it as a library, CLI or MCP server.
 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
@@ -18,10 +20,13 @@ Convert HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and images (PNG/JPG/
 
 - 📊 **0.965 overall on the public PDF benchmark**: opendataloader-bench, 200 documents, higher than the 12 parsers on the public leaderboard (as recorded on 2026-09-29; measured on 4.24.50). [Measurement details](docs/benchmarks-en.md#pdf--markdown--opendataloader-bench)
 - 🇰🇷 **100% Korean document table structure match**: all **10,342 visible tables** from 2,424 original HWPX documents. [Validation](#validation)
+- 🧩 **Published in the Claude plugin directory**: **1,700+ installs** (as of 2026-11-14). Also listed on the official MCP Registry.
 
 If this saves you time, a GitHub ⭐ helps others find it.
 
 Videos (Korean): [public benchmark run](https://youtu.be/9kRbwiTRQLs) (2026-09-27 cut, 1 min 31 sec) · [batch form filling demo](https://youtu.be/Q13GmgDcIw0)
+
+**Contents**: [Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Validation](#validation) · [Recent updates](#recent-updates) · [FAQ](#faq) · [Documentation and security](#documentation-and-security)
 
 ## Install
 
@@ -33,26 +38,19 @@ npm install kordoc
 
 Run the CLI without installing it globally: `npx kordoc`. PDF, OCR, image-format conversion and QR-reading dependencies are installed by default; omitting them with `--omit=optional` limits those features.
 
-**Connect an AI agent**
+### Connect an AI agent
 
-```bash
-npx -y kordoc setup
-```
-
-Registers MCP with installed clients such as Claude Desktop, Claude Code, Cursor and Codex. Restart the client to use **22 tools** for parsing, comparison, generation, review, rendering and more. kordoc is also listed on the official MCP Registry as [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc).
-
-One-click install for VS Code and Cursor:
+| Where | How |
+| --- | --- |
+| Claude Desktop, Claude Code, Cursor, Codex and others | `npx -y kordoc setup` finds installed clients and registers the MCP server |
+| VS Code, Cursor | Use the buttons below |
+| Claude Code plugin | `/plugin marketplace add chrisryugj/kordoc`, then `/plugin install kordoc@kordoc` |
+| Claude apps | Find kordoc in the plugin directory and install it |
+| Other MCP clients | Official MCP Registry [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc) or [manual setup](docs/usage-en.md) |
 
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_kordoc-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=kordoc&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22kordoc%22%2C%22mcp%22%5D%7D) [![Install in Cursor](https://img.shields.io/badge/Cursor-Install_kordoc-000000?style=flat-square&logo=cursor&logoColor=white)](https://cursor.com/en/install-mcp?name=kordoc&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImtvcmRvYyIsIm1jcCJdfQ%3D%3D)
 
-Claude Code plugin:
-
-```text
-/plugin marketplace add chrisryugj/kordoc
-/plugin install kordoc@kordoc
-```
-
-[Manual MCP setup and installation troubleshooting](docs/usage-en.md)
+Restart the client to use **22 tools** for parsing, comparison, generation, review, rendering and more. If registration fails, see [manual MCP setup and installation troubleshooting](docs/usage-en.md).
 
 ## Quick start
 
@@ -65,7 +63,7 @@ npx kordoc document.pdf --format json --pages 1-3
 npx kordoc scan.pdf --ocr -o scan.md
 npx kordoc generate report.md --preset report -o report.hwpx
 npx kordoc to-hwpx document.hwp -o document.hwpx
-npx kordoc to-hwpx ./old-docs   # whole folder (subfolders too) — .hwpx next to each file, existing ones skipped
+npx kordoc to-hwpx ./old-docs   # whole folder (subfolders too): .hwpx next to each file, existing ones skipped
 npx kordoc document.pdf -o document.hwpx   # PDF, DOCX and others become HWPX from what was read (images included)
 npx kordoc pack build report1.hwpx report2.hwpx report3.hwpx --name Gwangyang -o gwangyang.kpack   # agency pack (docs/agency-pack-en.md)
 npx kordoc generate new-report.md --pack gwangyang.kpack -o new-report.hwpx
@@ -93,7 +91,7 @@ const hwpx = await markdownToHwpx("# Plan\n\nBody text", {
 await writeFile("report.hwpx", Buffer.from(hwpx))
 ```
 
-[Parse options, APIs, forms and rendering examples](docs/usage-en.md#-quick-start)
+[Parse options, APIs, forms and rendering examples](docs/usage-en.md#-quick-start) · From Python or Java: [Python SDK](sdk/python/README.md), [Java SDK](sdk/java/README.md)
 
 ## Features
 
@@ -102,8 +100,8 @@ await writeFile("report.hwpx", Buffer.from(hwpx))
 | Read | Markdown, IR, page text, RAG chunks, local OCR (handwriting included), QR code values in images (`--qr-codes`), one image format for all images (`--image-format png\|webp`) |
 | Compare and edit | Block/cell diffs, format-preserving HWPX/HWP patches, new content in a sample's format |
 | Create | Markdown → HWPX or HWP (HWP needs `npm install @rhwp/core`, then `-o doc.hwp`), government-document presets and department templates (`--template`), tables, equations and charts |
-| Convert | HWP → HWPX — HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts; distribution-protected and track-changes documents included). PDF, DOCX and others become HWPX from what was read with `-o document.hwpx` |
-| Agency packs | Build a house-style pack (`.kpack`) from a few of your own agency documents and write new documents in that style — [agency packs](docs/agency-pack-en.md) |
+| Convert | HWP → HWPX: HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts; distribution-protected and track-changes documents included). PDF, DOCX and others become HWPX from what was read with `-o document.hwpx` |
+| Agency packs | Build a house-style pack (`.kpack`) from a few of your own agency documents and write new documents in that style: [agency packs](docs/agency-pack-en.md) |
 | Fill forms | Fields, click-here controls, two draft templates and seal placement |
 | Review | Notation and public-language rules, structure and AI-writing gate, budget calculation checks, block-level lint for open documents (`lint-blocks`) |
 | View and protect | HWPX/HWP previews and region crops, PII masking |
@@ -112,7 +110,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout and statute annexes: 4.24.24 · 2026-10-30; PDF tables: 4.24.35 · 2026-11-01; OCR: 4.24.32 · 2026-11-01; HWP → HWPX conversion: 4.24.29 · 2026-10-31; PDF text, KoOCR-Bench and opendataloader-bench defaults and OCR on: 4.24.50 · 2026-11-07). Results use fixed corpora and reference criteria.
+Results use fixed corpora and reference criteria. Measured on: default 4.22.14 (2026-10-19) · render layout and statute annexes 4.24.24 (2026-10-30) · HWP → HWPX conversion 4.24.29 (2026-10-31) · OCR 4.24.32 (2026-11-01) · PDF tables 4.24.35 (2026-11-01) · PDF text and opendataloader-bench defaults and OCR on 4.24.50 (2026-11-07) · KoOCR-Bench 4.24.68.
 
 | Target | Population | Result |
 | --- | --- | --- |
@@ -126,7 +124,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
 | OCR | 53 documents · 102 pages · 65 tables | CER **0.0237** · character recall **99.33%** · table structure **33/65** |
-| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.906** by default · tables **0.916** · handwriting **0.921** · order **0.914** · heading recall 0.930 (4.24.68) |
+| KoOCR-Bench v2.0c (external) | public 877 pages (tables, text, handwriting, order) | total **0.906** by default · tables **0.916** · handwriting **0.921** · order **0.914** · heading recall 0.930 |
 | opendataloader-bench | 200 PDF documents | Overall **0.965** with defaults · **0.967** with `ocr: true` · 0.939 with OCR off (4.22.14) |
 | HWPX render layout | 1,565 Hancom PDF pairs (1,508 with matching page counts) · 111,480 text runs · 4,300 images | Text position (±1.5pt) **106,904 · 95.9%** · image position (±2pt) **4,213 · 98.0%** |
 
@@ -136,20 +134,20 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 Latest release: **[4.24.81](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.81)** · 2026-11-16
 
-| Version | Highlights | Measured change |
+| Version | What changed | Measured change |
 | --- | --- | --- |
-| 4.24.81 | Plain paragraphs starting with `>` ("> 50% or more") or made of `---` no longer turn into blockquotes or rules (losing text) when the markdown is rendered or round-tripped through HWPX (#212) · `patchHwpx` edits those paragraphs | **No** per-document change on the score benchmark (5,465 documents), PDF text (744), PDF tables (730), annex (544), formats (146), roundtrip (75) and ODL 200 · scoring code unchanged |
-| 4.24.80 | HWP (5.0) output — `generate -o doc.hwp`, MCP `output_path` `.hwp`, `hwpxToHwp`, via the optional dependency `@rhwp/core` (default install size unchanged) | 11 generated samples (9 government-document presets, two columns with equations, tables and images) keep their page counts · **0** content-loss reports · parser unchanged |
-| 4.24.79 | PDF spaced digits ("- 10 -"), particles after Hanja at line starts, one-syllable fragments after particle-shaped words, weekday parentheses after dates · table rows split at unruled page breaks (two-line labels, numbered lists in cells) · OCR value rows between unruled section-name rows | PDF text word-boundary F1 99.149% → **99.159%** (19 documents up, an approval document 0.981 → **1**) · ODL table TEDS 98.015% → **98.053%** · annex PDF recall 99.982% → **99.983%** · KoOCR 0.90644 → **0.90653** · 2 per-document drops are scoring artifacts (see CHANGELOG) |
-| 4.24.78 | PDF false spaces in letter-spaced Hangul lines · table captions kept when layout tables are flattened · HWP figure captions below the image · wrapped lines of hanging-indent numbered lists · OCR cells "18 (18.2%)" | PDF text word-boundary F1 99.139% → **99.149%** (20 documents up, one press release 0.925 → **0.954**) · score benchmark **1 on all 5,465 documents** · KoOCR drug-label page CER 0.134 → **0.123** · no per-document drops on in-house benchmarks or KoOCR |
-| 4.24.77 | PDF false spaces (Microsoft Print To PDF and LibreOffice PDFs now judge spaces on unrounded coordinates) · preview draws fractions stacked, cases on one line | PDF text word-boundary F1 up on 9 documents (two press releases 0.962 → **0.993** and 0.974 → **0.992**) · no per-document drops on in-house benchmarks or KoOCR |
+| 4.24.81 | Plain paragraphs starting with `>` ("> 50% or more") or made of `---` no longer turn into blockquotes or rules (losing text) when the Markdown is rendered or round-tripped through HWPX (#212). `patchHwpx` edits those paragraphs too | **No** per-document change on the score benchmark (5,465 documents), PDF text (744), PDF tables (730), annex (544), formats (146), roundtrip (75) and ODL 200 · scoring code unchanged |
+| 4.24.80 | Saves HWP (5.0): `generate -o doc.hwp`, MCP `output_path` `.hwp`, `hwpxToHwp`. Uses the optional dependency `@rhwp/core`; the default install size is unchanged | 11 generated samples (9 government-document presets, two columns with equations, tables and images) keep their page counts · **0** content-loss reports · parser unchanged |
+| 4.24.79 | PDF text: spaced page numbers ("- 10 -"), particles after Hanja at line starts and weekday parentheses after dates now read correctly. Table rows split at unruled page breaks and OCR value rows are fixed too | PDF text word-boundary F1 99.149% → **99.159%** (19 documents up, an approval document 0.981 → **1**) · ODL table TEDS 98.015% → **98.053%** · annex PDF recall 99.982% → **99.983%** · KoOCR 0.90644 → **0.90653** · 2 per-document drops are scoring artifacts (see CHANGELOG) |
+| 4.24.78 | Removes false spaces in letter-spaced Hangul PDF lines. Also fixes table captions lost when layout tables are flattened, HWP figure captions below the image, wrapped lines of hanging-indent numbered lists and OCR cells "18 (18.2%)" | PDF text word-boundary F1 99.139% → **99.149%** (20 documents up, one press release 0.925 → **0.954**) · score benchmark **1 on all 5,465 documents** · KoOCR drug-label page CER 0.134 → **0.123** · no per-document drops on in-house benchmarks or KoOCR |
+| 4.24.77 | Fewer false spaces in PDFs made by other programs (spaces judged on unrounded coordinates). The preview draws fractions stacked and cases on one line | PDF text word-boundary F1 up on 9 documents (two press releases 0.962 → **0.993** and 0.974 → **0.992**) · no per-document drops on in-house benchmarks or KoOCR |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
 ## FAQ
 
 **How do I convert an HWP or HWPX file to Markdown?**
-`npx kordoc document.hwp -o document.md`. It reads the file directly, without Hancom Office. Convert many files at once with `npx kordoc *.hwpx -d ./output`.
+Run `npx kordoc document.hwp -o document.md`. It reads the file directly, without Hancom Office. Convert many files at once with `npx kordoc *.hwpx -d ./output`.
 
 **How do I let Claude, Cursor or another AI agent read Korean documents?**
 Run `npx -y kordoc setup` to register the MCP server. The agent can then read, compare and fill HWP, PDF and Excel files from a file path.
@@ -172,6 +170,18 @@ Yes. `KORDOC_OFFLINE=1` blocks all outbound traffic, and OCR runs on the local C
 - [gVisor sandbox](docs/sandbox.md): run the parser inside gVisor to protect the host (Linux; `KORDOC_SANDBOX=gvisor` or `docker --runtime=runsc`, Korean)
 - [Security policy](SECURITY.md) · [MIT license](LICENSE) · [Third-party notices](NOTICE)
 
+## Star History
+
+<a href="https://star-history.dera.page/#chrisryugj/kordoc&type=timeline&legend=bottom-right">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=chrisryugj/kordoc&type=timeline&theme=dark&legend=top-left" />
+    <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=chrisryugj/kordoc&type=timeline&legend=top-left" />
+    <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=chrisryugj/kordoc&type=timeline&legend=top-left" />
+  </picture>
+</a>
+
 ## About the Author
 
 A local civil servant in Korea. Built this after seven years of wrestling HWP files at the Gwangjin-gu District Office in Seoul. Validated on thousands of real government documents across five public-sector projects.
+
+License: [MIT](LICENSE)
