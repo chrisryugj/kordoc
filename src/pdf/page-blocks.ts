@@ -925,7 +925,11 @@ function extractBlocksWithGrids(
       const overlapX = (x: BoundingBox) => Math.min(x.x + x.width, b.x + b.width) - Math.max(x.x, b.x)
       return !blocks.some(x => x.bbox && x.bbox.y >= b.y - 2 && x.bbox.y + x.bbox.height <= b.y + b.height + 2 &&
         (x.type === "paragraph" ? (x.text?.match(/\p{L}/gu)?.length ?? 0) >= 10 && overlapX(x.bbox) >= 0.8 * b.width
-          : x.type === "table" && !ocrPage && x.table?.cols === cr.table.cols && overlapX(x.bbox) >= 0.5 * Math.min(x.bbox.width, b.width)))
+          : x.type === "table" && (ocrPage
+            // OCR 쪽: 열 수가 다른 선 격자 표가 후보 폭을 거의 다 덮으며 행 사이에 들어 있으면 한 표가 아니다 — 격자 표 위 제목·조직도 줄과
+            // 아래 쪽 번호가 격자를 건너 한 표로 묶였다(OCR 벤치 changwon 조직도 쪽: 5×7 후보가 22×9 격자를 품음)
+            ? x.table?.cols !== cr.table.cols && overlapX(x.bbox) >= 0.8 * b.width
+            : x.table?.cols === cr.table.cols && overlapX(x.bbox) >= 0.5 * Math.min(x.bbox.width, b.width))))
     })
     if (clusterResults.length > 0) {
       const ciToIdx = new Map<ClusterItem, number>()
