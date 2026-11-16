@@ -13,9 +13,11 @@ export const EV = { GLYPH: 1, SAVE: 2, RESTORE: 3, BEGIN_TEXT: 4, END_TEXT: 5, F
   /** ExtGState /SMask 그룹의 내용 — pdfjs 는 연산자 목록에만 끼워 넣고 글 추출은 들여다보지 않는다 */
   SMASK_BEGIN: 25, SMASK_END: 26,
   /** Tz(가로 비율, 퍼센트) */
-  HSCALE: 27 } as const
+  HSCALE: 27,
+  /** w(선 굵기) */
+  LINE_WIDTH: 28 } as const
 const { GLYPH, SAVE, RESTORE, FONT, XOBJECT, MARK_BEGIN, MARK_END } = EV
-const FIXED: Record<number, number> = { 1: 31, 6: 4, 7: 2, 8: 3, 21: 11, 22: 11, 24: 2, 27: 2 }
+const FIXED: Record<number, number> = { 1: 31, 6: 4, 7: 2, 8: 3, 21: 11, 22: 11, 24: 2, 27: 2, 28: 2 }
 
 /** 경로 조각 수(또는 사각형 표시 −1)부터 쓰는 수의 개수. 조각: 0 MoveTo·1 LineTo·2 2차 곡선·3 3차 곡선·4 닫기·5 `re` 로 시작한 MoveTo */
 export function pathLength(ev: ArrayLike<number>, at: number): number {

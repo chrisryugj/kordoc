@@ -93,6 +93,8 @@ pub const SMASK_BEGIN: f64 = 25.0;
 pub const SMASK_END: f64 = 26.0;
 /// Tz(가로 비율, 퍼센트) — 글 추출 문턱은 pdfjs 처럼 Tz 를 빼고 잰다
 pub const HSCALE: f64 = 27.0;
+/// [LINE_WIDTH, w] — w 연산자
+pub const LINE_WIDTH: f64 = 28.0;
 
 struct Events<'f, 'a> { fonts: &'f mut HashMap<String, FontEntry>, image_pages: &'f mut HashMap<String, usize>, page: usize, inline_n: usize, buf: Vec<f64>, strs: Vec<String>, last_fill: Option<(usize, f64, f64)>,
     /// 방금 낸 채움 경로 사건의 끝 자리 — 바로 뒤에 딸린 긋기(B)가 오면 한 연산(fillStroke)으로 묶게 표시한다
@@ -239,6 +241,7 @@ impl<'a> Events<'_, 'a> {
             Item::XObject(n) => { let n = self.s(n); self.buf.extend_from_slice(&[XOBJECT, n]) }
             Item::FormBegin(m, b) => self.buf.extend_from_slice(&[FORM_BEGIN, m[0], m[1], m[2], m[3], m[4], m[5], b[0] as f64, b[1] as f64, b[2] as f64, b[3] as f64]),
             Item::HScale(h) => self.buf.extend_from_slice(&[HSCALE, h as f64]),
+            Item::LineWidth(w) => self.buf.extend_from_slice(&[LINE_WIDTH, w as f64]),
             Item::Clip(false, c) => self.emit_clip(&c),
             Item::Pop(false) => self.buf.push(CLIP_POP),
             other => return Some(other),

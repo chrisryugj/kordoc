@@ -91,12 +91,14 @@ export function hayroOps(ev: ArrayLike<number>, strs: string[]): OpList {
         if (run.length) push(OPS.showText, [run])
         run = []; runTm = null; pendingTm = false
         break
+      // 선 굵기는 pdf.js 처럼 콘텐츠의 w 자리에 낸다 — 선 판정은 q/Q 와 무관하게 직전 w 를 채움 괘선에도 쓴다
+      case EV.LINE_WIDTH: push(OPS.setLineWidth, [ev[i + 1]!]); break
       case EV.PATH: {
-        const code = ev[i + 1]!, lw = ev[i + 6]!
-        // 채움에 딸린 긋기(B) — 바로 앞 채움 묶음(… constructPath·fill·restore)에 선 굵기·선 색을 끼우고 fillStroke 로 바꾼다
+        const code = ev[i + 1]!
+        // 채움에 딸린 긋기(B) — 바로 앞 채움 묶음(… constructPath·fill·restore)에 선 색을 끼우고 fillStroke 로 바꾼다
         if (code === 6) {
           const at = fnArray.length - 3, c = ev[i + 2]!, a = ev[i + 5]! / 255
-          const extra: Array<[number, unknown[]]> = [[OPS.setLineWidth, [lw]]]
+          const extra: Array<[number, unknown[]]> = []
           if (c >= 0) extra.push([OPS.setStrokeRGBColor, [c, ev[i + 3]!, ev[i + 4]!]])
           if (a < 1) extra.push([OPS.setGState, [[["CA", a]]]])
           fnArray.splice(at, 0, ...extra.map(e => e[0])); argsArray.splice(at, 0, ...extra.map(e => e[1]))
@@ -105,7 +107,6 @@ export function hayroOps(ev: ArrayLike<number>, strs: string[]): OpList {
         }
         push(OPS.save, [])
         push(OPS.transform, [ev[i + 7]!, ev[i + 8]!, ev[i + 9]!, ev[i + 10]!, ev[i + 11]!, ev[i + 12]!])
-        if (lw >= 0) push(OPS.setLineWidth, [lw])
         const r = ev[i + 2]!, g = ev[i + 3]!, b = ev[i + 4]!, a = ev[i + 5]! / 255
         const fills = code !== 3, strokes = code >= 3
         if (r >= 0) {

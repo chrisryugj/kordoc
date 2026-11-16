@@ -67,6 +67,8 @@ pub enum Item<'a> {
     XObject(String),
     FormBegin([f64; 6], [f32; 4]),
     HScale(f32),
+    /// w — pdf.js 연산자 목록은 선 굵기를 콘텐츠 순서 그대로 낸다(선 판정은 채움 괘선에도 직전 w 를 쓴다)
+    LineWidth(f32),
     // 콜백 자리 (Clip·Pop 의 real=false 는 hayro 가 생략한 덮는 클립 — 장치가 대신 낸다)
     Run { mode: u8, glyphs: Rc<Vec<GlyphPlan>>, mask: Option<Rc<MaskRec<'a>>> },
     /// 경로 칠하기 — 둘째 값은 pdf.js 셈으로 색을 다시 낼 색 공간, 셋째는 콘텐츠가 그린 경로
@@ -788,6 +790,7 @@ impl<'a> Shadow<'a> {
                     cx.ts().pj.settle(None, h);
                     self.show(cx, g, out);
                 }
+                TypedInstruction::LineWidth(w) => out.push(Item::LineWidth(w.0.as_f32())),
                 TypedInstruction::HorizontalScaling(h) => { cx.ts().th = h.0.as_f32(); cx.ts().pj.hs = h.0.as_f64() / 100.0; out.push(Item::HScale(h.0.as_f32())) }
                 TypedInstruction::TextLeading(tl) => { cx.ts().tl = tl.0.as_f32(); cx.ts().pj.tl = tl.0.as_f64() }
                 TypedInstruction::CharacterSpacing(c) => { cx.ts().tc = c.0.as_f32(); cx.ts().pj.tc = c.0.as_f64() }
