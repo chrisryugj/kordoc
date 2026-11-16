@@ -95,6 +95,8 @@ pub const SMASK_END: f64 = 26.0;
 pub const HSCALE: f64 = 27.0;
 
 struct Events<'f, 'a> { fonts: &'f mut HashMap<String, FontEntry>, image_pages: &'f mut HashMap<String, usize>, page: usize, inline_n: usize, buf: Vec<f64>, strs: Vec<String>, last_fill: Option<(usize, f64, f64)>,
+    /// 방금 낸 채움 경로 사건의 끝 자리 — 바로 뒤에 딸린 긋기(B)가 오면 한 연산(fillStroke)으로 묶게 표시한다
+    fill_end: usize,
     /// 이미 내용을 낸 소프트 마스크 — pdfjs 는 같은 ExtGState 를 다시 써도 한 번만 낸다
     masks: std::collections::HashSet<(u128, Option<u128>, u128, u128)>,
     /// 그림자 해석기와 그 계획(맨 위가 지금 해석 중인 쪽 또는 소프트 마스크)
@@ -290,8 +292,8 @@ impl<'a> Events<'_, 'a> {
 
     fn draw(&mut self, rect: Option<&Rect>, path: Option<&BezPath>, props: &DrawProps<'a>, mode: &DrawMode) {
         let Some(it) = self.next("draw", is_shade(props)) else { return };
-        let (rec, legacy, cs, form) = match it {
-            Item::Draw(m, cs, form) => (m, None, cs, Some(form)),
+        let (rec, legacy, cs, form, op) = match it {
+            Item::Draw(m, cs, form, op) => (m, None, cs, Some(form), op),
             // 예전 bbox 와 다르면 음영 영역을 예전 bbox 로 다시 만든다 — hayro 가 지금 bbox 로 그린 것과 같은지 먼저 확인한다
             Item::Shade { mask, ctm, nb, lb } => {
                 let legacy = (nb != lb).then(|| {
@@ -300,7 +302,7 @@ impl<'a> Events<'_, 'a> {
                     let same = ec == code && match (rect, path, er) { (Some(r), _, Some(e)) => *r == e, (_, Some(p), None) => same_path(p, &ep), _ => false };
                     same.then(|| fill_shape(&props.transform, &(ctm.inverse() * lb.to_path(0.1))))
                 }).flatten();
-                (mask, legacy, None, None)
+                (mask, legacy, None, None, 0)
             }
             it => return self.mismatch("draw", &it)
         };
@@ -312,12 +314,18 @@ impl<'a> Events<'_, 'a> {
             match r { Some(r) => self.buf.extend_from_slice(&[-1.0, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0]), None => push_path(&mut self.buf, &p) }
             return;
         }
-        let (code, lw) = match mode {
+        // 넓이 없는 채움을 hayro 는 가는 긋기로 바꿔 준다(path.rs fill_path_impl). 연산자 목록은 pdf.js 처럼 콘텐츠의 채움과 경로 그대로 —
+        // 긋기로 내면 그라데이션을 이루는 폭 0 사각형 수백 개가 표 괘선으로 읽힌다
+        let zero_fill = (op == 1 || op == 2) && matches!(mode, DrawMode::Stroke(_));
+        // hayro 는 B 를 채움·긋기 두 번으로 준다 — 채움 사건 바로 뒤의 딸린 긋기는 6 으로 적어 연산자 목록이 fillStroke 하나로 낸다
+        let joined = op == 3 && self.fill_end == self.buf.len() && self.fill_end != 0;
+        let (code, lw) = if zero_fill { (op as f64, -1.0) } else { match mode {
+            DrawMode::Stroke(sp) if joined => (6.0, sp.line_width as f64),
             DrawMode::Fill(r) => (if matches!(r, hayro_interpret::FillRule::EvenOdd) { 2.0 } else { 1.0 }, -1.0),
             DrawMode::Stroke(sp) => (3.0, sp.line_width as f64),
             DrawMode::FillAndStroke(r, sp) => (if matches!(r, hayro_interpret::FillRule::EvenOdd) { 5.0 } else { 4.0 }, sp.line_width as f64),
             DrawMode::Invisible => return,
-        };
+        } };
         self.mask(props.soft_mask.as_ref(), rec.as_ref());
         let mut c = paint_rgba(&props.paint);
         // ICCBased·DeviceCMYK 를 거치는 색은 pdf.js 셈(Alternate·Adobe 다항식)으로 — hayro 는 ICC 프로파일로 바꾼다
@@ -326,11 +334,12 @@ impl<'a> Events<'_, 'a> {
         }
         let t = props.transform.as_coeffs();
         self.buf.extend_from_slice(&[PATH, code, c[0], c[1], c[2], c[3], lw, t[0], t[1], t[2], t[3], t[4], t[5]]);
-        // 콘텐츠가 그린 경로 그대로(hayro 는 사각형 모양이면 사각형으로 준다). 넓이 없는 채움을 hayro 가 대각선 긋기로 바꾼 것은 hayro 모양
-        let form = form.filter(|f| match (rect, path) { (Some(r), _) => path_as_rect(&f.path) == Some(*r), (_, Some(p)) => same_path(p, &f.path), _ => false });
+        // 콘텐츠가 그린 경로 그대로(hayro 는 사각형 모양이면 사각형으로 준다)
+        let form = form.filter(|f| zero_fill || match (rect, path) { (Some(r), _) => path_as_rect(&f.path) == Some(*r), (_, Some(p)) => same_path(p, &f.path), _ => false });
         if let Some(f) = form { push_path_form(&mut self.buf, &f.path, &f.re) }
         else if let Some(r) = rect { self.buf.extend_from_slice(&[-1.0, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0]) }
         else if let Some(p) = path { push_path(&mut self.buf, p) }
+        if code == 1.0 || code == 2.0 { self.fill_end = self.buf.len() }
     }
 }
 
@@ -452,7 +461,7 @@ impl Doc {
         let Some(page) = self.pdf.pages().get(index) else { return Ok(Vec::new()) };
         let plan = self.shadow.page(page);
         let mut ctx = Context::new(Affine::IDENTITY, Rect::new(0.0, 0.0, 1.0, 1.0), &self.cache, self.pdf.xref(), InterpreterSettings::default());
-        let mut ev = Events { fonts: &mut self.fonts, image_pages: &mut self.image_pages, page: index, inline_n: 0, buf: Vec::with_capacity(4096), strs: Vec::new(), last_fill: None,
+        let mut ev = Events { fonts: &mut self.fonts, image_pages: &mut self.image_pages, page: index, inline_n: 0, buf: Vec::with_capacity(4096), strs: Vec::new(), last_fill: None, fill_end: 0,
             masks: std::collections::HashSet::new(), shadow: &mut self.shadow, plans: vec![plan.into_iter()], err: None };
         interpret_page(page, &mut ctx, &mut ev);
         ev.finish();

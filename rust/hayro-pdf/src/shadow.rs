@@ -70,7 +70,8 @@ pub enum Item<'a> {
     // 콜백 자리 (Clip·Pop 의 real=false 는 hayro 가 생략한 덮는 클립 — 장치가 대신 낸다)
     Run { mode: u8, glyphs: Rc<Vec<GlyphPlan>>, mask: Option<Rc<MaskRec<'a>>> },
     /// 경로 칠하기 — 둘째 값은 pdf.js 셈으로 색을 다시 낼 색 공간, 셋째는 콘텐츠가 그린 경로
-    Draw(Option<Rc<MaskRec<'a>>>, Option<Rc<Pcs>>, Rc<PathForm>),
+    /// 끝 값은 콘텐츠의 칠하기 연산 — 0 긋기, 1 채움, 2 짝홀 채움, 3 채움에 딸린 긋기(B·B*·b·b*)
+    Draw(Option<Rc<MaskRec<'a>>>, Option<Rc<Pcs>>, Rc<PathForm>, u8),
     /// `sh` — hayro 가 음영을 못 만들면 콜백이 없다. 장치가 음영 칠하기(무늬 행렬 = 그리기 행렬)로 알아본다.
     /// 칠하는 영역은 bbox 라서, 덮는 클립을 생략한 hayro bbox(nb)와 예전 bbox(lb)가 다르면 장치가 예전 것으로 다시 만든다
     Shade { mask: Option<Rc<MaskRec<'a>>>, ctm: Affine, nb: Rect, lb: Rect },
@@ -331,14 +332,16 @@ impl<'a> Cx<'a> {
             self.last = self.sub;
         }
     }
-    fn fill(&mut self, out: &mut Vec<Item<'a>>) { self.paint(false, out) }
-    fn stroke(&mut self, out: &mut Vec<Item<'a>>) { self.paint(true, out) }
-    fn paint(&mut self, stroke: bool, out: &mut Vec<Item<'a>>) {
+    fn fill(&mut self, even_odd: bool, out: &mut Vec<Item<'a>>) { self.paint(if even_odd { 2 } else { 1 }, out) }
+    fn stroke(&mut self, out: &mut Vec<Item<'a>>) { self.paint(0, out) }
+    fn fill_stroke(&mut self, even_odd: bool, out: &mut Vec<Item<'a>>) { self.fill(even_odd, out); self.paint(3, out) }
+    fn paint(&mut self, op: u8, out: &mut Vec<Item<'a>>) {
+        let stroke = op == 0 || op == 3;
         if !self.visible() { return }
         let st = self.st();
         let cs = if st.tr { None } else if stroke { st.stroke_cs.clone() } else { st.fill_cs.clone() };
         let form = Rc::new(PathForm { path: self.path.clone(), re: self.path_re.clone() });
-        out.push(Item::Draw(st.mask.clone(), cs, form))
+        out.push(Item::Draw(st.mask.clone(), cs, form, op))
     }
 }
 
@@ -702,12 +705,13 @@ impl<'a> Shadow<'a> {
                     }
                 }
                 TypedInstruction::ClosePath(_) => cx.close_path(),
-                TypedInstruction::FillPathEvenOdd(_) | TypedInstruction::FillPathNonZero(_) | TypedInstruction::FillPathNonZeroCompatibility(_) => {
-                    cx.fill(out); cx.end_path(out)
-                }
-                TypedInstruction::FillAndStrokeEvenOdd(_) | TypedInstruction::FillAndStrokeNonZero(_) => { cx.fill(out); cx.stroke(out); cx.end_path(out) }
+                TypedInstruction::FillPathEvenOdd(_) => { cx.fill(true, out); cx.end_path(out) }
+                TypedInstruction::FillPathNonZero(_) | TypedInstruction::FillPathNonZeroCompatibility(_) => { cx.fill(false, out); cx.end_path(out) }
+                TypedInstruction::FillAndStrokeEvenOdd(_) => { cx.fill_stroke(true, out); cx.end_path(out) }
+                TypedInstruction::FillAndStrokeNonZero(_) => { cx.fill_stroke(false, out); cx.end_path(out) }
                 TypedInstruction::CloseAndStrokePath(_) => { cx.close_path(); cx.stroke(out); cx.end_path(out) }
-                TypedInstruction::CloseFillAndStrokeEvenOdd(_) | TypedInstruction::CloseFillAndStrokeNonZero(_) => { cx.close_path(); cx.fill(out); cx.stroke(out); cx.end_path(out) }
+                TypedInstruction::CloseFillAndStrokeEvenOdd(_) => { cx.close_path(); cx.fill_stroke(true, out); cx.end_path(out) }
+                TypedInstruction::CloseFillAndStrokeNonZero(_) => { cx.close_path(); cx.fill_stroke(false, out); cx.end_path(out) }
                 TypedInstruction::StrokePath(_) => { cx.stroke(out); cx.end_path(out) }
                 // 색 공간 — interpret/mod.rs 의 색 연산자와 같은 순서로 정한다
                 TypedInstruction::NonStrokeColorDeviceGray(_) | TypedInstruction::NonStrokeColorDeviceRgb(_) => cx.st_mut().fill_cs = None,

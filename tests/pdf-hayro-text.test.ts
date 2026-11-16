@@ -2,6 +2,8 @@ import { it } from "node:test"
 import assert from "node:assert/strict"
 import { openHayro } from "../src/pdf/hayro.js"
 import { hayroFontInfo, hayroTextPage } from "../src/pdf/hayro-text.js"
+import { hayroOps } from "../src/pdf/hayro-ops.js"
+import { OPS } from "../src/pdf/ops.js"
 import { readFileSync } from "node:fs"
 import { parse } from "../src/index.js"
 
@@ -71,4 +73,15 @@ it("연산자 목록의 showText 는 TJ 숫자를 글자 사이에 둔다 (자�
   const ops2 = hayroOps(ev2.events, ev2.strings)
   const run2 = ops2.argsArray[ops2.fnArray.indexOf(OPS.showText)]![0] as unknown[]
   assert.deepEqual(run2.map(g => typeof g === "number" ? Math.round(g) : (g as { unicode: string }).unicode), ["A", " ", "B", -300, "C"])
+})
+
+it("칠하기 연산은 콘텐츠 그대로 — 넓이 없는 채움은 채움, B 는 fillStroke 하나", async () => {
+  // hayro 는 넓이 없는 채움을 가는 긋기로, B 를 채움·긋기 두 번으로 준다. 그대로 내면 그라데이션 띠·도형 테두리가 표 괘선으로 읽힌다
+  const page = hayroTextPage(await openHayro(onePagePdf("100 100 0 50 re f* 1 0 0 RG 2 w 200 100 50 50 re B", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")), 1)
+  const { fnArray, argsArray } = hayroOps(page.events, page.strings)
+  const paints = fnArray.filter(f => [OPS.fill, OPS.eoFill, OPS.stroke, OPS.fillStroke, OPS.eoFillStroke].includes(f))
+  assert.deepEqual(paints, [OPS.eoFill, OPS.fillStroke])
+  assert.deepEqual(argsArray[fnArray.indexOf(OPS.constructPath)]!.slice(0, 2), [[OPS.rectangle], [100, 100, 0, 50]])
+  const at = fnArray.lastIndexOf(OPS.constructPath)
+  assert.deepEqual([fnArray[at - 2], argsArray[at - 2], fnArray[at - 1], argsArray[at - 1]], [OPS.setLineWidth, [2], OPS.setStrokeRGBColor, [255, 0, 0]])
 })
