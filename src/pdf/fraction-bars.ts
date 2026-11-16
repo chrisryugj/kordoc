@@ -33,6 +33,8 @@ const BAR_PAD = 1
 const PART_MAX_CHARS = 40
 /** 분자·분모 한글 낱말 상한 */
 const PART_MAX_WORDS = 3
+/** 분자·분모 안 이웃 글 사이 틈 상한 (em) — 식 조각은 붙어 있고, 넓게 떨어진 글은 표 칸들이다. 연산자 글리프가 빠진 식 "기말자산가치 [−] 기초자산가치" 가 4.8em, 표 칸은 7.8em 부터 */
+const PART_MAX_GAP_EM = 6
 /** 괘선 판정 오차 (pt) */
 const RULE_EPS = 2
 
@@ -98,6 +100,9 @@ export function foldFractionBars(items: NormItem[], horizontals: LineSegment[], 
       return t.split(/\s+/).filter(w => /[가-힣]/.test(w)).length
     }
     if (chars(num) > PART_MAX_CHARS || chars(den) > PART_MAX_CHARS || words(num) > PART_MAX_WORDS || words(den) > PART_MAX_WORDS) continue
+    // 칸마다 떨어진 글(체크 상자 "[]" 여럿)을 한 식으로 묶지 않는다 — 세로 괘선 없는 표의 행 괘선이 분수 막대로 읽혔다(OCR 벤치 web051)
+    const gapped = (g: NormItem[]) => { const o = sortLineByX([...g]); return o.some((it, k) => k > 0 && it.x - (o[k - 1].x + o[k - 1].w) > fs * PART_MAX_GAP_EM) }
+    if (gapped(num) || gapped(den)) continue
     if (Math.max(hi(num) - lo(num), hi(den) - lo(den)) < len * 0.6) continue
     // 막대는 분자·분모 양끝 밖으로 조금 더 나간다(실측 왼쪽 4~6pt·오른쪽 2pt) — 글 끝에 딱 맞는 선은 밑줄이다(칸 안 개정 밑줄
     // "공공기록"이 다음 줄 "법령 및" 위 분수로 읽혔다)
