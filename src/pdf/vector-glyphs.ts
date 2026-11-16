@@ -22,7 +22,7 @@
  * (cbe-record-guide 표지·간지 6, ice-arc-2026 간지 6). 쪽 판정(글자 수·비율)은 quality.ts 가 한다.
  */
 
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "./ops.js"
 
 /** 글자 모양 채움 경로 (쪽 좌표, CTM 적용) */
 export interface GlyphPath {

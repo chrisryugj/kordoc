@@ -33,7 +33,7 @@ npm install kordoc        # CLI 만 쓸 거면 설치 없이 npx kordoc <파일>
 
 PDF·OCR 의존성은 기본으로 설치됩니다(줄이려면 `--omit=optional` — 대신 PDF·OCR 이 빠짐). PDF 인쇄 렌더(`markdownToPdf`)만 `puppeteer-core` 를 따로 설치하세요.
 
-앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `jszip`·`markdown-it` 뿐입니다(`cfb` 와 XML 파서 wasm 은 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`·`pdfjs-dist`)은 쓰지 않는 기능(PNG 렌더·OCR·PDF)만큼 뺄 수 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
+앱(Electron 등)에 라이브러리로만 넣을 때: `import "kordoc"` 가 실제로 불러오는 필수 패키지는 `jszip`·`markdown-it` 뿐입니다(`cfb` 와 XML 파서 wasm 은 번들에 들어 있음). `@modelcontextprotocol/sdk`(와 그것이 끌고 오는 express·hono 등 92개, 약 11MB)·`commander`·`zod` 는 `kordoc mcp`·CLI 전용이라 앱 설치본에서 빼도 됩니다. 선택 의존(`sharp`·`onnxruntime-node`·`@huggingface/tokenizers`·`@hyzyla/pdfium`)은 쓰지 않는 기능(PNG 렌더·OCR)만큼 뺄 수 있습니다. PDF 엔진(hayro wasm)은 패키지 안에 들어 있습니다. MCP SDK 를 선택 의존으로 돌리지 않는 이유는 아래 #99 처럼 다른 선택 의존 설치가 실패하면 npm 이 함께 빼 MCP 서버가 통째로 사라지기 때문입니다.
 
 <details>
 <summary>설치 문제 해결</summary>
@@ -437,7 +437,7 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 | `ZIP_BOMB` / `DECOMPRESSION_BOMB` | 압축 폭탄 방어 발동 |
 | `NO_SECTIONS` | 본문 섹션 없음 |
 | `OUTPUT_TOO_LARGE` | 출력 직렬화가 런타임 문자열 한계 초과 |
-| `MISSING_DEPENDENCY` | 선택 의존성 미설치 (pdfjs-dist 등) |
+| `MISSING_DEPENDENCY` | 선택 의존성 미설치 (onnxruntime-node 등) |
 | `EMPTY_INPUT` | 빈 입력 |
 | `FILE_NOT_FOUND` | 입력 경로 없음 (ENOENT) |
 | `PARSE_ERROR` | 그 외 파싱 실패 |
@@ -590,7 +590,7 @@ import type {
 | **HWP 5.x** (한컴 레거시) | OLE2 + CFB | 배포용 복호화, 열기 암호, 손상 CFB 복구, 각주·하이퍼링크, 21종 제어문자, 이미지 추출, 실제 쪽 경계 |
 | **HWP 3.x** (1996~2002) | 단일 binary | 상용조합형 → 유니코드, 한자·기호 5,893자 lookup, 중첩 문단, 아래아(옛한글), 열기 암호 |
 | **HWPML 2.x** (XML HWP) | XML DOM | HeadingType 기반 헤딩, 병합 셀, DoS 방어 |
-| **PDF** | pdfjs-dist | 선·클립·무괘선 표, XY-Cut 읽기 순서, 2단 지면, 헤딩, 각주·미주, 수식 글꼴 복원, OCR, 밑줄·링크, 이미지 추출, 텍스트 품질 신호 |
+| **PDF** | hayro (wasm) | 선·클립·무괘선 표, XY-Cut 읽기 순서, 2단 지면, 헤딩, 각주·미주, 수식 글꼴 복원, OCR, 밑줄·링크, 이미지 추출, 텍스트 품질 신호 |
 | **XLSX** (Excel) | ZIP + XML DOM | 공유 문자열, 병합 셀, 다중 시트, 수식 표시, 날짜 셀 ISO 변환, 대형 시트 스트리밍 |
 | **XLS** (Excel 97~2003) | OLE2 + BIFF8 | Workbook 스트림, SST 공유 문자열, 셀·시트 추출 |
 | **DOCX** (Word) | ZIP + XML DOM | 스타일 헤딩, 번호 매기기(실제 번호 라벨), 각주, 하이퍼링크, 이미지 추출 |
@@ -617,7 +617,8 @@ import type {
 - **PaddleOCR** (Apache 2.0, PaddlePaddle) — 텍스트 OCR 엔진 파생 (PP-OCRv5 korean)
 - **Pix2Text** (MIT, breezedeus) — 수식 OCR(MFD/MFR) 알고리즘 포팅. 모델은 런타임 다운로드이며 재배포하지 않습니다 — MFD 가중치의 기반인 Ultralytics YOLOv8 은 AGPL-3.0 이므로 수식 OCR 에 의존하는 상용·비공개 제품은 해당 조건을 별도 확인하세요
 - **cfb** (Apache 2.0, SheetJS) — HWP5 OLE2 컨테이너 파싱
-- **pdfjs-dist** (Apache 2.0, Mozilla) — PDF 텍스트 추출
+- **hayro** (Apache 2.0 OR MIT, The Hayro Authors) — PDF 해석 엔진 (wasm 으로 배포, 크레이트 고지는 `THIRD_PARTY/hayro-pdf.txt`)
+- **PDF.js** (Apache 2.0, Mozilla) — 글 조각 규칙·연산자 번호·PDF 글 디코딩을 옮겨 씀
 - **JSZip** (MIT, Stuart Knightley 외) — ZIP 기반 포맷 파싱
 
 전체 고지는 [NOTICE](../NOTICE), 라이선스 전문은 `THIRD_PARTY/` — 둘 다 npm 배포 패키지에 포함됩니다.

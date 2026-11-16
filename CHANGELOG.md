@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- PDF 텍스트 레이어 엔진을 pdf.js(`pdfjs-dist`)에서 hayro(Rust PDF 해석기)로 바꿨다. OCR·수식 래스터는 그대로 PDFium(`@hyzyla/pdfium`)이 그린다. hayro 를 wasm 으로 빌드해 패키지에 싣고(`dist/hayro-pdf.wasm` 4.1MB, 크레이트 `rust/hayro-pdf`, 다시 만들기 `node rust/hayro-pdf/build.mjs`), 글 조각·그리기 연산자 목록·글꼴·그림 화소·쪽 상자·정보 사전·링크 주석을 hayro 가 낸다. 판정 모듈은 그대로이고, 어댑터(`src/pdf/hayro*.ts`)가 판정 모듈이 읽던 모양(pdf.js 글 조각 규칙·연산자 번호)으로 맞춘다. 글자 자리는 엔진이 pdf.js 의 글 상태 셈(f64)으로 따로 내, 틈이 문턱에 딱 걸리는 글(TJ −0.2em 등)도 pdf.js 와 같은 곳에서 끊는다. `pdfjs-dist` 가 선택 의존성에서 빠져 PDF 를 읽으려고 따로 설치할 것이 없다(설치 크기: kordoc 34.9MB + pdfjs-dist 37MB → kordoc 39.1MB, `@hyzyla/pdfium` 11MB 는 OCR·수식을 쓸 때만). 결과(OCR 끔, main 과 마크다운 비교): rhwp 표본 3,339개 중 3,330개, 실제 문서 742개 중 732개가 같다. 다른 19개는 실제 문서의 그림 색·자리·제목 판정 등 10개, hayro 가 풀지 못하는 progressive JPEG(휘도보다 색차 표본이 많은 것) 그림 5개, 실리지 않은 CID 글꼴에서 매핑 없는 코드 뒤 글자가 밀리는 1개, 0.6em 문턱에 걸린 공백 1개, main 이 못 읽거나 글을 내지 않던 2개다. main 이 메모리 초과로 죽던 순환 패턴 문서 1개는 0.2초에 읽는다. OCR 을 켠 결과는 래스터가 그대로라 텍스트 레이어가 같은 문서에서는 바뀌지 않는다
+  - hayro 는 upstream main 61f50b42 로 고정했다. 표준 글꼴의 `h.smcp` 같은 접미사 글리프 이름은 폭이 0 으로 읽혀 글자가 빠진다(LaurenzV/hayro#1810, 합쳐지면 고정 커밋을 올린다)
+  - 그림 색: ICC 색 공간·DeviceCMYK 그림은 hayro 의 색 관리(ICC 프로파일)로 바꾼다(종전 pdf.js 는 ICC 를 무시하고 CMYK 를 다항식으로 바꿨다). 화소가 달라진 문서 891개 중 26개, 화소 차 그림별 ΔE 중앙값 2.1(90분위 5.1)로, 색 관리 엔진에 더 가깝다(PDFium 대비 ΔE 중앙값 3.46 → 1.48, Ghostscript 3.52 → 1.33, Poppler 4.32 → 3.50, 그림 1,126개). 국토교통부 문서 하나는 1/255 다른 CMYK 단색 견본의 화소 같음 판정이 바뀌어 그림 자리 다섯 곳이 옮겨졌다(원본 견본 6개 중 남는 수 4 → 5)
+  - ToUnicode 없는 복합 글꼴: hayro #1813(합쳐짐)이 실은 글꼴에도 CIDSystemInfo 의 Adobe-<Ordering>-UCS2 CMap 으로 유니코드를 찾아(pdf.js 와 같은 규칙) 실은 Adobe-Korea1 글꼴의 글이 살아난다(kakao-enterprise 2·3쪽). 891개 중 6개 문서의 마크다운이 바뀌어 모두 pdf.js 에 가까워졌다(2개는 pdf.js 와 같아졌다)
+  - 메모리: 엔진은 그림을 물을 때 그 쪽만 디코딩하고 128MB 를 넘으면 앞 쪽 그림부터 놓는다. 쪽 사건열은 쪽마다 그때 해석한다. 큰 문서 13개(4,133쪽, OCR 끔, main 과 번갈아 2회): 144~157초 → 95~98초, CPU 182~194초 → 115~119초, 최대 RSS 1.95~2.20GB → 1.15~1.24GB
+  - wasm 은 SIMD128 로 빌드한다(Node 16.4+·현대 브라우저)
+  - 글 조각은 pdf.js 처럼 양방향 배열(`src/pdf/bidi.ts`, core/bidi.js 를 그대로 옮김)을 거친다. 아랍·히브리 글이 논리 순서로 나온다. 결합 문자(\p{Mn})는 pdf.js 처럼 폭 0 으로 지금 조각에 붙인다(식 위 화살표 U+20D7 이 기준 글자 앞에 따로 나오지 않는다)
+  - `/ActualText`: 묶음(BDC … EMC)의 글자가 모두 사설 영역(U+E000–F8FF)이면 `/ActualText` 로 바꾼다. Chrome 인쇄 PDF(Skia/PDF)는 Pretendard 고정폭 숫자의 ToUnicode 를 사설 영역으로 적고 실제 숫자를 `/ActualText` 에 둬, 목차 쪽 번호가 사설 영역 글자로 나왔다(321쪽 문서에서 910자 → 0자). 다른 글자는 종전처럼 ToUnicode 그대로다
+  - 암호 걸린 PDF·읽을 수 없는 PDF 는 종전처럼 KordocError(암호: "암호로 보호된 PDF 파일입니다 …"). PDF 로딩 30초 타임아웃 대신 일의 양으로 끊는다(엔진이 동기로 연다): 쪽당 콘텐츠 연산자 1,000만 개, wasm 메모리 2GB. 엔진이 trap 하면 그 문서를 닫는다
+  - 내부: `src/pdf/polyfill.ts`·`pdfium-images.ts`·`image-blank.ts`(PDFium 큰 그림 경로 #186·#190)를 지웠다. `PDFJS_DOCUMENT_OPTIONS` 내보내기는 없다
+  - bench: 견고성·줄 추출 도구(`ocr-robust.mjs`·`extract-pdf-lines.mjs`)는 `bench/lib/pdf-engine.mjs`(글 조각·연산자는 hayro, 쪽 렌더는 PDFium)를 쓴다. 채점 기준이 되는 `ocr-lib.mjs`·`verify-pages.mjs`·`ref/pdf-consensus.mjs` 는 측정 대상 엔진과 독립인 pdfjs-dist(devDependency)를 쓴다
+
+### Fixed
+
+- OCR 쪽에서 격자 표를 건너 묶인 표 후보: 격자 표 위 제목·조직도 줄과 아래 쪽 번호가 한 표(5×7)로 묶여 본문을 삼켰다. 열 수가 다른 선 격자 표가 후보 폭의 80% 이상을 덮으며 행 사이에 들어 있으면 표 후보에서 뺀다(OCR 벤치 changwon 조직도 쪽)
+- OCR 두 단 본문이 2열 표가 되던 것: 포스터의 번호·장식 원을 OCR 이 "0" 으로 읽은 한 글자 box 가 본문 줄 사이마다 끼어 두 단 본문 판정(열 평균 15자)을 깎았다. OCR 한 글자 셀은 평균에서 뺀다(ODL 141, 래스터 1px 차이에 갈리던 자리). ODL 200 문서별 하락 0
+- 세로 괘선 없는 표의 행 괘선이 분수 막대로 읽히던 것: 분자·분모 안 이웃 글이 6em 넘게 떨어져 있으면(칸마다 놓인 체크 상자) 분수로 접지 않는다. OCR 쪽 글 상자 높이가 1px 달라지는 데 따라 접힘이 갈렸다(OCR 벤치 web051). rhwp 표·텍스트, ODL 200 문서별 변화 0
+- 위 세 OCR 판정 수정을 합친 측정(PDFium 래스터): OCR 벤치 56문서·ODL 200(4종) 문서별 변화 0, KoOCR-Bench 공개 877쪽 .90653 → .90657(관보 1쪽 CER .055 → .024)
+
 ## [4.24.81] - 2026-11-16
 
 ### Fixed

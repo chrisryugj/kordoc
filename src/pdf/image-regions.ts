@@ -2,7 +2,7 @@
  * 페이지 내 이미지 XObject 영역 추출 (정보손실 가시화용) — line-detector.ts에서 분리.
  */
 
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "./ops.js"
 
 export interface ImageRegion {
   x1: number; y1: number; x2: number; y2: number

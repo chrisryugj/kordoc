@@ -35,6 +35,15 @@ describe("foldFractionBars", () => {
     assert.ok(md("ocr", []).includes("\\frac"), md("ocr", []))
   })
 
+  it("칸마다 떨어진 글은 한 식으로 접지 않는다 — 세로 괘선 없는 표의 행 괘선 (OCR 벤치 web051)", () => {
+    // 건축허가신청서 2쪽: 행 괘선 98.3~553 @256.3, 위 줄에 칸마다 체크 상자, 아래 줄에 큰 글자 칸 하나
+    const row = [item("개인하수처리시설의 설치신고", 102, 264, 107, 8), item("[]", 226, 264, 12, 8), item("[]", 377, 258, 14, 8), item("[]", 527, 258, 14, 8),
+      item("신고", 253, 258, 15, 7), item("특정토양오염유발시설 설치의", 253, 246, 127, 14), item("소음·진동배출시설의 허가", 102, 246, 139, 8)]
+    const { items, bars } = foldFractionBars(row, [hl(98.3, 553, 256.3, 0.33)])
+    assert.equal(bars.size, 0)
+    assert.ok(!items.some(i => i.text.includes("\\frac")))
+  })
+
   it("분자 위첨자는 제 크기 창 밖이라도 분자로 — ｛…｝²", () => {
     const { items } = foldFractionBars([item("｛a｝", 217, 503, 160), item("2", 384, 508, 4, 7), item("측정횟수", 288, 490, 45)], [hl(212.9, 426.1, 500.5)])
     assert.deepEqual(texts(items), ["$\\frac{｛a｝^{2}}{\\text{측정횟수}}$"])

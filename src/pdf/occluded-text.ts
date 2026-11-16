@@ -7,7 +7,7 @@
  * 짚는다(주석 모양·합자로 흐름이 어긋나면 손대지 않는다). pdfjs v4 사각형 경로만 본다.
  */
 
-import { OPS, normalizeUnicode } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, normalizeUnicode } from "./ops.js"
 import type { PdfTextItem } from "./text-line.js"
 
 interface Rect { x1: number; y1: number; x2: number; y2: number }

@@ -31,7 +31,7 @@ for (const required of ["NOTICE", "THIRD_PARTY"]) {
 const tpDir = join(root, "THIRD_PARTY")
 if (existsSync(tpDir)) {
   const entries = readdirSync(tpDir)
-  for (const needed of ["apache-2.0.LICENSE", "claw-hwp.LICENSE", "rhwp-forms.txt"]) {
+  for (const needed of ["apache-2.0.LICENSE", "claw-hwp.LICENSE", "rhwp-forms.txt", "hayro-pdf.txt"]) {
     if (!entries.includes(needed)) {
       errors.push(`THIRD_PARTY/${needed} 누락`)
     }

@@ -107,9 +107,10 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/cell-edges.ts` | 한컴 칸 클립 격자 칸의 보이는 변(v4.17.0): 네 변 자리의 실제 선(획·얇은 채움 괘선·짧은 조각)이 변 길이 60% 이상을 덮고 빈 길이 3pt 이하면 보임(점선 틈 3pt 이음, 옆 칸 괘선 끝 1.5pt 미만 무시). 흰 선·음영 윤곽(`nonRules`)·합성 가상 테두리는 제외. 선 격자·클러스터·booktabs·글상자 표에는 두지 않는다. 쪽 잇기(칸 복사·`appendCell`·이어짐 조각)가 변을 옮기고 합친다 |
 | `src/pdf/table-trim.ts` | PDF 표 후행 빈 열 정리: HWP 계열 builder 와 같은 규칙(칸 단위 빈 열, 걸친 병합 칸은 폭 안으로), 그림만 든 칸은 빈 칸 아님 |
 | `src/pdf/text-clean.ts` | PDF 마크다운 최종 정리 — 쪽번호 제거·균등배분·`mergeKoreanLines`(한글 줄 병합). v4.12.3: `normalizeAraea`(한컴 PDF 의 ㆍ→U+119E 되돌림, 셀 blocks 포함)·`splitSingleCellTables`(중첩 없는 1×1 표는 줄마다 문단 — 1×1 줄 결합의 원인은 builder 가 아니라 mergeKoreanLines). v4.14.4: 본문 줄 이음은 line-wrap(블록 조립 단계)으로 옮겨 `mergeKoreanLines` 는 블록 안 `\n`(강등 표 글·글상자)만 |
-| `src/pdf/symbol-fonts.ts` | Wingdings 글리프 코드 → 유니코드 복원 (v4.12.1) — pdfjs 가 심볼 폰트 코드를 Latin-1 로 돌려주는 것(`è`=0xE8 ➔)을 `page.commonObjs` 폰트 실명으로 판별해 되돌림. Windows 양식 선택 상자(Marlett g·f·e·d·c 겹침 + 체크 b)는 ☐·☑ 한 글자로 |
+| `src/pdf/symbol-fonts.ts` | Wingdings 글리프 코드 → 유니코드 복원 (v4.12.1) — 심볼 폰트 코드가 Latin-1 글자로 나오는 것(`è`=0xE8 ➔)을 폰트 실명(`hayroFontInfo`)으로 판별해 되돌림. Windows 양식 선택 상자(Marlett g·f·e·d·c 겹침 + 체크 b)는 ☐·☑ 한 글자로 |
 | `src/pdf/cluster-detector.ts` | 클러스터 기반 테이블 감지 (선 없는 PDF용). 칸 글은 선 표와 같은 공백 규칙(`joinCellItems`, 글자 단위 제작기의 "2 0 , 7 7 5" 방지) |
-| `src/pdf/polyfill.ts` | pdfjs-dist 호환 심 (DOMMatrix, Path2D) |
+| `src/pdf/hayro.ts` | PDF 엔진 — hayro wasm(`rust/hayro-pdf`, `src/pdf/hayro-pdf.wasm`) 로더, 문서마다 인스턴스 |
+| `src/pdf/hayro-text.ts`·`hayro-ops.ts`·`hayro-meta.ts` | hayro 사건열 → 글 조각·연산자 목록·정보 사전·링크 (판정 모듈이 읽는 모양) |
 | `src/pdf/quality.ts` | PDF 페이지별 텍스트 품질 신호 계산 (한글/제어문자/PUA 비율, needsOcr 판정). 사유 `vector_text`: 글자를 곡선으로 그린 쪽(vector-glyphs) |
 | `src/pdf/vector-glyphs.ts` | 벡터 글자 감지: 글자를 채운 곡선 경로로 그린 쪽(rhwp cairo·윤곽 인쇄): 음절 모양 채움 경로의 글줄 → quality `vector_text`(코퍼스 16,775쪽 한컴 PDF 오탐 0), OCR 쪽 그래픽 추림(글자 경로·클립 제외, cairo 는 음영 칸에만 클립) |
 | `src/pdf/line-wrap.ts` | PDF 줄 꺾임 이음: 본문 줄을 문단으로 복원(찬 줄·새 항목 아님), 칸 안 어절 중간 꺾임, 쪽 넘김 꺾임(`joinPageBreakWraps`). 한컴 텍스트층은 줄 끝 공백을 싣지 않아 어절 중간/경계는 기하로 못 가르고 글로 판정: 조사·어미, 문서 어휘 증거(`WrapLexicon`), 한 음절 조각, 날짜 줄(HWPX 정답 22,911곳 92.9%) |
@@ -124,13 +125,13 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/heading-demote.ts` | 승격 뒤 제목 강등: 쪽 가장자리 머리말·꼬리말, 캡션, 수식 번호·관계 기호 줄(#89), 소문자 시작 이어진 문장, 본문 스타일 긴 문장, 제목 바로 아래 본문 크기 기울임 필자 줄(실제 서체 이름), 7.5pt 미만 글. 같은 줄 소문자 항목 부호("n.") + 굵은 도입문은 문단으로, 다른 서체로 떨어진 절 번호·소문자로 꺾인 둘째 줄·"&" 이음 줄은 제목에 잇는다 |
 | `src/pdf/paragraph-lines.ts` | 줄 → 문단 결합(page-blocks 에서 분리), drop cap 소속을 결합 전에 적용 |
 | `src/pdf/equation-runs.ts` | 한컴 수식 글꼴(HyhwpEQ) 글 → `$…$`: U+E0xx 코드 해독표(숫자 E034~E03D·이탤릭 a~z E0E5~·A~Z E000~·그리스 E09D~·기호), 가까운 수식 글자 union-find 묶음(분수 막대는 가로로 늘려 찍어 글자 크기가 막대 길이만큼 커지므로 크기 판단에서 뺌), 막대 위·아래 `\frac`, √+윗줄 `\sqrt`, 첨자 `^{}`·`_{}`. parser 가 리터럴 `$` 이스케이프 뒤에 부른다 |
-| `src/pdf/tracked-text.ts` | 자간 벌린 라틴 글 `restoreTrackedSpacing`: pdfjs 가 글자마다 공백을 넣은 아이템("E M A I L")을 같은 글꼴 글리프 흐름의 진짜 공백으로 다시 짠다(normalizeItems 전, 한글 균등배분 제외, 흐름이 어긋나는 글꼴은 건너뜀) |
+| `src/pdf/tracked-text.ts` | 자간 벌린 라틴 글 `restoreTrackedSpacing`: 글자마다 공백이 든 글 조각("E M A I L", pdf.js 와 같은 조각 규칙)을 같은 글꼴 글리프 흐름의 진짜 공백으로 다시 짠다(normalizeItems 전, 한글 균등배분 제외, 흐름이 어긋나는 글꼴은 건너뜀) |
 | `src/pdf/vertical-text.ts` | 세로쓰기 글상자 `joinVerticalColumns`: 한 글자씩 쌓은 기둥(글자 높이 1~2배 간격, 네 자 이상) 둘 이상이 윗머리를 맞춰 오른쪽→왼쪽으로 늘어서고, 기둥 안 간격 중앙값이 기둥 사이×0.8·글자 높이×1.15 이하, 기둥 절반 이상에 낱말 틈이 있을 때 기둥마다 한 줄 아이템으로 바꿔 영역 안에 위→아래로 놓는다. 세로 구두점(、。)은 왼쪽 기둥에. 표 칸에 쌓인 지역명·직위 열은 간격 조건에서 빠진다 |
 | `src/html-tables.ts` | `htmlTables` 옵션 후처리 `toHtmlTables`: 파이프 표를 HTML 표로(Markdown 이스케이프 해제·HTML 이스케이프, `<br>`·`<u>`·`<img>` 보존), 모든 표를 태그마다 한 줄씩 들여쓰기(prettify 모양, 빈 줄 없음). `parse()` 가 plain 뒤에 markdown·pages[].markdown 에 적용 |
 | `src/plain-markdown.ts` | `plain` 옵션 후처리 `toPlainMarkdown`: 그림 자리 표시·칸 안 `<img>`·링크 URL(글만 남김)·`<u>`·`**` 를 걷는다. `parse()` 가 markdown 과 pages[].markdown 에 적용 |
 | `src/script-tags.ts` | 첨자 표지 공용 — `wrapScript`·`tidyScriptTags`(이웃 합치기·공백 밖으로)·`plainScripts`(`plain` 의 `10^4`·`H_2O`)·`stripScriptTags`(`scriptTags` 끔: 마크다운·IR 글에서 태그만 걷음). HWPX `hh:supscript`·HWP5 CharShape bit 15·16·DOCX `w:vertAlign`·PDF 기하가 이 태그를 낸다 |
-| `src/pdf/occluded-text.ts` | 가려진 글: 연산자 목록에서 불투명 사각형 채움마다 그때까지 찍은 글자 수·영역을 기록하고, 텍스트 아이템을 같은 글자 흐름으로 짚어 뒤에 칠한 사각형 안에 드는 아이템을 뺀다(ODL 079·080 쪽 배경 아래 머리글). 반투명·혼합 모드·사각형 아닌 클립은 판단 안 함, 흐름이 어긋나면 그 뒤는 손대지 않음. pdfjs v4 사각형 경로만 |
-| `src/pdf/glyph-names.ts` | ToUnicode 없이 /Differences 글리프 이름만 둔 글꼴(옛 숫자 `seven.oldstyle`·작은 대문자 `c.sc`·합자 `f_l`)을 AGL 규칙으로 글자 복원 — pdfjs 가 제어 문자로 돌려주는 코드를 되살린다(ToUnicode 가 U+FFFD 로 매긴 코드 포함). TeX CM 수식 글꼴을 라틴-1 이름으로 다시 매긴 하위 글꼴(TeXCMMathsSymbols thorn=+·onequarter==·eth=(·C0=−, Italic 0x3D=/)은 원래 기호로. `getDocument({ fontExtraProperties: true })` 가 필요. `restoreNamedGlyphs` 는 normalizeItems 전에 연산자 목록 showText 글리프(originalCharCode)를 글꼴마다 텍스트 아이템 글자에 맞춰 짚어, 공백·빈 글로 사라지는 코드(9 `nine.oldstyle`·129 `F.a`, ODL 005·006)와 ToUnicode 가 소문자로 매긴 작은 대문자(`h.smcp`, ODL 001~015)를 되살린다 — 맞춤이 어긋난 글꼴은 손대지 않음(코퍼스 PDF 1,911건 중 대상 글꼴 2건·출력 변화 0) |
+| `src/pdf/occluded-text.ts` | 가려진 글: 연산자 목록에서 불투명 사각형 채움마다 그때까지 찍은 글자 수·영역을 기록하고, 텍스트 아이템을 같은 글자 흐름으로 짚어 뒤에 칠한 사각형 안에 드는 아이템을 뺀다(ODL 079·080 쪽 배경 아래 머리글). 반투명·혼합 모드·사각형 아닌 클립은 판단 안 함, 흐름이 어긋나면 그 뒤는 손대지 않음. `re` 로 그린 사각형 경로만(`hayro-ops.ts`) |
+| `src/pdf/glyph-names.ts` | ToUnicode 없이 /Differences 글리프 이름만 둔 글꼴(옛 숫자 `seven.oldstyle`·작은 대문자 `c.sc`·합자 `f_l`)을 AGL 규칙으로 글자 복원 — 제어 문자로 나오는 코드를 되살린다(ToUnicode 가 U+FFFD 로 매긴 코드 포함). TeX CM 수식 글꼴을 라틴-1 이름으로 다시 매긴 하위 글꼴(TeXCMMathsSymbols thorn=+·onequarter==·eth=(·C0=−, Italic 0x3D=/)은 원래 기호로. 글꼴의 /Differences 는 `hayroFontInfo` 가 준다. `restoreNamedGlyphs` 는 normalizeItems 전에 연산자 목록 showText 글리프(originalCharCode)를 글꼴마다 텍스트 아이템 글자에 맞춰 짚어, 공백·빈 글로 사라지는 코드(9 `nine.oldstyle`·129 `F.a`, ODL 005·006)와 ToUnicode 가 소문자로 매긴 작은 대문자(`h.smcp`, ODL 001~015)를 되살린다 — 맞춤이 어긋난 글꼴은 손대지 않음(코퍼스 PDF 1,911건 중 대상 글꼴 2건·출력 변화 0) |
 | `src/xlsx/parser.ts` | XLSX(ZIP+XML) 파싱, 공유 문자열/병합 셀 처리 |
 | `src/xlsx/sheet-blocks.ts` | XLSX·XLS 공용 시트 → 표: 글 있는 행·열만 펼침(빈 행·열 제외·병합은 남은 행·열로 축소, #91), 열 수에 따른 칸 예산·절단 경고 |
 | `src/docx/parser.ts` | DOCX(ZIP+XML) 파싱, 스타일/번호매기기/각주 처리 |
@@ -188,7 +189,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 - **IR 패턴**: 파서가 직접 마크다운을 생성하지 않고, `IRBlock[]`로 정규화 후 `blocksToMarkdown()`에서 일괄 변환
 - **2-pass 테이블**: Pass 1에서 colSpan/rowSpan 고려한 그리드 크기 계산, Pass 2에서 셀 배치
 - **깨진 ZIP 복구**: HWPX Central Directory 손상 시 Local File Header(PK\x03\x04) 직접 스캔
-- **pdfjs-dist 외부 의존**: `external`로 번들에서 제외, 사용자가 선택적 설치. cfb는 `noExternal`로 번들에 포함
+- **PDF 엔진 wasm**: `src/pdf/hayro-pdf.wasm` 을 빌드가 `dist/` 로 복사하고 `import.meta.url` 옆에서 읽는다(재생성: `node rust/hayro-pdf/build.mjs`). cfb는 `noExternal`로 번들에 포함
 - **HWP5 레코드 구조**: 4바이트 헤더(tagId 10bit, level 10bit, size 12bit), FLAG_COMPRESSED 시 inflateRawSync
 - **공문서 항목부호 뒤는 탭**: 부호 run(부호 + `<hp:tab/>`) + 내용 run, 문단은 `tabPrIDRef="1"`(autoTabLeft). 공백을 쓰면
   양쪽 정렬이 부호 뒤 공백을 늘려 첫 줄 내용이 둘째 줄보다 오른쪽에 선다(실결재 99%가 가진 결함). 헤더는 공문서 모드에서
@@ -199,7 +200,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 ## 빌드 설정 (tsup)
 
 두 개의 빌드 파이프라인:
-1. **라이브러리** (`src/index.ts`): ESM + CJS, dts 생성, `pdfjs-dist` external / `cfb` bundled
+1. **라이브러리** (`src/index.ts`): ESM + CJS, dts 생성, hayro wasm 은 dist/ 에 파일로 / `cfb` bundled
 2. **바이너리** (`src/cli.ts`, `src/mcp.ts`): ESM only, shebang 자동 삽입
 
 ## 구현 주의 (상세)

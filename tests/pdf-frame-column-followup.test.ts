@@ -1,7 +1,7 @@
 import { it } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import { takeFrameSpanningText } from "../src/pdf/frame-cell-blocks.js"
 import type { NormItem } from "../src/pdf/text-line.js"

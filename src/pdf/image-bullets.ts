@@ -1,5 +1,5 @@
 /** Repeated hollow-circle raster markers are list text, not a trailing image placeholder. */
-import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, ImageKind } from "./ops.js"
 import type { NormItem } from "./text-line.js"
 import { extractImageRegions, type ImageRegion } from "./image-regions.js"
 

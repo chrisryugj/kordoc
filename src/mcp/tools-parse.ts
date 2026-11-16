@@ -220,7 +220,7 @@ export function registerParseTools(server: McpServer): void {
               const { extractPdfMetadataOnly } = await import("../pdf/parser.js")
               metadata = await extractPdfMetadataOnly(buffer)
             } catch {
-              metadata = undefined // pdfjs-dist 미설치 시 metadata 생략
+              metadata = undefined // 열 수 없는 PDF 는 metadata 생략
             }
             break
           case "hwp3":

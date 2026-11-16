@@ -7,7 +7,7 @@
  * 이름을 글자로 바꾼다. 작은 대문자(.sc·.smcp·.c2sc)는 지면에 대문자로 보이므로 대문자로 낸다.
  */
 
-import { OPS, normalizeUnicode } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, normalizeUnicode } from "./ops.js"
 import type { NormItem, PdfTextItem } from "./text-line.js"
 
 const NAMED: Record<string, string> = {

@@ -11,7 +11,7 @@ import type { IRBlock, ParseWarning } from "../types.js"
  * 수식 OCR 을 적용하여 blocks 에 formula paragraph 를 삽입한다.
  *
  * 좌표 매핑:
- *   - pdfium 픽셀 bbox (top-left origin) → PDF 포인트 (bottom-left origin) 변환
+ *   - 렌더 픽셀 bbox (top-left origin) → PDF 포인트 (bottom-left origin) 변환
  *   - 수식 bbox 의 y center 와 같은 페이지 내 pdfjs block 의 y center 비교로 삽입 위치 결정
  *   - pdfjs 가 이미 뽑은 수식 흔적(block) 과 겹치면 해당 block 제거 (중복 방지)
  *
@@ -75,7 +75,7 @@ export async function applyFormulaOcr(
 
         const x1 = r.bbox.x1 * scaleX
         const x2 = r.bbox.x2 * scaleX
-        // pdfium 픽셀 y → PDF bottom-up
+        // 렌더 픽셀 y → PDF bottom-up
         const yTop = pdfHeight - r.bbox.y1 * scaleY
         const yBottom = pdfHeight - r.bbox.y2 * scaleY
         const centerY = (yTop + yBottom) / 2

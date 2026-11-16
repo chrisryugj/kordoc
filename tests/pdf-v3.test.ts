@@ -22,7 +22,7 @@ import {
   removeHeaderFooterBlocks,
 } from "../src/pdf/parser.js"
 import { detectClusterTables, type ClusterItem } from "../src/pdf/cluster-detector.js"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import type { IRBlock, IRCell, IRTable } from "../src/types.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 

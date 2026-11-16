@@ -7,7 +7,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { extractLines } from "../src/pdf/line-extract.js"
 import { buildClipCellGrids, dropGridsInside } from "../src/pdf/clip-cells.js"
 import { remapSymbolText, symbolFontTable, remapSymbolFontItems } from "../src/pdf/symbol-fonts.js"

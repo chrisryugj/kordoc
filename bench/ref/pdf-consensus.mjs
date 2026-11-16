@@ -1,6 +1,7 @@
 // PDF 교차검증 — pdftotext(poppler) + pdfjs raw 의 '합의(consensus)' 3-gram 대비 커버리지.
 // 두 추출기가 모두 동의한 내용만 신뢰 기준으로 쓰고(pitfall #12), 읽기 순서는
 // 추출기마다 달라 n-gram bag 비교만 수행한다 (순서 비교 금지).
+// pdfjs-dist 는 이 참조만 쓰는 devDependency 다 — kordoc 엔진(hayro)과 독립인 둘째 추출기여야 자기채점이 되지 않는다.
 
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"

@@ -158,7 +158,7 @@ describe("DOCX v:imagedata 추출", () => {
 // ─── PDF ────────────────────────────────────────────
 
 /** pdfjs OPS 상수 (image-extract.ts와 동일 소스) */
-import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, ImageKind } from "../src/pdf/ops.js"
 
 /** 콜백형 get()을 갖는 가짜 PDFObjects — 비동기 해제 시뮬레이션 */
 function fakePage(objects: Record<string, unknown>) {

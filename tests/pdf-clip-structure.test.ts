@@ -7,7 +7,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { buildClipCellGrids } from "../src/pdf/clip-cells.js"
 import { extractPageBlocksWithLines, type PageCarry } from "../src/pdf/page-blocks.js"
 import { mergeContinuedCells } from "../src/pdf/cell-continuation.js"

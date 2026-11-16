@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { glyphNameText, remapControlGlyphs, restoreNamedGlyphs } from "../src/pdf/glyph-names.js"
 import type { NormItem, PdfTextItem } from "../src/pdf/text-line.js"
 const item = (text: string): NormItem => ({ text, x: 72, y: 500, w: 10, h: 10, fontSize: 10, fontName: "font", isHidden: false })

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import type { PdfTextItem } from "../src/pdf/text-line.js"
 import { NO_UNICODE, readOutline, restoreUnmappedGlyphs } from "../src/pdf/symbol-glyphs.js"
 import { outlineFont } from "./helpers/outline-font.js"

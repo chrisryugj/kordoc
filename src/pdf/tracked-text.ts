@@ -4,7 +4,7 @@
  * 있으니, 한 글자·공백이 번갈아 나오는 아이템을 같은 글꼴의 글리프 흐름으로 다시 짠다. 흐름이 어긋나는 글꼴은 손대지 않는다.
  */
 
-import { OPS, normalizeUnicode } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, normalizeUnicode } from "./ops.js"
 import type { PdfTextItem } from "./text-line.js"
 
 // 한글 균등배분("홍 보 지 원 반")은 normalizeItems·셀 글이 따로 다룬다 — 라틴·숫자·기호만

@@ -7,7 +7,7 @@
  * https://github.com/opendataloader-project/opendataloader-pdf
  */
 
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "./ops.js"
 import type { LineSegment } from "./line-types.js"
 
 // ─── pdfjs-dist v5 DrawOPS ──

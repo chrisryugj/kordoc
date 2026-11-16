@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, ImageKind } from "../src/pdf/ops.js"
 import { restoreImageBullets } from "../src/pdf/image-bullets.js"
 import type { NormItem } from "../src/pdf/text-line.js"
 const item = (text: string, y: number): NormItem => ({ text, x: 100, y, w: 290, h: 11, fontSize: 11, fontName: "Body", isHidden: false })

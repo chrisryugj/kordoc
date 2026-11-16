@@ -7,7 +7,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { cellEdges, joinCellEdges, recordClipCellEdges, CLIP_CELL_EDGES, NO_EDGES } from "../src/pdf/cell-edges.js"
 import { extractLines } from "../src/pdf/line-extract.js"
 import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"

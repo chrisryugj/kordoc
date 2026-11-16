@@ -37,7 +37,7 @@ describe("connected closed-box flow bands", () => {
   })
 })
 
-import { OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS, ImageKind } from "../src/pdf/ops.js"
 
 function arrowPixels(direction: "right" | "left" | "logo" = "right", transparent = false) {
   const width = 40, height = 40, data = new Uint8Array(width * height * 4); data.fill(255)

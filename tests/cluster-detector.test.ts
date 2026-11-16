@@ -23,6 +23,61 @@ describe("detectClusterTables", () => {
     assert.deepEqual(detectClusterTables(items, 1), [])
   })
 
+  it("OCR 두 단 본문: 장식 원을 읽은 한 글자 box 는 셀 길이 평균에서 뺀다 (ODL 141 포스터 오른쪽 단)", () => {
+    // 번호 원·장식 원을 OCR 이 "0"·"6" 으로 읽은 box 가 본문 줄 사이마다 끼어 있다 — 평균에 넣으면 두 단 본문이 2열 표가 됐다
+    const boxes: Array<[string, number, number, number, number, number]> = [
+      ["0", 1499, 1676, 13, 13, 15],
+      ["0", 1061, 1676, 14, 13, 15],
+      ["6", 942, 1621, 29, 42, 47],
+      ["Copyright gives a lot of protection,but it also has", 1063, 1608, 480, 30, 34],
+      ["are US Government documents, like NASA photos and", 1063, 1542, 521, 29, 32],
+      ["limitations. Not everything gets copyright protection.", 1064, 1584, 502, 40, 45],
+      ["Facts and ideas are not protected bycopyright, neither", 1064, 1560, 525, 40, 45],
+      ["reports by federal agencies.", 1064, 1516, 265, 19, 21],
+      ["0", 1499, 1461, 13, 13, 15],
+      ["0", 1061, 1461, 14, 13, 15],
+      ["0", 1499, 1373, 13, 13, 15],
+      ["Another limitation of copyright is “fair use,” which", 1062, 1313, 472, 19, 21],
+      ["allows us to copy and re-use copyrighted work", 1063, 1287, 446, 27, 30],
+      ["without theartist’spermission incertain,limited", 1062, 1252, 456, 40, 45],
+      ["ways that are still fair to the creator.", 1062, 1236, 340, 27, 30],
+      ["0", 1499, 1175, 13, 13, 15],
+      ["0", 1061, 1175, 14, 13, 15],
+      ["0", 1499, 1087, 13, 13, 15],
+      ["8", 940, 1041, 28, 42, 47],
+      ["0", 1061, 1087, 14, 13, 15],
+      ["When you re-use portions of someone else’s work", 1062, 1017, 479, 28, 31],
+      ["for a school project—like using images or songs for", 1062, 1001, 489, 28, 31],
+      ["a presentation in class-that’s a fair use situation.", 1062, 966, 478, 40, 45],
+      ["You don‘t need the author’s permission.", 1062, 949, 379, 28, 31],
+      ["0", 1499, 874, 13, 13, 15],
+      ["0", 1061, 874, 14, 13, 15],
+      ["U", 1499, 786, 13, 13, 15],
+      ["9", 940, 743, 29, 42, 47],
+      ["0", 1061, 786, 14, 13, 14],
+      ["Copyright protection doesn’t last forever.", 1063, 709, 391, 29, 32],
+      ["Eventually’it expires, and the creativework flls", 1063, 685, 454, 40, 45],
+      ["into the “public domain.” Works in the public", 1063, 667, 424, 29, 32],
+      ["you want.", 1062, 616, 92, 17, 19],
+      ["domain are free to re-use and share however", 1063, 645, 431, 23, 26],
+      ["0", 1499, 569, 13, 13, 15],
+      ["0", 1061, 569, 14, 13, 15],
+      ["0", 1499, 482, 13, 13, 15],
+      ["Some creators are happy to share their", 1063, 371, 373, 26, 29],
+      ["creative work. They use a licensing system", 1063, 342, 407, 40, 45],
+      ["for sharing called Creative Commons. You", 1062, 318, 408, 40, 45],
+      ["can find millions of CC work that are free to", 1063, 290, 415, 24, 27],
+      ["share or re-use.", 1063, 279, 152, 27, 30],
+      ["11", 1584, 169, 18, 12, 13],
+      [":", 1620, 177, 11, 15, 16],
+      ["C", 1564, 104, 57, 57, 63],
+    ]
+    const items: ClusterItem[] = boxes.map(([text, x, y, w, h, fontSize]) => ({ text, x, y, w, h, fontSize, fontName: "ocr" }))
+    const rejected = { prose: 0 }
+    assert.deepEqual(detectClusterTables(items, 1, rejected), [])
+    assert.equal(rejected.prose, 1)
+  })
+
   it("2열 × 4행 정렬된 텍스트 → 테이블 감지", () => {
     // 2열 key-value 테이블 시뮬레이션
     const items: ClusterItem[] = [

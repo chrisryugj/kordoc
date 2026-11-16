@@ -135,9 +135,22 @@ describe("합성 PDF — 벡터 글자 쪽 감지", () => {
   })
 })
 
+/** 첫 쪽 연산자 목록 — PDF 엔진(hayro) 어댑터가 만드는 모양 */
+async function pageOps(pdf: ArrayBuffer) {
+  const { openHayro } = await import("../src/pdf/hayro.js")
+  const { hayroOps } = await import("../src/pdf/hayro-ops.js")
+  const doc = await openHayro(new Uint8Array(pdf))
+  try {
+    const { events, strings } = doc.events(0)
+    return hayroOps(events, strings)
+  } finally {
+    doc.close()
+  }
+}
+
 describe("OCR 경로 — 벡터 글자 쪽은 그 쪽 괘선으로 표 복원", () => {
   it("ocrVectorOps 는 글자 경로의 연산자와 클립만 뺀다 (괘선·채움·그림은 남김)", async () => {
-    const { OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs")
+    const { OPS } = await import("../src/pdf/ops.js")
     const fn = [OPS.save, OPS.constructPath, OPS.fill, OPS.constructPath, OPS.clip, OPS.endPath, OPS.constructPath, OPS.stroke, OPS.restore]
     const opList = { fnArray: fn, argsArray: fn.map((_, i) => [i]) }
     const paths = [{ ops: [1, 2] }] as unknown as GlyphPath[]
@@ -150,9 +163,7 @@ describe("OCR 경로 — 벡터 글자 쪽은 그 쪽 괘선으로 표 복원", 
     // 2×2 표 괘선 (x 100~300, y 500~600 — PDF 좌표)
     const grid = "0.5 w 100 600 m 300 600 l S 100 550 m 300 550 l S 100 500 m 300 500 l S " +
       "100 500 m 100 600 l S 200 500 m 200 600 l S 300 500 m 300 600 l S"
-    const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs")
-    const doc = await getDocument({ data: new Uint8Array(buildPdf(grid)), isEvalSupported: false }).promise
-    const opList = await (await doc.getPage(1)).getOperatorList()
+    const opList = await pageOps(buildPdf(grid))
     // OCR 박스(렌더 픽셀 = pt, 위쪽 원점): 칸 가운데 글줄
     const H = 792
     const at = (text: string, x: number, yPdfTop: number) => ({ text, x, y: H - yPdfTop, w: 40, h: 10, confidence: 0.99 })
@@ -166,7 +177,6 @@ describe("OCR 경로 — 벡터 글자 쪽은 그 쪽 괘선으로 표 복원", 
     // 연산자 목록이 없으면(종전 기본값) 괘선이 없어 이 격자는 표가 되지 않는다
     const without = ocrItemsToBlocks(items, 1, 612, H, 1, undefined, true)
     assert.ok(!without.some(b => b.type === "table" && b.table?.rows === 2 && b.table.cols === 2 && b.table.cells[1][1].text === "홍길동"))
-    await doc.destroy()
   })
 
   it("음영 머리 칸에만 클립을 깐 표(cairo 모양)도 ocrVectorOps 로는 머리 행과 본문 행이 한 표", async () => {
@@ -174,9 +184,7 @@ describe("OCR 경로 — 벡터 글자 쪽은 그 쪽 괘선으로 표 복원", 
     const shade = (x: number) => `q ${x} 550 100 50 re W n 0.8 g ${x} 550 100 50 re f Q `
     const grid = shade(100) + shade(200) + "0 g 0.5 w 100 600 m 300 600 l S 100 550 m 300 550 l S 100 500 m 300 500 l S " +
       "100 500 m 100 600 l S 200 500 m 200 600 l S 300 500 m 300 600 l S"
-    const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs")
-    const doc = await getDocument({ data: new Uint8Array(buildPdf(grid)), isEvalSupported: false }).promise
-    const opList = await (await doc.getPage(1)).getOperatorList()
+    const opList = await pageOps(buildPdf(grid))
     const H = 792
     const at = (text: string, x: number, yPdfTop: number) => ({ text, x, y: H - yPdfTop, w: 40, h: 10, confidence: 0.99 })
     const items = [at("구분", 120, 580), at("내용", 220, 580), at("성명", 120, 530), at("홍길동", 220, 530)]
@@ -184,7 +192,6 @@ describe("OCR 경로 — 벡터 글자 쪽은 그 쪽 괘선으로 표 복원", 
     assert.equal(tables.length, 1, JSON.stringify(tables.map(b => b.table?.cells.map(r => r.map(c => c.text)))))
     const t = tables[0].table!
     assert.deepEqual(t.cells.map(r => r.map(c => c.text)), [["구분", "내용"], ["성명", "홍길동"]])
-    await doc.destroy()
   })
 })
 

@@ -6,7 +6,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
+import { OPS } from "../src/pdf/ops.js"
 import { normalizeItems, mergeLineSimple, type PdfTextItem, type NormItem } from "../src/pdf/text-line.js"
 import { detectColumns } from "../src/pdf/columns.js"
 import { dropShadingClipGrids, dropHeadBandClipGrids } from "../src/pdf/table-grid.js"
