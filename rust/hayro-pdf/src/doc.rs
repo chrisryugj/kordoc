@@ -440,7 +440,9 @@ impl<'a> Device<'a> for Events<'_, 'a> {
         if !matches!(it, Item::MarkBegin) { return self.mismatch("begin_marked_content", &it) }
         let mcid = props.and_then(|d| d.get::<i32>(b"MCID".as_ref())).map(|v| v as f64).unwrap_or(-1.0);
         let t = self.s(String::from_utf8_lossy(tag).into_owned());
-        self.buf.extend_from_slice(&[MARK_BEGIN, t, mcid]);
+        // /ActualText 는 PDF 글 문자열의 바이트를 글자 하나씩으로 싣는다(디코딩은 src/pdf/hayro-meta.ts pdfString). 없으면 0, 있으면 문자열 번호 + 1
+        let actual = props.and_then(|d| d.get::<hayro_syntax::object::String<'_>>(b"ActualText".as_ref())).map(|s| { let v: String = s.to_vec().iter().map(|&b| b as char).collect(); self.s(v) + 1.0 }).unwrap_or(0.0);
+        self.buf.extend_from_slice(&[MARK_BEGIN, t, mcid, actual]);
     }
     fn end_marked_content(&mut self) {
         let Some(it) = self.next("end_marked_content", false) else { return };

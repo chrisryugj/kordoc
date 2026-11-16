@@ -120,3 +120,22 @@ it("주석 appearance 의 경로는 pdf.js 연산자 목록처럼 appearance 자
   assert.deepEqual(m.map(v => Math.round(v * 1e6) / 1e6), [1, 0, 0, 1, 0, 0])
   assert.equal(fnArray.slice(0, fnArray.indexOf(OPS.constructPath)).filter(f => f === OPS.transform).length, 2)
 })
+
+it("/ActualText 는 묶음의 글자가 모두 사설 영역일 때만 쓴다", async () => {
+  // Chrome 인쇄 PDF 의 고정폭 숫자 — ToUnicode 는 사설 영역(U+E071…), 실제 숫자는 /ActualText
+  const cmap = "/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /T def /CMapType 2 def 1 begincodespacerange <00> <FF> endcodespacerange 2 beginbfchar <41> <E072> <42> <0042> endbfchar endcmap end end"
+  const content = "BT /F1 12 Tf 100 700 Td /Span << /ActualText (1) >> BDC (A) Tj EMC /Span << /ActualText (x) >> BDC (B) Tj EMC ET"
+  const stream = (d: string) => `<< /Length ${d.length} >>\nstream\n${d}\nendstream`
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 6 0 R >>", stream(content), stream(cmap),
+  ]
+  let pdf = "%PDF-1.4\n"
+  const offsets: number[] = []
+  for (let i = 0; i < objects.length; i++) { offsets.push(pdf.length); pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n` }
+  const xref = pdf.length
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map(o => String(o).padStart(10, "0") + " 00000 n \n").join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`
+  const page = hayroTextPage(await openHayro(new Uint8Array(Buffer.from(pdf, "latin1"))), 1)
+  assert.equal(page.items.map(it => it.str).join(""), "1B")
+})

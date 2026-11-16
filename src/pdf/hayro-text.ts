@@ -7,6 +7,7 @@
 import { normalizeUnicode } from "./ops.js"
 import type { HayroDoc } from "./hayro.js"
 import type { PdfTextItem } from "./text-line.js"
+import { pdfString } from "./hayro-meta.js"
 
 export const EV = { GLYPH: 1, SAVE: 2, RESTORE: 3, BEGIN_TEXT: 4, END_TEXT: 5, FONT: 6, XOBJECT: 7, MARK_BEGIN: 8, MARK_END: 9,
   CLIP_PUSH: 10, CLIP_POP: 11, RUN_END: 12, TEXT_MATRIX: 13, PATH: 20, IMAGE: 21, FORM_BEGIN: 22, FORM_END: 23, FONT_KEY: 24,
@@ -19,7 +20,7 @@ export const EV = { GLYPH: 1, SAVE: 2, RESTORE: 3, BEGIN_TEXT: 4, END_TEXT: 5, F
   /** 연산자 목록의 CTM 에 곱할 행렬(주석 appearance 앞뒤) */
   CTM: 29 } as const
 const { GLYPH, SAVE, RESTORE, FONT, XOBJECT, MARK_BEGIN, MARK_END } = EV
-const FIXED: Record<number, number> = { 1: 32, 6: 4, 7: 2, 8: 3, 21: 11, 22: 11, 24: 2, 27: 2, 28: 2, 29: 7 }
+const FIXED: Record<number, number> = { 1: 32, 6: 4, 7: 2, 8: 4, 21: 11, 22: 11, 24: 2, 27: 2, 28: 2, 29: 7 }
 
 /** 경로 조각 수(또는 사각형 표시 −1)부터 쓰는 수의 개수. 조각: 0 MoveTo·1 LineTo·2 2차 곡선·3 3차 곡선·4 닫기·5 `re` 로 시작한 MoveTo */
 export function pathLength(ev: ArrayLike<number>, at: number): number {
@@ -55,9 +56,34 @@ export interface HayroTextPage {
 
 export interface HayroFontInfo { name: string; subtype: string; composite: boolean; differences: Array<[number, string]>; toUnicode: Array<[number, string]> }
 
+/** 사설 영역(U+E000–F8FF) 글자인지 — 사건의 글자 값(유니코드 하나)으로 */
+const isPrivateUse = (cp: number) => cp >= 0xe000 && cp <= 0xf8ff
+
+/**
+ * /ActualText 가 붙은 묶음(BDC … EMC)의 글자가 모두 사설 영역이면 /ActualText 로 바꾼다 — Chrome 인쇄 PDF 는 Pretendard 고정폭 숫자의
+ * ToUnicode 를 사설 영역으로 적고 실제 숫자는 /ActualText 에 둔다(목차 쪽 번호). 다른 글자는 pdf.js 처럼 ToUnicode 그대로 둔다.
+ * 글자 수가 같으면 하나씩, 다르면 첫 글자에 통째로 싣고 나머지는 빈 글자로
+ */
+function applyActualText(ev: ArrayLike<number> & { [i: number]: number }, strs: string[]): void {
+  const open: Array<{ text: string; glyphs: number[] } | null> = []
+  for (let i = 0; i < ev.length; i += eventLength(ev, i)) {
+    const t = ev[i]!
+    if (t === MARK_BEGIN) open.push(ev[i + 3] ? { text: pdfString(strs[ev[i + 3]! - 1] ?? ""), glyphs: [] } : null)
+    else if (t === GLYPH) { for (const o of open) o?.glyphs.push(i) }
+    else if (t === MARK_END) {
+      const o = open.pop()
+      if (!o || !o.text || !o.glyphs.length || !o.glyphs.every(g => isPrivateUse(ev[g + 1]!))) continue
+      const chars = [...o.text]
+      const whole = chars.length !== o.glyphs.length
+      o.glyphs.forEach((g, k) => { const s = whole ? (k ? "" : o.text) : chars[k]!; strs.push(s); ev[g + 1] = -strs.length })
+    }
+  }
+}
+
 /** 쪽(1부터)의 글 조각과 사건열 */
 export function hayroTextPage(doc: HayroDoc, pageNumber: number): HayroTextPage {
   const { events, strings } = doc.events(pageNumber - 1)
+  applyActualText(events, strings)
   return { ...buildItems(events, strings, doc.pageView(pageNumber - 1)), events, strings }
 }
 
