@@ -18,7 +18,7 @@
 
 import JSZip from "jszip"
 import { type GongmunOptions, needsGaejosikAssets, resolveGongmun, usesReportFonts } from "./gongmun.js"
-import { gaejosikBodyWidth } from "./gaejosik.js"
+import { gaejosikBodyWidth, gaejosikSizes } from "./gaejosik.js"
 import { type HwpxTheme, resolveTheme, charVariantBase, charPr } from "./gen-ids.js"
 import { buildPrvText, parseMarkdownToBlocks, beginInlineDoc, endInlineDoc, extractFootnoteDefs } from "./md-runs.js"
 import { type PageOptions, resolvePage } from "./gen-page.js"
@@ -30,7 +30,7 @@ import { buildProfileRemap, type FormatProfile } from "./gen-profile.js"
 import { docframeActive, docframeCharPrXmls, docframeIds } from "./gen-docframe.js"
 import { levelCharIds, levelFontFaces, levelCharPrXmls } from "./gen-levels.js"
 import { ImageRegistry } from "./gen-image.js"
-import { GJ_SUMMARY_FONT, planGaejosikSummary } from "./gen-gaejosik.js"
+import { GJ_SUMMARY_FONT, planGaejosikSummary, gaejosikNeedsExtraChars } from "./gen-gaejosik.js"
 import { StyleRegistry } from "./style-registry.js"
 import { buildGongmunSectionV5, usesV5Engine } from "./gen-gongmun.js"
 import { fillTocPages } from "./toc-pages.js"
@@ -202,6 +202,16 @@ export async function markdownToHwpx(
   const sumXmls = sumPlan ? [charPr(lvBase + lvXmls.length, sumPlan.height, true, false, sumFontId, undefined, sumPlan.ratio, sumFontId, sumPlan.spacing)] : []
   const gjSummary = sumPlan ? { plan: sumPlan, charPrId: lvBase + lvXmls.length } : null
   if (sumPlan) options?.warnings?.push(...sumPlan.warnings)
+  // 개조식 절 띠 번호(HY헤드라인M □ 크기 흰 글자)·표 캡션(표 글꼴 +1pt)·단위 줄(표 글꼴 -2pt) — 원고에 있을 때만 요약 상자 다음 id
+  const gjExtraBase = lvBase + lvXmls.length + sumXmls.length
+  const gjChars = gongmun?.preset === "gaejosik" && gaejosikNeedsExtraChars(blocks)
+    ? { sectionNum: gjExtraBase, caption: gjExtraBase + 1, unit: gjExtraBase + 2 } : null
+  const gjSz = gongmun ? gaejosikSizes(gongmun.bodyHeight, gongmun.sizes) : null
+  const gjExtraXmls = gjChars && gjSz ? [
+    charPr(gjChars.sectionNum, gjSz.dae, false, false, 3, "#FFFFFF"),
+    charPr(gjChars.caption, gjSz.table + 100, false, false, 7),
+    charPr(gjChars.unit, gjSz.table - 200, false, false, 7),
+  ] : []
   const chartParts: ChartPart[] = []
   // 이미지 레지스트리 (v4.0.5 placeholder → v4.5.0 실데이터) — images 옵션 바이트·
   // data: URI는 실제 임베드, 그 외 참조는 1×1 placeholder로 왕복 보존
@@ -210,7 +220,7 @@ export async function markdownToHwpx(
         [k, v instanceof Uint8Array ? v : new Uint8Array(v)] as const))
     : undefined
   const images = new ImageRegistry(supplied)
-  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, page, lvIds, gjSummary)
+  const sectionXml = blocksToSectionXml(blocks, theme, gongmun, gongmunList, fit, chartParts, bfReg, remap, dfIds, images, page, lvIds, gjSummary, gjChars)
 
   // 프로필이 있었는데 한 표에도 못 붙었으면 진단 경고 — 매칭은 보수적(불일치=미적용)이라
   // 마크다운을 크게 고쳐 쓴 경우 전멸할 수 있는데, 그걸 조용히 삼키지 않는다. 1회만.
@@ -232,7 +242,7 @@ export async function markdownToHwpx(
   zip.file("Contents/content.hpf", generateManifest(chartParts, images.manifestItems(), gongmun ? "gongmun" : "default"))
   for (const part of images.parts) zip.file(part.name, part.data)
   zip.file("Contents/header.xml", generateHeaderXml(theme, gongmun, fit?.variants ?? [], extraBorderFills,
-    [...(remap?.charPrXmls ?? []), ...dfXmls, ...lvXmls, ...sumXmls],
+    [...(remap?.charPrXmls ?? []), ...dfXmls, ...lvXmls, ...sumXmls, ...gjExtraXmls],
     gongmunList?.indentVariants ?? [], [...(remap?.fontFaces ?? []), ...lvFonts, ...sumFonts]))
   zip.file("Contents/section0.xml", sectionXml)
   for (const part of chartParts) zip.file(part.name, part.xml)

@@ -195,7 +195,7 @@ await markdownToHwpx(md, {
   gongmun: {
     preset: "개조식",
     cover: { org: "Agency", date: "2026. 7. 11." },
-    toc: true,                          // h2 list → Ⅰ Ⅱ Ⅲ TOC (on by default for gaejosik)
+    toc: true,                          // h2 list → Ⅰ Ⅱ Ⅲ TOC (on by default for gaejosik with a cover)
     approval: ["담당", "팀장", "과장"],   // approval box (optional)
     pageNumbers: true,                  // page numbers (on by default for gaejosik/report/plan)
     endMark: false,                     // "끝." at the end (on by default for drafts)
@@ -204,7 +204,9 @@ await markdownToHwpx(md, {
 ```
 
 - Tables follow government conventions automatically (shaded header, double bottom rule, content-proportional widths). Themes and a reference document's table format (`hwpxToProfile`) are accepted too.
-- For the report, plan, gaejosik and bangchim presets, a blockquote right after the `#` title (`> …하고자 함`) becomes the summary box (gaejosik puts it under the title box on the first body page when the cover is on, the default; with `cover: false` the first `#` is a chapter header and the quote stays a ※ note). Keep it to one sentence (commas allowed) within three lines; longer or multi-sentence summaries produce a warning. For ministry, `> ▪ …` blockquotes become performance summary boxes wherever they appear.
+- For the report, plan, gaejosik and bangchim presets, a blockquote right after the `#` title (`> …하고자 함`) becomes the summary box (gaejosik puts it under the title box on the first body page; with `cover: false` a single leading `#` becomes that title box on page 1 and the TOC is off by default, while several `#` headings stay chapter headers). Keep it to one sentence (commas allowed) within three lines; longer or multi-sentence summaries produce a warning. For ministry, `> ▪ …` blockquotes become performance summary boxes wherever they appear.
+- In gaejosik, a numbered `### 1. Section` becomes a section band (number cell + underlined title); an unnumbered `### Title` stays a □ item. A `< Table title >` paragraph right before a table is a centred caption, `(단위: 억원)` is a small right-aligned unit line, and a `자료 : …` line right after a table is a source line (report, plan and bangchim treat captions and unit lines the same way; source lines become ※ notes).
+- With `toc: true`, report, plan and bangchim fill the TOC page column with the page each chapter starts on (body page 1 = 1) and list 붙임 (attachment) lines below the chapters. Pages come from kordoc's own layout.
 - CLI: `kordoc generate report.md -o report.hwpx --preset 개조식 --org Agency --approval 담당,팀장,과장`
 - HWP (5.0) output: `-o report.hwp` (for MCP `generate_document`, give `output_path` a `.hwp` extension). kordoc writes HWPX and converts it with the optional peer dependency `@rhwp/core` (MIT, about 32 MB unpacked), so run `npm install @rhwp/core` first. In the library: `await hwpxToHwp(await markdownToHwpx(md))`. Anything dropped in the conversion is reported in `warnings`.
 

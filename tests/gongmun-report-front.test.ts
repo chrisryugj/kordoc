@@ -71,6 +71,26 @@ describe("서울 보고서 계열 — 표지", () => {
   })
 })
 
+describe("서울 보고서 계열 — 표 캡션·단위·자료 줄", () => {
+  it("보고서 프리셋도 「< 제목 >」 가운데 굵게, 「(단위: …)」 오른쪽 작게(「자료 :」 는 종전대로 ※ 참고)", async () => {
+    const doc = `# 보고\n\n> 보고드림\n\n## 현황\n\n- 항목\n\n< 종합 순위 >\n\n(단위: 위)\n\n| 순위 | 1위 |\n| --- | --- |\n| 도시 | 서울 |\n\n자료 : 서울시 보도자료\n`
+    const z = await JSZip.loadAsync(await markdownToHwpx(doc, { gongmun: { preset: "보고서" } }))
+    const sec = await z.file("Contents/section0.xml")!.async("text"), head = await z.file("Contents/header.xml")!.async("text")
+    const at = (text: string) => {
+      const i = sec.indexOf(text), p = sec.slice(sec.lastIndexOf("<hp:p ", i), i)
+      const para = /paraPrIDRef="(\d+)"/.exec(p)![1], char = [...p.matchAll(/charPrIDRef="(\d+)"/g)].pop()![1]
+      return { align: /<hh:align horizontal="(\w+)"/.exec(head.match(new RegExp(`<hh:paraPr id="${para}"[\\s\\S]*?</hh:paraPr>`))![0])![1], char: head.match(new RegExp(`<hh:charPr id="${char}"[\\s\\S]*?</hh:charPr>`))![0] }
+    }
+    const cap = at("&lt; 종합 순위 &gt;"), unit = at("(단위: 위)"), src = at("자료 : 서울시 보도자료")
+    assert.equal(cap.align, "CENTER")
+    assert.match(cap.char, /height="1300"[\s\S]*<hh:bold\/>/)
+    assert.equal(unit.align, "RIGHT")
+    assert.match(unit.char, /height="1000"/)
+    assert.match(sec, /<hp:t>※<hp:tab [^>]*\/><\/hp:t><\/hp:run><hp:run charPrIDRef="\d+"><hp:t>자료 : 서울시 보도자료/)
+    assert.ok(src)
+  })
+})
+
 describe("서울 보고서 계열 — 목차", () => {
   const pageTexts = async (buf: ArrayBuffer) => {
     const r = await renderDocument(Buffer.from(buf), { format: "svg" } as never) as unknown as { assets: { data: string | Uint8Array }[] }

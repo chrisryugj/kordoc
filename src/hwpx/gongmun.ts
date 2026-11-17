@@ -109,7 +109,7 @@ export interface GongmunOptions {
   endMark?: boolean
   /** 결재란 — 직위 라벨 배열(예: ["담당","팀장","과장"]). 문서 최상단 우측 배치 */
   approval?: string[]
-  /** 본문 첫 페이지 제목 박스(개조식) — 목차 뒤 본문 시작에 제목 반복(실측 관행). 기본: 표지 있으면 켜짐 */
+  /** 본문 첫 페이지 제목 박스(개조식, 기본 켜짐) — 표지가 있으면 목차 뒤 본문 시작에 제목 반복(실측 관행), 없으면 맨 앞 h1 하나를 이 상자로 */
   bodyTitleBox?: boolean
   /** 개조식 장 헤더 제목 칸을 글자 폭에 맞춤. 기본: 꺼짐(제목 칸이 본문 폭까지) */
   chapterFit?: boolean
@@ -505,7 +505,8 @@ export function resolveGongmun(input: GongmunOptions): ResolvedGongmun {
     summary: opts.summary?.trim() || null,
     docInfo: opts.docInfo ?? null,
     checklist: resolveChecklist(opts.checklist, preset),
-    toc: preset !== "press" && (opts.toc ?? (gaejosik || ministry)),
+    // 개조식 목차는 표지와 함께(표지 없는 개조식은 첫 쪽이 제목 상자 — 목차 쪽만 앞에 서지 않게)
+    toc: preset !== "press" && (opts.toc ?? (gaejosik ? coverOn : ministry)),
     fonts: opts.fonts ?? {},
     sizes: opts.sizes ?? {},
     levels: resolveLevels(opts.levels, Math.round(bodyPt * 100)),
@@ -521,7 +522,8 @@ export function resolveGongmun(input: GongmunOptions): ResolvedGongmun {
     endMark: opts.endMark ?? preset === "official",
     approval: opts.approval && opts.approval.length > 0 ? opts.approval : null,
     // 본문 제목박스 — 실측(GT3·GT12): 목차 뒤 본문 시작에 제목 반복. 표지 켜진 개조식 기본
-    bodyTitleBox: opts.bodyTitleBox ?? (gaejosik && coverOn),
+    // 표지 없는 개조식은 맨 앞 h1 하나를 이 상자로 그린다(실측: 표지 없는 □ 문서 139건 중 73건이 제목을 상자 표에)
+    bodyTitleBox: opts.bodyTitleBox ?? gaejosik,
     chapterFit: opts.chapterFit ?? false,
     // h2 말머리 — 실측: 보고서 양식 □ 대항목(QA-2), 공고문 아라비아("1. 사업개요", 바이오헬스 실측)
     // v5 라운드 3: 보고서·계획서 기본 band(띠 표) — 서울 plan 7/19·교육청 7/18 실측, 실무자 요청

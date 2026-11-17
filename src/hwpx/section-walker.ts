@@ -444,11 +444,17 @@ interface KordocTableChannel {
 function kordocTableChannel(tblEl: Element, ctx: WalkCtx): KordocTableChannel | null {
   const found = findKordocMarkedCell(tblEl, 0)
   if (!found) return null
-  const m = found.name.match(/^__kordoc_(?:h([1-6])|(toc|skip)|(summary))$/)
+  const m = found.name.match(/^__kordoc_(?:h([1-6])(n)?|(toc|skip)|(summary))$/)
   if (!m) return null
-  if (m[2]) return { kind: "skip" }
+  if (m[3]) return { kind: "skip" }
   const text = collectSubListText(found.cell, ctx).trim()
-  if (m[3]) return { kind: "quote", text }
+  if (m[4]) return { kind: "quote", text }
+  // `__kordoc_h3n` — 개조식 절 띠: 번호는 같은 행 첫 칸에 있다 → "1. 제목"
+  if (m[2]) {
+    const first = Array.from(found.cell.parentNode?.childNodes ?? []).find((c) => c.nodeType === 1 && ((c as Element).tagName || "").replace(/^[^:]+:/, "") === "tc")
+    const num = first && first !== found.cell ? collectSubListText(first, ctx).trim() : ""
+    return { kind: "heading", level: Number(m[1]), text: /^\d{1,2}$/.test(num) ? `${num}. ${text}` : text }
+  }
   return { kind: "heading", level: Number(m[1]), text }
 }
 

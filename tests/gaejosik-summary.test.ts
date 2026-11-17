@@ -91,11 +91,14 @@ describe("개조식 요약 상자", () => {
     assert.ok(sec.includes("※"))
   })
 
-  it("표지 없는 개조식은 첫 h1 이 장 헤더라 인용문은 ※ 참고, summary 옵션은 본문 맨 앞 상자", async () => {
+  it("표지 없는 개조식은 맨 앞 h1 이 제목 상자라 그 뒤 인용문은 요약 상자 — 제목 상자를 끄면 종전대로 h1 이 장·인용문은 ※ 참고", async () => {
     const { sec } = await parts(await markdownToHwpx(doc(SUMMARY), { gongmun: { preset: "개조식", cover: false } }))
-    assert.equal(summaryTable(sec), null)
-    assert.ok(sec.includes("※"))
-    const opt = (await parts(await markdownToHwpx(doc("참고 인용"), { gongmun: { preset: "개조식", cover: false, toc: false, summary: SUMMARY } }))).sec
+    assert.ok(summaryTable(sec)?.includes(`<hp:t>${SUMMARY}</hp:t>`))
+    assert.ok(sec.indexOf('name="__kordoc_h1"') < sec.indexOf('name="__kordoc_summary"'), "제목 상자 뒤 요약 상자")
+    const old = (await parts(await markdownToHwpx(doc(SUMMARY), { gongmun: { preset: "개조식", cover: false, bodyTitleBox: false } }))).sec
+    assert.equal(summaryTable(old), null)
+    assert.ok(old.includes("※"))
+    const opt = (await parts(await markdownToHwpx(doc("참고 인용"), { gongmun: { preset: "개조식", cover: false, toc: false, bodyTitleBox: false, summary: SUMMARY } }))).sec
     const box = opt.indexOf('name="__kordoc_summary"')
     assert.ok(box > 0 && box < opt.indexOf("<hp:t>Ⅰ</hp:t>"), "장 헤더 앞")
     assert.ok(opt.indexOf("<hp:secPr") < box, "첫 문단이 secPr 를 진다")

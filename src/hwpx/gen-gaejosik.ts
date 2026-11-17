@@ -169,15 +169,16 @@ export function buildGaejosikToc(chapters: string[], gongmun: ResolvedGongmun, b
  * (투톤 바 600 + 제목칸 3566 + 투톤 바 600), 제목 HY헤드라인M 22pt.
  * 목차 뒤·첫 장 앞에 배치. 실무(GT12)는 실제 문서 제목을 넣는다.
  */
-export function buildGaejosikBodyTitle(title: string, gongmun: ResolvedGongmun, bodyWidth: number = GAEJOSIK_BASE_WIDTH): string {
+/** @param repeat 표지 제목의 반복이면 true(다시 읽을 때 건너뜀), 표지 없는 문서의 제목이면 false(다시 읽으면 # 제목) */
+export function buildGaejosikBodyTitle(title: string, gongmun: ResolvedGongmun, bodyWidth: number = GAEJOSIK_BASE_WIDTH, repeat = true): string {
   const g = coverGeom(gongmun.bodyHeight, gongmun.sizes, bodyWidth)
   const bt = bodyTitleGeom(gongmun.bodyHeight, gongmun.sizes)
   const barEmpty = emptyPara(GJ_PARA_BAR, false, GJ_CHAR_BAR)
   const titlePara = `<hp:p paraPrIDRef="${GONGMUN_CENTER}" styleIDRef="0"><hp:run charPrIDRef="${GJ_CHAR_BODY_TITLE}"><hp:t>${escapeTextXml(title)}</hp:t></hp:run></hp:p>`
   const topRow = cell({ bf: GJ_BF_BAR_DARK, col: 0, colSpan: 2, row: 0, w: g.topDarkW, h: bt.barH, paras: barEmpty })
     + cell({ bf: GJ_BF_BAR_LIGHT, col: 2, row: 0, w: g.topLightW, h: bt.barH, paras: barEmpty })
-  // 왕복 채널 (P2) — 표지 제목의 반복(파생물): 재파싱 시 스킵해 h1 중복 방지
-  const titleRow = cell({ bf: 1, col: 0, colSpan: 3, row: 1, w: g.totalW, h: bt.titleH, paras: titlePara, name: "__kordoc_skip" })
+  // 왕복 채널 (P2) — 표지 제목의 반복(파생물)은 재파싱 시 스킵해 h1 중복 방지, 표지 없는 문서의 제목은 h1 로 복원
+  const titleRow = cell({ bf: 1, col: 0, colSpan: 3, row: 1, w: g.totalW, h: bt.titleH, paras: titlePara, name: repeat ? "__kordoc_skip" : "__kordoc_h1" })
   const botRow = cell({ bf: GJ_BF_BAR_DARK, col: 0, row: 2, w: g.botDarkW, h: bt.barH, paras: barEmpty })
     + cell({ bf: GJ_BF_BAR_LIGHT, col: 1, colSpan: 2, row: 2, w: g.botLightW, h: bt.barH, paras: barEmpty })
   const box = table([topRow, titleRow, botRow], g.totalW, bt.barH * 2 + bt.titleH, 3, 1, bodyWidth)
@@ -211,8 +212,8 @@ export interface GaejosikSummaryPlan {
 const stripInline = (s: string): string => s.replace(/(?<!!)\[([^\]\n]*)\]\([^)\s]*\)/g, "$1").replace(/\*\*|~~|`/g, "")
 
 /**
- * 표지 제목(h1) 바로 뒤 — 첫 장 헤더 전 — 인용문, 또는 summary 옵션을 요약 상자로 (서울 실결재 제목 아래 요약 상자 53개 전부 1×1).
- * 표지가 없으면 첫 h1 이 장 헤더(Ⅰ)라 인용문은 종전대로 ※ 참고. summary 옵션이 있으면 그것이 상자, 인용문은 ※ 참고(v5 보고서와 같음)
+ * 제목(h1, gaejosikTitleH1) 바로 뒤 — 첫 장 헤더 전 — 인용문, 또는 summary 옵션을 요약 상자로 (서울 실결재 제목 아래 요약 상자 53개 전부 1×1).
+ * 제목 h1 이 없으면(h1 이 장) 인용문은 종전대로 ※ 참고. summary 옵션이 있으면 그것이 상자, 인용문은 ※ 참고(v5 보고서와 같음)
  */
 /** 표지 날짜 문단 — formatGaejosikDate 모양("2026. 10. 9.") */
 const COVER_DATE = /^\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?$/
@@ -238,12 +239,24 @@ export function coverMetaBlocks(blocks: MdBlock[], h1: number, g: ResolvedGongmu
   return out
 }
 
+/**
+ * 문서 제목으로 쓰는 h1 — 표지가 있으면 첫 h1(표지 제목). 표지가 없으면 제목 상자(bodyTitleBox)가 켜졌고 맨 앞 제목이 h1 하나뿐이며
+ * 그 뒤에 ## 장이 있을 때만(종전엔 장 「Ⅰ」이 됐다). h1 이 여럿이거나 ## 이 없으면 -1(h1 은 종전대로 장).
+ */
+export function gaejosikTitleH1(blocks: MdBlock[], g: ResolvedGongmun): number {
+  const h1 = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
+  if (g.cover || h1 < 0) return h1
+  if (!g.bodyTitleBox || blocks.findIndex((b) => b.type === "heading") !== h1) return -1
+  const later = blocks.slice(h1 + 1).filter((b) => b.type === "heading")
+  return later.some((b) => (b.level ?? 1) === 2) && !later.some((b) => (b.level ?? 1) === 1) ? h1 : -1
+}
+
 export function planGaejosikSummary(blocks: MdBlock[], g: ResolvedGongmun, bodyWidth: number): GaejosikSummaryPlan | null {
   if (g.preset !== "gaejosik") return null
   let text = g.summary ? polishGongmunText(g.summary) : ""
   let quoteIdx = -1
-  if (!text && g.cover) {
-    const h1 = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
+  const h1 = gaejosikTitleH1(blocks, g)
+  if (!text && h1 >= 0) {
     const meta = coverMetaBlocks(blocks, h1, g)
     const at = h1 + 1 + (meta.date !== undefined ? 1 : 0) + (meta.org !== undefined ? 1 : 0)
     const next = h1 >= 0 ? blocks[at] : undefined
@@ -276,6 +289,44 @@ export function buildGaejosikSummary(plan: GaejosikSummaryPlan, charPrId: number
     + `<hp:cellMargin left="${pad}" right="${pad}" top="${SUMMARY_CELL_MARGIN}" bottom="${SUMMARY_CELL_MARGIN}"/>`
     + `</hp:tc>`
   return `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}">${table([tcXml], plan.width, h, 1, 1, bodyWidth)}</hp:run></hp:p>`
+}
+
+// ─── 절 띠·표 캡션·단위·자료 줄 ────────────────────────
+
+/** 장 안 번호 절 — `### 1. 제목`(번호 없는 ### 은 종전대로 □) */
+export const GJ_SECTION_RE = /^(\d{1,2})[.)]\s+(\S.*)$/
+/** 표 캡션 — 「< 제목 >」(실측 202건/63문서, 꺾쇠 안 공백 없는 꼴 84건). 전각 ＜ ＞ 도 받는다 */
+export const GJ_CAPTION_RE = /^[<＜]\s*[^<>＜＞]{1,60}?\s*[>＞]$/
+/** 단위 줄 — 「(단위: 억원)」(실측 183건/35문서, 오른쪽 180건) */
+export const GJ_UNIT_RE = /^\(\s*단위\s*[:：]/
+/** 표 바로 뒤 출처 줄 — 「자료 : …」「출처: …」「※ 출처 : …」 */
+export const GJ_SOURCE_RE = /^(?:※\s*)?(?:자료|출처)\s*[:：]/
+
+/** 개조식 추가 글자 모양 id — 절 띠 번호·표 캡션·단위 줄(쓰일 때만 헤더에 낸다) */
+export interface GaejosikExtraChars { sectionNum: number; caption: number; unit: number }
+
+/** 원고에 절 띠·캡션·단위 줄이 있는지 — 없으면 추가 글자 모양을 내지 않는다(기존 산출물 불변) */
+export function gaejosikNeedsExtraChars(blocks: MdBlock[]): boolean {
+  return blocks.some((b) => (b.type === "heading" && b.level === 3 && GJ_SECTION_RE.test((b.text || "").trim()))
+    || (b.type === "paragraph" && (GJ_CAPTION_RE.test((b.text || "").trim()) || GJ_UNIT_RE.test((b.text || "").trim()))))
+}
+
+/**
+ * 절 띠 — 장(Ⅰ) 안 번호 절. 코퍼스 실측(□ 문서 300건 중 26건 156개, 로마 장 보고서 34건 중 11건이 이 꼴):
+ * 1×3 [번호칸 약 10mm 진한 채움·흰 글자 HY헤드라인M 16(37건)][간격 2mm(47건)][제목칸 채움 없음(114/156)·아래 실선 0.5mm(64건)],
+ * 제목 HY헤드라인M 16. 번호칸 채움은 같은 문서 장 머리 남색 #193AAA (실측 진한 채움 #231E7E·#333399·#3057B9·#203A7B 10건)
+ */
+export function buildGaejosikSection(num: string, title: string, bodyWidth: number, bfReg: TableBfRegistry, numChar: number, titleChar: number): string {
+  const w = bodyWidth - 566, numW = 2835, gapW = 567, titleW = w - numW - gapW, h = 2551
+  const none = bfReg.get({ t: "none", b: "none", l: "none", r: "none" })
+  const fill = bfReg.get({ t: "none", b: "none", l: "none", r: "none", fill: "#193AAA" })
+  const under = bfReg.get({ t: "none", b: ["0.5 mm", "#000000"], l: "none", r: "none" })
+  const numPara = `<hp:p paraPrIDRef="${GONGMUN_CENTER}" styleIDRef="0"><hp:run charPrIDRef="${numChar}"><hp:t>${escapeTextXml(num)}</hp:t></hp:run></hp:p>`
+  const titlePara = `<hp:p paraPrIDRef="${PARA_NORMAL}" styleIDRef="0"><hp:run charPrIDRef="${titleChar}"><hp:t> ${escapeTextXml(title)}</hp:t></hp:run></hp:p>`
+  const row = cell({ bf: fill, col: 0, w: numW, h, paras: numPara })
+    + cell({ bf: none, col: 1, w: gapW, h })
+    + cell({ bf: under, col: 2, w: titleW, h, paras: titlePara, name: "__kordoc_h3n" })
+  return `<hp:p paraPrIDRef="${GJ_PARA_CHAPTER}" styleIDRef="0"><hp:run charPrIDRef="${CHAR_NORMAL}">${table([row], w, h, 3, 1, bodyWidth)}</hp:run></hp:p>`
 }
 
 // ─── 장 헤더 표 ─────────────────────────────────────

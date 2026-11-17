@@ -40,6 +40,7 @@ import {
   buildBangchimTitleTable, buildBangchimSummary, buildSquareChapter, buildBangchimSectionBand, buildBangchimSubhead,
 } from "./gen-frame-seoul.js"
 import { formatGaejosikDate } from "./gaejosik.js"
+import { GJ_CAPTION_RE, GJ_UNIT_RE } from "./gen-gaejosik.js"
 import {
   buildMinistryCover, buildMinistryToc, buildMinistryChapterBand, buildMinistrySectionBand, buildMinistrySubheadBox,
   buildMinistryItemBand, buildMinistrySummaryBox, buildMinistryAttachBand, isAttachHeading, ministryRuns, romanOf, MINISTRY,
@@ -336,11 +337,13 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
         if (pics.every(Boolean)) return `<hp:p paraPrIDRef="${reg.para({ align: "CENTER", lineSp: scheme.lineSp })}" styleIDRef="0"><hp:run charPrIDRef="${reg.char({ font: st.font, pt: st.pt })}">${pics.join("")}</hp:run></hp:p>`
       }
     }
-    // 서울 방침서 캡션 줄 — "< 표 제목 >" 한컴돋움 13 굵게 가운데, "【 소제목 】" HY헤드라인M 15 (정답지 8줄: 굵게 6·가운데 4, 글꼴은 작성자마다 다름)
-    if (isBangchim && !node.align) {
+    // 서울 보고서 계열 캡션 줄 — "< 표 제목 >" 한컴돋움 13 굵게 가운데, "【 소제목 】" HY헤드라인M 15 (방침서 정답지 8줄: 굵게 6·가운데 4,
+    // 글꼴은 작성자마다 다름). "(단위: …)" 는 표 글꼴 -2pt 오른쪽(코퍼스 183건 중 오른쪽 180). "자료 :"·"출처 :" 는 아웃라인이 ※ 참고로 바꾼다
+    if (isReport && !node.align) {
       const t = plain(node.text)
-      const cap = /^<\s*[^<>]{2,60}\s*>$/.test(t) ? { font: "한컴돋움", pt: 13, bold: true, align: "CENTER" as const }
-        : /^【[^】]{1,30}】/.test(t) ? { font: "HY헤드라인M", pt: 15, bold: false, align: "LEFT" as const } : null
+      const cap = GJ_CAPTION_RE.test(t) ? { font: "한컴돋움", pt: 13, bold: true, align: "CENTER" as const }
+        : /^【[^】]{1,30}】/.test(t) ? { font: "HY헤드라인M", pt: 15, bold: false, align: "LEFT" as const }
+        : GJ_UNIT_RE.test(t) ? { font: scheme.table.font, pt: scheme.table.pt - 2, bold: false, align: "RIGHT" as const } : null
       if (cap) {
         const base = { font: cap.font, pt: cap.pt, bold: cap.bold }
         return generateParagraph(node.text, reg.para({ align: cap.align, lineSp: scheme.lineSp, keepWithNext: true }), reg.char(base), inlineMapper(reg, base))
