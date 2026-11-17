@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 서울 보고서 계열 표지: 표지 쪽에 쪽번호가 찍히던 것(실측 표지 41건 중 번호가 보이는 표지 0건), 서울방침 표지의 부서명이 다음 쪽으로 넘어가던 것(빈 줄 높이를 쪽 본문 높이에 맞춤), 보고서 프리셋 문서정보표 이름칸이 좁아 「문서번 / 호」로 꺾이던 것, 기관명 「○○실」 자리표시가 「○ ○ 실」로 벌어지고 6자 이상 기관명도 띄우던 것(실측 6자 이상 12건 중 10건 붙여 씀). 서울방침 부서명은 실측 최빈값대로 자간 20%(31건 중 18건)
 
+### Security
+
+- Windows 한컴 자동화 대체 경로(DRM HWPX·배포용 HWP 글 읽기, `to-hwpx --engine auto|hancom`): PowerShell 을 이름(`powershell`)이 아니라 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 전체 경로로 띄운다. 이름만 주면 Windows 가 현재 폴더를 먼저 찾아, MCP 서버처럼 작업 폴더가 받은 압축을 푼 폴더일 때 그 안의 같은 이름 실행 파일이 뜰 수 있었다
+- 한컴 자동화 끄기: `ParseOptions.hancomFallback: false` 또는 환경 변수 `KORDOC_NO_HANCOM=1` 이면 한글을 띄우지 않고 DRM·배포용 안내로 끝낸다(`to-hwpx --engine auto` 도 한글을 고르지 않는다). 종전엔 Windows 에 한글이 설치돼 있고 경로를 주면 늘 띄웠다
+- DRM·배포용 글 읽기(`extractTextViaCom`)를 비동기로: 한글이 쪽마다 글을 내는 동안(최대 2분) 호출한 프로그램의 이벤트 루프가 멈추지 않는다
+- CLI 문서 암호를 환경 변수 `KORDOC_PASSWORD` 로도 받는다(`--password` 가 없을 때). 명령줄 인자는 변환하는 동안 같은 PC 의 다른 프로그램이 프로세스 목록에서 볼 수 있다
+
 ## [4.24.83] - 2026-11-17
 
 4.24.82 대비 자체 벤치(점수 5,465·PDF 글 744·PDF 표 730·별표 544·formats 146·roundtrip 75·ODL 200 4종·OCR 56·견고성 54) 문서별 변화 0. KoOCR-Bench 공개 877쪽은 예측 파일이 바이트까지 같다(.90657).

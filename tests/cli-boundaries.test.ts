@@ -67,3 +67,15 @@ for (const position of ["before", "after"] as const) {
     }
   })
 }
+
+test("--password 대신 환경 변수 KORDOC_PASSWORD 로 암호 문서를 연다 (명령줄 인자는 프로세스 목록에 보인다)", () => {
+  const fixture = fileURLToPath(new URL("./fixtures/password/HWP5-password-123456.hwpx", import.meta.url))
+  const run = (env: NodeJS.ProcessEnv) => spawnSync(process.execPath, ["--import", "tsx", CLI, fixture, "--silent"], {
+    encoding: "utf-8", timeout: 60000, env: { ...process.env, ...env },
+  })
+  const locked = run({ KORDOC_PASSWORD: "" })
+  assert.notEqual(locked.status, 0, "암호 없이는 열리지 않아야 시험이 뜻이 있다")
+  const opened = run({ KORDOC_PASSWORD: "123456" })
+  assert.equal(opened.status, 0, opened.stderr)
+  assert.ok(opened.stdout.trim().length > 0)
+})

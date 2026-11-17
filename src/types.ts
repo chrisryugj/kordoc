@@ -309,6 +309,11 @@ export interface ParseOptions {
   /** 원본 파일 경로 (DRM COM fallback에 필요, 내부 전용) */
   filePath?: string
   /**
+   * DRM 걸린 HWPX·배포용 HWP 를 만나면 Windows 의 한컴오피스 한글을 자동화(COM)로 띄워 글을 읽는다(filePath 가 있을 때, 기본 true).
+   * false 거나 환경 변수 KORDOC_NO_HANCOM=1 이면 한글을 띄우지 않고 DRM·배포용 안내로 끝낸다 (한글 창·프로세스를 띄우면 안 되는 서버·감싼 앱용)
+   */
+  hancomFallback?: boolean
+  /**
    * PDF·이미지 수식 OCR 활성화 (기본 false). 이미지 입력은 같은 모델로 래스터의 수식 영역을 찾아 그 자리 OCR 글상자를
    * `$...$` 로 바꾼다(수식 구조가 있고 덮은 글이 한글 위주가 아닌 영역만 — src/ocr/image-formula.ts).
    *
