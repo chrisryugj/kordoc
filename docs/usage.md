@@ -384,6 +384,8 @@ npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --gate  # 
 npx kordoc profile 기관서식.hwpx                                   # 표 서식 프로필 JSON → generate --profile
 npx kordoc levels 기관견본.hwpx                                     # 항목부호 단계별 글꼴·크기·굵기 → generate --levels
 npx kordoc generate 보고서.md -o 보고서.hwpx --levels-from 기관견본.hwpx  # 견본 단계별 서식 바로 적용
+npx kordoc measure 공개보고서.pdf --preset 보고서                     # 보고서 PDF 모양 재기: 여백·줄간격·단계별(□ㅇ-※) 글꼴·크기·장 번호칸 색
+npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --layout 공개보고서.pdf  # 잰 모양을 프리셋 위에 적용(직접 준 옵션 우선)
 npx kordoc generate 본문.md -o 새문서.hwpx --template 부서서식.hwpx     # 부서 견본의 제목표·담당 줄·요약 상자·□○-·※·표·참고 띠 서식으로 새 내용
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --agency 국세청  # 중앙부처 기관 서식 (보도자료 2,670건 실측, 52곳·공통)
 npx kordoc pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack  # 기관팩 — 우리 기관 문서로 서식 묶음 (docs/agency-pack.md)
@@ -487,7 +489,7 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `patch_document` | 편집한 Markdown 을 원본 HWPX/HWP 에 서식 보존 반영 |
 | `convert_to_hwpx` | HWP → HWPX 변환 — HWP 5.x 는 서식 그대로(글꼴·문단 모양·표·그림·도형·수식·머리말·각주·차트), HWP 3.x 는 글·표만. 같은 이름 .hwpx 가 이미 있으면 `output_path` 필요 |
 | `extract_profile` | 참조 HWPX 의 표 서식 프로필 JSON — `generate_document` 의 `profile_path` 로 재현 |
-| `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 (표 합계 행은 기본 머리행 바로 아래 — `total_row`), 부서 견본 `template_path`·기관팩 `pack_path` |
+| `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 (표 합계 행은 기본 머리행 바로 아래 — `total_row`), 부서 견본 `template_path`·기관팩 `pack_path`, 보고서 PDF 모양 `layout_path` |
 | `build_agency_pack` | 기관 문서(HWPX) 몇 건 → 기관팩(.kpack) — 대표 견본 고르기·원문 비우기·작성 요령 ([기관팩](agency-pack.md)) |
 | `agency_pack_info` | 기관팩 요약·작성 요령 — 팩으로 원고를 쓰기 전에 읽는다 |
 | `lint_document` | 공문서 검수 — 표기법 + 문체·윤문·구성·수치 대조·예산(산출근거 검산·표 합계·외화·증감 기준) 옵트인. 지적마다 줄·글자 위치 |

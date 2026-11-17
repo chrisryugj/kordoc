@@ -559,6 +559,8 @@ export type {
   FormatProfile, TableProfile, CellProfile, BorderFillDef, BorderDef, CharPrDef,
 } from "./hwpx/generator.js"
 export { hwpxToProfile } from "./hwpx/extract-profile.js"
+export { measurePdfLayout, type PdfLayoutSpec, type PdfLayoutLevel } from "./pdf/layout-measure.js"
+export { applyMeasuredLayout, type MeasuredLayoutResult } from "./hwpx/layout-options.js"
 export { normalizeGongmunPreset, PRESET_ALIAS, incompatibleGongmunWarnings } from "./hwpx/gongmun.js"
 export { agencyNames, agencyStyle, AGENCY_COMMON_NAME } from "./hwpx/agency.js"
 export type { AgencyStyle, AgencyReportStyle, AgencyPressStyle, AgencyFont } from "./hwpx/agency-styles.js"
