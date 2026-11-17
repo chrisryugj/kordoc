@@ -116,6 +116,8 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   const lineHu = (st: LevelStyle) => Math.round(st.pt * 100 * ((st.lineSp ?? scheme.lineSp) / 100))
   const paras: string[] = []
   let pendingPageBreak = false
+  /** 목차를 만들었으면 장 머리·붙임 문단 앞에 `<!--kordoc-toc:N-->` 를 단다(쪽 번호 측정용, 최종 XML 에서 지움) */
+  let tocMarks = false
 
   // 표 스타일 (실측: 한컴돋움 12 헤더 bold·#DFE6F7·라벨열 #F2F2F2, 외곽 0.4/내부 0.12/헤더 이중선)
   const tblCharPr = reg.char({ font: scheme.table.font, pt: scheme.table.pt })
@@ -177,10 +179,14 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     }
   } else if (isReport) {
     if (g.cover) {
-      paras.push(...buildReportCover({
+      const cover = buildReportCover({
         title: docTitle, date: g.cover.date ?? formatGaejosikDate(new Date()).replace(/\s\d+\.$/, "."), org: g.cover.org || undefined,
         dept: g.cover.dept, docInfo: g.docInfo ?? undefined, approval: g.approval ?? undefined,
-      }, frame))
+        bodyH: (page?.heightHU ?? 84188) - mmToHwpunit(g.margins.top) - mmToHwpunit(g.margins.bottom) - 2 * g.headerFooter,
+      }, frame)
+      // 표지 쪽은 쪽번호를 찍지 않는다(점검표·목차와 같음)
+      if (g.pageNumbers) cover[0] = cover[0].replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${pageHidingCtrl()}`)
+      paras.push(...cover)
       pendingPageBreak = true
     } else if (g.approval) {
       paras.push(buildApprovalSeoul(g.approval, null, frame))
@@ -192,22 +198,24 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
       paras.push(pendingPageBreak ? xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `) : xml)
       pendingPageBreak = true
     }
-    // 방침서 목차 — 점검표 다음 쪽(실측 16건 중 7), 쪽번호 칸은 비움
-    if (isBangchim && g.toc && outline.chapters > 0) {
+    // 목차 — 점검표 다음 쪽(방침서 실측 16건 중 7). 서울 보고서 양식 목차와 같은 표(열 3650·39336·4464)라 보고서·계획서도 같은 틀
+    if (g.toc && outline.chapters > 0) {
       const chs = outline.nodes.filter((n): n is Extract<OutlineNode, { kind: "chapter" }> => n.kind === "chapter")
         .map((n) => ({ label: n.label ?? chapterLabel(n.index, "roman").replace(/\.$/, ""), title: n.label ? plain(n.text).replace(CHAPTER_LABEL_RE, "") : plain(n.text) }))
-      const toc = buildBangchimToc(chs, frame)
+      const toc = buildBangchimToc(chs, frame, outline.nodes.filter((n) => n.kind === "attach").map((n) => n.text))
       if (g.pageNumbers) toc[0] = toc[0].replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${pageHidingCtrl()}`)
       if (pendingPageBreak) toc[0] = toc[0].replace(/^<hp:p /, `<hp:p pageBreak="1" `)
       paras.push(...toc)
-      warnings.push("목차 쪽번호 칸은 비워 둡니다 — 쪽은 조판 뒤에 정해지므로 한글에서 채우세요")
+      // 쪽 칸은 generator 가 조판 뒤 채운다(fillTocPages) — 장 머리·붙임·본문 첫 쪽 문단 앞에 표시
+      tocMarks = true
       pendingPageBreak = true
     }
     if (docTitle) {
       const t = isBangchim ? buildBangchimTitleTable(docTitle, bangchimSub, reportInfo ?? bangchimContact, frame) : buildReportTitleTable(docTitle, reportInfo, frame)
       if (t.overflow) warnings.push(`제목이 길어 한 줄에 담지 못했습니다(20pt·장평 85%까지 축소) — 제목을 줄이세요: "${docTitle.slice(0, 30)}…"`)
-      if (pendingPageBreak) { paras.push(t.xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `).replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`)); pendingPageBreak = false }
-      else paras.push(t.xml)
+      const bodyMark = tocMarks ? "<!--kordoc-toc:body-->" : ""
+      if (pendingPageBreak) { paras.push(bodyMark + t.xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `).replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`)); pendingPageBreak = false }
+      else paras.push(bodyMark + t.xml)
       frontKind = "title"
     }
     // 제목 없는 보고서의 담당자 행 — 우상단 12pt (기안문 보고정보 행과 동일)
@@ -239,6 +247,7 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
   /** 다음 노드 — □ 의 keepWithNext 는 다음이 하위 항목·※ 일 때만. □→□→□→표 사슬이 이어지면 표가 안 들어갈 때 장 전체가 다음 쪽으로 밀린다(실렌더) */
   let nextNode: OutlineNode | undefined
   let tableSeq = 0
+  let tocChapter = 0, tocAttach = 0
   /** 업무보고 서식 틀 번호 — 절(장마다 리셋)·소제목(절마다)·항목 띠(소제목마다) */
   let sectionSeq = 0, subheadSeq = 0, itemBandSeq = 0
   /** 업무보고 첫 본문 문단에 쪽번호 1 리셋 */
@@ -500,6 +509,9 @@ export function buildGongmunSectionV5(blocks: MdBlock[], gongmun: ResolvedGongmu
     if (!xml) return
     if (pendingPageBreak) { xml = xml.replace(/^<hp:p /, `<hp:p pageBreak="1" `); pendingPageBreak = false }
     if (pendingNewPageNum) { xml = xml.replace(/<hp:run charPrIDRef="(\d+)">/, `<hp:run charPrIDRef="$1">${newPageNumCtrl(1)}`); pendingNewPageNum = false }
+    // 목차 쪽 칸 차례 — 장 다음 붙임
+    if (tocMarks && node.kind === "chapter") xml = `<!--kordoc-toc:${tocChapter++}-->${xml}`
+    else if (tocMarks && node.kind === "attach") xml = `<!--kordoc-toc:${outline.chapters + tocAttach++}-->${xml}`
     paras.push(xml)
     prevKind = node.kind
     if (node.kind === "item") prevItemDepth = node.depth

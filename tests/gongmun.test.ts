@@ -404,12 +404,12 @@ describe("gaejosik 개조식 보고서", () => {
     assert.ok((sec2.match(/pageBreak="1"/g) || []).length >= 2, "표지→목차→본문 쪽나눔 2회")
   })
 
-  it("보고서 표지(서울형: 문서정보표·결재선·파랑 띠·기관명) — 목차는 v5 보고서에 없음", async () => {
+  it("보고서 표지(서울형: 문서정보표·결재선·파랑 띠·기관명) — toc 를 켜지 않으면 목차 없음", async () => {
     const buf = await markdownToHwpx(md, {
       gongmun: { preset: "report", cover: { date: "2026. 7. 11.", org: "테스트기관", dept: "스마트도시과" }, approval: ["주무관", "팀장", "과장"], docInfo: { docNum: "스마트도시과-1" } },
     })
     const sec = await (await JSZip.loadAsync(buf)).file("Contents/section0.xml")!.async("text").then(flatSec)
-    assert.ok(!sec.includes("목  차"), "v5 보고서는 목차 없음")
+    assert.ok(!sec.includes("목  차") && !sec.includes("목    차"), "toc 없으면 목차 없음")
     assert.ok(/테\s+스\s+트\s+기\s+관/.test(sec), "표지 기관명(자간 띄움)")
     assert.ok(sec.includes("(스마트도시과)") && sec.includes("문서번호") && sec.includes("스마트도시과-1"), "부서명·문서정보표")
     assert.ok((sec.match(/pageBreak="1"/g) || []).length >= 1, "표지→본문 쪽나눔")

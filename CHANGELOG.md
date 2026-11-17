@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- 보고서·계획서 프리셋도 `toc` 를 켜면 목차 쪽을 만든다(종전엔 서울방침만 목차를 만들고 두 프리셋은 옵션을 말없이 무시했다). 서울 보고서 계열(보고서·계획서·서울방침) 목차 쪽 칸에 장이 시작하는 쪽 번호를 넣는다: 생성 뒤 kordoc 조판으로 쪽을 나눠 장 머리가 그려진 쪽을 본문 첫 쪽 = 1 기준으로 적는다(`toc-pages.ts`). 붙임 줄은 장 아래 같은 표에 싣는다(서울시 보고서 양식 목차 꼴, 서울 결재문서 목차 7건 중 4건이 붙임을 싣는다). 한컴(맥)으로 연 9쪽 견본에서 장 4개·붙임의 쪽 번호가 모두 같았다
+- render: 문단 영역(`scene.regions`)에 문단 id 가 있으면 `sourceId` 로 싣는다
+
+### Fixed
+
+- 서울 보고서 계열 표지: 표지 쪽에 쪽번호가 찍히던 것(실측 표지 41건 중 번호가 보이는 표지 0건), 서울방침 표지의 부서명이 다음 쪽으로 넘어가던 것(빈 줄 높이를 쪽 본문 높이에 맞춤), 보고서 프리셋 문서정보표 이름칸이 좁아 「문서번 / 호」로 꺾이던 것, 기관명 「○○실」 자리표시가 「○ ○ 실」로 벌어지고 6자 이상 기관명도 띄우던 것(실측 6자 이상 12건 중 10건 붙여 씀). 서울방침 부서명은 실측 최빈값대로 자간 20%(31건 중 18건)
+
 ## [4.24.83] - 2026-11-17
 
 4.24.82 대비 자체 벤치(점수 5,465·PDF 글 744·PDF 표 730·별표 544·formats 146·roundtrip 75·ODL 200 4종·OCR 56·견고성 54) 문서별 변화 0. KoOCR-Bench 공개 877쪽은 예측 파일이 바이트까지 같다(.90657).

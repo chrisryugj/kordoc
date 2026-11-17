@@ -322,7 +322,8 @@ export function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx:
     const { seg } = plan
     if (hasText) {
       const lineBox = bboxOf(ctx, ox + seg.horzpos, oy + seg.vertpos, seg.horzsize, seg.textheight)
-      if (paraRegionId === null) paraRegionId = ctx.regions.add("paragraph", lineBox, { parentId: parentId(ctx) })
+      // sourceId = 문단 id(있을 때) — 생성기 목차 쪽 번호가 장 머리 문단의 쪽을 찾는다(fillTocPages)
+      if (paraRegionId === null) paraRegionId = ctx.regions.add("paragraph", lineBox, { parentId: parentId(ctx), sourceId: p.getAttribute("id") || undefined })
       else ctx.regions.addFragment(paraRegionId, lineBox)
       if (gOpenOn !== ctx.page) {
         if (gOpenOn >= 0) ctx.pages[gOpenOn].push("</g>")

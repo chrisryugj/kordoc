@@ -73,7 +73,7 @@ export interface CoverSpec {
   bar: { gradient: [string, string]; h: number }
   date: { font: string; pt: number; bold: boolean }
   org: { font: string; pt: number; bold: boolean }
-  dept: { font: string; pt: number; bold: boolean }
+  dept: { font: string; pt: number; bold: boolean; spacing?: number }
   /** 문단 줄간격(%) — 문서정보·결재선·제목·날짜·기관·부서 */
   lineSp: { info: number; approval: number; title: number; date: number; org: number; dept: number }
 }
@@ -217,7 +217,8 @@ export const BANGCHIM_FRAME: FrameSpec = {
     bar: { gradient: ["#3057B9", "#A0B4E6"], h: 663 },
     date: { font: "HY견명조", pt: 21, bold: true },
     org: { font: "HY헤드라인M", pt: 26, bold: true },
-    dept: { font: "HY견명조", pt: 22, bold: false },
+    // 부서 자간 20%(12건 중 8 — 10·0·-10 은 1~2건)
+    dept: { font: "HY견명조", pt: 22, bold: false, spacing: 20 },
     // 줄간격 — 문서정보 160(16건)·결재선 130(16건)·제목 120(최다 5건)·날짜 170(11)·기관 170(12)·부서 190(11)
     lineSp: { info: 160, approval: 130, title: 120, date: 170, org: 170, dept: 190 },
   },

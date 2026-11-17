@@ -160,13 +160,21 @@ export function buildSeoulChecklist(inp: ChecklistInput, ctx: FrameCtx): string 
  * 제목 왼쪽(비로마 번호 목차 3건 중 2). 목차 있는 7건 모두 쪽번호를 적었지만
  * 쪽은 조판 전에 알 수 없어 칸만 둔다(업무보고 목차와 같은 방침) — 한글에서 조판 뒤 채운다.
  */
-export function buildBangchimToc(chapters: { label: string; title: string }[], ctx: FrameCtx): string[] {
+/** 목차 쪽 칸 이름 — 조판 뒤 생성기(fillTocPages)가 이 칸에 쪽 번호를 넣는다. 장 행 다음 붙임 행 차례로 0부터 */
+export const TOC_PAGE_CELL = "__kordoc_tocpage_"
+
+/**
+ * 목차 — "목    차" + 장마다 번호·제목·쪽 칸, 붙임 줄은 장 아래 같은 표에(서울시 보고서 양식 목차: 붙임 행 높이 3196,
+ * 「붙임   1. …」 한컴돋움 15 굵게·이어지는 붙임은 7칸 들여 맞춤, 쪽 HY견고딕 17, 밑줄은 마지막 붙임 행만)
+ */
+export function buildBangchimToc(chapters: { label: string; title: string }[], ctx: FrameCtx, attach: string[] = []): string[] {
   const { reg, bf } = ctx
   const cols = [3650, 39336, 4464], w = 47450
   const thin: BorderSide = ["0.12 mm", "#000000"]
   const none = bf.get({ t: "none", b: "none", l: "none", r: "none" })
   const under = bf.get({ t: "none", b: thin, l: "none", r: "none" })
   const pageBox = bf.get({ t: "none", b: thin, l: "none", r: thin })
+  const pageSide = bf.get({ t: "none", b: "none", l: "none", r: thin })
   const pCenter = (lineSp: number) => reg.para({ align: "CENTER", lineSp })
   const blank = reg.char({ font: "HY헤드라인M", pt: 10 })
   const spacer = (row: number, h: number) => cols.map((cw, c) => tc({ bf: none, row, col: c, w: cw, h, paras: para("", pCenter(160), blank) })).join("")
@@ -182,9 +190,22 @@ export function buildBangchimToc(chapters: { label: string; title: string }[], c
     const row = rows.length
     rows.push(tc({ bf: none, row, col: 0, w: cols[0], h: 5859, paras: para(roman ? `${ch.label}.` : ch.label, pCenter(roman ? 150 : 160), cNum) })
       + tc({ bf: under, row, col: 1, w: cols[1], h: 5859, paras: para(ch.title, reg.para({ align: roman ? "JUSTIFY" : "LEFT", lineSp: 160 }), cTitle) })
-      + tc({ bf: pageBox, row, col: 2, w: cols[2], h: 5859, paras: para("", pCenter(160), reg.char({ font: "HY견고딕", pt: 18 })) }))
+      + tc({ bf: pageBox, row, col: 2, w: cols[2], h: 5859, paras: para("", pCenter(160), reg.char({ font: "HY견고딕", pt: 18 })), name: `${TOC_PAGE_CELL}${i}` }))
     h += 5859
   })
+  if (attach.length) {
+    rows.push(spacer(rows.length, 3112)); h += 3112
+    const cAttach = reg.char({ font: "한컴돋움", pt: 15, bold: true }), cPage = reg.char({ font: "HY견고딕", pt: 17 })
+    attach.forEach((line, k) => {
+      const row = rows.length, last = k === attach.length - 1
+      const body = line.replace(/\s+끝\.?\s*$/, "")
+      const text = k === 0 ? body.replace(/^\s*붙\s*임\s*[:：]?\s*/, "붙임   ") : `       ${body.trim()}`
+      rows.push(tc({ bf: none, row, col: 0, w: cols[0], h: 3196, paras: para("", pCenter(160), blank) })
+        + tc({ bf: last ? under : none, row, col: 1, w: cols[1], h: 3196, paras: para(text, reg.para({ align: "LEFT", lineSp: 160 }), cAttach) })
+        + tc({ bf: last ? pageBox : pageSide, row, col: 2, w: cols[2], h: 3196, paras: para("", pCenter(160), cPage), name: `${TOC_PAGE_CELL}${chapters.length + k}` }))
+      h += 3196
+    })
+  }
   const head = para("목    차", reg.para({ align: "JUSTIFY", left: 3000, before: 5000, lineSp: 70 }), reg.char({ font: "HY헤드라인M", pt: 29, italic: true }))
   return [head, host(ftbl(rows, w, h, 3), reg.para({ align: "CENTER", lineSp: 100 }), blank)]
 }

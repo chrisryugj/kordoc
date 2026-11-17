@@ -64,6 +64,17 @@ export function spacedOrgName(org: string): string {
   return [...t].join("  ")
 }
 
+/**
+ * 표지 기관명 — 서울 방침서 표지 16건: 3자는 한 칸씩 띄우고(「경 제 실」「복 지 실」 2건 전부) 6자 이상은 붙여 쓴다
+ * (「도시공간본부」 등 5건 전부). 5자는 2:2(「서 울 특 별 시」「기 획 조 정 실」 / 「평생교육국」「정원도시국」)라 종전대로 띄운다.
+ * 한 칸 띄움(실물), ○ 자리표시는 띄우지 않는다
+ */
+export function coverOrgName(org: string): string {
+  const t = org.trim()
+  if (/[\s○◯]/.test(t) || [...t].length > 5) return t
+  return [...t].join(" ")
+}
+
 // ─── 기안문 두문표 ─────────────────────────────────
 
 export interface DocHeadInput { org?: string; slogan?: string; to?: string; via?: string; title?: string }
@@ -459,6 +470,8 @@ export interface ReportCoverInput {
   dept?: string
   docInfo?: { docNum?: string; date?: string; disclosure?: string; policyNo?: string }
   approval?: string[]
+  /** 쪽 본문 높이(HWPUNIT) — 주면 빈 줄 높이를 줄여 표지를 한 쪽에 담는다 */
+  bodyH?: number
 }
 
 /** 표지 — 좌 문서정보표·우 결재선표(양끝 배치) → 파랑 띠 제목 → 날짜 → 기관·부서명 */
@@ -472,10 +485,13 @@ export function buildReportCover(inp: ReportCoverInput, ctx: FrameCtx): string[]
   const center = reg.para({ align: "CENTER", lineSp: 100 })
   const centerAt = (k: keyof NonNullable<typeof cv>["lineSp"]) => (cv ? reg.para({ align: "CENTER", lineSp: cv.lineSp[k] }) : center)
   const blank = (pt = 15) => para("", reg.para({ align: "LEFT", lineSp: 160 }), reg.char({ font: "한컴돋움", pt }))
-  // 문서정보표 (4×2)
+  // 문서정보표 (4×2) — 이름칸은 실측 비율이되 이름("문서번호")이 한 줄에 들 만큼은 넓힌다(보고서 12pt 굵게는 비율 폭에서 꺾였다)
   const infoRows = [["문서번호", inp.docInfo?.docNum ?? ""], ["결재일자", inp.docInfo?.date ?? ""], ["공개여부", inp.docInfo?.disclosure ?? ""], ["방침번호", inp.docInfo?.policyNo ?? ""]]
   const infoW = Math.round(ctx.W * 0.36)
-  const [lw, vw] = scale([4200, 12800], infoW)
+  const labelFont = cv?.infoFont ?? "한컴돋움", labelPt = cv?.infoLabelPt ?? 12
+  const labelNeed = Math.ceil(measureTextWidth("문서번호", labelPt * 100, 100, { faceClass: faceClassForGen(labelFont) }) * 1.05) + 2 * 140 + 200
+  const [lw0] = scale([4200, 12800], infoW)
+  const lw = Math.max(lw0, labelNeed), vw = infoW - lw
   const infoXml = ftbl(infoRows.map(([l, v], r) =>
     tc({ bf: bf.get({ t: r === 0 ? "thick" : "thin", b: r === 3 ? "thick" : "thin", l: "thick", r: "thin" }), row: r, col: 0, w: lw, h: 1850, paras: para(l, centerAt("info"), c12b) })
     + tc({ bf: bf.get({ t: r === 0 ? "thick" : "thin", b: r === 3 ? "thick" : "thin", l: "thin", r: "thick" }), row: r, col: 1, w: vw, h: 1850, paras: para(v, centerAt("info"), c12) }),
@@ -490,11 +506,17 @@ export function buildReportCover(inp: ReportCoverInput, ctx: FrameCtx): string[]
     line += `</hp:run><hp:run charPrIDRef="${c12}"><hp:t> </hp:t></hp:run><hp:run charPrIDRef="${c12}">` + ftbl([top, sign], colW * n, 5365, n)
   }
   out.push(`<hp:p paraPrIDRef="${reg.para({ align: "DISTRIBUTE", lineSp: 100 })}" styleIDRef="0"><hp:run charPrIDRef="${c12}">${line}</hp:run></hp:p>`)
-  for (let i = 0; i < 4; i++) out.push(blank(20))
+  // 빈 줄(위 4·제목 아래 2·날짜 아래 8)은 20pt — 표지 글이 커서(서울방침 날짜 170%·기관 170%·부서 190%) 쪽을 넘으면
+  // 남는 높이를 14줄로 나눈 크기로 줄인다(종전: 부서명이 다음 쪽으로 넘어갔다)
+  const barH = cv?.bar.h ?? 200
+  const lineH = (pt: number, k: "date" | "org" | "dept") => pt * (cv ? cv.lineSp[k] : 100)
+  const fixed = 1850 * 4 + 6000 + 2 * barH + lineH(cv?.date.pt ?? 22, "date")
+    + (inp.org ? lineH(cv?.org.pt ?? 24, "org") : 0) + (inp.dept ? lineH(cv?.dept.pt ?? 22, "dept") : 0)
+  const blankPt = inp.bodyH ? Math.min(20, Math.floor(((inp.bodyH - fixed - 1000) / 14 / 160) * 10) / 10) : 20
+  for (let i = 0; i < 4; i++) out.push(blank(blankPt))
   // 파랑 띠 제목
   const w = ctx.W - 1200
   const bar = bf.get({ t: "none", b: "none", l: "none", r: "none", fill: cv ? { gradient: [...cv.bar.gradient], type: "LINEAR", angle: 90 } : "#1F2FD6" })
-  const barH = cv?.bar.h ?? 200
   const fit = fitOneLine(inp.title, frame.titleFont, 27, w - 800, 22)
   const cT = reg.char({ font: frame.titleFont, pt: fit.pt, bold: true, ratio: fit.ratio, spacing: fit.spacing })
   const c1 = reg.char({ font: "한컴돋움", pt: 1 })
@@ -505,10 +527,10 @@ export function buildReportCover(inp: ReportCoverInput, ctx: FrameCtx): string[]
     tc({ bf: bar, row: 2, col: 0, w, h: barH, paras: para("", barP, c1) }),
   ]
   out.push(host(ftbl(rows, w, 6000 + 2 * barH, 1), reg.para({ align: "CENTER", lineSp: 100 }), cT))
-  for (let i = 0; i < 2; i++) out.push(blank(20))
+  for (let i = 0; i < 2; i++) out.push(blank(blankPt))
   out.push(para(inp.date, centerAt("date"), reg.char(cv ? cv.date : { font: frame.titleFont, pt: 22, bold: true })))
-  for (let i = 0; i < 8; i++) out.push(blank(20))
-  if (inp.org) out.push(para(spacedOrgName(inp.org), centerAt("org"), reg.char(cv ? cv.org : { font: frame.titleFont, pt: 24, bold: true })))
+  for (let i = 0; i < 8; i++) out.push(blank(blankPt))
+  if (inp.org) out.push(para(coverOrgName(inp.org), centerAt("org"), reg.char(cv ? cv.org : { font: frame.titleFont, pt: 24, bold: true })))
   if (inp.dept) out.push(para(`(${inp.dept.replace(/^\(|\)$/g, "")})`, centerAt("dept"), reg.char(cv ? cv.dept : { font: "한컴돋움", pt: 22, bold: true })))
   return out
 }

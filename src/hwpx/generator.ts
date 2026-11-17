@@ -33,6 +33,7 @@ import { ImageRegistry } from "./gen-image.js"
 import { GJ_SUMMARY_FONT, planGaejosikSummary } from "./gen-gaejosik.js"
 import { StyleRegistry } from "./style-registry.js"
 import { buildGongmunSectionV5, usesV5Engine } from "./gen-gongmun.js"
+import { fillTocPages } from "./toc-pages.js"
 import { polishGongmunBlock } from "./gongmun-typo.js"
 import { cleanPastedMarkdown } from "./paste-clean.js"
 import { markdownToHwpxFromTemplate } from "./gen-from-template.js"
@@ -141,21 +142,26 @@ export async function markdownToHwpx(
       // eslint-disable-next-line no-console
       console.warn(`[kordoc] format profile: 프로필 표 ${remap.tables.length}개가 문서 표와 매칭되지 않아 미적용 (행·열/첫 셀 텍스트 불일치)`)
     }
-    const zip = new JSZip()
-    zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
-    zip.file("version.xml", generateVersionXml(), { compression: "STORE" })
-    zip.file("META-INF/container.xml", generateContainerXml())
-    zip.file("Contents/content.hpf", generateManifest(chartParts, images.manifestItems(), "gongmun"))
-    for (const part of images.parts) zip.file(part.name, part.data)
-    zip.file("Contents/header.xml", generateHeaderXml(theme, gongmun, [],
+    const headerXml = generateHeaderXml(theme, gongmun, [],
       [...(remap?.borderFillXmls ?? []), ...bfReg.emit()],
       [...(remap?.charPrXmls ?? []), ...reg.charPrXmls],
       [], [...(remap?.fontFaces ?? []), ...reg.extraFonts],
-      { paraPrXmls: reg.paraPrXmls, bodyFace: "함초롬바탕" }))
-    zip.file("Contents/section0.xml", res.xml)
-    for (const part of chartParts) zip.file(part.name, part.xml)
-    zip.file("Preview/PrvText.txt", buildPrvText(blocks))
-    return await zip.generateAsync({ type: "arraybuffer" })
+      { paraPrXmls: reg.paraPrXmls, bodyFace: "함초롬바탕" })
+    const pack = (sectionXml: string): Promise<ArrayBuffer> => {
+      const zip = new JSZip()
+      zip.file("mimetype", "application/hwp+zip", { compression: "STORE" })
+      zip.file("version.xml", generateVersionXml(), { compression: "STORE" })
+      zip.file("META-INF/container.xml", generateContainerXml())
+      zip.file("Contents/content.hpf", generateManifest(chartParts, images.manifestItems(), "gongmun"))
+      for (const part of images.parts) zip.file(part.name, part.data)
+      zip.file("Contents/header.xml", headerXml)
+      zip.file("Contents/section0.xml", sectionXml)
+      for (const part of chartParts) zip.file(part.name, part.xml)
+      zip.file("Preview/PrvText.txt", buildPrvText(blocks))
+      return zip.generateAsync({ type: "arraybuffer" })
+    }
+    // 목차 쪽 칸 — 한 번 조판해 장 머리가 그려진 쪽을 넣는다
+    return await pack(await fillTocPages(res.xml, pack, options?.warnings))
   }
   // 실측 폰트 프리셋(개조식·보고서·계획서) — 전용 charPr 블록(11~25)이 먼저 온다 (QA-1)
   const measured = !!gongmun && usesReportFonts(gongmun.preset)
