@@ -173,7 +173,7 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
   // 산문 역할의 후보도 표가 아니다 (table-roles.ts). 목차·차트는 호출 측이 그 영역의 글로 바꾼다
   return results.filter(r => {
     const twoColumns = isTwoColumnProse(r)
-    const prose = twoColumns || isProseTable(r.table) || gaplessCjkLines(r) || isFootnoteList(r.table) ||
+    const prose = twoColumns || isProseTable(r.table) || gaplessCjkLines(r) || isFootnoteList(r, items) ||
       [...r.usedItems].every(it => it.fontName === "ocr") && isProseFragmentTable(r.table)
     if (prose && rejected) rejected.prose++
     // OCR 두 단 본문은 단 경계(군집 상자들 사이 빈 x 띠 가운데 양쪽 글이 고른 가장 넓은 것)를 알린다 — 호출 측이 글 판정으로 못 찾은
@@ -195,12 +195,19 @@ export function detectClusterTables(items: ClusterItem[], pageNum: number, rejec
 
 /**
  * 각주 목록 — 쪽 아래 "78) 제19장 … 참조" 줄들은 번호와 글 사이가 벌어져 2열 후보가 된다. 채워진 행이 (하나 빼고) 모두 첫 칸에 각주 번호
- * "N)" 만 들고 번호가 하나씩 차례로 늘면 표가 아니다 — 본문 글로 돌려 각주 잇기(본문 "78)" 참조 ↔ 각주 줄)가 받는다(task1725 209쪽)
+ * "N)" 만 들고 번호가 하나씩 차례로 늘고, 그 번호의 절반 이상을 같은 쪽 본문의 작은 글씨 참조("가능성"78))가 가리키면 표가 아니다.
+ * 본문 글로 돌려 각주 잇기(본문 "78)" 참조 ↔ 각주 줄)가 받는다(task1725 209쪽: 참조 6pt, 각주 줄 12pt). 참조가 없으면 번호 열 표다
+ * ("1) | 사업 방식", #214). 각주 번호와 본문 글자 크기가 같은 문서가 있어 글자 크기로는 구분하지 않는다
  */
-function isFootnoteList(table: IRTable): boolean {
-  const filled = table.cells.map(row => row.filter(cell => cell.text.trim())).filter(row => row.length)
+function isFootnoteList(r: ClusterTableResult, items: ClusterItem[]): boolean {
+  const filled = r.table.cells.map(row => row.filter(cell => cell.text.trim())).filter(row => row.length)
   const marks = filled.map(row => /^(\d{1,3})\)$/.exec(row[0].text.trim())).filter(m => m !== null).map(m => Number(m![1]))
-  return marks.length >= 3 && marks.length >= filled.length - 1 && marks.every((v, i) => i === 0 || v === marks[i - 1] + 1)
+  if (marks.length < 3 || marks.length < filled.length - 1 || !marks.every((v, i) => i === 0 || v === marks[i - 1] + 1)) return false
+  const sizes = [...r.usedItems].map(i => i.fontSize).sort((a, b) => a - b)
+  const small = sizes[sizes.length >> 1] * 0.85
+  const refs = new Set(items.filter(i => !r.usedItems.has(i) && i.fontSize <= small)
+    .map(i => /^\(?(\d{1,3})\)?$/.exec(i.text.trim())).filter(m => m !== null).map(m => Number(m![1])))
+  return marks.filter(m => refs.has(m)).length * 2 >= marks.length
 }
 
 /**

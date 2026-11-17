@@ -48,6 +48,21 @@ describe("각주 목록", () => {
     const items: ClusterItem[] = JSON.parse(readFileSync(new URL("./fixtures/footnote-list-items.json", import.meta.url), "utf8"))
     assert.deepEqual(detectClusterTables(items, 209), [])
   })
+
+  it("첫 열이 \"1)\"·\"2)\"… 번호뿐인 표는 본문에 각주 참조가 없으면 표다 (#214)", () => {
+    const items: ClusterItem[] = JSON.parse(readFileSync(new URL("./fixtures/label-value-borderless-items.json", import.meta.url), "utf8"))
+    // 사업 개요 표의 이름표("사업 방식" 등)를 지워 첫 열에 번호만 남긴다
+    const numbered = items.filter(i => !(i.y >= 549 && i.y <= 661 && i.x > 85 && i.x < 190))
+    const table = detectClusterTables(numbered, 6).find(r => r.table.cols === 2)?.table
+    assert.ok(table)
+    assert.deepEqual(table.cells.map(r => r.map(c => c.text)), [
+      ["1)", "학부생들의 유대감과 결속력을 위해 MT를 진행함"],
+      ["2)", "2022.10.17~2022.10.28"],
+      ["3)", "2022.10.29~2022.10.30"],
+      ["4)", "\\487,960"],
+      ["5)", "기획국/고은서"],
+    ])
+  })
 })
 
 describe("borderless two-column label/value tables split into items", () => {
