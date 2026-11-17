@@ -57,6 +57,8 @@ describe("COM 폴백 — 끄기·실행 위치", () => {
       assert.equal(hancomAllowed(), true)
       assert.equal(isComFallbackAvailable({ hancomFallback: false }), false)
       process.env.KORDOC_NO_HANCOM = "1"
+      const { hwpToHwpxViaHancom } = await import("../src/hwp5/to-hwpx/hancom.js")
+      assert.throws(() => hwpToHwpxViaHancom(new Uint8Array(), "hwp"), /KORDOC_NO_HANCOM=1/)
       assert.equal(hancomAllowed(), false)
       assert.equal(isComFallbackAvailable(), false)
     } finally {
