@@ -4,6 +4,7 @@
 //  2. .claude/skills/gongmunseo/references/engine-spec.md·logic.md ← docs/gongmunseo-engine-spec.md·gongmun-logic.md (정본)
 //  3. server.json 의 version·packages[0].version ← package.json version (MCP 레지스트리)
 //  4. plugins/kordoc/skills/kordoc/SKILL.md 의 npx 고정 버전(kordoc@X.Y.Z) ← package.json version
+//  5. ChatGPT 제출본 plugins/chatgpt/kordoc/: plugin.json version ← package.json, skills/kordoc/SKILL.md ← 4의 SKILL.md 사본
 //
 // 사용: node scripts/sync-meta.mjs          → 드리프트를 실제로 고침
 //       node scripts/sync-meta.mjs --check  → 드리프트 있으면 exit 1 (prepublishOnly 게이트용)
@@ -75,6 +76,30 @@ if (pinned !== skillRaw) {
   } else {
     writeFileSync(skillPath, pinned)
     console.log(`✓ SKILL.md npx 고정 버전 → ${pkg.version}`)
+  }
+}
+
+// 5. ChatGPT 플러그인 디렉터리 제출본 (platform.openai.com/plugins 에 ZIP 업로드). 스킬은 Claude 판과 같은 파일
+const gptPluginPath = join(root, "plugins/chatgpt/kordoc/plugin.json")
+const gptPluginRaw = readFileSync(gptPluginPath, "utf8")
+const gptPlugin = JSON.parse(gptPluginRaw)
+if (gptPlugin.version !== pkg.version) {
+  drift++
+  if (checkOnly) {
+    console.error(`✗ plugins/chatgpt/kordoc/plugin.json version ${gptPlugin.version} ≠ package.json ${pkg.version}`)
+  } else {
+    writeFileSync(gptPluginPath, gptPluginRaw.replace(`"version": "${gptPlugin.version}"`, `"version": "${pkg.version}"`))
+    console.log(`✓ ChatGPT plugin.json version ${gptPlugin.version} → ${pkg.version}`)
+  }
+}
+const gptSkillPath = join(root, "plugins/chatgpt/kordoc/skills/kordoc/SKILL.md")
+if (readFileSync(gptSkillPath, "utf8") !== pinned) {
+  drift++
+  if (checkOnly) {
+    console.error("✗ plugins/chatgpt/kordoc/skills/kordoc/SKILL.md ≠ plugins/kordoc/skills/kordoc/SKILL.md")
+  } else {
+    writeFileSync(gptSkillPath, pinned)
+    console.log("✓ ChatGPT SKILL.md 사본 동기화")
   }
 }
 

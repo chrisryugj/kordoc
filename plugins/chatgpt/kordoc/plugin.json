@@ -1,0 +1,61 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "kordoc",
+  "version": "4.24.83",
+  "description": "Read, write and fill Korean documents (HWP, HWPX, PDF, DOCX, XLSX, PPTX, scans) with the kordoc CLI: Markdown conversion, government-document generation, form filling and format-preserving edits.",
+  "author": {
+    "name": "Seungin Ryu",
+    "email": "hello@pubax.org",
+    "url": "https://github.com/chrisryugj"
+  },
+  "homepage": "https://pubax.org/kordoc/",
+  "repository": "https://github.com/chrisryugj/kordoc",
+  "license": "MIT",
+  "keywords": [
+    "hwp",
+    "hwpx",
+    "korean",
+    "document-parser",
+    "markdown",
+    "form-filling",
+    "ocr"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "kordoc",
+        "shortDescription": "Read & write Korean HWP documents",
+        "longDescription": "Read, write and fill Korean documents with the kordoc command-line tool (npm, MIT).\n\nWhat you can do:\n- Convert HWP 3.x/5.x, HWPX, HWPML, PDF, DOCX, XLS/XLSX and PPTX files, and scanned images through built-in OCR, to Markdown with merged table cells kept.\n- Write a Korean government document (HWPX) from Markdown with presets such as 기안문, 보고서, 계획서, 통지 and 회의록.\n- Fill the blanks of an HWPX form while keeping its original layout.\n- Edit a document as Markdown and write the changes back without losing formatting.\n- Convert HWP to HWPX, compare two documents, check an HWPX file's structure and render a page preview.\n\nThe skill runs kordoc with npx in the code environment. Documents are processed there and are not sent to the developer.",
+        "developerName": "Seungin Ryu",
+        "category": "Productivity",
+        "capabilities": [
+          "Convert HWP, HWPX, PDF and Office files to Markdown",
+          "Read scanned documents with built-in OCR",
+          "Create Korean government documents (HWPX) from Markdown",
+          "Fill HWPX forms while keeping the layout",
+          "Edit documents without losing formatting",
+          "Convert HWP to HWPX and compare documents"
+        ],
+        "websiteURL": "https://pubax.org/kordoc/",
+        "supportURL": "https://github.com/chrisryugj/kordoc/issues",
+        "defaultPrompt": [
+          "이 HWP 파일을 Markdown으로 바꿔줘",
+          "이 초안으로 보고서 양식 HWPX 만들어줘",
+          "이 신청서 서식의 빈칸을 채워줘"
+        ],
+        "brandColor": "#121212",
+        "composerIcon": "./assets/logo.png",
+        "logo": "./assets/logo.png"
+      },
+      "publication": {
+        "release_notes": "First ChatGPT directory release. One skill that runs the kordoc CLI with npx to convert, create, fill and edit Korean documents.",
+        "translations": {
+          "ko-KR": {
+            "subtitle": "한글(HWP) 문서 읽기·작성·서식 채우기",
+            "description": "kordoc 명령줄 도구(npm, MIT)로 한국 문서를 읽고, 만들고, 서식을 채웁니다.\n\n- HWP 3.x·5.x, HWPX, HWPML, PDF, DOCX, XLS·XLSX, PPTX 파일과 스캔 이미지(내장 OCR)를 병합 칸까지 살린 Markdown으로 바꿉니다.\n- Markdown 원고로 공문서(HWPX)를 만듭니다. 기안문, 보고서, 계획서, 통지, 회의록 등 양식을 고를 수 있습니다.\n- HWPX 서식의 빈칸을 원래 모양 그대로 채웁니다.\n- 문서를 Markdown으로 고친 뒤 서식을 잃지 않고 다시 씁니다.\n- HWP를 HWPX로 바꾸고, 두 문서를 비교하고, HWPX 구조를 검사하고, 쪽 미리보기를 그립니다.\n\n스킬은 코드 실행 환경에서 npx로 kordoc을 돌립니다. 문서는 그 환경 안에서 처리되며 개발자에게 전송되지 않습니다."
+          }
+        }
+      }
+    }
+  }
+}
