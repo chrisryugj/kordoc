@@ -2,6 +2,10 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.83: footnote-list rule for ordinal-column tables · 2026-11-17
+
+The rule that treats a borderless table whose first column holds only `1)`, `2)`, … as a footnote list now also requires that at least half of those numbers are referenced by small-font body items on the same page (#214). Across 2,111 corpus PDFs (score benchmark 1,911, ODL 200) the rule fires on one page only, task1725 p.209, where references point to all 4 numbers, so that page is judged as before. Against 4.24.82, score 5,465, PDF text 744, PDF tables 730, annex 544, formats 146, roundtrip 75, ODL 200 (all four runs), OCR 56 and robustness 54 show no per-document change, and the KoOCR-Bench public 877-page predictions are byte-identical (.90657). Scoring code is unchanged.
+
 ## 4.24.82: hayro as the PDF text-layer engine · 2026-11-17
 
 Text items, operators, fonts and images in PDFs now come from hayro (WebAssembly) instead of pdf.js (#213). OCR and formula rasters still use PDFium. Against 4.24.81, score 5,465, PDF text 744, PDF tables 730, annex 544, formats 146, roundtrip 75, ODL 200 (all four runs), OCR 56 and robustness 54 show no per-document drops and 2 gains (ODL `01030000000007` nid .99441 → .99684, robustness web047 at +1° skew CER .1663 → .1227). KoOCR-Bench public 877 pages .90653 → .90657. The scoring references (`ocr-lib.mjs`, `verify-pages.mjs`, `ref/pdf-consensus.mjs`) keep using pdfjs-dist, independent of the engine under test.

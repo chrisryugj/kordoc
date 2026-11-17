@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.24.83] - 2026-11-17
+
+4.24.82 대비 자체 벤치(점수 5,465·PDF 글 744·PDF 표 730·별표 544·formats 146·roundtrip 75·ODL 200 4종·OCR 56·견고성 54) 문서별 변화 0. KoOCR-Bench 공개 877쪽은 예측 파일이 바이트까지 같다(.90657).
 
 ### Fixed
 
