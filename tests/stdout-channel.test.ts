@@ -15,7 +15,7 @@ import { parse } from "../src/index.js"
 
 const CLI = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
 const MCP = fileURLToPath(new URL("../src/mcp.ts", import.meta.url))
-const UTILS = fileURLToPath(new URL("../src/utils.ts", import.meta.url))
+const UTILS = new URL("../src/utils.ts", import.meta.url).href
 
 /** 한 쪽짜리 PDF — startxref 를 7바이트 어긋나게 해 pdfjs 가 전 객체 색인(경고)으로 복구하게 한다 */
 function badXrefPdf(): Buffer {

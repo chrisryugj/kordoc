@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.0] - 2026-11-18
+
 - 개발 빌드에서 `tsup`과 그 하위 의존성 `picomatch`를 제거했다(GHSA-fc5q-39xc-vjpf). esbuild로 ESM·CommonJS·CLI·MCP를 만들고 Rollup으로 단일 타입 선언을 생성한다.
 
 ### Added
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Windows에서 폴더를 HWPX로 변환할 때 출력이 끝나기 전에 종료하던 문제와 같은 모델을 동시에 내려받을 때 이미 검증된 모델이 있어도 실패하던 문제를 고쳤다. OCR 목차의 제목과 쪽 번호 검출 상자가 조금 겹쳐도 한 줄로 잇는다.
+- MCP는 Windows에서도 기존 출력 파일의 동일성을 확인한 뒤에만 내용을 바꾸며, 이미지 폴더 밖 Windows 절대 경로를 건너뛴 이유를 알린다.
 - 서울 보고서 계열 표지: 표지 쪽에 쪽번호가 찍히던 것(실측 표지 41건 중 번호가 보이는 표지 0건), 서울방침 표지의 부서명이 다음 쪽으로 넘어가던 것(빈 줄 높이를 쪽 본문 높이에 맞춤), 보고서 프리셋 문서정보표 이름칸이 좁아 「문서번 / 호」로 꺾이던 것, 기관명 「○○실」 자리표시가 「○ ○ 실」로 벌어지고 6자 이상 기관명도 띄우던 것(실측 6자 이상 12건 중 10건 붙여 씀). 서울방침 부서명은 실측 최빈값대로 자간 20%(31건 중 18건)
 
 ### Security

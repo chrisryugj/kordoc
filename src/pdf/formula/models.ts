@@ -293,7 +293,12 @@ async function downloadToFile(
       )
     }
 
-    await rename(partPath, localPath)
+    try {
+      await rename(partPath, localPath)
+    } catch (err) {
+      // Windows may refuse replacement while another downloader reads the completed file.
+      if (!await isExistingValid(localPath, spec.sha256)) throw err
+    }
     onProgress?.({
       spec,
       downloaded,

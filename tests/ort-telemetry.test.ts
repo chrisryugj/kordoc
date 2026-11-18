@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 let fixture: string
 const engineUrl = new URL("../src/ocr/engine.ts", import.meta.url).href
@@ -48,7 +48,7 @@ function child(script: string, original: string | undefined): ReturnType<typeof 
   const env: NodeJS.ProcessEnv = { ...process.env, KORDOC_MODEL_CACHE: fixture }
   if (original === undefined) delete env.ORT_DISABLE_TELEMETRY
   else env.ORT_DISABLE_TELEMETRY = original
-  return spawnSync(process.execPath, ["--import", "tsx", "--import", join(fixture, "register.mjs"), "--input-type=module", "--eval", script], {
+  return spawnSync(process.execPath, ["--import", "tsx", "--import", pathToFileURL(join(fixture, "register.mjs")).href, "--input-type=module", "--eval", script], {
     cwd, env, encoding: "utf8", timeout: 15_000,
   })
 }
