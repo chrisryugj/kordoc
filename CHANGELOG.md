@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `generate --layout` 을 `--plain` 과 함께 주거나 MCP `generate_document` 에 `preset` 없이 `layout_path` 를 주면 HWPX 를 만들기 전에 오류로 멈춘다(#217). 종전엔 PDF 를 읽지 않고 범용 HWPX 를 만들어 PDF 모양 옵션이 말없이 빠졌다
+
 ## [4.25.0] - 2026-11-18
 
 - 개발 빌드에서 `tsup`과 그 하위 의존성 `picomatch`를 제거했다(GHSA-fc5q-39xc-vjpf). esbuild로 ESM·CommonJS·CLI·MCP를 만들고 Rollup으로 단일 타입 선언을 생성한다.
