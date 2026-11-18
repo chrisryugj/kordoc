@@ -151,6 +151,11 @@ export function registerGenerateTools(server: McpServer): void {
             content: [{ type: "text", text: `✓ ${asHwp ? "HWP" : "HWPX"} 생성 (${pack_path ? "기관팩" : "견본"} 서식) → ${out}\n크기: ${(bytes.byteLength / 1024).toFixed(1)}KB${warns.length ? `\n⚠ ${warns.join("\n⚠ ")}` : ""}` }],
           }
         }
+
+        if (layout_path !== undefined && !preset) {
+          return { content: [{ type: "text", text: "오류: layout_path 는 preset 과 함께 지정해야 합니다" }], isError: true }
+        }
+
         // 조립은 gongmun-surface SSOT(buildGongmunOptions) — CLI와 의미론 공유 (v4.0.4)
         let gongmun: GongmunOptions | undefined
         if (preset) {

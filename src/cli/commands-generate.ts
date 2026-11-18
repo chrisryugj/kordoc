@@ -64,7 +64,7 @@ export function registerGenerateCommands(program: Command): void {
     .option("--sizes <spec>", "개조식 요소별 크기(pt): dae=16,cham=13,table=12,coverTitle=30 …")
     .option("--levels <spec>", "항목부호 단계별 위계 타이포: 0=HY견고딕/17/bold,1=한컴돋움/15/bold,2=휴먼명조/14 (depth 0~7, 숫자=pt·bold·plain·글꼴명)")
     .option("--levels-from <hwpx>", "견본 HWPX 에서 항목부호 단계별 글꼴·크기·굵기를 배워 적용 (kordoc levels 와 같은 추출, --levels 로 준 단계가 우선)")
-    .option("--layout <pdf>", "보고서 PDF 의 모양을 재서 적용: 여백·줄간격·단계별(□ㅇ-※) 글꼴·크기·장 번호칸 색 (kordoc measure 와 같은 측정, 직접 준 옵션이 우선)")
+    .option("--layout <pdf>", "보고서 PDF 의 모양을 재서 적용: 여백·줄간격·단계별(□ㅇ-※) 글꼴·크기·장 번호칸 색 (kordoc measure 와 같은 측정, 직접 준 옵션이 우선, --plain 과 함께 쓸 수 없음)")
     .option("--bullet2 <char>", "2단계 항목부호: ㅇ(이응 — 기안문·공고문 실측 지배)·○(원 — 보고서 양식)·◦·❍")
     .option("--agency <name>", "기관 서식 — 중앙행정기관 이름(국세청·교육부 …) 또는 공통. 보도자료 2,670건 실측 단계 글꼴·크기·2단계 부호·표 머리·기관 색 (보고서·계획서·업무보고·개조식·보도자료)")
     .option("--suppress-single", "단일 형제 항목 부호 생략 (편람 규정 — 기본은 하나여도 부호 부여)")
@@ -167,6 +167,11 @@ export function registerGenerateCommands(program: Command): void {
           if (!silent) process.stderr.write(`[kordoc] ${asHwp ? "HWP" : "HWPX"} 생성 (${opts.pack ? "기관팩" : "견본"}:${basename(tplPath)}) → ${outPath}\n`)
           if (opts.json) process.stdout.write(JSON.stringify({ output: outPath, preset: null, ...(opts.pack ? { pack: tplPath, packKind: opts.packKind ?? null } : { template: tplPath }), bytes: bytes.byteLength, warnings }) + "\n")
           return
+        }
+
+        if (plain && opts.layout !== undefined) {
+          process.stderr.write("[kordoc] --layout 은 --plain 과 함께 쓸 수 없습니다\n")
+          process.exit(1)
         }
 
         // 공문서 옵션 구성 — 값 검증(열거)과 조립은 gongmun-surface SSOT, 여기는
