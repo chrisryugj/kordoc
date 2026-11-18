@@ -16,12 +16,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { platform, tmpdir } from "os"
 import { join } from "path"
 import { KordocError } from "../../utils.js"
+import { hancomAllowed, NO_HANCOM_ENV, powershellPath } from "../../hwpx/com-fallback.js"
 
 /** 이 환경에서 한/글 자동화(HWPFrame.HwpObject)를 쓸 수 있는가 — Windows 에서 COM 클래스가 등록돼 있을 때만 */
 export function hancomAvailable(): boolean {
-  if (platform() !== "win32") return false
+  // KORDOC_NO_HANCOM=1 이면 auto 엔진도 한글을 고르지 않는다
+  if (!hancomAllowed()) return false
   try {
-    const out = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command",
+    const out = execFileSync(powershellPath(), ["-NoProfile", "-NonInteractive", "-Command",
       "if ([type]::GetTypeFromProgID('HWPFrame.HwpObject')) { 'yes' } else { 'no' }"], { encoding: "utf-8", timeout: 30_000, windowsHide: true })
     return out.trim().endsWith("yes")
   } catch {
@@ -71,12 +73,13 @@ try {
 /** 한/글 문서(HWP 5.x·HWP 3.x·HWPML) → HWPX, 한/글 자체 저장. 원본 확장자는 detectFormat 결과로 붙인다(한/글이 확장자로 형식을 고른다) */
 export function hwpToHwpxViaHancom(bytes: Uint8Array, ext: "hwp" | "hml"): Uint8Array {
   if (platform() !== "win32") throw new KordocError("한/글 저장 변환은 Windows + 한/글 설치 환경에서만 씁니다 — engine 을 \"kordoc\" 이나 \"auto\" 로 주세요")
+  if (!hancomAllowed()) throw new KordocError(`${NO_HANCOM_ENV}=1 설정으로 한/글 자동화가 꺼져 있습니다. engine을 "kordoc"이나 "auto"로 선택하세요`)
   const dir = mkdtempSync(join(tmpdir(), "kordoc-hancom-"))
   try {
     const src = join(dir, `in.${ext}`), out = join(dir, "out.hwpx")
     writeFileSync(src, bytes)
     const { args, env } = hancomSaveInvocation(src, out)
-    const res = execFileSync("powershell", args, { encoding: "utf-8", env, timeout: 300_000, windowsHide: true }).trim()
+    const res = execFileSync(powershellPath(), args, { encoding: "utf-8", env, timeout: 300_000, windowsHide: true }).trim()
     const last = res.split(/\r?\n/).pop() ?? ""
     if (last !== "OK") {
       if (last === "ERR OPEN") throw new KordocError("한/글이 문서를 열지 못했습니다 — 열기 암호가 걸린 문서는 engine \"kordoc\" 과 password 로 바꾸세요")

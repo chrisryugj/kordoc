@@ -322,9 +322,9 @@ export async function parseHwp(buffer: ArrayBuffer, options?: ParseOptions): Pro
 
     // 배포용 HWP 5.x 감지 — 본문이 "상위 버전의 배포용 문서입니다..." 플레이스홀더뿐이면
     // COM fallback으로 재시도 (Windows + 한컴오피스 환경에서만). 이슈 #25 대응.
-    if (isDistributionSentinel(markdown) && isComFallbackAvailable() && options?.filePath) {
+    if (isDistributionSentinel(markdown) && isComFallbackAvailable(options) && options?.filePath) {
       try {
-        const { pages, pageCount, warnings: comWarns } = extractTextViaCom(options.filePath)
+        const { pages, pageCount, warnings: comWarns } = await extractTextViaCom(options.filePath)
         if (pages.some(p => p && p.trim().length > 0)) {
           const com = comResultToParseResult(pages, pageCount, comWarns)
           return {

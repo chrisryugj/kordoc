@@ -22,7 +22,7 @@
 // 사용법: node bench/redact-bench.mjs [--gate] [--verbose] [--random=N(기본 3000, 0=끔)] [--schift=path|--no-schift]
 //          [--corpus[=dir[:ext,…],…]] [--corpus-rules=r,…] [--cache=dir] [--dump=path] [--json=path]
 //   --corpus 는 기본으로 bench/corpus 전체를 하위 폴더까지 훑는다 (hwpx·hwp·pdf·docx·xlsx·hml)
-//   모듈: 기본 ../dist/index.js (먼저 tsup 빌드). KORDOC_REDACT_MODULE=경로 로 다른 빌드와 비교.
+//   모듈: 기본 ../dist/index.js (먼저 npm run build). KORDOC_REDACT_MODULE=경로 로 다른 빌드와 비교.
 
 import { readFile, readdir, writeFile, mkdir, realpath, stat } from "node:fs/promises"
 import { join, extname, dirname, relative, sep } from "node:path"

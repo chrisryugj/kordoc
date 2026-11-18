@@ -7,13 +7,31 @@
  * 흐름: manifest.xml에 encryption-data 발견 → COM으로 Open → GetPageText(1..N) → Markdown
  */
 
-import { execFileSync } from "child_process"
+import { execFile } from "child_process"
 import { platform } from "os"
+import { win32 } from "path"
+import { promisify } from "util"
 import type { InternalParseResult, ParseWarning, DocumentMetadata, IRBlock } from "../types.js"
 
-/** COM fallback 사용 가능 여부 (Windows만) */
-export function isComFallbackAvailable(): boolean {
-  return platform() === "win32"
+const execFileAsync = promisify(execFile)
+
+/** Windows PowerShell 전체 경로. 이름("powershell")만 주면 Windows 는 현재 폴더를 시스템 폴더보다 먼저 찾아,
+ *  작업 폴더(받은 압축을 푼 폴더 등)에 같은 이름 실행 파일이 있으면 그것이 뜬다 */
+export function powershellPath(): string {
+  return win32.join(process.env.SystemRoot || process.env.windir || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+}
+
+/** 한컴오피스 한글 자동화로 대신 읽기를 끄는 환경 변수 (CLI·MCP·감싼 앱이 옵션 없이 끌 때) */
+export const NO_HANCOM_ENV = "KORDOC_NO_HANCOM"
+
+/** 한컴오피스 한글 자동화(COM)를 띄워도 되는가 — Windows 이고, 옵션 hancomFallback 이 false 가 아니고, KORDOC_NO_HANCOM=1 이 아닐 때 */
+export function hancomAllowed(options?: { hancomFallback?: boolean }): boolean {
+  return platform() === "win32" && options?.hancomFallback !== false && process.env[NO_HANCOM_ENV] !== "1"
+}
+
+/** COM fallback 사용 가능 여부 (Windows, 끄지 않았을 때) */
+export function isComFallbackAvailable(options?: { hancomFallback?: boolean }): boolean {
+  return hancomAllowed(options)
 }
 
 /** manifest.xml 내용에서 encryption-data 존재 여부 확인 */
@@ -25,12 +43,13 @@ export function isEncryptedHwpx(manifestXml: string): boolean {
  * COM API로 DRM HWPX 파일의 텍스트를 추출
  * @param filePath 디스크 상의 HWPX 파일 절대 경로
  */
-export function extractTextViaCom(filePath: string): { pages: string[]; pageCount: number; warnings: ParseWarning[] } {
-  if (!isComFallbackAvailable()) {
+export async function extractTextViaCom(filePath: string): Promise<{ pages: string[]; pageCount: number; warnings: ParseWarning[] }> {
+  if (platform() !== "win32") {
     throw new Error("COM fallback은 Windows에서만 사용 가능합니다")
   }
   const { args, env } = comPowerShellInvocation(filePath)
-  const stdout = execFileSync("powershell", args, {
+  // 비동기로: 한글을 띄워 쪽마다 글을 받는 동안(길면 2분) 호출한 프로그램의 이벤트 루프를 막지 않는다
+  const { stdout } = await execFileAsync(powershellPath(), args, {
     encoding: "utf-8",
     env,
     timeout: 120_000,      // 2분 타임아웃

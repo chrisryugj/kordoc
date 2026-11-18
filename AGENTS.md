@@ -29,7 +29,7 @@ npm 패키지로 배포하고 라이브러리 API·CLI(`kordoc`)·MCP 서버(`ko
 ## 명령
 
 ```bash
-npm run build          # tsup — ESM+CJS 라이브러리 + CLI·MCP 바이너리 → dist/
+npm run build          # esbuild + Rollup — ESM+CJS 라이브러리 + CLI·MCP 바이너리 → dist/
 npm run dev            # watch 모드
 npm test               # node --import tsx --test tests/*.test.ts
 npm run typecheck      # tsc --noEmit

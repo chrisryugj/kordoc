@@ -30,3 +30,43 @@ describe("COM 폴백 — 보안 승인 모듈 등록", () => {
     assert.ok(ps1.includes("RegisterModule('FilePathCheckDLL', 'FilePathCheckerModuleExample')"))
   })
 })
+
+describe("COM 폴백 — 끄기·실행 위치", () => {
+  it("PowerShell 은 System32 전체 경로로 띄운다 (이름만이면 작업 폴더의 같은 이름 실행 파일이 먼저 잡힌다)", async () => {
+    const { powershellPath } = await import("../src/hwpx/com-fallback.js")
+    const saved = process.env.SystemRoot
+    process.env.SystemRoot = "D:\\Windows"
+    try {
+      assert.equal(powershellPath(), "D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+    } finally {
+      if (saved === undefined) delete process.env.SystemRoot
+      else process.env.SystemRoot = saved
+    }
+  })
+
+  it("hancomFallback:false 나 KORDOC_NO_HANCOM=1 이면 Windows 에서도 한글을 띄우지 않는다", async () => {
+    const os = await import("node:os")
+    const { syncBuiltinESMExports } = await import("node:module")
+    const { hancomAllowed, isComFallbackAvailable } = await import("../src/hwpx/com-fallback.js")
+    const original = os.default.platform
+    os.default.platform = () => "win32"
+    syncBuiltinESMExports()
+    const saved = process.env.KORDOC_NO_HANCOM
+    try {
+      delete process.env.KORDOC_NO_HANCOM
+      assert.equal(hancomAllowed(), true)
+      assert.equal(isComFallbackAvailable({ hancomFallback: false }), false)
+      process.env.KORDOC_NO_HANCOM = "1"
+      const { hwpToHwpxViaHancom } = await import("../src/hwp5/to-hwpx/hancom.js")
+      assert.throws(() => hwpToHwpxViaHancom(new Uint8Array(), "hwp"), /KORDOC_NO_HANCOM=1/)
+      assert.equal(hancomAllowed(), false)
+      assert.equal(isComFallbackAvailable(), false)
+    } finally {
+      os.default.platform = original
+      syncBuiltinESMExports()
+      if (saved === undefined) delete process.env.KORDOC_NO_HANCOM
+      else process.env.KORDOC_NO_HANCOM = saved
+    }
+    assert.equal(hancomAllowed(), process.platform === "win32" && process.env.KORDOC_NO_HANCOM !== "1")
+  })
+})

@@ -68,6 +68,11 @@ export KORDOC_ROOT=/srv/kordoc/work
 |------|------|--------------|
 | `KORDOC_OFFLINE` | 모델 다운로드·webhook 등 모든 아웃바운드를 시도 전에 차단 | 예외 발생, 사이드로드 방법 안내 |
 | `KORDOC_ROOT` | MCP 서버의 파일 읽기·쓰기를 해당 디렉토리 하위로 제한 | `KORDOC_ROOT 밖의 경로입니다` 예외 |
+| `KORDOC_NO_HANCOM` | `1` 이면 Windows 에서 DRM HWPX·배포용 HWP 를 만나도 한컴오피스 한글을 자동화(COM)로 띄우지 않는다. `to-hwpx --engine auto`도 한글을 고르지 않으며 `--engine hancom`을 지정하면 설정을 알리는 오류를 낸다 | DRM·배포용 안내로 끝남(라이브러리는 `hancomFallback: false` 와 같음) |
+
+Windows 에서 위 변수가 없으면 kordoc 은 DRM HWPX·배포용 HWP 를 읽을 때 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`
+(전체 경로)로 한글을 숨긴 창으로 띄워 쪽마다 글을 받는다(최대 2분, 비동기). 한글 창·프로세스를 띄우면 안 되는 서버·감싼 앱은 이 변수를 고정한다.
+CLI 의 문서 암호는 `--password` 대신 환경 변수 `KORDOC_PASSWORD` 로 넘기면 프로세스 목록에 남지 않는다.
 
 `KORDOC_ROOT` 판정은 심볼릭 링크를 해석한 실제 경로(realpath)로 하므로 링크로
 빠져나갈 수 없고, 형제 디렉토리(`/srv/kordoc/work-old`)도 통과하지 않는다.

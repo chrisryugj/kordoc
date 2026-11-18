@@ -81,9 +81,9 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
       } else {
         // 파일 경로가 options에 있으면 COM fallback 시도
         // (DRM 문서용 — 열기 암호 문서는 COM 도 암호 없이 못 여니 실패하면 아래 암호 안내로 끝낸다, #93)
-        if (isComFallbackAvailable() && options?.filePath) {
+        if (isComFallbackAvailable(options) && options?.filePath) {
           try {
-            const { pages, pageCount, warnings } = extractTextViaCom(options.filePath)
+            const { pages, pageCount, warnings } = await extractTextViaCom(options.filePath)
             if (pages.some(p => p && p.trim().length > 0)) {
               return comResultToParseResult(pages, pageCount, warnings)
             }

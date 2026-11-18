@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 개발 빌드에서 `tsup`과 그 하위 의존성 `picomatch`를 제거했다(GHSA-fc5q-39xc-vjpf). esbuild로 ESM·CommonJS·CLI·MCP를 만들고 Rollup으로 단일 타입 선언을 생성한다.
+
 ### Added
 
 - 보고서·계획서 프리셋도 `toc` 를 켜면 목차 쪽을 만든다(종전엔 서울방침만 목차를 만들고 두 프리셋은 옵션을 말없이 무시했다). 서울 보고서 계열(보고서·계획서·서울방침) 목차 쪽 칸에 장이 시작하는 쪽 번호를 넣는다: 생성 뒤 kordoc 조판으로 쪽을 나눠 장 머리가 그려진 쪽을 본문 첫 쪽 = 1 기준으로 적는다(`toc-pages.ts`). 붙임 줄은 장 아래 같은 표에 싣는다(서울시 보고서 양식 목차 꼴, 서울 결재문서 목차 7건 중 4건이 붙임을 싣는다). 한컴(맥)으로 연 9쪽 견본에서 장 4개·붙임의 쪽 번호가 모두 같았다
@@ -23,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - 서울 보고서 계열 표지: 표지 쪽에 쪽번호가 찍히던 것(실측 표지 41건 중 번호가 보이는 표지 0건), 서울방침 표지의 부서명이 다음 쪽으로 넘어가던 것(빈 줄 높이를 쪽 본문 높이에 맞춤), 보고서 프리셋 문서정보표 이름칸이 좁아 「문서번 / 호」로 꺾이던 것, 기관명 「○○실」 자리표시가 「○ ○ 실」로 벌어지고 6자 이상 기관명도 띄우던 것(실측 6자 이상 12건 중 10건 붙여 씀). 서울방침 부서명은 실측 최빈값대로 자간 20%(31건 중 18건)
+
+### Security
+
+- Windows 한컴 자동화 대체 경로(DRM HWPX·배포용 HWP 글 읽기, `to-hwpx --engine auto|hancom`): PowerShell 을 이름(`powershell`)이 아니라 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` 전체 경로로 띄운다. 이름만 주면 Windows 가 현재 폴더를 먼저 찾아, MCP 서버처럼 작업 폴더가 받은 압축을 푼 폴더일 때 그 안의 같은 이름 실행 파일이 뜰 수 있었다
+- 한컴 자동화 끄기: `ParseOptions.hancomFallback: false` 또는 환경 변수 `KORDOC_NO_HANCOM=1` 이면 한글을 띄우지 않고 DRM·배포용 안내로 끝낸다(`to-hwpx --engine auto` 도 한글을 고르지 않는다). 종전엔 Windows 에 한글이 설치돼 있고 경로를 주면 늘 띄웠다
+- DRM·배포용 글 읽기(`extractTextViaCom`)를 비동기로: 한글이 쪽마다 글을 내는 동안(최대 2분) 호출한 프로그램의 이벤트 루프가 멈추지 않는다
+- CLI 문서 암호를 환경 변수 `KORDOC_PASSWORD` 로도 받는다(`--password` 가 없을 때). 명령줄 인자는 변환하는 동안 같은 PC 의 다른 프로그램이 프로세스 목록에서 볼 수 있다
 
 ## [4.24.83] - 2026-11-17
 

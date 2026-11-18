@@ -2,7 +2,7 @@
 
 import { format } from "util"
 
-/** 빌드 타임에 tsup define으로 주입되는 버전 */
+/** 빌드 타임에 esbuild define으로 주입되는 버전 */
 declare const __KORDOC_VERSION__: string
 export const VERSION: string = typeof __KORDOC_VERSION__ !== "undefined" ? __KORDOC_VERSION__ : "0.0.0-dev"
 
