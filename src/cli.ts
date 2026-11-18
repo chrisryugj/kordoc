@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /** kordoc CLI — 모두 파싱해버리겠다 (하위 명령은 cli/ 아래 명령군 모듈) */
 
 import { Command, Option } from "commander"

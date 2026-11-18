@@ -25,8 +25,8 @@
     "THIRD_PARTY"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "bench:gate": "node bench/verify-pages.mjs --gate && node bench/score.mjs && node bench/roundtrip.mjs --gate && node bench/pdf-table-gt.mjs --gate --no-ocr && node bench/pdf-text-gt.mjs --gate && node bench/annex-gt.mjs --gate && node bench/formats-sweep.mjs --gate && node bench/fuzz-sweep.mjs --gate && node bench/verify-reflow.mjs --gate && node bench/redact-bench.mjs --gate && node bench/ocr-accuracy.mjs --gate && node bench/hwp2hwpx.mjs --gate",
@@ -118,7 +118,9 @@
     "pdfjs-dist": "^4.10.38",
     "puppeteer-core": "^25.16.0",
     "sharp": "^0.35.5",
-    "tsup": "^8.4.0",
+    "esbuild": "^0.28.1",
+    "rollup": "^4.63.2",
+    "rollup-plugin-dts": "^6.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"
   }

@@ -197,7 +197,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 - **v5 공문서(official/report/plan/notice/minutes)는 gen-gongmun.ts 경로** — gen-section의 h2Marker·coverH1Idx·docframe 분기는 개조식·보도자료·범용에만 산다. 위계·글꼴 값을 바꾸려면 gongmun-scheme.ts 하나만 (reference 2.8 실측 인용 필수). □ 두 줄·제목 두 줄은 fit-line이 막는다 — 실렌더 확인은 `bench/visual` 또는 scratch capture(한컴 창 1500px로 좁혀 HUD 회피)
 - **공문서 모드 paraPr margin**: HWPX `<hh:margin>`은 **반드시 자식요소형**(`<hc:intent>`/`<hc:left>`/`<hc:right>`/`<hc:prev>`/`<hc:next>`, `xmlns:hc` 선언 필수). 속성형(`indent="…"`)은 한컴이 무시함. 내어쓰기 = `<hc:intent>` **음수**(둘째 줄을 오른쪽으로), 깊이 들여쓰기 = `<hc:left>` 누적. (실제 한컴 공문서 파일로 검증한 모델)
 
-## 빌드 설정 (tsup)
+## 빌드 설정 (scripts/build.mjs)
 
 두 개의 빌드 파이프라인:
 1. **라이브러리** (`src/index.ts`): ESM + CJS, dts 생성, hayro wasm 은 dist/ 에 파일로 / `cfb` bundled

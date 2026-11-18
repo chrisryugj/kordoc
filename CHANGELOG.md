@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 개발 빌드에서 `tsup`과 그 하위 의존성 `picomatch`를 제거했다(GHSA-fc5q-39xc-vjpf). esbuild로 ESM·CommonJS·CLI·MCP를 만들고 Rollup으로 단일 타입 선언을 생성한다.
+
 ### Added
 
 - 보고서·계획서 프리셋도 `toc` 를 켜면 목차 쪽을 만든다(종전엔 서울방침만 목차를 만들고 두 프리셋은 옵션을 말없이 무시했다). 서울 보고서 계열(보고서·계획서·서울방침) 목차 쪽 칸에 장이 시작하는 쪽 번호를 넣는다: 생성 뒤 kordoc 조판으로 쪽을 나눠 장 머리가 그려진 쪽을 본문 첫 쪽 = 1 기준으로 적는다(`toc-pages.ts`). 붙임 줄은 장 아래 같은 표에 싣는다(서울시 보고서 양식 목차 꼴, 서울 결재문서 목차 7건 중 4건이 붙임을 싣는다). 한컴(맥)으로 연 9쪽 견본에서 장 4개·붙임의 쪽 번호가 모두 같았다

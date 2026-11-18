@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /** kordoc MCP 서버 — Claude/Cursor에서 문서 파싱 도구로 사용. 도구 정의는 mcp/ 아래 도구군 모듈 */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"

@@ -28,6 +28,20 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: ESM·CommonJS 공개 API와 배포용 PDF 엔진 확인
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          import { createRequire } from 'node:module';
+          import * as esm from 'kordoc';
+          const cjs = createRequire(import.meta.url)('kordoc');
+          assert.deepEqual(Object.keys(cjs).sort(), Object.keys(esm).sort());
+          const pdf = readFileSync('tests/fixtures/embedded-cid-font-ucs2.pdf');
+          const first = await esm.parse(pdf), second = await cjs.parse(pdf);
+          assert.ok(first.success && second.success && first.markdown.trim());
+          assert.equal(first.markdown, second.markdown);
+          JS
 
   # gVisor — 테스트를 gVisor 커널 위에서 네트워크 없이 돌리고, 선택형 격리 경로(KORDOC_SANDBOX=gvisor)를 검증한다 (docs/sandbox.md)
   gvisor:

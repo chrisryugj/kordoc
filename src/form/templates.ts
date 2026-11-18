@@ -61,7 +61,7 @@ export function builtinTemplateDir(): string {
   const here = dirname(fileURLToPath(import.meta.url))
   const candidates = [
     join(here, "..", "..", "templates"), // src/form/templates.ts → 패키지 루트
-    join(here, "..", "templates"),       // dist/*.js (tsup 번들) → 패키지 루트
+    join(here, "..", "templates"),       // dist/*.js (번들) → 패키지 루트
   ]
   for (const c of candidates) {
     if (existsSync(join(c, BUILTIN_TEMPLATES[0].file))) return c
