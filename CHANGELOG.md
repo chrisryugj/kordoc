@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.1] - 2026-11-19
+
 ### Changed
 
 - `generate --layout` 을 `--plain` 과 함께 주거나 MCP `generate_document` 에 `preset` 없이 `layout_path` 를 주면 HWPX 를 만들기 전에 오류로 멈춘다(#217). 종전엔 PDF 를 읽지 않고 범용 HWPX 를 만들어 PDF 모양 옵션이 말없이 빠졌다

@@ -130,16 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.0](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.0)** · 2026-11-18
+Latest release: **[4.25.1](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.1)** · 2026-11-19
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
+| 4.25.1 | `generate --layout` together with `--plain`, or MCP `layout_path` without a `preset`, used to drop the PDF layout and write a plain HWPX; both now fail before any file is written (#217, @LimePencil) | Both invalid combinations stop before the PDF is read or a file is written (CLI and MCP entry-point tests) · parser and generator unchanged |
 | 4.25.0 | Measure a PDF with `measure` and apply its layout using `generate --layout`. Report and plan tables of contents include page numbers. Windows Hancom automation can be disabled. | Page numbers for all four chapters and the appendix matched in a nine-page sample opened in Hancom. |
 | 4.24.83 | Borderless tables whose first column holds only ordinals ("1)", "2)") were judged footnote lists and flattened into text; fixed (#214). Numbered lines at the page foot count as a footnote list only when small body-text references point to those numbers | **No** per-document change on the score benchmark (5,465 documents), PDF text (744), PDF tables (730), annex (544), ODL 200, OCR 56 and robustness 54 · KoOCR 877 pages output unchanged (0.90657) · scoring code unchanged |
 | 4.24.82 | Reads the PDF text layer with a WebAssembly engine (hayro) shipped in the package. Nothing extra to install for PDFs (`pdfjs-dist` is gone), and large documents read faster with less memory. Three OCR judgement fixes too: table candidates spanning ruled tables, two-column body text, fraction bars (#213, @VerifiedIdiot) | **No** per-document drops on in-house benchmarks (score 5,465, PDF text 744, PDF tables 730, annex 544, ODL 200, OCR 56) · one ODL document nid 0.99441 → **0.99684** · KoOCR 0.90653 → **0.90657** · 13 large documents 144–157 s → **95–98 s**, peak memory 1.95–2.20 GB → **1.15–1.24 GB** |
 | 4.24.81 | Plain paragraphs starting with `>` ("> 50% or more") or made of `---` no longer turn into blockquotes or rules (losing text) when the Markdown is rendered or round-tripped through HWPX (#212). `patchHwpx` edits those paragraphs too | **No** per-document change on the score benchmark (5,465 documents), PDF text (744), PDF tables (730), annex (544), formats (146), roundtrip (75) and ODL 200 · scoring code unchanged |
-| 4.24.80 | Saves HWP (5.0): `generate -o doc.hwp`, MCP `output_path` `.hwp`, `hwpxToHwp`. Uses the optional dependency `@rhwp/core`; the default install size is unchanged | 11 generated samples (9 government-document presets, two columns with equations, tables and images) keep their page counts · **0** content-loss reports · parser unchanged |
-| 4.24.79 | PDF text: spaced page numbers ("- 10 -"), particles after Hanja at line starts and weekday parentheses after dates now read correctly. Table rows split at unruled page breaks and OCR value rows are fixed too | PDF text word-boundary F1 99.149% → **99.159%** (19 documents up, an approval document 0.981 → **1**) · ODL table TEDS 98.015% → **98.053%** · annex PDF recall 99.982% → **99.983%** · KoOCR 0.90644 → **0.90653** · 2 per-document drops are scoring artifacts (see CHANGELOG) |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
