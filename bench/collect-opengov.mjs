@@ -10,6 +10,7 @@
 import { writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDocBytes } from './collect-lib.mjs';
 
 const UA = 'kordoc-bench/3.0 (research; contact: ryuseungin@gmail.com)';
 const BASE = 'https://opengov.seoul.go.kr';
@@ -63,9 +64,13 @@ await mkdir(outDir, { recursive: true });
 const existing = new Set(await readdir(outDir));
 
 let saved = 0;
+const failed = []; // 받지 못한 목록 쪽·상세 쪽 — 끝에 알리고 종료 코드 1
 for (let page = START_PAGE; page < START_PAGE + 30 && saved < MAX_FILES; page++) {
   const listUrl = `${BASE}/sanction/list?items_per_page=50&page=${page}${EXTRA_QUERY}`;
-  const html = await (await fetch(listUrl, { headers })).text();
+  const listRes = await fetch(listUrl, { headers });
+  // 오류 쪽 본문엔 문서 링크가 없어, 상태를 보지 않으면 「이 쪽 0건」과 구별되지 않는다
+  if (!listRes.ok) { console.log(`! 목록 ${page}: HTTP ${listRes.status}`); failed.push(`목록 ${page}`); await sleep(jitter()); continue; }
+  const html = await listRes.text();
   let items = parseList(html);
   if (TITLE_INCLUDE) items = items.filter(it => TITLE_INCLUDE.test(it.title));
   if (TITLE_EXCLUDE) items = items.filter(it => !TITLE_EXCLUDE.test(it.title));
@@ -75,7 +80,9 @@ for (let page = START_PAGE; page < START_PAGE + 30 && saved < MAX_FILES; page++)
   for (const { nid, title } of items) {
     if (saved >= MAX_FILES) break;
     try {
-      const detail = await (await fetch(`${BASE}/sanction/${nid}`, { headers })).text();
+      const detailRes = await fetch(`${BASE}/sanction/${nid}`, { headers });
+      if (!detailRes.ok) { console.log(`  ! ${nid} 상세 HTTP ${detailRes.status}`); failed.push(nid); await sleep(jitter()); continue; }
+      const detail = await detailRes.text();
       const atts = parseAttachments(detail).filter(a => /\.(hwpx?|pdf)$/i.test(a.fname));
       for (const { fname: dname, link } of atts) {
         if (saved >= MAX_FILES) break;
@@ -84,7 +91,9 @@ for (let page = START_PAGE; page < START_PAGE + 30 && saved < MAX_FILES; page++)
         const res = await fetch(BASE + link, { headers });
         if (!res.ok) { console.log(`  ! ${nid} HTTP ${res.status}`); continue; }
         const buf = Buffer.from(await res.arrayBuffer());
-        if (buf.length < 1000 || buf.subarray(0, 200).toString().includes('<!DOCTYPE')) continue;
+        if (buf.length < 1000) continue;
+        // 200 이어도 오류·로그인 안내 HTML 이 올 수 있다 — 대소문자 DOCTYPE 냄새가 아니라 파일 머리로 가린다
+        if (!isDocBytes(buf, dname)) { console.log(`  ! ${fname} 문서가 아님 (${res.headers.get('content-type') ?? '형식 모름'}) 저장 안 함`); continue; }
         await writeFile(join(outDir, fname), buf);
         existing.add(fname);
         saved++;
@@ -94,7 +103,9 @@ for (let page = START_PAGE; page < START_PAGE + 30 && saved < MAX_FILES; page++)
       await sleep(jitter());
     } catch (e) {
       console.log(`  ! ${nid}: ${e.message}`);
+      failed.push(nid);
     }
   }
 }
 console.log(`완료: ${saved}건 저장 → ${outDir}`);
+if (failed.length) { console.log(`받지 못한 쪽 ${failed.length}: ${failed.join(', ')}`); process.exitCode = 1; }

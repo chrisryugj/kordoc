@@ -10,6 +10,7 @@
 import { writeFile, mkdir, readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { isDocBytes } from "./collect-lib.mjs"
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) kordoc-bench/4.14 (research; contact: ryuseungin@gmail.com)"
 const args = process.argv.slice(2)
@@ -42,7 +43,7 @@ const safeName = t => t.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim(
 
 async function attachments(newsId) {
   const res = await fetch(`https://www.korea.kr/briefing/pressReleaseView.do?newsId=${newsId}`, { headers })
-  if (!res.ok) return []
+  if (!res.ok) throw new Error(`보기 HTTP ${res.status}`)
   const html = await res.text()
   const out = []
   const re = /<a href="\/common\/download\.do\?fileId=(\d+)&amp;tblKey=GMN">\s*(?:<img[^>]*>)?\s*([^<]+?)\s*<\/a>/g
@@ -51,12 +52,16 @@ async function attachments(newsId) {
 }
 
 let pairs = 0
+const failed = [] // 받지 못한 목록 쪽·보기 쪽 — 끝에 알리고 종료 코드 1
+let partial = 0 // 한쪽 첨부를 받지 못해 저장하지 않은 짝
 outer: for (let page = P0; page <= P1; page++) {
   let list
   try {
     const res = await fetch(`https://www.korea.kr/briefing/pressReleaseList.do?pageIndex=${page}`, { headers })
+    // 오류 쪽 본문엔 보도자료 링크가 없어, 상태를 보지 않으면 「이 쪽 0건」과 구별되지 않는다
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     list = await res.text()
-  } catch (e) { console.log(`! 목록 ${page}: ${e.message}`); continue }
+  } catch (e) { console.log(`! 목록 ${page}: ${e.message}`); failed.push(`목록 ${page}`); await pause(); continue }
   // 목록 본문의 보도자료 링크만 (사이드 배너의 다른 newsId 는 pressReleaseView 링크가 아님)
   const ids = [...new Set([...list.matchAll(/pressReleaseView\.do\?newsId=(\d+)/g)].map(m => m[1]))]
   await pause()
@@ -65,7 +70,7 @@ outer: for (let page = P0; page <= P1; page++) {
     if (seenNews.has(newsId)) continue
     seenNews.add(newsId)
     let files
-    try { files = await attachments(newsId) } catch (e) { console.log(`! ${newsId}: ${e.message}`); continue }
+    try { files = await attachments(newsId) } catch (e) { console.log(`! ${newsId}: ${e.message}`); failed.push(newsId); continue }
     await pause()
     // 곁가지(--also=docx,xlsx,xls,hml): 짝과 무관하게 이 포맷 첨부도 받는다 — formats 트랙 모수 보강용
     for (const f of files) {
@@ -74,7 +79,7 @@ outer: for (let page = P0; page <= P1; page++) {
       const res = await fetch(`https://www.korea.kr/common/download.do?fileId=${f.fileId}&tblKey=GMN`, { headers })
       const buf = Buffer.from(await res.arrayBuffer())
       await pause()
-      if (!res.ok || buf.length < 1000) { console.log(`  ! ${newsId} ${f.name} HTTP ${res.status} ${buf.length}B`); continue }
+      if (!res.ok || buf.length < 1000 || !isDocBytes(buf, f.name)) { console.log(`  ! ${newsId} ${f.name} ${res.ok ? "문서가 아님" : `HTTP ${res.status}`} ${buf.length}B`); continue }
       await writeFile(join(alsoDir, `${newsId}_${safeName(f.name)}`), buf)
       console.log(`  ~ ${newsId}_${f.name.slice(0, 60)}`)
     }
@@ -89,19 +94,27 @@ outer: for (let page = P0; page <= P1; page++) {
     }
     for (const [stem, g] of byStem) {
       if (!g.hwpx || !g.pdf) continue
+      // 다 받은 뒤에 쓴다 — hwpx·pdf 중 하나라도 못 받으면 짝이 아니라 아무것도 저장하지 않는다(hwp 는 있으면 덤)
+      const got = {}
       for (const ext of ["hwpx", "pdf", "hwp"]) {
         if (!g[ext]) continue
         const res = await fetch(`https://www.korea.kr/common/download.do?fileId=${g[ext].fileId}&tblKey=GMN`, { headers })
         const buf = Buffer.from(await res.arrayBuffer())
         await pause()
-        if (!res.ok || buf.length < 1000) { console.log(`  ! ${newsId} ${ext} HTTP ${res.status} ${buf.length}B`); continue }
-        const fname = `${newsId}_${safeName(stem)}.${ext}`
-        await writeFile(join(outDir, fname), buf)
+        if (!res.ok || buf.length < 1000 || !isDocBytes(buf, `.${ext}`)) {
+          console.log(`  ! ${newsId} ${ext} ${res.ok && buf.length >= 1000 ? "문서가 아님" : `HTTP ${res.status}`} ${buf.length}B`)
+          if (ext === "hwp") continue
+          break
+        }
+        got[ext] = buf
       }
+      if (!got.hwpx || !got.pdf) { partial++; console.log(`  ! ${newsId}_${stem.slice(0, 60)} 짝을 다 받지 못해 저장 안 함`); continue }
+      for (const [ext, buf] of Object.entries(got)) await writeFile(join(outDir, `${newsId}_${safeName(stem)}.${ext}`), buf)
       pairs++
-      console.log(`+ [${pairs}] p${page} ${newsId}_${stem.slice(0, 60)}${g.hwp ? " (+hwp)" : ""}`)
+      console.log(`+ [${pairs}] p${page} ${newsId}_${stem.slice(0, 60)}${got.hwp ? " (+hwp)" : ""}`)
       if (pairs >= MAX) break
     }
   }
 }
-console.log(`완료: ${pairs}짝 → corpus/${outName}`)
+console.log(`완료: ${pairs}짝 → corpus/${outName}${partial ? ` (못 받은 짝 ${partial})` : ""}`)
+if (failed.length) { console.log(`받지 못한 쪽 ${failed.length}: ${failed.join(", ")}`); process.exitCode = 1 }
