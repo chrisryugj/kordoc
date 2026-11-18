@@ -644,7 +644,7 @@ describe("CLI 플래그 매핑 (cliOcrEngineOptions)", () => {
     assert.deepEqual(cliOcrEngineOptions({ ocrLines: true, ocrLinesAll: true }), { ocrLines: "all" })
     assert.deepEqual(cliOcrEngineOptions({ ocrDet: "server", ocrDetSha256: HEX, ocrDetLongSide: "1920" }), { ocrDet: "server", ocrDetLongSide: 1920 })
     assert.deepEqual(cliOcrEngineOptions({ ocrDet: "m/det.onnx", ocrDetSha256: HEX }), { ocrDet: { path: resolve("m/det.onnx"), sha256: HEX } })
-    assert.deepEqual(cliOcrEngineOptions({ ocrRec: "/m/rec.onnx" }), { ocrRec: { path: "/m/rec.onnx", sha256: "" } })
+    assert.deepEqual(cliOcrEngineOptions({ ocrRec: "/m/rec.onnx" }), { ocrRec: { path: resolve("/m/rec.onnx"), sha256: "" } })
     // 프리셋 이름은 경로로 바꾸지 않는다(같은 이름의 파일은 ./handwriting 으로)
     assert.deepEqual(cliOcrEngineOptions({ ocrRec: "handwriting", ocrRecSha256: HEX }), { ocrRec: "handwriting" })
     assert.deepEqual(cliOcrEngineOptions({ ocrRec: "auto" }), { ocrRec: "auto" })

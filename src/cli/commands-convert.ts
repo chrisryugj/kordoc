@@ -69,7 +69,7 @@ export function registerConvertCommands(program: Command): void {
       }
       if (opts.json) process.stdout.write(JSON.stringify(batch ? { converted: files.length - failed - skipped, skipped, failed, files: results } : results[0], null, 2) + "\n")
       else if (batch) process.stderr.write(`[kordoc] ${files.length}개 중 변환 ${files.length - failed - skipped} · 건너뜀 ${skipped} · 실패 ${failed}\n`)
-      if (failed) process.exit(1)
+      if (failed) process.exitCode = 1
     })
 }
 

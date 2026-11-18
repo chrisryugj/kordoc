@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "kordoc",
-  "version": "4.24.83",
+  "version": "4.25.0",
   "description": "Read, write and fill Korean documents (HWP, HWPX, PDF, DOCX, XLSX, PPTX, scans) with the kordoc CLI: Markdown conversion, government-document generation, form filling and format-preserving edits.",
   "author": {
     "name": "Seungin Ryu",

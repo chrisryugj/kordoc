@@ -139,7 +139,11 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
     let best: T | null = null
     for (const o of items) {
       if (o === it || gone.has(o) || !sameLine(o, it) || junk(o)) continue
-      if (toLeft ? o.x + o.w > it.x + 2 : o.x < it.x + it.w - 2) continue
+      // Detection boxes include padding. Adjacent words can overlap by a fraction
+      // of a line height even when their text does not overlap.
+      const padding = toLeft && ends.get(it)?.lead && /^…\s*\d{1,4}$/.test(it.text)
+        ? Math.max(2, Math.min(o.h, it.h, o.w / 2, it.w / 2) * 0.5) : 2
+      if (toLeft ? o.x + o.w > it.x + padding : o.x < it.x + it.w - padding) continue
       if (!best || (toLeft ? o.x + o.w > best.x + best.w : o.x < best.x)) best = o
     }
     return best

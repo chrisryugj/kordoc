@@ -26,7 +26,7 @@ export async function loadGenerationImages(
   for (const match of markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)) {
     const url = match[1]
     // Remote URLs are not fetched; inline data is handled by the generator.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(url) || seen.has(url)) continue
+    if (seen.has(url) || (/^[a-z][a-z0-9+.-]*:/i.test(url) && !/^[a-z]:[\\/]/i.test(url))) continue
     seen.add(url)
     let name = url
     try { name = decodeURIComponent(url) } catch { /* Keep literal malformed percent sequences. */ }
