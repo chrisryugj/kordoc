@@ -44,6 +44,7 @@ PDF·OCR 의존성은 기본으로 설치됩니다(줄이려면 `--omit=optional
   npx -y kordoc@latest setup
   ```
 - **PowerShell `npx.ps1 … PSSecurityException`** — PowerShell 기본 정책 문제입니다. 명령 프롬프트(cmd)에서 `npx -y kordoc setup` 을 실행하거나, `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 후 PowerShell 을 다시 여세요.
+- **백신이 `dist\chunk-*.js` 를 격리해 `EPERM`·`ERR_MODULE_NOT_FOUND` 로 MCP 서버가 안 뜸** (#223): Kaspersky 가 수식 변환표가 든 청크를 `HEUR:Exploit.MSOffice.CVE-2017-11882` 로 잘못 잡은 보고가 있습니다. 그 파일에는 한글 수식 명령어를 LaTeX 로 바꾸는 표와 함수만 있습니다. 백신 예외 목록에 kordoc 설치 폴더를 넣고 다시 설치하세요. Claude 데스크톱 앱(MSIX)에서 설치했다면 `%APPDATA%\npm\node_modules` 가 실제로는 `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\npm\node_modules` 에 있어 이 경로로 넣어야 적용됩니다.
 - **제한 네트워크 linux/x64 에서 PNG 렌더·이미지 OCR 만 `MISSING_DEPENDENCY`(sharp)** (#99) — onnxruntime 의 CUDA 다운로드가 실패하면서 sharp 까지 빠진 경우입니다.
   ```bash
   ONNXRUNTIME_NODE_INSTALL=skip npx -y kordoc@^4 <command> ...

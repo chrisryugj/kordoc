@@ -44,6 +44,7 @@ Embedding kordoc as a library in an app (Electron etc.): the only required packa
   npx -y kordoc@latest setup
   ```
 - **PowerShell `npx.ps1 … PSSecurityException`** — PowerShell's default policy. Run `npx -y kordoc setup` in cmd, or `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` and reopen PowerShell.
+- **Antivirus quarantines `dist\chunk-*.js` and the MCP server fails with `EPERM` / `ERR_MODULE_NOT_FOUND`** (#223): Kaspersky has been reported to flag the chunk holding the equation conversion table as `HEUR:Exploit.MSOffice.CVE-2017-11882`. That file only holds the table and functions that turn Hangul equation commands into LaTeX. Add the kordoc install folder to the antivirus exclusions and reinstall. When installed from the Claude desktop app (MSIX), `%APPDATA%\npm\node_modules` actually lives under `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\npm\node_modules`; the exclusion only takes effect on that path.
 - **PNG rendering / image OCR fail with `MISSING_DEPENDENCY` (sharp) on network-restricted linux/x64** (#99) — onnxruntime's CUDA download failed and took sharp with it.
   ```bash
   ONNXRUNTIME_NODE_INSTALL=skip npx -y kordoc@^4 <command> ...
