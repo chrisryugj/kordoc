@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.2] - 2026-11-19
+
 ### Fixed
 
 - `parse-worker`(protocol 1·2)가 입력 파일을 비동기로 읽는다(#224). 종전엔 동기로 읽어 큰 파일을 읽는 동안 워커의 이벤트 루프(신호 처리·stdout 비우기)가 멈췄다. 150MB 입력에서 함수가 돌아오기까지 동기 구간 14ms → 0ms
