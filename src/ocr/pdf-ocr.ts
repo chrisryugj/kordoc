@@ -372,10 +372,22 @@ export async function ocrOnePage(
   const sharpAny = sharpModRaw as { default?: SharpPngFactory } | SharpPngFactory
   const sharp: SharpPngFactory =
     typeof sharpAny === "function" ? sharpAny : (sharpAny.default ?? (sharpAny as unknown as SharpPngFactory))
-  const png = await sharp(rgba, { raw: { width: rw, height: rh, channels: 4 } })
-    .png()
-    .toBuffer()
+  const encode = (data: Uint8Array, width: number, height: number) => sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer()
 
+  // 텍스트층이 멀쩡한 쪽은 그림 영역마다 잘라 넘기고 그 영역 상자를 단다 — 그림 영역 병합은 영역 안 상자가 있는 블록만 받는다(#225)
+  if (regions) {
+    const blocks: IRBlock[] = []
+    for (const r of regions) {
+      const crop = cropRegion(rgba, rw, rh, pdfH, rh / pdfH, r)
+      if (!crop) continue
+      const text = (await mode(new Uint8Array(await encode(crop.rgba, crop.width, crop.height)), pageNo, "image/png")).trim()
+      if (text) blocks.push({ type: "paragraph", text, pageNumber: pageNo, bbox: { page: pageNo, x: r.x1, y: r.y1, width: r.x2 - r.x1, height: r.y2 - r.y1 } })
+    }
+    if (!blocks.length) warnings.push({ page: pageNo, message: `페이지 ${pageNo} 그림 영역 OCR 결과 없음`, code: "OCR_FAILED" })
+    return { blocks }
+  }
+
+  const png = await encode(rgba, rw, rh)
   const text = await mode(new Uint8Array(png), pageNo, "image/png")
   if (!text.trim()) {
     warnings.push({ page: pageNo, message: `페이지 ${pageNo} OCR 결과 없음`, code: "OCR_FAILED" })
@@ -424,6 +436,19 @@ export function stretchFaintCrop(rgba: Uint8Array): void {
 }
 
 /** 그림 영역마다 두 배 래스터에서 잘라 다시 인식한 글줄 — 좌표는 쪽 배율 래스터 기준으로 되돌린다 */
+/** 쪽 래스터(배율 scale, 위가 0)에서 PDF 좌표(pt, 아래가 0) 영역을 잘라 낸다. 16px 미만이면 null */
+function cropRegion(
+  rgba: Uint8Array, rw: number, rh: number, pdfH: number, scale: number,
+  r: { x1: number; y1: number; x2: number; y2: number },
+): { rgba: Uint8Array; width: number; height: number; x0: number; y0: number } | null {
+  const x0 = Math.max(0, Math.floor(r.x1 * scale)), y0 = Math.max(0, Math.floor((pdfH - r.y2) * scale))
+  const cw = Math.min(rw, Math.ceil(r.x2 * scale)) - x0, ch = Math.min(rh, Math.ceil((pdfH - r.y1) * scale)) - y0
+  if (cw < 16 || ch < 16) return null
+  const crop = new Uint8Array(cw * ch * 4)
+  for (let y = 0; y < ch; y++) crop.set(rgba.subarray(((y0 + y) * rw + x0) * 4, ((y0 + y) * rw + x0 + cw) * 4), y * cw * 4)
+  return { rgba: crop, width: cw, height: ch, x0, y0 }
+}
+
 async function closerReads(
   rgba: Uint8Array, rw: number, rh: number, pdfH: number, hi: number,
   regions: Array<{ x1: number; y1: number; x2: number; y2: number }>,
@@ -432,11 +457,9 @@ async function closerReads(
 ): Promise<Array<OcrItem[] | null>> {
   const out: Array<OcrItem[] | null> = []
   for (const r of regions) {
-    const x0 = Math.max(0, Math.floor(r.x1 * hi)), y0 = Math.max(0, Math.floor((pdfH - r.y2) * hi))
-    const cw = Math.min(rw, Math.ceil(r.x2 * hi)) - x0, ch = Math.min(rh, Math.ceil((pdfH - r.y1) * hi)) - y0
-    if (cw < 16 || ch < 16) { out.push(null); continue }
-    const crop = new Uint8Array(cw * ch * 4)
-    for (let y = 0; y < ch; y++) crop.set(rgba.subarray(((y0 + y) * rw + x0) * 4, ((y0 + y) * rw + x0 + cw) * 4), y * cw * 4)
+    const cut = cropRegion(rgba, rw, rh, pdfH, hi, r)
+    if (!cut) { out.push(null); continue }
+    const { rgba: crop, width: cw, height: ch, x0, y0 } = cut
     // 글 한 줄 띠(가로가 높이 6배 이상)만 — 큰 그림(손글씨 판서 사진, ODL 106)까지 늘리면 잡음 글이 달라졌다
     if (cw >= ch * 6) stretchFaintCrop(crop)
     const items = await engine.recognizePage(crop, cw, ch, undefined, tuning)

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- PDF: `ocr` 에 함수(OcrProvider)를 주면 텍스트층이 멀쩡한 쪽의 글 없는 그림(차트 등)을 OCR 대상으로 고르지 않아 함수가 한 번도 불리지 않던 것(#225). 판정을 `ocr: true` 와 같게 하고, 그런 쪽은 쪽 전체가 아니라 그림 영역마다 잘라 함수를 부르며 결과를 그 그림 자리에 넣는다. 다른 블록과 겹치는 그림(표 칸 안 그림)은 아직 넣지 않는다. 기본·`true`·`false`·`"force"` 출력은 그대로
+
 ## [4.25.2] - 2026-11-19
 
 ### Fixed

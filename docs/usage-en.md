@@ -258,6 +258,7 @@ await parse(buffer, {                   // external OCR (Claude Vision, Tesserac
 })
 ```
 
+- An external OCR function gets the whole page for pages that need OCR, and only the cropped image region for text-free images (charts and the like) on pages whose text layer is intact. The result goes where that image sits. Images overlapping other blocks, such as one inside a table cell, are not inserted yet (#225).
 - Full external OCR example: [`examples/minicpm-ocr`](../examples/minicpm-ocr) — wires a self-hosted MiniCPM-OCR server (vLLM, SGLang, llama.cpp, Ollama) into `OcrProvider`. The example code owns the network call; kordoc itself never talks to the endpoint. It also ships a timing / page-level CER script.
 - Runs on local CPU with no API key (PP-OCRv5 korean ONNX — all 11,172 precomposed Hangul syllables).
 - Only pages without a text layer or with a broken one are OCR'd, and table structure is recovered from scans.

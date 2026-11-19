@@ -403,8 +403,10 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const ocrDone = new Set<number>()
     /** ocrLines 옵션 — 내장 OCR 이 읽은 쪽별 줄 */
     const ocrLinesOut = new Map<number, OcrPageLines>()
-    // 그림 영역 OCR — ocr: true 는 후보 전부, 자동 OCR(기본값)은 큰 그림만
-    const ocrRegions = options?.ocr === true || autoOcr ? ocrImageRegions(uncoveredImageRegions, largeImageRegions, options?.ocr === true) : new Map<number, ImageRegion[]>()
+    // 그림 영역 OCR — ocr: true 와 사용자 프로바이더는 후보 전부, 자동 OCR(기본값)은 큰 그림만.
+    // 프로바이더는 판정이 true 와 같다고 적어 둔 계약인데 종전엔 영역을 고르지 않아 호출조차 되지 않았다(#225)
+    const allRegions = options?.ocr === true || typeof options?.ocr === "function"
+    const ocrRegions = allRegions || autoOcr ? ocrImageRegions(uncoveredImageRegions, largeImageRegions, allRegions) : new Map<number, ImageRegion[]>()
     if (ocrBuffer) {
       const inScope = (p: number) => !pageFilter || pageFilter.has(p)
       const targets = new Set<number>()

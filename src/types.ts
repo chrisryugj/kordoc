@@ -238,7 +238,8 @@ export interface ParseOptions {
    *  - `true`: 내장 엔진(PP-OCRv5 korean, ~18MB 자동 다운로드)으로 OCR 필요 판정
    *    페이지만 인식 (스캔 페이지·글꼴 매핑 깨진 페이지). 정상 페이지는 파싱 결과 유지.
    *  - `"force"`: 전 페이지를 내장 엔진으로 강제 OCR.
-   *  - 함수: 사용자 제공 OcrProvider (Claude Vision·Tesseract 등) — 판정은 `true`와 동일. */
+   *  - 함수: 사용자 제공 OcrProvider (Claude Vision·Tesseract 등) — 판정은 `true`와 동일. OCR 할 쪽은 쪽 전체를, 텍스트층이 멀쩡한 쪽의
+   *    글 없는 그림은 그림 영역마다 잘라 PNG 로 넘기고 결과를 그 그림 자리에 넣는다(다른 블록과 겹치는 그림, 예컨대 표 칸 안 그림은 아직 넣지 않는다). */
   ocr?: boolean | "force" | OcrProvider
   /** 내장 OCR 이 인식한 줄을 결과 `ocrLines` 로 낸다 (PDF·이미지 입력, 기본 끔 — 끄면 산출 불변).
    *  `true`: 블록을 만드는 데 쓴 줄. `"all"`: 거기에 저신뢰(conf < 0.5)로 버린 줄도 `dropped: true` 로 함께.
