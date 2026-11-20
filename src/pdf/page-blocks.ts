@@ -31,7 +31,7 @@ import { extractImageRegions, type ImageRegion } from "./image-regions.js"
 import { markImageCell } from "./table-trim.js"
 import { mergeSliverColumns } from "./table-trim.js"
 import { headerLineAbove } from "./grid-header-line.js"
-import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, TABLE_COLXS, TABLE_ROWYS, recordCellLines, recordRowRules } from "./table-meta.js"
+import { CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, FILLER_CELLS, IMAGE_CELL_BOXES, TABLE_COLXS, TABLE_ROWYS, recordCellLines, recordRowRules } from "./table-meta.js"
 import { hasCrossingFrames } from "./crossing-frames.js"
 import { joinSpreadRowLabels } from "./spread-labels.js"
 import { recordClipCellEdges, takeClipCellEdges } from "./cell-edges.js"
@@ -628,6 +628,7 @@ function extractBlocksWithGrids(
       const isBackdrop = (r: ImageRegion) => r.x1 <= b.x1 + 1 && r.x2 >= b.x2 - 1 && r.y1 <= b.y1 + 1 && r.y2 >= b.y2 - 1
       if (imageRegions.some(r => { const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2; return cx > b.x1 && cx < b.x2 && cy > b.y1 && cy < b.y2 && !isBackdrop(r) })) {
         markImageCell(irGrid[cell.row][cell.col])
+        IMAGE_CELL_BOXES.set(irGrid[cell.row][cell.col], { x1: b.x1, y1: b.y1, x2: b.x2, y2: b.y2 })
       }
       if (cell.filler && !cellItems.length) FILLER_CELLS.add(irGrid[cell.row][cell.col])
       if (cellItems.length) recordCellLines(irGrid[cell.row][cell.col], cellItems)

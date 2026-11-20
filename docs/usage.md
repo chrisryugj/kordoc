@@ -258,7 +258,7 @@ await parse(buffer, {                   // 외부 OCR (Claude Vision, Tesseract 
 })
 ```
 
-- 외부 OCR 함수는 OCR 할 쪽이면 쪽 전체를 받고, 텍스트층이 멀쩡한 쪽의 글 없는 그림(차트 등)이면 그 그림 영역만 잘라 받습니다. 결과는 그 그림 자리에 들어갑니다. 표 칸 안 그림처럼 다른 블록과 겹치는 그림은 아직 넣지 않습니다(#225).
+- 외부 OCR 함수는 OCR 할 쪽이면 쪽 전체를 받고, 텍스트층이 멀쩡한 쪽의 글 없는 그림(차트 등)이면 그 그림 영역만 잘라 받습니다. 결과는 그 그림 자리에 들어가고, 표 칸 안 그림이면 그 칸 안에 들어갑니다(#225).
 - 외부 OCR 완전 예제: [`examples/minicpm-ocr`](../examples/minicpm-ocr) — 자체 호스팅 MiniCPM-OCR(vLLM·SGLang·llama.cpp·Ollama)을 `OcrProvider` 로 연결합니다. 네트워크 호출은 예제 코드가 맡고 kordoc 본체는 통신하지 않습니다. 처리 시간·쪽 단위 CER 실측 스크립트도 들어 있습니다.
 - API 키 없이 로컬 CPU 로 읽습니다(PP-OCRv5 korean ONNX — 완성형 한글 11,172자 전량).
 - 텍스트층이 없거나 깨진 쪽만 OCR 하고, 스캔본의 표 구조도 복원합니다.

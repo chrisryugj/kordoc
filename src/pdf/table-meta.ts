@@ -25,6 +25,8 @@ export const EMPTY_PARTS = new WeakSet<IRTable>()
 /** 셀 영역에 그림이 놓인 칸 — PDF 는 그림을 셀 글과 따로 뽑아 셀 text 가 비지만, HWP 계열은 셀에 그림 참조가 들어가
  *  비지 않은 칸이다(보도자료 머리표 오른쪽 끝 로고 칸). 후행 빈 열 판정(table-trim)에서 빈 칸으로 보지 않는다 */
 export const IMAGE_CELLS = new WeakSet<IRCell>()
+/** 그림 칸(IMAGE_CELLS)의 칸 사각형 (쪽 좌표, y 는 아래가 0) — 그림 영역 OCR 결과가 표와 겹쳐 버려지지 않고 그 칸에 들어가게 (#225) */
+export const IMAGE_CELL_BOXES = new WeakMap<IRCell, { x1: number; y1: number; x2: number; y2: number }>()
 /** 클립이 없던 자리를 메운 칸 — 쪽 넘김 조각을 이을 때 비어 있는 자리로 본다 (앞 쪽 세로 병합이 이어진 칸) */
 export const FILLER_CELLS = new WeakSet<IRCell>()
 /** 앞 쪽 칸의 이어짐인 1칸 조각 → 그 앞 쪽 칸의 클립 사각형 (clip-cells 판정, cell-continuation 이 앞 쪽 표 그 칸에 붙인다) */

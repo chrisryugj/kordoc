@@ -1,5 +1,6 @@
-import type { IRBlock } from "../types.js"
+import type { BoundingBox, IRBlock, IRCell } from "../types.js"
 import { FRAME_READING_UNITS, recordFrameReadingUnit } from "./frame-cell-blocks.js"
+import { IMAGE_CELL_BOXES, IMAGE_CELLS } from "./table-meta.js"
 
 export interface ImageRegion { x1: number; y1: number; x2: number; y2: number }
 
@@ -61,7 +62,16 @@ export function mergeOcrImageRegions(
       const frame = FRAME_READING_UNITS.get(block)
       const source = frame?.blocks.every(member => selectedSet.has(member)) ? frame.blocks : [block]
       source.forEach(member => seen.add(member))
-      const available = source.filter(member => !hasOriginal(member))
+      // 표 칸 안 그림의 글은 표와 겹친다고 버리지 않고 그 칸에 넣는다 — 레이아웃 표 칸에 든 차트(#225).
+      // HWP·HWPX 칸 안 그림 글(#143)과 같은 자리
+      const outside: IRBlock[] = []
+      for (const member of source) {
+        const cell = imageCellAt(before, page, member.bbox!)
+        if (!cell) { outside.push(member); continue }
+        addToCell(cell, { ...member, style: undefined, bbox: undefined })
+        added++
+      }
+      const available = outside.filter(member => !hasOriginal(member))
       // A partial accepted or native-covered frame cannot reintroduce omitted text.
       const units = frame && available.length === source.length && source === frame.blocks
         ? [{ blocks: available, bbox: frame.bbox, atomic: true }]
@@ -89,6 +99,35 @@ export function mergeOcrImageRegions(
     }
   }
   return added
+}
+
+/** 상자 가운데가 든 그림 칸 — 쪽의 표와 그 칸 안 중첩 표에서 찾는다. 칸 사각형은 표를 만들 때 남긴 것(IMAGE_CELL_BOXES)만 쓴다 */
+function imageCellAt(blocks: IRBlock[], page: number, b: BoundingBox): IRCell | null {
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2
+  const walk = (list: IRBlock[], depth: number): IRCell | null => {
+    if (depth > 8) return null
+    for (const block of list) {
+      if (!block.table || (block.pageNumber !== undefined && block.pageNumber !== page)) continue
+      for (const row of block.table.cells) for (const cell of row) {
+        const box = IMAGE_CELL_BOXES.get(cell)
+        if (box && IMAGE_CELLS.has(cell) && cx > box.x1 && cx < box.x2 && cy > box.y1 && cy < box.y2) return cell
+        const inner = cell.blocks ? walk(cell.blocks, depth + 1) : null
+        if (inner) return inner
+      }
+    }
+    return null
+  }
+  return walk(blocks, 0)
+}
+
+/** 칸 blocks 끝에 붙이고 text(blocks 의 평탄화 글)를 맞춘다. blocks 없이 글만 있던 칸은 그 글을 첫 문단으로 남긴다 */
+function addToCell(cell: IRCell, block: IRBlock): void {
+  if (!cell.blocks?.length && cell.text.trim()) cell.blocks = [{ type: "paragraph", text: cell.text }]
+  cell.blocks = [...(cell.blocks ?? []), block]
+  const text = block.type === "table" && block.table
+    ? block.table.cells.map(row => row.map(c => c.text.trim()).filter(Boolean).join(" ")).join("\n")
+    : block.text ?? ""
+  cell.text = [cell.text, text].filter(t => t.trim()).join("\n")
 }
 
 /** 숫자 한 글자 라벨이 차트 눈금인지 — 같은 행(가로 축: 세로 중심이 작은 쪽 높이의 0.35 안)이나 오른끝을 맞춘 열(세로 축)에 숫자 라벨이
