@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.2](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.2)** · 2026-11-19
+Latest release: **[4.25.3](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.3)** · 2026-11-21
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
+| 4.25.3 | A PDF `ocr` function (OcrProvider) was never called for text-free charts and images on pages with an intact text layer; fixed (#225). Each image region is cropped and passed to the function, and the result goes where the image sits, inside the table cell when the image is in one (#226, @circlebig) | **No** per-document change on score 5,465, PDF text 744, ODL 200 (OCR on and off), OCR 56, robustness 54 and annex 544 · the reported PDF gets the chart text in its cell |
 | 4.25.2 | `parse-worker` reads input files asynchronously, so the worker keeps handling signals and output while a large file is read (#224). Troubleshooting now covers antivirus exclusions when the equation-conversion file is wrongly flagged (#223) | Synchronous time before the call returns on a 150 MB input 14 ms → **0 ms** · parser output unchanged |
 | 4.25.1 | `generate --layout` together with `--plain`, or MCP `layout_path` without a `preset`, used to drop the PDF layout and write a plain HWPX; both now fail before any file is written (#217, @LimePencil) | Both invalid combinations stop before the PDF is read or a file is written (CLI and MCP entry-point tests) · parser and generator unchanged |
 | 4.25.0 | Measure a PDF with `measure` and apply its layout using `generate --layout`. Report and plan tables of contents include page numbers. Windows Hancom automation can be disabled. | Page numbers for all four chapters and the appendix matched in a nine-page sample opened in Hancom. |
 | 4.24.83 | Borderless tables whose first column holds only ordinals ("1)", "2)") were judged footnote lists and flattened into text; fixed (#214). Numbered lines at the page foot count as a footnote list only when small body-text references point to those numbers | **No** per-document change on the score benchmark (5,465 documents), PDF text (744), PDF tables (730), annex (544), ODL 200, OCR 56 and robustness 54 · KoOCR 877 pages output unchanged (0.90657) · scoring code unchanged |
-| 4.24.82 | Reads the PDF text layer with a WebAssembly engine (hayro) shipped in the package. Nothing extra to install for PDFs (`pdfjs-dist` is gone), and large documents read faster with less memory. Three OCR judgement fixes too: table candidates spanning ruled tables, two-column body text, fraction bars (#213, @VerifiedIdiot) | **No** per-document drops on in-house benchmarks (score 5,465, PDF text 744, PDF tables 730, annex 544, ODL 200, OCR 56) · one ODL document nid 0.99441 → **0.99684** · KoOCR 0.90653 → **0.90657** · 13 large documents 144–157 s → **95–98 s**, peak memory 1.95–2.20 GB → **1.15–1.24 GB** |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
