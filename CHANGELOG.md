@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- OCR: `ocrRec: "handwriting"` 의 손글씨 rec 를 korean-handwriting-rec v1.2.0 으로 올린다. 사람이 서류에 손으로 쓰는 기호(₩ 〃 % + = # ² ~)가 든 줄 39.7% → 97.3%, 손글씨 금액·날짜의 쉼표·점 56.8% → 96.9%(기본 rec 대비, 모델 저장소 공개 값). 이 판의 사전은 내장 사전 끝에 ₩·〃 를 더한 것이라 자기 사전(`rec_korean_hw_v1.2.yml`)과 짝으로 읽는다 — `ocrRecDict` 를 주면 종전처럼 그것이 우선. 기본·`"auto"` 의 손글씨 다시 읽기는 v1.0(`rec_korean_hw.onnx`)·내장 사전 그대로라 출력이 바뀌지 않는다. 캐시 이름에 판을 넣어(`rec_korean_hw_v1.2.onnx`) 두 판이 한 캐시에 함께 있는다. 폐쇄망에서 `ocrRec: "handwriting"` 을 쓰려면 두 파일을 반입한다(`docs/offline-deployment.md`)
+
 ## [4.25.3] - 2026-11-21
 
 ### Fixed

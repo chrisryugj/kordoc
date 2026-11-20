@@ -29,7 +29,7 @@ import { parse, parseImage } from "../src/index.js"
 import { cliOcrEngineOptions } from "../src/cli/convert.js"
 import { validateOcrOptions } from "../src/ocr/options.js"
 import {
-  ALL_OCR_MODELS, DEFAULT_OCR_MODELS, OCR_DET_MODEL, OCR_HANDWRITING_REC_MODEL, OCR_REC_DICT, OCR_REC_MODEL, OCR_SERVER_DET_MODEL, OCR_V6_MEDIUM_DET_MODEL,
+  ALL_OCR_MODELS, DEFAULT_OCR_MODELS, OCR_DET_MODEL, OCR_HANDWRITING_REC_DICT, OCR_HANDWRITING_REC_MODEL, OCR_REC_DICT, OCR_REC_MODEL, OCR_SERVER_DET_MODEL, OCR_V6_MEDIUM_DET_MODEL,
   getOcrModelStatus, ocrModelPath, ocrSelectionKey, parseCharacterDict, resolveOcrModels,
 } from "../src/ocr/models.js"
 import { DEFAULT_BUILTIN_OCR, builtinOcrConfig, pageLines, recognizeOcrPage } from "../src/ocr/pdf-ocr.js"
@@ -120,28 +120,33 @@ describe("모델 선택·기본 설정", () => {
     assert.throws(() => builtinOcrConfig({ ocrDetLongSide: 0 }), /ocrDetLongSide/)
   })
 
-  it("ocrRec: \"handwriting\" → 손글씨 rec(고정 주소·SHA-256)와 내장 사전, 캐시 파일·키는 기본·로컬 파일과 따로", () => {
+  it("ocrRec: \"handwriting\" → 손글씨 rec 와 그 사전(같은 revision·SHA-256 고정), 캐시 파일·키는 기본·로컬 파일과 따로", () => {
     const hw = builtinOcrConfig({ ocrRec: "handwriting" }).models
     assert.equal("spec" in hw.rec && hw.rec.spec, OCR_HANDWRITING_REC_MODEL)
     assert.equal(hw.det, DEFAULT_OCR_MODELS.det)
-    assert.equal(hw.dict, DEFAULT_OCR_MODELS.dict)
-    assert.equal(OCR_HANDWRITING_REC_MODEL.sha256, "1655d6abd17989f1922855dd77922e532e74275fe237e5f07174b623993fef81")
-    assert.match(OCR_HANDWRITING_REC_MODEL.url, /\/resolve\/bb4c2714cf6b05e5d13bfe22199d0e6d30866597\/model\/rec_korean_hw\.onnx$/)
+    assert.equal("spec" in hw.dict && hw.dict.spec, OCR_HANDWRITING_REC_DICT)
+    assert.equal(OCR_HANDWRITING_REC_MODEL.sha256, "30b50029ba534c22ee34b4a250f7cd79b6a74ff1439e6487835520710fbb314b")
+    assert.match(OCR_HANDWRITING_REC_MODEL.url, /\/resolve\/e28b61b77df91aa024f9bbf5af962289ad0a8fa8\/model\/rec_korean_hw\.onnx$/)
+    assert.equal(OCR_HANDWRITING_REC_DICT.sha256, "65a89ddc425eecb0e5495e6533edbb5531ba52112db80f423624f3a7c9076bee")
+    assert.match(OCR_HANDWRITING_REC_DICT.url, /\/resolve\/e28b61b77df91aa024f9bbf5af962289ad0a8fa8\/model\/ppocrv5_korean_dict\.yml$/)
     assert.notEqual(OCR_HANDWRITING_REC_MODEL.filename, OCR_REC_MODEL.filename)
+    assert.notEqual(OCR_HANDWRITING_REC_DICT.filename, OCR_REC_DICT.filename)
     // 같은 바이트를 로컬 파일로 준 선택과도 세션을 나눈다
-    const sameBytes = resolveOcrModels({ ocrRec: { path: "/m/rec_korean_hw.onnx", sha256: OCR_HANDWRITING_REC_MODEL.sha256 } })
+    const sameBytes = resolveOcrModels({ ocrRec: { path: "/m/rec_korean_hw_v1.2.onnx", sha256: OCR_HANDWRITING_REC_MODEL.sha256 } })
     assert.equal(new Set([DEFAULT_OCR_MODELS, hw, sameBytes].map(ocrSelectionKey)).size, 3)
     // 명시한 로컬 사전은 그대로 쓴다
     const dict = resolveOcrModels({ ocrRec: "handwriting", ocrRecDict: { path: "/m/d.yml", sha256: HEX } })
     assert.deepEqual(dict.dict, { file: { path: "/m/d.yml", sha256: HEX } })
   })
 
-  it("ocrRec: \"auto\" → 기본 rec 로 읽고, 다시 읽을 손글씨 rec 는 같은 det·사전", () => {
+  it("ocrRec: \"auto\" → 기본 rec 로 읽고, 다시 읽을 손글씨 rec 는 같은 det 에 손글씨 사전 (로컬 사전을 주면 그것)", () => {
     const c = builtinOcrConfig({ ocrRec: "auto" })
     assert.equal(c.models.rec, DEFAULT_OCR_MODELS.rec)
     assert.equal(c.handwriting && "spec" in c.handwriting.rec && c.handwriting.rec.spec, OCR_HANDWRITING_REC_MODEL)
     assert.equal(c.handwriting?.det, c.models.det)
-    assert.equal(c.handwriting?.dict, c.models.dict)
+    assert.equal(c.handwriting && "spec" in c.handwriting.dict && c.handwriting.dict.spec, OCR_HANDWRITING_REC_DICT)
+    const own = builtinOcrConfig({ ocrRec: "auto", ocrRecDict: { path: "/m/d.yml", sha256: HEX } })
+    assert.deepEqual(own.handwriting?.dict, { file: { path: "/m/d.yml", sha256: HEX } })
     assert.equal(builtinOcrConfig({ ocrRec: "handwriting" }).handwriting, undefined)
   })
 
@@ -160,7 +165,7 @@ describe("모델 선택·기본 설정", () => {
     assert.deepEqual(ALL_OCR_MODELS, [OCR_DET_MODEL, OCR_REC_MODEL, OCR_REC_DICT])
     const { MODEL_GROUPS } = await import("../src/shared/model-bundle.js")
     const specs = MODEL_GROUPS.flatMap(g => g.specs)
-    assert.ok(!specs.includes(OCR_HANDWRITING_REC_MODEL) && !specs.some(s => s.filename === OCR_HANDWRITING_REC_MODEL.filename))
+    for (const hw of [OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT]) assert.ok(!specs.includes(hw) && !specs.some(s => s.filename === hw.filename))
   })
 })
 
@@ -287,14 +292,14 @@ describe("내장 엔진 E2E — ocrLines·로컬 모델 (모델 있을 때만)",
   })
 })
 
-describe("손글씨 rec 프리셋 E2E (손글씨 rec 가 캐시에 있을 때만)", () => {
-  it("이미지·스캔 PDF: 프리셋 결과 JSON 전체가 같은 파일의 로컬 지정과 같다", async (t) => {
+describe("손글씨 rec 프리셋 E2E (손글씨 rec·사전이 캐시에 있을 때만)", () => {
+  it("이미지·스캔 PDF: 프리셋 결과 JSON 전체가 같은 파일(rec·사전)의 로컬 지정과 같다", async (t) => {
     const f = await fixtures(t)
     if (!f) return
-    const path = ocrModelPath(OCR_HANDWRITING_REC_MODEL)
-    let bytes: Buffer
-    try { bytes = readFileSync(path) } catch { t.skip("손글씨 rec 미설치"); return }
-    const local: ParseOptions = { ocrRec: { path, sha256: sha(bytes) } }
+    const path = ocrModelPath(OCR_HANDWRITING_REC_MODEL), dictPath = ocrModelPath(OCR_HANDWRITING_REC_DICT)
+    let bytes: Buffer, dictBytes: Buffer
+    try { bytes = readFileSync(path); dictBytes = readFileSync(dictPath) } catch { t.skip("손글씨 rec 미설치"); return }
+    const local: ParseOptions = { ocrRec: { path, sha256: sha(bytes) }, ocrRecDict: { path: dictPath, sha256: sha(dictBytes) } }
     const img = await parse(f.png, { ocrRec: "handwriting", ocrLines: "all" })
     assert.ok(img.success)
     assert.match(img.markdown, /대한민국/)
@@ -310,7 +315,7 @@ describe("손글씨 rec 프리셋 E2E (손글씨 rec 가 캐시에 있을 때만
   it("ocrRec: \"auto\" — 확신도 높은 인쇄 쪽은 기본 rec 결과 그대로, 낮은 쪽만 손글씨 rec 로 바꾼다", async (t) => {
     const f = await fixtures(t)
     if (!f) return
-    try { readFileSync(ocrModelPath(OCR_HANDWRITING_REC_MODEL)) } catch { t.skip("손글씨 rec 미설치"); return }
+    try { readFileSync(ocrModelPath(OCR_HANDWRITING_REC_MODEL)); readFileSync(ocrModelPath(OCR_HANDWRITING_REC_DICT)) } catch { t.skip("손글씨 rec 미설치"); return }
     assert.deepEqual(toWire(await parse(f.png, { ocrRec: "auto", ocrLines: "all" })), toWire(await parse(f.png, { ocrLines: "all" })))
     assert.deepEqual(toWire(await parse(f.pdf, { ocr: true, ocrRec: "auto" })), toWire(await parse(f.pdf, { ocr: true })))
     // 기본 엔진이 확신 없이 읽은 쪽(가짜 엔진 .5)은 손글씨 rec 로 다시 읽는다 — 확신하는 쪽(.99)은 다시 읽지 않는다
@@ -557,7 +562,7 @@ describe("손글씨 rec 프리셋 — 다운로드·폐쇄망", () => {
         assert.equal(img.success, false)
         const msg = img.success ? "" : img.error
         assert.match(msg, /차단됨: Korean handwriting rec/)
-        assert.match(msg, /ppocr\/rec_korean_hw\.onnx/)
+        assert.match(msg, /ppocr\/rec_korean_hw_v1\.2\.onnx/)
         assert.match(msg, /ocrRec 에 로컬 파일/)
         assert.doesNotMatch(msg, /models --export/)
         // 명시 OCR 에서 실패해도 기본 rec 로 조용히 바꾸지 않는다 — 캐시의 기본 rec 로 읽으면 "대한민국" 이 나온다
@@ -590,13 +595,14 @@ describe("손글씨 rec 프리셋 — 다운로드·폐쇄망", () => {
         assert.ok(off.success && !off.warnings?.some(w => w.code === "OCR_FAILED"))
         assert.deepEqual(calls, [])
         assert.equal(existsSync(join(empty, "ppocr", OCR_HANDWRITING_REC_MODEL.filename)), false)
+        assert.equal(existsSync(join(empty, "ppocr", OCR_HANDWRITING_REC_DICT.filename)), false)
       }))
     } finally {
       rmSync(empty, { recursive: true, force: true })
     }
   })
 
-  it("명시 OCR 은 고정 주소에서 손글씨 rec 만 받으려 한다 (기본 rec 는 받지 않는다)", async (t) => {
+  it("명시 OCR 은 고정 주소에서 손글씨 rec 와 그 사전만 받으려 한다 (기본 rec 는 받지 않는다)", async (t) => {
     const f = await fixtures(t)
     if (!f) return
     if (process.env.KORDOC_OFFLINE) { t.skip("KORDOC_OFFLINE 설정됨"); return }
@@ -608,6 +614,7 @@ describe("손글씨 rec 프리셋 — 다운로드·폐쇄망", () => {
       await withEnv({ KORDOC_MODEL_CACHE: cache }, () => withoutNetwork(async (calls) => {
         const r = await parse(f.png, { ocrRec: "handwriting" })
         assert.equal(r.success, false)
+        // 첫 파일(손글씨 rec) 받기가 막히면 거기서 멈춘다 — 사전도 손글씨 것이라 기본 rec·사전 주소는 부르지 않는다
         assert.deepEqual(calls, [OCR_HANDWRITING_REC_MODEL.url])
       }))
     } finally {
@@ -711,7 +718,7 @@ describe("CLI·parse-worker 결과 = Node parse() (모델 있을 때만)", () =>
   it("손글씨 rec 프리셋도 --ocr-rec handwriting·protocol 2 응답·parse() 가 같다 (손글씨 rec 가 캐시에 있을 때만)", async (t) => {
     const f = await fixtures(t)
     if (!f) return
-    if (!existsSync(ocrModelPath(OCR_HANDWRITING_REC_MODEL))) { t.skip("손글씨 rec 미설치"); return }
+    if (![OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT].every(s => existsSync(ocrModelPath(s)))) { t.skip("손글씨 rec 미설치"); return }
     const dir = mkdtempSync(join(tmpdir(), "kordoc-ocrhw-"))
     try {
       const file = join(dir, "수기 스캔.pdf")

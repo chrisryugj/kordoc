@@ -10,7 +10,7 @@ import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import JSZip from "jszip"
 import { markdownToHwpx, parse } from "../../src/index.js"
-import { OCR_HANDWRITING_REC_MODEL, OCR_REC_MODEL, ocrModelPath, ocrModelsCached } from "../../src/ocr/models.js"
+import { OCR_HANDWRITING_REC_DICT, OCR_HANDWRITING_REC_MODEL, OCR_REC_MODEL, ocrModelPath, ocrModelsCached } from "../../src/ocr/models.js"
 import type { ParseOptions } from "../../src/types.js"
 
 export const IMAGE_BYTES = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 11, 22, 33, 44, 55, 66])
@@ -155,7 +155,7 @@ async function ocrCases(): Promise<typeof SDK_CASES> {
       options: { ocr: true, ocrLines: "all", ocrDet: "mobile", ocrDetLongSide: 1280, ocrRec: { path: rec, sha256 } } },
     { name: "image-ocr-lines", file: "스캔 그림.png", build: () => scan.png, options: { ocrLines: true } },
     // 손글씨 rec 프리셋 — 그 모델도 캐시에 있을 때만
-    ...existsSync(ocrModelPath(OCR_HANDWRITING_REC_MODEL))
+    ...[OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT].every(s => existsSync(ocrModelPath(s)))
       ? [{ name: "pdf-ocr-handwriting", file: "수기 스캔.pdf", build: () => scan.pdf, options: { ocr: true, ocrLines: "all", ocrRec: "handwriting" } } as const]
       : [],
   ]

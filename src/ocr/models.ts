@@ -2,7 +2,7 @@
  * 내장 텍스트 OCR 모델 (PP-OCRv5 korean) 스펙 + 다운로드/검증.
  *
  * 캐시 위치: `~/.cache/kordoc/models/ppocr/` — 총 ~18MB (det 4.6 + rec 12.8 + dict 0.1).
- * 선택 모델 server det(88MB, `ocrDet: "server"`)·v6 medium det(62MB, `ocrDet: "medium"`)·손글씨 rec(15MB, `ocrRec: "handwriting"`)는 고를 때만 같은 곳에 받는다. 로컬 모델 파일(`ocrDet`·`ocrRec`·`ocrRecDict`
+ * 선택 모델 server det(88MB, `ocrDet: "server"`)·v6 medium det(62MB, `ocrDet: "medium"`)·손글씨 rec(15MB, `ocrRec: "handwriting"`, 사전 포함)는 고를 때만 같은 곳에 받는다. 로컬 모델 파일(`ocrDet`·`ocrRec`·`ocrRecDict`
  * {path, sha256})은 캐시에 복사하지 않고 엔진이 그 경로에서 읽어 대조한다.
  * 다운로드 인프라는 수식 OCR 과 공용 (formula/models.ts ensureModelsIn).
  *
@@ -64,15 +64,26 @@ export const OCR_REC_MODEL: ModelSpec = {
 }
 
 /** 선택 모델 (`ocrRec: "handwriting"`) — PP-OCRv5 korean rec 를 AI Hub 손글씨·공문서 데이터로 추가 학습한 공개 모델(Apache-2.0).
- *  출력 클래스·사전이 내장 rec 와 같아(사전 yml 바이트 동일) OCR_REC_DICT 를 그대로 쓴다. server det 처럼 기본 묶음에 넣지 않는다.
- *  주소는 Hugging Face revision 을 고정했다 — SHA-256 은 실제 다운로드 + HF API lfs.oid 대조로 검증됨 */
+ *  사전은 내장 사전 끝에 손으로 쓰는 기호 ₩·〃 두 글자를 더한 것(11,947자)이라 OCR_HANDWRITING_REC_DICT 와 짝으로 쓴다.
+ *  server det 처럼 기본 묶음에 넣지 않는다. 주소는 Hugging Face revision 을 고정했다 — SHA-256 은 실제 다운로드 + HF API lfs.oid 대조로 검증됨 */
 export const OCR_HANDWRITING_REC_MODEL: ModelSpec = {
   name: "Korean handwriting rec",
-  filename: "rec_korean_hw.onnx",
-  url: "https://huggingface.co/Rebeccaaaaaaaa/korean-handwriting-rec/resolve/bb4c2714cf6b05e5d13bfe22199d0e6d30866597/model/rec_korean_hw.onnx",
-  sha256: "1655d6abd17989f1922855dd77922e532e74275fe237e5f07174b623993fef81",
+  // 캐시 이름에 판을 넣는다 — 이전 판(rec_korean_hw.onnx, 다른 SHA-256)을 쓰는 kordoc 과 한 캐시를 나눠도 서로 덮어쓰지 않는다
+  filename: "rec_korean_hw_v1.2.onnx",
+  url: "https://huggingface.co/Rebeccaaaaaaaa/korean-handwriting-rec/resolve/e28b61b77df91aa024f9bbf5af962289ad0a8fa8/model/rec_korean_hw.onnx",
+  sha256: "30b50029ba534c22ee34b4a250f7cd79b6a74ff1439e6487835520710fbb314b",
   sizeMb: 15,
-  offlineHint: "온라인 PC에서 받은 파일을 이 PC 모델 캐시의 ppocr/rec_korean_hw.onnx 로 반입하거나(SHA-256 을 검증한다), ocrRec 에 로컬 파일 {path, sha256} 을 지정하세요",
+  offlineHint: "온라인 PC에서 받은 파일을 이 PC 모델 캐시의 ppocr/rec_korean_hw_v1.2.onnx 로 반입하거나(SHA-256 을 검증한다), ocrRec 에 로컬 파일 {path, sha256} 을 지정하세요",
+}
+
+/** 손글씨 rec 의 사전 — 내장 사전(11,945자) 끝에 ₩·〃 를 더한 inference.yml 형식. 손글씨 rec 와 같은 revision 에 고정 */
+export const OCR_HANDWRITING_REC_DICT: ModelSpec = {
+  name: "Korean handwriting dict",
+  filename: "rec_korean_hw_v1.2.yml",
+  url: "https://huggingface.co/Rebeccaaaaaaaa/korean-handwriting-rec/resolve/e28b61b77df91aa024f9bbf5af962289ad0a8fa8/model/ppocrv5_korean_dict.yml",
+  sha256: "65a89ddc425eecb0e5495e6533edbb5531ba52112db80f423624f3a7c9076bee",
+  sizeMb: 1,
+  offlineHint: "온라인 PC에서 받은 파일을 이 PC 모델 캐시의 ppocr/rec_korean_hw_v1.2.yml 로 반입하거나(SHA-256 을 검증한다), ocrRecDict 에 로컬 파일 {path, sha256} 을 지정하세요",
 }
 
 export const OCR_REC_DICT: ModelSpec = {
@@ -122,13 +133,14 @@ export function resolveOcrModels(o: Pick<ParseOptions, "ocrDet" | "ocrRec" | "oc
   return {
     det: det === undefined || det === "mobile" ? DEFAULT_OCR_MODELS.det : det === "server" ? { spec: OCR_SERVER_DET_MODEL } : det === "medium" ? { spec: OCR_V6_MEDIUM_DET_MODEL } : file(det),
     rec: o?.ocrRec === "handwriting" ? { spec: OCR_HANDWRITING_REC_MODEL } : o?.ocrRec && o.ocrRec !== "auto" && o.ocrRec !== "printed" ? file(o.ocrRec) : DEFAULT_OCR_MODELS.rec,
-    dict: o?.ocrRecDict ? file(o.ocrRecDict) : DEFAULT_OCR_MODELS.dict,
+    dict: o?.ocrRecDict ? file(o.ocrRecDict) : o?.ocrRec === "handwriting" ? { spec: OCR_HANDWRITING_REC_DICT } : DEFAULT_OCR_MODELS.dict,
   }
 }
 
-/** `ocrRec: "auto"` 가 손글씨 쪽을 다시 읽을 모델 — 같은 det·사전에 rec 만 손글씨 rec */
+/** `ocrRec: "auto"` 가 손글씨 쪽을 다시 읽을 모델 — 같은 det 에 손글씨 rec 와 그 사전. 로컬 사전(ocrRecDict)을 줬으면 그것을 쓴다 */
 export function handwritingFallbackModels(sel: OcrModelSelection): OcrModelSelection {
-  return { ...sel, rec: { spec: OCR_HANDWRITING_REC_MODEL } }
+  const dict = sel.dict === DEFAULT_OCR_MODELS.dict ? { spec: OCR_HANDWRITING_REC_DICT } : sel.dict
+  return { ...sel, rec: { spec: OCR_HANDWRITING_REC_MODEL }, dict }
 }
 
 /** 엔진 캐시 키 — 같은 파일 셋이면 같은 세션을 쓴다 */
