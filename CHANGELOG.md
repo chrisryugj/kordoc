@@ -7,16 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- OCR: `ocrRec: "handwriting"` 의 손글씨 rec 를 korean-handwriting-rec v1.2.0 으로 올린다. 서류에 손으로 쓰는 기호(₩ 〃 % + = # ² ~)가 든 줄 39.7% → 97.3%, 손글씨 금액·날짜의 쉼표·점 56.8% → 96.9%(기본 rec 대비, 모델 저장소 공개 값). 이 버전은 내장 사전 끝에 ₩·〃 를 더한 전용 사전(`rec_korean_hw_v1.2.yml`)과 함께 쓴다 — `ocrRecDict` 를 주면 종전처럼 그것이 우선. 기본·`"auto"` 의 손글씨 다시 읽기는 v1.0(`rec_korean_hw.onnx`)·내장 사전 그대로라 출력이 바뀌지 않는다. 캐시 파일명에 버전을 붙여(`rec_korean_hw_v1.2.onnx`) 두 버전을 한 캐시에 함께 둔다. 폐쇄망에서 `ocrRec: "handwriting"` 을 쓰려면 두 파일을 반입한다(`docs/offline-deployment.md`)
-
 ## [4.25.3] - 2026-11-21
 
 ### Fixed
 
 - PDF: `ocr` 에 함수(OcrProvider)를 주면 텍스트층이 멀쩡한 쪽의 글 없는 그림(차트 등)을 OCR 대상으로 고르지 않아 함수가 한 번도 불리지 않던 것(#225). 판정을 `ocr: true` 와 같게 하고, 그런 쪽은 쪽 전체가 아니라 그림 영역마다 잘라 함수를 부르며 결과를 그 그림 자리에 넣는다. 기본·`true`·`false`·`"force"` 출력은 그대로
 - PDF: 표 칸 안 그림(레이아웃 표 칸에 든 차트 등)의 그림 영역 OCR 결과가 표와 겹친다는 이유로 버려지던 것(#225). 표를 만들 때 그림이 놓인 칸의 사각형을 남겨 두고(`IMAGE_CELL_BOXES`), 결과 상자 가운데가 든 그림 칸의 `blocks`·`text` 에 넣는다 — HWP·HWPX 칸 안 그림 글(#143)과 같은 자리. OcrProvider·`ocr: true`·자동 OCR(모델 캐시 있을 때 기본값) 모두 해당해, 표 칸에 그림이 든 PDF 는 기본 출력도 그 칸에 그림 속 글이 들어간다. `ocr: false` 출력은 그대로
+
+### Changed
+
+- OCR: `ocrRec: "handwriting"` 의 손글씨 rec 를 korean-handwriting-rec v1.2.0 으로 올린다. 서류에 손으로 쓰는 기호(₩ 〃 % + = # ² ~)가 든 줄 39.7% → 97.3%, 손글씨 금액·날짜의 쉼표·점 56.8% → 96.9%(기본 rec 대비, 모델 저장소 공개 값). 이 버전은 내장 사전 끝에 ₩·〃 를 더한 전용 사전(`rec_korean_hw_v1.2.yml`)과 함께 쓴다 — `ocrRecDict` 를 주면 종전처럼 그것이 우선. 기본·`"auto"` 의 손글씨 다시 읽기는 v1.0(`rec_korean_hw.onnx`)·내장 사전 그대로라 출력이 바뀌지 않는다. 캐시 파일명에 버전을 붙여(`rec_korean_hw_v1.2.onnx`) 두 버전을 한 캐시에 함께 둔다. 폐쇄망에서 `ocrRec: "handwriting"` 을 쓰려면 두 파일을 반입한다(`docs/offline-deployment.md`)
 
 ## [4.25.2] - 2026-11-19
 
