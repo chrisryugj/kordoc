@@ -197,20 +197,24 @@ https://github.com/VerifiedIdiot/korean-handwriting-rec
 
 Licensed under the Apache License, Version 2.0 (as stated by the model repository)
 
-Model weights (ONNX, downloaded at runtime only when `ocrRec: "handwriting"` is
-selected, with SHA-256 verification, not redistributed with this package):
+Model weights (ONNX, downloaded at runtime only when needed, with SHA-256
+verification, not redistributed with this package):
 - rec_korean_hw_v1.2.onnx (HuggingFace `Rebeccaaaaaaaa/korean-handwriting-rec`
   model/rec_korean_hw.onnx, pinned revision e28b61b77df91aa024f9bbf5af962289ad0a8fa8)
-- rec_korean_hw_v1.2.yml (same repository and revision, model/ppocrv5_korean_dict.yml)
+  and rec_korean_hw_v1.2.yml (same repository and revision,
+  model/ppocrv5_korean_dict.yml) — when `ocrRec: "handwriting"` is selected
+- rec_korean_hw.onnx (same repository, model/rec_korean_hw.onnx, pinned revision
+  bb4c2714cf6b05e5d13bfe22199d0e6d30866597) — v1.0, when the default or
+  `ocrRec: "auto"` re-reads a handwritten page
 
-Fine-tuned from korean_PP-OCRv5_mobile_rec (PaddleOCR, above). Its character
-dictionary is the PP-OCRv5 Korean dictionary with two handwritten symbols
-(₩, 〃) appended. The base model, conversion tools and training data
+Fine-tuned from korean_PP-OCRv5_mobile_rec (PaddleOCR, above). v1.0 uses its
+character dictionary; v1.2's dictionary is the PP-OCRv5 Korean dictionary with
+two handwritten symbols (₩, 〃) appended. The base model, conversion tools and training data
 sources (AI Hub datasets) are described in the model repository README.
 No training data is redistributed with this package.
 
 Used in:
-- src/ocr/models.ts — model spec (OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT)
+- src/ocr/models.ts — model spec (OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT, OCR_HANDWRITING_FALLBACK_REC_MODEL)
 
 You may obtain a copy of the Apache License 2.0 at:
 https://www.apache.org/licenses/LICENSE-2.0

@@ -29,7 +29,7 @@ import { parse, parseImage } from "../src/index.js"
 import { cliOcrEngineOptions } from "../src/cli/convert.js"
 import { validateOcrOptions } from "../src/ocr/options.js"
 import {
-  ALL_OCR_MODELS, DEFAULT_OCR_MODELS, OCR_DET_MODEL, OCR_HANDWRITING_REC_DICT, OCR_HANDWRITING_REC_MODEL, OCR_REC_DICT, OCR_REC_MODEL, OCR_SERVER_DET_MODEL, OCR_V6_MEDIUM_DET_MODEL,
+  ALL_OCR_MODELS, DEFAULT_OCR_MODELS, OCR_DET_MODEL, OCR_HANDWRITING_FALLBACK_REC_MODEL, OCR_HANDWRITING_REC_DICT, OCR_HANDWRITING_REC_MODEL, OCR_REC_DICT, OCR_REC_MODEL, OCR_SERVER_DET_MODEL, OCR_V6_MEDIUM_DET_MODEL,
   getOcrModelStatus, ocrModelPath, ocrSelectionKey, parseCharacterDict, resolveOcrModels,
 } from "../src/ocr/models.js"
 import { DEFAULT_BUILTIN_OCR, builtinOcrConfig, pageLines, recognizeOcrPage } from "../src/ocr/pdf-ocr.js"
@@ -139,12 +139,18 @@ describe("모델 선택·기본 설정", () => {
     assert.deepEqual(dict.dict, { file: { path: "/m/d.yml", sha256: HEX } })
   })
 
-  it("ocrRec: \"auto\" → 기본 rec 로 읽고, 다시 읽을 손글씨 rec 는 같은 det 에 손글씨 사전 (로컬 사전을 주면 그것)", () => {
+  it("기본·ocrRec: \"auto\" → 기본 rec 로 읽고, 다시 읽을 손글씨 rec 는 v1.0(고정 SHA-256)에 같은 det·사전 (로컬 사전을 주면 그것)", () => {
     const c = builtinOcrConfig({ ocrRec: "auto" })
     assert.equal(c.models.rec, DEFAULT_OCR_MODELS.rec)
-    assert.equal(c.handwriting && "spec" in c.handwriting.rec && c.handwriting.rec.spec, OCR_HANDWRITING_REC_MODEL)
-    assert.equal(c.handwriting?.det, c.models.det)
-    assert.equal(c.handwriting && "spec" in c.handwriting.dict && c.handwriting.dict.spec, OCR_HANDWRITING_REC_DICT)
+    for (const hw of [c.handwriting, DEFAULT_BUILTIN_OCR.handwriting]) {
+      assert.equal(hw && "spec" in hw.rec && hw.rec.spec, OCR_HANDWRITING_FALLBACK_REC_MODEL)
+      assert.equal(hw?.det, DEFAULT_OCR_MODELS.det)
+      assert.equal(hw?.dict, DEFAULT_OCR_MODELS.dict)
+    }
+    // 다시 읽기 문턱이 v1.0 확신도로 맞춰져 있다 — 명시 프리셋(v1.2)과 다른 파일
+    assert.equal(OCR_HANDWRITING_FALLBACK_REC_MODEL.sha256, "1655d6abd17989f1922855dd77922e532e74275fe237e5f07174b623993fef81")
+    assert.match(OCR_HANDWRITING_FALLBACK_REC_MODEL.url, /\/resolve\/bb4c2714cf6b05e5d13bfe22199d0e6d30866597\/model\/rec_korean_hw\.onnx$/)
+    assert.notEqual(OCR_HANDWRITING_FALLBACK_REC_MODEL.filename, OCR_HANDWRITING_REC_MODEL.filename)
     const own = builtinOcrConfig({ ocrRec: "auto", ocrRecDict: { path: "/m/d.yml", sha256: HEX } })
     assert.deepEqual(own.handwriting?.dict, { file: { path: "/m/d.yml", sha256: HEX } })
     assert.equal(builtinOcrConfig({ ocrRec: "handwriting" }).handwriting, undefined)
@@ -165,7 +171,7 @@ describe("모델 선택·기본 설정", () => {
     assert.deepEqual(ALL_OCR_MODELS, [OCR_DET_MODEL, OCR_REC_MODEL, OCR_REC_DICT])
     const { MODEL_GROUPS } = await import("../src/shared/model-bundle.js")
     const specs = MODEL_GROUPS.flatMap(g => g.specs)
-    for (const hw of [OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT]) assert.ok(!specs.includes(hw) && !specs.some(s => s.filename === hw.filename))
+    for (const hw of [OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT, OCR_HANDWRITING_FALLBACK_REC_MODEL]) assert.ok(!specs.includes(hw) && !specs.some(s => s.filename === hw.filename))
   })
 })
 
@@ -315,7 +321,7 @@ describe("손글씨 rec 프리셋 E2E (손글씨 rec·사전이 캐시에 있을
   it("ocrRec: \"auto\" — 확신도 높은 인쇄 쪽은 기본 rec 결과 그대로, 낮은 쪽만 손글씨 rec 로 바꾼다", async (t) => {
     const f = await fixtures(t)
     if (!f) return
-    try { readFileSync(ocrModelPath(OCR_HANDWRITING_REC_MODEL)); readFileSync(ocrModelPath(OCR_HANDWRITING_REC_DICT)) } catch { t.skip("손글씨 rec 미설치"); return }
+    try { readFileSync(ocrModelPath(OCR_HANDWRITING_FALLBACK_REC_MODEL)) } catch { t.skip("손글씨 rec v1.0 미설치"); return }
     assert.deepEqual(toWire(await parse(f.png, { ocrRec: "auto", ocrLines: "all" })), toWire(await parse(f.png, { ocrLines: "all" })))
     assert.deepEqual(toWire(await parse(f.pdf, { ocr: true, ocrRec: "auto" })), toWire(await parse(f.pdf, { ocr: true })))
     // 기본 엔진이 확신 없이 읽은 쪽(가짜 엔진 .5)은 손글씨 rec 로 다시 읽는다 — 확신하는 쪽(.99)은 다시 읽지 않는다
