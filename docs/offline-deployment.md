@@ -51,8 +51,8 @@ node node_modules/kordoc/dist/cli.js models --import ./models   # SHA-256 검증
 node node_modules/kordoc/dist/cli.js models --status
 ```
 
-선택 모델인 server det(`ocrDet: "server"`, 88MB)·v6 medium det(`ocrDet: "medium"`, 62MB)와 손글씨 rec(`ocrRec: "handwriting"`, 15MB — 기본 설정도 손글씨 쪽을 만나면 받는다)는 `models`·`--with-models` 묶음에 들지 않는다. 내부망에서 받지 못하면 기본 rec 결과를 그대로 쓰고, `ocrRec: "printed"` 로 아예 끌 수 있다.
-내부망에서 쓰려면 같은 파일을 모델 캐시의 `ppocr/det_server.onnx`·`ppocr/det_v6_medium.onnx`·`ppocr/rec_korean_hw.onnx` 로 반입하거나(엔진이 SHA-256 을 검증한다), `ocrDet`·`ocrRec`·`ocrRecDict` 에 로컬 파일
+선택 모델인 server det(`ocrDet: "server"`, 88MB)·v6 medium det(`ocrDet: "medium"`, 62MB)와 손글씨 rec v1.2(`ocrRec: "handwriting"`, 15MB + 사전 0.1MB)·v1.0(15MB — 기본 설정이 손글씨 쪽을 만나면 받아 다시 읽는다)는 `models`·`--with-models` 묶음에 들지 않는다. 내부망에서 받지 못하면 기본 설정은 기본 rec 결과를 그대로 쓰고(`ocrRec: "printed"` 로 아예 끌 수 있다), `ocrRec: "handwriting"` 은 모델이 없다는 실패로 끝난다.
+내부망에서 쓰려면 같은 파일을 모델 캐시의 `ppocr/det_server.onnx`·`ppocr/det_v6_medium.onnx`·`ppocr/rec_korean_hw_v1.2.onnx`·`ppocr/rec_korean_hw_v1.2.yml`(v1.2 의 사전)·`ppocr/rec_korean_hw.onnx`(v1.0) 로 반입하거나(엔진이 SHA-256 을 검증한다), `ocrDet`·`ocrRec`·`ocrRecDict` 에 로컬 파일
 `{path, sha256}` 을 준다 — 로컬 파일은 캐시에 복사하지 않고 그 경로에서 읽어 대조한다.
 
 ## 4. 운영 시 제한 모드
