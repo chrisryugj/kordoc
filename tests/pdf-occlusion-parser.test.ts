@@ -1,5 +1,6 @@
 import { it } from "node:test"
 import assert from "node:assert/strict"
+import { parse } from "../src/index.js"
 import { parsePdfDocument } from "../src/pdf/parser.js"
 
 function pdfWithSmallCapAndCover(content = "BT /F1 12 Tf 60 700 Td (h) Tj ET BT /F2 12 Tf 60 600 Td (Hidden) Tj ET 1 g 50 590 100 40 re f BT /F2 12 Tf 60 500 Td (Visible body text remains on this page.) Tj ET"): ArrayBuffer {
@@ -26,13 +27,10 @@ function pdfWithSmallCapAndCover(content = "BT /F1 12 Tf 60 700 Td (h) Tj ET BT 
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 }
 
-// hayro 는 표준 글꼴의 접미사 글리프 이름(h.smcp) 폭을 0 으로 읽어 글자가 빠진다 — LaurenzV/hayro#1810 이 합쳐지고 고정 커밋을 올리면 todo 를 뗀다
-it("filters covered text even when an earlier small-cap glyph is restored", { todo: "LaurenzV/hayro#1810" }, async () => {
-  const result = await parsePdfDocument(pdfWithSmallCapAndCover(), { ocr: false, removeHeaderFooter: false })
-  const text = result.blocks.map(b => b.text ?? "").join("\n")
-  assert.match(text, /H/)
-  assert.match(text, /Visible body text/)
-  assert.doesNotMatch(text, /Hidden/)
+it("filters covered text even when an earlier small-cap glyph is restored", async () => {
+  const result = await parse(pdfWithSmallCapAndCover(), { ocr: false, removeHeaderFooter: false })
+  assert.ok(result.success)
+  assert.equal(result.markdown, "H\n\nVisible body text remains on this page.")
   assert.ok(result.warnings?.some(w => w.code === "HIDDEN_TEXT_FILTERED"))
 })
 

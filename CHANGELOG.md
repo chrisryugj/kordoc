@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- PDF: 내장하지 않은 표준 글꼴에서 `h.smcp`처럼 접미사가 붙은 글리프의 폭을 기본 글리프 이름으로 찾아, 폭이 0으로 읽혀 보이는 글자가 빠지던 문제를 고쳤다(LaurenzV/hayro#1810).
+
 ## [4.25.3] - 2026-11-21
 
 ### Fixed
