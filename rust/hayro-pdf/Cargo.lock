@@ -121,12 +121,12 @@ dependencies = [
 [[package]]
 name = "hayro-ccitt"
 version = "0.5.0"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 
 [[package]]
 name = "hayro-cmap"
 version = "0.1.1"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 dependencies = [
  "brotli",
  "hayro-postscript",
@@ -135,7 +135,7 @@ dependencies = [
 [[package]]
 name = "hayro-font"
 version = "0.5.0"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 dependencies = [
  "bitflags",
  "hayro-cmap",
@@ -150,7 +150,7 @@ dependencies = [
 [[package]]
 name = "hayro-interpret"
 version = "0.9.0"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 dependencies = [
  "bitflags",
  "hayro-cmap",
@@ -167,7 +167,7 @@ dependencies = [
 [[package]]
 name = "hayro-jbig2"
 version = "0.4.0"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 dependencies = [
  "fearless_simd",
  "hayro-ccitt",
@@ -176,7 +176,7 @@ dependencies = [
 [[package]]
 name = "hayro-jpeg2000"
 version = "0.5.0"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 dependencies = [
  "fearless_simd",
 ]
@@ -193,12 +193,12 @@ dependencies = [
 [[package]]
 name = "hayro-postscript"
 version = "0.2.0"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 
 [[package]]
 name = "hayro-syntax"
 version = "0.9.0"
-source = "git+https://github.com/LaurenzV/hayro?rev=61f50b42a7f7b15764780b9ba534cba91488bb28#61f50b42a7f7b15764780b9ba534cba91488bb28"
+source = "git+https://github.com/LaurenzV/hayro?rev=58f11bf55df61539d82329b41cd05ca723d99ef6#58f11bf55df61539d82329b41cd05ca723d99ef6"
 dependencies = [
  "hayro-ccitt",
  "hayro-jbig2",
