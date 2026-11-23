@@ -22,6 +22,8 @@
  */
 
 import { RULES, RULE_PRIORITY, labelsBefore, labelsIn, type Ctx, type Match, type Variant } from "./redact-rules.js"
+import { maskModelSpan, modelAddressOk } from "./redact-name-address.js"
+import type { ModelSpan } from "./redact-model.js"
 
 export type RedactRule =
   | "rrn" | "phone" | "email" | "card" | "account" | "passport" | "driver" | "brn" | "crn" | "ip" | "name" | "address"
@@ -46,6 +48,12 @@ export interface RedactOptions {
   rules?: readonly RedactRule[]
   /** 마스크 문자 — 1글자(UTF-16 1단위). 영숫자·공백·제어문자·마크다운/XML 특수문자(|\<>&"')는 금지. 기본 "●" */
   maskChar?: string
+  /**
+   * 학습 모델이 찾은 인명·주소 스팬 (redact-model.ts `loadPiiModel().detect(같은 문자열)` — UTF-16 오프셋).
+   * 해당 룰(name·address)이 켜져 있을 때만 쓴다. RULE_PRIORITY 의 그 룰 자리에서 사전 룰보다 먼저 차지하고, 번호형 룰이
+   * 이미 잡은 곳과 겹치면 버린다. 사전 룰은 남은 곳에서 그대로 돈다(합집합)
+   */
+  modelSpans?: readonly ModelSpan[]
 }
 
 /**
@@ -117,6 +125,8 @@ function assertMaskChar(maskChar: string): void {
   }
 }
 
+const NO_CTX: ReadonlySet<Ctx> = new Set()
+
 /** 나열 구분자 — 앞 값과 이 값 사이가 이것뿐이면 같은 라벨 아래 목록이다 ("계좌 110-…, 110-…") */
 const LIST_SEP_RE = /^\s{0,2}(?:[,;/·、]|및|또는)?\s{0,2}$/
 
@@ -127,12 +137,26 @@ const LIST_SEP_RE = /^\s{0,2}(?:[,;/·、]|및|또는)?\s{0,2}$/
  */
 function detect(
   text: string, rules: readonly RedactRule[], maskChar: string, headerAt?: (index: number) => string | undefined,
+  modelSpans?: readonly ModelSpan[],
 ): RedactHit[] {
   const norm = normalizeForDetect(text)
   const hits: RedactHit[] = []
   const occupied: Array<{ start: number; end: number; ctx: () => ReadonlySet<Ctx>; rule: RedactRule }> = []
   for (const rule of RULE_PRIORITY) {
     if (!rules.includes(rule)) continue
+    // 학습 모델 스팬 — 이 룰 자리에서 사전 룰보다 먼저 (번호형이 먼저 차지한 곳은 버린다)
+    for (const s of modelSpans ?? []) {
+      if (s.rule !== rule) continue
+      const start = Math.max(0, s.index)
+      const end = Math.min(text.length, s.index + s.length)
+      if (end <= start || occupied.some((o) => start < o.end && end > o.start)) continue
+      if (rule === "address" && !modelAddressOk(norm.slice(start, end))) continue
+      // 가릴 글자가 없는 스팬("이○○" — 이미 가린 이름)은 PII 가 남아 있지 않다 (이미 가린 번호와 같은 취급)
+      const masked = maskModelSpan(text.slice(start, end), norm.slice(start, end), s.rule, maskChar)
+      if (masked === text.slice(start, end)) continue
+      occupied.push({ start, end, ctx: () => NO_CTX, rule })
+      hits.push({ rule, masked, index: start, length: end - start })
+    }
     for (const v of RULES[rule]) {
       // 모듈 정규식을 그대로 lastIndex 0 부터 exec — 복제(matchAll 내부 복제 포함)는 큰 정규식에서 한 번에 수~15µs 라
       // 24만 줄 문서(hwp5/big_file)에서 변형 하나에 0.2~3.8초였다. detect 는 재진입하지 않아 공유해도 안전.
@@ -204,7 +228,7 @@ export function redactText(text: string, options?: RedactOptions): RedactTextRes
   assertMaskChar(maskChar)
   const rules = options?.rules ?? DEFAULT_REDACT_RULES
   if (text === "" || rules.length === 0) return { text, hits: [] }
-  const hits = detect(text, rules, maskChar)
+  const hits = detect(text, rules, maskChar, undefined, options?.modelSpans)
   return { text: applyHits(text, hits), hits }
 }
 
@@ -328,9 +352,10 @@ export function mdMarkerRanges(line: string): Array<[number, number]> {
 /** 마크다운 한 줄 탐지 — 인라인 표지를 지운 사본에서 찾아 원문 오프셋·마스킹으로 되돌린다 */
 function detectMarkdownLine(
   line: string, rules: readonly RedactRule[], maskChar: string, headerAt?: (index: number) => string | undefined,
+  modelSpans?: readonly ModelSpan[],
 ): RedactHit[] {
   const markers = mdMarkerRanges(line)
-  if (markers.length === 0) return detect(line, rules, maskChar, headerAt)
+  if (markers.length === 0) return detect(line, rules, maskChar, headerAt, modelSpans)
   let clean = ""
   const map: number[] = []
   let cursor = 0
@@ -342,7 +367,23 @@ function detectMarkdownLine(
     cursor = me
   }
   keep(line.length)
-  const hits = detect(clean, rules, maskChar, headerAt ? (i) => headerAt(map[i] ?? i) : undefined)
+  // 모델 스팬도 표지를 지운 사본 좌표로 옮긴다 (스팬 안 표지는 빠지고 양 끝은 남은 글자로 맞춘다)
+  let cleanSpans: ModelSpan[] | undefined
+  if (modelSpans?.length) {
+    cleanSpans = []
+    for (const s of modelSpans) {
+      let a = -1
+      let b = -1
+      for (let k = 0; k < map.length; k++) {
+        if (map[k] < s.index) continue
+        if (map[k] >= s.index + s.length) break
+        if (a < 0) a = k
+        b = k + 1
+      }
+      if (a >= 0) cleanSpans.push({ ...s, index: a, length: b - a })
+    }
+  }
+  const hits = detect(clean, rules, maskChar, headerAt ? (i) => headerAt(map[i] ?? i) : undefined, cleanSpans)
   return hits.map((h) => {
     const start = map[h.index]
     const end = map[h.index + h.length - 1] + 1
@@ -367,13 +408,21 @@ export function redactMarkdown(markdown: string, options?: RedactOptions): Redac
   const lines = markdown.split("\n")
   const headers = tableHeaderContext(lines)
   const hits: RedactHit[] = []
+  const spans = options?.modelSpans
   let offset = 0
   const outLines = lines.map((line, i) => {
     if (line.includes("data:image/") || line === "" || rules.length === 0) {
       offset += line.length + 1
       return line
     }
-    const lineHits = detectMarkdownLine(line, rules, maskChar, headers.get(i))
+    // 문서 오프셋의 모델 스팬을 이 줄 좌표로 (줄을 넘는 스팬은 줄마다 잘린 조각으로)
+    const lineEnd = offset + line.length
+    const lineSpans = spans?.filter((s) => s.index < lineEnd && s.index + s.length > offset)
+      .map((s) => {
+        const a = Math.max(s.index, offset)
+        return { ...s, index: a - offset, length: Math.min(s.index + s.length, lineEnd) - a }
+      })
+    const lineHits = detectMarkdownLine(line, rules, maskChar, headers.get(i), lineSpans)
     for (const h of lineHits) hits.push({ ...h, index: h.index + offset })
     offset += line.length + 1
     return applyHits(line, lineHits)

@@ -402,6 +402,7 @@ npx kordoc redact complaint.hwpx -o redacted.hwpx                   # format-pre
 npx kordoc redact complaint.hwpx --mask-char '*' -o redacted.hwpx   # mask character (default ●)
 npx kordoc redact contract.hwp --rules rrn,phone,crn --json --dry-run  # pick rules + per-location report only (crn, IP are opt-in)
 npx kordoc redact complaint.hwpx --rules rrn,phone,email,name,address -o redacted.hwpx  # names and addresses too (opt-in)
+npx kordoc redact complaint.hwpx --model -o redacted.hwpx            # names and addresses with a learned model too (see below)
 npx kordoc redact notice.pdf                                        # PDF/DOCX/etc.: masked .redacted.md only
 
 # render
@@ -418,6 +419,16 @@ npx kordoc watch ./docs --webhook https://api/hook  # webhook notification
 ```
 
 - A human must check PII-masking results before publication. Text inside images is outside automatic detection.
+- `redact --model` also finds names and addresses with the learned model
+  [schift-io/schift-ko-pii-ax-v1](https://huggingface.co/schift-io/schift-ko-pii-ax-v1), next to the dictionary and context rules
+  (it turns the name and address rules on). It catches the shapes the rules skip on purpose — bare names without context
+  ("이수아는 …"), masked names (`홍○동`, `김영*`), spaced names (`정 하 늘`) and addresses with only a 동 or lot number — and masks
+  them the same way (surname and 시·군·구 kept). The int8 model (151MB; `--model q4` is 81MB) is downloaded once into
+  `~/.cache/kordoc/models/schift-pii/` with SHA-256 verification and needs `onnxruntime-node` (optional dependency). It adds
+  tens to ~200ms of CPU time per 512-token chunk. On a closed network, copy the same cache files from an online PC. The model is
+  under the Schift License v2.0 (Apache 2.0 plus a revenue threshold: entities above USD 10M annual revenue need a commercial
+  license for revenue-generating use; research, evaluation and non-profit use are always allowed), so it is not in the npm
+  package and is downloaded only when turned on.
 - `watch -d` keeps the subfolder structure.
 - `check-ocr-models` and `check-formula-models` download missing models — pass `--status-only` to inspect only.
 - `lint` parses documents (HWPX, HWP, PDF, …) and checks the body. Parsed text collapses repeated spaces and turns bold into `**`,
@@ -561,7 +572,8 @@ To tell ZIP formats apart, call `await detectZipFormat(buffer)` when `detectForm
 | Function | Description |
 |----------|-------------|
 | `lintGongmunText(text, { document?, parsed? })` | 27 official-notation rules + 2 AI-slop rules (`document: true` adds document-level attachment / "끝." checks; `parsed: true` for text parsed from a document skips manuscript-only rules) |
-| `redactMarkdown(text, options?)` / `redactText(...)` | PII detection + masking — text level (file level: CLI `redact`, MCP `redact_document`) |
+| `redactMarkdown(text, options?)` / `redactText(...)` | PII detection + masking — text level (file level: CLI `redact`, MCP `redact_document`). Pass learned-model spans as `modelSpans` to merge them into names and addresses |
+| `loadPiiModel({ variant? })` | Person-name and address model (schift-ko-pii-ax-v1, int8 or q4) — feed `await m.detect(text)` to `redactMarkdown(text, { rules, modelSpans })` on the same `text` |
 | `blocksToChunks(blocks, options?)` | RAG structure chunks — heading/outline breadcrumbs + standalone table chunks |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown |
 | `blocksToPages(blocks)` | IRBlock[] → `[{ pageNumber, markdown }]` |

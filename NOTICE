@@ -347,3 +347,30 @@ Modifications:
 
 You may obtain a copy of the MIT License at:
 https://opensource.org/licenses/MIT
+
+================================================================================
+
+schift-ko-pii-ax-v1 — Korean Person-Name and Address Tagger (optional)
+https://huggingface.co/schift-io/schift-ko-pii-ax-v1
+
+Copyright Schift Inc.
+Licensed under the Schift License v2.0 (Apache License 2.0 base with a revenue threshold: an entity whose annual
+gross revenue exceeded USD 10,000,000 in its most recently completed fiscal year needs a commercial license for
+revenue-generating use; research, evaluation and non-profit use are always permitted). Fine-tuned from
+skt/A.X-Encoder-base (Apache License 2.0); the tokenizer files are copied unchanged from that repository.
+
+Model weights (ONNX int8 · 4-bit, tokenizer.json — downloaded at runtime only when the user turns the model on
+(`redact --model`, `use_model`, `loadPiiModel()`), pinned revision with SHA-256 verification, not redistributed
+with this package).
+
+Used in:
+- src/redact-model.ts — model specs, WordPiece tokenizer over tokenizer.json (original TypeScript implementation
+  following the HuggingFace `tokenizers` WordPiece/BertPreTokenizer behaviour), 512-token windowing and BIOES span
+  decoding
+- tests/fixtures/pii-wordpiece-parity.json — a 61-piece synthetic vocabulary with ids/offsets recorded from Python
+  `tokenizers` 0.22.2 (no model data)
+
+Modifications:
+- 없음(가중치를 싣지 않고 켤 때만 받는다)
+
+License text: https://huggingface.co/schift-io/schift-ko-pii-ax-v1/blob/main/LICENSE

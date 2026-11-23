@@ -20,7 +20,10 @@
 //   exact   : typed TP 중 스팬 경계가 정답과 정확히 같은 비율.
 //
 // 사용법: node bench/redact-bench.mjs [--gate] [--verbose] [--random=N(기본 3000, 0=끔)] [--schift=path|--no-schift]
-//          [--corpus[=dir[:ext,…],…]] [--corpus-rules=r,…] [--cache=dir] [--dump=path] [--json=path]
+//          [--corpus[=dir[:ext,…],…]] [--corpus-rules=r,…] [--cache=dir] [--dump=path] [--json=path] [--model[=int8|q4]]
+//   --model 은 인명·주소를 학습 모델(schift-ko-pii-ax-v1, redact-model.ts)로도 찾아 modelSpans 로 넘긴다 — synthetic·external·
+//   corpus 트랙의 name·address 가 사전 룰 + 모델 합집합이 된다 (처음 한 번 모델을 받는다, onnxruntime-node 필요). corpus 오탐을
+//   보려면 --corpus --corpus-rules=name,address --model --dump=경로
 //   --corpus 는 기본으로 bench/corpus 전체를 하위 폴더까지 훑는다 (hwpx·hwp·pdf·docx·xlsx·hml)
 //   모듈: 기본 ../dist/index.js (먼저 npm run build). KORDOC_REDACT_MODULE=경로 로 다른 빌드와 비교.
 
@@ -34,6 +37,8 @@ const flag = (name) => args.includes(`--${name}`)
 const opt = (name) => { const a = args.find(x => x.startsWith(`--${name}=`)); return a ? a.slice(name.length + 3) : undefined }
 const gateMode = flag("gate")
 const verbose = flag("verbose")
+const modelArg = args.find((a) => a === "--model" || a.startsWith("--model="))
+const modelVariant = modelArg ? (modelArg.includes("=") ? modelArg.split("=")[1] : "int8") : null
 
 const modPath = process.env.KORDOC_REDACT_MODULE
   ? pathToFileURL(process.env.KORDOC_REDACT_MODULE).href
@@ -47,6 +52,14 @@ const PROBES = {
   crn: "법인등록번호 110111-1022287", ip: "IP 192.168.10.25",
   name: "성명: 홍길동", address: "서울특별시 종로구 세종대로 209",
 }
+/** --model: 문자열 → 모델 스팬 (같은 문자열은 한 번만 돌린다) */
+const piiModel = modelVariant ? await mod.loadPiiModel({ variant: modelVariant }) : null
+const modelSpanCache = new Map()
+async function modelSpansFor(texts) {
+  if (!piiModel) return
+  for (const t of texts) if (!modelSpanCache.has(t)) modelSpanCache.set(t, await piiModel.detect(t))
+}
+const spansOf = (t) => (piiModel ? modelSpanCache.get(t) : undefined)
 const ALL_RULES = mod.ALL_REDACT_RULES
   ?? Object.keys(PROBES).filter(r => redactMarkdown(PROBES[r], { rules: [r] }).hits.some(h => h.rule === r))
 
@@ -115,7 +128,7 @@ function evaluate(cases, rules) {
   const bySection = new Map()
   const errors = []
   for (const c of cases) {
-    const r = redactMarkdown(c.text, { rules })
+    const r = redactMarkdown(c.text, { rules, modelSpans: spansOf(c.text) })
     const hits = r.hits.map(h => ({ rule: h.rule, start: h.index, end: h.index + h.length }))
     const sec = bySection.get(c.section) ?? { gold: 0, found: 0, fp: 0 }
     bySection.set(c.section, sec)
@@ -184,7 +197,8 @@ function printEval(name, ev) {
 // ─── 실행: synthetic ─────────────────────────────────
 const cases = parseCases(await readFile(join(root, "redact/cases.md"), "utf8"))
 const goldCount = cases.reduce((a, c) => a + c.gold.length, 0)
-console.log(`# redact 벤치 — 합성 케이스 ${cases.length}개 (정답 스팬 ${goldCount}, 음성 케이스 ${cases.filter(c => c.gold.length === 0).length})`)
+console.log(`# redact 벤치 — 합성 케이스 ${cases.length}개 (정답 스팬 ${goldCount}, 음성 케이스 ${cases.filter(c => c.gold.length === 0).length})${piiModel ? ` · 학습 모델 ${modelVariant}` : ""}`)
+await modelSpansFor(cases.map((c) => c.text))
 console.log(`모듈: ${modPath.replace(/^file:\/\//, "")}`)
 
 const evals = {
@@ -371,12 +385,13 @@ async function runSchift(path) {
     return null
   }
   const rows = src.trim().split("\n").map((l) => JSON.parse(l))
+  await modelSpansFor(rows.map((r) => r.text))
   const per = Object.fromEntries(ALL_RULES.map((r) => [r, { tp: 0, fp: 0, fn: 0, exact: 0 }]))
   const cat = new Map()
   let orgGold = 0, orgOverlap = 0
   const errors = []
   for (const r of rows) {
-    const hits = redactText(r.text, { rules: [...ALL_RULES] }).hits.map((h) => ({ rule: h.rule, start: h.index, end: h.index + h.length }))
+    const hits = redactText(r.text, { rules: [...ALL_RULES], modelSpans: spansOf(r.text) }).hits.map((h) => ({ rule: h.rule, start: h.index, end: h.index + h.length }))
     const c = cat.get(r.category) ?? { gold: 0, found: 0, fp: 0 }
     cat.set(r.category, c)
     const used = new Set()
@@ -409,7 +424,7 @@ async function runSchift(path) {
   const micro = prfOf(Object.values(per).reduce((a, v) => ({ tp: a.tp + v.tp, fp: a.fp + v.fp, fn: a.fn + v.fn }), { tp: 0, fp: 0, fn: 0 }))
   const exactTotal = EXTERNAL_TYPES.reduce((a, t) => a + per[t].exact, 0)
   const negativeFP = [...cat.entries()].filter(([k]) => isNegativeCategory(k)).reduce((a, [, v]) => a + v.fp, 0)
-  console.log(`\n### 외부 정답 (스키프트 benchmark_v3, ${rows.length}문장) — all 룰, 기관명 ${orgGold}개는 모수 밖`)
+  console.log(`\n### 외부 정답 (스키프트 benchmark_v3, ${rows.length}문장) — all 룰${piiModel ? ` + 학습 모델 ${modelVariant}` : ""}, 기관명 ${orgGold}개는 모수 밖`)
   console.log("유형      TP   FP   FN   P      R      F1     exact")
   for (const t of EXTERNAL_TYPES) {
     const v = perType[t]
@@ -490,7 +505,11 @@ async function runCorpus(specs) {
       docs++
       const f = rel
       const dir = top
-      const r = redactMarkdown(md, { rules })
+      // --model: 문서 마크다운 전체를 모델에 넣는다 (redactDocument 와 같이 이미지 data URI 줄은 공백으로)
+      const modelSpans = piiModel
+        ? await piiModel.detect(md.split("\n").map((l) => l.includes("data:image/") ? " ".repeat(l.length) : l).join("\n"))
+        : undefined
+      const r = redactMarkdown(md, { rules, modelSpans })
       for (const h of r.hits) {
         tally[h.rule] = (tally[h.rule] ?? 0) + 1
         byDir[dir] ??= {}
@@ -502,7 +521,7 @@ async function runCorpus(specs) {
       }
     }
   }
-  console.log(`\n### 코퍼스 (룰: ${opt("corpus-rules") ? rules.join(",") : "기본 룰셋"}) — 문서 ${docs} (파싱 실패 ${fails}), ${((Date.now() - t0) / 1000).toFixed(0)}s`)
+  console.log(`\n### 코퍼스 (룰: ${opt("corpus-rules") ? rules.join(",") : "기본 룰셋"}${piiModel ? ` + 학습 모델 ${modelVariant}` : ""}) — 문서 ${docs} (파싱 실패 ${fails}), ${((Date.now() - t0) / 1000).toFixed(0)}s`)
   console.log(`룰별 탐지: ${JSON.stringify(tally)}`)
   for (const [d, t] of Object.entries(byDir)) console.log(`  ${d.padEnd(16)} ${JSON.stringify(t)}`)
   console.log("상위 모양 (숫자→9, 영문→a):")

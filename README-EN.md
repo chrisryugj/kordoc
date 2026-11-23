@@ -102,7 +102,7 @@ await writeFile("report.hwpx", Buffer.from(hwpx))
 - **[Agency packs](docs/agency-pack-en.md)**: Build a house-style pack (`.kpack`) from a few of your own agency documents and write new documents in that style
 - **Fill forms**: Fields, click-here controls, two draft templates and seal placement
 - **Review**: Notation and public-language rules, structure and AI-writing gate, budget calculation checks, block-level lint for open documents (`lint-blocks`)
-- **View and protect**: HWPX/HWP previews and region crops, PII masking
+- **View and protect**: HWPX/HWP previews and region crops, PII masking (opt-in learned model for names and addresses, `--model`)
 
 Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsupported edits are skipped with a reason. [Format-preserving editing](docs/usage-en.md#format-preserving-editing) · [Full CLI reference](docs/usage-en.md#-cli)
 

@@ -589,6 +589,7 @@ export function registerGenerateCommands(program: Command): void {
     .command("redact <files...>")
     .description("개인정보 서식 보존 마스킹 — 주민·외국인등록번호·전화·이메일·카드·계좌·사업자등록번호·여권·운전면허(--rules 로 인명·주소 opt-in)를 탐지해 HWPX/HWP는 원본 서식 그대로 같은 길이로 가린 파일(본문·표·머리말/꼬리말·각주·글상자·미리보기·메타데이터 포함), 그 외 포맷(PDF 등)은 원본을 건드리지 않고 마스킹된 마크다운만 출력. 자동 검출 보조 도구이므로 결과는 반드시 사람이 최종 확인하세요 (이미지 속 글자는 탐지 불가)")
     .option("--rules <csv>", "적용 룰 (기본: rrn,phone,email,card,account,brn,passport,driver — crn(법인등록번호),ip,name(인명),address(주소)는 opt-in)")
+    .option("--model [variant]", "인명·주소를 학습 모델(schift-ko-pii-ax-v1)로도 탐지 — name·address 룰을 함께 켬. variant: int8(기본, 처음 151MB 받음)·q4(81MB). onnxruntime-node 필요, 모델은 Schift License v2.0")
     .option("--mask-char <ch>", "마스크 문자 1글자 (기본: ●)")
     .option("-o, --output <path>", "출력 경로 (단일 파일 시)")
     .option("-d, --out-dir <dir>", "출력 디렉토리 (다중 파일 시)")
@@ -607,6 +608,12 @@ export function registerGenerateCommands(program: Command): void {
       const rules = opts.rules
         ? String(opts.rules).split(",").map((r: string) => r.trim()).filter(Boolean)
         : [...DEFAULT_REDACT_RULES]
+      const modelVariant = opts.model === undefined ? undefined : opts.model === true ? "int8" : String(opts.model)
+      if (modelVariant && modelVariant !== "int8" && modelVariant !== "q4") {
+        process.stderr.write(`[kordoc] 알 수 없는 모델: ${modelVariant} (허용: int8, q4)\n`)
+        process.exit(1)
+      }
+      if (modelVariant) for (const r of ["name", "address"]) if (!rules.includes(r)) rules.push(r)
       const badRule = rules.find((r: string) => !KNOWN_RULES.has(r))
       if (badRule) {
         process.stderr.write(`[kordoc] 알 수 없는 룰: ${badRule} (허용: ${[...KNOWN_RULES].join(", ")})\n`)
@@ -664,6 +671,7 @@ export function registerGenerateCommands(program: Command): void {
           const buffer = readFileSync(absPath)
           const r = await redactDocument(toArrayBuffer(buffer), {
             rules: rules as never, maskChar, filePath: absPath, dryRun: opts.dryRun,
+            model: modelVariant ? { variant: modelVariant as "int8" | "q4" } : undefined,
           })
           // 리포트 기준: HWPX/HWP 는 파일 안 위치(본문·머리말·미리보기 …), 그 외 포맷은 본문 마크다운
           const listed = r.fileHits.length > 0
