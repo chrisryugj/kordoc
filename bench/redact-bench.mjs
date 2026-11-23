@@ -21,8 +21,9 @@
 //
 // 사용법: node bench/redact-bench.mjs [--gate] [--verbose] [--random=N(기본 3000, 0=끔)] [--schift=path|--no-schift]
 //          [--corpus[=dir[:ext,…],…]] [--corpus-rules=r,…] [--cache=dir] [--dump=path] [--json=path] [--model[=int8|q4]]
-//   --model 은 인명·주소를 학습 모델(schift-ko-pii-ax-v1, redact-model.ts)로도 찾아 modelSpans 로 넘긴다 — synthetic·external
-//   트랙의 name·address 가 사전 룰 + 모델 합집합이 된다 (처음 한 번 모델을 받는다, onnxruntime-node 필요)
+//   --model 은 인명·주소를 학습 모델(schift-ko-pii-ax-v1, redact-model.ts)로도 찾아 modelSpans 로 넘긴다 — synthetic·external·
+//   corpus 트랙의 name·address 가 사전 룰 + 모델 합집합이 된다 (처음 한 번 모델을 받는다, onnxruntime-node 필요). corpus 오탐을
+//   보려면 --corpus --corpus-rules=name,address --model --dump=경로
 //   --corpus 는 기본으로 bench/corpus 전체를 하위 폴더까지 훑는다 (hwpx·hwp·pdf·docx·xlsx·hml)
 //   모듈: 기본 ../dist/index.js (먼저 npm run build). KORDOC_REDACT_MODULE=경로 로 다른 빌드와 비교.
 
@@ -504,7 +505,11 @@ async function runCorpus(specs) {
       docs++
       const f = rel
       const dir = top
-      const r = redactMarkdown(md, { rules })
+      // --model: 문서 마크다운 전체를 모델에 넣는다 (redactDocument 와 같이 이미지 data URI 줄은 공백으로)
+      const modelSpans = piiModel
+        ? await piiModel.detect(md.split("\n").map((l) => l.includes("data:image/") ? " ".repeat(l.length) : l).join("\n"))
+        : undefined
+      const r = redactMarkdown(md, { rules, modelSpans })
       for (const h of r.hits) {
         tally[h.rule] = (tally[h.rule] ?? 0) + 1
         byDir[dir] ??= {}
@@ -516,7 +521,7 @@ async function runCorpus(specs) {
       }
     }
   }
-  console.log(`\n### 코퍼스 (룰: ${opt("corpus-rules") ? rules.join(",") : "기본 룰셋"}) — 문서 ${docs} (파싱 실패 ${fails}), ${((Date.now() - t0) / 1000).toFixed(0)}s`)
+  console.log(`\n### 코퍼스 (룰: ${opt("corpus-rules") ? rules.join(",") : "기본 룰셋"}${piiModel ? ` + 학습 모델 ${modelVariant}` : ""}) — 문서 ${docs} (파싱 실패 ${fails}), ${((Date.now() - t0) / 1000).toFixed(0)}s`)
   console.log(`룰별 탐지: ${JSON.stringify(tally)}`)
   for (const [d, t] of Object.entries(byDir)) console.log(`  ${d.padEnd(16)} ${JSON.stringify(t)}`)
   console.log("상위 모양 (숫자→9, 영문→a):")
