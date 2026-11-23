@@ -239,7 +239,8 @@ const MIN_PAGE_PIXELS = 1_000_000
 /** 이미지 파일(PNG·JPEG·WebP·TIFF·GIF·AVIF·HEIC·BMP·PCX·DCX) — 페이지마다 이미지 블록과 정규화한 페이지 이미지(`images`), 그리고 OCR 글(`ocr: false` 면 생략). 멀티페이지 TIFF·DCX 는 페이지마다 */
 export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
-    const { parseImageDocument, imagePageCount, imagePage, imagePagePixels } = await import("./ocr/image-ocr.js")
+    const { parseImageDocument, imagePageCount, imagePage, imagePagePixels, decodeToRgba } = await import("./ocr/image-ocr.js")
+    const pageRasters = options?.pageImages ? new (await import("./ocr/page-images.js")).PageImageSink(options.pageImages) : null
     const pageCount = await imagePageCount(buffer)
     // pages 는 멀티페이지 이미지에만 적용 — 단일 페이지 이미지는 기존처럼 항상 읽는다
     const wanted = pageCount > 1 && options?.pages ? parsePageRange(options.pages, pageCount) : null
@@ -258,12 +259,22 @@ export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): P
       // 페이지 이미지 누적 바이트는 PDF 와 같은 상한 — 넘으면 자리 표시만 남긴다
       if (img && options?.images !== false && (imageBytes += img.data.length) <= MAX_PAGE_IMAGE_BYTES) images.push(img)
       else if (options?.images !== false) skippedPages++
-      if (options?.ocr === false) continue
-      const r = await parseImageDocument(buffer, options, page)
+      const r = options?.ocr === false ? null : await parseImageDocument(buffer, options, page)
+      if (pageRasters?.full) pageRasters.skip(page) // 상한 뒤 페이지는 디코딩하지 않는다
+      else if (pageRasters) {
+        // 내장 OCR 이 읽은 래스터, 없으면(OCR 끔·OcrProvider) 디코딩한 이미지. 디코딩하지 못하면 파싱은 살리고 그 페이지만 빼고 경고한다
+        const raster = r?.raster ?? await decodeToRgba(buffer, page - 1).catch((e: unknown) => {
+          warnings.push({ page, message: `페이지 ${page} pageImages 생략: ${sanitizeError(e)}`, code: "SKIPPED_IMAGE" })
+          return null
+        })
+        if (raster) await pageRasters.add(page, raster)
+      }
+      if (!r) continue
       blocks.push(...r.blocks)
       warnings.push(...r.warnings)
       if (r.lines) lines.push(r.lines)
     }
+    const pageImages = pageRasters?.finish(warnings)
     if (skippedPages) warnings.push({ message: `페이지 ${skippedPages}개는 이미지를 생략했습니다 — 페이지 이미지 누적 상한(128MB) 도달, ${MAX_PIXELS / 10_000}만 픽셀 초과 또는 손상`, code: "SKIPPED_IMAGE" })
     // OCR 글은 첨자를 가르지 않는다(검출 박스로는 기준선을 믿을 수 없다) — scriptTags 와 무관하게 평문
     stripScriptTags({ blocks })
@@ -277,6 +288,7 @@ export async function parseImage(buffer: ArrayBuffer, options?: ParseOptions): P
       pageCount,
       images: images.length ? images : undefined,
       ...(options?.ocrLines ? { ocrLines: lines } : {}),
+      ...(pageImages ? { pageImages } : {}),
     }
   } catch (err) {
     return { success: false, fileType: "image", error: sanitizeError(err), code: classifyError(err) }
@@ -363,9 +375,9 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
     return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err) }
   }
   try {
-    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, ocrLines } = await parsePdfDocument(buffer, options)
+    const { markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, ocrLines, pageImages } = await parsePdfDocument(buffer, options)
     // 첨자 표기 — PDF 는 기하 추정이라 기본 끔(scriptTags: true 로 켠다)
-    return scriptsOff({ success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, pageCount: metadata?.pageCount, ...(ocrLines ? { ocrLines } : {}) }, options?.scriptTags !== true)
+    return scriptsOff({ success: true, fileType: "pdf", markdown, blocks, metadata, outline, warnings, isImageBased, pageQuality, qualitySummary, images, pages, pageCount: metadata?.pageCount, ...(ocrLines ? { ocrLines } : {}), ...(pageImages ? { pageImages } : {}) }, options?.scriptTags !== true)
   } catch (err) {
     const isImageBased = err instanceof Error && "isImageBased" in err ? true : undefined
     return { success: false, fileType: "pdf", error: sanitizeError(err), code: classifyError(err), isImageBased }
@@ -639,7 +651,7 @@ export type {
   ParseWarning, WarningCode, OutlineItem,
   DiffResult, BlockDiff, CellDiff, DiffChangeType,
   FormField, FormResult,
-  OcrProvider, OcrModelFile, OcrPageLines, OcrLine, WatchOptions,
+  OcrProvider, OcrModelFile, OcrPageLines, OcrLine, OcrLineCandidate, PageImage, WatchOptions,
 } from "./types.js"
 export { blocksToMarkdown } from "./table/builder.js"
 export type { MarkdownOptions } from "./table/builder.js"

@@ -156,6 +156,8 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/ocr/engine.ts` | 내장 텍스트 OCR 엔진 — PP-OCRv5 korean det(DBNet)+rec(CTC) ONNX 추론, 모델 선택마다 세션 하나(로컬 모델 파일은 읽은 바이트를 SHA-256 대조 뒤 그 바이트로 연다) |
 | `src/ocr/models.ts` | OCR 모델 스펙(HF 공식 변환본, SHA 핀 — server det·v6 medium det·손글씨 rec 는 고를 때만 받는 선택 모델) + 모델 선택(`ocrDet`·`ocrRec`·`ocrRecDict`) + inference.yml 사전 파서 |
 | `src/ocr/options.ts` | OCR 엔진 옵션 값 검증 — parse()·parse-worker 공용, 모델 모듈을 끌어오지 않는다 |
+| `src/ocr/ctc-beam.ts` | `ocrLineCandidates`: rec 출력에 CTC prefix beam search 를 돌려 줄의 상위 읽기 후보와 확률을 낸다(빔 32·시점마다 상위 8 클래스). greedy 디코드·줄 글·`confidence` 는 그대로 |
+| `src/ocr/page-images.ts` | `pageImages`: OCR 경로가 읽은 페이지 래스터를 PNG·무손실 WebP 로 모은다. 누적 128MB·래스터 픽셀 합계 10억 상한(렌더링·인코딩 전에 잡는다) |
 | `src/ocr/pdf-ocr.ts` | PDF OCR 브릿지 — pdfium 래스터 → 내장 엔진/사용자 프로바이더 → 블록 파이프라인 (좌표는 PDF pt 환산, **pdfium page.number 는 0-based — +1 환산 필수**). 벡터 글자 쪽(`vector_text`)은 기울기 보정 없이 그 쪽 실제 벡터 괘선으로 표 복원. `ocrLines` 쪽 줄은 블록과 함께 돌려준다(래스터 px) |
 | `src/ocr/ruling-lines.ts` | 래스터 괘선 감지 — 페이지 픽셀 이진화+런렝스로 표 수평/수직 선 추출 → 선 기반 표 파이프라인 공급 (오탐 방어 3겹: 최소길이 20pt·두께 상한 2.5pt·양측 잉크 포위 제외). 점선 괘선·채움 사각형 변(표 괘선에 맞물린 것만)·흐린 선(잉크 상한 205) |
 | `src/ocr/embedded-image-ocr.ts` | HWP·HWPX 삽입 그림 속 글(#143): `ocr` 가 `true`·`"force"`·함수일 때만 그림 블록 뒤에 image-ocr 결과 블록을 넣음(장식 그림·WMF·EMF 건너뜀, 기본은 산출 불변) |

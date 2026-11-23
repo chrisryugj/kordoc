@@ -157,7 +157,7 @@ Yes. `KORDOC_OFFLINE=1` blocks all outbound traffic, and OCR runs on the local C
 `--format chunks` emits structure chunks with heading breadcrumbs plus standalone table chunks. Use `--table-format gfm` (API: `tableFormat: "gfm"`) for tables without HTML. From Python or Java, use the [Python SDK](sdk/python/README.md) or [Java SDK](sdk/java/README.md).
 
 **Can I get OCR line boxes or use another model?**
-`--ocr --ocr-lines --format json` exports line boxes and confidence; `--ocr-det` and `--ocr-det-long-side` select the detector and resolution, and `--ocr-rec handwriting|auto` selects the handwriting recognizer. [OCR lines and models](docs/usage-en.md#ocr-lines-and-models)
+`--ocr --ocr-lines --format json` exports line boxes and confidence (plus ranked readings with probabilities per line with `--ocr-line-candidates 3`); `--ocr-det` and `--ocr-det-long-side` select the detector and resolution, and `--ocr-rec handwriting|auto` selects the handwriting recognizer. `--page-images png` also returns the page the OCR path read as an image. [OCR lines and models](docs/usage-en.md#ocr-lines-and-models)
 
 ## Documentation and security
 

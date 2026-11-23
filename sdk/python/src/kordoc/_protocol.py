@@ -34,6 +34,8 @@ OPTION_NAMES: dict[str, str] = {
     "drop_blank_images": "dropBlankImages",
     "ocr": "ocr",
     "ocr_lines": "ocrLines",
+    "ocr_line_candidates": "ocrLineCandidates",
+    "page_images": "pageImages",
     "ocr_det": "ocrDet",
     "ocr_det_long_side": "ocrDetLongSide",
     "ocr_rec": "ocrRec",

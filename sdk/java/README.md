@@ -53,7 +53,7 @@ try (KordocClient client = KordocClient.start(KordocConfig.defaults())) {
 
 - `parse` · `parseAsync`(`CompletableFuture`) · `parseBytes` · `warmup` · `close`
 - `KordocClient.start(...)` 에서 워커를 띄우고 protocol handshake 까지 마칩니다. try-with-resources 를 나가면 소유 워커를 모두 종료·회수합니다.
-- `result.raw()` 는 엔진 결과 JSON 원본(`ObjectNode`, 알 수 없는 필드 포함)입니다. `markdown()`·`blocks()`·`pages()`·`metadata()`·`warnings()`·`images()`·`ocrLines()` 를 꺼내 쓸 수 있습니다.
+- `result.raw()` 는 엔진 결과 JSON 원본(`ObjectNode`, 알 수 없는 필드 포함)입니다. `markdown()`·`blocks()`·`pages()`·`metadata()`·`warnings()`·`images()`·`ocrLines()`·`ocrLineCandidates()`·`pageImages()` 를 꺼내 쓸 수 있습니다.
 - `result.throwIfFailed()` 는 파싱 실패를 `KordocParseFailedException` 으로 바꿉니다.
 
 ### 파싱 옵션
@@ -63,7 +63,8 @@ try (KordocClient client = KordocClient.start(KordocConfig.defaults())) {
 `tableFormat("gfm")` · `htmlTables` · `htmlCellLinks` · `layoutTables("visual"|"keep")` · `classifyTables` · `tables` · `plain` · `scriptTags` ·
 `removeHeaderFooter` · `dedupeRunningHeaders` · `keepTrailingEmptyCols` · `keepEmptyParagraphs` · `includeFieldPlaceholders` ·
 `pages("1-3")`·`pages(List.of(1, 3))` · `images` · `inlineImages` · `qrCodes` · `imageFormat("png"|"webp")` · `imagePlacement("page-end"|"flow")` · `dropBlankImages` · `ocr(boolean)`·`ocrForce()` · `formulaOcr` · `password` · `timeout(Duration)` ·
-`ocrLines(boolean)`·`ocrLinesAll()` · `ocrDet("mobile" | "server")`·`ocrDet(OcrModelFile)` · `ocrDetLongSide(int)` · `ocrRec("handwriting")`·`ocrRec(OcrModelFile)` · `ocrRecDict(OcrModelFile)`
+`ocrLines(boolean)`·`ocrLinesAll()` · `ocrLineCandidates(int)` · `ocrDet("mobile" | "server")`·`ocrDet(OcrModelFile)` · `ocrDetLongSide(int)` · `ocrRec("handwriting")`·`ocrRec(OcrModelFile)` · `ocrRecDict(OcrModelFile)` ·
+`pageImages(boolean)`·`pageImages("png" | "webp")`
 
 ```java
 ParseResult r = client.parse(Path.of("스캔본.pdf"), ParseOptions.builder().ocr(true).ocrLines(true).ocrDet("server").ocrDetLongSide(1920)
@@ -74,6 +75,8 @@ for (OcrPageLines page : r.ocrLines().orElse(List.of())) {                      
 ParseResult form = client.parse(Path.of("수기 신청서.pdf"), ParseOptions.builder().ocr(true).ocrRec("handwriting").build());   // 손글씨 인식 모델(~15MB, 첫 사용 시 엔진이 받는다)
 ```
 
+`ocrLineCandidates(n)` 을 `ocrLines` 와 함께 주면 `result.ocrLineCandidates().get(p).get(i)` 가 `ocrLines().get(p).lines().get(i)` 의 읽기 후보(`OcrLineCandidate(text, probability)`, `probability` 내림차순 — 줄의 `confidence` 와 다른 척도)입니다.
+`pageImages(true)` 를 주면 그 상자가 가리키는 페이지 래스터가 `result.pageImages()`(`PageImage(pageNumber, width, height, image)`, 바이트는 `image().read()`)로 옵니다. 전송은 이미지와 같습니다.
 상자는 OCR 래스터 픽셀입니다(`scale()` = px/pt). 좌표 규약과 모델 검증은 [OCR 줄·모델 선택](../../docs/usage.md#ocr-줄모델-선택)을 따릅니다.
 
 함수 값(OCR 프로바이더, 진행 콜백)과 입력 경로를 바꾸는 옵션은 받지 않습니다. 잘못된 옵션은 `KordocProtocolException`(`code() == "INVALID_OPTIONS"`)입니다.

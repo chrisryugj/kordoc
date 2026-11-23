@@ -55,6 +55,35 @@ def test_ocr_lines_typed_match_raw(engine: dict, sdk_fixtures: Path, manifest: l
                 assert [(ln.box.x, ln.box.y, ln.box.w, ln.box.h) for ln in page.lines] == [
                     (ln["box"]["x"], ln["box"]["y"], ln["box"]["w"], ln["box"]["h"]) for ln in raw["lines"]]
             assert any("대한민국" in ln.text for ln in pages[0].lines), case["name"]
+            # 읽기 후보(ocr_line_candidates) — 줄과 같은 자리, 옵션을 안 준 문서는 줄마다 빈 튜플
+            want = case["options"].get("ocrLineCandidates", 0)
+            for cands, raw in zip(r.ocr_line_candidates, r.raw["ocrLines"]):
+                assert [[(c.text, c.probability) for c in cs] for cs in cands] == [[(c["text"], c["probability"]) for c in ln.get("candidates", [])] for ln in raw["lines"]]
+                assert all((1 <= len(cs) <= want) if want else cs == () for cs in cands), case["name"]
+
+
+def test_page_images_inline_and_files(engine: dict, sdk_fixtures: Path, manifest: list[dict], tmp_path: Path) -> None:
+    """페이지 이미지 대조 문서(sharp·pdfium 이 있을 때만 manifest 에 있다) — inline·files 전송 모두 포맷에 맞는 바이트를 읽는다."""
+    cases = [c for c in manifest if "pageImages" in c["options"]]
+    if not cases:
+        pytest.skip("sharp·pdfium 이 없어 페이지 이미지 대조 문서가 없습니다")
+    magic = {"image/png": lambda b: b[:8] == b"\x89PNG\r\n\x1a\n", "image/webp": lambda b: b[:4] == b"RIFF" and b[8:12] == b"WEBP"}
+    with KordocClient(**engine) as client:
+        for case in cases:
+            want = "image/webp" if case["options"]["pageImages"] == "webp" else "image/png"
+            inline = client.parse(sdk_fixtures / case["file"], **kwargs_of(case["options"]))
+            files = client.parse(sdk_fixtures / case["file"], image_transport="files", assets_dir=tmp_path, **kwargs_of(case["options"]))
+            assert inline.page_images and len(inline.page_images) == len(inline.raw["pageImages"]) == len(files.page_images), case["name"]
+            for a, b, raw in zip(inline.page_images, files.page_images, inline.raw["pageImages"]):
+                assert (a.page_number, a.width, a.height) == (raw["pageNumber"], raw["width"], raw["height"])
+                assert a.image.mime_type == b.image.mime_type == want and a.image.filename == f"page_{a.page_number:03d}.{want[6:]}"
+                # files 의 파일 이름은 dataRef 가 정한다 — 원본 페이지 이미지(images)와 바이트가 같으면 그 파일을 함께 가리킨다
+                assert a.image.path is None and b.image.path.parent == files.assets_dir and b.image.path.stat().st_size == b.image.byte_length
+                assert a.image.read() == b.image.read() and magic[want](a.image.read()), case["name"]
+        # 모르는 포맷은 워커가 거부한다(PNG 로 바꿔 내지 않는다)
+        with pytest.raises(KordocProtocolError) as e:
+            client.parse(sdk_fixtures / cases[0]["file"], page_images="gif")
+        assert e.value.code == "INVALID_OPTIONS"
 
 
 def test_resident_worker_same_pid(engine: dict, sdk_fixtures: Path) -> None:

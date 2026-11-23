@@ -83,6 +83,8 @@ if (result.success) {
 | `pages` | `-p, --pages` | `"1-3"`·`"1,3,5-7"`·`[1, 5, 10]` — PDF·한컴 저장본은 실제 쪽, 조판 캐시 없으면 섹션 근사. DOCX 는 Word 조판 쪽(쪽을 매기지 않은 문서는 거르지 않음) |
 | `ocr` | `--ocr` · `--ocr-force` | 기본: 스캔 쪽 + 큰 그림 속 글(모델 캐시 있을 때) · `true`: + 작은 그림·로고까지(모델 ~18MB 자동 다운로드) · `"force"`: 전 쪽 · `false`: 끔 · 함수: 외부 OCR · HWP·HWPX 삽입 그림은 `true`·`"force"`·함수일 때만 읽음(기본은 원문 글만, DOCX 등 다른 형식 그림은 대상 아님) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | 내장 OCR 이 읽은 줄(상자·신뢰도)을 결과 `ocrLines` 로(PDF·이미지). `"all"` 은 저신뢰로 버린 줄도 `dropped: true` 로 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
+| `ocrLineCandidates` | `--ocr-line-candidates <n>` | `ocrLines` 의 연장 — 줄마다 인식 모델의 상위 읽기 후보 n 개(1~5)를 `candidates: [{ text, probability }]` 로. `ocrLines` 와 함께 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
+| `pageImages` | `--page-images png\|webp` | 기존 OCR 경로가 읽은 페이지를 그대로 결과 `pageImages` 로(PDF·이미지). `true`·`"png"` 는 PNG, `"webp"` 는 무손실 WebP. `ocr: false` 여도 냄 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
 | `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | 글줄 검출 모델 `"mobile"`(기본)·`"server"`(~88MB, 첫 사용 시 다운로드)·`"medium"`(PP-OCRv6, ~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔 입력용)·로컬 파일 `{path, sha256}`, 검출 입력 긴 변(32~4096, 기본 960) |
 | `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 — 기본은 기본 rec 로 읽고 뚜렷한 손글씨 쪽만 손글씨 rec 로 다시 읽음. `"printed"`(기본 rec 만)·`"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·`"auto"`(기본보다 너그러운 문턱으로 손글씨 쪽을 다시 읽음)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
 | `formulaOcr` | `--formula-ocr` | PDF·이미지 수식 OCR(MFD+MFR, 모델 ~155MB) — 감지한 수식을 `$…$`·`$$…$$` 로(이미지는 그 자리 OCR 글을 수식으로 바꾼다) |
@@ -286,6 +288,13 @@ await parse("인쇄 스캔.pdf", { ocr: true, ocrRec: "printed" })              
   `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` 입니다(상자 네 꼭짓점에 적용).
 - 줄은 블록을 만드는 데 쓴 것입니다. 텍스트층이 있는 쪽의 그림 영역만 읽은 쪽은 `regionsOnly: true` 이고 영역 안 줄만 담깁니다(그림 글 병합 판정 전). 이 경로는 원본 PDF 영역과 좌표를 맞추기 위해 쪽 전체를 회전하지 않으며 `deskewAngle`은 0입니다.
   사용자 OcrProvider·HWP 삽입 그림 OCR 은 줄 좌표가 없어 해당하지 않습니다. 옵션을 끄면 결과는 이전과 같습니다.
+- `ocrLineCandidates: N`(1~5)은 줄마다 `candidates` 를 `probability` 높은 순으로 붙입니다. `probability` 는 그 읽기의 확률(같은 글이 되는 CTC 정렬을 모두 더한 값, 빔 32·시점마다 상위 8 클래스의 근사)이라
+  같은 줄의 후보끼리 견줄 수 있고, 줄의 `confidence`(가장 유력한 정렬에서 글자별 최고 확률의 평균)와는 다른 척도입니다. 줄의 `text`·`confidence` 는 그대로입니다. 후보 글은 표기 후처리 전의 인식 결과라 기호·글머리에서 줄 `text` 와 다를 수 있으며,
+  줄 상자 하나를 읽어 그대로 낸 줄에만 붙습니다(이어 붙였거나 다시 읽어 고친 줄에는 없음). 손글씨 모델로 다시 읽은 쪽은 그 모델의 후보입니다.
+- `pageImages` 는 `ocrLines` 좌표가 가리키는 래스터를 페이지마다 `{ pageNumber, filename, width, height, mimeType, data }` 로 냅니다. 이미지 입력은 실제 포맷과 무관하게
+  EXIF 방향대로 세운 이미지(OCR 이 기울기를 보정했으면 보정한 것), PDF 는 OCR 배율로 렌더링한 페이지이고 OCR 하지 않은 페이지와 `ocr: false` 에서도 나옵니다.
+  `"webp"` 는 무손실이며 `sharp` 가 없거나 한 변이 16,383px 를 넘는 페이지는 PNG 로 냅니다(`mimeType` 으로 구분). 누적 128MB·래스터 픽셀 합계 10억(1,000페이지)에
+  닿은 뒤의 페이지는 빼고 `SKIPPED_IMAGE` 로 경고합니다 — PDF 는 OCR 한 페이지를 먼저 담습니다. 이미지 입력은 같은 페이지가 `images` 에도 실리므로 응답이 크면 `images: false` 를 함께 줍니다.
 - 로컬 모델 파일은 절대 경로 + SHA-256 이 필수이며, 엔진이 바이트를 읽어 대조한 뒤 그 바이트로 엽니다. rec 출력 클래스 수가 사전 + 2 가 아니면 거부합니다.
   내장 모델(`"server"`·`"handwriting"` 포함)은 `~/.cache/kordoc/models/ppocr/` 에 받고, `KORDOC_OFFLINE` 이면 받지 않습니다. 자동 OCR(`ocr` 미지정)은 고른 모델 파일이 있을 때만 돕니다.
 - `ocrRec: "handwriting"` 은 PP-OCRv5 korean rec 를 손글씨·공문서 데이터로 추가 학습한 공개 모델([korean-handwriting-rec](https://github.com/VerifiedIdiot/korean-handwriting-rec), Apache-2.0)입니다.

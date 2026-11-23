@@ -13,6 +13,9 @@
     { "id": 4, "cmd": "parse", "file": "/abs/scan.pdf", "options": { "ocr": true, "ocrLines": "all", "ocrDet": "server", "ocrDetLongSide": 1920,
       "ocrRec": { "path": "/abs/models/rec.onnx", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } } },
     { "id": 5, "cmd": "parse", "file": "/abs/수기 신청서.pdf", "options": { "ocr": true, "ocrRec": "handwriting" } },
+    { "id": 6, "cmd": "parse", "file": "/abs/사진.bmp", "options": { "ocr": false, "pageImages": true } },
+    { "id": 7, "cmd": "parse", "file": "/abs/scan.pdf", "options": { "pageImages": "webp" }, "transport": { "images": "files", "assetsDir": "/abs/assets" } },
+    { "id": 8, "cmd": "parse", "file": "/abs/scan.pdf", "options": { "ocr": true, "ocrLines": "all", "ocrLineCandidates": 3 } },
     { "cmd": "quit" }
   ],
   "responses": [
@@ -30,7 +33,22 @@
           { "text": "대한민국 정부 2026", "box": { "x": 118, "y": 105, "w": 640, "h": 60 }, "confidence": 0.9987 },
           { "text": "잡음", "box": { "x": 900, "y": 300, "w": 40, "h": 20 }, "confidence": 0.31, "dropped": true } ] },
         { "pageNumber": 3, "width": 1786, "height": 2526, "scale": 3, "deskewAngle": 0.42, "regionsOnly": true, "lines": [
-          { "text": "그림 속 글", "box": { "x": 200.5, "y": 1000, "w": 300, "h": 40.5 }, "confidence": 0.95 } ] } ] } }
+          { "text": "그림 속 글", "box": { "x": 200.5, "y": 1000, "w": 300, "h": 40.5 }, "confidence": 0.95 } ] } ] } },
+    { "id": 6, "rss": 123456, "result": { "success": true, "fileType": "image", "markdown": "![image](image_001.png)", "blocks": [{ "type": "image", "text": "image_001.png", "pageNumber": 1 }],
+      "pageImages": [{ "pageNumber": 1, "filename": "page_001.png", "width": 5, "height": 3, "mimeType": "image/png", "data": "iVBORw0KGgoBAgME" }] } },
+    { "id": 7, "rss": 123456, "assetsDir": "/abs/assets/kordoc-7-XyZ789",
+      "result": { "success": true, "fileType": "pdf", "markdown": "본문", "blocks": [],
+        "pageImages": [
+          { "pageNumber": 1, "filename": "page_001.webp", "width": 1786, "height": 2526, "mimeType": "image/webp", "dataRef": { "path": "page_001.webp", "byteLength": 20480 } },
+          { "pageNumber": 2, "filename": "page_002.png", "width": 16384, "height": 1200, "mimeType": "image/png", "dataRef": { "path": "page_002.png", "byteLength": 4096 } } ] } },
+    { "id": 8, "rss": 123456, "result": { "success": true, "fileType": "pdf", "markdown": "대한민국 정부 2026", "blocks": [],
+      "ocrLines": [
+        { "pageNumber": 1, "width": 1260, "height": 390, "scale": 3, "deskewAngle": 0, "lines": [
+          { "text": "대한민국 정부 2026", "box": { "x": 118, "y": 105, "w": 640, "h": 60 }, "confidence": 0.9868, "candidates": [
+            { "text": "대한민국 정부 2026", "probability": 0.9488 }, { "text": "대한민국 정부2026", "probability": 0.0354 }, { "text": "대한민국 정부  2026", "probability": 0.0069 } ] },
+          { "text": "제1장 … 3", "box": { "x": 118, "y": 200, "w": 640, "h": 60 }, "confidence": 0.93 },
+          { "text": "잡음", "box": { "x": 900, "y": 300, "w": 40, "h": 20 }, "confidence": 0.31, "dropped": true, "candidates": [
+            { "text": "잡음", "probability": 0.2 } ] } ] } ] } }
   ],
   "invalid": [
     { "name": "JSON 아님", "request": "not json", "error": "INVALID_JSON" },

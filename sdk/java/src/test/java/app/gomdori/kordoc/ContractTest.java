@@ -1,5 +1,6 @@
 package app.gomdori.kordoc;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -29,6 +30,9 @@ class ContractTest {
                 .ocrRec(new OcrModelFile(Path.of("/abs/models/rec.onnx"), "a".repeat(64))).build().wireOptions());
         // 손글씨 rec 프리셋은 문자열 그대로(경로로 바꾸지 않는다)
         assertEquals(reqs.get(4).get("options"), ParseOptions.builder().ocr(true).ocrRec("handwriting").build().wireOptions());
+        assertEquals(reqs.get(5).get("options"), ParseOptions.builder().ocr(false).pageImages(true).build().wireOptions());
+        assertEquals(reqs.get(6).get("options"), ParseOptions.builder().pageImages("webp").build().wireOptions());
+        assertEquals(reqs.get(7).get("options"), ParseOptions.builder().ocr(true).ocrLinesAll().ocrLineCandidates(3).build().wireOptions());
     }
 
     @Test
@@ -51,8 +55,8 @@ class ContractTest {
                 .keepTrailingEmptyCols(true).keepEmptyParagraphs(true).includeFieldPlaceholders(true).pages("1-2")
                 .images(false).inlineImages(true).qrCodes(true).imageFormat("webp").imagePlacement("flow").dropBlankImages(true).ocr(true).formulaOcr(false).password("pw")
                 .ocrLines(true).ocrDet("server").ocrDetLongSide(1920).ocrRec(new OcrModelFile(Path.of("/m/rec.onnx"), "a".repeat(64)))
-                .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).build().wireOptions();
-        assertEquals(28, all.size());
+                .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).pageImages("webp").ocrLineCandidates(3).build().wireOptions();
+        assertEquals(30, all.size());
     }
 
     @Test
@@ -93,5 +97,57 @@ class ContractTest {
         ObjectNode empty = Json.MAPPER.createObjectNode().put("success", true);
         empty.putArray("ocrLines");
         assertEquals(List.of(), new ParseResult(empty, null).ocrLines().orElseThrow());
+    }
+
+    @Test
+    void decodePageImages() throws IOException {
+        JsonNode res = fixture().get("responses");
+        List<PageImage> inline = new ParseResult((ObjectNode) res.get(6).get("result"), null).pageImages();
+        assertEquals(1, inline.size());
+        PageImage p = inline.get(0);
+        assertEquals(List.of(1, 5, 3), List.of(p.pageNumber(), p.width(), p.height()));
+        assertEquals("page_001.png", p.image().filename());
+        assertEquals("image/png", p.image().mimeType());
+        assertTrue(p.image().path().isEmpty());
+        assertArrayEquals(new byte[] {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 1, 2, 3, 4}, p.image().read());
+
+        JsonNode files = res.get(7);
+        List<PageImage> refs = new ParseResult((ObjectNode) files.get("result"), Path.of(files.get("assetsDir").asText())).pageImages();
+        assertEquals(List.of(1, 1786, 2526), List.of(refs.get(0).pageNumber(), refs.get(0).width(), refs.get(0).height()));
+        assertEquals("image/webp", refs.get(0).image().mimeType());
+        assertEquals(20480L, refs.get(0).image().byteLength().orElseThrow());
+        assertEquals(Path.of("/abs/assets/kordoc-7-XyZ789/page_001.webp"), refs.get(0).image().path().orElseThrow());
+        // WebP 로 내지 못한 페이지는 PNG 로 온다 — 포맷은 페이지마다 mimeType 으로 본다
+        assertEquals("image/png", refs.get(1).image().mimeType());
+        assertEquals(Path.of("/abs/assets/kordoc-7-XyZ789/page_002.png"), refs.get(1).image().path().orElseThrow());
+        // 옵션을 안 준 결과는 빈 목록
+        assertEquals(List.of(), new ParseResult((ObjectNode) res.get(0).get("result"), null).pageImages());
+    }
+
+    @Test
+    void decodeOcrLineCandidates() throws IOException {
+        JsonNode res = fixture().get("responses");
+        ParseResult r = new ParseResult((ObjectNode) res.get(8).get("result"), null);
+        List<List<OcrLineCandidate>> page = r.ocrLineCandidates().get(0);
+        assertEquals(List.of(new OcrLineCandidate("대한민국 정부 2026", 0.9488), new OcrLineCandidate("대한민국 정부2026", 0.0354),
+                new OcrLineCandidate("대한민국 정부  2026", 0.0069)), page.get(0));
+        // 줄과 같은 자리 — 후보가 없는 줄(이어 붙였거나 고친 줄)은 빈 목록, 버린 줄도 후보를 싣는다
+        assertEquals(r.ocrLines().orElseThrow().get(0).lines().size(), page.size());
+        assertEquals(List.of(), page.get(1));
+        assertEquals(List.of(new OcrLineCandidate("잡음", 0.2)), page.get(2));
+        // 옵션을 안 준 결과는 줄마다 빈 목록, ocrLines 가 없으면 빈 목록
+        assertEquals(List.of(List.of(List.of(), List.of()), List.of(List.of())), new ParseResult((ObjectNode) res.get(5).get("result"), null).ocrLineCandidates());
+        assertEquals(List.of(), new ParseResult((ObjectNode) res.get(0).get("result"), null).ocrLineCandidates());
+    }
+
+    /** 후보가 실린 응답을 읽어도 기존 타입의 구성 요소·toString·동등성은 그대로다 (후보는 ParseResult.ocrLineCandidates() 로만) */
+    @Test
+    void existingTypesUnchangedWithCandidates() throws IOException {
+        assertEquals(4, OcrPageLines.Line.class.getRecordComponents().length);
+        assertEquals(7, OcrPageLines.class.getRecordComponents().length);
+        assertTrue(java.lang.reflect.Modifier.isFinal(Image.class.getModifiers()));
+        OcrPageLines.Line line = new ParseResult((ObjectNode) fixture().get("responses").get(8).get("result"), null).ocrLines().orElseThrow().get(0).lines().get(0);
+        assertEquals(new OcrPageLines.Line("대한민국 정부 2026", new OcrPageLines.Box(118, 105, 640, 60), 0.9868, false), line);
+        assertEquals("Line[text=대한민국 정부 2026, box=Box[x=118.0, y=105.0, w=640.0, h=60.0], confidence=0.9868, dropped=false]", line.toString());
     }
 }

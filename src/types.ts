@@ -245,6 +245,13 @@ export interface ParseOptions {
    *  `true`: 블록을 만드는 데 쓴 줄. `"all"`: 거기에 저신뢰(conf < 0.5)로 버린 줄도 `dropped: true` 로 함께.
    *  사용자 OcrProvider·HWP 삽입 그림 OCR 에는 줄 좌표가 없어 해당 없음 */
   ocrLines?: boolean | "all"
+  /** `ocrLines` 의 연장 — 줄마다 인식 모델의 상위 읽기 후보를 이 개수까지 `candidates` 로 낸다 (1~5 정수, 기본 0 = 끔 — 끄면 출력 불변).
+   *  `ocrLines` 와 함께 쓴다 */
+  ocrLineCandidates?: number
+  /** 기존 OCR 경로가 읽은 페이지를 그대로 결과 `pageImages` 로 낸다 (PDF·이미지 입력, 기본 false — 끄면 출력 불변, `ocr: false` 여도 낸다).
+   *  `true`·`"png"`: PNG. `"webp"`: 무손실 WebP(optional dependency `sharp`, 없으면 PNG 로 내고 경고).
+   *  누적 128MB·래스터 픽셀 합계 10억(1,000페이지)에 닿은 뒤의 페이지는 빼고 경고(`SKIPPED_IMAGE`)한다 */
+  pageImages?: boolean | "png" | "webp"
   /** 내장 OCR 글줄 검출 모델. 기본 `"mobile"`(PP-OCRv5 mobile det, ~5MB). `"server"`: PP-OCRv5 server det(~88MB, 첫 사용 시
    *  다운로드 — 작은 글자에 강하지만 느리다). `"medium"`: PP-OCRv6 medium det(~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔·잡음 같은
    *  열화 입력에 강하고 깨끗한 PDF 는 기본이 낫다). 객체: 로컬 ONNX 파일(`path` 절대 경로 + `sha256` 필수, 다르면 로드 거부) */
@@ -512,6 +519,8 @@ export interface ParseSuccess extends ParseResultBase {
   qualitySummary?: DocumentQualitySummary
   /** 내장 OCR 이 읽은 쪽별 글줄 — `ocrLines` 옵션을 켠 PDF·이미지 입력에서만(OCR 을 돌린 쪽이 없으면 빈 배열). 쪽 번호 순 */
   ocrLines?: OcrPageLines[]
+  /** OCR 경로가 읽은 페이지 래스터 — `pageImages` 옵션을 켠 PDF·이미지 입력에서만. 쪽 번호 순 */
+  pageImages?: PageImage[]
   /** 문서의 메모(한글 "메모 넣기") — 메모가 있는 HWPX·HWP5 문서에서만, 문서 순서 (#180). 본문 마크다운에는 섞지 않는다
    *  (`memos` 옵션을 켜면 끝에 모아 낸다) */
   memos?: MemoNote[]
@@ -574,6 +583,29 @@ export interface OcrLine {
   confidence: number
   /** 저신뢰로 버려 블록에 들어가지 않은 줄 (`ocrLines: "all"` 일 때만) */
   dropped?: true
+  /** 인식 모델의 읽기 후보, 확률 내림차순 (`ocrLineCandidates` 를 켰을 때만). 줄 상자 하나를 읽어 그대로 낸 줄에만 있다 —
+   *  이어 붙였거나 다시 읽어 고친 줄에는 없다 */
+  candidates?: OcrLineCandidate[]
+}
+
+/** OCR 줄의 읽기 후보. `text` 는 표기 후처리 전의 인식 결과(앞뒤 공백만 뗌)라 줄의 `text` 와 기호·글머리에서 다를 수 있다.
+ *  `probability` 는 그 읽기의 확률(같은 글이 되는 CTC 정렬을 모두 더한 값, 0~1)이라 같은 줄의 후보끼리 견줄 수 있다 — 줄의 `confidence`(가장 유력한 정렬에서 글자별 최고 확률의 평균)와는 다른 척도 */
+export interface OcrLineCandidate {
+  text: string
+  probability: number
+}
+
+/** 페이지 래스터 하나 (ParseSuccess.pageImages 항목) — `OcrPageLines` 의 좌표가 가리키는 래스터다. 이미지 입력은 EXIF 방향대로 세운
+ *  이미지(OCR 이 기울기를 보정했으면 보정한 것), PDF 는 OCR 배율로 렌더링한 페이지. `filename`·`mimeType`·`data` 는 `ExtractedImage` 와 같다 */
+export interface PageImage {
+  pageNumber: number
+  /** 예: page_001.png */
+  filename: string
+  /** 래스터 폭·높이 (px) */
+  width: number
+  height: number
+  mimeType: "image/png" | "image/webp"
+  data: Uint8Array
 }
 
 /** 페이지 한 장의 마크다운 (#68). ParseSuccess.pages 항목. */
@@ -795,4 +827,6 @@ export interface InternalParseResult {
   pages?: PageMarkdown[]
   /** PDF 전용: ocrLines 옵션일 때 쪽별 OCR 줄 */
   ocrLines?: OcrPageLines[]
+  /** PDF 전용: pageImages 옵션일 때 페이지 래스터 */
+  pageImages?: PageImage[]
 }
