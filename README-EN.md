@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.4](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.4)** · 2026-11-23
+Latest release: **[4.25.5](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.5)** · 2026-11-23
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
+| 4.25.5 | `redact` can also find person names and addresses with a trained model, opt-in (`--model`, MCP `use_model`, @ubermensch1218). It catches bare names without context, masked names such as 「홍○동」, spaced-out names and addresses with only a dong or lot number. The model is downloaded only when enabled (151 MB) and uses the Schift License v2.0 | Synthetic benchmark name recall 0.962 → **1.000** (1 false positive), overall micro F1 0.995 → 0.998 · gate passes with the model off and on · output unchanged with the model off · 5,262 tests, 0 failures |
 | 4.25.4 | New `ocrLineCandidates` option returns the top readings with probabilities for each OCR line, and `pageImages` returns the page the OCR path read as an image (@VerifiedIdiot). `fill form.hwp -o out.hwp` wrote HWPX bytes under a `.hwp` name; it now saves HWP 5.x (#229, @seojaehong) | With both options off, output on two scanned PNGs and one scanned PDF is byte-identical to 4.25.3 · on a skewed scan, 150 of 151 lines carry candidates and the page image matches the line-coordinate size · 5,233 tests, 0 failures |
 | 4.25.3 | A PDF `ocr` function (OcrProvider) was never called for text-free charts and images on pages with an intact text layer; fixed (#225). Each image region is cropped and passed to the function, and the result goes where the image sits, inside the table cell when the image is in one (#226, @circlebig) | **No** per-document change on score 5,465, PDF text 744, ODL 200 (OCR on and off), OCR 56, robustness 54 and annex 544 · the reported PDF gets the chart text in its cell · `ocrRec: "handwriting"` uses handwriting rec v1.2.0 (handwritten symbol lines 39.7% → 97.3%, @VerifiedIdiot); default OCR output unchanged |
 | 4.25.2 | `parse-worker` reads input files asynchronously, so the worker keeps handling signals and output while a large file is read (#224). Troubleshooting now covers antivirus exclusions when the equation-conversion file is wrongly flagged (#223) | Synchronous time before the call returns on a 150 MB input 14 ms → **0 ms** · parser output unchanged |
 | 4.25.1 | `generate --layout` together with `--plain`, or MCP `layout_path` without a `preset`, used to drop the PDF layout and write a plain HWPX; both now fail before any file is written (#217, @LimePencil) | Both invalid combinations stop before the PDF is read or a file is written (CLI and MCP entry-point tests) · parser and generator unchanged |
-| 4.25.0 | Measure a PDF with `measure` and apply its layout using `generate --layout`. Report and plan tables of contents include page numbers. Windows Hancom automation can be disabled. | Page numbers for all four chapters and the appendix matched in a nine-page sample opened in Hancom. |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

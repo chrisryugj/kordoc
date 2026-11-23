@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.5] - 2026-11-23
+
 ### Added
 
 - redact: 인명·주소 학습 모델 opt-in — CLI `redact --model [int8|q4]`, MCP `redact_document` 의 `use_model`, `redactDocument({ model })`, 라이브러리 `loadPiiModel()` + `redactText`·`redactMarkdown` 의 `modelSpans`. Hugging Face `schift-io/schift-ko-pii-ax-v1`(A.X-Encoder-base 미세조정 BIOES 태거)을 onnxruntime-node 로 돌려(리비전 고정·SHA-256 대조, 캐시 `schift-pii/`) 룰이 일부러 놓치는 문맥 없는 맨 이름·가린 이름(홍○동·김영*)·띄어 쓴 이름·동/지번만 있는 주소를 잡는다. 모델 스팬은 RULE_PRIORITY 의 name·address 자리에서 사전 룰보다 먼저 차지하고(번호형 룰과 겹치면 버림, 사전 룰은 남은 곳에서 그대로 — 합집합), 같은 서식 보존 마스킹을 입힌다(성·시·군·구 남김, 공백 뺀 두 글자 이하 인명은 다 가림). 자리표시자 번지("자양로 000")와 가릴 글자가 없는 스팬(이미 가린 이름 "이○○")은 버린다. `--model` 을 켜면 name·address 룰도 켜진다. 기본은 꺼져 있고 끄면 출력은 그대로. `bench/redact-bench.mjs --model[=int8|q4]` 로 synthetic·external 트랙을 잰다 — synthetic all micro F1 0.995 → 0.998(인명 재현율 0.962 → 1.000, 음성 절 오탐 1: "세면장 조도임"), external 인명 재현율 0.878 → 1.000·정밀도 1.000 유지(473문장 중 모델 학습에 들어간 253문장을 뺀 220문장도 0.879 → 1.000)
