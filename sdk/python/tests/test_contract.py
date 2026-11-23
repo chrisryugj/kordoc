@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
 import pytest
 
-from kordoc import OcrBox, OcrLine, OcrModelFile, OcrPageLines, PageImage, ParseResult
+from kordoc import Image, OcrBox, OcrLine, OcrLineCandidate, OcrModelFile, OcrPageLines, PageImage, ParseResult
 from kordoc._protocol import OPTION_NAMES, parse_request, wire_options
 
 from conftest import PROTOCOL_FIXTURE
@@ -27,15 +28,16 @@ def test_requests_match_fixture() -> None:
     assert parse_request(5, "/abs/수기 신청서.pdf", {"ocr": True, "ocr_rec": "handwriting"}) == reqs[4]
     assert parse_request(6, "/abs/사진.bmp", {"ocr": False, "page_images": True}) == reqs[5]
     assert parse_request(7, "/abs/scan.pdf", {"page_images": "webp"}, image_transport="files", assets_dir="/abs/assets") == reqs[6]
+    assert parse_request(8, "/abs/scan.pdf", {"ocr": True, "ocr_lines": "all", "ocr_line_candidates": 3}) == reqs[7]
 
 
 def test_option_names_cover_worker_allowlist() -> None:
-    # docs/parse-worker-protocol.md 허용 목록과 같은 29개
+    # docs/parse-worker-protocol.md 허용 목록과 같은 30개
     assert sorted(OPTION_NAMES.values()) == sorted([
         "tableFormat", "htmlTables", "htmlCellLinks", "layoutTables", "classifyTables", "tables", "plain", "scriptTags",
         "removeHeaderFooter", "dedupeRunningHeaders", "keepTrailingEmptyCols", "keepEmptyParagraphs",
         "includeFieldPlaceholders", "pages", "images", "inlineImages", "qrCodes", "imageFormat", "imagePlacement", "dropBlankImages", "ocr", "formulaOcr", "password",
-        "ocrLines", "ocrDet", "ocrDetLongSide", "ocrRec", "ocrRecDict", "pageImages"])
+        "ocrLines", "ocrDet", "ocrDetLongSide", "ocrRec", "ocrRecDict", "pageImages", "ocrLineCandidates"])
 
 
 def test_ocr_model_files_become_absolute_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -107,3 +109,25 @@ def test_decode_page_images() -> None:
     assert (second.page_number, second.image.mime_type, second.image.path) == (2, "image/png", Path("/abs/assets/kordoc-7-XyZ789/page_002.png"))
     # 옵션을 안 준 결과는 빈 목록
     assert ParseResult(FIX["responses"][0]["result"]).page_images == []
+
+
+def test_decode_ocr_line_candidates() -> None:
+    r = ParseResult(FIX["responses"][8]["result"])
+    [page] = r.ocr_line_candidates
+    assert page[0] == (OcrLineCandidate("대한민국 정부 2026", 0.9488), OcrLineCandidate("대한민국 정부2026", 0.0354), OcrLineCandidate("대한민국 정부  2026", 0.0069))
+    # 줄과 같은 자리 — 후보가 없는 줄(이어 붙였거나 고친 줄)은 빈 튜플, 버린 줄도 후보를 싣는다
+    assert len(page) == len(r.ocr_lines[0].lines) == 3 and page[1] == () and page[2] == (OcrLineCandidate("잡음", 0.2),)
+    # 옵션을 안 준 결과는 줄마다 빈 튜플, ocrLines 가 없으면 빈 목록
+    assert ParseResult(FIX["responses"][5]["result"]).ocr_line_candidates == [[(), ()], [()]]
+    assert ParseResult(FIX["responses"][0]["result"]).ocr_line_candidates == []
+
+
+def test_existing_types_unchanged_with_candidates() -> None:
+    """후보가 실린 응답을 읽어도 기존 타입의 필드·repr·asdict·동등성은 그대로다 (후보는 ParseResult.ocr_line_candidates 로만)."""
+    assert [f.name for f in dataclasses.fields(OcrLine)] == ["text", "box", "confidence", "dropped"]
+    assert [f.name for f in dataclasses.fields(OcrPageLines)] == ["page_number", "width", "height", "scale", "deskew_angle", "regions_only", "lines"]
+    assert Image.__slots__ == ("filename", "mime_type", "source", "path", "byte_length", "_b64")
+    line = ParseResult(FIX["responses"][8]["result"]).ocr_lines[0].lines[0]
+    assert line == OcrLine("대한민국 정부 2026", OcrBox(118, 105, 640, 60), 0.9868)
+    assert repr(line) == "OcrLine(text='대한민국 정부 2026', box=OcrBox(x=118, y=105, w=640, h=60), confidence=0.9868, dropped=False)"
+    assert dataclasses.asdict(line) == {"text": "대한민국 정부 2026", "box": {"x": 118, "y": 105, "w": 640, "h": 60}, "confidence": 0.9868, "dropped": False}

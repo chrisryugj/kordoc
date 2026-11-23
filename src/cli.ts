@@ -33,6 +33,7 @@ program
   .option("--ocr-force", "전 페이지 강제 OCR (텍스트층이 있어도 무시하고 재인식)")
   .option("--ocr-lines", "내장 OCR 이 읽은 줄(래스터 px 상자·신뢰도)을 --format json 결과 ocrLines 로")
   .option("--ocr-lines-all", "--ocr-lines 에 저신뢰로 버린 줄도 dropped 표시로 함께")
+  .option("--ocr-line-candidates <n>", "--ocr-lines 의 줄마다 인식 모델의 상위 읽기 후보 n 개(1~5)를 candidates 로")
   .option("--page-images <format>", "OCR 경로가 읽은 페이지를 --format json 결과 pageImages 로: png | webp (무손실, optional dependency sharp 필요)")
   .option("--ocr-det <model>", "OCR 글줄 검출 모델: mobile (기본) | server (~88MB 첫 사용 시 다운로드) | medium (PP-OCRv6 ~62MB, 기울임·흐림·스캔 입력용) | 로컬 ONNX 경로 (--ocr-det-sha256 필수)")
   .option("--ocr-det-sha256 <hex>", "--ocr-det 로컬 파일의 SHA-256 — 다르면 로드 거부")

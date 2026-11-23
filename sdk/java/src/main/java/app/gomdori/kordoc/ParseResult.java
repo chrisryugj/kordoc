@@ -59,6 +59,24 @@ public final class ParseResult {
         return out;
     }
 
+    /**
+     * ocrLines 의 연장 — 줄마다 인식 모델의 읽기 후보(확률 내림차순, {@code ocrLineCandidates(n)}). {@code get(p).get(i)} 가
+     * {@code ocrLines().get(p).lines().get(i)} 의 후보이고, 옵션을 안 줬거나 후보가 없는 줄은 빈 목록
+     */
+    public List<List<List<OcrLineCandidate>>> ocrLineCandidates() {
+        List<List<List<OcrLineCandidate>>> pages = new ArrayList<>();
+        for (JsonNode p : raw.path("ocrLines")) {
+            List<List<OcrLineCandidate>> lines = new ArrayList<>();
+            for (JsonNode l : p.path("lines")) {
+                List<OcrLineCandidate> candidates = new ArrayList<>();
+                for (JsonNode c : l.path("candidates")) candidates.add(new OcrLineCandidate(c.path("text").asText(), c.path("probability").asDouble()));
+                lines.add(List.copyOf(candidates));
+            }
+            pages.add(List.copyOf(lines));
+        }
+        return List.copyOf(pages);
+    }
+
     /** OCR 경로가 읽은 페이지 래스터 ({@code pageImages(true)}·{@code pageImages("webp")}, PDF·이미지 입력). 쪽 번호 순, 옵션을 안 줬으면 빈 목록 */
     public List<PageImage> pageImages() {
         List<PageImage> out = new ArrayList<>();

@@ -53,8 +53,10 @@ export function replaceFormulaItems(items: OcrItem[], regions: FormulaBox[]): Oc
         const cut = (x: number) => Math.max(0, Math.min(n, Math.round(((x - p.x) / p.w) * n)))
         const a = cut(f.bbox.x1), b = cut(f.bbox.x2)
         const left = chars.slice(0, a).join("").trimEnd(), right = chars.slice(b).join("").trimStart()
-        if (left) next.push({ ...p, text: left, w: Math.max(1, f.bbox.x1 - p.x) })
-        if (right) next.push({ ...p, text: right, x: f.bbox.x2, w: Math.max(1, p.x + p.w - f.bbox.x2) })
+        // 잘라 낸 조각은 줄 상자 전체의 읽기 후보(candidates)와 맞지 않으니 뗀다
+        const base = p.candidates ? { ...p, candidates: undefined } : p
+        if (left) next.push({ ...base, text: left, w: Math.max(1, f.bbox.x1 - p.x) })
+        if (right) next.push({ ...base, text: right, x: f.bbox.x2, w: Math.max(1, p.x + p.w - f.bbox.x2) })
       }
       pieces = next
     }

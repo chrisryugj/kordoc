@@ -1,5 +1,5 @@
 /**
- * 내장 OCR 엔진 옵션(ocrLines·ocrDet·ocrDetLongSide·ocrRec·ocrRecDict·pageImages) 값 검증 — parse()·parse-worker 가 함께 쓴다.
+ * 내장 OCR 엔진 옵션(ocrLines·ocrLineCandidates·ocrDet·ocrDetLongSide·ocrRec·ocrRecDict·pageImages) 값 검증 — parse()·parse-worker 가 함께 쓴다.
  * 모델·다운로드 모듈을 끌어오지 않게 따로 둔다(OCR 을 안 쓰는 파싱도 이 검증은 지난다).
  */
 
@@ -7,8 +7,12 @@ import { isAbsolute } from "path"
 import type { ParseOptions } from "../types.js"
 
 /** OCR 엔진 옵션 검증 — 잘못이면 사유 문자열(parse() 실패 결과·워커 INVALID_OPTIONS 가 그대로 쓴다), 맞으면 null */
-export function validateOcrOptions(o: Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict" | "pageImages"> | undefined): string | null {
+export function validateOcrOptions(o: Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict" | "pageImages" | "ocrLineCandidates"> | undefined): string | null {
   if (!o) return null
+  // 후보 수 상한 5 — 빔 폭(ctc-beam.ts 32)과 함께 줄마다의 일을 묶는다
+  const n = o.ocrLineCandidates
+  if (n !== undefined && (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 5)) return `ocrLineCandidates 는 0~5 정수입니다 (받은 값: ${JSON.stringify(n)})`
+  if (n && !o.ocrLines) return "ocrLineCandidates 는 ocrLines 와 함께 씁니다 (후보는 ocrLines 의 줄에 실립니다)"
   if (o.pageImages !== undefined && typeof o.pageImages !== "boolean" && o.pageImages !== "png" && o.pageImages !== "webp") return `pageImages 는 true·false·"png"·"webp" 입니다 (받은 값: ${JSON.stringify(o.pageImages)})`
   if (o.ocrLines !== undefined && typeof o.ocrLines !== "boolean" && o.ocrLines !== "all") return `ocrLines 는 true·false·"all" 입니다 (받은 값: ${JSON.stringify(o.ocrLines)})`
   const det = o.ocrDet

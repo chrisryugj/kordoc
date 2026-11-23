@@ -55,6 +55,11 @@ def test_ocr_lines_typed_match_raw(engine: dict, sdk_fixtures: Path, manifest: l
                 assert [(ln.box.x, ln.box.y, ln.box.w, ln.box.h) for ln in page.lines] == [
                     (ln["box"]["x"], ln["box"]["y"], ln["box"]["w"], ln["box"]["h"]) for ln in raw["lines"]]
             assert any("대한민국" in ln.text for ln in pages[0].lines), case["name"]
+            # 읽기 후보(ocr_line_candidates) — 줄과 같은 자리, 옵션을 안 준 문서는 줄마다 빈 튜플
+            want = case["options"].get("ocrLineCandidates", 0)
+            for cands, raw in zip(r.ocr_line_candidates, r.raw["ocrLines"]):
+                assert [[(c.text, c.probability) for c in cs] for cs in cands] == [[(c["text"], c["probability"]) for c in ln.get("candidates", [])] for ln in raw["lines"]]
+                assert all((1 <= len(cs) <= want) if want else cs == () for cs in cands), case["name"]
 
 
 def test_page_images_inline_and_files(engine: dict, sdk_fixtures: Path, manifest: list[dict], tmp_path: Path) -> None:

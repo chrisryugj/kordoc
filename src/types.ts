@@ -245,6 +245,9 @@ export interface ParseOptions {
    *  `true`: 블록을 만드는 데 쓴 줄. `"all"`: 거기에 저신뢰(conf < 0.5)로 버린 줄도 `dropped: true` 로 함께.
    *  사용자 OcrProvider·HWP 삽입 그림 OCR 에는 줄 좌표가 없어 해당 없음 */
   ocrLines?: boolean | "all"
+  /** `ocrLines` 의 연장 — 줄마다 인식 모델의 상위 읽기 후보를 이 개수까지 `candidates` 로 낸다 (1~5 정수, 기본 0 = 끔 — 끄면 출력 불변).
+   *  `ocrLines` 와 함께 쓴다 */
+  ocrLineCandidates?: number
   /** 기존 OCR 경로가 읽은 페이지를 그대로 결과 `pageImages` 로 낸다 (PDF·이미지 입력, 기본 false — 끄면 출력 불변, `ocr: false` 여도 낸다).
    *  `true`·`"png"`: PNG. `"webp"`: 무손실 WebP(optional dependency `sharp`, 없으면 PNG 로 내고 경고).
    *  누적 128MB·래스터 픽셀 합계 10억(1,000페이지)에 닿은 뒤의 페이지는 빼고 경고(`SKIPPED_IMAGE`)한다 */
@@ -580,6 +583,16 @@ export interface OcrLine {
   confidence: number
   /** 저신뢰로 버려 블록에 들어가지 않은 줄 (`ocrLines: "all"` 일 때만) */
   dropped?: true
+  /** 인식 모델의 읽기 후보, 확률 내림차순 (`ocrLineCandidates` 를 켰을 때만). 줄 상자 하나를 읽어 그대로 낸 줄에만 있다 —
+   *  이어 붙였거나 다시 읽어 고친 줄에는 없다 */
+  candidates?: OcrLineCandidate[]
+}
+
+/** OCR 줄의 읽기 후보. `text` 는 표기 후처리 전의 인식 결과(앞뒤 공백만 뗌)라 줄의 `text` 와 기호·글머리에서 다를 수 있다.
+ *  `probability` 는 그 읽기의 확률(같은 글이 되는 CTC 정렬을 모두 더한 값, 0~1)이라 같은 줄의 후보끼리 견줄 수 있다 — 줄의 `confidence`(가장 유력한 정렬에서 글자별 최고 확률의 평균)와는 다른 척도 */
+export interface OcrLineCandidate {
+  text: string
+  probability: number
 }
 
 /** 페이지 래스터 하나 (ParseSuccess.pageImages 항목) — `OcrPageLines` 의 좌표가 가리키는 래스터다. 이미지 입력은 EXIF 방향대로 세운

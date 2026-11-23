@@ -191,6 +191,7 @@ async function ocrCases(): Promise<typeof SDK_CASES> {
     { name: "pdf-ocr-lines", file: "스캔 문서.pdf", build: () => scan.pdf,
       options: { ocr: true, ocrLines: "all", ocrDet: "mobile", ocrDetLongSide: 1280, ocrRec: { path: rec, sha256 } } },
     { name: "image-ocr-lines", file: "스캔 그림.png", build: () => scan.png, options: { ocrLines: true } },
+    { name: "image-ocr-candidates", file: "스캔 그림.png", build: () => scan.png, options: { ocrLines: "all", ocrLineCandidates: 3 } },
     // 손글씨 rec 프리셋 — 그 모델도 캐시에 있을 때만
     ...[OCR_HANDWRITING_REC_MODEL, OCR_HANDWRITING_REC_DICT].every(s => existsSync(ocrModelPath(s)))
       ? [{ name: "pdf-ocr-handwriting", file: "수기 스캔.pdf", build: () => scan.pdf, options: { ocr: true, ocrLines: "all", ocrRec: "handwriting" } } as const]

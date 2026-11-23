@@ -65,6 +65,19 @@ class EngineTest {
                     assertEquals(raw.get(i).get("lines").get(0).get("text").asText(), pages.get(i).lines().get(0).text());
                 }
                 assertTrue(pages.get(0).lines().stream().anyMatch(l -> l.text().contains("대한민국")), c.get("name").asText());
+                // 읽기 후보(ocrLineCandidates) — 줄과 같은 자리, 옵션을 안 준 문서는 줄마다 빈 목록
+                int want = c.get("options").path("ocrLineCandidates").asInt(0);
+                for (int i = 0; i < pages.size(); i++) {
+                    for (int k = 0; k < pages.get(i).lines().size(); k++) {
+                        JsonNode rawCandidates = raw.get(i).get("lines").get(k).path("candidates");
+                        List<OcrLineCandidate> candidates = r.ocrLineCandidates().get(i).get(k);
+                        assertEquals(rawCandidates.size(), candidates.size(), c.get("name").asText());
+                        for (int m = 0; m < candidates.size(); m++) {
+                            assertEquals(new OcrLineCandidate(rawCandidates.get(m).get("text").asText(), rawCandidates.get(m).get("probability").asDouble()), candidates.get(m));
+                        }
+                        assertTrue(want == 0 ? candidates.isEmpty() : candidates.size() >= 1 && candidates.size() <= want, c.get("name").asText());
+                    }
+                }
             }
         }
     }

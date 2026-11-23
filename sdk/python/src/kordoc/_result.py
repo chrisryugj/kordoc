@@ -87,6 +87,15 @@ class OcrPageLines:
 
 
 @dataclass(frozen=True)
+class OcrLineCandidate:
+    """OCR 줄의 읽기 후보(``ocr_line_candidates=N``). ``text`` 는 표기 후처리 전의 인식 결과, ``probability`` 는 그 읽기의 확률(모든 정렬의 합, 0~1) —
+    같은 줄의 후보끼리 견줄 수 있다. 줄의 ``confidence``(가장 유력한 정렬에서 글자별 최고 확률의 평균)와는 다른 척도다."""
+
+    text: str
+    probability: float
+
+
+@dataclass(frozen=True)
 class PageImage:
     """엔진의 OCR 경로가 읽은 페이지 래스터(``page_images``). ``OcrPageLines`` 좌표가 가리키는 이미지이고 바이트는 ``image.read()``."""
 
@@ -128,6 +137,13 @@ class ParseResult:
         """내장 OCR 이 읽은 쪽별 줄(``ocr_lines=True``·``"all"`` 일 때). 옵션을 안 줬거나 PDF·이미지가 아니면 None, OCR 을 돌린 쪽이 없으면 빈 목록."""
         raw = self.raw.get("ocrLines")
         return None if raw is None else [OcrPageLines.from_raw(p) for p in raw]
+
+    @property
+    def ocr_line_candidates(self) -> list[list[tuple[OcrLineCandidate, ...]]]:
+        """``ocr_lines`` 의 연장 — 줄마다 인식 모델의 읽기 후보(확률 내림차순). ``ocr_line_candidates[p][i]`` 가 ``ocr_lines[p].lines[i]`` 의 후보이고,
+        옵션(``ocr_line_candidates=N``)을 안 줬거나 후보가 없는 줄은 빈 튜플."""
+        return [[tuple(OcrLineCandidate(c["text"], c["probability"]) for c in ln.get("candidates") or ()) for ln in p["lines"]]
+                for p in self.raw.get("ocrLines") or []]
 
     @property
     def page_images(self) -> list[PageImage]:

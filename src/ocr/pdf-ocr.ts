@@ -89,7 +89,8 @@ export function builtinOcrConfig(o: ParseOptions | undefined): Readonly<BuiltinO
     models,
     ...(o.ocrRec === "auto" ? { handwriting: handwritingFallbackModels(models), autoRec: AUTO_REC }
       : o.ocrRec === undefined ? { handwriting: handwritingFallbackModels(models), autoRec: o.ocr ? { ...DEFAULT_AUTO_REC, fetch: true as const } : DEFAULT_AUTO_REC } : {}),
-    tuning: o.ocrDetLongSide === undefined ? DEFAULT_OCR_TUNING : { ...DEFAULT_OCR_TUNING, detLongSide: o.ocrDetLongSide },
+    tuning: o.ocrDetLongSide === undefined && !o.ocrLineCandidates ? DEFAULT_OCR_TUNING
+      : { ...DEFAULT_OCR_TUNING, ...(o.ocrDetLongSide !== undefined ? { detLongSide: o.ocrDetLongSide } : {}), ...(o.ocrLineCandidates ? { lineCandidates: o.ocrLineCandidates } : {}) },
     lines: o.ocrLines === "all" ? "all" : o.ocrLines ? "kept" : undefined,
   }
 }
@@ -162,7 +163,7 @@ export function reportModelDownload(p: { phase: string; downloaded: number; spec
 
 /** OcrItem(래스터 px) → 결과 줄 */
 export function toOcrLine(it: OcrItem, dropped = false): OcrLine {
-  return { text: it.text, box: { x: it.x, y: it.y, w: it.w, h: it.h }, confidence: it.confidence, ...(dropped ? { dropped: true as const } : {}) }
+  return { text: it.text, box: { x: it.x, y: it.y, w: it.w, h: it.h }, confidence: it.confidence, ...(dropped ? { dropped: true as const } : {}), ...(it.candidates && { candidates: it.candidates }) }
 }
 
 /** 쪽 줄 묶음 — 블록에 쓴 줄 + (all) 버린 줄을 위→아래, 왼→오른 순으로 */

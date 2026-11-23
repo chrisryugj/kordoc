@@ -45,6 +45,8 @@ import { dropNestedFragments, isDotFragment, joinLeaderItems, restoreBulletItems
 import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { disableOrtTelemetry } from "./runtime-env.js"
 import { findOcrTextGaps, rememberOcrTextGaps } from "./text-gaps.js"
+import { ctcCandidates } from "./ctc-beam.js"
+import type { OcrLineCandidate } from "../types.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
 export interface OcrItem {
@@ -55,6 +57,8 @@ export interface OcrItem {
   h: number
   /** CTC 평균 신뢰도 0~1 */
   confidence: number
+  /** 이 줄 상자를 읽은 인식 모델의 읽기 후보 (tuning.lineCandidates 일 때, 상자 하나를 읽어 그대로 낸 줄만) */
+  candidates?: OcrLineCandidate[]
 }
 
 export interface OcrPageStats {
@@ -100,6 +104,8 @@ export interface OcrTuning {
   /** 저신뢰로 버린 줄이 많은 쪽을 큰 검출로 다시 읽기 (pdf-ocr recognizeOcrPage). 그림 영역만 읽을 때는 끈다 — 차트 글 영역은
    *  눈금·범례 조각을 늘 많이 버려 다시 읽기가 걸렸고 "single" 이 "sing le" 로 갈렸다(ODL 027) */
   redetect: boolean
+  /** 줄마다 읽기 후보를 이 개수까지 낸다 (ParseOptions.ocrLineCandidates, ctc-beam.ts) — 없으면 후보를 구하지 않는다 */
+  lineCandidates?: number
 }
 
 export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
@@ -788,10 +794,12 @@ export class OcrEngine {
     }
 
     if (footer) jobs.push({ box: footer, rot: 0, group: group++, footer: true })
-    const results = await this.recognizeJobs(rgba, width, jobs, tuning.recBatch)
+    const results = await this.recognizeJobs(rgba, width, jobs, tuning.recBatch, tuning.lineCandidates)
+    /** 읽기 후보를 받은 줄과 그때의 글 — 끝에서 글이 그대로인 줄에만 후보를 단다(이어 붙이거나 다시 읽어 고친 줄은 그 상자의 후보가 아니다) */
+    const candidatesOf = tuning.lineCandidates ? new Map<OcrItem, { text: string; list: OcrLineCandidate[] }>() : undefined
 
     // 회전 후보 그룹은 최고 신뢰도 하나만
-    const best = new Map<number, { job: LineJob; text: string; confidence: number; steps: number[]; stepPx: number }>()
+    const best = new Map<number, { job: LineJob; text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[] }>()
     // 끝자락을 지운 crop 은 원본보다 신뢰도가 KEEP_MARGIN 넘게 높을 때만 — 받침 조각 오독은 원본 0.46~0.89 → 지운 쪽 0.99 로
     // 차이가 크고, 차이가 작은 쪽은 띄어쓰기·대시 길이 같은 잡음이었다(과학영재 안내문 "gifted" → "gifed" +0.015)
     const score = (job: LineJob, confidence: number) => confidence - (job.keep ? KEEP_MARGIN : 0)
@@ -892,6 +900,7 @@ export class OcrEngine {
         if (stats) {
           stats.droppedLowConf++
           stats.dropped?.push({ text, ...this.itemBox(rgba, width, job.box, tuning), confidence })
+          if (r.candidates && job.join === undefined && stats.dropped) stats.dropped[stats.dropped.length - 1].candidates = r.candidates
         }
         continue
       }
@@ -901,6 +910,7 @@ export class OcrEngine {
         continue
       }
       const item = { text, ...this.itemBox(rgba, width, job.box, tuning), confidence }
+      if (r.candidates) candidatesOf?.set(item, { text, list: r.candidates })
       if (job.rot === 0) rememberOcrTextGaps(item, findOcrTextGaps(rgba, width, job.box, read, text, steps, stepPx))
       if (job.rot === 0 && job.keep === undefined) boxOf.set(item, job.box)
       items.push(item)
@@ -1074,6 +1084,7 @@ export class OcrEngine {
     // 줄 끝 쪽 번호(rowTailBoxes)까지 들어온 뒤에 잇는다
     if (tuning.postprocess) items = joinGapLeaders(rgba, width, items)
     if (tuning.postprocess) restoreBulletItems(items)
+    if (candidatesOf) for (const it of items) { const c = candidatesOf.get(it); if (c && c.text === it.text) it.candidates = c.list }
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
   }
@@ -1147,10 +1158,12 @@ export class OcrEngine {
     pageW: number,
     jobs: LineJob[],
     batchSize: number,
-  ): Promise<Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null>> {
+    /** 줄마다 읽기 후보를 이 개수까지 함께 구한다 (0 이면 구하지 않는다) */
+    nBest = 0,
+  ): Promise<Array<{ text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[] } | null>> {
     const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot, j.keep, j.stretch))
     const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w)
-    const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number } | null> = new Array(jobs.length).fill(null)
+    const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[] } | null> = new Array(jobs.length).fill(null)
     const plane = REC_HEIGHT
     for (let s = 0; s < order.length;) {
       // 폭 오름차순이라 배치 마지막 원소가 최대 폭
@@ -1204,6 +1217,8 @@ export class OcrEngine {
           if (!keep.every(Boolean)) kept = { ...r, text: chars.filter((_, i) => keep[i]).join(""), steps: r.steps.filter((_, i) => keep[i]) }
         }
         results[ci] = kept && { ...kept, stepPx: (bw / T) * (src / crops[ci].w) }
+        const candidates = nBest > 0 && results[ci] ? ctcCandidates(data.subarray(k * T * C, (k + 1) * T * C), T, C, this.dict, nBest) : undefined
+        if (candidates?.length) results[ci]!.candidates = candidates
       })
       s = e
     }
