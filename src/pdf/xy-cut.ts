@@ -112,7 +112,7 @@ export function xyCutOrder(items: NormItem[], gapThreshold: number, depth = 0, w
 
   const hValid = hCut.gap >= minGap
   const vValid = (vCut.gap >= vMinGap || (vCut.gap >= PROSE_GUTTER_MIN_GAP && isProseGutter(items, vCut.position))) &&
-    !splitsSpacedLabel(items, vCut.position) && !splitsLoneRowTail(items, vCut.position)
+    !splitsSpacedLabel(items, vCut.position) && !splitsLoneRowTail(items, vCut.position) && !splitsEmptyFieldRows(items, vCut.position)
 
   // 축 선택: 기본 Y 우선 (한국 공문서는 단일 컬럼 위주 — 코퍼스 검증 결과 Y 우선이 안정적).
   // 단, 수직 갭이 수평 갭보다 명백히 크면(1.5×) 컬럼 분리로 보고 X 우선
@@ -329,6 +329,17 @@ function splitsLoneRowTail(items: NormItem[], x: number): boolean {
   // 머리가 영역 왼쪽 끝에서 시작해 꼬리까지 한 줄을 채우면 4em 빈칸까지 같은 줄로 본다
   const text = [...head, ...tail].map(i => i.text).join("")
   return !/[가-힣]/.test(text) && /[\u3040-\u30ff\u3400-\u9fff]/.test(text) && gap <= fs * 4 && fills && headBox.x <= box.x + fs
+}
+
+/**
+ * 값이 빈 입력란 줄("▶참가업체 :    ▶전화번호 :")이 두 칸으로 늘어선 서식 — 왼쪽 줄이 모두 쌍점으로 끝나고, 쌍점으로 끝나는 오른쪽 줄
+ * 둘 이상이 왼쪽 줄과 같은 기준선이면 단이 아니라 한 줄의 두 칸이다. 세로로 자르면 왼쪽 칸을 다 읽고 오른쪽 칸을 읽었다(위험물 반입 신청서)
+ */
+function splitsEmptyFieldRows(items: NormItem[], x: number): boolean {
+  const left = groupByY(items.filter(i => i.x + i.w / 2 < x)), right = groupByY(items.filter(i => i.x + i.w / 2 >= x))
+  const field = (row: NormItem[]) => /[:：]$/.test([...row].sort((a, b) => a.x - b.x).map(i => i.text).join("").trim())
+  if (left.length < 2 || !left.every(field)) return false
+  return right.filter(r => field(r) && left.some(l => Math.abs(l[0].y - r[0].y) <= 2)).length >= 2
 }
 
 /** Fresh wrap evidence is needed only for a region with a possible horizontal cut. */
