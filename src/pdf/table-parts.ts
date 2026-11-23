@@ -570,6 +570,23 @@ function outlineOnly(pairs: Array<[Anchor, Anchor]>, cell: (a: Anchor) => IRCell
   return filled.length === 1 && outlineContinues(cell(filled[0][0]), cell(filled[0][1]))
 }
 
+/**
+ * 칸 안 표 이어짐 — 틀 칸 끝에 놓인 표가 쪽을 넘어 다음 쪽 틀 칸 첫머리에서 머리 행(글 있는 칸 둘 이상)을 되풀이하며 이어진다. 틀 칸은
+ * 한 칸이 갈린 것이고 안의 두 조각은 한 표다 — 이은 표 블록을 돌려준다 (간접시계장치 설치기준 [별표 5의6]: 제목·표·주를 한 틀에 담은
+ * 1열 표 안 8열 표의 끝 행 "… 1개 설치할 / 것" — 다음 쪽 조각이 머리 두 행을 되풀이한 따로 선 표로 남았다)
+ */
+function joinNestedParts(u: IRCell, d: IRCell): IRBlock | null {
+  const prev = u.blocks?.[u.blocks.length - 1], curr = d.blocks?.[0]
+  if (!prev?.table || !curr?.table || !prev.pageNumber || curr.pageNumber !== prev.pageNumber + 1) return null
+  const px = TABLE_COLXS.get(prev.table), cx = TABLE_COLXS.get(curr.table)
+  if (!px || !cx || !shiftedSame(px, cx, false) || curr.table.cells[0].filter(c => c.text.trim()).length < 2
+    || repeatedHeaderRows(prev.table, curr.table) <= 0) return null
+  const table = joinClipParts(prev, curr)
+  if (!table || table.rows >= prev.table.rows + curr.table.rows) return null
+  markJoinedPages(table, prev, curr)
+  return { ...prev, table }
+}
+
 /** 쪽 경계 괘선과 목록 번호 증거 범위 — joinSplitParts 가 두 조각 곁정보로 정한다 */
 interface Cut { open: boolean; ruled: boolean; list: "any" | "multi" | "none" }
 const NO_CUT: Cut = { open: false, ruled: false, list: "any" }
@@ -626,9 +643,10 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
   // 이때 다른 열의 한 줄 끝난 글은 칸 안 문단 경계다(선관위 "기능장" / "기사(6) …") — 끝난 이름표 모순(lineEnded)을 보지 않는다.
   // 법령 별표 272건에서 칸 조각 이어짐 + 글 쌍 둘 이상 35건이 모두 쪼개진 행, 표 GT 에서 새 행 1건(위 규제영향분석서, 괘선 있는 쪽 경계)
   const contentPairs = pairs.filter(([u, d]) => hasContent(u.cell) && hasContent(d.cell))
+  const nested = !textOnly && pairs.length === 1 ? joinNestedParts(cell(pairs[0][0]), cell(pairs[0][1])) : null
   const carriedSplit = !textOnly && carried && !newCell && (contentPairs.length <= 1 || contentPairs.every(([, d]) => d.rs > 1)
     || (!cut.ruled && contentPairs.some(([u, d]) => wordOverflows(cell(u), cell(d), colXs[u.c], colXs[u.c + u.cs]))))
-  if (!carriedSplit && !band) {
+  if (!nested && !carriedSplit && !band) {
     // 앞 쪽 칸이 한 줄로 끝난 이름표(다음 어절이 들어갈 자리가 남음)인데 뒤 쪽 같은 열에 다른 글이 있으면 그 열은 새 칸이다 — 끝난 칸의
     // 이어진 조각은 글이 없어 클립조차 없다. 다른 열 끝줄이 꽉 찬 것(글 이어짐)보다 이 모순이 앞선다 (편람 [별표 4] 가로 판
     // "8. 글자 | …꽉 찬 끝줄" 다음 쪽 "9. 한글과 함께 적는 외국글자 | 가. 단어를 …", 시험기준표 "액성한계·소성한계 | KS F 2303" 다음 쪽
@@ -666,6 +684,10 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
     appendCell(table.cells[u.r][u.c], table.cells[d.r][d.c])
     // 뒤 조각에서 여러 행을 덮던 칸은 이은 칸이 그만큼 더 덮는다 (아래 줄이기가 경계 행 하나를 뺀다)
     if (d.rs > 1) table.cells[u.r][u.c].rowSpan = u.rs + d.rs
+  }
+  if (nested) {
+    const blocks = cell(pairs[0][0]).blocks!
+    blocks.splice(blocks.indexOf(cell(pairs[0][1]).blocks![0]) - 1, 2, nested)
   }
   // 위에서 내려와 두 행에 걸친 세로 병합 칸은 한 행 줄어든다
   for (let r = 0; r < first; r++) for (let c = 0; c < table.cols; c++) {

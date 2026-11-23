@@ -1079,6 +1079,36 @@ describe("쪽 넘김 3차 — 목록 이어짐·괘선 없는 쪽 경계·칸 �
     assert.ok(res2 && !res2.split)
   })
 
+  it("틀 칸 안 표가 다음 쪽 틀 칸 첫머리에서 머리 행을 되풀이하면 틀 행은 갈린 한 행이고 안 표는 한 표다", () => {
+    // 간접시계장치 설치기준 [별표 5의6]: 제목·표·주를 한 틀(1열 표)에 담았고, 안 표 끝 행 "… 1개 설치할 / 것" 이 쪽 경계에서 갈렸다
+    const xs = [60, 160, 300, 500]
+    const make = (head: string): IRBlock[] => {
+      const inPrev = grid(3, 3, [[0, 0, "차종"], [0, 1, "승용자동차"], [0, 2, "화물자동차"], [1, 0, "실내후사장치"], [1, 1, "설치 필요"], [1, 2, "설치 가능"],
+        [2, 0, "앞면시계장치"], [2, 1, "설치 가능"], [2, 2, "설치 필요\n- 1개 설치할"]])
+      const inCurr = grid(2, 3, [[0, 0, head], [0, 1, "승용자동차"], [0, 2, "화물자동차"], [1, 2, "것"]])
+      FILLER_CELLS.add(inCurr.cells[1][0])
+      FILLER_CELLS.add(inCurr.cells[1][1])
+      const framePrev = grid(2, 1, [[0, 0, "간접시계장치 설치대상 및 기준"], [1, 0, "차종\n승용자동차\n화물자동차\n실내후사장치\n설치 필요\n설치 가능\n앞면시계장치\n설치 가능\n설치 필요\n- 1개 설치할"]])
+      framePrev.cells[1][0].blocks = [clipBlock(inPrev, xs, 1, 40, 600)]
+      const frameCurr = grid(2, 1, [[0, 0, `${head}\n승용자동차\n화물자동차\n것`], [1, 0, "주) 거울의 경우에는 2m 이상 높이에 설치한다"]])
+      frameCurr.cells[0][0].blocks = [clipBlock(inCurr, xs, 2, 700, 80)]
+      return [clipBlock(framePrev, [58, 502], 1, 34, 750), clipBlock(frameCurr, [58, 502], 2, 400, 384)]
+    }
+    const inner = (blocks: IRBlock[]): IRTable[] => blocks.flatMap(b => b.table!.cells.flat()).flatMap(c => c.blocks ?? []).map(b => b.table!)
+    const blocks = make("차종")
+    mergeCrossPageTables(blocks, PAGE_H)
+    assert.equal(blocks.length, 1)
+    assert.equal(blocks[0].table!.rows, 3)
+    const joined = inner(blocks)
+    assert.equal(joined.length, 1)
+    assert.equal(joined[0].rows, 3)
+    assert.equal(joined[0].cells[2][2].text, "설치 필요\n- 1개 설치할\n것")
+    // 머리 행이 다르면 다른 표다 — 안 표 두 개가 그대로 남는다
+    const other = make("구분")
+    mergeCrossPageTables(other, PAGE_H)
+    assert.deepEqual(inner(other).map(t => t.rows), [3, 2])
+  })
+
   it("괘선 없는 쪽 경계에서는 한 줄 이름표와 다음 번호 항목이 갈려도 쪼개진 행이다", () => {
     // 직무교육기관 기준: "안전 | 9) 안전검사기관의 종사자 | 안전검사" / 다음 쪽 "검사 | 10) 자율안전검사기관의 종사자 | (빈 칸)" —
     // 두 줄 이름표 "안전 / 검사" 와 칸 안 목록이 쪽 경계에서 갈렸다
