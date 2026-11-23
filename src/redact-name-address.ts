@@ -597,3 +597,30 @@ export const NAME_VARIANTS: readonly Variant[] = [
     },
   },
 ]
+
+// ─── 학습 모델 스팬 마스킹 (redact-model.ts) ───────────────
+
+const REGION_PREFIX_RE = new RegExp(`^(?:${REGION})(?=\\s)`)
+
+/** 모델 주소 스팬에도 룰과 같은 자리표시자 기준 — 번호가 0 뿐인 "자양로 000" 은 주소가 아니다 (cases.md 정책) */
+export const modelAddressOk = (norm: string): boolean => !PLACEHOLDER_NO.test(norm)
+
+/**
+ * 학습 모델이 찾은 인명·주소 스팬을 룰 매치와 같은 서식으로 가린다 — 인명은 성(겹성은 두 글자)을, 주소는 앞의
+ * 시·도·시·군·구를 남기고 그 뒤 글자·숫자만 가린다. 구분자·공백·기존 가림표(○·*)는 그대로라 길이가 같다.
+ * 공백을 뺀 두 글자 이하 인명은 다 가린다 — 모델은 성 없는 이름("지훈이랑")도 잡아서 첫 글자가 성이라는 보장이 없다.
+ * norm 은 normalizeForDetect 사본(같은 길이) — 글자 판정을 그쪽에서 한다
+ */
+export function maskModelSpan(value: string, norm: string, rule: "name" | "address", maskChar: string): string {
+  let keep = 0
+  if (rule === "address") keep = REGION_PREFIX_RE.exec(norm)?.[0].length ?? 0
+  else {
+    const first = norm.search(/\p{L}/u)
+    if (first >= 0 && norm.replace(/\s/g, "").length >= 3) {
+      keep = first + (DOUBLE_SURNAMES.some((d) => norm.startsWith(d, first)) ? 2 : 1)
+    }
+  }
+  let out = ""
+  for (let i = 0; i < value.length; i++) out += i >= keep && /[\p{L}\p{N}]/u.test(norm[i]) ? maskChar : value[i]
+  return out
+}

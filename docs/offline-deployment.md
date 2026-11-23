@@ -55,6 +55,11 @@ node node_modules/kordoc/dist/cli.js models --status
 내부망에서 쓰려면 같은 파일을 모델 캐시의 `ppocr/det_server.onnx`·`ppocr/det_v6_medium.onnx`·`ppocr/rec_korean_hw_v1.2.onnx`·`ppocr/rec_korean_hw_v1.2.yml`(v1.2 의 사전)·`ppocr/rec_korean_hw.onnx`(v1.0) 로 반입하거나(엔진이 SHA-256 을 검증한다), `ocrDet`·`ocrRec`·`ocrRecDict` 에 로컬 파일
 `{path, sha256}` 을 준다 — 로컬 파일은 캐시에 복사하지 않고 그 경로에서 읽어 대조한다.
 
+개인정보 마스킹의 인명·주소 학습 모델(`redact --model`·MCP `use_model`, schift-ko-pii-ax-v1)도 `models`·`--with-models` 묶음에 들지 않는다.
+내부망에서 쓰려면 인터넷 되는 PC 에서 한 번 켜서 받은 `schift-pii/tokenizer.json`·`schift-pii/pii_int8.onnx`(151MB, `--model q4` 는
+`schift-pii/pii_q4b128.onnx` 81MB)를 내부망 PC 모델 캐시의 같은 자리로 반입한다(SHA-256 을 검증한다). 받지 못하면 `--model` 은 모델이 없다는
+실패로 끝나고, `--model` 없이 쓰는 마스킹은 영향이 없다.
+
 ## 4. 운영 시 제한 모드
 
 시스템 환경변수 또는 서비스 정의에 **두 변수를 고정**하는 것을 권장한다.
@@ -92,7 +97,7 @@ MCP 서버는 기동 시 적용된 제한을 stderr 에 한 줄 남긴다:
 
 | # | 위치 | 목적지 | 발생 조건 | 차단 |
 |---|------|--------|-----------|------|
-| 1 | `src/pdf/formula/models.ts` | `huggingface.co` | OCR/수식 기능 사용 + 모델 미캐시 (최초 1회) | `KORDOC_OFFLINE=1` |
+| 1 | `src/pdf/formula/models.ts` | `huggingface.co` | OCR/수식 기능, `redact --model` 사용 + 모델 미캐시 (최초 1회) | `KORDOC_OFFLINE=1` |
 | 2 | `src/watch.ts` | 운영자가 지정한 URL | `kordoc watch --webhook <url>` 명시 시에만 | `KORDOC_OFFLINE=1` |
 | 3 | `src/pdf/hayro.ts` | 패키지 안 자기 파일(`hayro-pdf.wasm`, 번들과 같은 출처) | 브라우저에서 PDF 를 읽을 때. Node 는 파일로 읽어 `fetch` 를 부르지 않는다 | 바깥 통신 아님 |
 
@@ -107,7 +112,7 @@ grep -rn 'await fetch(' dist/*.js dist/*.cjs        # 빌드 산출물 기준(ES
 `data:`·`about:` 외 모든 요청을 차단한다. 이 제한은 `KORDOC_OFFLINE` 설정과 무관하게
 항상 적용되며, 문서가 참조하는 외부 이미지·CSS·글꼴도 가져오지 않는다.
 
-4.18.4부터 네이티브 OCR·수식 엔진은 ONNX Runtime 및 Transformers를 동적으로 불러오기 전에
+4.18.4부터 네이티브 OCR·수식 엔진(과 `redact --model` 의 인명·주소 모델)은 ONNX Runtime 및 Transformers를 동적으로 불러오기 전에
 `ORT_DISABLE_TELEMETRY=1`을 설정한다. ONNX Runtime 1.29의 POSIX 구현은 이 값으로
 통계 업로더·이벤트·영구 장치 식별자의 생성을 생략한다. 이는 통계 스레드가 프로세스
 종료 중 이미 해제된 mutex를 사용하는 충돌도 방지한다. kordoc가 초기화하기 전에 다른

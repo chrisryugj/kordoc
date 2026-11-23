@@ -21,7 +21,8 @@
 
 import { parse } from "./index.js"
 import { detectFormat, detectZipFormat, detectOle2Format } from "./detect.js"
-import { redactMarkdown, normalizeForDetect, DEFAULT_REDACT_RULES, type RedactHit, type RedactOptions } from "./redact.js"
+import { redactMarkdown, normalizeForDetect, DEFAULT_REDACT_RULES, type RedactHit, type RedactOptions, type RedactRule } from "./redact.js"
+import { sharedPiiModel, type PiiModel, type PiiModelOptions } from "./redact-model.js"
 import { literalsFromMarkdown, findLiterals, type ScrubCtx, type RedactFileHit } from "./redact-scrub.js"
 import { scrubHwpx } from "./redact-hwpx.js"
 import { scrubHwp5 } from "./redact-hwp5.js"
@@ -33,6 +34,12 @@ export interface RedactDocumentOptions extends RedactOptions {
   filePath?: string
   /** 탐지만 하고 결과 파일 바이트를 만들지 않는다 */
   dryRun?: boolean
+  /**
+   * 인명·주소를 학습 모델(schift-ko-pii-ax-v1, redact-model.ts)로도 찾는다 — true·옵션이면 공용 모델을(처음 한 번 받아)
+   * 열고, loadPiiModel() 로 연 모델을 넘겨도 된다. 켜면 rules 에 name·address 가 없어도 더한다. 본문 마크다운에서 찾은
+   * 값은 사전 룰 값과 똑같이 리터럴로 파일 전체(머리말·미리보기·메타데이터)에 퍼진다
+   */
+  model?: boolean | PiiModelOptions | PiiModel
 }
 
 export interface RedactDocumentResult {
@@ -58,6 +65,20 @@ export interface RedactDocumentResult {
 
 // ─── 진입점 ──────────────────────────────────────────
 
+async function resolveModel(m: RedactDocumentOptions["model"]): Promise<PiiModel | undefined> {
+  if (!m) return undefined
+  if (typeof m === "object" && "detect" in m) return m
+  return sharedPiiModel(m === true ? undefined : m)
+}
+
+/** 모델을 켜면 인명·주소 룰도 켠다 — 모델 스팬은 그 룰 자리에서만 쓰인다 */
+function withModelRules(rules: readonly RedactRule[], on: boolean): readonly RedactRule[] {
+  if (!on) return rules
+  const out = [...rules]
+  for (const r of ["name", "address"] as const) if (!out.includes(r)) out.push(r)
+  return out
+}
+
 /** 세분화 포맷 판정 — ZIP·OLE 내부 구조까지 (PPTX·XLS 를 hwpx·hwp 로 오인하지 않게) */
 async function preciseFormat(buffer: ArrayBuffer): Promise<string> {
   let format: string = detectFormat(buffer)
@@ -73,13 +94,18 @@ async function preciseFormat(buffer: ArrayBuffer): Promise<string> {
 export async function redactDocument(input: ArrayBuffer | Uint8Array, options?: RedactDocumentOptions): Promise<RedactDocumentResult> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input)
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-  const rules = options?.rules ?? DEFAULT_REDACT_RULES
+  const model = await resolveModel(options?.model)
+  const rules = withModelRules(options?.rules ?? DEFAULT_REDACT_RULES, !!model)
   const maskChar = options?.maskChar ?? "●"
   const format = await preciseFormat(buffer)
 
   const parsed = await parse(buffer, options?.filePath ? { filePath: options.filePath } : undefined)
   if (!parsed.success) throw new Error(`파싱 실패: ${parsed.error}`)
-  const md = redactMarkdown(parsed.markdown, { rules, maskChar })
+  // 이미지 data URI 줄은 마스킹 대상이 아니라 모델에도 넣지 않는다 (같은 길이 공백으로 — 오프셋 유지)
+  const modelSpans = model
+    ? await model.detect(parsed.markdown.split("\n").map((l) => l.includes("data:image/") ? " ".repeat(l.length) : l).join("\n"))
+    : undefined
+  const md = redactMarkdown(parsed.markdown, { rules, maskChar, modelSpans })
   const ctx: ScrubCtx = { rules, maskChar, literals: literalsFromMarkdown(parsed.markdown, md.hits) }
   const lit = maskLiterals(md.text, ctx)
   const base = { format, markdown: lit.text, markdownHits: [...md.hits, ...lit.hits].sort((a, b) => a.index - b.index) }

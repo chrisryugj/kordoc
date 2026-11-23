@@ -608,6 +608,8 @@ export { validateHwpx } from "./validate.js"
 export type { ValidateResult, ValidateIssue } from "./validate.js"
 export { redactText, redactMarkdown, DEFAULT_REDACT_RULES } from "./redact.js"
 export type { RedactRule, RedactHit, RedactTextResult, RedactOptions } from "./redact.js"
+export { loadPiiModel, getPiiModelsDir } from "./redact-model.js"
+export type { PiiModel, PiiModelOptions, PiiModelVariant, ModelSpan } from "./redact-model.js"
 export { blocksToChunks } from "./chunks.js"
 export type { DocChunk, ChunkOptions } from "./chunks.js"
 

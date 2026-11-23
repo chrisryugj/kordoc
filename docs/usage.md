@@ -409,6 +409,7 @@ npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx                      # 서
 npx kordoc redact 민원서류.hwpx --mask-char '*' -o 마스킹.hwpx      # 마스크 문자 (기본 ●)
 npx kordoc redact 계약서.hwp --rules rrn,phone,crn --json --dry-run # 룰 선택 + 위치별 리포트만 (crn·IP 는 opt-in)
 npx kordoc redact 민원서류.hwpx --rules rrn,phone,email,name,address -o 마스킹.hwpx  # 이름·주소까지 (opt-in)
+npx kordoc redact 민원서류.hwpx --model -o 마스킹.hwpx              # 이름·주소를 학습 모델로도 (맨 이름·가린 이름까지, 아래 참고)
 npx kordoc redact 공문.pdf                                         # PDF·DOCX 등은 마스킹된 .redacted.md 만
 
 # 렌더
@@ -425,6 +426,12 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 ```
 
 - 개인정보 마스킹 결과는 공개 전에 사람이 최종 확인해야 합니다. 이미지 속 글자는 자동 탐지 범위에 포함되지 않습니다.
+- `redact --model` 은 인명·주소를 사전·문맥 룰과 함께 학습 모델 [schift-io/schift-ko-pii-ax-v1](https://huggingface.co/schift-io/schift-ko-pii-ax-v1)
+  로도 찾습니다(name·address 룰을 함께 켬). 룰이 일부러 놓치는 문맥 없는 맨 이름("이수아는 …"), 가린 이름(`홍○동`·`김영*`), 띄어 쓴
+  이름(`정 하 늘`), 동·지번만 있는 주소까지 잡고, 가리는 서식은 룰과 같습니다(성·시·군·구는 남김). 처음 한 번 int8 모델(151MB, `--model q4` 는
+  81MB)을 `~/.cache/kordoc/models/schift-pii/` 에 받고 SHA-256 을 대조하며, `onnxruntime-node`(optional dependency)가 필요합니다. 512토큰
+  조각마다 CPU 로 수십~200ms 가 더 듭니다. 폐쇄망은 온라인 PC 의 같은 캐시 폴더 파일을 반입하세요. 모델은 Schift License v2.0(Apache 2.0 +
+  직전 회계연도 매출 1천만 달러 초과 법인의 영리 사용 제한, 연구·평가·비영리는 항상 허용)이라 npm 패키지에 들어 있지 않고 켤 때만 받습니다.
 - `watch -d` 는 하위 폴더 구조를 그대로 둡니다.
 - `check-ocr-models`·`check-formula-models` 는 없는 모델을 내려받습니다 — 상태만 보려면 `--status-only`.
 - `lint` 에 HWPX·HWP·PDF 등 문서를 주면 본문을 파싱해 검사합니다. 파싱한 글은 연속 공백이 접히고 원문 굵게가 `**` 로
@@ -568,7 +575,8 @@ ZIP 종류를 가르려면 `detectFormat()` 이 `hwpx` 일 때 `await detectZipF
 | 함수 | 설명 |
 |------|------|
 | `lintGongmunText(text, { document?, parsed? })` | 공문서 표기법 27룰 + AI 슬롭 2룰 (`document: true` 면 붙임·"끝." 문서 단위 검사 포함, `parsed: true` 는 문서를 파싱한 글 — 원고 전용 규칙 제외) |
-| `redactMarkdown(text, options?)` / `redactText(...)` | 개인정보 탐지 + 마스킹 — 텍스트 단위 (파일 단위는 CLI `redact`·MCP `redact_document`) |
+| `redactMarkdown(text, options?)` / `redactText(...)` | 개인정보 탐지 + 마스킹 — 텍스트 단위 (파일 단위는 CLI `redact`·MCP `redact_document`). `modelSpans` 에 학습 모델 스팬을 주면 인명·주소에 섞는다 |
+| `loadPiiModel({ variant? })` | 인명·주소 학습 모델(schift-ko-pii-ax-v1, int8·q4) — `await m.detect(text)` 의 스팬을 같은 `text` 의 `redactMarkdown(text, { rules, modelSpans })` 로 |
 | `blocksToChunks(blocks, options?)` | RAG 구조 청크 — 헤딩·개조식 위계 breadcrumb + 표 독립 청크 |
 | `blocksToMarkdown(blocks)` | IRBlock[] → Markdown |
 | `blocksToPages(blocks)` | IRBlock[] → `[{ pageNumber, markdown }]` |

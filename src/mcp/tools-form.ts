@@ -464,8 +464,10 @@ export function registerFormTools(server: McpServer): void {
       mask_char: z.string().min(1).max(1).optional().describe("마스크 문자 1글자 (기본: ●)"),
       output_path: z.string().min(1).optional().describe("출력 경로 (HWPX/HWP는 같은 확장자, 그 외는 .md) — dry_run이 아니면 필수"),
       dry_run: z.boolean().default(false).describe("탐지 리포트만 반환, 파일 미생성"),
+      use_model: z.boolean().default(false)
+        .describe("인명·주소를 학습 모델(schift-ko-pii-ax-v1, int8)로도 탐지 — name·address 룰을 함께 켬. 처음 한 번 151MB를 받고 onnxruntime-node 가 필요. 맨 이름·가린 이름(홍○동)·띄어 쓴 이름까지 잡는다"),
     },
-    async ({ file_path, rules, mask_char, output_path, dry_run }) => {
+    async ({ file_path, rules, mask_char, output_path, dry_run, use_model }) => {
       try {
         const { buffer, resolved } = await readValidatedFile(file_path)
         // ZIP·OLE 내부 구조까지 세분화 — PPTX·XLS 를 hwpx·hwp 로 보고 확장자를 잘못 요구하지 않게 (#80)
@@ -483,7 +485,7 @@ export function registerFormTools(server: McpServer): void {
           return { content: [{ type: "text", text: "output_path가 입력 파일과 같습니다 — 원본을 덮어쓰지 않습니다. 다른 경로를 지정하세요." }], isError: true }
         }
         const { redactDocument } = await import("../redact-doc.js")
-        const r = await redactDocument(buffer, { rules, maskChar: mask_char, filePath: file_path, dryRun: dry_run })
+        const r = await redactDocument(buffer, { rules, maskChar: mask_char, filePath: file_path, dryRun: dry_run, model: use_model })
         // HWPX/HWP 는 파일 안 위치 기준, 그 외는 본문 마크다운 기준. 명단 수천 행이면 응답이 넘치므로 자른다
         const MAX_LINES = 50
         const listed = r.fileHits.length > 0

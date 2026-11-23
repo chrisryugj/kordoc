@@ -102,7 +102,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 - **[기관팩](docs/agency-pack.md)**: 우리 기관 문서 몇 건으로 서식 묶음(`.kpack`)을 만들어 그 서식대로 새 문서 작성
 - **양식**: 필드·누름틀 채우기, 표준 기안문 2종, 도장 날인
 - **검수**: 표기법·공공언어, 구성·AI 문체 게이트, 예산 산출근거 검산, 열린 문서 블록 단위 검수(`lint-blocks`)
-- **보기·보안**: HWPX·HWP 미리보기·영역 추출, 개인정보 마스킹
+- **보기·보안**: HWPX·HWP 미리보기·영역 추출, 개인정보 마스킹(인명·주소는 학습 모델 opt-in `--model`)
 
 서식 보존 패치용 Markdown은 `--keep-layout-tables`로 추출합니다. 적용하지 못한 편집은 건너뛴 사유로 보고합니다. [서식 보존 편집](docs/usage.md#서식-보존-편집) · [CLI 전체](docs/usage.md#-cli)
 
