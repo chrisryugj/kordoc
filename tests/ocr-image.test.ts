@@ -3,8 +3,8 @@
  *
  * 잠근 계약:
  *  1. 메타데이터 DPI 100~1200 은 그대로 (px/pt = dpi/72), 72·96 은 기본값이라 불신
- *  2. DPI 가 없으면 A판(√2)·Letter(11/8.5) 판형으로 추정 — 150dpi A4 스캔이 216dpi 로
- *     가정돼 페이지가 0.69배로 쪼그라들던 것 방지
+ *  2. DPI 가 없으면 A판(√2)·Letter(11/8.5)·4·6배판(257/188) 판형으로 추정. 150dpi A4 스캔이 216dpi 로
+ *     가정돼 페이지가 0.69배로 쪼그라들던 것 방지 (4·6배판: 190×260mm 지침서 150dpi 스캔의 표를 놓쳤다)
  *  3. 판형도 아니면 종전 216dpi (3 px/pt)
  *  4. decodeToRgba: EXIF 방향대로 세운다(Orientation 6 세로 촬영 JPEG — 종전엔 누운 글을 읽어 한글 131자 → 쓰레기 57자),
  *     픽셀이 MAX_OCR_PIXELS 를 넘으면 그 안으로 줄이고 배율(shrink)을 알린다(16000² PNG 1.84GB 회귀)
@@ -32,9 +32,16 @@ describe("imageScale — 이미지 px/pt", () => {
   it("Letter 판형", () => {
     assert.ok(Math.abs(imageScale(2550, 3300) * 72 - 300) < 3)
   })
+  it("4·6배판 판형 (190×260mm 쪽 150dpi·216dpi 렌더)", () => {
+    assert.ok(Math.abs(imageScale(1121, 1535) * 72 - 150) < 3, `150dpi 추정 ${imageScale(1121, 1535) * 72}`)
+    assert.ok(Math.abs(imageScale(1614, 2211) * 72 - 216) < 4, `216dpi 추정 ${imageScale(1614, 2211) * 72}`)
+  })
+  it("기울어진 쪽은 4·6배판으로 보지 않는다 (A4 216dpi 를 3° 돌려 넓힌 캔버스 1915×2616)", () => {
+    assert.equal(imageScale(1915, 2616, undefined, true), 3)
+  })
   it("판형 아님 → 216dpi 가정", () => {
     assert.equal(imageScale(420, 80), 3)
-    assert.equal(imageScale(1614, 2211), 3)
+    assert.equal(imageScale(1500, 2250), 3)
   })
 })
 

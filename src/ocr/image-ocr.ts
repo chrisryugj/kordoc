@@ -34,16 +34,19 @@ const IMAGE_SCALE = 3
  * 이미지 px/pt 스케일 추정. 블록 파이프라인의 문턱(줄 묶음 3pt·괘선 최소 길이 20pt·표 간격)은
  * pt 기준이라, 150dpi 스캔을 216dpi 로 가정하면 페이지가 0.69배로 쪼그라든 좌표가 된다.
  *  1) 메타데이터 DPI(JFIF·pHYs·EXIF) 100~1200 — 72/96 은 기본값·화면값이라 불신
- *  2) 판형: 긴 변/짧은 변이 √2(A판)·11/8.5(Letter) ±2% 면 전면 스캔 — A4 842pt·Letter 792pt 긴 변
+ *  2) 판형: 긴 변/짧은 변이 √2(A판)·11/8.5(Letter)·257/188(4·6배판) ±2% 면 전면 스캔. A4 842pt·Letter 792pt·4·6배판 728.5pt 긴 변.
+ *     4·6배판은 A판 구간과 겹치는 곳(1.386~1.394)을 A판에 내준다. 지침·안내서(190×260mm) 쪽을 216dpi 로 가정해 150dpi 스캔의 표를 놓쳤다.
+ *     기울어진 쪽(skewed)은 4·6배판으로 보지 않는다. A4 를 2~3° 돌려 캔버스를 넓힌 이미지의 비도 1.366~1.381 이다
  *  3) 그 밖: 216dpi 가정 (종전 동작)
  */
-export function imageScale(width: number, height: number, densityDpi?: number): number {
+export function imageScale(width: number, height: number, densityDpi?: number, skewed = false): number {
   if (densityDpi && densityDpi >= 100 && densityDpi <= 1200) return densityDpi / 72
   const long = Math.max(width, height), short = Math.min(width, height)
   if (short > 0) {
     const r = long / short
     if (Math.abs(r / Math.SQRT2 - 1) <= 0.02) return long / 842
     if (Math.abs(r / (11 / 8.5) - 1) <= 0.02) return long / 792
+    if (!skewed && Math.abs(r / (257 / 188) - 1) <= 0.02) return long / 728.5
   }
   return IMAGE_SCALE
 }
@@ -86,9 +89,9 @@ export async function parseImageDocument(
   let width = decodedW, height = decodedH
   if (shrink < 1) warnings.push({ page, code: "PARTIAL_PARSE", message: "OCR 래스터 픽셀 상한으로 이미지 해상도를 축소했습니다 (작은 글자 인식 결손 가능)" })
   // 픽셀 상한으로 줄인 이미지는 같은 지면을 낮은 해상도로 본 것 — px/pt 도 같은 비율로
-  const scale = imageScale(width / shrink, height / shrink, density) * shrink
   // 스캔·사진 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다
   const deskewed = deskewPage(decoded, width, height)
+  const scale = imageScale(width / shrink, height / shrink, density, deskewed.angle !== 0) * shrink
   let data = deskewed.rgba
   const angle = deskewed.angle
 
