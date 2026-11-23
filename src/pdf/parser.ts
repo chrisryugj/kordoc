@@ -37,6 +37,7 @@ import { restoreUnmappedGlyphs, spaceMappedDots } from "./symbol-glyphs.js"
 import { trimTrailingEmptyTableCols } from "./table-trim.js"
 import { selectionContextPages, marginContextBlocks } from "./selection-context.js"
 import { restoreImageBullets } from "./image-bullets.js"
+import { restoreVectorBullets } from "./vector-bullets.js"
 import { detectRightArrowRegions } from "./flow-boxes.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
 import { wrapEquationRuns } from "./equation-runs.js"
@@ -281,6 +282,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         remapSymbolFontItems(visible, (loadedName) => fontObj(loadedName)?.name)
         remapControlGlyphs(visible, differencesOf)
         await restoreImageBullets(visible, imagePage, opList.fnArray, opList.argsArray, imageBulletShapes)
+        restoreVectorBullets(visible, opList.fnArray, opList.argsArray)
         // 글꼴 id(g_d0_fN)는 글꼴 객체마다 다르다. 크롬은 한 서체를 Type3 글꼴 객체 여러 개(256자마다 새 객체)로 쪼개
         // 같은 본문이 "다른 서체"로 보여 제목으로 승격된다(#89). Type3 는 서브셋 접두(ABCDEF+)를 뗀 서체 이름으로 맞춘다.
         // 다른 글꼴은 같은 이름의 서브셋 객체 차이가 굵게 흉내 낸 제목의 유일한 증거일 수 있어 그대로 둔다(ODL 181 Calibri).
