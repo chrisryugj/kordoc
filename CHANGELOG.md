@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.4] - 2026-11-23
+
 ### Added
 
 - `ocrLineCandidates` 옵션(CLI `--ocr-line-candidates <n>`, 1~5) — `ocrLines` 의 연장으로, 줄마다 인식 모델의 상위 읽기 후보를 `candidates: [{ text, probability }]` 로 낸다. `probability` 는 그 읽기의 확률(같은 글이 되는 CTC 정렬을 모두 더한 값 — prefix beam search, 빔 32·시점마다 상위 8 클래스의 근사)이라 같은 줄의 후보끼리 견줄 수 있고, 줄의 `confidence`(가장 유력한 정렬에서 글자별 최고 확률의 평균)와는 다른 척도다. 줄의 `text`·`confidence` 는 그대로다. 후보 글은 표기 후처리 전의 인식 결과이며 줄 상자 하나를 읽어 그대로 낸 줄에만 붙는다. `ocrLines` 와 함께 쓰고 범위 밖 값은 거부한다. parse-worker protocol 2·Python SDK(`ocr_line_candidates`, `result.ocr_line_candidates`)·Java SDK(`ocrLineCandidates(n)`, `result.ocrLineCandidates()`)도 받는다. 기본은 꺼져 있고 끄면 출력은 그대로
 - `pageImages` 옵션(CLI `--page-images png|webp`) — 기존 OCR 경로가 읽은 페이지를 그대로 결과 `pageImages`(페이지마다 `pageNumber`·`filename`·`width`·`height`·`mimeType`·`data`)로 낸다. `ocrLines` 좌표가 가리키는 래스터다 — 이미지 입력은 실제 포맷·EXIF 방향과 무관하게 세운 이미지(OCR 이 기울기를 보정했으면 보정한 것), PDF 는 OCR 배율로 렌더링한 페이지이며 OCR 하지 않은 페이지와 `ocr: false` 에서도 낸다. `true`·`"png"` 는 PNG, `"webp"` 는 무손실 WebP. 누적 128MB·래스터 픽셀 합계 10억에 닿은 뒤의 페이지는 빼고 `SKIPPED_IMAGE` 로 알린다. parse-worker protocol 2(`files` 전송 포함)·Python SDK(`page_images`, `result.page_images`)·Java SDK(`pageImages(…)`, `result.pageImages()`)도 받는다. 기본은 꺼져 있고 끄면 출력은 그대로
+
+### Fixed
+
+- CLI: `fill 서식.hwp -o 결과.hwp` 가 채운 HWPX(zip)를 `.hwp` 이름으로 써서 한글이 열지 못하던 것(#229). `-o` 확장자가 `.hwp` 이면 `generate` 처럼 HWP 5.x 로 바꿔 쓰고 변환 경고를 stderr 로 낸다. `hwpx-preserve`(기본)·`hwpx` 두 경로 모두
 
 ## [4.25.3] - 2026-11-21
 
