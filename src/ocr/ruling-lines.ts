@@ -458,7 +458,7 @@ export function detectRulingLines(
   // Faint internal rules are evidence only when enclosed by an existing dark
   // frame and repeated across both axes. Do not brighten the whole page's grid.
   const cellDividers: PxSegment[] = []
-  const frames: Array<{ x1: number; x2: number; y1: number; y2: number }> = []
+  const frames: Array<{ x1: number; x2: number; y1: number; y2: number; open?: true }> = []
   for (let i = 0; i < horizontals.length && frames.length < 32; i++) {
     const a = horizontals[i]
     for (let j = i + 1; j < horizontals.length && frames.length < 32; j++) {
@@ -470,14 +470,39 @@ export function detectRulingLines(
       frames.push({ x1: a.x1, x2: a.x2, y1, y2 })
     }
   }
+  // 옆 테두리 없는 표: 진한 안쪽 세로선의 위·아래 끝에 같은 폭 가로 괘선이 있고 그 사이 같은 폭 가로 괘선이 넷 이상이면 틀로 본다.
+  // 스캔 판에서 0.12mm 괘선이 흐려져(휘도 ~223) 시험일정표 "구분│일자" 열이 합쳐졌다(검정고시 계획 2쪽)
+  for (const a of horizontals) {
+    if (frames.length >= 32 || a.x2 - a.x1 < minLenPx * 3) continue
+    const same = horizontals.filter(b => Math.abs(a.x1 - b.x1) <= tol && Math.abs(a.x2 - b.x2) <= tol)
+    for (const v of inkV) {
+      if (v.x1 <= a.x1 + tol || v.x1 >= a.x2 - tol || Math.abs(v.y1 - a.y1) > tol) continue
+      const b = same.find(h => Math.abs(h.y1 - v.y2) <= tol)
+      if (!b || b.y1 - a.y1 < minLenPx * 2 || same.filter(h => h.y1 >= a.y1 - tol && h.y1 <= b.y1 + tol).length < 4) continue
+      if (!frames.some(f => Math.abs(f.y1 - a.y1) <= tol && Math.abs(f.y2 - b.y1) <= tol)) frames.push({ x1: a.x1, x2: a.x2, y1: a.y1, y2: b.y1, open: true })
+      break
+    }
+  }
   if (frames.length) {
     const faint = new Uint8Array(ink.length)
     for (let p = 0; p < faint.length; p++) if (luma[p] <= 240 && rgba[p * 4 + 3] >= 128) faint[p] = 1
     const hs = detectBands(faint, width, height, maxThickPx, false, solid)
     const vs = detectBands(faint, width, height, maxThickPx, true, solid)
+    // 열린 틀은 좌우 3px 보다 12 이상 어두운 옅은 픽셀만 세로선 후보로. 연한 색 머리 띠가 통째로 옅은 잉크라 열 괘선이 띠에 묻혀 굵은 덩어리로 버려졌다
+    const faintCol = new Uint8Array(ink.length)
+    for (let p = 0; p < faint.length; p++) {
+      const x = p % width
+      if (faint[p] && x >= 3 && x + 3 < width && luma[p] + 12 <= Math.min(luma[p - 3], luma[p + 3])) faintCol[p] = 1
+    }
+    const vsOpen = frames.some(f => f.open) ? detectBands(faintCol, width, height, maxThickPx, true, solid) : []
     for (const f of frames) {
-      const innerH = hs.filter(h => h.y1 > f.y1 + tol && h.y1 < f.y2 - tol && Math.abs(h.x1 - f.x1) <= tol && Math.abs(h.x2 - f.x2) <= tol)
-      const innerV = vs.filter(v => v.x1 > f.x1 + tol && v.x1 < f.x2 - tol && Math.abs(v.y1 - f.y1) <= tol && Math.abs(v.y2 - f.y2) <= tol)
+      // 열린 틀의 행 괘선은 틀 끝이나 틀을 가로지르는 진한 열 괘선에서 시작·끝나도 된다. 병합된 첫 열 옆 칸만 가르는 옅은 행 괘선(미래전략포럼 개요 스캔 판)
+      const colAt = (x: number) => inkV.some(v => Math.abs(v.x1 - x) <= tol && v.y1 <= f.y1 + tol && v.y2 >= f.y2 - tol)
+      const endsAtEdge = (h: PxSegment) => f.open
+        ? (Math.abs(h.x1 - f.x1) <= tol || colAt(h.x1)) && (Math.abs(h.x2 - f.x2) <= tol || colAt(h.x2))
+        : Math.abs(h.x1 - f.x1) <= tol && Math.abs(h.x2 - f.x2) <= tol
+      const innerH = hs.filter(h => h.y1 > f.y1 + tol && h.y1 < f.y2 - tol && endsAtEdge(h))
+      const innerV = (f.open ? vsOpen : vs).filter(v => v.x1 > f.x1 + tol && v.x1 < f.x2 - tol && Math.abs(v.y1 - f.y1) <= tol && Math.abs(v.y2 - f.y2) <= tol)
       // 진한 안쪽 세로선이 틀을 다 가로지르는 것도 열 근거다 — 쪽을 넘는 표는 바닥 괘선이 옅어 틀 아래끝이 안쪽 가로선이고 세로선은
       // 그 아래로 이어진다(약품 이상사례 표: 왼쪽 이름 칸 행 구분선이 밝기 211 로 옅어 이름 다섯이 한 칸에 몰렸다). 옅은 세로선은 틀에 맞는 것만 더한다 —
       // 음영 머리 띠의 옅은 자국이 걸친 머리 칸("제6(당)기")을 갈랐다(회계표)

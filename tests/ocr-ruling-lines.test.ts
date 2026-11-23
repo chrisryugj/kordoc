@@ -384,6 +384,33 @@ describe("light grid inside a dark frame", () => {
     const lines = detectRulingLines(rgba, w, h, SCALE)
     for (const y of [140, 220, 300]) assert.ok(lines.horizontals.some(l => Math.abs(l.y1 - y) <= 2 && l.x1 <= 62 && l.x2 >= 738), `y=${y} 전폭`)
   })
+
+  // 옆 테두리 없는 표(검정고시 계획 시험일정표 스캔 판): 가로 괘선 여섯, 연한 색 머리 띠, 진한 열 괘선 하나, 흐려진 열 괘선(휘도 223) 하나
+  const openTable = (dark: boolean) => {
+    const w = 800, h = 500, rgba = makeCanvas(w, h)
+    fillRect(rgba, w, 60, 60, 740, 140, 235)
+    for (const y of [60, 140, 200, 260, 320, 380]) drawHLine(rgba, w, 60, 740, y)
+    if (dark) drawVLine(rgba, w, 500, 60, 381)
+    for (let y = 60; y <= 381; y++) { ink(rgba, w, 250, y, 223); ink(rgba, w, 251, y, 223) }
+    return detectRulingLines(rgba, w, h, SCALE)
+  }
+  it("옆 테두리 없는 표: 진한 열 괘선이 틀을 가로지르면 머리 띠를 지나는 옅은 열 괘선도 받는다", () => {
+    const { verticals } = openTable(true)
+    assert.ok(verticals.some(v => Math.abs(v.x1 - 250.5) <= 2 && v.y1 <= 64 && v.y2 >= 377), JSON.stringify(verticals))
+  })
+  it("옆 테두리 없는 표: 진한 열 괘선이 없으면 옅은 줄은 선이 아님", () => {
+    const { verticals } = openTable(false)
+    assert.ok(!verticals.some(v => Math.abs(v.x1 - 250.5) <= 2), JSON.stringify(verticals))
+  })
+  it("옆 테두리 없는 표: 병합된 첫 열 옆 칸만 가르는 옅은 행 괘선(열 괘선에서 틀 끝까지)을 받는다", () => {
+    // 미래전략포럼 개요 스캔 판: 연도 묶음 행 괘선은 전폭, 그 안 차수 행 괘선은 첫 열 괘선(x 200)부터 오른쪽 끝까지 옅게(휘도 225)
+    const w = 800, h = 500, rgba = makeCanvas(w, h)
+    for (const y of [60, 100, 260, 420]) drawHLine(rgba, w, 60, 740, y)
+    for (const x of [200, 300]) drawVLine(rgba, w, x, 60, 421)
+    for (const y of [140, 180, 220, 300, 340, 380]) for (let x = 202; x <= 740; x++) ink(rgba, w, x, y, 225)
+    const { horizontals } = detectRulingLines(rgba, w, h, SCALE)
+    for (const y of [140, 180, 220, 300, 340, 380]) assert.ok(horizontals.some(l => Math.abs(l.y1 - y) <= 2 && l.x1 <= 204 && l.x2 >= 736), `y=${y} ${JSON.stringify(horizontals)}`)
+  })
 })
 
 it("splits a line at recovered cell boundaries but preserves a merged header", async () => {
