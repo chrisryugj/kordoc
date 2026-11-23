@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `pageImages` 옵션(CLI `--page-images png|webp`) — 기존 OCR 경로가 읽은 페이지를 그대로 결과 `pageImages`(페이지마다 `pageNumber`·`filename`·`width`·`height`·`mimeType`·`data`)로 낸다. `ocrLines` 좌표가 가리키는 래스터다 — 이미지 입력은 실제 포맷·EXIF 방향과 무관하게 세운 이미지(OCR 이 기울기를 보정했으면 보정한 것), PDF 는 OCR 배율로 렌더링한 페이지이며 OCR 하지 않은 페이지와 `ocr: false` 에서도 낸다. `true`·`"png"` 는 PNG, `"webp"` 는 무손실 WebP. 누적 128MB·래스터 픽셀 합계 10억에 닿은 뒤의 페이지는 빼고 `SKIPPED_IMAGE` 로 알린다. parse-worker protocol 2(`files` 전송 포함)·Python SDK(`page_images`, `result.page_images`)·Java SDK(`pageImages(…)`, `result.pageImages()`)도 받는다. 기본은 꺼져 있고 끄면 출력은 그대로
+
 ## [4.25.3] - 2026-11-21
 
 ### Fixed

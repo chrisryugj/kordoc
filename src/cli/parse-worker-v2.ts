@@ -62,6 +62,7 @@ const optionsSchema = z.object({
   dropBlankImages: z.boolean(),
   ocr: z.union([z.boolean(), z.literal("force")]),
   ocrLines: z.union([z.boolean(), z.literal("all")]),
+  pageImages: z.union([z.boolean(), z.enum(["png", "webp"])]),
   ocrDet: z.union([z.enum(["mobile", "server", "medium"]), modelFileSchema]),
   ocrDetLongSide: z.number().int(),
   ocrRec: z.union([z.literal("handwriting"), z.literal("auto"), z.literal("printed"), modelFileSchema]),
@@ -116,10 +117,10 @@ export function toParseOptions(wire: unknown, absPath: string): ParseOptions {
 
 interface ImageHolder { data?: unknown; filename?: string; dataRef?: { path: string; byteLength: number } }
 
-/** 결과 안의 이미지 바이트(result.images[]·블록 imageData — children·셀 blocks·captionBlocks 까지)를 모은다 */
+/** 결과 안의 이미지 바이트(result.images[]·result.pageImages[]·블록 imageData — children·셀 blocks·captionBlocks 까지)를 모은다 */
 function collectImageHolders(result: ParseResult): ImageHolder[] {
   if (!result.success) return []
-  const holders: ImageHolder[] = [...(result.images ?? [])]
+  const holders: ImageHolder[] = [...(result.images ?? []), ...(result.pageImages ?? [])]
   const walk = (blocks: IRBlock[] | undefined, depth: number): void => {
     if (!blocks || depth > 64) return
     for (const b of blocks) {

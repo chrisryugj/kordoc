@@ -403,6 +403,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
     const ocrDone = new Set<number>()
     /** ocrLines 옵션 — 내장 OCR 이 읽은 쪽별 줄 */
     const ocrLinesOut = new Map<number, OcrPageLines>()
+    /** pageImages 옵션 — 페이지 래스터 모음 */
+    const pageRasters = options?.pageImages ? new (await import("../ocr/page-images.js")).PageImageSink(options.pageImages) : null
     // 그림 영역 OCR — ocr: true 와 사용자 프로바이더는 후보 전부, 자동 OCR(기본값)은 큰 그림만.
     // 프로바이더는 판정이 true 와 같다고 적어 둔 계약인데 종전엔 영역을 고르지 않아 호출조차 되지 않았다(#225)
     const allRegions = options?.ocr === true || typeof options?.ocr === "function"
@@ -431,7 +433,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
           const regionPages = new Map([...ocrRegions].filter(([p]) =>
             options?.ocr !== "force" && !isImageBased && !pageQuality.find(q => q.page === p)?.needsOcr))
           const { builtinOcrConfig } = await import("../ocr/pdf-ocr.js")
-          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options?.onProgress, options?.tables !== false, vectorPageOps, regionPages, builtinOcrConfig(options), ocrLinesOut)
+          const ocrPageBlocks = await runPdfOcr(ocrBuffer, targets, mode, warnings, options?.onProgress, options?.tables !== false, vectorPageOps, regionPages, builtinOcrConfig(options), ocrLinesOut, pageRasters ?? undefined)
           // OCR 글은 첨자를 가르지 않는다 — 검출 박스 높이·위치로는 기준선을 믿을 수 없다(scriptTags 를 켜도)
           for (const obs of ocrPageBlocks.values()) stripScriptTags({ blocks: obs })
           if (ocrPageBlocks.size > 0) {
@@ -472,6 +474,20 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         }
       }
     }
+
+    // pageImages — OCR 한 페이지는 OCR 이 읽은 래스터를 위에서 받았다. 나머지는 같은 배율로 렌더링만 한다(ocr: false 포함)
+    if (pageRasters) {
+      const rest: number[] = []
+      for (let i = 1; i <= effectivePageCount; i++) if ((!pageFilter || pageFilter.has(i)) && !pageRasters.has(i)) rest.push(i)
+      try {
+        const { renderPdfPageImages } = await import("../ocr/pdf-ocr.js")
+        await renderPdfPageImages(buffer, rest, pageRasters, warnings)
+      } catch (e) {
+        // 환경 오류(의존성) — 글 파싱 결과는 살리고 원인을 경고로 남긴다 (OCR 실행 불가와 같은 처리)
+        warnings.push({ message: `pageImages 실행 불가: ${e instanceof Error ? e.message : String(e)}`, code: "SKIPPED_IMAGE" })
+      }
+    }
+    const pageImages = pageRasters?.finish(warnings)
 
     if (isImageBased && ocrDone.size === 0) {
       // OCR 미설정/실패 — 빈 출력을 무경고로 내보내지 않고 경고 + 플래그로 가시화 (v3.0)
@@ -656,6 +672,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
       qualitySummary: summarizeDocumentQuality(pageQuality),
       images: extractedImages.length > 0 ? extractedImages : undefined,
       ...(options?.ocrLines ? { ocrLines: [...ocrLinesOut.values()].sort((a, b) => a.pageNumber - b.pageNumber) } : {}),
+      ...(pageImages ? { pageImages } : {}),
     }
   } finally {
     doc.close()

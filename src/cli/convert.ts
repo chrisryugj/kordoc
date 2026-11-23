@@ -13,11 +13,13 @@ import { htmlCellLinks } from "../html-cell-links.js"
 import { createOutputGuard } from "./output-path.js"
 
 /** --ocr-lines·--ocr-det·--ocr-rec… → ParseOptions. 값 검증은 parse() 가 한다(잘못이면 실패 JSON). 로컬 경로는 현재 디렉터리 기준 절대 경로로 */
-export function cliOcrEngineOptions(opts: OptionValues): Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict"> {
-  const out: Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict"> = {}
+export function cliOcrEngineOptions(opts: OptionValues): Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict" | "pageImages"> {
+  const out: Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict" | "pageImages"> = {}
   const file = (path: string, sha256: unknown) => ({ path: resolve(path), sha256: typeof sha256 === "string" ? sha256 : "" })
   if (opts.ocrLinesAll) out.ocrLines = "all"
   else if (opts.ocrLines) out.ocrLines = true
+  // 받은 글 그대로 넘겨 parse() 가 그 값을 들어 거부한다
+  if (opts.pageImages !== undefined) out.pageImages = opts.pageImages as "png" | "webp"
   if (opts.ocrDet !== undefined) {
     out.ocrDet = opts.ocrDet === "mobile" || opts.ocrDet === "server" || opts.ocrDet === "medium" ? opts.ocrDet : file(String(opts.ocrDet), opts.ocrDetSha256)
   }

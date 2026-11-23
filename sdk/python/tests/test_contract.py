@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kordoc import OcrBox, OcrLine, OcrModelFile, OcrPageLines, ParseResult
+from kordoc import OcrBox, OcrLine, OcrModelFile, OcrPageLines, PageImage, ParseResult
 from kordoc._protocol import OPTION_NAMES, parse_request, wire_options
 
 from conftest import PROTOCOL_FIXTURE
@@ -25,15 +25,17 @@ def test_requests_match_fixture() -> None:
         "ocr_rec": OcrModelFile("/abs/models/rec.onnx", "a" * 64)}) == reqs[3]
     # 손글씨 rec 프리셋은 문자열 그대로(경로로 바꾸지 않는다)
     assert parse_request(5, "/abs/수기 신청서.pdf", {"ocr": True, "ocr_rec": "handwriting"}) == reqs[4]
+    assert parse_request(6, "/abs/사진.bmp", {"ocr": False, "page_images": True}) == reqs[5]
+    assert parse_request(7, "/abs/scan.pdf", {"page_images": "webp"}, image_transport="files", assets_dir="/abs/assets") == reqs[6]
 
 
 def test_option_names_cover_worker_allowlist() -> None:
-    # docs/parse-worker-protocol.md 허용 목록과 같은 28개
+    # docs/parse-worker-protocol.md 허용 목록과 같은 29개
     assert sorted(OPTION_NAMES.values()) == sorted([
         "tableFormat", "htmlTables", "htmlCellLinks", "layoutTables", "classifyTables", "tables", "plain", "scriptTags",
         "removeHeaderFooter", "dedupeRunningHeaders", "keepTrailingEmptyCols", "keepEmptyParagraphs",
         "includeFieldPlaceholders", "pages", "images", "inlineImages", "qrCodes", "imageFormat", "imagePlacement", "dropBlankImages", "ocr", "formulaOcr", "password",
-        "ocrLines", "ocrDet", "ocrDetLongSide", "ocrRec", "ocrRecDict"])
+        "ocrLines", "ocrDet", "ocrDetLongSide", "ocrRec", "ocrRecDict", "pageImages"])
 
 
 def test_ocr_model_files_become_absolute_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,3 +92,18 @@ def test_decode_ocr_lines_typed() -> None:
     future = {"pageNumber": 1, "width": 10, "height": 10, "scale": 3, "deskewAngle": 0, "newPageKey": 1,
               "lines": [{"text": "가", "box": {"x": 1, "y": 2, "w": 3, "h": 4, "angle": 0}, "confidence": 0.9, "newLineKey": True}]}
     assert ParseResult({"success": True, "ocrLines": [future]}).ocr_lines[0].lines[0].box == OcrBox(1, 2, 3, 4)
+
+
+def test_decode_page_images() -> None:
+    inline, files = FIX["responses"][6], FIX["responses"][7]
+    [p] = ParseResult(inline["result"]).page_images
+    assert isinstance(p, PageImage) and (p.page_number, p.width, p.height) == (1, 5, 3)
+    assert (p.image.filename, p.image.mime_type, p.image.path) == ("page_001.png", "image/png", None)
+    assert p.image.read() == b"\x89PNG\r\n\x1a\n\x01\x02\x03\x04"
+    first, second = ParseResult(files["result"], Path(files["assetsDir"])).page_images
+    assert (first.page_number, first.width, first.height, first.image.mime_type, first.image.byte_length) == (1, 1786, 2526, "image/webp", 20480)
+    assert first.image.path == Path("/abs/assets/kordoc-7-XyZ789/page_001.webp")
+    # WebP 로 내지 못한 페이지는 PNG 로 온다 — 포맷은 페이지마다 mime_type 으로 본다
+    assert (second.page_number, second.image.mime_type, second.image.path) == (2, "image/png", Path("/abs/assets/kordoc-7-XyZ789/page_002.png"))
+    # 옵션을 안 준 결과는 빈 목록
+    assert ParseResult(FIX["responses"][0]["result"]).page_images == []

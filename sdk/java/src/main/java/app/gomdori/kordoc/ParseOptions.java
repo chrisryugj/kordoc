@@ -93,6 +93,10 @@ public final class ParseOptions {
         public Builder ocrLines(boolean v) { return put("ocrLines", v); }
         /** ocrLines 에 저신뢰로 버린 줄도 dropped 로 함께 */
         public Builder ocrLinesAll() { wire.put("ocrLines", "all"); return this; }
+        /** true: OCR 경로가 읽은 페이지를 PNG 로 결과 pageImages 에 ({@link ParseResult#pageImages()}) */
+        public Builder pageImages(boolean v) { return put("pageImages", v); }
+        /** 페이지 이미지 포맷: "png" | "webp"(무손실) */
+        public Builder pageImages(String format) { wire.put("pageImages", format); return this; }
         /** OCR 글줄 검출 모델: "mobile"(기본) | "server"(~88MB, 첫 사용 시 다운로드) */
         public Builder ocrDet(String model) { wire.put("ocrDet", model); return this; }
         /** OCR 글줄 검출 모델을 로컬 ONNX 로 */

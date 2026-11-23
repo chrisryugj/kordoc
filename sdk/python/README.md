@@ -56,7 +56,7 @@ asyncio.run(main())
 
 - `parse(path, **options)` · `parse_bytes(data, **options)` · `warmup(path, **options)` · `close()`(`aclose()`)
 - `with` / `async with` 를 나가면 소유 워커를 모두 종료·회수합니다. 패키지 import·클라이언트 생성만으로는 프로세스를 띄우지 않습니다.
-- `result.raw` 는 엔진 결과 JSON 원본입니다(알 수 없는 필드 포함). `markdown`·`blocks`·`pages`·`metadata`·`warnings`·`images`·`ocr_lines` 를 꺼내 쓸 수 있습니다.
+- `result.raw` 는 엔진 결과 JSON 원본입니다(알 수 없는 필드 포함). `markdown`·`blocks`·`pages`·`metadata`·`warnings`·`images`·`ocr_lines`·`page_images` 를 꺼내 쓸 수 있습니다.
 - `result.raise_for_error()` 는 파싱 실패를 `KordocParseFailed` 로 바꿉니다.
 
 ### 파싱 옵션
@@ -68,7 +68,8 @@ asyncio.run(main())
 `table_format`(`"gfm"`) · `html_tables` · `html_cell_links` · `layout_tables`(`"visual"`·`"keep"`) · `classify_tables` · `tables` · `plain` · `script_tags` ·
 `remove_header_footer` · `dedupe_running_headers` · `keep_trailing_empty_cols` · `keep_empty_paragraphs` · `include_field_placeholders` ·
 `pages`(`"1-3"` 또는 `[1, 3]`) · `images` · `inline_images` · `qr_codes` · `image_format`(`"png"`·`"webp"`) · `image_placement`(`"page-end"`·`"flow"`) · `drop_blank_images` · `ocr`(`True`·`False`·`"force"`) · `formula_ocr` · `password` ·
-`ocr_lines`(`True`·`"all"`) · `ocr_det`(`"mobile"`·`"server"`·`OcrModelFile`) · `ocr_det_long_side` · `ocr_rec`(`"handwriting"`·`"auto"`·`OcrModelFile`) · `ocr_rec_dict`(`OcrModelFile`)
+`ocr_lines`(`True`·`"all"`) · `ocr_det`(`"mobile"`·`"server"`·`OcrModelFile`) · `ocr_det_long_side` · `ocr_rec`(`"handwriting"`·`"auto"`·`OcrModelFile`) · `ocr_rec_dict`(`OcrModelFile`) ·
+`page_images`(`True`·`"png"`·`"webp"`)
 
 ```python
 from kordoc import KordocClient, OcrModelFile
@@ -83,6 +84,7 @@ with KordocClient() as client:
     form = client.parse("수기 신청서.pdf", ocr=True, ocr_rec="handwriting")   # 손글씨 인식 모델(~15MB, 첫 사용 시 엔진이 받는다)
 ```
 
+`page_images` 를 주면 그 상자가 가리키는 페이지 래스터가 `result.page_images`(`PageImage(page_number, width, height, image)`, 바이트는 `image.read()`)로 옵니다. 전송은 이미지와 같습니다.
 상자는 OCR 래스터 픽셀입니다(`page.scale` = px/pt). 좌표 규약과 모델 검증은 [OCR 줄·모델 선택](../../docs/usage.md#ocr-줄모델-선택)을 따릅니다.
 
 함수 값(OCR 프로바이더, 진행 콜백)과 입력 경로를 바꾸는 옵션은 받지 않습니다. 잘못된 옵션은 `KordocProtocolError`(`code="INVALID_OPTIONS"`)입니다.

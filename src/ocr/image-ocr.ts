@@ -20,6 +20,7 @@ import { applyImageFormulas } from "./image-formula.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
 import { deskewPage, rotateQuarter } from "./deskew.js"
+import type { PageRaster } from "./page-images.js"
 import { imageFormat, type ImageKind } from "../detect.js"
 import { MAX_PIXELS, bmpToRgba, encodePng } from "../image/transcode.js"
 import { heicToRgba } from "../image/heic.js"
@@ -52,6 +53,8 @@ export interface ImageOcrResult {
   warnings: ParseWarning[]
   /** ocrLines 옵션일 때 해당 페이지의 OCR 줄 */
   lines?: OcrPageLines
+  /** pageImages 옵션일 때 내장 OCR 이 읽은 래스터(기울기·눕힌 페이지를 바로잡은 것) — `lines` 좌표의 기준 */
+  raster?: PageRaster
 }
 
 /** 이미지 버퍼 → OCR → IRBlock[] (표 괘선 감지 포함). page 는 1부터 — 멀티페이지 TIFF 만 2 이상 */
@@ -112,6 +115,7 @@ export async function parseImageDocument(
   // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
   if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
   const lines = config.lines ? pageLines(page, width, height, scale, angle, items, stats.dropped) : undefined
+  const raster = options?.pageImages ? { raster: { data, width, height } } : undefined
   if (stats.droppedLowConf > 0) {
     warnings.push({
       page,
@@ -124,13 +128,13 @@ export async function parseImageDocument(
   }
   if (items.length === 0) {
     warnings.push({ page, message: "이미지에서 텍스트를 인식하지 못했습니다", code: "OCR_FAILED" })
-    return { blocks: [], warnings, lines }
+    return { blocks: [], warnings, lines, ...raster }
   }
 
   const pdfW = width / scale
   const pdfH = height / scale
   const extraLines = rulingToPdfLines(ruling, scale, pdfH)
-  return { blocks: ocrItemsToBlocks(items, page, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings, lines }
+  return { blocks: ocrItemsToBlocks(items, page, pdfW, pdfH, scale, extraLines, options?.tables !== false), warnings, lines, ...raster }
 }
 
 type MetaInfo = { density?: number; width?: number; height?: number; orientation?: number; pages?: number }

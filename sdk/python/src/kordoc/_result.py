@@ -87,6 +87,16 @@ class OcrPageLines:
 
 
 @dataclass(frozen=True)
+class PageImage:
+    """엔진의 OCR 경로가 읽은 페이지 래스터(``page_images``). ``OcrPageLines`` 좌표가 가리키는 이미지이고 바이트는 ``image.read()``."""
+
+    page_number: int
+    width: int
+    height: int
+    image: Image
+
+
+@dataclass(frozen=True)
 class ParseResult:
     """엔진 ``parse()`` 결과. ``raw`` 는 워커가 보낸 JSON 원본(알 수 없는 필드 포함)이다."""
 
@@ -118,6 +128,11 @@ class ParseResult:
         """내장 OCR 이 읽은 쪽별 줄(``ocr_lines=True``·``"all"`` 일 때). 옵션을 안 줬거나 PDF·이미지가 아니면 None, OCR 을 돌린 쪽이 없으면 빈 목록."""
         raw = self.raw.get("ocrLines")
         return None if raw is None else [OcrPageLines.from_raw(p) for p in raw]
+
+    @property
+    def page_images(self) -> list[PageImage]:
+        """OCR 경로가 읽은 페이지 래스터(``page_images=True``·``"png"``·``"webp"``, PDF·이미지 입력). 쪽 번호 순, 옵션을 안 줬으면 빈 목록."""
+        return [PageImage(p["pageNumber"], p["width"], p["height"], Image(p, self.assets_dir)) for p in self.raw.get("pageImages") or []]
 
     @property
     def metadata(self) -> dict[str, Any] | None:

@@ -69,6 +69,46 @@ class EngineTest {
         }
     }
 
+    /** 페이지 이미지 대조 문서(sharp·pdfium 이 있을 때만 manifest 에 있다) — INLINE·FILES 전송 모두 포맷에 맞는 바이트를 읽는다 */
+    @Test
+    void pageImagesInlineAndFiles(@TempDir Path assets) throws Exception {
+        try (KordocClient client = KordocClient.start(Support.engine().build())) {
+            Path first = null;
+            for (JsonNode c : Support.manifest()) {
+                JsonNode opt = c.get("options").get("pageImages");
+                if (opt == null) continue;
+                Path doc = Support.fixtures().resolve(c.get("file").asText());
+                if (first == null) first = doc;
+                String ext = "webp".equals(opt.asText()) ? "webp" : "png";
+                ParseResult inline = client.parse(doc, Support.optionsOf(c.get("options")));
+                ParseResult files = client.parse(doc, ParseOptions.builder().ocr(false).fileImageTransport(assets).pageImages(ext).build());
+                JsonNode raw = inline.raw().get("pageImages");
+                assertTrue(raw.size() > 0, c.get("name").asText());
+                assertEquals(raw.size(), inline.pageImages().size());
+                assertEquals(raw.size(), files.pageImages().size());
+                for (int i = 0; i < raw.size(); i++) {
+                    PageImage a = inline.pageImages().get(i), b = files.pageImages().get(i);
+                    assertEquals(List.of(raw.get(i).get("pageNumber").asInt(), raw.get(i).get("width").asInt(), raw.get(i).get("height").asInt()),
+                            List.of(a.pageNumber(), a.width(), a.height()));
+                    assertEquals("image/" + ext, a.image().mimeType());
+                    assertEquals(String.format("page_%03d.%s", a.pageNumber(), ext), b.image().filename());
+                    assertTrue(a.image().path().isEmpty());
+                    // FILES 의 파일 이름은 dataRef 가 정한다 — 원본 페이지 이미지(images)와 바이트가 같으면 그 파일을 함께 가리킨다
+                    assertEquals(files.assetsDir().orElseThrow(), b.image().path().orElseThrow().getParent());
+                    byte[] bytes = a.image().read();
+                    assertArrayEquals(bytes, b.image().read());
+                    String magic = new String(bytes, 0, 12, java.nio.charset.StandardCharsets.ISO_8859_1);
+                    assertTrue(ext.equals("png") ? magic.startsWith("\u0089PNG") : magic.startsWith("RIFF") && magic.endsWith("WEBP"), c.get("name").asText());
+                }
+            }
+            if (first == null) return; // sharp·pdfium 이 없어 페이지 이미지 대조 문서가 없다
+            // 모르는 포맷은 워커가 거부한다(PNG 로 바꿔 내지 않는다)
+            Path doc = first;
+            KordocProtocolException e = assertThrows(KordocProtocolException.class, () -> client.parse(doc, ParseOptions.builder().pageImages("gif").build()));
+            assertEquals("INVALID_OPTIONS", e.code());
+        }
+    }
+
     @Test
     void residentWorkerKeepsPid() throws Exception {
         try (KordocClient client = KordocClient.start(Support.engine().build())) {

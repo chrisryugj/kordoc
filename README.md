@@ -157,7 +157,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 `--format chunks`가 제목 경로를 붙인 구조 청크와 독립 표 청크를 냅니다. 표를 HTML 없이 받으려면 `--table-format gfm`(API는 `tableFormat: "gfm"`)을 씁니다. Python·Java에서는 [Python SDK](sdk/python/README.md)·[Java SDK](sdk/java/README.md)로 부릅니다.
 
 **Q. OCR 줄 좌표나 다른 모델이 필요하면?**
-`--ocr --ocr-lines --format json`이 줄별 상자·신뢰도를 내고, `--ocr-det`·`--ocr-det-long-side`로 검출 모델과 해상도를, `--ocr-rec handwriting|auto`로 손글씨 인식 모델을 고릅니다. [OCR 줄·모델 선택](docs/usage.md#ocr-줄모델-선택)
+`--ocr --ocr-lines --format json`이 줄별 상자·신뢰도를 내고, `--ocr-det`·`--ocr-det-long-side`로 검출 모델과 해상도를, `--ocr-rec handwriting|auto`로 손글씨 인식 모델을 고릅니다. `--page-images png`는 OCR 경로가 읽은 페이지를 이미지로 함께 냅니다. [OCR 줄·모델 선택](docs/usage.md#ocr-줄모델-선택)
 
 ## 문서·보안
 

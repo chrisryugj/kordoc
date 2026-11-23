@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `page_images`(`True`·`"png"`·`"webp"`) — 엔진의 OCR 경로가 읽은 페이지 래스터를 `result.page_images`(`PageImage(page_number, width, height, image)`)로 받습니다. 이 옵션을 받는 npm kordoc 엔진이 필요합니다.
 - **동작 변경**: `max_worker_rss_bytes` 로 워커를 바꿀 때, 같은 슬롯의 다음 요청은 이전 워커의 종료·회수가 끝난 뒤 새 워커를 띄웁니다. 보통은 바로 끝나지만 워커가 quit 에 응하지 않으면 `close_timeout`(기본 10초)에 강제 종료 정리 3초를 더한 만큼까지 기다리며, 이 대기는 요청 제한 시간에 들어갑니다.
 - **동작 변경**: `worker_pids()`·`worker_info()` 가 ready 전이거나 종료를 기다리는 중이어도 살아 있는 소유 워커를 포함합니다(ready 전 워커는 버전·rss 가 없을 수 있습니다).
 - 취소·실패한 요청의 워커도 종료·회수가 끝난 뒤 같은 슬롯의 교체 워커를 띄웁니다. 회수 작업이 예외·취소로 끝나도 그 슬롯의 이후 요청에 그 예외를 다시 던지지 않고, 이전 워커가 남아 있으면 먼저 끝냅니다.

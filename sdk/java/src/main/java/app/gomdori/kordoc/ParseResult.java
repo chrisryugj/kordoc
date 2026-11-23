@@ -59,6 +59,13 @@ public final class ParseResult {
         return out;
     }
 
+    /** OCR 경로가 읽은 페이지 래스터 ({@code pageImages(true)}·{@code pageImages("webp")}, PDF·이미지 입력). 쪽 번호 순, 옵션을 안 줬으면 빈 목록 */
+    public List<PageImage> pageImages() {
+        List<PageImage> out = new ArrayList<>();
+        for (JsonNode p : raw.path("pageImages")) out.add(new PageImage(p.path("pageNumber").asInt(), p.path("width").asInt(), p.path("height").asInt(), new Image(p, assetsDir)));
+        return out;
+    }
+
     /** 파싱 실패면 {@link KordocParseFailedException}. 성공이면 자기 자신 */
     public ParseResult throwIfFailed() {
         if (!success()) throw new KordocParseFailedException(code().orElse(null), error().orElse("파싱 실패"));

@@ -1,5 +1,6 @@
 package app.gomdori.kordoc;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -29,6 +30,8 @@ class ContractTest {
                 .ocrRec(new OcrModelFile(Path.of("/abs/models/rec.onnx"), "a".repeat(64))).build().wireOptions());
         // 손글씨 rec 프리셋은 문자열 그대로(경로로 바꾸지 않는다)
         assertEquals(reqs.get(4).get("options"), ParseOptions.builder().ocr(true).ocrRec("handwriting").build().wireOptions());
+        assertEquals(reqs.get(5).get("options"), ParseOptions.builder().ocr(false).pageImages(true).build().wireOptions());
+        assertEquals(reqs.get(6).get("options"), ParseOptions.builder().pageImages("webp").build().wireOptions());
     }
 
     @Test
@@ -51,8 +54,8 @@ class ContractTest {
                 .keepTrailingEmptyCols(true).keepEmptyParagraphs(true).includeFieldPlaceholders(true).pages("1-2")
                 .images(false).inlineImages(true).qrCodes(true).imageFormat("webp").imagePlacement("flow").dropBlankImages(true).ocr(true).formulaOcr(false).password("pw")
                 .ocrLines(true).ocrDet("server").ocrDetLongSide(1920).ocrRec(new OcrModelFile(Path.of("/m/rec.onnx"), "a".repeat(64)))
-                .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).build().wireOptions();
-        assertEquals(28, all.size());
+                .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).pageImages("webp").build().wireOptions();
+        assertEquals(29, all.size());
     }
 
     @Test
@@ -93,5 +96,30 @@ class ContractTest {
         ObjectNode empty = Json.MAPPER.createObjectNode().put("success", true);
         empty.putArray("ocrLines");
         assertEquals(List.of(), new ParseResult(empty, null).ocrLines().orElseThrow());
+    }
+
+    @Test
+    void decodePageImages() throws IOException {
+        JsonNode res = fixture().get("responses");
+        List<PageImage> inline = new ParseResult((ObjectNode) res.get(6).get("result"), null).pageImages();
+        assertEquals(1, inline.size());
+        PageImage p = inline.get(0);
+        assertEquals(List.of(1, 5, 3), List.of(p.pageNumber(), p.width(), p.height()));
+        assertEquals("page_001.png", p.image().filename());
+        assertEquals("image/png", p.image().mimeType());
+        assertTrue(p.image().path().isEmpty());
+        assertArrayEquals(new byte[] {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 1, 2, 3, 4}, p.image().read());
+
+        JsonNode files = res.get(7);
+        List<PageImage> refs = new ParseResult((ObjectNode) files.get("result"), Path.of(files.get("assetsDir").asText())).pageImages();
+        assertEquals(List.of(1, 1786, 2526), List.of(refs.get(0).pageNumber(), refs.get(0).width(), refs.get(0).height()));
+        assertEquals("image/webp", refs.get(0).image().mimeType());
+        assertEquals(20480L, refs.get(0).image().byteLength().orElseThrow());
+        assertEquals(Path.of("/abs/assets/kordoc-7-XyZ789/page_001.webp"), refs.get(0).image().path().orElseThrow());
+        // WebP 로 내지 못한 페이지는 PNG 로 온다 — 포맷은 페이지마다 mimeType 으로 본다
+        assertEquals("image/png", refs.get(1).image().mimeType());
+        assertEquals(Path.of("/abs/assets/kordoc-7-XyZ789/page_002.png"), refs.get(1).image().path().orElseThrow());
+        // 옵션을 안 준 결과는 빈 목록
+        assertEquals(List.of(), new ParseResult((ObjectNode) res.get(0).get("result"), null).pageImages());
     }
 }

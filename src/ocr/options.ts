@@ -1,5 +1,5 @@
 /**
- * 내장 OCR 엔진 옵션(ocrLines·ocrDet·ocrDetLongSide·ocrRec·ocrRecDict) 값 검증 — parse()·parse-worker 가 함께 쓴다.
+ * 내장 OCR 엔진 옵션(ocrLines·ocrDet·ocrDetLongSide·ocrRec·ocrRecDict·pageImages) 값 검증 — parse()·parse-worker 가 함께 쓴다.
  * 모델·다운로드 모듈을 끌어오지 않게 따로 둔다(OCR 을 안 쓰는 파싱도 이 검증은 지난다).
  */
 
@@ -7,8 +7,9 @@ import { isAbsolute } from "path"
 import type { ParseOptions } from "../types.js"
 
 /** OCR 엔진 옵션 검증 — 잘못이면 사유 문자열(parse() 실패 결과·워커 INVALID_OPTIONS 가 그대로 쓴다), 맞으면 null */
-export function validateOcrOptions(o: Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict"> | undefined): string | null {
+export function validateOcrOptions(o: Pick<ParseOptions, "ocrLines" | "ocrDet" | "ocrDetLongSide" | "ocrRec" | "ocrRecDict" | "pageImages"> | undefined): string | null {
   if (!o) return null
+  if (o.pageImages !== undefined && typeof o.pageImages !== "boolean" && o.pageImages !== "png" && o.pageImages !== "webp") return `pageImages 는 true·false·"png"·"webp" 입니다 (받은 값: ${JSON.stringify(o.pageImages)})`
   if (o.ocrLines !== undefined && typeof o.ocrLines !== "boolean" && o.ocrLines !== "all") return `ocrLines 는 true·false·"all" 입니다 (받은 값: ${JSON.stringify(o.ocrLines)})`
   const det = o.ocrDet
   if (det !== undefined && det !== "mobile" && det !== "server" && det !== "medium") {

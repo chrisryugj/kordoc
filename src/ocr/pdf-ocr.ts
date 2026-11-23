@@ -22,6 +22,7 @@ import { UNRULED_REGION_TABLES } from "../pdf/ocr-region-merge.js"
 import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-lines.js"
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
 import { deskewPage, rotateQuarter } from "./deskew.js"
+import type { PageImageSink, PageRaster } from "./page-images.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
 import { similarity } from "../diff/text-diff.js"
 import { DEFAULT_OCR_MODELS, ensureOcrModelsFor, handwritingFallbackModels, ocrModelsCached, resolveOcrModels, type OcrModelSelection } from "./models.js"
@@ -206,6 +207,8 @@ export async function runPdfOcr(
   config: Readonly<BuiltinOcrConfig> = DEFAULT_BUILTIN_OCR,
   /** config.lines 일 때 쪽별 OCR 줄을 여기에 모은다 */
   linesOut?: Map<number, OcrPageLines>,
+  /** pageImages 옵션일 때 OCR 이 읽은 페이지 래스터를 여기에 모은다 */
+  rastersOut?: PageImageSink,
 ): Promise<Map<number, IRBlock[]>> {
   const result = new Map<number, IRBlock[]>()
   if (targets.size === 0) return result
@@ -230,14 +233,15 @@ export async function runPdfOcr(
       const page = doc.getPage(pageNo - 1)
       onProgress?.(++done, targets.size)
       try {
-        const { blocks, lines } = await withTimeout(
-          ocrOnePage(page, pageNo, mode, engine, warnings, detectTables, vectorOps?.get(pageNo), imageRegions?.get(pageNo), config),
+        const { blocks, lines, raster } = await withTimeout(
+          ocrOnePage(page, pageNo, mode, engine, warnings, detectTables, vectorOps?.get(pageNo), imageRegions?.get(pageNo), config, !!rastersOut),
           PAGE_TIMEOUT_MS,
           `OCR 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`,
         )
         result.set(pageNo, blocks)
         // 줄은 블록과 함께 받은 쪽만 — 타임아웃으로 버린 쪽이 뒤늦게 끝나도 섞이지 않는다
         if (lines) linesOut?.set(pageNo, lines)
+        if (raster) await rastersOut?.add(pageNo, raster)
       } catch (e) {
         warnings.push({
           page: pageNo,
@@ -263,7 +267,9 @@ export async function ocrOnePage(
   vectorOps?: PageOps,
   regions?: Array<{ x1: number; y1: number; x2: number; y2: number }>,
   config: Readonly<BuiltinOcrConfig> = DEFAULT_BUILTIN_OCR,
-): Promise<{ blocks: IRBlock[]; lines?: OcrPageLines }> {
+  /** 읽은 래스터도 돌려준다 (pageImages) */
+  wantRaster = false,
+): Promise<{ blocks: IRBlock[]; lines?: OcrPageLines; raster?: PageRaster }> {
   let { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
   const renderScale = Math.min(OCR_RENDER_SCALE, Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH)))
   if (renderScale < OCR_RENDER_SCALE) {
@@ -321,8 +327,10 @@ export async function ocrOnePage(
     }
     const scale = rh / pdfH
     /** 블록과 함께 돌려줄 쪽 줄 (config.lines 일 때만) */
+    // 줄 좌표의 기준 래스터 — 기울기·눕힌 페이지를 바로잡은 것
+    const raster = wantRaster ? { raster: { data: upright, width: rw, height: rh } } : undefined
     const withLines = (blocks: IRBlock[], kept: OcrItem[], regionsOnly = false) =>
-      config.lines ? { blocks, lines: pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly) } : { blocks }
+      config.lines ? { blocks, lines: pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly), ...raster } : { blocks, ...raster }
     // 텍스트층이 있는 쪽의 그림 영역만 읽을 때는 영역마다 그 안 글줄로 따로 블록을 만든다 — 쪽 전체로 묶으면 본문 줄과 그림 글이
     // 한 문단으로 합쳐져 영역 판정(mergeOcrImageRegions)에서 빠진다
     if (regions) {
@@ -361,6 +369,7 @@ export async function ocrOnePage(
   }
 
   // 사용자 프로바이더 — PNG 인코딩 후 호출, 페이지당 paragraph (종전 계약)
+  const raster = wantRaster ? { raster: { data: rgba, width: rw, height: rh } } : undefined
   type SharpPngFactory = (
     input: Uint8Array,
     opts: { raw: { width: number; height: number; channels: number } },
@@ -384,16 +393,51 @@ export async function ocrOnePage(
       if (text) blocks.push({ type: "paragraph", text, pageNumber: pageNo, bbox: { page: pageNo, x: r.x1, y: r.y1, width: r.x2 - r.x1, height: r.y2 - r.y1 } })
     }
     if (!blocks.length) warnings.push({ page: pageNo, message: `페이지 ${pageNo} 그림 영역 OCR 결과 없음`, code: "OCR_FAILED" })
-    return { blocks }
+    return { blocks, ...raster }
   }
 
   const png = await encode(rgba, rw, rh)
   const text = await mode(new Uint8Array(png), pageNo, "image/png")
   if (!text.trim()) {
     warnings.push({ page: pageNo, message: `페이지 ${pageNo} OCR 결과 없음`, code: "OCR_FAILED" })
-    return { blocks: [] }
+    return { blocks: [], ...raster }
   }
-  return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: pageNo }] }
+  return { blocks: [{ type: "paragraph", text: text.trim(), pageNumber: pageNo }], ...raster }
+}
+
+/**
+ * OCR 하지 않은 페이지의 래스터(pageImages) — OCR 과 같은 배율로 렌더링만 한다. 렌더링하기 전에 페이지 크기로 픽셀 예산을 잡아
+ * (PageImageSink.reserve) 상한을 넘긴 뒤로는 렌더링하지 않고, 페이지마다 OCR 과 같은 제한 시간을 건다(pdfium 렌더링·PNG 인코딩은
+ * 동기라 도중에 끊지는 못한다). 렌더링하지 못한 페이지는 경고하고 넘어간다
+ */
+export async function renderPdfPageImages(buffer: ArrayBuffer, pages: number[], out: PageImageSink, warnings: ParseWarning[]): Promise<void> {
+  if (!pages.length) return
+  const pdfiumMod = await tryImport<typeof import("@hyzyla/pdfium")>("@hyzyla/pdfium", () => import("@hyzyla/pdfium"))
+  const pdfium = await pdfiumMod.PDFiumLibrary.init()
+  const doc = await pdfium.loadDocument(new Uint8Array(buffer))
+  try {
+    const count = doc.getPageCount()
+    for (const pageNo of pages) {
+      if (pageNo < 1 || pageNo > count) continue
+      try {
+        const page = doc.getPage(pageNo - 1)
+        const { originalWidth: pdfW, originalHeight: pdfH } = page.getOriginalSize()
+        // ocrOnePage 와 같은 배율
+        const scale = Math.min(OCR_RENDER_SCALE, Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH)))
+        if (!out.reserve(Math.ceil(pdfW * scale) * Math.ceil(pdfH * scale))) continue
+        // 받은 뒤에 담는다 — 제한 시간을 넘겨 버린 페이지가 뒤늦게 끝나도 섞이지 않는다 (runPdfOcr 의 줄과 같은 규칙)
+        out.push(await withTimeout((async () => {
+          const r = await page.render({ scale, render: async ({ data }) => data })
+          return out.encode(pageNo, { data: bgraToRgba(r.data), width: r.width, height: r.height })
+        })(), PAGE_TIMEOUT_MS, `pageImages 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`))
+      } catch (e) {
+        warnings.push({ page: pageNo, message: `페이지 ${pageNo} pageImages 생략: ${e instanceof Error ? e.message : String(e)}`, code: "SKIPPED_IMAGE" })
+      }
+    }
+  } finally {
+    doc.destroy()
+    pdfium.destroy()
+  }
 }
 
 /** 2×2 평균 축소 (RGBA) */

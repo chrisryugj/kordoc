@@ -76,6 +76,43 @@ export function badXrefPdf(): Buffer {
   return Buffer.from(out, "latin1")
 }
 
+/** 쪽마다 글 한 줄(텍스트층)인 PDF — sizes 는 쪽별 [가로, 세로] pt. 글이 20자를 넘어 OCR 대상이 아니다 */
+export function textPdf(sizes: Array<[number, number]>): Buffer {
+  const content = "BT /F1 6 Tf 10 40 Td (Native text layer line with enough characters) Tj ET"
+  const kids = sizes.map((_, i) => `${4 + i * 2} 0 R`).join(" ")
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${kids}] /Count ${sizes.length} >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ...sizes.flatMap(([w, h], i) => [
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Contents ${5 + i * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`,
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    ]),
+  ]
+  let out = "%PDF-1.4\n"
+  const offsets: number[] = []
+  objs.forEach((o, i) => { offsets.push(Buffer.byteLength(out, "latin1")); out += `${i + 1} 0 obj\n${o}\nendobj\n` })
+  const xrefPos = Buffer.byteLength(out, "latin1")
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offsets.map(o => String(o).padStart(10, "0") + " 00000 n \n").join("")
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`
+  return Buffer.from(out, "latin1")
+}
+
+/** 5×3 24비트 BMP — (x, y) 화소는 tinyBmpColor(x, y) */
+export const TINY_BMP = { width: 5, height: 3 } as const
+export const tinyBmpColor = (x: number, y: number): [number, number, number] => [x * 50, y * 100, 255 - x * 40 - y * 20]
+export function tinyBmp(): Buffer {
+  const { width: w, height: h } = TINY_BMP
+  const row = (w * 3 + 3) & ~3, out = Buffer.alloc(54 + row * h)
+  out.write("BM"); out.writeUInt32LE(out.length, 2); out.writeUInt32LE(54, 10)
+  out.writeUInt32LE(40, 14); out.writeInt32LE(w, 18); out.writeInt32LE(h, 22); out.writeUInt16LE(1, 26); out.writeUInt16LE(24, 28); out.writeUInt32LE(row * h, 34)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const [r, g, b] = tinyBmpColor(x, y), o = 54 + (h - 1 - y) * row + x * 3
+    out[o] = b; out[o + 1] = g; out[o + 2] = r
+  }
+  return out
+}
+
 /** 글자 없이 JPEG 한 장만 찍힌 한 쪽 PDF (스캔본 꼴) — 쪽 w×h pt, 그림은 그 두 배 픽셀 */
 export function imagePdf(jpeg: Buffer, w: number, h: number): Buffer {
   const parts: Buffer[] = []
@@ -161,6 +198,15 @@ async function ocrCases(): Promise<typeof SDK_CASES> {
   ]
 }
 
+/** 페이지 이미지(pageImages) 대조 — OCR 없이, sharp·pdfium 이 있을 때만. 이미지 입력은 PNG, PDF 는 WebP 로 받아 두 형식이 SDK 를 지난다 */
+async function pageImageCases(): Promise<typeof SDK_CASES> {
+  try { await import("sharp"); await import("@hyzyla/pdfium") } catch { return [] }
+  return [
+    { name: "image-page-images", file: "페이지.bmp", build: tinyBmp, options: { ocr: false, pageImages: true } },
+    { name: "pdf-page-images-webp", file: "페이지.pdf", build: () => textPdf([[300, 300], [200, 100]]), options: { ocr: false, pageImages: "webp" } },
+  ]
+}
+
 /** SDK 결과 동등성 대조 목록 — 파일 이름, 만드는 법, 대조할 옵션 */
 export const SDK_CASES: { name: string; file: string; build: () => Promise<Buffer> | Buffer; options: ParseOptions }[] = [
   { name: "docx-image", file: "이미지 문서.docx", build: () => imageDocx(), options: {} },
@@ -175,7 +221,7 @@ export const SDK_CASES: { name: string; file: string; build: () => Promise<Buffe
 export async function writeSdkFixtures(out: string): Promise<void> {
   mkdirSync(join(out, "expected"), { recursive: true })
   const manifest = []
-  for (const c of [...SDK_CASES, ...await ocrCases()]) {
+  for (const c of [...SDK_CASES, ...await pageImageCases(), ...await ocrCases()]) {
     const path = join(out, c.file)
     writeFileSync(path, await c.build())
     const result = await parse(path, { ...c.options })
