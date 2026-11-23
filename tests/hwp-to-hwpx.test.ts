@@ -472,6 +472,24 @@ describe("fill_form·fill — HWP 서식을 원본 서식으로 채우기", () =
     }
   })
 
+  it("fill -o 결과.hwp 는 HWPX(zip)를 .hwp 이름으로 쓰지 않고 HWP 5.x 로 저장한다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kordoc-fill-hwp-out-"))
+    try {
+      const src = join(dir, "신청서.hwp")
+      writeFileSync(src, buildHwp(Buffer.concat([paragraph("신청서"), table2x2([["성명", ""], ["연락처", ""]])])))
+      const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+      for (const [args, name] of [[[], "김철수"], [["--format", "hwpx"], "박영수"]] as const) {
+        const out = join(dir, `결과${args.length}.hwp`)
+        const c = spawnSync(process.execPath, ["--import", "tsx", cli, "fill", src, "-f", `성명=${name}`, ...args, "-o", out], { encoding: "utf8", timeout: 60000 })
+        assert.equal(c.status, 0, c.stderr)
+        const bytes = new Uint8Array(readFileSync(out))
+        assert.deepEqual([...bytes.subarray(0, 4)], [0xd0, 0xcf, 0x11, 0xe0], `${args.join(" ") || "기본"}: CFB(HWP 5.x) 여야 한다 — zip 이면 한글이 못 연다`)
+        const back = await parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer)
+        assert.ok(back.success && back.markdown.includes(name), back.success ? back.markdown : back.error)
+      }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it("HWP 5.x 에 도장을 찍으면 서식 그대로 바꾼 HWPX 에 찍는다 (MCP·CLI)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kordoc-seal-hwp-"))
     const previousRoot = process.env.KORDOC_ROOT

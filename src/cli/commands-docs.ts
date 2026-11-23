@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, PRESET_ALIAS, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate, hwpToHwpx } from "../index.js"
+import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, hwpxToHwp, fillHwpx, fillWithUniqueGuard, PRESET_ALIAS, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate, hwpToHwpx } from "../index.js"
 import type { FillInput } from "../index.js"
 import { fillPlan } from "../form/match.js"
 import { toArrayBuffer, sanitizeError } from "../utils.js"
@@ -43,7 +43,7 @@ export function registerDocCommands(program: Command): void {
     .description("서식 문서의 빈칸을 채워서 출력 — kordoc fill 신청서.hwpx -f '성명=홍길동,전화=010-1234-5678' -o 결과.hwpx / 내장 기안문 서식은 kordoc fill --template gian")
     .option("-f, --fields <pairs>", "채울 필드 (key=value 쉼표 구분 또는 JSON)")
     .option("-j, --json <path>", "채울 필드 JSON 파일 경로")
-    .option("-o, --output <path>", "출력 파일 경로 (확장자로 포맷 결정: .md, .hwpx)")
+    .option("-o, --output <path>", "출력 파일 경로 (확장자로 포맷 결정: .md, .hwpx, .hwp — .hwp 는 채운 뒤 HWP 5.x 로 저장)")
     .option("--format <type>", "출력 포맷: hwpx-preserve (기본, 원본 스타일 보존), hwpx, markdown", "hwpx-preserve")
     .option("--formats <json>", "필드별 값 서식 JSON (라벨→포맷) — 예: '{\"날짜\":\"yy.mm.dd\",\"주민등록번호\":\"rrn:masked\"}'")
     .option("--template <name>", "내장 표준 서식 사용 (파일 경로 불필요): gian(일반기안문) | gian-simple(간이기안문). 위치 인자 'templates:일반기안문' 표기도 동일")
@@ -191,11 +191,20 @@ export function registerDocCommands(program: Command): void {
           const ext = extname(opts.output).toLowerCase()
           const explicitFormat = command.getOptionValueSource("format") === "cli" || program.getOptionValueSource("format") === "cli"
           const before = outputFormat
-          if (ext === ".hwpx") outputFormat = outputFormat === "markdown" ? "hwpx-preserve" : outputFormat
+          if (ext === ".hwpx" || ext === ".hwp") outputFormat = outputFormat === "markdown" ? "hwpx-preserve" : outputFormat
           else if (ext === ".md") outputFormat = "markdown"
           if (explicitFormat && before !== outputFormat) {
             process.stderr.write(`[kordoc] ⚠️ --format ${before} 가 출력 확장자(${ext})와 충돌합니다 — 확장자 기준 ${outputFormat} 로 진행\n`)
           }
+        }
+
+        // -o 결과.hwp — 채운 HWPX 를 HWP 5.x 로 바꿔 쓴다 (종전엔 zip 을 .hwp 이름으로 써서 한글이 못 열었다)
+        const hwpxOut = async (buf: ArrayBuffer | Uint8Array): Promise<Buffer> => {
+          if (!/\.hwp$/i.test(opts.output ?? "")) return Buffer.from(buf as ArrayBuffer)
+          const warnings: string[] = []
+          const bytes = await hwpxToHwp(buf, { warnings })
+          if (!opts.silent) for (const w of warnings) process.stderr.write(`[kordoc] ⚠ ${w}\n`)
+          return Buffer.from(bytes)
         }
 
         // ─── hwpx-preserve: 원본 ZIP 직접 수정 ───
@@ -234,7 +243,7 @@ export function registerDocCommands(program: Command): void {
             }
             if (opts.output) {
               mkdirSync(dirname(resolve(opts.output)), { recursive: true })
-              writeFileSync(resolve(opts.output), Buffer.from(hwpxResult.buffer))
+              writeFileSync(resolve(opts.output), await hwpxOut(hwpxResult.buffer))
               if (!opts.silent) process.stderr.write(`[kordoc] → ${resolve(opts.output)}\n`)
             } else {
               process.stdout.write(Buffer.from(hwpxResult.buffer))
@@ -278,7 +287,7 @@ export function registerDocCommands(program: Command): void {
           const hwpxBuffer = await markdownToHwpx(markdown)
           if (opts.output) {
             mkdirSync(dirname(resolve(opts.output)), { recursive: true })
-            writeFileSync(resolve(opts.output), Buffer.from(hwpxBuffer))
+            writeFileSync(resolve(opts.output), await hwpxOut(hwpxBuffer))
             if (!opts.silent) process.stderr.write(`[kordoc] → ${resolve(opts.output)}\n`)
           } else {
             process.stdout.write(Buffer.from(hwpxBuffer))
