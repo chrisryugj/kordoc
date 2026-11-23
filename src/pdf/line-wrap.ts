@@ -18,6 +18,7 @@
  */
 
 import type { BoundingBox, IRBlock } from "../types.js"
+import { WRAP_DICT_WORDS } from "./wrap-dict-data.js"
 
 /** 줄 글에서 판정에 방해되는 마크업 — 밑줄·취소선 표시 (page-blocks 가 아이템 글에 감싼 것) */
 const MARKUP = /<\/?u>|~~/g
@@ -361,7 +362,23 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
     if (/[가-힣]{2}$/.test(left) && /^\([^()\s]*\)/.test(right) && !endsAsWord(left) && !/(?:함|음|됨|임|다)$/.test(left) &&
       !BARE_UNIT_PAREN.test(right) && !/^\(\d/.test(right)) return ""
   }
+  // 문서 안 증거가 없는 명사+명사 꺾임("행정⏎처분을", "방송⏎사업자"). 법령 본문에서 붙여 쓴 낱말 사전(wrap-dict-data.ts)에 두 조각을 이은
+  // 어절이 있으면 붙인다. 앞 조각은 줄 끝 어절 전체, 뒤 조각은 다음 줄 첫 어절 전체(끝 조사는 떼고도 본다)여야 한다. 앞부분만 맞추면
+  // 사전의 조사 붙은 꼴("증가가")이 다음 낱말 머리("가계대출")를 먹었다. PDF 글 744쌍 띄어쓰기 F1 0.99163 → 0.99184(90문서 오름·5문서 내림,
+  // 내린 곳은 "기후위기"·"인명구조"처럼 붙여도 띄어도 맞는 복합 명사를 원문이 띄운 곳). 칸 글(heads=false)은 세로 이름표가 있어 뺀다
+  if (heads && dictJoins(left, right)) return ""
   return " "
+}
+/** wrap-dict-data 의 끝 조사 목록과 같다 (scripts/build-wrap-dict.mjs) */
+const DICT_PARTICLE = /(?:에서는|에서도|에서의|으로서|으로써|으로는|으로도|에게는|에게|에서|에는|에도|으로|까지|부터|이다|이며|이고|이나|과의|와의|의|을|를|이|가|은|는|에|로|과|와|도|만)$/
+let DICT: Set<string> | undefined
+function dictJoins(left: string, right: string): boolean {
+  const tail = left.match(/[가-힣]+$/)?.[0], run = right.match(/^[가-힣]+/)?.[0]
+  if (!tail || !run || tail.length !== left.replace(/^[(\[「『‘“"']+/, "").length) return false
+  if (run.length !== right.replace(/[.,)」』’”;:]+$/, "").length) return false
+  DICT ??= new Set(WRAP_DICT_WORDS.split("\n"))
+  const stem = run.replace(DICT_PARTICLE, "")
+  return DICT.has(tail + run) || (stem.length > 0 && stem !== run && DICT.has(tail + stem))
 }
 /** 단위·약어만 든 괄호 ("(%)", "(천원)", "(GMP)") */
 const BARE_UNIT_PAREN = /^\((?:%|‰|[가-힣]{1,3}|[A-Za-z]{1,5}|[A-Za-z]+\/[A-Za-z]+)\)[.,]?$/

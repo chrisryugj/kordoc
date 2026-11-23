@@ -695,3 +695,17 @@ describe("joinPageBreakWraps — 사이에 낀 쪽 바닥 각주", () => {
     assert.equal(blocks[1], note)
   })
 })
+
+describe("wrapJoiner: 법령 붙여 쓰기 사전", () => {
+  it("문서 안 증거가 없는 명사+명사 꺾임은 사전에 이은 어절이 있으면 붙인다 (\"행정⏎처분을\", \"방송⏎사업자는\")", () => {
+    assert.equal(wrapJoiner("위반하면 행정", "처분을 받는다"), "")
+    assert.equal(wrapJoiner("지상파 방송", "사업자는 이를"), "")
+  })
+  it("뒤 조각의 앞부분만 맞는 사전 낱말로는 붙이지 않는다 (사전의 \"증가가\"가 \"가계대출\" 머리를 먹지 않게)", () => {
+    assert.equal(wrapJoiner("전년 대비 증가", "가계대출이 늘었다"), " ")
+  })
+  it("사전에 없는 꺾임과 칸 글(heads=false)은 종전대로 띄운다", () => {
+    assert.equal(wrapJoiner("비만", "치료를 위해"), " ")
+    assert.equal(wrapJoiner("행정", "처분", undefined, false), " ")
+  })
+})
