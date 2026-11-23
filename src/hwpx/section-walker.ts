@@ -251,6 +251,7 @@ function walkSection(
             cell.text += ((cell.text || cell.paraSeen) ? "\n" : "") + (footnote ? `${text} (주: ${footnote})` : text)
             cell.paraSeen = true
             const cellBlock: IRBlock = { type: "paragraph", text, pageNumber: ctx.page }
+            if (style) cellBlock.style = style
             if (footnote) cellBlock.footnoteText = footnote
             if (footnoteBlocks) cellBlock.footnoteBlocks = footnoteBlocks
             // 왕복 채널 — 셀 문단도 인라인 강조 span 복원 (v4.0.4: 최상위 한정 확장,
@@ -1035,11 +1036,11 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
           break
         }
 
-        // run 요소 — hp:r 은 charPrIDRef 를 문단 대표 스타일로. 첨자 글자 모양이면 이 run 이 더한 글을 <sup>·<sub> 로
+        // run 요소: 첫 run 의 charPrIDRef 를 문단 대표 스타일로(한글 저장본은 hp:run, 종전엔 hp:r 만 읽어 글자 크기 제목이 없었다). 첨자 글자 모양이면 이 run 이 더한 글을 <sup>·<sub> 로
         // (개체·각주 등 컨트롤을 품은 run·필드 경계가 걸친 run 은 글 위치가 섞여 감싸지 않는다)
         case "r": case "run": {
           const runCharPr = child.getAttribute("charPrIDRef")
-          if (tag === "r" && runCharPr && !charPrId) charPrId = runCharPr
+          if (runCharPr && !charPrId) charPrId = runCharPr
           const script = runCharPr ? styleMap?.charProperties.get(runCharPr)?.script : undefined
           const start = text.length, nLinks = linkRanges.length, nOpen = openFields.length
           walk(child, depth + 1)

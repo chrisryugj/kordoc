@@ -49,7 +49,8 @@ describe("HWPX 목차 줄 (#121)", () => {
     const r = await parse(await tocHwpx())
     assert.ok(r.success)
     const headings = r.blocks.filter(b => b.type === "heading").map(b => b.text)
-    assert.deepEqual(headings, ["제1장 총칙", "제1절 목적", "제2장 운영 기준"])
+    // 문서 제목과 "목 차"는 12pt(본문 10pt)라 글자 크기로 제목이 된다
+    assert.deepEqual(headings, ["○○공사 업무 개선 추진계획(합성)", "목 차", "제1장 총칙", "제1절 목적", "제2장 운영 기준"])
     assert.deepEqual(r.outline?.map(o => o.text), headings)
     assert.ok(r.blocks.some(b => b.type === "paragraph" && b.text === "제1장 총칙 1"))
     assert.match(r.markdown, /<붙임2> 관련 법령 12/)

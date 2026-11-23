@@ -340,12 +340,12 @@ export function detectHwpxHeadings(blocks: IRBlock[], styleMap: HwpxStyleMap, to
   // outline(개요) 기반 헤딩이 이미 감지된 문서는 폰트크기 휴리스틱 생략 — outline이 권위 정보
   if (blocks.some(b => b.type === "heading")) return
 
-  // 본문 폰트 크기 결정
+  // 본문 폰트 크기 결정. HWP 와 같이 글자 수 가중 최빈값(짧은 큰 글자 항목 줄이 많은 문서에서 본문 크기를 놓치지 않게)
   let baseFontSize = 0
   const sizeFreq = new Map<number, number>()
   for (const b of blocks) {
-    if (b.style?.fontSize) {
-      sizeFreq.set(b.style.fontSize, (sizeFreq.get(b.style.fontSize) || 0) + 1)
+    if (b.style?.fontSize && b.text) {
+      sizeFreq.set(b.style.fontSize, (sizeFreq.get(b.style.fontSize) || 0) + b.text.length)
     }
   }
   let maxCount = 0
