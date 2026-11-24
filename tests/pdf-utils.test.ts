@@ -22,9 +22,9 @@ describe("cleanPdfText", () => {
   })
 
   it("한국어 줄바꿈 병합", () => {
-    const input = "대한민국\n헌법"
+    const input = "대한민국\n정부"
     const result = cleanPdfText(input)
-    assert.equal(result, "대한민국 헌법")
+    assert.equal(result, "대한민국 정부")
   })
 
   it("영어-한글 줄바꿈은 병합 안 함", () => {
@@ -79,9 +79,9 @@ describe("cleanPdfText", () => {
   })
 
   it("일반 한글 줄바꿈은 여전히 병합됨", () => {
-    const input = "대한민국\n헌법"
+    const input = "대한민국\n정부"
     const result = cleanPdfText(input)
-    assert.equal(result, "대한민국 헌법")
+    assert.equal(result, "대한민국 정부")
   })
 
   // ─── 법령 조항 보호 ──────────────────────────────────

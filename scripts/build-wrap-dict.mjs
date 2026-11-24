@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // PDF 줄 꺾임 붙여 쓰기 사전(src/pdf/wrap-dict-data.ts) 만들기. 법령 본문에서 한 어절로 붙여 쓴 한글 낱말을 모은다.
 //
-// 재료: 법제처 국가법령정보 공동활용 현행 법률 본문(scripts/wrap-dict-laws.txt 의 법률, 2026-11-24 받음). 법령은 저작권법 제7조
+// 재료: 법제처 국가법령정보 공동활용 현행 법률 전체 본문(1,720개, 이름은 scripts/wrap-dict-laws.txt, 2026-11-24 받음). 법령은 저작권법 제7조
 // 보호받지 않는 저작물이다. 벤치 코퍼스(bench/corpus)의 문서는 재료로 쓰지 않는다. 사전이 채점 정답을 외우지 않게 하려는 것이다.
 //
 // 뽑는 기준(결과를 보기 전에 정함): 세~열 음절 한글 어절, 3회 이상, 어느 쪼갬 자리든 띄어 쓴 이웃 어절 꼴("행정 처분")보다 4배 넘게
 // 많음(줄 안 괄호 습관 parenJoins 와 같은 문턱). 끝 조사를 뗀 줄기가 따로 있으면 조사 붙은 꼴은 뺀다(찾을 때 조사를 떼고도 본다).
 //
-// 사용: node scripts/build-wrap-dict.mjs <법령 본문 파일(.md·.txt)…>
+// 사용: node scripts/build-wrap-dict.mjs <법령 본문 파일(.md·.txt)…>  (법률 하나당 파일 하나, 조문 내용·항 글을 줄마다)
 import { readFileSync, writeFileSync } from "node:fs"
 
 const files = process.argv.slice(2)
