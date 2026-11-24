@@ -232,7 +232,9 @@ export function detectRulingLines(
     if (c.runs || cells.some(o => o !== c && touch(c, o))) for (const p of c.pix) ink[p] = 0
   }
 
-  const solid: RunReader = (m, base, step, span) => solidRuns(m, base, step, span, minLenPx)
+  // 끊김 허용은 216dpi 기준 2px. 150dpi 쪽에선 2px 가 1pt 라 위아래 줄 글자 세로 획이 가는 행 괘선을 건너 이어져 세로선이 됐다(미래전략포럼 개요 dpi150 판)
+  const gapTol = Math.max(1, Math.round(GAP_TOL_PX * scale / 3))
+  const solid: RunReader = (m, base, step, span) => solidRuns(m, base, step, span, minLenPx, gapTol)
   const dot = {
     maxGap: Math.max(2, Math.round(DOT_MAX_GAP_PT * scale)),
     maxDash: Math.max(2, Math.round(DOT_MAX_DASH_PT * scale)),
@@ -609,7 +611,7 @@ function fillEdges(pageLuma: Uint8Array, width: number, height: number, scale: n
 type RunReader = (mask: Uint8Array, base: number, step: number, span: number) => Array<{ lo: number; hi: number }>
 
 /** 스캔라인 하나의 실선 런 (GAP_TOL_PX 이하 끊김 허용, 최소 길이 이상) */
-function solidRuns(mask: Uint8Array, base: number, step: number, span: number, minLenPx: number): Array<{ lo: number; hi: number }> {
+function solidRuns(mask: Uint8Array, base: number, step: number, span: number, minLenPx: number, gapTol = GAP_TOL_PX): Array<{ lo: number; hi: number }> {
   const runs: Array<{ lo: number; hi: number }> = []
   let runStart = -1
   let gap = 0
@@ -619,7 +621,7 @@ function solidRuns(mask: Uint8Array, base: number, step: number, span: number, m
       if (runStart < 0) runStart = pos
       gap = 0
     } else if (runStart >= 0) {
-      if (++gap > GAP_TOL_PX || pos >= span) {
+      if (++gap > gapTol || pos >= span) {
         const hi = pos - gap
         if (hi - runStart + 1 >= minLenPx) runs.push({ lo: runStart, hi })
         runStart = -1

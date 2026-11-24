@@ -402,6 +402,15 @@ describe("light grid inside a dark frame", () => {
     const { verticals } = openTable(false)
     assert.ok(!verticals.some(v => Math.abs(v.x1 - 250.5) <= 2), JSON.stringify(verticals))
   })
+  it("150dpi 쪽: 가는 행 괘선 위아래 줄 글자 세로 획(2px 틈)은 세로선으로 잇지 않는다", () => {
+    // 미래전략포럼 개요 dpi150 판: 20px 획 · 2px 틈 · 2px 행 괘선 · 2px 틈 · 20px 획이 2px 끊김 허용으로 49px 세로선(최소 42px)이 됐다
+    const w = 600, h = 300, rgba = makeCanvas(w, h)
+    for (const y of [50, 76, 102]) drawHLine(rgba, w, 40, 560, y)
+    drawVLine(rgba, w, 40, 50, 103); drawVLine(rgba, w, 560, 50, 103)
+    for (const x of [200, 260, 320]) { drawVLine(rgba, w, x, 54, 73, 1); drawVLine(rgba, w, x, 80, 99, 1) }
+    const { verticals } = detectRulingLines(rgba, w, h, 150 / 72)
+    assert.ok(!verticals.some(v => v.x1 > 100 && v.x1 < 500), JSON.stringify(verticals))
+  })
   it("옆 테두리 없는 표: 병합된 첫 열 옆 칸만 가르는 옅은 행 괘선(열 괘선에서 틀 끝까지)을 받는다", () => {
     // 미래전략포럼 개요 스캔 판: 연도 묶음 행 괘선은 전폭, 그 안 차수 행 괘선은 첫 열 괘선(x 200)부터 오른쪽 끝까지 옅게(휘도 225)
     const w = 800, h = 500, rgba = makeCanvas(w, h)
