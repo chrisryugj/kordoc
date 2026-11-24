@@ -254,6 +254,9 @@ export interface ParseOptions {
   /** `ocrLines` 의 연장 — 줄마다 인식 모델의 상위 읽기 후보를 이 개수까지 `candidates` 로 낸다 (1~5 정수, 기본 0 = 끔 — 끄면 출력 불변).
    *  `ocrLines` 와 함께 쓴다 */
   ocrLineCandidates?: number
+  /** `ocrLines` 의 연장 — 줄마다 글자별 신뢰도·상자를 `chars` 로 낸다 (기본 끔 — 끄면 출력 불변). `true`: 글자만.
+   *  1~5 정수: 글자마다 인식 모델이 다음으로 본 글자(대안)를 이 개수까지 함께. `ocrLines` 와 함께 쓴다 */
+  ocrChars?: boolean | number
   /** 기존 OCR 경로가 읽은 페이지를 그대로 결과 `pageImages` 로 낸다 (PDF·이미지 입력, 기본 false — 끄면 출력 불변, `ocr: false` 여도 낸다).
    *  `true`·`"png"`: PNG. `"webp"`: 무손실 WebP(optional dependency `sharp`, 없으면 PNG 로 내고 경고).
    *  누적 128MB·래스터 픽셀 합계 10억(1,000페이지)에 닿은 뒤의 페이지는 빼고 경고(`SKIPPED_IMAGE`)한다 */
@@ -592,6 +595,27 @@ export interface OcrLine {
   /** 인식 모델의 읽기 후보, 확률 내림차순 (`ocrLineCandidates` 를 켰을 때만). 줄 상자 하나를 읽어 그대로 낸 줄에만 있다 —
    *  이어 붙였거나 다시 읽어 고친 줄에는 없다 */
   candidates?: OcrLineCandidate[]
+  /** 글자마다 신뢰도·상자 (`ocrChars` 를 켰을 때만). 이으면 `text` 와 같다 — 표기 후처리로 글이 바뀌었거나, 이어 붙였거나 다시 읽어
+   *  고쳤거나, 세로로 돌려 읽은 줄에는 없다 */
+  chars?: OcrChar[]
+}
+
+/** OCR 줄의 글자 하나 */
+export interface OcrChar {
+  /** 글자 하나 (코드 포인트 하나, 공백 포함) */
+  text: string
+  /** 글자 상자 (래스터 px). 세로는 줄 상자 그대로, 가로는 인식 시점으로 나눈 근사다 — 글자 모양을 잰 것이 아니다 */
+  box: { x: number; y: number; w: number; h: number }
+  /** 이 글자를 고른 CTC 시점의 확률 0~1 — 줄의 `confidence` 는 이 값을 글자마다 평균한 것이다 */
+  confidence: number
+  /** 같은 시점에서 다음으로 확률이 높은 글자, 확률 내림차순 (`ocrChars` 가 1~5 일 때, 0.001 이상만) */
+  alternatives?: OcrCharAlternative[]
+}
+
+/** 글자 대안 — `confidence` 는 고른 글자의 `confidence` 와 같은 시점·같은 척도다 */
+export interface OcrCharAlternative {
+  text: string
+  confidence: number
 }
 
 /** OCR 줄의 읽기 후보. `text` 는 표기 후처리 전의 인식 결과(앞뒤 공백만 뗌)라 줄의 `text` 와 기호·글머리에서 다를 수 있다.

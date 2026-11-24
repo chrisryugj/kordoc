@@ -46,7 +46,7 @@ import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box,
 import { disableOrtTelemetry } from "./runtime-env.js"
 import { findOcrTextGaps, rememberOcrTextGaps } from "./text-gaps.js"
 import { ctcCandidates } from "./ctc-beam.js"
-import type { OcrLineCandidate } from "../types.js"
+import type { OcrChar, OcrCharAlternative, OcrLineCandidate } from "../types.js"
 
 /** OCR 인식 결과 한 줄 — 좌표는 입력 이미지 픽셀 (top-left origin, y down) */
 export interface OcrItem {
@@ -59,6 +59,8 @@ export interface OcrItem {
   confidence: number
   /** 이 줄 상자를 읽은 인식 모델의 읽기 후보 (tuning.lineCandidates 일 때, 상자 하나를 읽어 그대로 낸 줄만) */
   candidates?: OcrLineCandidate[]
+  /** 글자마다 신뢰도·상자 (tuning.chars 일 때, 상자 하나를 바로 세워 읽어 그대로 낸 줄만) */
+  chars?: OcrChar[]
 }
 
 export interface OcrPageStats {
@@ -106,6 +108,8 @@ export interface OcrTuning {
   redetect: boolean
   /** 줄마다 읽기 후보를 이 개수까지 낸다 (ParseOptions.ocrLineCandidates, ctc-beam.ts) — 없으면 후보를 구하지 않는다 */
   lineCandidates?: number
+  /** 글자마다 신뢰도·상자를 내고, 대안을 이 개수까지 함께 낸다 (ParseOptions.ocrChars) — 0 이면 대안 없이, 없으면 글자를 내지 않는다 */
+  chars?: number
 }
 
 export const DEFAULT_OCR_TUNING: Readonly<OcrTuning> = Object.freeze({
@@ -794,12 +798,14 @@ export class OcrEngine {
     }
 
     if (footer) jobs.push({ box: footer, rot: 0, group: group++, footer: true })
-    const results = await this.recognizeJobs(rgba, width, jobs, tuning.recBatch, tuning.lineCandidates)
+    const results = await this.recognizeJobs(rgba, width, jobs, tuning.recBatch, tuning.lineCandidates, tuning.chars)
     /** 읽기 후보를 받은 줄과 그때의 글 — 끝에서 글이 그대로인 줄에만 후보를 단다(이어 붙이거나 다시 읽어 고친 줄은 그 상자의 후보가 아니다) */
     const candidatesOf = tuning.lineCandidates ? new Map<OcrItem, { text: string; list: OcrLineCandidate[] }>() : undefined
+    /** 글자를 받은 줄 — 후보와 같이 끝에서 글이 글자를 이은 것과 같은 줄에만 단다 */
+    const charsOf = tuning.chars !== undefined ? new Map<OcrItem, OcrChar[]>() : undefined
 
     // 회전 후보 그룹은 최고 신뢰도 하나만
-    const best = new Map<number, { job: LineJob; text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[] }>()
+    const best = new Map<number, { job: LineJob; text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[]; charScores?: CharScore[] }>()
     // 끝자락을 지운 crop 은 원본보다 신뢰도가 KEEP_MARGIN 넘게 높을 때만 — 받침 조각 오독은 원본 0.46~0.89 → 지운 쪽 0.99 로
     // 차이가 크고, 차이가 작은 쪽은 띄어쓰기·대시 길이 같은 잡음이었다(과학영재 안내문 "gifted" → "gifed" +0.015)
     const score = (job: LineJob, confidence: number) => confidence - (job.keep ? KEEP_MARGIN : 0)
@@ -901,6 +907,11 @@ export class OcrEngine {
           stats.droppedLowConf++
           stats.dropped?.push({ text, ...this.itemBox(rgba, width, job.box, tuning), confidence })
           if (r.candidates && job.join === undefined && stats.dropped) stats.dropped[stats.dropped.length - 1].candidates = r.candidates
+          if (r.charScores && job.rot === 0 && job.join === undefined && stats.dropped) {
+            const it = stats.dropped[stats.dropped.length - 1], list = lineChars(r.text, r.steps, r.charScores, job.box.x, r.stepPx, it)
+            const fit = list && joinChars(list, it.text)
+            if (fit) it.chars = fit
+          }
         }
         continue
       }
@@ -911,6 +922,8 @@ export class OcrEngine {
       }
       const item = { text, ...this.itemBox(rgba, width, job.box, tuning), confidence }
       if (r.candidates) candidatesOf?.set(item, { text, list: r.candidates })
+      const list = r.charScores && job.rot === 0 ? lineChars(r.text, r.steps, r.charScores, job.box.x, r.stepPx, item) : undefined
+      if (list) charsOf?.set(item, list)
       if (job.rot === 0) rememberOcrTextGaps(item, findOcrTextGaps(rgba, width, job.box, read, text, steps, stepPx))
       if (job.rot === 0 && job.keep === undefined) boxOf.set(item, job.box)
       items.push(item)
@@ -1085,6 +1098,7 @@ export class OcrEngine {
     if (tuning.postprocess) items = joinGapLeaders(rgba, width, items)
     if (tuning.postprocess) restoreBulletItems(items)
     if (candidatesOf) for (const it of items) { const c = candidatesOf.get(it); if (c && c.text === it.text) it.candidates = c.list }
+    if (charsOf) for (const it of items) { const c = charsOf.get(it); const list = c && joinChars(c, it.text); if (list) it.chars = list }
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
   }
@@ -1160,10 +1174,12 @@ export class OcrEngine {
     batchSize: number,
     /** 줄마다 읽기 후보를 이 개수까지 함께 구한다 (0 이면 구하지 않는다) */
     nBest = 0,
-  ): Promise<Array<{ text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[] } | null>> {
+    /** 글자마다 신뢰도와 대안 이 개수까지를 함께 구한다 (없으면 구하지 않는다) */
+    nAlternatives?: number,
+  ): Promise<Array<{ text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[]; charScores?: CharScore[] } | null>> {
     const crops = jobs.map(j => lineCrop(rgba, pageW, j.box, j.rot, j.keep, j.stretch))
     const order = crops.map((_, i) => i).sort((a, b) => crops[a].w - crops[b].w)
-    const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[] } | null> = new Array(jobs.length).fill(null)
+    const results: Array<{ text: string; confidence: number; steps: number[]; stepPx: number; candidates?: OcrLineCandidate[]; charScores?: CharScore[] } | null> = new Array(jobs.length).fill(null)
     const plane = REC_HEIGHT
     for (let s = 0; s < order.length;) {
       // 폭 오름차순이라 배치 마지막 원소가 최대 폭
@@ -1198,7 +1214,7 @@ export class OcrEngine {
       if (C !== this.dict.length + 2) throw new KordocError(`OCR rec 출력 클래스 ${C}개가 사전 ${this.dict.length}자 + 2 와 다릅니다 — 모델에 맞는 사전(ocrRecDict)을 지정하세요`)
       const data = logits.data as Float32Array
       idx.forEach((ci, k) => {
-        const r = ctcDecode(data.subarray(k * T * C, (k + 1) * T * C), T, C, this.dict)
+        const r = ctcDecode(data.subarray(k * T * C, (k + 1) * T * C), T, C, this.dict, nAlternatives)
         // CTC 시점 하나가 덮는 원본 픽셀 폭 — crop 은 높이 48 로 줄인 뒤 bw 까지 오른쪽을 채웠다 (회전 crop 은 세로 축)
         const job = jobs[ci], src = job.rot === 0 ? job.box.w : job.box.h
         // 채운 자리(crop 폭 밖)에 찍힌 글자 — CTC 는 짧은 박스의 진짜 끝 글자도 마지막 시점에 찍어("54" → 시점 36·39) 자리만으로는 못 가른다.
@@ -1214,7 +1230,7 @@ export class OcrEngine {
           const inside = chars.filter((c, i) => r.steps[i] <= last && tallCh(c)).length
           let budget = inside <= 2 ? tallInkCount(g, job.box.w, job.box.h, inkStats(g)) - inside : Infinity
           const keep = chars.map((c, i) => r.steps[i] <= last || !tallCh(c) || budget-- > 0)
-          if (!keep.every(Boolean)) kept = { ...r, text: chars.filter((_, i) => keep[i]).join(""), steps: r.steps.filter((_, i) => keep[i]) }
+          if (!keep.every(Boolean)) kept = { ...r, text: chars.filter((_, i) => keep[i]).join(""), steps: r.steps.filter((_, i) => keep[i]), ...(r.charScores && { charScores: r.charScores.filter((_, i) => keep[i]) }) }
         }
         results[ci] = kept && { ...kept, stepPx: (bw / T) * (src / crops[ci].w) }
         const candidates = nBest > 0 && results[ci] ? ctcCandidates(data.subarray(k * T * C, (k + 1) * T * C), T, C, this.dict, nBest) : undefined
@@ -1234,14 +1250,53 @@ function median(gray: Uint8Array): number {
   return 255
 }
 
+/** 글자 하나의 신뢰도·대안 — 글자(코드 포인트) 순서로 ctcDecode 의 steps 와 짝이다 */
+export interface CharScore {
+  confidence: number
+  alternatives?: OcrCharAlternative[]
+}
+
+/** 대안으로 내는 최소 확률 — 이보다 낮은 글자는 읽기에 견줄 대안이 아니다 */
+const MIN_ALTERNATIVE_PROB = 1e-3
+
+/**
+ * 인식 결과 글자마다 상자를 붙인다 (테스트용 export). 가로 경계는 이웃 글자의 CTC 시점 가운데 사이 중점이고 양끝은 줄 상자 끝이다 —
+ * 글자 모양을 잰 것이 아니라 근사다. 세로는 줄 상자 그대로. 글자 수가 시점·점수와 맞지 않으면 null
+ */
+export function lineChars(text: string, steps: number[], scores: CharScore[], boxX: number, stepPx: number,
+  line: { x: number; y: number; w: number; h: number }): OcrChar[] | null {
+  const chars = [...text]
+  if (chars.length !== steps.length || chars.length !== scores.length) return null
+  const lo = line.x, hi = line.x + line.w
+  const at = (i: number) => boxX + (steps[i] + 0.5) * stepPx
+  const edge = (i: number) => i <= 0 ? lo : i >= chars.length ? hi : Math.min(hi, Math.max(lo, (at(i - 1) + at(i)) / 2))
+  return chars.map((ch, i) => {
+    const x = Math.round(edge(i))
+    return { text: ch, box: { x, y: line.y, w: Math.max(0, Math.round(edge(i + 1)) - x), h: line.h }, ...scores[i] }
+  })
+}
+
+/** 글자를 이은 것이 줄 글과 같으면 그 글자들 — 앞뒤 공백 글자는 줄 글이 뗐으면 함께 뗀다. 다르면(후처리가 고친 줄) undefined */
+function joinChars(list: OcrChar[], text: string): OcrChar[] | undefined {
+  if (list.map(c => c.text).join("") === text) return list
+  let a = 0, b = list.length
+  while (a < b && !list[a].text.trim()) a++
+  while (b > a && !list[b - 1].text.trim()) b--
+  const trimmed = list.slice(a, b)
+  return trimmed.length && trimmed.map(c => c.text).join("") === text ? trimmed : undefined
+}
+
 /** CTC greedy 디코드 — 연속 중복 붕괴 → blank(0) 제거 → 사전 매핑 (테스트용 export) */
 export function ctcDecode(
   data: Float32Array,
   T: number,
   C: number,
   dict: string[],
-): { text: string; confidence: number; steps: number[] } | null {
+  /** 주면 글자(코드 포인트)마다 신뢰도와 대안 이 개수까지를 charScores 로 함께 낸다 (ParseOptions.ocrChars) */
+  alternatives?: number,
+): { text: string; confidence: number; steps: number[]; charScores?: CharScore[] } | null {
   let text = ""
+  const scores: CharScore[] | undefined = alternatives === undefined ? undefined : []
   let confSum = 0
   let confCount = 0
   let prev = -1
@@ -1263,7 +1318,8 @@ export function ctcDecode(
     if (best === 0) continue
     // 모델 출력이 softmax 확률이 아니면 (>1) 해당 스텝만 정규화
     let p = bestV
-    if (p > 1.0001 || p < 0) {
+    const logits = p > 1.0001 || p < 0
+    if (logits) {
       let denom = 0
       for (let c = 0; c < C; c++) denom += Math.exp(data[off + c] - bestV)
       p = 1 / denom
@@ -1273,9 +1329,27 @@ export function ctcDecode(
     const tok = best >= 1 && best <= dict.length ? dict[best - 1] : best === dict.length + 1 ? " " : ""
     text += tok
     for (const _ of tok) { const r: [number, number] = [t, t]; runs.push(r); open.push(r) }
+    if (scores) {
+      // 대안은 신뢰도를 잰 시점(글자 구간의 첫 시점)에서 고른 글자 다음으로 확률 높은 글자들 — 공백도 글자로, 여러 글자짜리 사전 항목은
+      // 대안에서 빼고, 고른 것이 여러 글자짜리면 대안을 달지 않는다(글자 하나를 바꿀 대안이 아니다)
+      const alts: OcrCharAlternative[] = []
+      if (alternatives! > 0 && [...tok].length === 1) {
+        const prob = (c: number) => logits ? Math.exp(data[off + c] - bestV) * p : data[off + c]
+        for (let c = 1; c < C; c++) {
+          if (c === best) continue
+          const q = prob(c), alt = c <= dict.length ? dict[c - 1] : " "
+          if (q < MIN_ALTERNATIVE_PROB || [...alt].length !== 1 || (alts.length === alternatives && q <= alts[alts.length - 1].confidence)) continue
+          if (alts.length === alternatives) alts.pop()
+          let i = alts.length
+          while (i > 0 && alts[i - 1].confidence < q) i--
+          alts.splice(i, 0, { text: alt, confidence: q })
+        }
+      }
+      for (const _ of tok) scores.push(alts.length ? { confidence: p, alternatives: alts } : { confidence: p })
+    }
   }
   if (!text) return null
-  return { text, confidence: confCount > 0 ? confSum / confCount : 0, steps: runs.map(([a, b]) => (a + b) / 2) }
+  return { text, confidence: confCount > 0 ? confSum / confCount : 0, steps: runs.map(([a, b]) => (a + b) / 2), ...(scores && { charScores: scores }) }
 }
 
 /** 이진화 확률맵의 4-연결 성분 bbox (score = 성분 평균 확률, 테스트용 export) */

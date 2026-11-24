@@ -153,7 +153,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/form/match.ts` | 양식 필드 매칭 공용 유틸 (정규화, 접두사 매칭, 인셀 패턴 채우기) |
 | `src/form/filler.ts` | IRBlock[] 기반 양식 필드 값 채우기 |
 | `src/form/filler-hwpx.ts` | HWPX XML 직접 조작으로 양식 채우기 (원본 서식 100% 보존) |
-| `src/ocr/engine.ts` | 내장 텍스트 OCR 엔진 — PP-OCRv5 korean det(DBNet)+rec(CTC) ONNX 추론, 모델 선택마다 세션 하나(로컬 모델 파일은 읽은 바이트를 SHA-256 대조 뒤 그 바이트로 연다) |
+| `src/ocr/engine.ts` | 내장 텍스트 OCR 엔진 — PP-OCRv5 korean det(DBNet)+rec(CTC) ONNX 추론, 모델 선택마다 세션 하나(로컬 모델 파일은 읽은 바이트를 SHA-256 대조 뒤 그 바이트로 연다). `ocrChars` 의 글자 신뢰도·대안은 greedy 디코드(`ctcDecode`)가 같은 시점에서 함께 낸다 |
 | `src/ocr/models.ts` | OCR 모델 스펙(HF 공식 변환본, SHA 핀 — server det·v6 medium det·손글씨 rec 는 고를 때만 받는 선택 모델) + 모델 선택(`ocrDet`·`ocrRec`·`ocrRecDict`) + inference.yml 사전 파서 |
 | `src/ocr/options.ts` | OCR 엔진 옵션 값 검증 — parse()·parse-worker 공용, 모델 모듈을 끌어오지 않는다 |
 | `src/ocr/ctc-beam.ts` | `ocrLineCandidates`: rec 출력에 CTC prefix beam search 를 돌려 줄의 상위 읽기 후보와 확률을 낸다(빔 32·시점마다 상위 8 클래스). greedy 디코드·줄 글·`confidence` 는 그대로 |

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ocr_chars`(`True` 또는 1~5, `ocr_lines` 와 함께) — 줄마다 글자별 신뢰도·상자를 `result.ocr_chars`(`ocr_lines` 와 같은 자리의 `OcrChar(text, box, confidence, alternatives)` 튜플)로 받습니다. 숫자를 주면 글자마다 대안(`OcrCharAlternative(text, confidence)`)을 그 개수까지 함께 받습니다. 기존 `OcrLine` 은 그대로입니다. 이 옵션을 받는 npm kordoc 엔진이 필요합니다.
 - `ocr_line_candidates=N`(1~5, `ocr_lines` 와 함께) — 줄마다 인식 모델의 읽기 후보를 `result.ocr_line_candidates`(`ocr_lines` 와 같은 자리의 `OcrLineCandidate(text, probability)` 튜플)로 받습니다. 기존 `OcrLine` 은 그대로입니다. 이 옵션을 받는 npm kordoc 엔진이 필요합니다.
 - `page_images`(`True`·`"png"`·`"webp"`) — 엔진의 OCR 경로가 읽은 페이지 래스터를 `result.page_images`(`PageImage(page_number, width, height, image)`)로 받습니다. 이 옵션을 받는 npm kordoc 엔진이 필요합니다.
 - **동작 변경**: `max_worker_rss_bytes` 로 워커를 바꿀 때, 같은 슬롯의 다음 요청은 이전 워커의 종료·회수가 끝난 뒤 새 워커를 띄웁니다. 보통은 바로 끝나지만 워커가 quit 에 응하지 않으면 `close_timeout`(기본 10초)에 강제 종료 정리 3초를 더한 만큼까지 기다리며, 이 대기는 요청 제한 시간에 들어갑니다.

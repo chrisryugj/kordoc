@@ -33,6 +33,8 @@ class ContractTest {
         assertEquals(reqs.get(5).get("options"), ParseOptions.builder().ocr(false).pageImages(true).build().wireOptions());
         assertEquals(reqs.get(6).get("options"), ParseOptions.builder().pageImages("webp").build().wireOptions());
         assertEquals(reqs.get(7).get("options"), ParseOptions.builder().ocr(true).ocrLinesAll().ocrLineCandidates(3).build().wireOptions());
+        assertEquals(reqs.get(8).get("options"), ParseOptions.builder().ocr(true).ocrLinesAll().ocrChars(2).build().wireOptions());
+        assertTrue(ParseOptions.builder().ocrChars(true).build().wireOptions().get("ocrChars").isBoolean());
     }
 
     @Test
@@ -55,8 +57,8 @@ class ContractTest {
                 .keepTrailingEmptyCols(true).keepEmptyParagraphs(true).includeFieldPlaceholders(true).pages("1-2")
                 .images(false).inlineImages(true).qrCodes(true).imageFormat("webp").imagePlacement("flow").dropBlankImages(true).ocr(true).formulaOcr(false).password("pw")
                 .ocrLines(true).ocrDet("server").ocrDetLongSide(1920).ocrRec(new OcrModelFile(Path.of("/m/rec.onnx"), "a".repeat(64)))
-                .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).pageImages("webp").ocrLineCandidates(3).build().wireOptions();
-        assertEquals(30, all.size());
+                .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).pageImages("webp").ocrLineCandidates(3).ocrChars(3).build().wireOptions();
+        assertEquals(31, all.size());
     }
 
     @Test
@@ -149,5 +151,21 @@ class ContractTest {
         OcrPageLines.Line line = new ParseResult((ObjectNode) fixture().get("responses").get(8).get("result"), null).ocrLines().orElseThrow().get(0).lines().get(0);
         assertEquals(new OcrPageLines.Line("대한민국 정부 2026", new OcrPageLines.Box(118, 105, 640, 60), 0.9868, false), line);
         assertEquals("Line[text=대한민국 정부 2026, box=Box[x=118.0, y=105.0, w=640.0, h=60.0], confidence=0.9868, dropped=false]", line.toString());
+    }
+
+    @Test
+    void decodeOcrChars() throws IOException {
+        JsonNode res = fixture().get("responses");
+        ParseResult r = new ParseResult((ObjectNode) res.get(9).get("result"), null);
+        List<List<OcrChar>> page = r.ocrChars().get(0);
+        assertEquals(List.of(new OcrChar("정", new OcrPageLines.Box(118, 105, 58, 60), 0.99, List.of()),
+                new OcrChar("부", new OcrPageLines.Box(176, 105, 62, 60), 0.81, List.of(new OcrCharAlternative("투", 0.15), new OcrCharAlternative("무", 0.02)))), page.get(0));
+        // 줄과 같은 자리 — 글자가 없는 줄(표기 후처리로 글이 바뀐 줄 등)은 빈 목록
+        assertEquals(r.ocrLines().orElseThrow().get(0).lines().size(), page.size());
+        assertEquals(List.of(), page.get(1));
+        // 옵션을 안 준 결과는 줄마다 빈 목록, ocrLines 가 없으면 빈 목록. 기존 Line 은 그대로
+        assertEquals(List.of(List.of(List.of(), List.of()), List.of(List.of())), new ParseResult((ObjectNode) res.get(5).get("result"), null).ocrChars());
+        assertEquals(List.of(), new ParseResult((ObjectNode) res.get(0).get("result"), null).ocrChars());
+        assertEquals(new OcrPageLines.Line("정부", new OcrPageLines.Box(118, 105, 120, 60), 0.9, false), r.ocrLines().orElseThrow().get(0).lines().get(0));
     }
 }

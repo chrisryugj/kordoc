@@ -89,8 +89,9 @@ export function builtinOcrConfig(o: ParseOptions | undefined): Readonly<BuiltinO
     models,
     ...(o.ocrRec === "auto" ? { handwriting: handwritingFallbackModels(models), autoRec: AUTO_REC }
       : o.ocrRec === undefined ? { handwriting: handwritingFallbackModels(models), autoRec: o.ocr ? { ...DEFAULT_AUTO_REC, fetch: true as const } : DEFAULT_AUTO_REC } : {}),
-    tuning: o.ocrDetLongSide === undefined && !o.ocrLineCandidates ? DEFAULT_OCR_TUNING
-      : { ...DEFAULT_OCR_TUNING, ...(o.ocrDetLongSide !== undefined ? { detLongSide: o.ocrDetLongSide } : {}), ...(o.ocrLineCandidates ? { lineCandidates: o.ocrLineCandidates } : {}) },
+    tuning: o.ocrDetLongSide === undefined && !o.ocrLineCandidates && !o.ocrChars ? DEFAULT_OCR_TUNING
+      : { ...DEFAULT_OCR_TUNING, ...(o.ocrDetLongSide !== undefined ? { detLongSide: o.ocrDetLongSide } : {}), ...(o.ocrLineCandidates ? { lineCandidates: o.ocrLineCandidates } : {}),
+        ...(o.ocrChars ? { chars: o.ocrChars === true ? 0 : o.ocrChars } : {}) },
     lines: o.ocrLines === "all" ? "all" : o.ocrLines ? "kept" : undefined,
   }
 }
@@ -163,7 +164,7 @@ export function reportModelDownload(p: { phase: string; downloaded: number; spec
 
 /** OcrItem(래스터 px) → 결과 줄 */
 export function toOcrLine(it: OcrItem, dropped = false): OcrLine {
-  return { text: it.text, box: { x: it.x, y: it.y, w: it.w, h: it.h }, confidence: it.confidence, ...(dropped ? { dropped: true as const } : {}), ...(it.candidates && { candidates: it.candidates }) }
+  return { text: it.text, box: { x: it.x, y: it.y, w: it.w, h: it.h }, confidence: it.confidence, ...(dropped ? { dropped: true as const } : {}), ...(it.candidates && { candidates: it.candidates }), ...(it.chars && { chars: it.chars }) }
 }
 
 /** 쪽 줄 묶음 — 블록에 쓴 줄 + (all) 버린 줄을 위→아래, 왼→오른 순으로 */
@@ -509,7 +510,8 @@ async function closerReads(
     if (cw >= ch * 6) stretchFaintCrop(crop)
     const items = await engine.recognizePage(crop, cw, ch, undefined, tuning)
     out.push(items.map(it => {
-      const placed = { ...it, x: (it.x + x0) / 2, y: (it.y + y0) / 2, w: it.w / 2, h: it.h / 2 }
+      const half = (b: { x: number; y: number; w: number; h: number }) => ({ x: (b.x + x0) / 2, y: (b.y + y0) / 2, w: b.w / 2, h: b.h / 2 })
+      const placed = { ...it, ...half(it), ...(it.chars && { chars: it.chars.map(c => ({ ...c, box: half(c.box) })) }) }
       copyOcrTextGaps(it, placed, 0.5, x0 / 2)
       return placed
     }))

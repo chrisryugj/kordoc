@@ -653,7 +653,7 @@ export type {
   ParseWarning, WarningCode, OutlineItem,
   DiffResult, BlockDiff, CellDiff, DiffChangeType,
   FormField, FormResult,
-  OcrProvider, OcrModelFile, OcrPageLines, OcrLine, OcrLineCandidate, PageImage, WatchOptions,
+  OcrProvider, OcrModelFile, OcrPageLines, OcrLine, OcrLineCandidate, OcrChar, OcrCharAlternative, PageImage, WatchOptions,
 } from "./types.js"
 export { blocksToMarkdown } from "./table/builder.js"
 export type { MarkdownOptions } from "./table/builder.js"

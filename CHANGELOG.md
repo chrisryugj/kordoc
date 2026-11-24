@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ocrChars` 옵션(CLI `--ocr-chars [n]`) — `ocrLines` 의 연장으로, 줄마다 글자별 신뢰도·상자를 `chars: [{ text, box, confidence }]` 로 낸다. `confidence` 는 그 글자를 고른 CTC 시점의 확률(줄의 `confidence` 는 이 값의 평균)이고, `n`(1~5)을 주면 같은 시점에서 다음으로 확률 높은 글자를 `alternatives: [{ text, confidence }]` 로 n 개까지 더한다. 상자의 세로는 줄 상자, 가로는 이웃 글자의 인식 시점 사이를 나눈 근사다. `chars` 를 이으면 줄 `text` 와 같고, 표기 후처리로 글이 바뀐 줄·이어 붙였거나 다시 읽어 고친 줄·세로로 돌려 읽은 줄에는 없다. `ocrLines` 와 함께 쓰고 범위 밖 값은 거부한다. parse-worker protocol 2·Python SDK(`ocr_chars`, `result.ocr_chars`)·Java SDK(`ocrChars(…)`, `result.ocrChars()`)도 받는다. 기본은 꺼져 있고 끄면 출력은 그대로
+
 ## [4.25.15] - 2026-11-25
 
 ### Fixed

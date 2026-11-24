@@ -84,6 +84,7 @@ if (result.success) {
 | `ocr` | `--ocr` · `--ocr-force` | 기본: 스캔 쪽 + 큰 그림 속 글(모델 캐시 있을 때) · `true`: + 작은 그림·로고까지(모델 ~18MB 자동 다운로드) · `"force"`: 전 쪽 · `false`: 끔 · 함수: 외부 OCR · HWP·HWPX 삽입 그림은 `true`·`"force"`·함수일 때만 읽음(기본은 원문 글만, DOCX 등 다른 형식 그림은 대상 아님) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | 내장 OCR 이 읽은 줄(상자·신뢰도)을 결과 `ocrLines` 로(PDF·이미지). `"all"` 은 저신뢰로 버린 줄도 `dropped: true` 로 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
 | `ocrLineCandidates` | `--ocr-line-candidates <n>` | `ocrLines` 의 연장 — 줄마다 인식 모델의 상위 읽기 후보 n 개(1~5)를 `candidates: [{ text, probability }]` 로. `ocrLines` 와 함께 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
+| `ocrChars` | `--ocr-chars [n]` | `ocrLines` 의 연장 — 줄마다 글자별 신뢰도·상자를 `chars: [{ text, box, confidence }]` 로. `n`(1~5)을 주면 글자마다 대안 n 개를 `alternatives` 로 함께. `ocrLines` 와 함께 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
 | `pageImages` | `--page-images png\|webp` | 기존 OCR 경로가 읽은 페이지를 그대로 결과 `pageImages` 로(PDF·이미지). `true`·`"png"` 는 PNG, `"webp"` 는 무손실 WebP. `ocr: false` 여도 냄 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
 | `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | 글줄 검출 모델 `"mobile"`(기본)·`"server"`(~88MB, 첫 사용 시 다운로드)·`"medium"`(PP-OCRv6, ~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔 입력용)·로컬 파일 `{path, sha256}`, 검출 입력 긴 변(32~4096, 기본 960) |
 | `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 — 기본은 기본 rec 로 읽고 뚜렷한 손글씨 쪽만 손글씨 rec 로 다시 읽음. `"printed"`(기본 rec 만)·`"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·`"auto"`(기본보다 너그러운 문턱으로 손글씨 쪽을 다시 읽음)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
@@ -293,6 +294,10 @@ await parse("인쇄 스캔.pdf", { ocr: true, ocrRec: "printed" })              
 - `ocrLineCandidates: N`(1~5)은 줄마다 `candidates` 를 `probability` 높은 순으로 붙입니다. `probability` 는 그 읽기의 확률(같은 글이 되는 CTC 정렬을 모두 더한 값, 빔 32·시점마다 상위 8 클래스의 근사)이라
   같은 줄의 후보끼리 견줄 수 있고, 줄의 `confidence`(가장 유력한 정렬에서 글자별 최고 확률의 평균)와는 다른 척도입니다. 줄의 `text`·`confidence` 는 그대로입니다. 후보 글은 표기 후처리 전의 인식 결과라 기호·글머리에서 줄 `text` 와 다를 수 있으며,
   줄 상자 하나를 읽어 그대로 낸 줄에만 붙습니다(이어 붙였거나 다시 읽어 고친 줄에는 없음). 손글씨 모델로 다시 읽은 쪽은 그 모델의 후보입니다.
+- `ocrChars: true` 는 줄마다 `chars` 를 붙입니다. 글자마다 `text`(코드 포인트 하나, 공백 포함)·`box`(래스터 px)·`confidence`(그 글자를 고른 CTC 시점의 확률 — 줄의 `confidence` 는 이 값의 평균)입니다.
+  `ocrChars: N`(1~5)이면 같은 시점에서 다음으로 확률 높은 글자를 `alternatives: [{ text, confidence }]` 로 N 개까지 더합니다(0.001 이상, 확률 내림차순). 줄 후보(`candidates`)는 줄 전체를 다르게 읽은 것이고, 대안은 글자 자리마다 본 것이라
+  틀린 글자가 어디인지(신뢰도 낮은 글자)와 그 자리에 올 글자를 함께 알 수 있습니다. 글자 상자의 세로는 줄 상자 그대로이고, 가로는 이웃 글자의 인식 시점 사이를 나눈 근사입니다(글자 모양을 잰 것이 아님).
+  `chars` 를 이으면 줄 `text` 와 같습니다 — 표기 후처리로 글이 바뀐 줄, 이어 붙였거나 다시 읽어 고친 줄, 세로로 돌려 읽은 줄에는 없습니다.
 - `pageImages` 는 `ocrLines` 좌표가 가리키는 래스터를 페이지마다 `{ pageNumber, filename, width, height, mimeType, data }` 로 냅니다. 이미지 입력은 실제 포맷과 무관하게
   EXIF 방향대로 세운 이미지(OCR 이 기울기를 보정했으면 보정한 것), PDF 는 OCR 배율로 렌더링한 페이지이고 OCR 하지 않은 페이지와 `ocr: false` 에서도 나옵니다.
   `"webp"` 는 무손실이며 `sharp` 가 없거나 한 변이 16,383px 를 넘는 페이지는 PNG 로 냅니다(`mimeType` 으로 구분). 누적 128MB·래스터 픽셀 합계 10억(1,000페이지)에

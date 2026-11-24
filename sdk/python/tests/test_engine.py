@@ -60,6 +60,14 @@ def test_ocr_lines_typed_match_raw(engine: dict, sdk_fixtures: Path, manifest: l
             for cands, raw in zip(r.ocr_line_candidates, r.raw["ocrLines"]):
                 assert [[(c.text, c.probability) for c in cs] for cs in cands] == [[(c["text"], c["probability"]) for c in ln.get("candidates", [])] for ln in raw["lines"]]
                 assert all((1 <= len(cs) <= want) if want else cs == () for cs in cands), case["name"]
+            # 글자(ocr_chars) — 줄과 같은 자리, 이으면 줄 글. 옵션을 안 준 문서는 줄마다 빈 튜플
+            on = "ocrChars" in case["options"]
+            for chars, page, raw in zip(r.ocr_chars, pages, r.raw["ocrLines"]):
+                assert [[(c.text, c.confidence, (c.box.x, c.box.y, c.box.w, c.box.h), [(a.text, a.confidence) for a in c.alternatives]) for c in cs] for cs in chars] == [
+                    [(c["text"], c["confidence"], (c["box"]["x"], c["box"]["y"], c["box"]["w"], c["box"]["h"]), [(a["text"], a["confidence"]) for a in c.get("alternatives", [])])
+                     for c in ln.get("chars", [])] for ln in raw["lines"]]
+                assert all("".join(c.text for c in cs) == ln.text for cs, ln in zip(chars, page.lines) if cs), case["name"]
+                assert any(chars) if on else all(cs == () for cs in chars), case["name"]
 
 
 def test_page_images_inline_and_files(engine: dict, sdk_fixtures: Path, manifest: list[dict], tmp_path: Path) -> None:
