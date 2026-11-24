@@ -1,7 +1,7 @@
 import { build, context } from "esbuild"
 import { rollup, watch } from "rollup"
 import { dts } from "rollup-plugin-dts"
-import { copyFile, mkdir, readFile, rm } from "node:fs/promises"
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { watchFile } from "node:fs"
 import { fileURLToPath } from "node:url"
 
@@ -46,6 +46,16 @@ if (process.argv.includes("--watch")) {
   watchFile(wasm, () => { void copyWasm().catch(console.error) })
 } else {
   await Promise.all(builds.map(options => build(options)))
+  // 소스맵에서 붙여 쓰기 사전 원문은 뺀다 — 수십만 낱말 문자열이라 디버깅에 쓸 데가 없고 맵마다 1MB 넘게 늘린다
+  for (const name of await readdir(dist)) {
+    if (!name.endsWith(".map")) continue
+    const file = new URL(name, dist)
+    const map = JSON.parse(await readFile(file, "utf8"))
+    const i = map.sources?.findIndex(s => s.endsWith("src/pdf/wrap-dict-data.ts")) ?? -1
+    if (i < 0 || !map.sourcesContent) continue
+    map.sourcesContent[i] = null
+    await writeFile(file, JSON.stringify(map))
+  }
   const bundle = await rollup(types)
   try {
     for (const output of declarations) await bundle.write(output)
