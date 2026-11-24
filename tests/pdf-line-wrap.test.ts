@@ -709,3 +709,19 @@ describe("wrapJoiner: 법령 붙여 쓰기 사전", () => {
     assert.equal(wrapJoiner("행정", "처분", undefined, false), " ")
   })
 })
+
+describe("wrapJoiner: 줄 끝 용언 어간 꺾임", () => {
+  it("하다·되다 어간 뒤로 넘어온 어미는 붙인다 (\"통과되⏎도록\", \"제시하⏎고\", \"걱정하⏎시지\")", () => {
+    assert.equal(wrapJoiner("국회를 통과되", "도록 노력하겠다"), "")
+    assert.equal(wrapJoiner("방안을 제시하", "고 있다"), "")
+    assert.equal(wrapJoiner("너무 걱정하", "시지 않도록"), "")
+  })
+  it("-아/-어 뒤 보조 용언 지다는 붙인다 (\"높아⏎지고\", \"많아⏎졌다\")", () => {
+    assert.equal(wrapJoiner("필요성도 높아", "지고 있다."), "")
+    assert.equal(wrapJoiner("이용자가 많아", "졌다."), "")
+  })
+  it("어간 꼴이 아닌 줄 끝이나 어미가 아닌 다음 어절은 종전대로 띄운다", () => {
+    assert.equal(wrapJoiner("100만원 이하", "기준으로"), " ")
+    assert.equal(wrapJoiner("아시아", "지역의"), " ")
+  })
+})
