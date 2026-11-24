@@ -286,6 +286,8 @@ await parse("인쇄 스캔.pdf", { ocr: true, ocrRec: "printed" })              
   블록 `bbox`(PDF pt, 아래 원점)로는 `x / scale`, `쪽 높이 − (y + h) / scale` 로 옮깁니다. 이미지 입력은 EXIF 방향대로 세운 이미지 픽셀입니다(24MP 를 넘어 줄였으면 줄인 크기).
   기울기를 보정한 쪽(`deskewAngle` ≠ 0)은 돌린 래스터 기준입니다 — 입력 좌표로는 θ = `deskewAngle`(도), (cx, cy) = ((`width`−1)/2, (`height`−1)/2) 로
   `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` 입니다(상자 네 꼭짓점에 적용).
+- 괘선이나 칸 클립으로 찾은 표 칸(스캔·텍스트층 PDF 모두)은 `cells[r][c].bbox` 에 칸 좌표가 있습니다. 표 블록 `bbox` 와 같은 단위라
+  래스터 픽셀로는 `x · scale`, `(페이지 높이 − y − height) · scale` 입니다. 옵션 없이 늘 붙고 마크다운은 그대로입니다.
 - 줄은 블록을 만드는 데 쓴 것입니다. 텍스트층이 있는 쪽의 그림 영역만 읽은 쪽은 `regionsOnly: true` 이고 영역 안 줄만 담깁니다(그림 글 병합 판정 전). 이 경로는 원본 PDF 영역과 좌표를 맞추기 위해 쪽 전체를 회전하지 않으며 `deskewAngle`은 0입니다.
   사용자 OcrProvider·HWP 삽입 그림 OCR 은 줄 좌표가 없어 해당하지 않습니다. 옵션을 끄면 결과는 이전과 같습니다.
 - `ocrLineCandidates: N`(1~5)은 줄마다 `candidates` 를 `probability` 높은 순으로 붙입니다. `probability` 는 그 읽기의 확률(같은 글이 되는 CTC 정렬을 모두 더한 값, 빔 32·시점마다 상위 8 클래스의 근사)이라

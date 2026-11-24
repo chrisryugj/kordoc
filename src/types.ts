@@ -185,6 +185,12 @@ export interface IRCell {
   blocks?: IRBlock[]
   /** 제목 셀 여부 (HWP5 width_ref bit2 / HWPX header 속성) — v3.0 */
   isHeader?: boolean
+  /**
+   * 칸 좌표 — PDF·OCR 표에서 괘선이나 칸 클립으로 찾은 칸에만 있다 (블록 `bbox` 와 같은 PDF pt, 아래 원점).
+   * kordoc 이 한 칸을 여러 칸으로 나누면(이름·값, 글줄마다 행 등) 나뉜 칸이 모두 원래 칸의 좌표를 갖는다.
+   * 행이 덜 나뉜 표를 글줄로 다시 짠 행에는 없고, 페이지를 넘어 이은 칸은 첫 페이지 칸의 좌표다
+   */
+  bbox?: BoundingBox
 }
 
 // ─── 메타데이터 ─────────────────────────────────────

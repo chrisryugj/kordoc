@@ -13,7 +13,7 @@ import { buildClipCellGrids, dropGridsInside, type ClipPage } from "./clip-cells
 import { dropShadingClipGrids, dropInsetClipGrids, dropHeadBandClipGrids, dropRuledFragmentClipGrids } from "./table-grid.js"
 import { chainShortSegments, type ClipRect } from "./line-extract.js"
 import { isTextRunClipStrip, isProseBoxGrid, isSparseProseGrid } from "./grid-classify.js"
-import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment } from "./line-detector.js"
+import { extractLines, preprocessLines, filterPageBorderLines, closeOpenTableEdges, bridgeSplitColumnVerticals, buildTableGrids, extractCells, mapTextToCells, cellTextToString, normalizeUndersegmentedTable, type TextItem, type TableGrid, type LineSegment, type ExtractedCell } from "./line-detector.js"
 import { extendStraddledVerticals } from "./ocr-straddle-verticals.js"
 import { detectClusterTables, findTwoColumnProseCutX, sideTabGlyphs, type ClusterItem, type ClusterTableResult } from "./cluster-detector.js"
 import { copyOcrTextGaps } from "../ocr/text-gaps.js"
@@ -587,6 +587,7 @@ function extractBlocksWithGrids(
     )
 
     let nestedAttached = false
+    const cellBox = (c: ExtractedCell): BoundingBox => ({ page: pageNum, x: c.bbox.x1, y: c.bbox.y1, width: c.bbox.x2 - c.bbox.x1, height: c.bbox.y2 - c.bbox.y1 })
     for (const cell of cells) {
       const cellItems = cellTextMap.get(cell) || []
       // 틀 셀 — 안쪽 클립 그리드가 낸 표를 이 셀의 blocks 에 원문 순서(위→아래)로 넣는다.
@@ -601,14 +602,14 @@ function extractBlocksWithGrids(
       if (lone?.table && lone.bbox && lone.table.rows === 1 && lone.table.cols === 1 && CLIP_TABLES.has(lone.table) &&
           !lone.table.cells[0][0].blocks?.some(b => b.type === "table") && lone.bbox.width >= cw * 0.9 &&
           /^[^\n]{1,30}$/.test(lone.table.cells[0][0].text.trim())) {
-        irGrid[cell.row][cell.col] = { text: lone.table.cells[0][0].text, colSpan: cell.colSpan, rowSpan: cell.rowSpan }
+        irGrid[cell.row][cell.col] = { text: lone.table.cells[0][0].text, colSpan: cell.colSpan, rowSpan: cell.rowSpan, bbox: cellBox(cell) }
         takeClipCellEdges(cell, irGrid[cell.row][cell.col])
         continue
       }
       if (nested.length > 0) {
         nestedAttached = true
         const built = buildFrameCellBlocks(cellItems, nested, pageNum, lex)
-        irGrid[cell.row][cell.col] = { text: built.text, colSpan: cell.colSpan, rowSpan: cell.rowSpan, blocks: built.blocks }
+        irGrid[cell.row][cell.col] = { text: built.text, colSpan: cell.colSpan, rowSpan: cell.rowSpan, blocks: built.blocks, bbox: cellBox(cell) }
         // 틀 칸 자기 글의 글줄 — 쪽을 넘은 틀 칸의 글 이어짐 판정(table-parts)이 본다 (과제 명세서 "□ 개념" 칸이 다음 쪽 상자 칸으로 이어짐)
         if (cellItems.length) recordCellLines(irGrid[cell.row][cell.col], cellItems)
         takeClipCellEdges(cell, irGrid[cell.row][cell.col])
@@ -618,6 +619,7 @@ function extractBlocksWithGrids(
         text: cleanCellText(cellTextToString(cellItems, { box: cell.bbox, lex })),
         colSpan: cell.colSpan,
         rowSpan: cell.rowSpan,
+        bbox: cellBox(cell),
       }
       // 1×1 상자는 시각적 글줄 대신 원문 기하로 만든 문단을 함께 둔다. 칸 text 는 keep 모드의 기존 글을 보존한다.
       if (numRows === 1 && numCols === 1 && cellItems.length) {
@@ -710,7 +712,7 @@ function extractBlocksWithGrids(
           const o = kept.get(i)
           return row.map((rawText, c) => {
             const src = o === undefined ? undefined : irGrid[o]?.[c]
-            return { text: cleanCellText(rawText), colSpan: src?.colSpan ?? 1, rowSpan: src ? spanRows(o!, src.rowSpan) : 1 }
+            return { text: cleanCellText(rawText), colSpan: src?.colSpan ?? 1, rowSpan: src ? spanRows(o!, src.rowSpan) : 1, ...(src?.bbox ? { bbox: src.bbox } : {}) }
           })
         })
         finalRows = finalGrid.length

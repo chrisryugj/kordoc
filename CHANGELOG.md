@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- PDF·OCR: 표 칸 좌표 `IRCell.bbox`. 괘선이나 칸 클립으로 찾은 칸마다 표 블록 `bbox` 와 같은 PDF pt(아래 원점) 좌표를 싣는다. 지금까지는 표 전체의 좌표만 있어, 스캔한 표에서 칸의 위치가 필요하면 표 안 OCR 줄을 칸 글과 다시 맞춰야 했다. 마크다운은 그대로다
+
 ## [4.25.7] - 2026-11-24
 
 ### Fixed

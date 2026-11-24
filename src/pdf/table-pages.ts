@@ -21,6 +21,8 @@ function relocate(src: IRCell, dst: IRCell, from = 0): Split[] {
   return out
 }
 
+// 페이지를 넘은 꼬리는 다음 페이지 글이다 — 앞 페이지 칸의 좌표를 물려주지 않는다
+const withoutBox = ({ bbox: _, ...cell }: IRCell): IRCell => cell
 const setSplits = (cell: IRCell, splits: Split[]): void => {
   if (splits.length) CELL_SPLITS.set(cell, splits.sort((a, b) => a.at - b.at))
 }
@@ -187,7 +189,7 @@ function splitCrossPageRows(t: IRTable, pageNumber: number | undefined): IRTable
     if (cut > r && splits.every(s => cut < r + s.cell.rowSpan && pages[cut] === s.split!.page)) {
       for (const { cell, c, split } of splits) {
         cells[r][c] = clone(cell, { ...split!.head, rowSpan: cut - r })
-        const tail: IRCell = { ...cell, ...split!.tail, rowSpan: r + cell.rowSpan - cut }
+        const tail: IRCell = { ...withoutBox(cell), ...split!.tail, rowSpan: r + cell.rowSpan - cut }
         CELL_PAGES.set(tail, split!.page)
         setSplits(tail, split!.rest)
         cells[cut][c] = tail
@@ -197,7 +199,7 @@ function splitCrossPageRows(t: IRTable, pageNumber: number | undefined): IRTable
     const row: IRCell[] = Array.from({ length: t.cols }, () => ({ text: "", colSpan: 1, rowSpan: 1 }))
     for (const { cell, c, split } of splits) {
       cells[r][c] = clone(cell, split!.head)
-      const tail: IRCell = { ...cell, ...split!.tail, rowSpan: 1 }
+      const tail: IRCell = { ...withoutBox(cell), ...split!.tail, rowSpan: 1 }
       CELL_PAGES.set(tail, split!.page)
       setSplits(tail, split!.rest)
       row[c] = tail

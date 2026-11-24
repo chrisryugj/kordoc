@@ -286,6 +286,8 @@ await parse("printed-scan.pdf", { ocr: true, ocrRec: "printed" })               
   convert to block `bbox` space (PDF pt, bottom-left origin) with `x / scale` and `pageHeight − (y + h) / scale`. For image input the raster is the image as shown (EXIF orientation applied; shrunk if over 24MP).
   Deskewed pages (`deskewAngle` ≠ 0) use the rotated raster — map back with θ = `deskewAngle` (degrees), (cx, cy) = ((`width`−1)/2, (`height`−1)/2):
   `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` (apply to the four box corners).
+- Table cells found from ruling lines or cell clips (scanned and text-layer PDF) carry their box in `cells[r][c].bbox`, in the same units as the table block's `bbox`;
+  in raster pixels that is `x · scale`, `(pageHeight − y − height) · scale`. Always set, no option; Markdown is unchanged.
 - Lines are the ones used to build blocks. Pages where only figure regions were read (the page has a text layer) are marked `regionsOnly: true` and list only lines inside those regions (before the figure-text merge). This path keeps the original PDF region coordinates without rotating the whole page, so `deskewAngle` is 0.
   A user OcrProvider and OCR of images embedded in HWP have no line geometry and are not covered. With the option off, results are unchanged.
 - `ocrLineCandidates: N` (1–5) adds `candidates` to each line in descending `probability`. `probability` is the reading's probability summed over all CTC alignments (an approximation with a beam of 32 and the top 8 classes per frame),
