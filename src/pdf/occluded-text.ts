@@ -19,10 +19,13 @@ export function occludedTextItems(items: PdfTextItem[], fnArray: ArrayLike<numbe
   let drawn = ""
   let ctm = [1, 0, 0, 1, 0, 0]
   let alpha = 1, normalBlend = true
+  // 무늬(타일·음영) 칠 — 타일 칸이 칠하지 않은 곳과 무늬 안 투명도·소프트 마스크는 비친다. 크롬 인쇄 PDF 의 쪽 전체 워터마크 무늬가
+  // 본문 위에 칠해져 쪽 글이 통째로 빠졌다
+  let pattern = false
   let clip: Rect | null | undefined = undefined // undefined = 쪽 전체, null = 사각형 아닌 클립(판단 안 함)
   let path: Rect[] = []
   let pathOk = true
-  const stack: Array<{ ctm: number[]; alpha: number; normalBlend: boolean; clip: Rect | null | undefined }> = []
+  const stack: Array<{ ctm: number[]; alpha: number; normalBlend: boolean; pattern: boolean; clip: Rect | null | undefined }> = []
   const box = (x: number, y: number, w: number, h: number): Rect => {
     const xs: number[] = [], ys: number[] = []
     for (const [px, py] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
@@ -36,7 +39,7 @@ export function occludedTextItems(items: PdfTextItem[], fnArray: ArrayLike<numbe
     const fn = fnArray[i]
     const args = (argsArray as unknown[][])[i]
     if (fn === OPS.save || fn === OPS.paintFormXObjectBegin) {
-      stack.push({ ctm: ctm.slice(), alpha, normalBlend, clip })
+      stack.push({ ctm: ctm.slice(), alpha, normalBlend, pattern, clip })
       const m = fn === OPS.paintFormXObjectBegin ? (args as unknown[])[0] : null
       if (Array.isArray(m) && m.length >= 6) ctm = mul(ctm, m as number[])
       const bbox = fn === OPS.paintFormXObjectBegin ? args[1] : null
@@ -48,8 +51,10 @@ export function occludedTextItems(items: PdfTextItem[], fnArray: ArrayLike<numbe
       }
     } else if (fn === OPS.restore || fn === OPS.paintFormXObjectEnd) {
       const s = stack.pop()
-      if (s) ({ ctm, alpha, normalBlend, clip } = s)
+      if (s) ({ ctm, alpha, normalBlend, pattern, clip } = s)
     } else if (fn === OPS.transform) ctm = mul(ctm, args as number[])
+    else if (fn === OPS.setFillColorN) pattern = true
+    else if (fn === OPS.setFillRGBColor || fn === OPS.setFillGray || fn === OPS.setFillCMYKColor || fn === OPS.setFillColor) pattern = false
     else if (fn === OPS.setGState) {
       const entries = (args as unknown[])[0]
       if (Array.isArray(entries)) for (const e of entries) {
@@ -76,7 +81,7 @@ export function occludedTextItems(items: PdfTextItem[], fnArray: ArrayLike<numbe
     } else if (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.fillStroke || fn === OPS.eoFillStroke || fn === OPS.endPath ||
                fn === OPS.stroke || fn === OPS.closeStroke || fn === OPS.closeFillStroke || fn === OPS.closeEOFillStroke) {
       const fills = fn !== OPS.endPath && fn !== OPS.stroke && fn !== OPS.closeStroke
-      if (fills && pathOk && path.length === 1 && alpha >= 1 && normalBlend && clip !== null && drawn.length > 0) {
+      if (fills && pathOk && path.length === 1 && alpha >= 1 && normalBlend && !pattern && clip !== null && drawn.length > 0) {
         const rect = clip ? meet(path[0], clip) : path[0]
         if (rect.x2 > rect.x1 && rect.y2 > rect.y1) covers.push({ at: drawn.length, rect })
       }

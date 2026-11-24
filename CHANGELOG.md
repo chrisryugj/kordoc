@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- PDF: 크롬 인쇄 PDF 의 CSS 배경 무늬(쪽 전체 무늬 칠) 뒤 본문이 가려진 글로 통째로 빠지던 것. 무늬·음영 칠은 가림 덮개로 보지 않는다(단색 불투명 사각형은 그대로)
+
 ## [4.25.11] - 2026-11-24
 
 ### Changed

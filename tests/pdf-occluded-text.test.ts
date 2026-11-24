@@ -30,6 +30,15 @@ describe("occludedTextItems", () => {
     }
   })
 
+  it("keeps text under a pattern fill, and a solid fill after it still covers", () => {
+    // 무늬 칠은 setFillColorN — 무늬 칸 밖은 비친다. 저장·복원 뒤 단색 칠은 다시 덮개다
+    const fn = [OPS.showText, OPS.save, OPS.setFillColorN, OPS.constructPath, OPS.fill, OPS.restore,
+      OPS.showText, OPS.save, OPS.setFillRGBColor, OPS.constructPath, OPS.fill, OPS.restore]
+    const page = [[OPS.rectangle], [0, 0, 595, 842]]
+    const args = [[glyphs("Header 6")], [], ["Pattern"], page, [], [], [glyphs("Body")], [], [255, 255, 255], [[OPS.rectangle], [90, 690, 60, 30]], [], []]
+    assert.deepEqual([...occludedTextItems([header, body], fn, args)], [body])
+  })
+
   it("leaves items alone when their text does not line up with the drawn glyphs", () => {
     const fn = [OPS.showText, OPS.constructPath, OPS.fill, OPS.showText]
     const args = [[glyphs("Other")], [[OPS.rectangle], [0, 0, 595, 842]], [], [glyphs("Body")]]

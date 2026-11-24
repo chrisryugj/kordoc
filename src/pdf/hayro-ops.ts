@@ -106,6 +106,9 @@ export function hayroOps(ev: ArrayLike<number>, strs: string[]): OpList {
         if (r >= 0) {
           if (fills) push(OPS.setFillRGBColor, [r, g, b])
           if (strokes) push(OPS.setStrokeRGBColor, [r, g, b])
+        } else if (fills) {
+          // 무늬·음영 칠(색 없음 −1)은 pdf.js 처럼 setFillColorN 으로 — 무늬 칸 밖·무늬 안 소프트 마스크는 비치므로 가림 판정이 덮개로 보지 않는다
+          push(OPS.setFillColorN, ["Pattern"])
         }
         if (a < 1) push(OPS.setGState, [[...(fills ? [["ca", a]] : []), ...(strokes ? [["CA", a]] : [])]])
         push(OPS.constructPath, [...pathArgs(ev, i + 13), null])
