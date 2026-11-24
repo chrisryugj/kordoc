@@ -50,6 +50,10 @@ export class WrapLexicon {
   private readonly words = new Map<string, number>()
   /** 줄 안에서 이웃한 두 어절("개인정보 처리") — 이어 붙인 꼴 증거(joinedWord)의 거부권 */
   private readonly pairs = new Set<string>()
+  /** 줄 안 어절 줄기(stemOf) — 괄호·조사를 붙여 쓴 꼴("국제에너지기구(IEA)는")도 이어 붙인 꼴 증거가 되게(joinedStem) */
+  private readonly stems = new Set<string>()
+  /** 줄 안 이웃 어절 줄기 짝 — joinedStem 의 거부권 */
+  private readonly spacedStems = new Set<string>()
   /** 줄 안 어절 첫머리 한글(두~여섯 음절) — 꺾인 두 조각이 어절 머리로 이어지나(startsWord) */
   private readonly heads = new Set<string>()
   /** 줄 안 이웃 어절의 앞 어절 한글 꼬리 + 뒤 어절 첫 음절("지식재산 보") — 어절 머리 증거의 거부권 */
@@ -88,11 +92,14 @@ export class WrapLexicon {
         const t = toks[i], n = t.length
         if (i > 0 && i < toks.length - 1) {
           bump(this.words, t)
+          const st = stemOf(t)
+          if (st) this.stems.add(st)
           const run = t.match(/^[가-힣]+/)?.[0] ?? ""
           for (let j = 2; j <= Math.min(run.length, 6); j++) this.heads.add(run.slice(0, j))
         }
         if (i + 1 < toks.length) {
           this.pairs.add(t + " " + toks[i + 1])
+          this.spacedStems.add(stemOf(t) + " " + stemOf(toks[i + 1]))
           const tail = t.match(/[가-힣]+$/)?.[0]
           if (tail) this.spacedHeads.add(tail + " " + toks[i + 1].charAt(0))
         }
@@ -132,6 +139,13 @@ export class WrapLexicon {
   /** 꺾인 두 조각을 이어 붙인 꼴이 줄 안 한 어절로 나왔고, 두 조각이 줄 안에서 띄어 쓴 이웃 어절로는 나온 적 없나 */
   joinedWord(left: string, right: string): boolean {
     return this.isWord(left + right) && !this.pairs.has(left + " " + right)
+  }
+
+  /** 꺾인 두 조각을 이은 줄기가 줄 안 어절 줄기로 나왔고, 두 조각 줄기를 띄어 쓴 이웃으로는 쓴 적 없나 — 뒤 조각은 한글 뒤 괄호·문장 부호만 붙어야 한다 */
+  joinedStem(left: string, right: string): boolean {
+    const run = right.match(/^[가-힣]+(?=$|[(.,)」』’”;:])/)?.[0]
+    if (!run || !/^[가-힣]+$/.test(left)) return false
+    return this.stems.has(stemOf(left + run)) && !this.spacedStems.has(left + " " + stemOf(run))
   }
 
   /** 두 어절을 줄 안에서 띄어 쓴 이웃으로 쓴 적 있나 */
@@ -350,7 +364,7 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   // "개인정보 처리"·"개인정보처리자" 가 섞인) 명사+명사 꺾임을 어절 통째로 가른다("개인정보⏎처리자가" → 문서 안 "개인정보처리자가").
   // hwpx↔pdf 752쌍 꺾임 자리(문서 전체 어휘로 모의, 판정 없던 자리만): 맞게 붙임 +208·잘못 붙임 +21. 띄어 쓴 이웃 어절 거부권이 없으면
   // +246·+78 이다(한 문서 안에서 "배달 종사자"·"배달종사자" 를 섞어 쓴 곳)
-  if (lex && /[가-힣A-Za-z0-9]$/.test(left) && /^[가-힣A-Za-z0-9]/.test(right) && lex.joinedWord(left, right.replace(/[.,)」』’”;:]+$/, ""))) return ""
+  if (lex && /[가-힣A-Za-z0-9]$/.test(left) && /^[가-힣A-Za-z0-9]/.test(right) && (lex.joinedWord(left, right.replace(/[.,)」』’”;:]+$/, "")) || (heads && lex.joinedStem(left, right)))) return ""
   if (/\d$/.test(left) && COUNTER.test(right)) return ""
   // 한 음절 조각 — 문서 줄 안에서 홀로 선 어절로 나온 적 없으면 꺾인 조각이다 ("살⏎펴보고", "공상공무⏎원";
   // 앞 조각 한 음절 붙음 0.53 → 이 검사로 "등·및·한·그" 를 거른다). 둘 다 한 음절이면 붙인다(79/91)
@@ -376,6 +390,12 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   // 칸 글(heads=false)은 세로 이름표가 있어 뺀다
   if (heads && dictJoins(left, right)) return ""
   return " "
+}
+/** 어절 줄기 — 머리 따옴표·괄호 뒤 한글 덩이에서 끝 조사를 뗀 꼴(두 음절 넘게 남을 때만). "국제에너지기구(IEA)는" → 국제에너지기구, "휴머노이드를" → 휴머노이드 */
+function stemOf(token: string): string {
+  const run = token.match(/^[「『‘“"'(]*([가-힣]+)/)?.[1] ?? ""
+  const st = run.replace(DICT_PARTICLE, "")
+  return st.length >= 2 ? st : run
 }
 /** wrap-dict-data 의 끝 조사 목록과 같다 (scripts/build-wrap-dict.mjs) */
 const DICT_PARTICLE = /(?:에서는|에서도|에서의|으로서|으로써|으로는|으로도|에게는|에게|에서|에는|에도|으로|까지|부터|이다|이며|이고|이나|과의|와의|의|을|를|이|가|은|는|에|로|과|와|도|만)$/
