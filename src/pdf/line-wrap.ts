@@ -463,7 +463,7 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
   for (let i = blocks.length - 1; i > 0; i--) {
     // 앞 쪽 끝 문단과 다음 쪽 첫 문단 사이에 그 쪽 바닥 각주(번호로 여는 작은 글자 문단)가 끼면 건너뛰어 잇는다 — 각주는 이은 문단 뒤에 남는다
     // (일문 계약서 "…別途規定するものと" ⏎ [각주 1 この契約書のモデルは…] ⏎ "する。")
-    const note = i >= 2 && footnoteBetween(blocks[i - 2], blocks[i - 1], blocks[i]) ? blocks[i - 1] : null
+    const note = i >= 2 && footnoteBetween(blocks[i - 2], blocks[i - 1], blocks[i], lex) ? blocks[i - 1] : null
     const a = note ? blocks[i - 2] : blocks[i - 1], b = blocks[i]
     if (!a.pageNumber || b.pageNumber !== a.pageNumber + 1 || !a.text || !b.text) continue
     if ((a.type !== "paragraph" && a.type !== "list") || b.type !== "paragraph") continue
@@ -508,15 +508,18 @@ export function joinPageBreakWraps(blocks: IRBlock[], lex?: WrapLexicon): void {
 }
 
 /** a(앞 쪽 끝 문단)와 b(다음 쪽 첫 문단) 사이의 f 가 a 쪽 바닥 각주인가 — 같은 쪽·a 보다 아래·더 작은 글자·각주 번호("1 "·"*"·"※")로 연다 */
-function footnoteBetween(a: IRBlock, f: IRBlock, b: IRBlock): boolean {
+function footnoteBetween(a: IRBlock, f: IRBlock, b: IRBlock, lex?: WrapLexicon): boolean {
   if (f.type !== "paragraph" || !f.text || !a.pageNumber || f.pageNumber !== a.pageNumber || b.pageNumber !== a.pageNumber + 1) return false
   const afs = a.style?.fontSize ?? 0, ffs = f.style?.fontSize ?? 0
   if (!afs || !ffs || ffs > afs * 0.95 || !a.bbox || !f.bbox || f.bbox.y + f.bbox.height > a.bbox.y + 1) return false
-  // 한글 없는 중·일문 문단이 문장 중간에서 끊겼을 때만 — 한국 보도자료는 문단 끝에 "(9.17. 기준)" 같은 덧말을 달아 문장 끝 판정을 빠져나가고,
-  // 그 뒤 각주("* WHO 공식 홈페이지…")를 건너뛰면 다음 쪽 새 문단까지 이어 붙였다
+  // 한글 없는 중·일문 문단이 문장 중간에서 끊겼을 때 — 한국 보도자료는 문단 끝에 "(9.17. 기준)" 같은 덧말을 달아 문장 끝 판정을 빠져나가고,
+  // 그 뒤 각주("* WHO 공식 홈페이지…")를 건너뛰면 다음 쪽 새 문단까지 이어 붙였다. 한글 문단은 한글 어절 가운데서 끊겼을 때만
+  // (선박 안전 코드 "…다음의 사항에 대하여 고속" ⏎ [각주 58) …] ⏎ "선 운항지침서에 …")
   const at = a.text?.replace(MARKUP, "").trimEnd() ?? ""
-  if (/[가-힣]/.test(at) || SENTENCE_END.test(at)) return false
-  return /^(?:\d{1,2}\)?\s|\*|※)/.test(f.text.replace(MARKUP, "").trimStart())
+  if (SENTENCE_END.test(at) || !/^(?:\d{1,2}\)?\s|\*|※)/.test(f.text.replace(MARKUP, "").trimStart())) return false
+  if (!/[가-힣]/.test(at)) return true
+  const bt = b.text?.replace(MARKUP, "").trimStart() ?? ""
+  return /[가-힣]$/.test(at) && /^[가-힣]/.test(bt) && wrapJoiner(at, bt, lex) === ""
 }
 
 /**

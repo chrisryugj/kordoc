@@ -702,6 +702,24 @@ describe("joinPageBreakWraps — 사이에 낀 쪽 바닥 각주", () => {
     assert.ok(blocks[0].text!.endsWith("規定するものとする。"), blocks[0].text)
     assert.equal(blocks[1], note)
   })
+  it("한글 문단은 한글 어절 가운데서 끊겼을 때만 각주를 건너뛰어 잇는다 (선박 안전 코드 \"…대하여 고속\" ⏎ [58) …] ⏎ \"선 운항지침서에 …\")", () => {
+    const lex = lexOf("이 코드의 규정을 적용받는 고속선의 정상운전상태 및")
+    const page = (head: string, tail: string): IRBlock[] => {
+      const a: IRBlock = { type: "paragraph", text: head, pageNumber: 1, bbox: { page: 1, x: 57, y: 64, width: 481, height: 50 }, style: { fontSize: 12 } }
+      PARA_LAST_LINE.set(a.bbox!, { right: 538, width: 481, fontSize: 12 })
+      const note: IRBlock = { type: "paragraph", text: "58) 제19장 부속서 3의 2.3.2 참조", pageNumber: 1, bbox: { page: 1, x: 57, y: 29, width: 207, height: 11 }, style: { fontSize: 11 } }
+      const b: IRBlock = { type: "paragraph", text: tail, pageNumber: 2, bbox: { page: 2, x: 57, y: 774, width: 339, height: 12 }, style: { fontSize: 12 } }
+      return [a, note, b]
+    }
+    const joined = page("동 시험의 목적은 다음의 사항에 대하여 고속", "선 운항지침서에 포함되어야 하는 정보를 결정하기 위함이다.")
+    joinPageBreakWraps(joined, lex)
+    assert.equal(joined.length, 2)
+    assert.ok(joined[0].text!.endsWith("고속선 운항지침서에 포함되어야 하는 정보를 결정하기 위함이다."), joined[0].text)
+    // 다음 쪽이 항목 머리("(ⅲ) …")로 열면 각주를 건너뛰지 않는다 — 앞 쪽 끝 "…평가" 는 문장 끝 표지가 없어도 문단 끝이다
+    const item = page("민관합동평가단을 통해 성장전략, 혁신역량 등 평가", "(ⅲ) 관련 분야 관계부처가 참여하여 공동 선정")
+    joinPageBreakWraps(item, lex)
+    assert.equal(item.length, 3)
+  })
 })
 
 describe("wrapJoiner: 법령 붙여 쓰기 사전", () => {
