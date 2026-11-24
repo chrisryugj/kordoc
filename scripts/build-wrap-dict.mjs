@@ -34,7 +34,10 @@ for (const [w, n] of words) {
   if (n >= 4 * spaced) joined.add(w)
 }
 const keep = [...joined].filter(w => { const st = w.replace(PARTICLE, ""); return !(st !== w && st.length >= 3 && joined.has(st)) }).sort()
-const out = "// 자동 생성: scripts/build-wrap-dict.mjs (법령 본문에서 붙여 쓴 한글 낱말). 손으로 고치지 않는다\n" +
-  `export const WRAP_DICT_WORDS = ${JSON.stringify(keep.join("\n"))}\n`
+// 앞머리 압축: 정렬한 낱말마다 앞 낱말과 같은 앞머리 길이(0~9 한 자리) + 나머지. 낱말은 한글뿐이라 숫자가 경계다
+let prev = ""
+const packed = keep.map(w => { let k = 0; while (k < 9 && k < prev.length && prev[k] === w[k]) k++; prev = w; return k + w.slice(k) }).join("")
+const out = "// 자동 생성: scripts/build-wrap-dict.mjs (법령 본문에서 붙여 쓴 한글 낱말, 앞머리 압축). 손으로 고치지 않는다\n" +
+  `export const WRAP_DICT_PACKED = ${JSON.stringify(packed)}\n`
 writeFileSync(new URL("../src/pdf/wrap-dict-data.ts", import.meta.url), out)
 console.log(`파일 ${files.length} · 어절 ${words.size} · 사전 ${keep.length}낱말 · ${Buffer.byteLength(out)}바이트`)

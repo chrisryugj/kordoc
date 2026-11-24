@@ -13,6 +13,8 @@ const external = Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies,
 const common = {
   absWorkingDir: fileURLToPath(root), outdir: fileURLToPath(dist),
   platform: "node", target: "node20", bundle: true, sourcemap: true, external,
+  // 한글을 \uXXXX 로 풀지 않는다. 붙여 쓰기 사전(낱말 수만 개)이 두 배로 부풀었다
+  charset: "utf8",
   define: { __KORDOC_VERSION__: JSON.stringify(pkg.version) },
 }
 const builds = [

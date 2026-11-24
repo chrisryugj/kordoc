@@ -18,7 +18,7 @@
  */
 
 import type { BoundingBox, IRBlock } from "../types.js"
-import { WRAP_DICT_WORDS } from "./wrap-dict-data.js"
+import { WRAP_DICT_PACKED } from "./wrap-dict-data.js"
 
 /** 줄 글에서 판정에 방해되는 마크업 — 밑줄·취소선 표시 (page-blocks 가 아이템 글에 감싼 것) */
 const MARKUP = /<\/?u>|~~/g
@@ -383,9 +383,16 @@ function dictJoins(left: string, right: string): boolean {
   const tail = left.match(/[가-힣]+$/)?.[0], run = right.match(/^[가-힣]+/)?.[0]
   if (!tail || !run || tail.length !== left.replace(/^[(\[「『‘“"']+/, "").length) return false
   if (run.length !== right.replace(/[.,)」』’”;:]+$/, "").length) return false
-  DICT ??= new Set(WRAP_DICT_WORDS.split("\n"))
+  DICT ??= unpackDict(WRAP_DICT_PACKED)
   const stem = run.replace(DICT_PARTICLE, "")
   return DICT.has(tail + run) || (stem.length > 0 && stem !== run && DICT.has(tail + stem))
+}
+/** 앞머리 압축 풀기: 낱말마다 앞 낱말과 같은 앞머리 길이(숫자 한 자리) + 나머지 (scripts/build-wrap-dict.mjs) */
+function unpackDict(packed: string): Set<string> {
+  const words = new Set<string>()
+  let prev = ""
+  for (const m of packed.matchAll(/(\d)(\D*)/g)) words.add(prev = prev.slice(0, +m[1]) + m[2])
+  return words
 }
 /** 단위·약어만 든 괄호 ("(%)", "(천원)", "(GMP)") */
 const BARE_UNIT_PAREN = /^\((?:%|‰|[가-힣]{1,3}|[A-Za-z]{1,5}|[A-Za-z]+\/[A-Za-z]+)\)[.,]?$/
