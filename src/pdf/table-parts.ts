@@ -15,7 +15,7 @@ import { CELL_LINES, CLIP_TABLES, EMPTY_PARTS, FILLER_CELLS, IMAGE_CELLS, PART_C
 import { matchesCompleteSiblingRow, matchesCompleteRubricRow, matchesIndependentRowPair, matchesCompleteContextRow, matchesCompleteAlignedLabelListRow, partialAlignedLabelCells, itemMark, hasNumberedRowSequence } from "./split-row-pattern.js"
 import { CONTACT_HEAD, CONTACT_ROLE } from "./contact-table.js"
 import { markJoinedPages } from "./table-pages.js"
-import { startsNewItem, type WrapLexicon } from "./line-wrap.js"
+import { startsNewItem, wrapJoiner, type WrapLexicon } from "./line-wrap.js"
 import { NO_EDGES, hasOpenCellSeam, joinCellEdges } from "./cell-edges.js"
 import { CELL_EDGES } from "../table/layout-frames.js"
 
@@ -202,11 +202,11 @@ export function joinSplitParts(prev: IRTable, pcx: number[], curr: IRTable, ccx:
     || !continuesAcross(partial.value.upper, partial.value.lower, U[partial.value.c], U[partial.value.c + partial.value.cs]) || startsNewItem(partial.value.upper.text, partial.value.lower.text))) partial = undefined
   const selected = partial ? new Set([partial.label.c, partial.value.c]) : undefined
   // 검증된 두 셀의 열 범위는 서로 겹치지 않는다. 이 모드에서는 독립 문맥행을 다시 합치지 않는다.
-  let split = !selected && rows > prev.rows && mergeSplitRow(table, owner, prev.rows, U, false, cut)
+  let split = !selected && rows > prev.rows && mergeSplitRow(table, owner, prev.rows, U, false, cut, lex)
   // 세로 병합 칸을 이은 뒤 다시 본다 — 뒤 조각 이름표가 여러 행을 덮어 쪼개진 행 판정에서 빠졌던 행("일몰설정 / 예외기준" 이름표 옆
   // "…적용 되어야 / 하는 규제", 규제영향분석서)은 이름표가 한 칸이 되면 칸 조각 이어짐으로 판정된다
   // 글 이어짐이나 같은 완성행의 증거로만 잇고, 이어 늘린 빈 칸 조각만으로 행을 합치지 않는다.
-  if (rows > prev.rows && !split && prevBottom !== undefined && mergeStraddlingCells(table, owner, prev.rows, prevBottom, lex, U, selected) && !selected) split = mergeSplitRow(table, owner, prev.rows, U, true, { ...cut, open: false })
+  if (rows > prev.rows && !split && prevBottom !== undefined && mergeStraddlingCells(table, owner, prev.rows, prevBottom, lex, U, selected) && !selected) split = mergeSplitRow(table, owner, prev.rows, U, true, { ...cut, open: false }, lex)
   // 이은 표의 괘선 — 세 쪽 넘게 이어질 때 앞 조각과 다시 견준다. 잇지 않은 쪽 경계는 칸 밑변 하나로 센다
   if (pr && cr) {
     const cutRuled = pr.bottom || cr.top
@@ -317,7 +317,7 @@ function mergeStraddlingCells(table: IRTable, owner: (Anchor | null)[][], first:
         if (!midWord && lu.y - prevBottom > (u.r >= last ? STRADDLE_BOTTOM_ONE_ROW : STRADDLE_BOTTOM) * (lu.h || 10)) continue
       }
     }
-    appendCell(a, b)
+    appendCell(a, b, !!colXs && continuesAcross(a, b, colXs[u.c], colXs[u.c + u.cs]), lex)
     a.rowSpan = first + d.rs - u.r
     table.cells[first][d.c] = { text: "", colSpan: 1, rowSpan: 1 }
     const grown: Anchor = { ...u, rs: a.rowSpan }
@@ -483,15 +483,25 @@ function firstWordUnits(text: string): number {
  * 보므로 글만 이으면 사라진다 (코드 예시 틀 칸이 쪽을 넘을 때 다음 쪽 코드가 통째로 빠졌다). 그림 칸 표시도 옮겨 후행 빈 행 정리에서 보존한다.
  * 블록 없는 쪽 글은 줄마다 문단으로
  */
-function appendCell(a: IRCell, b: IRCell): void {
+/**
+ * 쪽을 넘은 칸 글을 잇는다. 앞 쪽 끝줄이 칸을 채우고 넘어간 글(flows)이 어절 중간에서 꺾였으면 줄바꿈 없이 붙인다 — 칸 안 줄 잇기
+ * (mergeCellTextLines)와 같은 판정이다(편람 "…해당하는 경" / 다음 쪽 "우에는 …"). 어절 경계·문단 경계는 종전대로 줄바꿈
+ */
+function appendCell(a: IRCell, b: IRCell, flows = false, lex?: WrapLexicon): void {
   if (IMAGE_CELLS.has(b)) IMAGE_CELLS.add(a)
   if (a.blocks?.length || b.blocks?.length) {
     const asBlocks = (c: IRCell): IRBlock[] => c.blocks?.length ? c.blocks
       : c.text.split("\n").map(l => l.trim()).filter(Boolean).map((text): IRBlock => ({ type: "paragraph", text }))
     a.blocks = [...asBlocks(a), ...asBlocks(b)]
   }
-  if (b.text.trim()) a.text = a.text.trim() ? a.text + "\n" + b.text : b.text
+  if (b.text.trim()) a.text = a.text.trim() ? a.text + (flows && midWordAcross(a.text, b.text, lex) ? "" : "\n") + b.text : b.text
   joinCellEdges(a, b)
+}
+
+/** 앞 칸 끝줄과 뒤 칸 첫 줄 사이가 어절 중간인가 */
+function midWordAcross(upper: string, lower: string, lex?: WrapLexicon): boolean {
+  const prev = upper.slice(upper.lastIndexOf("\n") + 1), next = lower.split("\n", 1)[0]
+  return !!prev.trim() && !!next.trim() && !startsNewItem(prev, next) && wrapJoiner(prev, next, lex, false) === ""
 }
 
 /** 칸에 내용이 있나 — 글·블록·그림 (그림은 PDF 에서 칸 글과 따로 뽑혀 text 가 빈다) */
@@ -591,7 +601,7 @@ function joinNestedParts(u: IRCell, d: IRCell): IRBlock | null {
 interface Cut { open: boolean; ruled: boolean; list: "any" | "multi" | "none" }
 const NO_CUT: Cut = { open: false, ruled: false, list: "any" }
 
-function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number, colXs: number[], textOnly = false, cut: Cut = NO_CUT): boolean {
+function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number, colXs: number[], textOnly = false, cut: Cut = NO_CUT, lex?: WrapLexicon): boolean {
   const last = first - 1
   // 열마다 앞 행 칸과 뒤 행 칸을 맞춘다 — 두 행을 다 덮는 세로 병합 칸(앞 쪽에서 넘어와 이어 늘린 칸)은 그대로 두고,
   // 나머지는 앞 행에서 끝나는 칸과 뒤 행에서 시작하는 칸의 열 범위가 같아야 한다
@@ -681,7 +691,7 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
     }
   }
   for (const [u, d] of pairs) {
-    appendCell(table.cells[u.r][u.c], table.cells[d.r][d.c])
+    appendCell(table.cells[u.r][u.c], table.cells[d.r][d.c], continuesAcross(cell(u), cell(d), colXs[u.c], colXs[u.c + u.cs]), lex)
     // 뒤 조각에서 여러 행을 덮던 칸은 이은 칸이 그만큼 더 덮는다 (아래 줄이기가 경계 행 하나를 뺀다)
     if (d.rs > 1) table.cells[u.r][u.c].rowSpan = u.rs + d.rs
   }

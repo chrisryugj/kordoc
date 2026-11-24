@@ -13,6 +13,7 @@ import { buildClipCellGrids } from "../src/pdf/clip-cells.js"
 import { CLIP_TABLES, CONT_PARTS, FILLER_CELLS, ROW_RULES, TABLE_COLXS, recordCellLines } from "../src/pdf/table-meta.js"
 import type { IRBlock, IRCell, IRTable } from "../src/types.js"
 import type { LineSegment } from "../src/pdf/line-types.js"
+import { WrapLexicon } from "../src/pdf/line-wrap.js"
 
 /** 앵커 목록 → 덮인 자리까지 채운 IR 격자 ([행, 열, 글, 열병합, 행병합]) — 글이 null 이면 채움 칸(클립 없던 자리) */
 function grid(rows: number, cols: number, anchors: Array<[number, number, string | null, number?, number?]>): IRTable {
@@ -52,6 +53,14 @@ describe("선 격자 표의 반복 머리행 아래 쪼개진 본문", () => {
     assert.equal(blocks.length, 1)
     assert.equal(blocks[0].table!.rows, 2)
     assert.match(blocks[0].table!.cells[1][1].text, /지원하는\n사업의/)
+  })
+  it("앞 쪽 끝줄을 채우고 어절 가운데서 넘어간 칸 글은 줄바꿈 없이 붙인다 (편람 \"…해당하는 경\" / 다음 쪽 \"우에는 …\")", () => {
+    const lex = new WrapLexicon()
+    for (let k = 0; k < 3; k++) lex.addLine("다음 각 호의 경우에는 그러하지 아니하다 이 경우에는 위원회의 심의를 거친다")
+    const blocks = blocksOf("다음 각 호의 어느 하나에 해당하는 경", "우에는 위원회의 심의를 거치지 아니한다.")
+    mergeCrossPageTables(blocks, undefined, lex)
+    assert.equal(blocks.length, 1)
+    assert.match(blocks[0].table!.cells[1][1].text, /해당하는 경우에는 위원회의/)
   })
   it("한 줄로 끝난 다른 이름표가 있으면 독립 데이터 행을 보존한다", () => {
     const blocks = blocksOf("기관이 지원하는", "사업의 세부 내용을 검토한다.")
