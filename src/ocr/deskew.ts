@@ -8,7 +8,7 @@
  * 추정: 페이지를 긴 변 ~1000px 로 줄여 잉크 픽셀을 모으고, 후보 각 θ 마다
  * y' = y·cosθ + x·sinθ 의 행 히스토그램 제곱합(줄이 수평일 때 가장 뾰족)을 비교 —
  * ±MAX 를 0.2° 간격으로 훑고 최댓값 주변을 0.02° 간격으로 다듬는다.
- * 적용 조건: |θ| ≥ MIN_APPLY_DEG 이고 0° 대비 뾰족함이 뚜렷할 때만 (클린 렌더는 무보정).
+ * 적용 조건: |θ| ≥ MIN_APPLY_DEG 이고 0° 대비 뾰족함이 뚜렷할 때만 (클린 렌더는 무보정). 글줄이 MIN_LINES 보다 적으면 더 뚜렷해야 한다.
  */
 
 /** 추정 범위 (°) — 이보다 큰 회전은 기울기가 아니라 방향 문제 (범위 밖) */
@@ -17,6 +17,13 @@ const MAX_SKEW_DEG = 5
 const MIN_APPLY_DEG = 0.25
 /** 0° 대비 투영 뾰족함 비율 하한 — 글자 적은 페이지·도형의 우연한 봉우리 거부 */
 const MIN_GAIN = 1.03
+/** 글줄이 이보다 적은 그림은 뾰족함 하한을 MIN_GAIN_FEW 로 올린다. 두 줄 그림은 글꼴 획 모양이 봉우리를 끌어 기울지 않은 렌더도
+ *  0.6~0.9° 로 읽혔다(#233: "대한민국 정부 2026" / "문서 검증 테스트" 840×260, 고딕 글꼴 −0.62~−0.92°·뾰족함 1.031~1.034).
+ *  같은 그림을 0.5° 이상 실제로 기울이면 1.05~1.17, 손글씨 한 줄 띠(3,700×190)의 기울기는 1.07 안팎이다 */
+const MIN_LINES = 3
+const MIN_GAIN_FEW = 1.05
+/** 글줄 띠 — 투영 칸이 최댓값의 이 비율을 넘는 연속 구간. 글줄 안 빈 행(한글 초성·종성 사이)보다 낮고 표 세로 괘선만 지나는 행보다 높다 */
+const LINE_BIN_FRAC = 0.05
 const TARGET_LONG = 1000
 
 export interface SkewEstimate {
@@ -24,6 +31,8 @@ export interface SkewEstimate {
   angle: number
   /** 최적각 투영 점수 / 0° 점수 */
   gain: number
+  /** 최적각 투영의 글줄 띠 수 */
+  lines: number
 }
 
 /** 기울기 추정 (적용 여부와 무관한 원값) */
@@ -39,7 +48,7 @@ export function estimateSkew(rgba: Uint8Array, width: number, height: number): S
       if (l < 128) { xs.push(x); ys.push(y) }
     }
   }
-  if (xs.length < 200) return { angle: 0, gain: 1 }
+  if (xs.length < 200) return { angle: 0, gain: 1, lines: 0 }
   const diag = Math.ceil(Math.hypot(sw, sh))
   const hist = new Float64Array(2 * diag + 2)
   const score = (deg: number): number => {
@@ -62,8 +71,17 @@ export function estimateSkew(rgba: Uint8Array, width: number, height: number): S
     const v = score(d)
     if (v > bestS) { bestS = v; best = d }
   }
+  score(best)
+  let max = 0
+  for (let i = 0; i < hist.length; i++) if (hist[i] > max) max = hist[i]
+  let lines = 0, on = false
+  for (let i = 0; i < hist.length; i++) {
+    const ink = hist[i] > max * LINE_BIN_FRAC
+    if (ink && !on) lines++
+    on = ink
+  }
   // 투영 회전각 θ 에서 줄이 수평 → 페이지는 −θ 만큼 기운 것
-  return { angle: +(-best).toFixed(2), gain: s0 > 0 ? bestS / s0 : 1 }
+  return { angle: +(-best).toFixed(2), gain: s0 > 0 ? bestS / s0 : 1, lines }
 }
 
 /**
@@ -72,7 +90,7 @@ export function estimateSkew(rgba: Uint8Array, width: number, height: number): S
  */
 export function deskewPage(rgba: Uint8Array, width: number, height: number): { rgba: Uint8Array; angle: number } {
   const est = estimateSkew(rgba, width, height)
-  if (Math.abs(est.angle) < MIN_APPLY_DEG || est.gain < MIN_GAIN) return { rgba, angle: 0 }
+  if (Math.abs(est.angle) < MIN_APPLY_DEG || est.gain < (est.lines < MIN_LINES ? MIN_GAIN_FEW : MIN_GAIN)) return { rgba, angle: 0 }
   return { rgba: rotateRgba(rgba, width, height, est.angle), angle: est.angle }
 }
 

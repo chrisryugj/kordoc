@@ -356,7 +356,9 @@ describe("내장 OCR 과 같은 래스터 (모델 있을 때만)", () => {
     const f = await fixtures(t)
     if (!f) return
     const sharp = (await loadSharp())!
-    const tilted = await sharp(Buffer.from(SCAN_SVG)).rotate(2, { background: "white" }).png().toBuffer()
+    // 글줄이 셋 이상이어야 기울기를 바로잡는다(두 줄 그림은 글꼴 모양에 따라 기울지 않아도 기울어 보여 보정하지 않는다, #233)
+    const tilted = await sharp(Buffer.from(SCAN_SVG.replace("</svg>", `<text x="40" y="40" font-size="32" font-family="sans-serif">공공 문서 첫 줄 예시</text><text x="40" y="245" font-size="32" font-family="sans-serif">마지막 줄 끝 예시 문장</text></svg>`)))
+      .rotate(2, { background: "white" }).png().toBuffer()
     const r = await parse(tilted, { ocrLines: true, pageImages: true })
     assert.ok(r.success)
     const [line] = r.ocrLines!, [p] = r.pageImages!
