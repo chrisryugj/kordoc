@@ -21,7 +21,8 @@ import { extractPageBlocksWithLines } from "../src/pdf/page-blocks.js"
 import { extractWithColumns } from "../src/pdf/columns.js"
 import { removeHeaderFooterBlocks, detectKoreanListBlocks } from "../src/pdf/block-detect.js"
 import { runPdfOcr } from "../src/ocr/pdf-ocr.js"
-import { createPdfImageState, extractPageImages } from "../src/pdf/image-extract.js"
+import { encodePng } from "../src/image/transcode.js"
+import { createPdfImageState, extractPageImages, flushPdfImages } from "../src/pdf/image-extract.js"
 import { buildTableGrids } from "../src/pdf/line-detector.js"
 import type { LineSegment } from "../src/pdf/line-detector.js"
 import type { NormItem } from "../src/pdf/text-line.js"
@@ -260,6 +261,24 @@ describe("결함 6 — 상한 도달 시 resolveImgData(5초 대기)를 건너�
       JSON.stringify(warnings))
   })
 
+  it("대기 중인 PNG가 바이트 상한을 넘기면 다음 쪽 그림을 디코딩하지 않는다", async () => {
+    const state = createPdfImageState()
+    state.totalBytes = 128 * 1024 * 1024 - 1
+    const warnings: ParseWarning[] = []
+    const imgData = { width: 256, height: 256, kind: ImageKind.RGB_24BPP, data: new Uint8Array(256 * 256 * 3) }
+    let reads = 0
+    const objs = { get: (_id: string, cb?: (data: unknown) => void) => { reads++; cb?.(imgData) } }
+    const page = { objs, commonObjs: objs }
+
+    const first = await extractPageImages(page, [OPS.paintImageXObject], [["img_1"]], 1, state, warnings)
+    const second = await extractPageImages(page, [OPS.paintImageXObject], [["img_2"]], 2, state, warnings)
+
+    assert.ok(first.images[0].data.length > 0)
+    assert.equal(second.blocks.length, 0)
+    assert.equal(reads, 1)
+    assert.deepEqual(warnings.map(w => [w.page, w.code]), [[2, "SKIPPED_IMAGE"]])
+  })
+
   it("상한 미도달 인라인 이미지는 여전히 정상 추출된다", async () => {
     const neverPage = { objs: { get: () => undefined }, commonObjs: { get: () => undefined } }
     const state = createPdfImageState()
@@ -269,6 +288,31 @@ describe("결함 6 — 상한 도달 시 resolveImgData(5초 대기)를 건너�
       neverPage, [OPS.paintInlineImageXObject], [[imgData]], 1, state, warnings)
     assert.equal(blocks.length, 1)
     assert.equal(images[0].filename, "image_001.png")
+  })
+
+  it("큰 RGBA 그림의 알파를 보존하고 스캔라인 실패는 해당 그림만 생략한다", async () => {
+    const width = 128, height = 128
+    const expectedRgba = Uint8Array.from({ length: width * height * 4 }, (_, i) => (i + Math.floor(i / (width * 4))) & 255)
+    const rgba = new Uint8ClampedArray(expectedRgba.length + 2).subarray(1)
+    rgba.set(expectedRgba)
+    const broken = new Uint8ClampedArray(expectedRgba.length)
+    broken.subarray = () => { throw new RangeError("scanline read failed") }
+    const kind = ImageKind.RGBA_32BPP
+    const small = { width: 8, height: 8, kind, data: new Uint8Array(8 * 8 * 4) }
+    const args = [[small], [{ width, height, kind, data: broken }], [{ width, height, kind, data: rgba }]]
+    const objs = { get: () => undefined }
+    const state = createPdfImageState()
+    const warnings: ParseWarning[] = []
+
+    const { blocks, images } = await extractPageImages(
+      { objs, commonObjs: objs }, args.map(() => OPS.paintInlineImageXObject), args, 1, state, warnings)
+    const pageImages = new Map([[1, blocks]])
+    await flushPdfImages(state, warnings, pageImages, images)
+
+    assert.deepEqual(images.map(image => image.filename), ["image_001.png", "image_003.png"])
+    assert.deepEqual(pageImages.get(1)?.map(block => block.text), ["image_001.png", "image_003.png"])
+    assert.deepEqual(images[1].data, encodePng(width, height, expectedRgba))
+    assert.deepEqual(warnings.map(warning => warning.code), ["SKIPPED_IMAGE"])
   })
 })
 

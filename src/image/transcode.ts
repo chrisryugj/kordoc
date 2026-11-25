@@ -8,7 +8,10 @@
  * 의존성 최소화 원칙 — Node 내장(node:zlib, Buffer)만 사용한다.
  */
 
-import { deflateSync } from "node:zlib"
+import { promisify } from "node:util"
+import { deflate, deflateSync } from "node:zlib"
+
+const deflateAsync = promisify(deflate)
 
 // ─── CRC32 (PNG 청크용) ──────────────────────────────
 
@@ -222,6 +225,40 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
 
 /** 8bit RGBA 픽셀 버퍼 → PNG (PDF 이미지 XObject 추출에서도 사용) */
 export function encodePng(width: number, height: number, rgba: Uint8Array): Uint8Array {
+  return assemblePng(width, height, deflateSync(pngScanlines(width, height, rgba, 4)))
+}
+
+/** PDF 전용 — 같은 스캔라인을 zlib 스레드 풀에서 압축하고, 실패하면 동기로 다시 시도한다 */
+export async function encodePngAsync(width: number, height: number, pixels: Uint8Array | Uint8ClampedArray, channels: 3 | 4 = 4): Promise<Uint8Array> {
+  const raw = pngScanlines(width, height, pixels, channels)
+  const idat = await deflateAsync(raw).catch(() => deflateSync(raw))
+  return assemblePng(width, height, idat)
+}
+
+export function pngScanlineBytes(width: number, height: number): number {
+  return (width * 4 + 1) * height
+}
+
+function pngScanlines(width: number, height: number, pixels: Uint8Array | Uint8ClampedArray, channels: 3 | 4): Uint8Array {
+  // IDAT: 각 스캔라인 앞에 필터 바이트 0(None) 을 붙인다
+  const stride = width * 4
+  const raw = new Uint8Array(pngScanlineBytes(width, height))
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (stride + 1) + 1
+    if (channels === 4) {
+      const source = y * stride
+      raw.set(pixels.subarray(source, source + stride), rowStart)
+    } else {
+      let source = y * width * 3
+      for (let dst = rowStart; dst < rowStart + stride; dst += 4, source += 3) {
+        raw[dst] = pixels[source]; raw[dst + 1] = pixels[source + 1]; raw[dst + 2] = pixels[source + 2]; raw[dst + 3] = 255
+      }
+    }
+  }
+  return raw
+}
+
+function assemblePng(width: number, height: number, idat: Uint8Array): Uint8Array {
   // IHDR: width, height, bit depth 8, color type 6(RGBA), compression 0, filter 0, interlace 0
   const ihdr = new Uint8Array(13)
   const iv = new DataView(ihdr.buffer)
@@ -229,16 +266,6 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Uint
   iv.setUint32(4, height, false)
   ihdr[8] = 8
   ihdr[9] = 6
-
-  // IDAT: 각 스캔라인 앞에 필터 바이트 0(None) 을 붙인 raw 데이터를 zlib deflate
-  const stride = width * 4
-  const raw = new Uint8Array((stride + 1) * height)
-  for (let y = 0; y < height; y++) {
-    const rowStart = y * (stride + 1)
-    raw[rowStart] = 0 // filter: None
-    raw.set(rgba.subarray(y * stride, y * stride + stride), rowStart + 1)
-  }
-  const idat = deflateSync(raw)
 
   const ihdrChunk = chunk("IHDR", ihdr)
   const idatChunk = chunk("IDAT", idat)
