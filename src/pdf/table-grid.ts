@@ -330,7 +330,7 @@ export function buildTableGrids(
     if (rowYs.length < 2 || colXs.length < 2) continue
 
     // 5. 그리드 검증: 최소 열 폭, 최소 행 높이
-    const validColXs = enforceMinWidth(colXs, MIN_COL_WIDTH, narrowRuns)
+    const validColXs = enforceMinWidth(colXs, MIN_COL_WIDTH, narrowRuns, fullHeightRuleXs(vLines, rowYs), gutterFree(rowLines, rowYs))
     const validRowYs = enforceMinHeight(rowYs, MIN_ROW_HEIGHT)
 
     if (validRowYs.length < 2 || validColXs.length < 2) continue
@@ -492,8 +492,23 @@ function headBandTiles(clips: TableGrid[], l: TableGrid, near: (a: number, b: nu
   return clips.some(o => !band.includes(o) && overlaps(o.bbox, body)) ? [] : band
 }
 
-/** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합 */
-function enforceMinWidth(colXs: number[], minWidth: number, narrowRuns = true): number[] {
+/** 표 위아래 변을 뺀 안쪽 가로 괘선 셋 이상 중 [a, b] 열 가운데를 지나는 것이 3분의 1 이하인가(머리 행 괘선만 지나는 묶음 사이 빈 열) */
+function gutterFree(hLines: LineSegment[], rowYs: number[]): (a: number, b: number) => boolean {
+  const top = rowYs[0], bottom = rowYs[rowYs.length - 1]
+  const inner = hLines.filter(h => h.y1 < top - CONNECT_TOL && h.y1 > bottom + CONNECT_TOL)
+  return (a, b) => { const mid = (a + b) / 2; return inner.length >= 3 && inner.filter(h => h.x1 <= mid && h.x2 >= mid).length * 3 <= inner.length }
+}
+
+/** 표 높이 90% 이상을 내리긋는 세로 괘선 x */
+function fullHeightRuleXs(vLines: LineSegment[], rowYs: number[]): number[] {
+  const h = rowYs[0] - rowYs[rowYs.length - 1]
+  return h > 0 ? vLines.filter(v => v.y2 - v.y1 >= h * 0.9).map(v => v.x1) : []
+}
+
+/** 최소 열 폭 보장 — 너무 좁은 열은 인접 열과 병합. 양쪽이 표를 내리긋는 괘선이고 안쪽 가로선 대부분이 끊기는 12pt 이상 안쪽 열(묶음 사이 빈 열)은 둔다. 맨 왼쪽 열은 세로쓰기 이름표 열일 수 있어 종전대로 합친다 */
+function enforceMinWidth(colXs: number[], minWidth: number, narrowRuns = true, fullRuleXs: number[] = [],
+  free: (a: number, b: number) => boolean = () => false): number[] {
+  const fullRule = (x: number): boolean => fullRuleXs.some(r => Math.abs(r - x) <= CONNECT_TOL)
   if (colXs.length <= 2) return colXs
   // 20pt 안 열이 NARROW_RUN_MIN 개 넘게 이어진 무리 안 경계는 12pt 까지 둔다
   const inRun = new Array(colXs.length).fill(false)
@@ -506,7 +521,9 @@ function enforceMinWidth(colXs: number[], minWidth: number, narrowRuns = true): 
   const result: number[] = [colXs[0]]
   for (let i = 1; i < colXs.length; i++) {
     const prevX = result[result.length - 1]
-    if (colXs[i] - prevX < (inRun[i] ? NARROW_RUN_MIN_WIDTH : minWidth) && i < colXs.length - 1) {
+    const w = colXs[i] - prevX
+    const ruled = w >= NARROW_RUN_MIN_WIDTH && prevX !== colXs[0] && fullRule(prevX) && fullRule(colXs[i]) && free(prevX, colXs[i])
+    if (w < (inRun[i] || ruled ? NARROW_RUN_MIN_WIDTH : minWidth) && i < colXs.length - 1) {
       // 너무 좁으면 스킵 (다음 열과 병합)
       continue
     }

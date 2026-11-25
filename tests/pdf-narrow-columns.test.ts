@@ -1,6 +1,7 @@
 /**
  * 좁은 열 무리 — 선 격자의 15pt 미만 열은 이웃과 합치되, 20pt 안 열이 다섯 넘게 이어진 무리(점수표 한 자리 숫자 열 14~17pt)는
  * 12pt 까지 열로 둔다. 홀로 좁은 열·OCR 래스터 괘선(조직도 상자 변)은 종전대로 합친다 (table-grid enforceMinWidth).
+ * 위아래 끝까지 긋는 괘선 사이에 안쪽 가로선 대부분(3분의 2 넘게)이 끊기는 안쪽 빈 열은 둔다.
  */
 
 import { describe, it } from "node:test"
@@ -25,6 +26,15 @@ describe("좁은 열 무리", () => {
   it("OCR 래스터 괘선은 종전대로 15pt 미만 열을 합친다", () => {
     const grid = buildTableGrids(horizontals, verticals, false)[0]
     assert.ok(grid.colXs.length - 1 < 7, JSON.stringify(grid.colXs))
+  })
+
+  it("안쪽 가로선 대부분이 끊기는 묶음 사이 빈 열은 OCR 괘선이어도 둔다", () => {
+    // 왼쪽 묶음(50~150)·오른쪽 묶음(164~300) 행 괘선이 13pt 빈 열(150~164)을 건너지 않는다
+    const xs = [50, 100, 150, 164, 230, 300]
+    // 머리 괘선(110) 하나는 빈 열을 건너도 된다
+    const hs = [h(100, 50, 300), h(140, 50, 300), h(110, 50, 300), ...[120, 130].flatMap(y => [h(y, 50, 150), h(y, 164, 300)])]
+    const grid = buildTableGrids(hs, xs.map(x => v(x, 100, 140)), false)[0]
+    assert.equal(grid.colXs.length - 1, 5, JSON.stringify(grid.colXs))
   })
 
   it("홀로 좁은 열은 합친다", () => {
