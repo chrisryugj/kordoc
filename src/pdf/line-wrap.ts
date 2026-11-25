@@ -405,7 +405,8 @@ let DICT: Set<string> | undefined
 function dictJoins(left: string, right: string): boolean {
   const tail = left.match(/[가-힣]+$/)?.[0], run = right.match(/^[가-힣]+/)?.[0]
   if (!tail || !run || tail.length !== left.replace(/^[(\[「『‘“"']+/, "").length) return false
-  if (run.length !== right.replace(/[.,)」』’”;:]+$/, "").length) return false
+  // 뒤 조각은 한글 덩이 + 끝 문장부호, 또는 한글 덩이 바로 뒤 괄호 덧말("에너지기구(IEA)는")
+  if (run.length !== right.replace(/[.,)」』’”;:]+$/, "").length && right[run.length] !== "(") return false
   DICT ??= unpackDict(WRAP_DICT_PACKED)
   const stem = run.replace(DICT_PARTICLE, "")
   return DICT.has(tail + run) || (stem.length > 0 && stem !== run && DICT.has(tail + stem))
