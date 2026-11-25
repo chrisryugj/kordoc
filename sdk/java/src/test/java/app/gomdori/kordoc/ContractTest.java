@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /** 공유 wire fixture(sdk/fixtures/protocol-v2.json) — 옵션 인코딩·응답 해독. 엔진 없이 돈다 */
@@ -167,5 +168,17 @@ class ContractTest {
         assertEquals(List.of(List.of(List.of(), List.of()), List.of(List.of())), new ParseResult((ObjectNode) res.get(5).get("result"), null).ocrChars());
         assertEquals(List.of(), new ParseResult((ObjectNode) res.get(0).get("result"), null).ocrChars());
         assertEquals(new OcrPageLines.Line("정부", new OcrPageLines.Box(118, 105, 120, 60), 0.9, false), r.ocrLines().orElseThrow().get(0).lines().get(0));
+    }
+
+    @Test
+    void decodeOcrDewarp() throws IOException {
+        JsonNode res = fixture().get("responses");
+        ParseResult r = new ParseResult((ObjectNode) res.get(5).get("result"), null);
+        // 페이지와 같은 자리 — 행마다 편 페이지만 기준점이 있고, 나머지 페이지는 empty
+        assertEquals(List.of(Optional.of(new OcrDewarp(629.5, List.of(new OcrDewarp.Knot(60, 1.8), new OcrDewarp.Knot(330, -0.6)))), Optional.empty()), r.ocrDewarp());
+        assertEquals(r.ocrLines().orElseThrow().size(), r.ocrDewarp().size());
+        // ocrLines 가 없으면 빈 목록. 기존 OcrPageLines 는 그대로(펴도 deskewAngle 은 0)
+        assertEquals(List.of(), new ParseResult((ObjectNode) res.get(0).get("result"), null).ocrDewarp());
+        assertEquals(0.0, r.ocrLines().orElseThrow().get(0).deskewAngle());
     }
 }

@@ -578,6 +578,10 @@ export interface OcrPageLines {
   /** 기울기 보정으로 래스터를 돌린 각(°, 양수 = 반시계로 세움). 좌표는 돌린 래스터 기준 — 보정하지 않았으면 0.
    *  입력 좌표로는 θ = deskewAngle, (cx, cy) = ((width−1)/2, (height−1)/2) 로 x₀ = cx + (x−cx)cosθ − (y−cy)sinθ, y₀ = cy + (x−cx)sinθ + (y−cy)cosθ */
   deskewAngle: number
+  /** 글줄 기울기가 위아래로 달라(휴대폰으로 비스듬히 찍은 쪽) 회전 대신 행마다 세로로 밀어 편 쪽만 — 좌표는 편 래스터 기준이고 deskewAngle 은 0.
+   *  knots 는 [행 y(px), 그 행의 기울기 θ(°, deskewAngle 과 같은 뜻)] 이고 θ(y) 는 기준점 사이를 잇는 구간 직선(바깥은 끝 기준점 각)이다.
+   *  입력 좌표로는 x₀ = x, y₀ = y + (x − cx)·tan θ(y) */
+  dewarp?: { cx: number; knots: Array<[number, number]> }
   /** 텍스트층이 있는 쪽이라 그림 영역만 읽었다 — 원본 PDF 좌표를 유지하고 deskewAngle은 0, 그 영역 안 줄만 담긴다 */
   regionsOnly?: true
   /** 위→아래, 왼→오른 순 */

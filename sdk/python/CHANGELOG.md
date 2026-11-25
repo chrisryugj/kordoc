@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `result.ocr_dewarp` — `ocr_lines` 와 같은 자리에 페이지마다 행별 기울기 보정(`OcrDewarp(cx, knots)`)을 받습니다. 행마다 펴지 않은 페이지는 `None` 입니다. 기존 `OcrPageLines` 는 그대로입니다. `dewarp` 를 내는 npm kordoc 엔진이 필요합니다.
 - `ocr_chars`(`True` 또는 1~5, `ocr_lines` 와 함께) — 줄마다 글자별 신뢰도·상자를 `result.ocr_chars`(`ocr_lines` 와 같은 자리의 `OcrChar(text, box, confidence, alternatives)` 튜플)로 받습니다. 숫자를 주면 글자마다 대안(`OcrCharAlternative(text, confidence)`)을 그 개수까지 함께 받습니다. 기존 `OcrLine` 은 그대로입니다. 이 옵션을 받는 npm kordoc 엔진이 필요합니다.
 - `ocr_line_candidates=N`(1~5, `ocr_lines` 와 함께) — 줄마다 인식 모델의 읽기 후보를 `result.ocr_line_candidates`(`ocr_lines` 와 같은 자리의 `OcrLineCandidate(text, probability)` 튜플)로 받습니다. 기존 `OcrLine` 은 그대로입니다. 이 옵션을 받는 npm kordoc 엔진이 필요합니다.
 - `page_images`(`True`·`"png"`·`"webp"`) — 엔진의 OCR 경로가 읽은 페이지 래스터를 `result.page_images`(`PageImage(page_number, width, height, image)`)로 받습니다. 이 옵션을 받는 npm kordoc 엔진이 필요합니다.

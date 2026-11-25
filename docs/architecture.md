@@ -166,7 +166,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/ocr/glyph-restore.ts` | 인식 글자열 되살리기 배선(`restoreGlyphs` — CTC 글자와 1:1 배열 한 벌을 도는 단일 패스): 글자 자리(steps)를 박스 픽셀로 옮겨 line-split 모양 판정으로 [ ] → 「」【】, 곧은 따옴표 → ‘“(연도 생략·줄에 하나뿐인 자리만), 숫자 → ①~⑨, 두 글자 사이에서 빠진 · ▲ 「 」 □(`gapGlyphs`, 공백 자리 · 와 0 자리 □ 포함), I·Ⅱ → Ⅰ~Ⅲ(획 수)·"." 로 시작한 제목 줄 앞 로마 숫자 |
 | `src/ocr/postprocess.ts` | OCR 문자열 후처리: 사전에 없는 공문서 기호 복원(○·△·곧은/굽은 따옴표·○○ 자리표시), 쉼표 숫자 붙임, 떠도는 리더 점 제거, 목차 한 줄 잇기(리더 양쪽·쪽번호 열 맞춤), "(cid:)"·배경 도안 환각 제거 |
 | `src/ocr/crop.ts` | 인식 입력 준비: 밴드 서브 박스 좌표·라인 crop 리사이즈(회전 포함) |
-| `src/ocr/deskew.ts` | 스캔 기울기 보정: 투영 프로파일 제곱합으로 각도 추정, PDF·이미지 경로 공통 |
+| `src/ocr/deskew.ts` | 스캔 기울기 보정: 투영 프로파일 제곱합으로 각도 추정, PDF·이미지 경로 공통. 페이지를 겹치는 가로 띠로 나눠 띠마다 각을 재고, 위아래 각이 다르면(원근) 회전 대신 행마다 세로로 밀어 편다(`dewarp`) |
 | `src/shared/offline.ts` | 폐쇄망 게이트 — `KORDOC_OFFLINE` 아웃바운드 킬스위치(`assertNetworkAllowed`), `KORDOC_ROOT` 파일 접근 루트 제한(`assertWithinRoot`, realpath 기준). **새 네트워크 호출은 반드시 여기를 경유** |
 | `src/shared/generate-images.ts` | CLI·MCP 생성 이미지 로더 `loadGenerationImages` — 파일마다 실경로를 이미지 폴더(MCP 는 `KORDOC_ROOT` 도) 안인지 보고 `O_NOFOLLOW`·일반 파일만 연다. 한글·URL 인코딩·하위 폴더 이름 지원 (#101) |
 | `src/shared/symbol-fonts.ts` | Wingdings 코드표 SSOT: PDF 심볼 폰트 글리프와 HWP/HWPX 한컴 심볼 PUA(U+F021~F0FF) 공용 |

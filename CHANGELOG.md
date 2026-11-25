@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ocrLines` 페이지 필드 `dewarp: { cx, knots }` — 글줄 기울기가 위아래로 달라 회전 대신 행마다 세로로 밀어 편 페이지에만 붙는다(그때 `deskewAngle` 은 0). `knots` 는 [행 y(px), 그 행의 기울기 θ(°, `deskewAngle` 과 같은 뜻)] 쌍이고 θ(y) 는 기준점 사이를 직선으로 잇는다(바깥은 끝 기준점 각). 입력 좌표로는 `x₀ = x`, `y₀ = y + (x − cx)·tan θ(y)` 다. 가로 표를 눕혀 찍어 래스터를 90° 더 돌린 페이지에는 없다. Python SDK(`result.ocr_dewarp`)·Java SDK(`result.ocrDewarp()`)는 페이지마다 하나씩 내고, 펴지 않은 페이지는 `None`·`Optional.empty()` 다
+
+### Changed
+
+- OCR: 글줄 기울기가 위아래로 다른 페이지(휴대폰으로 비스듬히 찍은 사진의 원근 등)는 페이지를 돌리지 않고 행마다 세로로 밀어 편다. 페이지 전체 각으로 재면 위아래 기울기가 서로 상쇄돼 보정하지 않던 페이지다. 그런 차이가 없는 페이지(클린 렌더, 고르게 기운 스캔)는 그대로다. ocr-robust 원근 변형(37페이지) CER .296 → .078·.351 → .133(기울기·흐림·JPEG 섞음), 기존 열화 변형 9종·ocr-accuracy(PDF 경로) 페이지별 결과는 전후 같다
+
 ## [4.25.18] - 2026-11-25
 
 ### Fixed

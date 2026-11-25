@@ -283,13 +283,16 @@ await parse("scanned-batch.pdf", { ocr: true, ocrRec: "auto" })                 
 await parse("printed-scan.pdf", { ocr: true, ocrRec: "printed" })                 // never downloads or uses the handwriting model
 ```
 
-- `ocrLines` boxes are in OCR raster pixels (top-left origin). Each page carries `width`, `height`, `scale` (px/pt, 3 = 216dpi for PDF by default) and `deskewAngle`;
+- `ocrLines` boxes are in OCR raster pixels (top-left origin). Each page carries `width`, `height`, `scale` (px/pt, 3 = 216dpi for PDF by default) and `deskewAngle` (plus `dewarp` on row-flattened pages);
   convert to block `bbox` space (PDF pt, bottom-left origin) with `x / scale` and `pageHeight − (y + h) / scale`. For image input the raster is the image as shown (EXIF orientation applied; shrunk if over 24MP).
   Deskewed pages (`deskewAngle` ≠ 0) use the rotated raster — map back with θ = `deskewAngle` (degrees), (cx, cy) = ((`width`−1)/2, (`height`−1)/2):
   `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` (apply to the four box corners).
+  Pages whose text-line skew differs top to bottom (perspective, e.g. phone photos) are flattened by shearing each row vertically instead of rotating; they carry `dewarp: { cx, knots }` and `deskewAngle` is 0.
+  `knots` are [row y (px), that row's skew θ (degrees, same sign as `deskewAngle`)] pairs, θ(y) is linear between knots and constant beyond the ends. Map back with `x₀ = x`, `y₀ = y + (x − cx)·tan θ(y)` (apply to the four box corners).
+  Pages turned a further 90° (a landscape table photographed sideways) have no `dewarp`.
 - Table cells found from ruling lines or cell clips (scanned and text-layer PDF) carry their box in `cells[r][c].bbox`, in the same units as the table block's `bbox`;
   in raster pixels that is `x · scale`, `(pageHeight − y − height) · scale`. Always set, no option; Markdown is unchanged.
-- Lines are the ones used to build blocks. Pages where only figure regions were read (the page has a text layer) are marked `regionsOnly: true` and list only lines inside those regions (before the figure-text merge). This path keeps the original PDF region coordinates without rotating the whole page, so `deskewAngle` is 0.
+- Lines are the ones used to build blocks. Pages where only figure regions were read (the page has a text layer) are marked `regionsOnly: true` and list only lines inside those regions (before the figure-text merge). This path keeps the original PDF region coordinates without rotating or flattening the whole page, so `deskewAngle` is 0 and there is no `dewarp`.
   A user OcrProvider and OCR of images embedded in HWP have no line geometry and are not covered. With the option off, results are unchanged.
 - `ocrLineCandidates: N` (1–5) adds `candidates` to each line in descending `probability`. `probability` is the reading's probability summed over all CTC alignments (an approximation with a beam of 32 and the top 8 classes per frame),
   so it is comparable between candidates of the same line; the line's `confidence` is a different measure (the mean of per-character top probabilities on the best path). The line's `text` and `confidence` are unchanged. Candidate text is the raw recognizer reading, so it can differ from the line `text` in symbols and bullets,
@@ -299,7 +302,7 @@ await parse("printed-scan.pdf", { ocr: true, ocrRec: "printed" })               
   so you can see which character is likely wrong (low confidence) and what could go there. The box height is the line box; the horizontal split is an approximation between neighbouring characters' frames, not a measured glyph outline.
   Joined `chars` equal the line `text` — lines whose text changed in post-processing, joined or re-read lines, and lines read rotated have none.
 - `pageImages` returns the raster that `ocrLines` coordinates refer to, one `{ pageNumber, filename, width, height, mimeType, data }` per page. Image input comes back upright per EXIF whatever its actual format
-  (deskewed when OCR deskewed it); PDF pages are rendered at the OCR scale, including pages that were not OCR'd and with `ocr: false`.
+  (deskewed or row-flattened when OCR did so); PDF pages are rendered at the OCR scale, including pages that were not OCR'd and with `ocr: false`.
   `"webp"` is lossless; without `sharp`, or for a page with a side over 16,383px, that page is PNG (check `mimeType`). Pages handled after 128MB in total or 1 billion raster pixels (1,000 pages)
   are left out with a `SKIPPED_IMAGE` warning — a PDF collects OCR'd pages first. Image input also carries the page in `images`, so pass `images: false` when the response gets large.
 - Local model files need an absolute path and a SHA-256; the engine reads the bytes, checks them and loads those bytes. A rec whose output classes are not dictionary + 2 is rejected.
