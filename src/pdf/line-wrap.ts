@@ -281,6 +281,8 @@ function particleContinues(left: string, rightWord: string): boolean {
   return VERB_FORM.test(right) && !auxBefore(h) && !((last === "이" || (last === "가" && h.length >= 3)) && BECOME.test(right))
 }
 
+/** 연결 어미·부사격 조사로 끝난 어절. "-하는"·"-되어" 는 뺐다("대응하는⏎데", "접지되어⏎야" 는 한 어절) */
+const CLAUSE_END = /[가-힣](?:하고|하며|하여|되고|되며|으로|에서|에게|에는|에도|한다|된다|했다|이며)$/
 /** 줄 머리가 새 항목(글머리표·번호·조항)인가 — 번호 뒤 숫자(9.8%)·"-" 뒤 글자(생산-가공)는 이어진 글.
  *  앞 줄이 한글로 끝나면 "다." 는 줄을 넘어온 문장 끝이다(…하였⏎다. 본문 꺾임 136곳 전부) */
 const ITEM_HEAD = /^(?:[□■◆◇○●◎◦▪▫•※▶▷►❍❏❑✓✔➢➤☞]|[①-⑳]|[-–·∙ㆍ*#](?=\s)|\(?\d{1,2}[.)](?!\d)|\(?[가-하][.)]|\([가-하\d]{1,2}\)|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|제\d+[조항호장절])/
@@ -319,6 +321,8 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   const yearHead = left.match(/(?:^|[^\d])((?:19|20)\d{0,1})$/), yearTail = right.match(/^(\d{1,2})년/)
   if (yearHead && yearTail && yearHead[1].length + yearTail[1].length === 4) return ""
   if (particleContinues(left, right)) return ""
+  // 연결 어미·조사로 끝난 줄 끝 어절("…마련하고", "…기관으로")은 온전한 어절이다. 다음 줄이 두 음절 넘는 한글 덩이로 열 때만("으로⏎서" 처럼 갈린 조사는 뺀다). -여 뒤 보조 용언 지다("취하여⏎진다면")도 뺀다
+  if (CLAUSE_END.test(left) && /^[가-힣]{2}/.test(right) && !(/여$/.test(left) && /^[지진져졌질]/.test(right))) return " "
   // 다음 줄이 문서 줄 안에 홀로 선 적 없는 한 음절 조각인가 (아래 한 음절 조각 판정)
   const r1 = right.replace(/[.,)」』’”]+$/, "")
   const lone = !!lex && /[가-힣]$/.test(left) && /^[가-힣]$/.test(r1) && !STANDALONE_SYLLABLE.test(r1) && !lex.isWord(r1) && !lex.isWord(right)
