@@ -359,6 +359,8 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
     if (joins != null) return joins ? "" : " "
   }
   const ev = lex?.evidence(left, right)
+  // 글자 쌍 띄움 증거보다 법령 사전이 낫다. 한 문서 안에서 같은 복합어를 섞어 쓰는 일이 많다(PDF 글 744쌍 15문서 오름·3문서 내림)
+  if (ev === " " && heads && dictJoins(left, right)) return ""
   if (ev != null) return ev
   // 이어 붙인 꼴이 문서 줄 안에 한 어절로 나왔고 두 조각을 띄어 쓴 이웃 어절로는 나온 적 없으면 붙인다 — 글자 쌍 증거가 갈리는(한 문서에
   // "개인정보 처리"·"개인정보처리자" 가 섞인) 명사+명사 꺾임을 어절 통째로 가른다("개인정보⏎처리자가" → 문서 안 "개인정보처리자가").

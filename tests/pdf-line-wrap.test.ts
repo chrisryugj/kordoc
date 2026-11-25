@@ -105,8 +105,9 @@ describe("wrapJoiner — 꺾인 자리 붙임/띄움 (hwpx↔pdf 실측 사례)"
     const joined = lexOf("대상 재일학도의용군인 및 가족", "공상공무원 특별공로상이자")
     assert.equal(wrapJoiner("무공수훈자, 보국수훈자, 재", "일학도의용군인, 4.19혁명부상자", joined), "")
     assert.equal(wrapJoiner("4.19혁명부상자, 공상공무", "원 및 특별공로상이자", joined), "")
-    assert.equal(wrapJoiner("주요 기후", "위기 대응", lexOf("최근 기후 위기 극복")), " ")
-    assert.equal(wrapJoiner("주요 기후", "위기 대응", lexOf("최근 기후위기 극복")), "")
+    // 법령 사전에 없는 낱말로 잰다. 사전에 든 꼴("기후위기")은 글자 쌍 띄움 증거보다 사전을 따른다(아래 사전 시험)
+    assert.equal(wrapJoiner("주요 축제", "준비 대응", lexOf("최근 축제 준비 극복")), " ")
+    assert.equal(wrapJoiner("주요 축제", "준비 대응", lexOf("최근 축제준비 극복")), "")
   })
 
   it("한 음절 조각: 줄 안에서 홀로 선 적 없으면 붙이고 낱말(등)이면 띄운다", () => {
@@ -726,6 +727,11 @@ describe("wrapJoiner: 법령 붙여 쓰기 사전", () => {
   it("문서 안 증거가 없는 명사+명사 꺾임은 사전에 이은 어절이 있으면 붙인다 (\"행정⏎처분을\", \"방송⏎사업자는\")", () => {
     assert.equal(wrapJoiner("위반하면 행정", "처분을 받는다"), "")
     assert.equal(wrapJoiner("지상파 방송", "사업자는 이를"), "")
+  })
+  it("글자 쌍 띄움 증거(\"행정 처리\"의 \"정|처\")가 있어도 사전에 이은 어절이 있으면 붙인다", () => {
+    const lex = lexOf("기관의 행정 처리를 맡는다", "담당 부서가 이를 검토한다")
+    assert.equal(lex.evidence("행정", "처분을"), " ")
+    assert.equal(wrapJoiner("위반하면 행정", "처분을 받는다", lex), "")
   })
   it("뒤 조각의 앞부분만 맞는 사전 낱말로는 붙이지 않는다 (사전의 \"증가가\"가 \"가계대출\" 머리를 먹지 않게)", () => {
     assert.equal(wrapJoiner("전년 대비 증가", "가계대출이 늘었다"), " ")
