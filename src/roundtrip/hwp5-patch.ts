@@ -118,6 +118,14 @@ function serializeRecords(recs: RawRecord[], repl?: Map<number, Buffer | null>, 
   return Buffer.concat(parts)
 }
 
+/** 문단 끝 문자(0x0d) 하나만 남은 PARA_TEXT 는 쓰지 않는다. 한글은 빈 문단을 PARA_TEXT 없이(nChars 1) 저장하고, 끝 문자만 든
+ *  PARA_TEXT 가 있으면 한글 뷰어가 파일이 손상됐다고 연다(#236, 글이 든 칸을 빈칸으로 만든 패치) */
+function dropBareParaEnds(scan: SectionScan5): void {
+  const bare = (d: Buffer): boolean => d.length === 2 && d.readUInt16LE(0) === 0x0d
+  for (const [i, d] of scan.repl) if (d && scan.records[i].tagId === TAG_PARA_TEXT && bare(d)) scan.repl.set(i, null)
+  for (const [i, list] of scan.inserts) scan.inserts.set(i, list.filter(x => !(x.tagId === TAG_PARA_TEXT && bare(x.data))))
+}
+
 // ─── 섹션 스캔 ───────────────────────────────────────
 
 export interface ScanPara5 {
@@ -431,6 +439,7 @@ export async function patchHwp(
       let out = originalBuf
       for (let i = 0; i < scans.length; i++) {
         if (scans[i].repl.size === 0 && scans[i].inserts.size === 0) continue
+        dropBareParaEnds(scans[i])
         const newStream = serializeRecords(scans[i].records, scans[i].repl, scans[i].inserts)
         const content = compressed ? compressWithTail(newStream) : newStream
         out = replaceOleStream(out, sectionPaths[i], content)

@@ -611,6 +611,25 @@ describe("patchHwp — 표 셀", () => {
     assert.ok(reparsed.includes("| 항목 | 값 |"))
   })
 
+  it("글이 든 칸을 빈칸으로 만들면 PARA_TEXT 를 쓰지 않는다 (한글 빈 문단과 같은 nChars 1·글 레코드 없음, #236)", async () => {
+    const hwp = buildHwp([table2x2([["항목", "값"], ["점수", "80"]])])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("| 점수 | 80 |", "| 점수 |  |"))
+    assert.equal(r.success, true)
+    assert.equal(r.applied, 1)
+    const recs = readRecords(Buffer.from(CFB.find(CFB.read(Buffer.from(r.data!), { type: "buffer" }), "/BodyText/Section0").content))
+    // 끝 문자(0x0d)만 든 PARA_TEXT 가 없다
+    assert.ok(!recs.some(x => x.tagId === TAG_PARA_TEXT && x.data.length === 2 && x.data.readUInt16LE(0) === 0x0d))
+    const cell = recs.findIndex((x, i) => x.tagId === TAG_PARA_HEADER && (x.data.readUInt32LE(0) & 0x7fffffff) === 1 && recs[i + 1]?.tagId !== TAG_PARA_TEXT)
+    assert.ok(cell >= 0, "빈칸 문단 = nChars 1 + PARA_TEXT 없음")
+    const re = parseHwp5Document(Buffer.from(r.data!)).markdown
+    assert.ok(re.includes("| 항목 | 값 |") && !re.includes("80"), re)
+    // 빈칸에 다시 글을 채우는 패치도 된다
+    const back = await patchHwp(r.data!, re.replace("| 점수 |  |", "| 점수 | 90 |"))
+    assert.equal(back.applied, 1)
+    assert.ok(parseHwp5Document(Buffer.from(back.data!)).markdown.includes("| 점수 | 90 |"))
+  })
+
   it("부등호(<) 평문 셀 — HTML 태그로 오인하지 않고 수정 적용", async () => {
     const hwp = buildHwp([
       table2x2([["유의확률", "값"], ["P-value", "<0.01"]]),
