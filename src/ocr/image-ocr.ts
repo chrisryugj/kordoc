@@ -91,7 +91,8 @@ export async function parseImageDocument(
   // 픽셀 상한으로 줄인 이미지는 같은 지면을 낮은 해상도로 본 것 — px/pt 도 같은 비율로
   // 스캔·사진 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다
   const deskewed = deskewPage(decoded, width, height)
-  const scale = imageScale(width / shrink, height / shrink, density, deskewed.angle !== 0) * shrink
+  // 원근을 편 쪽도 이미지 비가 종이 판형 비가 아니다 — 기울어진 쪽처럼 4·6배판으로 보지 않는다
+  const scale = imageScale(width / shrink, height / shrink, density, deskewed.angle !== 0 || !!deskewed.dewarp) * shrink
   let data = deskewed.rgba
   const angle = deskewed.angle
 
@@ -106,9 +107,12 @@ export async function parseImageDocument(
   let items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
     [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
   // 가로 표를 눕혀 찍은 쪽 — 래스터를 세워 괘선부터 다시 읽는다(좌표·블록 상자는 세운 쪽 기준)
+  let dewarp = deskewed.dewarp
   if (stats.pageRotation) {
     ({ rgba: data, width, height } = rotateQuarter(data, width, height, stats.pageRotation))
     delete stats.pageRotation
+    // 편 기준점은 세우기 전 행 기준이라 세운 래스터 좌표에 맞지 않는다 — 싣지 않는다
+    dewarp = undefined
     ruling = detectRulingLines(data, width, height, scale)
     items = await recognizeOcrPage(engine, config, { ...config.tuning, orientPage: false }, data, width, height, stats,
       [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
@@ -117,7 +121,7 @@ export async function parseImageDocument(
   if (config.tuning.postprocess) items = [...items, ...await rescueEmptyCells(engine, config.tuning, data, width, height, ruling, items)]
   // 수식 OCR(선택) — 수식 자리 글상자를 $LaTeX$ 로 (image-formula)
   if (options?.formulaOcr) items = await applyImageFormulas(items, data, width, height, warnings)
-  const lines = config.lines ? pageLines(page, width, height, scale, angle, items, stats.dropped) : undefined
+  const lines = config.lines ? pageLines(page, width, height, scale, angle, items, stats.dropped, false, dewarp) : undefined
   const raster = options?.pageImages ? { raster: { data, width, height } } : undefined
   if (stats.droppedLowConf > 0) {
     warnings.push({

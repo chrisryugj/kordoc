@@ -283,13 +283,15 @@ await parse("스캔 묶음.pdf", { ocr: true, ocrRec: "auto" })                 
 await parse("인쇄 스캔.pdf", { ocr: true, ocrRec: "printed" })                    // 손글씨 모델을 받지도 쓰지도 않음
 ```
 
-- `ocrLines` 의 상자는 OCR 래스터 픽셀(왼쪽 위 원점)입니다. 쪽마다 `width`·`height`·`scale`(px/pt, PDF 기본 3 = 216dpi)·`deskewAngle` 이 붙고,
+- `ocrLines` 의 상자는 OCR 래스터 픽셀(왼쪽 위 원점)입니다. 페이지마다 `width`·`height`·`scale`(px/pt, PDF 기본 3 = 216dpi)·`deskewAngle` 이 붙고(행마다 편 페이지는 `dewarp` 도),
   블록 `bbox`(PDF pt, 아래 원점)로는 `x / scale`, `쪽 높이 − (y + h) / scale` 로 옮깁니다. 이미지 입력은 EXIF 방향대로 세운 이미지 픽셀입니다(24MP 를 넘어 줄였으면 줄인 크기).
   기울기를 보정한 쪽(`deskewAngle` ≠ 0)은 돌린 래스터 기준입니다 — 입력 좌표로는 θ = `deskewAngle`(도), (cx, cy) = ((`width`−1)/2, (`height`−1)/2) 로
   `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` 입니다(상자 네 꼭짓점에 적용).
+  글줄 기울기가 위아래로 달라(휴대폰 사진의 원근 등) 회전 대신 행마다 세로로 밀어 편 페이지는 `dewarp: { cx, knots }` 가 붙고 `deskewAngle` 은 0입니다. `knots` 는 [행 y(px), 그 행의 기울기 θ(도, `deskewAngle` 과 같은 뜻)] 쌍이고
+  θ(y) 는 기준점 사이를 직선으로 잇습니다(바깥은 끝 기준점 각). 입력 좌표로는 `x₀ = x`, `y₀ = y + (x − cx)·tan θ(y)` 입니다(상자 네 꼭짓점에 적용). 가로 표를 눕혀 찍어 래스터를 90° 더 돌린 페이지에는 `dewarp` 가 없습니다.
 - 괘선이나 칸 클립으로 찾은 표 칸(스캔·텍스트층 PDF 모두)은 `cells[r][c].bbox` 에 칸 좌표가 있습니다. 표 블록 `bbox` 와 같은 단위라
   래스터 픽셀로는 `x · scale`, `(페이지 높이 − y − height) · scale` 입니다. 옵션 없이 늘 붙고 마크다운은 그대로입니다.
-- 줄은 블록을 만드는 데 쓴 것입니다. 텍스트층이 있는 쪽의 그림 영역만 읽은 쪽은 `regionsOnly: true` 이고 영역 안 줄만 담깁니다(그림 글 병합 판정 전). 이 경로는 원본 PDF 영역과 좌표를 맞추기 위해 쪽 전체를 회전하지 않으며 `deskewAngle`은 0입니다.
+- 줄은 블록을 만드는 데 쓴 것입니다. 텍스트층이 있는 페이지의 그림 영역만 읽은 페이지는 `regionsOnly: true` 이고 영역 안 줄만 담깁니다(그림 글 병합 판정 전). 이 경로는 원본 PDF 영역과 좌표를 맞추기 위해 페이지 전체를 회전하거나 펴지 않으며 `deskewAngle`은 0이고 `dewarp` 도 없습니다.
   사용자 OcrProvider·HWP 삽입 그림 OCR 은 줄 좌표가 없어 해당하지 않습니다. 옵션을 끄면 결과는 이전과 같습니다.
 - `ocrLineCandidates: N`(1~5)은 줄마다 `candidates` 를 `probability` 높은 순으로 붙입니다. `probability` 는 그 읽기의 확률(같은 글이 되는 CTC 정렬을 모두 더한 값, 빔 32·시점마다 상위 8 클래스의 근사)이라
   같은 줄의 후보끼리 견줄 수 있고, 줄의 `confidence`(가장 유력한 정렬에서 글자별 최고 확률의 평균)와는 다른 척도입니다. 줄의 `text`·`confidence` 는 그대로입니다. 후보 글은 표기 후처리 전의 인식 결과라 기호·글머리에서 줄 `text` 와 다를 수 있으며,
@@ -299,7 +301,7 @@ await parse("인쇄 스캔.pdf", { ocr: true, ocrRec: "printed" })              
   틀린 글자가 어디인지(신뢰도 낮은 글자)와 그 자리에 올 글자를 함께 알 수 있습니다. 글자 상자의 세로는 줄 상자 그대로이고, 가로는 이웃 글자의 인식 시점 사이를 나눈 근사입니다(글자 모양을 잰 것이 아님).
   `chars` 를 이으면 줄 `text` 와 같습니다 — 표기 후처리로 글이 바뀐 줄, 이어 붙였거나 다시 읽어 고친 줄, 세로로 돌려 읽은 줄에는 없습니다.
 - `pageImages` 는 `ocrLines` 좌표가 가리키는 래스터를 페이지마다 `{ pageNumber, filename, width, height, mimeType, data }` 로 냅니다. 이미지 입력은 실제 포맷과 무관하게
-  EXIF 방향대로 세운 이미지(OCR 이 기울기를 보정했으면 보정한 것), PDF 는 OCR 배율로 렌더링한 페이지이고 OCR 하지 않은 페이지와 `ocr: false` 에서도 나옵니다.
+  EXIF 방향대로 세운 이미지(OCR 이 기울기를 보정했거나 행마다 폈으면 그렇게 한 것), PDF 는 OCR 배율로 렌더링한 페이지이고 OCR 하지 않은 페이지와 `ocr: false` 에서도 나옵니다.
   `"webp"` 는 무손실이며 `sharp` 가 없거나 한 변이 16,383px 를 넘는 페이지는 PNG 로 냅니다(`mimeType` 으로 구분). 누적 128MB·래스터 픽셀 합계 10억(1,000페이지)에
   닿은 뒤의 페이지는 빼고 `SKIPPED_IMAGE` 로 경고합니다 — PDF 는 OCR 한 페이지를 먼저 담습니다. 이미지 입력은 같은 페이지가 `images` 에도 실리므로 응답이 크면 `images: false` 를 함께 줍니다.
 - 로컬 모델 파일은 절대 경로 + SHA-256 이 필수이며, 엔진이 바이트를 읽어 대조한 뒤 그 바이트로 엽니다. rec 출력 클래스 수가 사전 + 2 가 아니면 거부합니다.

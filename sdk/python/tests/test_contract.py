@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kordoc import Image, OcrBox, OcrChar, OcrCharAlternative, OcrLine, OcrLineCandidate, OcrModelFile, OcrPageLines, PageImage, ParseResult
+from kordoc import Image, OcrBox, OcrChar, OcrCharAlternative, OcrDewarp, OcrLine, OcrLineCandidate, OcrModelFile, OcrPageLines, PageImage, ParseResult
 from kordoc._protocol import OPTION_NAMES, parse_request, wire_options
 
 from conftest import PROTOCOL_FIXTURE
@@ -145,3 +145,13 @@ def test_decode_ocr_chars() -> None:
     assert ParseResult(FIX["responses"][5]["result"]).ocr_chars == [[(), ()], [()]]
     assert ParseResult(FIX["responses"][0]["result"]).ocr_chars == []
     assert r.ocr_lines[0].lines[0] == OcrLine("정부", OcrBox(118, 105, 120, 60), 0.9)
+
+
+def test_decode_ocr_dewarp() -> None:
+    r = ParseResult(FIX["responses"][5]["result"])
+    # 페이지와 같은 자리 — 행마다 편 페이지만 기준점이 있고, 나머지 페이지는 None
+    assert r.ocr_dewarp == [OcrDewarp(629.5, ((60, 1.8), (330, -0.6))), None]
+    assert len(r.ocr_dewarp) == len(r.ocr_lines)
+    # ocrLines 가 없으면 빈 목록. 기존 OcrPageLines 는 그대로(펴도 deskew_angle 은 0)
+    assert ParseResult(FIX["responses"][0]["result"]).ocr_dewarp == []
+    assert r.ocr_lines[0].deskew_angle == 0

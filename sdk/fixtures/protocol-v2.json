@@ -30,7 +30,7 @@
     { "error": { "code": "INVALID_JSON", "message": "잘못된 JSON 라인" } },
     { "id": 5, "rss": 123456, "result": { "success": true, "fileType": "pdf", "markdown": "대한민국 정부 2026", "blocks": [],
       "ocrLines": [
-        { "pageNumber": 1, "width": 1260, "height": 390, "scale": 3, "deskewAngle": 0, "lines": [
+        { "pageNumber": 1, "width": 1260, "height": 390, "scale": 3, "deskewAngle": 0, "dewarp": { "cx": 629.5, "knots": [[60, 1.8], [330, -0.6]] }, "lines": [
           { "text": "대한민국 정부 2026", "box": { "x": 118, "y": 105, "w": 640, "h": 60 }, "confidence": 0.9987 },
           { "text": "잡음", "box": { "x": 900, "y": 300, "w": 40, "h": 20 }, "confidence": 0.31, "dropped": true } ] },
         { "pageNumber": 3, "width": 1786, "height": 2526, "scale": 3, "deskewAngle": 0.42, "regionsOnly": true, "lines": [

@@ -9,6 +9,12 @@
  * y' = y·cosθ + x·sinθ 의 행 히스토그램 제곱합(줄이 수평일 때 가장 뾰족)을 비교 —
  * ±MAX 를 0.2° 간격으로 훑고 최댓값 주변을 0.02° 간격으로 다듬는다.
  * 적용 조건: |θ| ≥ MIN_APPLY_DEG 이고 0° 대비 뾰족함이 뚜렷할 때만 (클린 렌더는 무보정). 글줄이 MIN_LINES 보다 적으면 더 뚜렷해야 한다.
+ *
+ * 원근 펴기: 휴대폰으로 비스듬히 찍은 쪽은 글줄 기울기가 위아래로 다르다(사다리꼴). 쪽 전체의 투영은 위아래 각이 서로 상쇄돼
+ * 봉우리가 무뎌지고 0° 근처로 나와 보정하지 않았다(실측 사진 4장: 위 띠 +2.6°·아래 띠 −0.7° 인 쪽이 전체 −0.76°·뾰족함 1.010).
+ * 쪽을 겹치는 가로 띠로 나눠 띠마다 같은 방식으로 재고, 뚜렷한 띠 사이 각 차이가 DEWARP_SPREAD_DEG 이상이고 편 쪽이 한 각 회전보다
+ * 투영이 뚜렷이 뾰족하면 회전 대신
+ * 행마다 (x − cx)·tanθ(y) 만큼 세로로 밀어 글줄을 편다. θ(y) 는 뚜렷한 띠 각을 잇는 구간 직선, 바깥은 끝 띠 각 그대로.
  */
 
 /** 추정 범위 (°) — 이보다 큰 회전은 기울기가 아니라 방향 문제 (범위 밖) */
@@ -26,6 +32,65 @@ const MIN_GAIN_FEW = 1.05
 const LINE_BIN_FRAC = 0.05
 const TARGET_LONG = 1000
 
+/** 원근 펴기 — 띠 수(절반씩 겹침)·뚜렷한 띠의 뾰족함 하한·글줄 수 하한·적용하는 띠 사이 각 차이 */
+const DEWARP_BANDS = 6
+const DEWARP_MIN_GAIN = 1.05
+const DEWARP_MIN_LINES = 3
+const DEWARP_SPREAD_DEG = 0.8
+/** 원근은 위에서 아래로 기울기가 한쪽으로만 변한다 — 뚜렷한 띠 각이 이보다 크게 되돌아가면(도장·큰 제목 띠 하나가 튄 쪽) 펴지 않는다 */
+const DEWARP_MONO_TOL_DEG = 0.3
+/** 편 뒤 투영 뾰족함이 쪽 전체 한 각 회전의 최고 점수보다 이 배수 넘게 높아야 편다 */
+const DEWARP_WIN = 1.02
+
+/** 원근 펴기 — 행 y(래스터 px)의 글줄 기울기 θ(y)(°, deskewAngle 과 같은 뜻)를 잇는 기준점. 펴진 래스터 (x, y) 는 입력 (x, y + (x − cx)·tanθ(y)) */
+export interface SkewField {
+  cx: number
+  knots: Array<[number, number]>
+}
+
+/** 기준점을 잇는 θ(y) — 바깥은 끝 기준점 각 */
+export function fieldAngle(f: SkewField, y: number): number {
+  const k = f.knots
+  if (y <= k[0][0]) return k[0][1]
+  for (let i = 1; i < k.length; i++) if (y <= k[i][0]) { const t = (y - k[i - 1][0]) / (k[i][0] - k[i - 1][0]); return k[i - 1][1] * (1 - t) + k[i][1] * t }
+  return k[k.length - 1][1]
+}
+
+/** 띠별 기울기 — 뚜렷한 띠가 둘 이상이고 그 각 차이가 DEWARP_SPREAD_DEG 이상이며 위→아래로 한쪽으로만 변할 때만 기준점을 낸다 */
+export function estimateSkewField(rgba: Uint8Array, width: number, height: number): SkewField | null {
+  const bh = Math.floor(height / (DEWARP_BANDS / 2 + 0.5))
+  if (bh < 50) return null
+  const knots: Array<[number, number]> = []
+  // 띠도 쪽 전체와 같은 축소 간격으로 — 띠마다 긴 변을 맞추면 띠가 덜 줄어 쪽 전체 추정의 4배 가까이 셌다
+  const step = pageStep(width, height)
+  for (let k = 0; k < DEWARP_BANDS; k++) {
+    const y0 = Math.floor((k * (height - bh)) / (DEWARP_BANDS - 1))
+    const e = estimateSkew(rgba.subarray(y0 * width * 4, (y0 + bh) * width * 4), width, bh, step)
+    if (e.gain >= DEWARP_MIN_GAIN && e.lines >= DEWARP_MIN_LINES) knots.push([y0 + bh / 2, e.angle])
+  }
+  if (knots.length < 2) return null
+  const as = knots.map(k => k[1])
+  if (Math.max(...as) - Math.min(...as) < DEWARP_SPREAD_DEG) return null
+  const up = as.some((a, i) => i > 0 && a - as[i - 1] > DEWARP_MONO_TOL_DEG), down = as.some((a, i) => i > 0 && as[i - 1] - a > DEWARP_MONO_TOL_DEG)
+  if (up && down) return null
+  return { cx: (width - 1) / 2, knots }
+}
+
+/** 행마다 세로 밀기 — 펴진 (x, y) 는 입력 (x, y + (x − cx)·tanθ(y)) 에서 bilinear(세로), 바깥은 흰색 */
+export function dewarpRows(rgba: Uint8Array, width: number, height: number, f: SkewField): Uint8Array {
+  const out = new Uint8Array(rgba.length)
+  for (let y = 0; y < height; y++) {
+    const t = Math.tan((fieldAngle(f, y) * Math.PI) / 180)
+    for (let x = 0; x < width; x++) {
+      const sy = y + (x - f.cx) * t, y0 = Math.floor(sy), wy = sy - y0, o = (y * width + x) * 4
+      if (y0 < 0 || y0 >= height - 1) { out[o] = 255; out[o + 1] = 255; out[o + 2] = 255; out[o + 3] = 255; continue }
+      const i0 = (y0 * width + x) * 4, i1 = i0 + width * 4
+      for (let c = 0; c < 4; c++) out[o + c] = Math.round(rgba[i0 + c] * (1 - wy) + rgba[i1 + c] * wy)
+    }
+  }
+  return out
+}
+
 export interface SkewEstimate {
   /** 페이지 기울기 (°, 양수 = 시계 방향으로 기움 → 같은 각만큼 반시계로 돌리면 바로 섬) */
   angle: number
@@ -33,13 +98,13 @@ export interface SkewEstimate {
   gain: number
   /** 최적각 투영의 글줄 띠 수 */
   lines: number
+  /** 최적각 투영 점수(행 히스토그램 제곱합) — 펴기와 견줄 때 */
+  score: number
 }
 
-/** 기울기 추정 (적용 여부와 무관한 원값) */
-export function estimateSkew(rgba: Uint8Array, width: number, height: number): SkewEstimate {
-  const step = Math.max(1, Math.ceil(Math.max(width, height) / TARGET_LONG))
+/** 축소 잉크 점 — 긴 변 ~TARGET_LONG 축소(또는 주어진 간격) 휘도의 전역 문턱(어두운 픽셀) */
+function inkPoints(rgba: Uint8Array, width: number, height: number, step: number): { xs: number[]; ys: number[]; sw: number; sh: number } {
   const sw = Math.floor(width / step), sh = Math.floor(height / step)
-  // 축소 휘도 + 전역 문턱 (잉크 = 어두운 픽셀)
   const xs: number[] = [], ys: number[] = []
   for (let y = 0; y < sh; y++) {
     for (let x = 0; x < sw; x++) {
@@ -48,7 +113,15 @@ export function estimateSkew(rgba: Uint8Array, width: number, height: number): S
       if (l < 128) { xs.push(x); ys.push(y) }
     }
   }
-  if (xs.length < 200) return { angle: 0, gain: 1, lines: 0 }
+  return { xs, ys, sw, sh }
+}
+
+const pageStep = (width: number, height: number) => Math.max(1, Math.ceil(Math.max(width, height) / TARGET_LONG))
+
+/** 기울기 추정 (적용 여부와 무관한 원값). step 은 축소 간격 — 주지 않으면 긴 변이 ~TARGET_LONG 이 되게 */
+export function estimateSkew(rgba: Uint8Array, width: number, height: number, step = pageStep(width, height)): SkewEstimate {
+  const { xs, ys, sw, sh } = inkPoints(rgba, width, height, step)
+  if (xs.length < 200) return { angle: 0, gain: 1, lines: 0, score: 0 }
   const diag = Math.ceil(Math.hypot(sw, sh))
   const hist = new Float64Array(2 * diag + 2)
   const score = (deg: number): number => {
@@ -81,15 +154,35 @@ export function estimateSkew(rgba: Uint8Array, width: number, height: number): S
     on = ink
   }
   // 투영 회전각 θ 에서 줄이 수평 → 페이지는 −θ 만큼 기운 것
-  return { angle: +(-best).toFixed(2), gain: s0 > 0 ? bestS / s0 : 1, lines }
+  return { angle: +(-best).toFixed(2), gain: s0 > 0 ? bestS / s0 : 1, lines, score: bestS }
+}
+
+/** 편 뒤의 투영 뾰족함 — estimateSkew 와 같은 축소 잉크 점을 편 행(y − (x − cx)·tanθ(y))에 모은 행 히스토그램 제곱합 */
+function dewarpScore(rgba: Uint8Array, width: number, height: number, f: SkewField, step: number): number {
+  const { xs, ys, sh } = inkPoints(rgba, width, height, step)
+  const pad = Math.ceil(sh / 2), hist = new Float64Array(sh + 2 * pad + 2)
+  for (let k = 0; k < xs.length; k++) {
+    const x = xs[k] * step, y = ys[k] * step
+    const r = Math.round((y - (x - f.cx) * Math.tan((fieldAngle(f, y) * Math.PI) / 180)) / step) + pad
+    if (r >= 0 && r < hist.length) hist[r]++
+  }
+  let sum = 0
+  for (let i = 0; i < hist.length; i++) sum += hist[i] * hist[i]
+  return sum
 }
 
 /**
- * 필요하면 페이지를 바로 세운 RGBA 를 돌려준다 (같은 크기, 중심 회전, 바깥은 흰색).
- * 보정하지 않으면 입력 그대로 + angle 0.
+ * 필요하면 페이지를 바로 세운 RGBA 를 돌려준다 (같은 크기, 중심 회전, 바깥은 흰색). 글줄 기울기가 위아래로 다르면(원근) 회전 대신
+ * 행마다 펴고 dewarp 에 기준점을 싣는다(angle 0). 보정하지 않으면 입력 그대로 + angle 0.
  */
-export function deskewPage(rgba: Uint8Array, width: number, height: number): { rgba: Uint8Array; angle: number } {
+export function deskewPage(rgba: Uint8Array, width: number, height: number): { rgba: Uint8Array; angle: number; dewarp?: SkewField } {
   const est = estimateSkew(rgba, width, height)
+  // 펴기가 쪽 전체 한 각 회전보다 글줄을 뚜렷이 더 곧게 만들 때만 — 고르게 기운 쪽에 그림·도장 띠 하나가 엉뚱한 각을 내거나
+  // 클린 렌더의 띠 각이 글꼴 획 탓에 흔들리면 기준점은 나와도 한 각 회전(또는 그대로)이 더 뾰족하다
+  const field = estimateSkewField(rgba, width, height)
+  if (field && dewarpScore(rgba, width, height, field, pageStep(width, height)) > est.score * DEWARP_WIN) {
+    return { rgba: dewarpRows(rgba, width, height, field), angle: 0, dewarp: field }
+  }
   if (Math.abs(est.angle) < MIN_APPLY_DEG || est.gain < (est.lines < MIN_LINES ? MIN_GAIN_FEW : MIN_GAIN)) return { rgba, angle: 0 }
   return { rgba: rotateRgba(rgba, width, height, est.angle), angle: est.angle }
 }

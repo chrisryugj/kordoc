@@ -1,5 +1,5 @@
 /** OCR 강건성 실측 — ocr-accuracy 와 같은 클린 텍스트층 페이지를 216dpi 로 렌더한 뒤
- *  실스캔형 열화(기울기·잡음·흐림·저해상도·JPEG)를 결정적으로(시드 고정) 입혀 이미지 입력
+ *  실스캔형 열화(기울기·잡음·흐림·저해상도·JPEG·원근)를 결정적으로(시드 고정) 입혀 이미지 입력
  *  경로(parse(PNG/JPEG) → 내장 OCR)로 돌리고, 열화별 CER·문자 P/R·표 구조를 낸다.
  *
  *  정답·정규화는 ocr-accuracy 와 같다 (ocr-lib.mjs fair v2). clean 행은 같은 렌더를 PNG 로
@@ -41,6 +41,11 @@ const VARIANTS = {
   blur: [["blur", 1.2]],
   dpi150: [["dpi", 150]],
   jpeg50: [["jpeg", 50]],
+  // 휴대폰으로 비스듬히 찍은 페이지 — 한쪽 세로 변이 짧은 사다리꼴(원근)이라 글줄 기울기가 위아래로 달라진다(위 +·아래 −).
+  // [오른쪽 변이 짧아지는 비율, 덧붙일 기울기°]. 게이트(cerMax)는 두지 않았다 — 37페이지 로컬 코퍼스 측정이라(아래 PR 측정 참고) 전체 코퍼스에서 래칫한다
+  // 측정(2026-11-25, 37페이지): persp8 CER .296 → .078 · persp8+2 .351 → .133 (원근 펴기 전 → 후)
+  persp8: [["persp", [0.08, 0]]],
+  "persp8+2": [["persp", [0.08, 2]], ["blur", 0.7], ["jpeg", 70]],
   // 실스캔 흉내: 200dpi · 기울기 -1.2° · 흐림 0.7 · 잡음 σ8 · JPEG 60
   scan: [["dpi", 200], ["rotate", -1.2], ["blur", 0.7], ["noise", 8], ["jpeg", 60]],
 }
@@ -67,6 +72,28 @@ function mulberry32(seed) {
 }
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0 }
 
+/** 네 점 대응으로 사영 변환(3×3) — from 의 점을 to 로 보낸다 */
+function homography(from, to) {
+  const A = [], b = []
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = from[i], [u, v] = to[i]
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u)
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v)
+  }
+  for (let c = 0; c < 8; c++) {
+    let p = c
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r
+    ;[A[c], A[p]] = [A[p], A[c]]; [b[c], b[p]] = [b[p], b[c]]
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue
+      const f = A[r][c] / A[c][c]
+      for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k]
+      b[r] -= f * b[c]
+    }
+  }
+  return [...b.map((v, i) => v / A[i][i]), 1]
+}
+
 async function degrade(sharp, rgba, W, H, steps, seedKey) {
   let buf = Buffer.from(rgba), w = W, h = H
   let format = "png", quality = 100
@@ -76,6 +103,21 @@ async function degrade(sharp, rgba, W, H, steps, seedKey) {
       const r = await sharp(buf, { raw: { width: w, height: h, channels: 4 } })
         .rotate(v, { background: { r: 255, g: 255, b: 255, alpha: 1 } }).raw().toBuffer({ resolveWithObject: true })
       buf = r.data; w = r.info.width; h = r.info.height
+    } else if (op === "persp") {
+      // 출력 캔버스(같은 크기) 위 사다리꼴(왼쪽 변 그대로, 오른쪽 변을 k 만큼 줄여 가운데 정렬)을 기울기만큼 돌린 자리에 페이지를 놓는다
+      const [k, deg] = v, t = (deg * Math.PI) / 180, cx = w / 2, cy = h / 2
+      const rot = ([x, y]) => [cx + (x - cx) * Math.cos(t) - (y - cy) * Math.sin(t), cy + (x - cx) * Math.sin(t) + (y - cy) * Math.cos(t)]
+      const quad = [[0, 0], [w, (h * k) / 2], [w, h * (1 - k / 2)], [0, h]].map(rot)
+      const m = homography(quad, [[0, 0], [w, 0], [w, h], [0, h]])
+      const out = Buffer.alloc(buf.length, 255)
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const d = m[6] * x + m[7] * y + m[8], sx = (m[0] * x + m[1] * y + m[2]) / d, sy = (m[3] * x + m[4] * y + m[5]) / d
+        const x0 = Math.floor(sx), y0 = Math.floor(sy)
+        if (x0 < 0 || y0 < 0 || x0 >= w - 1 || y0 >= h - 1) continue
+        const fx = sx - x0, fy = sy - y0, i = (y0 * w + x0) * 4, o = (y * w + x) * 4
+        for (let c = 0; c < 4; c++) out[o + c] = Math.round((buf[i + c] * (1 - fx) + buf[i + 4 + c] * fx) * (1 - fy) + (buf[i + w * 4 + c] * (1 - fx) + buf[i + w * 4 + 4 + c] * fx) * fy)
+      }
+      buf = out
     } else if (op === "blur") {
       buf = await sharp(buf, { raw: { width: w, height: h, channels: 4 } }).blur(v).raw().toBuffer()
     } else if (op === "dpi") {

@@ -169,10 +169,10 @@ export function toOcrLine(it: OcrItem, dropped = false): OcrLine {
 
 /** 쪽 줄 묶음 — 블록에 쓴 줄 + (all) 버린 줄을 위→아래, 왼→오른 순으로 */
 export function pageLines(pageNumber: number, width: number, height: number, scale: number, deskewAngle: number,
-  kept: OcrItem[], dropped: OcrItem[] = [], regionsOnly = false): OcrPageLines {
+  kept: OcrItem[], dropped: OcrItem[] = [], regionsOnly = false, dewarp?: OcrPageLines["dewarp"]): OcrPageLines {
   const lines = [...kept.map(it => toOcrLine(it)), ...dropped.map(it => toOcrLine(it, true))]
     .sort((a, b) => (a.box.y - b.box.y) || (a.box.x - b.box.x))
-  return { pageNumber, width, height, scale, deskewAngle, ...(regionsOnly ? { regionsOnly: true as const } : {}), lines }
+  return { pageNumber, width, height, scale, deskewAngle, ...(dewarp ? { dewarp } : {}), ...(regionsOnly ? { regionsOnly: true as const } : {}), lines }
 }
 
 /** 위아래 끝이 모두 가로 괘선에 닿는 세로선 — 표 칸 경계 */
@@ -293,7 +293,7 @@ export async function ocrOnePage(
     // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정.
     // 벡터 글자·그림 영역 쪽은 PDF 원본 좌표를 유지한다. 회전하면 벡터 괘선·영역 경계 및
     // 원본 래스터를 잘라 읽는 closerReads와 좌표계가 달라져 줄 선택·병합이 어긋난다.
-    let { rgba: upright, angle } = vectorOps || regions ? { rgba, angle: 0 } : deskewPage(rgba, rw, rh)
+    let { rgba: upright, angle, dewarp } = vectorOps || regions ? { rgba, angle: 0, dewarp: undefined } : deskewPage(rgba, rw, rh)
     const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
     let ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
     // 그림 영역만 읽는 쪽은 표 행 경계 보강선(isolated)을 뺀다 — 도해 상자·화살표 선이 행 경계로 잡혀 이름표 읽기 순서가 흔들렸다(ODL 055 팜유 흐름도)
@@ -311,6 +311,8 @@ export async function ocrOnePage(
       ({ rgba: upright, width: rw, height: rh } = rotateQuarter(upright, rw, rh, stats.pageRotation));
       [pdfW, pdfH] = [pdfH, pdfW]
       delete stats.pageRotation
+      // 편 기준점은 세우기 전 행 기준이라 세운 래스터 좌표에 맞지 않는다 — 싣지 않는다
+      dewarp = undefined
       ruling = detectRulingLines(upright, rw, rh, rh / pdfH)
       items = await recognizeOcrPage(engine!, config, { ...tuning, orientPage: false }, upright, rw, rh, stats,
         [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
@@ -332,7 +334,7 @@ export async function ocrOnePage(
     // 줄 좌표의 기준 래스터 — 기울기·눕힌 페이지를 바로잡은 것
     const raster = wantRaster ? { raster: { data: upright, width: rw, height: rh } } : undefined
     const withLines = (blocks: IRBlock[], kept: OcrItem[], regionsOnly = false) =>
-      config.lines ? { blocks, lines: pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly), ...raster } : { blocks, ...raster }
+      config.lines ? { blocks, lines: pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly, dewarp), ...raster } : { blocks, ...raster }
     // 텍스트층이 있는 쪽의 그림 영역만 읽을 때는 영역마다 그 안 글줄로 따로 블록을 만든다 — 쪽 전체로 묶으면 본문 줄과 그림 글이
     // 한 문단으로 합쳐져 영역 판정(mergeOcrImageRegions)에서 빠진다
     if (regions) {

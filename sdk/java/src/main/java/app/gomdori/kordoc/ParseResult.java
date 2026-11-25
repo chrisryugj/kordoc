@@ -101,6 +101,22 @@ public final class ParseResult {
         return List.copyOf(pages);
     }
 
+    /**
+     * ocrLines 의 연장 — 페이지마다 행별 기울기 보정. {@code get(p)} 가 {@code ocrLines().get(p)} 의 보정이고,
+     * 행마다 펴지 않은 페이지는 empty, ocrLines 가 없으면 빈 목록
+     */
+    public List<Optional<OcrDewarp>> ocrDewarp() {
+        List<Optional<OcrDewarp>> pages = new ArrayList<>();
+        for (JsonNode p : raw.path("ocrLines")) {
+            JsonNode d = p.get("dewarp");
+            if (d == null || d.isNull()) { pages.add(Optional.empty()); continue; }
+            List<OcrDewarp.Knot> knots = new ArrayList<>();
+            for (JsonNode k : d.path("knots")) knots.add(new OcrDewarp.Knot(k.path(0).asDouble(), k.path(1).asDouble()));
+            pages.add(Optional.of(new OcrDewarp(d.path("cx").asDouble(), List.copyOf(knots))));
+        }
+        return List.copyOf(pages);
+    }
+
     /** OCR 경로가 읽은 페이지 래스터 ({@code pageImages(true)}·{@code pageImages("webp")}, PDF·이미지 입력). 쪽 번호 순, 옵션을 안 줬으면 빈 목록 */
     public List<PageImage> pageImages() {
         List<PageImage> out = new ArrayList<>();

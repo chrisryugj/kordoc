@@ -69,7 +69,7 @@ class OcrPageLines:
     width: int
     height: int
     scale: float
-    #: 기울기 보정으로 래스터를 돌린 각(°). 좌표는 돌린 래스터 기준
+    #: 기울기 보정으로 래스터를 돌린 각(°). 좌표는 돌린 래스터 기준 — 행마다 펴서 보정한 페이지는 0 이고 ``ParseResult.ocr_dewarp`` 를 본다
     deskew_angle: float
     #: 텍스트층이 있는 쪽이라 그림 영역만 읽었다
     regions_only: bool
@@ -112,6 +112,16 @@ class OcrChar:
     box: OcrBox
     confidence: float
     alternatives: tuple[OcrCharAlternative, ...] = ()
+
+
+@dataclass(frozen=True)
+class OcrDewarp:
+    """글줄 기울기가 위아래로 달라(휴대폰 사진의 원근 등) 회전 대신 행마다 세로로 밀어 편 페이지(``ocr_dewarp``). 좌표는 편 래스터 기준이다.
+    ``knots`` 는 (행 y(px), 그 행의 기울기 θ(°, ``deskew_angle`` 과 같은 뜻)) 이고 θ(y) 는 기준점 사이를 직선으로 잇는다(바깥은 끝 기준점 각).
+    입력 좌표로는 ``x₀ = x``, ``y₀ = y + (x − cx)·tan θ(y)``."""
+
+    cx: float
+    knots: tuple[tuple[float, float], ...]
 
 
 @dataclass(frozen=True)
@@ -171,6 +181,12 @@ class ParseResult:
         return [[tuple(OcrChar(c["text"], OcrBox(c["box"]["x"], c["box"]["y"], c["box"]["w"], c["box"]["h"]), c["confidence"],
                                tuple(OcrCharAlternative(a["text"], a["confidence"]) for a in c.get("alternatives") or ()))
                        for c in ln.get("chars") or ()) for ln in p["lines"]]
+                for p in self.raw.get("ocrLines") or []]
+
+    @property
+    def ocr_dewarp(self) -> list[OcrDewarp | None]:
+        """``ocr_lines`` 의 연장 — 페이지마다 행별 기울기 보정. ``ocr_dewarp[p]`` 가 ``ocr_lines[p]`` 의 보정이고, 행마다 펴지 않은 페이지는 None."""
+        return [None if (d := p.get("dewarp")) is None else OcrDewarp(d["cx"], tuple((k[0], k[1]) for k in d["knots"]))
                 for p in self.raw.get("ocrLines") or []]
 
     @property
