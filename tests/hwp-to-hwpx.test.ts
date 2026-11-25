@@ -286,6 +286,26 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.ok(xml.includes(`<hp:run charPrIDRef="0">${pageNum}<hp:t>둘째 문단</hp:t></hp:run>`), xml)
   })
 
+  it("글자가 없는 빈 문단에서 열린 지움 구간도 deleteEnd 를 같은 문단에 남긴다 (짝 없는 deleteBegin 이면 다시 읽을 때 뒤 본문이 모두 지운 글이 됐다)", async () => {
+    const range = (s: number, e: number): Buffer => { const d = Buffer.alloc(12); d.writeUInt32LE(s, 0); d.writeUInt32LE(e, 4); d.writeUInt32LE(((0x11 << 24) | 1) >>> 0, 8); return rec(0x46, 1, d) }
+    // 글 레코드 없이 문단 끝만 있는 문단. 지움 구간이 문단 끝을 넘는다(0~1)
+    const header = Buffer.alloc(24); header.writeUInt32LE(1, 0); header.writeUInt16LE(1, 12); header.writeUInt16LE(1, 16)
+    const seg = Buffer.alloc(36); seg.writeInt32LE(1000, 8)
+    const empty = Buffer.concat([rec(0x42, 0, header), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, seg), range(0, 1)])
+    const body = Buffer.concat([paragraph("앞 글"), paragraph("뒤 글")])
+    const view = Buffer.concat([paragraph("앞 글"), empty, paragraph("뒤 글")])
+    const cfb = CFB.read(Buffer.from(buildHwp(body, Buffer.alloc(0), { "/ViewText/Section0": view })), { type: "buffer" })
+    const fh = CFB.find(cfb, "/FileHeader")
+    const hdr = Buffer.from(fh.content)
+    hdr.writeUInt32LE(hdr.readUInt32LE(36) | (1 << 14), 36)
+    fh.content = hdr
+    const hwpx = await hwpToHwpx(new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer))
+    const xml = await (await JSZip.loadAsync(hwpx)).file("Contents/section0.xml")!.async("string")
+    assert.match(xml, /<hp:deleteBegin Id="1" TcId="1"\/><hp:deleteEnd Id="1" TcId="1" paraend="1"\/>/)
+    const md = (await parse(hwpx)).markdown
+    assert.ok(md.includes("뒤 글"), md)
+  })
+
   it("변경 추적 문서는 ViewText 를 옮겨 지운 글·표를 deleteBegin·deleteEnd 로 남기고 변경 목록·작성자를 header 에 쓴다", async () => {
     const range = (...tags: Array<[number, number, number, number]>): Buffer => {
       const d = Buffer.alloc(12 * tags.length)

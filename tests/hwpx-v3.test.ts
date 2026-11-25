@@ -517,6 +517,15 @@ describe("hwpx v3 — 변경추적/메모/숨은텍스트", () => {
     assert.ok(result.warnings?.some(w => w.code === "HIDDEN_TEXT_FILTERED"), "필터링 경고")
   })
 
+  it("같은 Id 의 deleteEnd 가 없는 deleteBegin 은 무시한다 (깨진 파일에서 뒤 본문 전체가 지운 글로 빠지지 않게)", async () => {
+    const body = `<hp:p id="0"><hp:run><hp:t>앞 글<hp:deleteBegin Id="7" TcId="1"/></hp:t></hp:run></hp:p>` +
+      `<hp:p id="0"><hp:run><hp:t>뒷문단<hp:deleteBegin Id="8" TcId="1"/>지운글<hp:deleteEnd Id="8" TcId="1"/>마무리</hp:t></hp:run></hp:p>`
+    const result = await parseHwpxDocument(await makeHwpx(sec(body)))
+    assert.ok(result.markdown.includes("뒷문단"), result.markdown)
+    assert.ok(result.markdown.includes("마무리"), result.markdown)
+    assert.ok(!result.markdown.includes("지운글"), result.markdown)
+  })
+
   it("hiddenComment 텍스트는 본문 혼입이 차단되고 HIDDEN_TEXT_FILTERED 경고가 남는다", async () => {
     const body = `<hp:p id="0"><hp:run><hp:t>본문</hp:t>` +
       `<hp:ctrl><hp:hiddenComment><hp:subList>${para("숨은 설명 텍스트")}</hp:subList></hp:hiddenComment></hp:ctrl></hp:run></hp:p>`

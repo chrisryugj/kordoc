@@ -6,7 +6,7 @@
  * 더 쪼개면 인위적 경계에 순환 import만 생김. 클러스터를 다시 부르지 않는 말단 판독 도우미만 section-nodes.ts 에 둔다.
  */
 
-import { collectImageRefs, DELETABLE_OBJECT_TAGS, extractImageRef, findDescendant, findTopLevelTbls, inIndependentDeletionStory, markDeletedObjects, userShapeComment } from "./section-shape.js"
+import { collectImageRefs, DELETABLE_OBJECT_TAGS, extractImageRef, findDescendant, findTopLevelTbls, inIndependentDeletionStory, markDeletedObjects, orphanDeleteBegins, userShapeComment } from "./section-shape.js"
 import { KordocError, sanitizeHref, stripDtd } from "../utils.js"
 import { escapeLiteralTags, wrapScript, tidyScriptTags } from "../script-tags.js"
 import { captionedText, convertTableToText, escapeLiteralDollar, MAX_COLS, MAX_ROWS } from "../table/builder.js"
@@ -44,6 +44,7 @@ export function parseSectionXml(xml: string, styleMap?: HwpxStyleMap, warnings?:
   const ctx: WalkCtx = { styleMap, warnings, sectionNum, shared: shared ?? createSectionShared() }
   // 변경추적 삭제 구간은 섹션 경계를 넘지 않음 — 비정상 파일에서 본문 전체 소실 방지
   ctx.shared.track.deleteDepth = 0
+  ctx.shared.track.orphanBegins = orphanDeleteBegins(doc.documentElement as unknown as Element)
 
   // 실제 페이지 프리패스 (#66) — 조판 캐시로 top-level 문단별 페이지 배정.
   // 신뢰 불가(usable=false) 섹션이 하나라도 있으면 호출자(parser.ts)가 섹션 근사로 되돌린다.
@@ -383,7 +384,7 @@ function walkSection(
 function handleShape(el: Element, sink: IRBlock[], ctx: WalkCtx): void {
   // 캡션은 삭제 개체만 미리 표시하고, 번호·주석 처리는 원래 글상자→캡션 순서로 수행한다.
   const capEl = findChildByLocalName(el, "caption")
-  if (capEl) markDeletedObjects(capEl, ctx.shared.track.deletedObjects, ctx.shared.track.deletedImageRefs)
+  if (capEl) markDeletedObjects(capEl, ctx.shared.track.deletedObjects, ctx.shared.track.deletedImageRefs, ctx.shared.track.orphanBegins)
   const imgRef = extractImageRef(el, 0, ctx.shared.track.deletedObjects)
   const drawTextChild = findDescendant(el, "drawText", 0, ctx.shared.track.deletedObjects)
 
@@ -862,7 +863,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
 
         // 변경추적 — 삭제 구간(deleteBegin~End)의 텍스트는 출력 제외 (최종본 상태 재현)
         case "deleteBegin":
-          if (ctx) ctx.shared.track.deleteDepth++
+          if (ctx && !ctx.shared.track.orphanBegins?.has(k)) ctx.shared.track.deleteDepth++
           break
         case "deleteEnd":
           if (ctx && ctx.shared.track.deleteDepth > 0) ctx.shared.track.deleteDepth--
@@ -995,7 +996,7 @@ function extractParagraphInfo(para: Element, styleMap?: HwpxStyleMap, ctx?: Walk
         case "fieldBegin": onFieldBegin(child); break
 
         // run 직계 변경추적 마커 (비표준 경로)
-        case "deleteBegin": if (ctx) ctx.shared.track.deleteDepth++; break
+        case "deleteBegin": if (ctx && !ctx.shared.track.orphanBegins?.has(child)) ctx.shared.track.deleteDepth++; break
         case "deleteEnd": if (ctx && ctx.shared.track.deleteDepth > 0) ctx.shared.track.deleteDepth--; break
         case "insertBegin": case "insertEnd": break
 

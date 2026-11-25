@@ -18,8 +18,18 @@ export function collectImageRefs(el: Element, refs: Set<string>, depth = 0): voi
   }
 }
 
+/** 같은 Id 의 deleteEnd 가 섹션 어디에도 없는 deleteBegin. 깨진 파일에서 그 뒤 본문 전체를 지운 글로 버리지 않게 깊이 셈에서 뺀다.
+ *  Id 가 없는 표시는 종전대로 센다 */
+export function orphanDeleteBegins(root: Element): WeakSet<Element> {
+  const all = (name: string): Element[] => ["hp:" + name, name].flatMap(n => Array.from(root.getElementsByTagName(n) as unknown as ArrayLike<Element>))
+  const ends = new Set(all("deleteEnd").map(e => e.getAttribute("Id")).filter(Boolean))
+  const orphans = new WeakSet<Element>()
+  for (const b of all("deleteBegin")) { const id = b.getAttribute("Id"); if (id && !ends.has(id)) orphans.add(b) }
+  return orphans
+}
+
 /** 삭제 개체만 표시하는 선순회 — 본문 텍스트·경고·번호·주석 상태는 해석하지 않는다. */
-export function markDeletedObjects(node: Node, deletedObjects: WeakSet<Element>, refs: Set<string>): void {
+export function markDeletedObjects(node: Node, deletedObjects: WeakSet<Element>, refs: Set<string>, orphans?: WeakSet<Element>): void {
   let deleteDepth = 0
   const walk = (parent: Node, depth: number) => {
     if (depth > MAX_XML_DEPTH) return
@@ -28,7 +38,7 @@ export function markDeletedObjects(node: Node, deletedObjects: WeakSet<Element>,
       const child = children[i] as Element
       if (child.nodeType !== 1) continue
       const tag = (child.tagName || child.localName || "").replace(/^[^:]+:/, "")
-      if (tag === "deleteBegin") { deleteDepth++; continue }
+      if (tag === "deleteBegin") { if (!orphans?.has(child)) deleteDepth++; continue }
       if (tag === "deleteEnd") { if (deleteDepth > 0) deleteDepth--; continue }
       if (deleteDepth > 0 && DELETABLE_OBJECT_TAGS.has(tag)) {
         deletedObjects.add(child)

@@ -205,7 +205,8 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
   }
   flush()
   // 글 끝 너머에서 닫히는 영역은 마지막 글자 자리에서 닫는다(짝이 깨지지 않게)
-  for (const [pos, list] of marks) if (pos >= n) for (const m of list) toks.push(markTok(n, m, ctx))
+  // 글자가 없는 문단(빈 문단)은 끝 표시도 0 자리에 둔다. markTok 가 끝을 앞 글자 자리(−1)로 옮겨 run 밖으로 빠졌다(짝 없는 deleteBegin)
+  for (const [pos, list] of marks) if (pos >= n) for (const m of list) toks.push(markTok(n > 0 || (typeof m !== "string" && m.begin) ? n : 1, m, ctx))
   // 컨트롤 뒤 글 자리 — 바로 뒤(8 WCHAR 다음)에 아무것도 없으면(문단 끝) 빈 글을 둔다. 그 자리가 다음 글자 모양 구간이면 빈 hp:t 도
   // 다음 run 에 든다. 개체가 잇달아 오면(수식 둘) 사이에 빈 글이 없다. 바로 뒤가 변경 추적 표시뿐이면 표시 뒤에 따로 빈 글을 둔다
   // (한글: <hp:t><hp:deleteEnd/></hp:t><hp:t/>)
