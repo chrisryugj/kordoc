@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.18](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.18)** · 2026-11-25
+Latest release: **[4.25.19](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.19)** · 2026-11-25
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
+| 4.25.19 | Pages photographed at an angle, whose text lines tilt differently top to bottom, are straightened row by row before OCR (#237, @VerifiedIdiot). Landscape HWP files converted to HWPX no longer open in portrait in Hangul (#238) | Perspective variants, 54 pages: CER persp8 **8.46%**, persp8+2 14.1% · Existing OCR paths unchanged page by page (KoOCR 877 pages, OCR, robustness, odlocr) · Print settings matching Hangul-saved files 109 → **263/264** pairs · 0 test failures |
 | 4.25.18 | A patched HWP 5.x file whose table cell was emptied no longer opens as corrupted in the Hangul viewer (#236). Empty paragraphs are written without a text record, as Hangul does | Emptying a cell in 3 Hangul-saved HWP files: text records holding only the paragraph end 1·1·0 → **0·0·0** · Re-parse OK · 5,336 tests, 0 failures |
 | 4.25.17 | `ocrChars` option (CLI `--ocr-chars [n]`, #235, @VerifiedIdiot) returns per-character confidence, box and alternatives for each OCR line, so you can see which character in a line is uncertain and what could go there | Output is byte-identical with the option off (KoOCR 877-page predictions unchanged) · **No** drop on OCR, robustness, odlocr and tables · 5,335 tests, 0 failures |
 | 4.25.16 | A word broken at a PDF body line end is joined when its tail plus the next line word appears unbroken elsewhere in the document ("서울지방중대범죄⏎수사청"). Empty spacer columns between column groups in PDF and OCR tables are no longer merged into a neighbour | PDF text spacing F1 0.99251 → **0.99253** (6 docs up, 0 down) · KoOCR 877 pages: one page up (statistics table TEDS 0.810 → 0.869), none down · **No** drop on score, tables, annex, ODL, OCR and robustness · 5,321 tests, 0 failures |
 | 4.25.15 | Converting a change-tracked HWP to HWPX dropped the end marker of deletions opened in empty paragraphs, so reading it back lost most of the body; fixed, and HWPX files with unmatched deletion markers are read to the end. PDF line wraps after a word ending in a connective ending stay spaced | Change-tracked HWP round-trip text match 0.114 → **0.993**, 0.269 → **1.0** · hwp2hwpx bench unchanged · PDF text spacing F1 0.99250 → 0.99251 (7 docs up, 0 down) · **No** drop on score, tables, roundtrip and formats · 5,319 tests, 0 failures |
-| 4.25.14 | The PDF line-wrap dictionary is used more widely: it now outranks spaced character-pair evidence from the same document, and also judges words carrying a parenthetical (「에너지기구(IEA)는」) or a middle-dot or Latin prefix (「산업·에너지」, 「AI기본」) | PDF text 744 pairs spacing F1 0.99240 → **0.99250** (53 docs up, 4 down) · **No** drop on tables, annex, score, ODL (4 modes), OCR, robustness and KoOCR 877 pages · 5,315 tests, 0 failures |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
