@@ -404,7 +404,10 @@ const DICT_PARTICLE = /(?:에서는|에서도|에서의|으로서|으로써|으�
 let DICT: Set<string> | undefined
 function dictJoins(left: string, right: string): boolean {
   const tail = left.match(/[가-힣]+$/)?.[0], run = right.match(/^[가-힣]+/)?.[0]
-  if (!tail || !run || tail.length !== left.replace(/^[(\[「『‘“"']+/, "").length) return false
+  if (!tail || !run) return false
+  // 앞 조각은 한글뿐이거나, 끝 한글 덩이 앞이 가운뎃점·닫는 괄호·영숫자("산업·에너지⏎정책", "AI기본⏎법을")
+  const lead = left.replace(/^[(\[「『‘“"']+/, ""), head = lead.slice(0, lead.length - tail.length)
+  if (head && !/[·ㆍ‧･)」』’”A-Za-z0-9]$/.test(head)) return false
   // 뒤 조각은 한글 덩이 + 끝 문장부호, 또는 한글 덩이 바로 뒤 괄호 덧말("에너지기구(IEA)는")
   if (run.length !== right.replace(/[.,)」』’”;:]+$/, "").length && right[run.length] !== "(") return false
   DICT ??= unpackDict(WRAP_DICT_PACKED)
