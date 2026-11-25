@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.18] - 2026-11-25
+
+### Fixed
+
+- HWP 5.x patch: 글이 든 표 칸을 빈칸으로 만들면 문단 끝 문자만 든 PARA_TEXT 레코드가 남아 한글 뷰어가 "파일이 손상되었습니다" 라며 열지 않던 것(#236). 한글처럼 빈 문단은 PARA_TEXT 없이(nChars 1) 쓴다. 한글 저장 HWP 3건에서 칸 하나를 빈칸으로 패치한 결과 끝 문자만 든 PARA_TEXT 1·1·0 → 0·0·0
+
 ## [4.25.17] - 2026-11-25
 
 ### Added
