@@ -148,6 +148,18 @@ export class WrapLexicon {
     return this.stems.has(stemOf(left + run)) && !this.spacedStems.has(left + " " + stemOf(run))
   }
 
+  /** 줄 끝 어절 꼬리(두 음절 이상, 어절 전체는 빼고)와 뒤 조각 한글 덩이(두 음절 이상)를 이은 꼴이 줄 안 어절 줄기로 나왔고 띄어 쓴 이웃으로는
+   *  쓴 적 없나. "서울지방중대범죄⏎수사청" 은 문서의 "중대범죄수사청은" 이 증거다 */
+  joinedTail(left: string, right: string): boolean {
+    const run = right.match(/^[가-힣]{2,}(?=$|[^가-힣])/)?.[0] ?? right.match(/^[가-힣]{2,}/)?.[0]
+    if (!run || !/^[가-힣]{3,}$/.test(left)) return false
+    for (let k = 2; k < left.length; k++) {
+      const tail = left.slice(-k)
+      if (this.stems.has(stemOf(tail + run)) && !this.spacedStems.has(tail + " " + stemOf(run))) return true
+    }
+    return false
+  }
+
   /** 두 어절을 줄 안에서 띄어 쓴 이웃으로 쓴 적 있나 */
   spacedPair(left: string, right: string): boolean {
     return this.pairs.has(left + " " + right)
@@ -370,7 +382,7 @@ export function wrapJoiner(prevText: string, nextText: string, lex?: WrapLexicon
   // "개인정보 처리"·"개인정보처리자" 가 섞인) 명사+명사 꺾임을 어절 통째로 가른다("개인정보⏎처리자가" → 문서 안 "개인정보처리자가").
   // hwpx↔pdf 752쌍 꺾임 자리(문서 전체 어휘로 모의, 판정 없던 자리만): 맞게 붙임 +208·잘못 붙임 +21. 띄어 쓴 이웃 어절 거부권이 없으면
   // +246·+78 이다(한 문서 안에서 "배달 종사자"·"배달종사자" 를 섞어 쓴 곳)
-  if (lex && /[가-힣A-Za-z0-9]$/.test(left) && /^[가-힣A-Za-z0-9]/.test(right) && (lex.joinedWord(left, right.replace(/[.,)」』’”;:]+$/, "")) || (heads && lex.joinedStem(left, right)))) return ""
+  if (lex && /[가-힣A-Za-z0-9]$/.test(left) && /^[가-힣A-Za-z0-9]/.test(right) && (lex.joinedWord(left, right.replace(/[.,)」』’”;:]+$/, "")) || (heads && (lex.joinedStem(left, right) || lex.joinedTail(left, right))))) return ""
   if (/\d$/.test(left) && COUNTER.test(right)) return ""
   // 한 음절 조각 — 문서 줄 안에서 홀로 선 어절로 나온 적 없으면 꺾인 조각이다 ("살⏎펴보고", "공상공무⏎원";
   // 앞 조각 한 음절 붙음 0.53 → 이 검사로 "등·및·한·그" 를 거른다). 둘 다 한 음절이면 붙인다(79/91)
