@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.13](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.13)** · 2026-11-25
+Latest release: **[4.25.14](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.14)** · 2026-11-25
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
+| 4.25.14 | The PDF line-wrap dictionary is used more widely: it now outranks spaced character-pair evidence from the same document, and also judges words carrying a parenthetical (「에너지기구(IEA)는」) or a middle-dot or Latin prefix (「산업·에너지」, 「AI기본」) | PDF text 744 pairs spacing F1 0.99240 → **0.99250** (53 docs up, 4 down) · **No** drop on tables, annex, score, ODL (4 modes), OCR, robustness and KoOCR 877 pages · 5,315 tests, 0 failures |
 | 4.25.13 | The PDF line-wrap dictionary now also draws on all 22,744 current administrative rules (98,619 → 212,857 words); the dictionary source is left out of the source maps, so the package size barely changes | PDF text 744 pairs spacing F1 0.99222 → **0.99240** (68 docs up, 8 down) · **No** drop on tables, annex, score, ODL (4 modes), OCR, robustness and KoOCR 877 pages · unpacked 32.4 MB · 5,312 tests, 0 failures |
 | 4.25.12 | Chrome-printed PDFs drew CSS background patterns as a full-page pattern fill that was taken for an opaque cover, dropping all body text underneath; pattern and shading fills no longer count as covers (#234, @Byun11) | The reported exam and official-letter pages go from 0 to 9,889 and 6,527 characters · **No** per-document change on score, tables, text, annex, formats, ODL (4 modes) and OCR · 5,312 tests, 0 failures |
 | 4.25.11 | PDF line-wrap joining also takes word stems with parentheses or particles attached (「국제에너지기구(IEA)는」) as evidence, and paragraphs split mid-word across a page by a footnote are joined | PDF text 744 pairs spacing F1 0.99221 → **0.99222** (5 docs up, 1 down) · **No** drop on tables, annex, formats and ODL (3 modes) · 5,309 tests, 0 failures |
 | 4.25.10 | PDF table cell text that continued across a page break was split by a line break in the middle of a word (`경<br>우에는`); OCR rotated an upright two-line image that some fonts make look skewed (#233). Both fixed | PDF text 744 pairs spacing F1 0.99211 → **0.99221** (11 docs up, 0 down) · **No** drop on tables, annex, score, ODL (4 modes), OCR, robustness and KoOCR 877 pages · 5,307 tests, 0 failures |
-| 4.25.9 | The PDF line-wrap dictionary now also draws on all 3,518 Presidential, Prime Ministerial and Ministerial Decrees, and verb stems broken at a line end (「통과되⏎도록」, 「높아⏎지고」) are joined into one word. The package size that grew in 4.25.8 because of the dictionary is back down | PDF text 744 pairs spacing F1 0.99198 → **0.99211** (61 docs up, 8 down) · unpacked size 39.4 MB → **32.2 MB** · **No** drop on tables, annex, ODL (4 modes), OCR, robustness and KoOCR 877 pages · 5,304 tests, 0 failures |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
