@@ -408,8 +408,8 @@ function dictJoins(left: string, right: string): boolean {
   // 앞 조각은 한글뿐이거나, 끝 한글 덩이 앞이 가운뎃점·닫는 괄호·영숫자("산업·에너지⏎정책", "AI기본⏎법을")
   const lead = left.replace(/^[(\[「『‘“"']+/, ""), head = lead.slice(0, lead.length - tail.length)
   if (head && !/[·ㆍ‧･)」』’”A-Za-z0-9]$/.test(head)) return false
-  // 뒤 조각은 한글 덩이 + 끝 문장부호, 또는 한글 덩이 바로 뒤 괄호 덧말("에너지기구(IEA)는")
-  if (run.length !== right.replace(/[.,)」』’”;:]+$/, "").length && right[run.length] !== "(") return false
+  // 뒤 조각은 한글 덩이 + 끝 문장부호, 또는 한글 덩이 바로 뒤 괄호 덧말("에너지기구(IEA)는")·가운뎃점·빗금("정책·제도")
+  if (run.length !== right.replace(/[.,)」』’”;:]+$/, "").length && !/^[(·ㆍ‧･/]$/.test(right[run.length])) return false
   DICT ??= unpackDict(WRAP_DICT_PACKED)
   const stem = run.replace(DICT_PARTICLE, "")
   return DICT.has(tail + run) || (stem.length > 0 && stem !== run && DICT.has(tail + stem))
