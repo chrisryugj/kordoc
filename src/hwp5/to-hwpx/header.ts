@@ -27,7 +27,7 @@ export function unitSwitch(caseXml: string, defaultXml: string): string {
 const TAG = {
   DOCUMENT_PROPERTIES: 0x10, ID_MAPPINGS: 0x11, BIN_DATA: 0x12, FACE_NAME: 0x13, BORDER_FILL: 0x14, CHAR_SHAPE: 0x15, TAB_DEF: 0x16,
   NUMBERING: 0x17, BULLET: 0x18, PARA_SHAPE: 0x19, STYLE: 0x1a, COMPATIBLE_DOCUMENT: 0x1e, LAYOUT_COMPATIBILITY: 0x1f,
-  TRACKCHANGE: 0x20, MEMO_SHAPE: 0x5c, TRACK_CHANGE: 0x60, TRACK_CHANGE_AUTHOR: 0x61,
+  DOC_DATA: 0x1b, TRACKCHANGE: 0x20, MEMO_SHAPE: 0x5c, TRACK_CHANGE: 0x60, TRACK_CHANGE_AUTHOR: 0x61,
 } as const
 
 const LANGS = ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"] as const
@@ -346,6 +346,50 @@ export function docProps(recs: Rec[]): DocProps {
   const secCnt = c.u16()
   const begin = [c.u16(), c.u16(), c.u16(), c.u16(), c.u16(), c.u16()]
   return { secCnt, begin, caret: [c.u32(), c.u32(), c.u32()] }
+}
+
+/** 매개변수 묶음(DOC_DATA): 묶음 id u16·항목 수 i16·빈칸 u16, 항목은 id u16·형식 u16·값. 형식 0x8000 은 묶음, 1 은 글(길이 u16 + UTF-16),
+ *  2~9 는 4바이트 수. 모르는 꼴이면 null */
+interface ParamSet { id: number; items: Array<{ id: number; v?: number; set?: ParamSet }> }
+function readParamSet(c: Cur, depth = 0): ParamSet | null {
+  if (depth > 4 || c.rest < 6) return null
+  const id = c.u16(), n = c.i16()
+  c.skip(2)
+  const items: ParamSet["items"] = []
+  for (let i = 0; i < n; i++) {
+    if (c.rest < 4) return null
+    const iid = c.u16(), t = c.u16()
+    if (t === 0x8000) {
+      const set = readParamSet(c, depth + 1)
+      if (!set) return null
+      items.push({ id: iid, set })
+    } else if (t === 1) c.skip(2 * c.u16())
+    else if (t >= 2 && t <= 9) items.push({ id: iid, v: c.u32() })
+    else return null
+  }
+  return { id, items }
+}
+
+/**
+ * settings.xml 인쇄 설정(PrintInfo). DOC_DATA 의 인쇄 묶음(0x0207)에서 옮긴다. 한글은 HWP 에 이 레코드가 있을 때만 PrintInfo 를 쓰고, 빠지면 HWPX 를
+ * 연 한글이 가로 쪽을 세로로 짠다(#238). 항목 대응은 한글이 함께 저장한 HWP·HWPX 짝 155개에서 맞춘 것: 0x4006 인쇄 방식, 0x4010 겹침 크기
+ * (이 항목이 없는 묶음은 OverlapSize 도 쓰지 않는다), 0x401f·0x4020 확대 비율. 머리말·꼬리말 자동 인쇄·재단선·철끈 구멍은 짝 모두 0 이라
+ * 항목을 가를 수 없어 기본값(거짓·0)으로 쓴다. 레코드가 없거나 못 읽으면 빈 글
+ */
+export function printInfoXml(recs: Rec[]): string {
+  const r = recs.find(x => x.tagId === TAG.DOC_DATA)
+  const top = r ? readParamSet(new Cur(r.data)) : null
+  const find = (s: ParamSet): ParamSet | undefined => s.id === 0x0207 ? s : s.items.map(i => i.set && find(i.set)).find(Boolean)
+  const p = top ? find(top) : undefined
+  if (!p) return ""
+  const v = (id: number): number | undefined => p.items.find(i => i.id === id)?.v
+  const item = (name: string, type: string, value: string | number): string =>
+    `<config:config-item name="${name}" type="${type}">${value}</config:config-item>`
+  const overlap = v(0x4010)
+  return '<config:config-item-set name="PrintInfo">' + item("PrintAutoFootNote", "boolean", "false") + item("PrintAutoHeadNote", "boolean", "false")
+    + item("PrintMethod", "short", v(0x4006) ?? 0) + (overlap === undefined ? "" : item("OverlapSize", "short", overlap))
+    + item("PrintCropMark", "short", 0) + item("BinderHoleType", "short", 0)
+    + item("ZoomX", "short", v(0x401f) ?? 100) + item("ZoomY", "short", v(0x4020) ?? 100) + "</config:config-item-set>"
 }
 
 /** ID_MAPPINGS 의 목록별 개수 칸 */

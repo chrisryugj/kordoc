@@ -12,7 +12,7 @@ import { createRequire } from "module"
 import { openHwp5Container, readHwp5DocInfoRecords, readHwp5SectionStreams, readHwp5SectionRecords, readHwp5BinData, type Hwp5Container } from "../parser.js"
 import { decompressStream, readRecords, FLAG_TRACK_CHANGES } from "../record.js"
 import { recordTree, Cur, el, esc, type Rec } from "./util.js"
-import { headerXml, docProps, paraShapeIds, XML_DECL, NS } from "./header.js"
+import { headerXml, docProps, paraShapeIds, printInfoXml, XML_DECL, NS } from "./header.js"
 import { sectionXml } from "./section.js"
 import type { ConvertContext } from "./controls.js"
 import { VERSION, KordocError } from "../../utils.js"
@@ -244,7 +244,7 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
   const caret = docProps(docInfo).caret
   zip.file("settings.xml", XML_DECL + '<ha:HWPApplicationSetting xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" '
     + 'xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0">'
-    + el("ha:CaretPosition", [["listIDRef", caret[0]], ["paraIDRef", caret[1]], ["pos", caret[2]]]) + "</ha:HWPApplicationSetting>")
+    + el("ha:CaretPosition", [["listIDRef", caret[0]], ["paraIDRef", caret[1]], ["pos", caret[2]]]) + printInfoXml(docInfo) + "</ha:HWPApplicationSetting>")
 
   const rdfPart = (name: string, type: string): string => '<rdf:Description rdf:about=""><ns0:hasPart xmlns:ns0="http://www.hancom.co.kr/hwpml/2016/meta/pkg#" '
     + `rdf:resource="${name}"/></rdf:Description><rdf:Description rdf:about="${name}"><rdf:type rdf:resource="http://www.hancom.co.kr/hwpml/2016/meta/pkg#${type}"/></rdf:Description>`

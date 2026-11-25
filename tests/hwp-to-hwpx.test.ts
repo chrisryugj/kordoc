@@ -369,6 +369,23 @@ describe("hwpToHwpx — 합성 문서", () => {
     assert.match(await zip.file("Contents/header.xml")!.async("string"), /<hh:memoPr id="1" width="15591" lineWidth="3" lineType="SOLID"/)
   })
 
+  it("DOC_DATA 의 인쇄 묶음을 settings.xml PrintInfo 로 옮기고, 레코드가 없으면 쓰지 않는다 (가로 쪽이 세로로 열리던 #238)", async () => {
+    // 한글 저장본 꼴: 묶음 0x021c ⊃ 인쇄 묶음 0x0207(항목 8개). 인쇄 방식 4·확대 100
+    const items: Array<[number, number, number]> = [[0x4006, 6, 4], [0x400e, 6, 0], [0x400a, 6, 0], [0x401f, 7, 100], [0x401d, 6, 0], [0x401a, 6, 0], [0x4010, 7, 0], [0x4020, 7, 100]]
+    const set = (id: number, n: number) => { const b = Buffer.alloc(6); b.writeUInt16LE(id, 0); b.writeInt16LE(n, 2); return b }
+    const item = ([id, t, v]: [number, number, number]) => { const b = Buffer.alloc(8); b.writeUInt16LE(id, 0); b.writeUInt16LE(t, 2); b.writeUInt32LE(v, 4); return b }
+    const head = Buffer.alloc(4); head.writeUInt16LE(0x0207, 0); head.writeUInt16LE(0x8000, 2)
+    const docData = rec(0x1b, 0, Buffer.concat([set(0x021c, 1), head, set(0x0207, items.length), ...items.map(item)]))
+    const settings = async (docInfo?: Buffer) => (await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"), docInfo)))).file("settings.xml")!.async("string")
+    const xml = await settings(docData)
+    assert.ok(xml.includes('<config:config-item-set name="PrintInfo"><config:config-item name="PrintAutoFootNote" type="boolean">false</config:config-item>'
+      + '<config:config-item name="PrintAutoHeadNote" type="boolean">false</config:config-item><config:config-item name="PrintMethod" type="short">4</config:config-item>'
+      + '<config:config-item name="OverlapSize" type="short">0</config:config-item><config:config-item name="PrintCropMark" type="short">0</config:config-item>'
+      + '<config:config-item name="BinderHoleType" type="short">0</config:config-item><config:config-item name="ZoomX" type="short">100</config:config-item>'
+      + '<config:config-item name="ZoomY" type="short">100</config:config-item></config:config-item-set></ha:HWPApplicationSetting>'), xml)
+    assert.ok(!(await settings()).includes("PrintInfo"))
+  })
+
   it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
     const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
     for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",
