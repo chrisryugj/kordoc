@@ -52,6 +52,8 @@ export function mapTextToCells(
     result.set(cell, [])
   }
   const candidates = items.length * cells.length >= 5000 ? cellBandLookup(cells) : () => cells
+  const tableTop = Math.min(...cells.map(c => c.bbox.y1)), tableBottom = Math.max(...cells.map(c => c.bbox.y2))
+  const wide = new Set(cells.map(c => c.col)).size >= 3
 
   for (const item of items) {
     const pad = CELL_PADDING
@@ -78,6 +80,13 @@ export function mapTextToCells(
       }
     }
 
+    // 세 열 이상 표에서 OCR 글 상자의 세로 가운데가 표 위아래 바깥이고 상자가 칸보다 낮으면 칸 글이 아니다. 표 바로 아래 출처 줄이
+    // 끝 행 칸에 30% 넘게 걸쳐 칸 글로 들어갔다(통계표). 칸에 못 든 글은 표 밖 글로 돌아간다(page-blocks 미배정 환원). 두 열 이하
+    // 상자는 종전대로 둔다(아래 선택지 줄을 빼면 글 상자 판정이 바뀌어 두 단 글이 표가 됐다)
+    if (bestCell && item.fontName === "ocr" && wide) {
+      const ih = item.h || item.fontSize, cy = item.y + ih / 2
+      if (ih < bestCell.bbox.y2 - bestCell.bbox.y1 && (cy < tableTop || cy > tableBottom)) continue
+    }
     // 교차 비율 > 0.3이면 셀에 할당 (ODL은 0.6이지만 PDF 텍스트 좌표 오차 고려)
     if (bestCell && bestScore > 0.3) {
       result.get(bestCell)!.push(item)
