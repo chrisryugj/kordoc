@@ -415,8 +415,12 @@ export function shouldDemoteTable(table: IRTable): boolean {
   // 라벨 헤더 표 가드: 2행2열+ + 첫 행 전체가 마커 없는 짧은 라벨 + 본문에
   // 내용 실존 (예: 채용분야|담당업무|우대조건, 성명|응시분야|비고) — 본문 셀의
   // ○/ㅇ 항목부호와 양식 표의 빈 기입란은 행정문서 표 관행이므로 강등하지 않음
+  // 합친 칸이 가린 자리(기본값 빈 칸)는 보지 않는다. "자금조달"·"자금운용" 이 두 칸씩 합친 머리 행이 가린 빈 자리 탓에 라벨 행으로
+  // 안 보여, ○ 항목 본문을 가진 관보 자금 표가 글 상자로 강등됐다
+  const covered = new Set<number>()
+  table.cells[0]?.forEach((c, i) => { for (let k = 1; k < (c.colSpan || 1); k++) covered.add(i + k) })
   if (table.rows >= 2 && table.cols >= 2 &&
-      table.cells[0].every(c => {
+      table.cells[0].filter((_, i) => !covered.has(i)).every(c => {
         const t = c.text.trim()
         return t.length > 0 && t.length <= 12 && !/[□■◆○●▶ㅇ<>]/.test(t)
       }) &&
