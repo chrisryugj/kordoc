@@ -96,6 +96,25 @@ class OcrLineCandidate:
 
 
 @dataclass(frozen=True)
+class OcrCharAlternative:
+    """글자 대안(``ocr_chars=N``) — ``confidence`` 는 고른 글자의 ``confidence`` 와 같은 시점·같은 척도다."""
+
+    text: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class OcrChar:
+    """OCR 줄의 글자 하나(``ocr_chars``). ``box`` 는 래스터 픽셀 — 세로는 줄 상자 그대로, 가로는 인식 시점으로 나눈 근사다.
+    ``confidence`` 는 이 글자를 고른 CTC 시점의 확률, ``alternatives`` 는 같은 시점에서 다음으로 확률 높은 글자(``ocr_chars=N`` 일 때)."""
+
+    text: str
+    box: OcrBox
+    confidence: float
+    alternatives: tuple[OcrCharAlternative, ...] = ()
+
+
+@dataclass(frozen=True)
 class PageImage:
     """엔진의 OCR 경로가 읽은 페이지 래스터(``page_images``). ``OcrPageLines`` 좌표가 가리키는 이미지이고 바이트는 ``image.read()``."""
 
@@ -143,6 +162,15 @@ class ParseResult:
         """``ocr_lines`` 의 연장 — 줄마다 인식 모델의 읽기 후보(확률 내림차순). ``ocr_line_candidates[p][i]`` 가 ``ocr_lines[p].lines[i]`` 의 후보이고,
         옵션(``ocr_line_candidates=N``)을 안 줬거나 후보가 없는 줄은 빈 튜플."""
         return [[tuple(OcrLineCandidate(c["text"], c["probability"]) for c in ln.get("candidates") or ()) for ln in p["lines"]]
+                for p in self.raw.get("ocrLines") or []]
+
+    @property
+    def ocr_chars(self) -> list[list[tuple[OcrChar, ...]]]:
+        """``ocr_lines`` 의 연장 — 줄마다 글자별 신뢰도·상자. ``ocr_chars[p][i]`` 가 ``ocr_lines[p].lines[i]`` 의 글자이고,
+        옵션(``ocr_chars``)을 안 줬거나 글자가 없는 줄(표기 후처리로 글이 바뀐 줄 등)은 빈 튜플."""
+        return [[tuple(OcrChar(c["text"], OcrBox(c["box"]["x"], c["box"]["y"], c["box"]["w"], c["box"]["h"]), c["confidence"],
+                               tuple(OcrCharAlternative(a["text"], a["confidence"]) for a in c.get("alternatives") or ()))
+                       for c in ln.get("chars") or ()) for ln in p["lines"]]
                 for p in self.raw.get("ocrLines") or []]
 
     @property

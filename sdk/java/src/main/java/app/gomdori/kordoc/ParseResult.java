@@ -77,6 +77,30 @@ public final class ParseResult {
         return List.copyOf(pages);
     }
 
+    /**
+     * ocrLines 의 연장 — 줄마다 글자별 신뢰도·상자({@code ocrChars(true)}·{@code ocrChars(n)}). {@code get(p).get(i)} 가
+     * {@code ocrLines().get(p).lines().get(i)} 의 글자이고, 옵션을 안 줬거나 글자가 없는 줄(표기 후처리로 글이 바뀐 줄 등)은 빈 목록
+     */
+    public List<List<List<OcrChar>>> ocrChars() {
+        List<List<List<OcrChar>>> pages = new ArrayList<>();
+        for (JsonNode p : raw.path("ocrLines")) {
+            List<List<OcrChar>> lines = new ArrayList<>();
+            for (JsonNode l : p.path("lines")) {
+                List<OcrChar> chars = new ArrayList<>();
+                for (JsonNode c : l.path("chars")) {
+                    List<OcrCharAlternative> alts = new ArrayList<>();
+                    for (JsonNode a : c.path("alternatives")) alts.add(new OcrCharAlternative(a.path("text").asText(), a.path("confidence").asDouble()));
+                    JsonNode b = c.path("box");
+                    chars.add(new OcrChar(c.path("text").asText(), new OcrPageLines.Box(b.path("x").asDouble(), b.path("y").asDouble(), b.path("w").asDouble(), b.path("h").asDouble()),
+                            c.path("confidence").asDouble(), List.copyOf(alts)));
+                }
+                lines.add(List.copyOf(chars));
+            }
+            pages.add(List.copyOf(lines));
+        }
+        return List.copyOf(pages);
+    }
+
     /** OCR 경로가 읽은 페이지 래스터 ({@code pageImages(true)}·{@code pageImages("webp")}, PDF·이미지 입력). 쪽 번호 순, 옵션을 안 줬으면 빈 목록 */
     public List<PageImage> pageImages() {
         List<PageImage> out = new ArrayList<>();

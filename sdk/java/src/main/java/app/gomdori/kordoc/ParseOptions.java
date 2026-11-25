@@ -95,6 +95,10 @@ public final class ParseOptions {
         public Builder ocrLinesAll() { wire.put("ocrLines", "all"); return this; }
         /** ocrLines 의 줄마다 인식 모델의 상위 읽기 후보 n 개(1~5, 0 = 끔)를 함께 받는다 ({@link ParseResult#ocrLineCandidates()}). ocrLines 와 함께 쓴다 */
         public Builder ocrLineCandidates(int n) { wire.put("ocrLineCandidates", n); return this; }
+        /** true: ocrLines 의 줄마다 글자별 신뢰도·상자를 함께 받는다 ({@link ParseResult#ocrChars()}). ocrLines 와 함께 쓴다 */
+        public Builder ocrChars(boolean v) { return put("ocrChars", v); }
+        /** ocrChars 에 더해 글자마다 대안 n 개(1~5, 0 = 끔)를 함께 받는다 */
+        public Builder ocrChars(int n) { wire.put("ocrChars", n); return this; }
         /** true: OCR 경로가 읽은 페이지를 PNG 로 결과 pageImages 에 ({@link ParseResult#pageImages()}) */
         public Builder pageImages(boolean v) { return put("pageImages", v); }
         /** 페이지 이미지 포맷: "png" | "webp"(무손실) */

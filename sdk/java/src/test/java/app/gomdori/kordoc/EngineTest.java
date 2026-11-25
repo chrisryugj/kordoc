@@ -78,6 +78,27 @@ class EngineTest {
                         assertTrue(want == 0 ? candidates.isEmpty() : candidates.size() >= 1 && candidates.size() <= want, c.get("name").asText());
                     }
                 }
+                // 글자(ocrChars) — 줄과 같은 자리, 이으면 줄 글. 옵션을 안 준 문서는 줄마다 빈 목록
+                boolean on = c.get("options").has("ocrChars");
+                boolean any = false;
+                for (int i = 0; i < pages.size(); i++) {
+                    for (int k = 0; k < pages.get(i).lines().size(); k++) {
+                        JsonNode rawChars = raw.get(i).get("lines").get(k).path("chars");
+                        List<OcrChar> chars = r.ocrChars().get(i).get(k);
+                        assertEquals(rawChars.size(), chars.size(), c.get("name").asText());
+                        for (int m = 0; m < chars.size(); m++) {
+                            assertEquals(rawChars.get(m).get("text").asText(), chars.get(m).text());
+                            assertEquals(rawChars.get(m).get("confidence").asDouble(), chars.get(m).confidence());
+                            assertEquals(rawChars.get(m).get("box").get("x").asDouble(), chars.get(m).box().x());
+                            assertEquals(rawChars.get(m).path("alternatives").size(), chars.get(m).alternatives().size());
+                        }
+                        if (!chars.isEmpty()) {
+                            any = true;
+                            assertEquals(pages.get(i).lines().get(k).text(), chars.stream().map(OcrChar::text).collect(java.util.stream.Collectors.joining()));
+                        }
+                    }
+                }
+                assertEquals(on, any, c.get("name").asText());
             }
         }
     }

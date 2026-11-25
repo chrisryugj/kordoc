@@ -54,7 +54,9 @@ export async function rescueEmptyCells(
     for (let y = 0; y < c.h; y++) crop.set(rgba.subarray(((c.y + y) * width + c.x) * 4, ((c.y + y) * width + c.x + c.w) * 4), ((y + PAD) * w + PAD) * 4)
     const stats: OcrPageStats = { droppedLowConf: 0 }
     const found = await engine.recognizePage(crop, w, h, stats, { ...tuning, orientPage: false })
-    for (const it of found) out.push({ ...it, x: it.x + c.x - PAD, y: it.y + c.y - PAD })
+    for (const it of found) {
+      out.push({ ...it, x: it.x + c.x - PAD, y: it.y + c.y - PAD, ...(it.chars && { chars: it.chars.map(ch => ({ ...ch, box: { ...ch.box, x: ch.box.x + c.x - PAD, y: ch.box.y + c.y - PAD } })) }) })
+    }
   }
   return out
 }

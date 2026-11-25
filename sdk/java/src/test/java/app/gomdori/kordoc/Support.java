@@ -75,6 +75,7 @@ final class Support {
                 case "ocr" -> b.ocr(v.asBoolean());
                 case "ocrLines" -> { if (v.isTextual()) b.ocrLinesAll(); else b.ocrLines(v.asBoolean()); }
                 case "ocrLineCandidates" -> b.ocrLineCandidates(v.asInt());
+                case "ocrChars" -> { if (v.isBoolean()) b.ocrChars(v.asBoolean()); else b.ocrChars(v.asInt()); }
                 case "pageImages" -> { if (v.isTextual()) b.pageImages(v.asText()); else b.pageImages(v.asBoolean()); }
                 case "ocrDet" -> { if (v.isTextual()) b.ocrDet(v.asText()); else b.ocrDet(modelFile(v)); }
                 case "ocrDetLongSide" -> b.ocrDetLongSide(v.asInt());

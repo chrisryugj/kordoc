@@ -68,7 +68,7 @@ asyncio.run(main())
 `table_format`(`"gfm"`) · `html_tables` · `html_cell_links` · `layout_tables`(`"visual"`·`"keep"`) · `classify_tables` · `tables` · `plain` · `script_tags` ·
 `remove_header_footer` · `dedupe_running_headers` · `keep_trailing_empty_cols` · `keep_empty_paragraphs` · `include_field_placeholders` ·
 `pages`(`"1-3"` 또는 `[1, 3]`) · `images` · `inline_images` · `qr_codes` · `image_format`(`"png"`·`"webp"`) · `image_placement`(`"page-end"`·`"flow"`) · `drop_blank_images` · `ocr`(`True`·`False`·`"force"`) · `formula_ocr` · `password` ·
-`ocr_lines`(`True`·`"all"`) · `ocr_line_candidates`(1~5) · `ocr_det`(`"mobile"`·`"server"`·`OcrModelFile`) · `ocr_det_long_side` · `ocr_rec`(`"handwriting"`·`"auto"`·`OcrModelFile`) · `ocr_rec_dict`(`OcrModelFile`) ·
+`ocr_lines`(`True`·`"all"`) · `ocr_line_candidates`(1~5) · `ocr_chars`(`True`·1~5) · `ocr_det`(`"mobile"`·`"server"`·`OcrModelFile`) · `ocr_det_long_side` · `ocr_rec`(`"handwriting"`·`"auto"`·`OcrModelFile`) · `ocr_rec_dict`(`OcrModelFile`) ·
 `page_images`(`True`·`"png"`·`"webp"`)
 
 ```python
@@ -85,6 +85,7 @@ with KordocClient() as client:
 ```
 
 `ocr_line_candidates=N` 을 `ocr_lines` 와 함께 주면 `result.ocr_line_candidates[p][i]` 가 `ocr_lines[p].lines[i]` 의 읽기 후보(`OcrLineCandidate(text, probability)` 튜플, `probability` 내림차순 — 줄의 `confidence` 와 다른 척도)입니다.
+`ocr_chars=True`(또는 대안 수 1~5)를 `ocr_lines` 와 함께 주면 `result.ocr_chars[p][i]` 가 `ocr_lines[p].lines[i]` 의 글자(`OcrChar(text, box, confidence, alternatives)` 튜플)입니다.
 `page_images` 를 주면 그 상자가 가리키는 페이지 래스터가 `result.page_images`(`PageImage(page_number, width, height, image)`, 바이트는 `image.read()`)로 옵니다. 전송은 이미지와 같습니다.
 상자는 OCR 래스터 픽셀입니다(`page.scale` = px/pt). 좌표 규약과 모델 검증은 [OCR 줄·모델 선택](../../docs/usage.md#ocr-줄모델-선택)을 따릅니다.
 
