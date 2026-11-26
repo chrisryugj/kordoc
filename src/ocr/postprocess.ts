@@ -40,6 +40,10 @@ export function restoreSymbols(text: string, ringDecided = false): string {
   // 네모 친 번호를 "[②" 로 읽은 줄 머리 — 상자 왼 변을 여는 대괄호로 읽었다(농진청 성과계획 목차, 텍스트층은 ①②). 닫는 "]" 가 없는
   // 줄의 머리 "[" 바로 뒤가 원문자일 때만 지운다
   if (!s.includes("]")) s = s.replace(/^\[(?=[\u2460-\u2473])/, "")
+  // \ucc9c\ubd84\uc728 \u2030 \uc740 \uc0ac\uc804 \ubc16\uc774\ub77c "%\u3002" \ub85c \uac08\ub77c \uc77d\ub294\ub2e4("(\ub2e8\uc704: \ucc9c\ubd84\uc728\u2030)", \ud1b5\uacc4 \uac04\ud589\ubb3c). \ud55c\uae00\u00b7\uc22b\uc790 \ubc14\ub85c \ub4a4 \uc804\uac01 \ub9c8\uce68\ud45c \u3002 \ub294 \ub9c8\uce68\ud45c\ub2e4(\uc190\uae00\uc528
+  // \uc904 "\uce74\ub4dc\ub97c\u3002\ud55c"). \uc904 \uba38\ub9ac \u3002 \ub294 \uc791\uc740 \uc6d0 \uae00\uba38\ub9ac \uc790\ub9ac\ub77c \ub454\ub2e4(\uace0\ud765 \uc608\uc0b0\uc11c "\u3002\uc0ac\ubb34\uc2e4\uc6b4\uc601", \ud14d\uc2a4\ud2b8\uce35 "\u3147")
+  s = s.replace(/%\u3002/g, "\u2030")
+  if (/[\uac00-\ud7a3]/.test(s)) s = s.replace(/(?<=[\uac00-\ud7a3\d)])\u3002/g, ".")
   return smartQuotes(dateDots(dateCommas(joinDigitGroups(s))))
 }
 

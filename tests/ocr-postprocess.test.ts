@@ -45,6 +45,16 @@ describe("restoreSymbols — 추출기 표기 환각", () => {
   })
 })
 
+describe("restoreSymbols: 전각 마침표", () => {
+  it("\"%。\" 은 천분율 ‰ 이고, 한글 줄의 홑 。 는 마침표다", () => {
+    assert.equal(restoreSymbols("(단위: 천분율%。)"), "(단위: 천분율‰)")
+    assert.equal(restoreSymbols("마음카드를。한 장"), "마음카드를.한 장")
+    // 줄 머리 。 는 작은 원 글머리 자리라 두고, 한글 없는 줄도 그대로 둔다
+    assert.equal(restoreSymbols("。사무실운영 소모품 구입"), "。사무실운영 소모품 구입")
+    assert.equal(restoreSymbols("こんにちは。"), "こんにちは。")
+  })
+})
+
 describe("smartQuotes — 둥근 따옴표", () => {
   it("띄어쓰기 없는 짝도 여닫음", () => {
     assert.equal(smartQuotes("지침내에서'기록관리시스템'이라는"), "지침내에서‘기록관리시스템’이라는")
