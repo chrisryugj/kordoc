@@ -209,6 +209,15 @@ describe("기입 빈칸 '년 월 일' 보존 — 균등배분 정리 예외", ()
     assert.equal(collapseEvenSpacing("⑦ 영 및 이 규칙에서 규정한 사항 외에 위원회 운영에 필요한", false), "⑦ 영 및 이 규칙에서 규정한 사항 외에 위원회 운영에 필요한")
     assert.equal(collapseEvenSpacing("수 입 및 지 출", false), "수입 및 지출")
   })
+  it("한 글자 낱말 셋과 긴 낱말이 섞인 줄은 균등배분이 아니다(결재문서 수신자 '각 과 및 안전센터')", () => {
+    assert.equal(collapseEvenSpacing("각 과 및 안전센터"), "각 과 및 안전센터")
+    // 무리 끝의 "및" 은 접속어. 떼고 남은 한 글자가 둘이면 붙이지 않는다
+    assert.equal(collapseEvenSpacing("수신자 각 과 및 안전센터", false), "수신자 각 과 및 안전센터")
+    // 균등배분 제목에 낱말이 섞인 줄, 문장 부호까지 띄운 줄, 괄호 꼬리 낱말은 그대로 접는다
+    assert.equal(collapseEvenSpacing("(채 용 전 ) 개인정보 수 집 · 이 용 동의서"), "(채용전)개인정보수집·이용동의서")
+    assert.equal(collapseEvenSpacing("· 샘씨엔에스 , 후 성 ,"), "·샘씨엔에스,후성,")
+    assert.equal(collapseEvenSpacing("기 준 점 수(이상)"), "기준점수(이상)")
+  })
   it("HWP/HWPX 공통 sanitizeText: 표 셀 '년 월 일' 유지, '현 장 대 응 단 장' 은 결합", () => {
     const md = blocksToMarkdown([
       { type: "table", table: { rows: 2, cols: 1, cells: [[{ text: "년 월 일", colSpan: 1, rowSpan: 1 }], [{ text: "현 장 대 응 단 장", colSpan: 1, rowSpan: 1 }]] } },

@@ -142,7 +142,12 @@ export function collapseEvenSpacing(text: string, whole = true): string {
     // 표시 서식은 글자 비율·날짜 빈칸 판정에 영향이 없다. 출력 태그는 원래 토큰으로 보존한다.
     const visible = tokens.map(t => t.replace(/<\/?u>|~~/g, ""))
     const singleCharCount = visible.filter(t => t.length === 1).length
-    if (tokens.length >= 3 && singleCharCount / tokens.length >= 0.7 && !isDateUnitBlank(visible)) return tokens.join("")
+    // 한글 세 자 넘게 붙은 낱말의 글자가 한 글자 토큰만큼 있으면 균등배분이 아니다. 균등배분은 글자마다 띄운다
+    // ("각 과 및 안전센터" 가 "각과및안전센터"). 균등배분 제목에 낱말 몇 개가 섞인 줄("(채 용 전 ) 개인정보 수 집 · 이 용 동의서")과 문장 부호까지
+    // 띄운 줄("· 샘씨엔에스 , 후 성 ,")은 접는다
+    const wordy = visible.reduce((n, t) => n + (t.match(/[가-힣]{3,}/g) ?? []).reduce((m, w) => m + w.length, 0), 0) >= singleCharCount &&
+      visible.every(t => t.length !== 1 || /[가-힣]/.test(t))
+    if (tokens.length >= 3 && singleCharCount / tokens.length >= 0.7 && !wordy && !isDateUnitBlank(visible)) return tokens.join("")
   }
 
   // 2. 부분 균등배분: 한글 1자가 3개+ 연속 (2자 단어는 건드리지 않음)
@@ -159,6 +164,13 @@ export function collapseEvenSpacing(text: string, whole = true): string {
       const after = text.slice(offset + match.length).replace(/^(?:<\/?u>|~~)+/, "")
       if (/\S$/.test(before) || /^\S/.test(after)) return match
       if (isDateUnitBlank(match.split(" "))) return match
+      // 무리 맨 앞·맨 끝의 "및" 은 접속어다. 떼고 남은 한 글자가 셋 이상일 때만 붙인다("각 과 및 안전센터" 의 "각 과" 는 두 낱말)
+      const edge = /^및 | 및$/.exec(match)
+      if (edge) {
+        const rest = match.replace(/^및 | 및$/, "")
+        if (rest.split(" ").length < 3) return match
+        return match.startsWith("및 ") ? "및 " + rest.replace(/ /g, "") : rest.replace(/ /g, "") + " 및"
+      }
       // 가운데 홀로 선 "및" 은 접속어다 — 그 앞뒤 조각만 붙이고 "및" 은 띄운다("영 및 이 규칙" 이 "영및이 규칙", 행정업무운영 편람 위원회 규칙)
       const parts = match.split(/ 및 (?=[가-힣\d])/)
       return parts.length > 1 ? parts.map(p => p.replace(/ /g, "")).join(" 및 ") : match.replace(/ /g, "")
