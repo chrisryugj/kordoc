@@ -39,7 +39,7 @@ sudo runsc install && sudo systemctl restart docker
 
 # 확인
 runsc --version
-docker run --rm --runtime=runsc node:24 dmesg | head -1   # Starting gVisor... (CI 와 같은 확인)
+docker run --rm --runtime=runsc node:24 uname -r   # 출력 끝에 -gvisor
 ```
 
 다른 배포판은 [공식 설치 안내](https://gvisor.dev/docs/user_guide/install/)의 바이너리 설치(SHA-512 확인 포함)를 따른다.
@@ -55,7 +55,7 @@ docker run --rm --runtime=runsc --network=none --read-only \
 ```
 
 - 파일로 결과를 받으려면 출력 폴더만 쓰기로 연다: `-v "$PWD/out":/out` 뒤 `-o /out/문서.md`.
-- 컨테이너 안이 gVisor 인지는 `dmesg` 첫 줄로 확인한다. gVisor 는 `Starting gVisor...` 를 낸다([syslog.go](https://github.com/google/gvisor/blob/master/pkg/sentry/kernel/syslog.go)). CI 도 이 줄로 확인한다(`tests/gvisor/assert-gvisor.sh`).
+- 컨테이너의 `uname -r` 출력이 `-gvisor`로 끝나는지 확인한다. CI도 같은 커널 릴리스 표지를 확인한다. [gVisor 커널 릴리스 정의](https://github.com/gvisor/gvisor/blob/release-20261123.1/pkg/sentry/kernel/version/version.go)
 
 ## 쿠버네티스
 
