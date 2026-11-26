@@ -36,7 +36,7 @@ import {
   splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   stripHeadMarker, stripShownHeadMarker, noScriptTags, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
-  type MdUnit,
+  removeNoteMarks, noteMarksOf, splitCellNote, type MdUnit,
 } from "./markdown-units.js"
 import { stripCellTokens, extractCellTokens, extractImgTags, cellStyledLines, cellEmphasisMissed, EMPHASIS_NOTE } from "./table-patch.js"
 import { hwpCharBook, cellLineStyles, type HwpCharBook, type HwpInsertStyle } from "./hwp5-char-shape.js"
@@ -500,7 +500,10 @@ interface ParaMapping5 {
   para?: ScanPara5
   /** 자동번호/글머리 접두가 IR 텍스트에 붙어 있었음 (레코드 텍스트에는 없음) */
   prefixStripped?: boolean
+  /** IR 글에 파서가 끼운 각주·미주 번호 표기("1)"). 레코드 글에는 각주 제어 문자만 있다 */
+  noteMarks?: string[]
 }
+
 
 /**
  * 같은 정규화 텍스트끼리 등장 순서대로 페어링 (중복 문단 대응) — HWPX 패처와 동일 방식.
@@ -544,6 +547,7 @@ function resolveParaMappings(blocks: IRBlock[], scans: SectionScan5[]): Map<numb
     const text = noScriptTags(b.text)
     let key = normForMatch(text)
     let prefixStripped = false
+    let noteMarks: string[] | undefined
     if (!buckets.has(key)) {
       // 자동번호/글머리 접두 제거 후 재시도 (파서가 붙인 headMarker)
       const sp = text.indexOf(" ")
@@ -552,12 +556,19 @@ function resolveParaMappings(blocks: IRBlock[], scans: SectionScan5[]): Map<numb
         if (alt && buckets.has(alt)) { key = alt; prefixStripped = true }
       }
     }
+    // 각주가 달린 문단: 파서가 각주 자리에 끼운 번호 표기를 빼고 재시도 (HWPX resolveParagraphMappings 의 noteMarks 와 같다)
+    const marks = noteMarksOf(b.footnoteText)
+    if (!buckets.has(key) && marks.length) {
+      const r = removeNoteMarks(text, marks)
+      const alt = r.missing.length ? "" : normForMatch(r.text)
+      if (alt && buckets.has(alt)) { key = alt; noteMarks = marks }
+    }
     const found = buckets.get(key)
     const list = found ? pairable(key, found) : null
     if (!list) { result.set(i, {}); continue }
     const occ = counters.get(key) ?? 0
     counters.set(key, occ + 1)
-    result.set(i, occ < list.length ? { para: list[occ], prefixStripped } : {})
+    result.set(i, occ < list.length ? { para: list[occ], prefixStripped, noteMarks } : {})
   }
   return result
 }
@@ -758,16 +769,25 @@ function patchParagraph(
   }
 
   // 각주 표기 — 본문이 아닌 각주 컨트롤에 있으므로 분리
+  let noteEdited = false
   if (block.footnoteText) {
     const noteMatch = newPlain.match(/\s*\(주: ([\s\S]*)\)$/)
     if (noteMatch) {
       newPlain = newPlain.slice(0, noteMatch.index).trimEnd()
       if (normForMatch(noteMatch[1]) !== normForMatch(block.footnoteText)) {
         ctx.skipped.push({ reason: "각주 텍스트 수정은 미지원 — 본문만 적용", before: block.footnoteText, after: noteMatch[1] })
+        noteEdited = true
       }
     } else {
       ctx.skipped.push({ reason: "각주 표기 삭제는 미지원 — 각주 유지, 본문만 적용", before: `(주: ${block.footnoteText})` })
     }
+  }
+
+  // 각주·미주 번호 표기: 레코드 글에는 각주 제어 문자만 있어(번호는 파서가 끼움) 떼고 맞댄다. 제어 문자는 바이트째 둔다
+  if (mapping.noteMarks?.length) {
+    const r = removeNoteMarks(newPlain, mapping.noteMarks)
+    newPlain = r.text
+    if (r.missing.length) ctx.skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
   }
 
   // 자동번호·글머리표 접두 — 레코드에 없는 텍스트이므로 떼고 기록
@@ -780,8 +800,10 @@ function patchParagraph(
   // 원본 비교는 block.text(강제 줄바꿈 \n 보존) 기준 — textUnitToPlain 은 \n 을 공백으로
   // 접어 <br>→\n 복원본과 절대 같아질 수 없어, 표기만 바꾼(\n↔<br>) no-op 편집을 수정으로
   // 오판하고 문단을 재기록해 중간 서식(CHAR_SHAPE 다중 런)을 파괴했다 (hwp5-1)
-  const origPlain = block.text != null ? noScriptTags(block.text) : restoreBr(origStyled.plain)
-  if (newPlain === origPlain) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
+  let origPlain = block.text != null ? noScriptTags(block.text) : restoreBr(origStyled.plain)
+  if (mapping.noteMarks?.length) origPlain = removeNoteMarks(origPlain, mapping.noteMarks).text
+  // 각주 글만 고친 편집은 위에서 알렸다
+  if (newPlain === origPlain) return noteEdited ? 0 : skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
   // 재파싱 정리에서 바뀌는 글(이중 공백 등)은 미지원 — 단 원문 문단이 이미 그 꼴(마크다운에 이중 공백이 그대로 보이는 문단)이면
   // 같은 렌더 경로라 허용한다: 바뀐 자리만 고쳐 원문 띄어쓰기는 그대로 남는다 (HWPX patcher 와 같다)
   if (sanitizeText(newPlain) !== newPlain && sanitizeText(origPlain) === origPlain) {
@@ -791,6 +813,7 @@ function patchParagraph(
   // 바뀐 자리 계산용 원문 평문: 편집본과 같은 마크다운 경로(공백 접힘·표지 걷기)를 거쳐야 diff 가 고친 자리만 잡는다
   let origMd = restoreBr(origStyled.plain)
   if (block.footnoteText) origMd = origMd.replace(/\s*\(주: [\s\S]*\)$/, "")
+  if (mapping.noteMarks?.length) origMd = removeNoteMarks(origMd, mapping.noteMarks).text
   if (mapping.prefixStripped) origMd = stripShownHeadMarker(block.text!, origMd)
   // 서식 비트는 평문 좌표를 맞댈 수 있을 때만 — 앞의 머리 기호만 뗀 글은 그만큼 민다(줄바꿈·각주를 걷은 문단은 끈다)
   const off = editedStyled.plain.length - newPlain.length
@@ -838,30 +861,32 @@ function patchGfmCells(
         const beforeEach = beforeParts.map(gfmCellToPlain)
         const afterEach = afterParts.map(gfmCellToPlain)
         if (beforeEach.some(p => p === null) || afterEach.some(p => p === null)) { cellSkip("서식/링크/이미지 포함 셀 수정은 미지원 (v1)"); continue }
-        const before = beforeEach.join("\n")
-        const after = afterEach.join("\n")
+        if (beforeEach.join("\n") === afterEach.join("\n")) continue
+        const { before, after, noted } = splitCellNote(beforeEach.join("\n"), afterEach.join("\n"), ctx.skipped)
         if (before === after) continue
         const para = cell.paras[0]
         if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); continue }
         if (afterEach.some(l => sanitizeText(l!) !== l)) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); continue }
         applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
-          cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(0, after))
+          noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(0, after))
         continue
       }
       if (beforeParts.length !== cell.paras.length || afterParts.length !== cell.paras.length) {
         cellSkip("셀 문단 수 변경 — 미지원 (문단 추가/삭제)"); continue
       }
       for (let k = 0; k < cell.paras.length; k++) {
-        const before = gfmCellToPlain(beforeParts[k])
-        const after = gfmCellToPlain(afterParts[k])
-        if (before === null || after === null) { cellSkip("서식/링크/이미지 포함 셀 수정은 미지원 (v1)"); break }
+        const rawBefore = gfmCellToPlain(beforeParts[k])
+        const rawAfter = gfmCellToPlain(afterParts[k])
+        if (rawBefore === null || rawAfter === null) { cellSkip("서식/링크/이미지 포함 셀 수정은 미지원 (v1)"); break }
+        if (rawBefore === rawAfter) continue
+        const { before, after, noted } = splitCellNote(rawBefore, rawAfter, ctx.skipped)
         if (before === after) continue
         if (after.includes("\n")) { cellSkip("셀 내 줄바꿈 추가는 미지원 (v1)"); break }
         const para = cell.paras[k]
         if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); break }
         if (sanitizeText(after) !== after) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); break }
         applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
-          cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(k, after))
+          noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(k, after))
       }
     }
   }

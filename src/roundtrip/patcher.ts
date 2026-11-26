@@ -28,7 +28,7 @@ import { patchZipEntries } from "./zip-patch.js"
 import { checkPatchIntegrity } from "./integrity.js"
 import { stripHeadMarker, stripShownHeadMarker, noScriptTags,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable, parseHtmlTable, htmlCellInnerToLines,
-  alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
+  alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH, removeNoteMarks,
   type MdUnit,
 } from "./markdown-units.js"
 import { patchGfmTable, patchHtmlTable, patchTextChunkTable, EMPHASIS_NOTE } from "./table-patch.js"
@@ -429,28 +429,7 @@ function textWithoutMarks(irKey: string, scanKey: string, marks: string[]): bool
   return j === scanKey.length && k === marks.length
 }
 
-/**
- * 편집 텍스트에서 각주·미주 참조 부호를 뺀다 — 부호는 앞 낱말에 붙어 나오므로(“액체1)와”) 앞 글자가
- * 공백이 아닌 등장을 우선하고, 문단 첫머리 부호(“문1）”)는 0 위치로 인정. 못 찾은 부호는 사용자가
- * 지운 것 — 주석 개체는 XML 에 그대로 남는다(삭제 미지원)
- */
-export function removeNoteMarks(text: string, marks: string[]): { text: string; missing: string[] } {
-  let out = text
-  let cursor = 0
-  const missing: string[] = []
-  for (const mark of marks) {
-    if (!mark) continue
-    let at = -1
-    for (let p = out.indexOf(mark, cursor); p !== -1; p = out.indexOf(mark, p + 1)) {
-      if (p === 0 || !/\s/.test(out[p - 1])) { at = p; break }
-      if (at === -1) at = p
-    }
-    if (at === -1) { missing.push(mark); continue }
-    out = out.slice(0, at) + out.slice(at + mark.length)
-    cursor = at
-  }
-  return { text: out, missing }
-}
+export { removeNoteMarks }
 
 // ─── 변경 처리 ───────────────────────────────────────
 
@@ -680,6 +659,7 @@ function patchParagraphUnit(
   const segsUsable = !block.footnoteText && !mapping.noteMarks?.length && !mapping.prefixStripped
 
   // 각주 표기 처리 — 본문이 아닌 각주 ctrl에 있으므로 분리
+  let noteEdited = false
   if (block.footnoteText) {
     // 주석 안 표(#149)는 마크다운에 HTML 격자로 나가 footnoteText(평탄화 글)와 모양이 다르다 — 원본 마크다운 표기와 견준다
     const origNote = block.footnoteBlocks ? origPlain.match(/\s*\(주: ([\s\S]*)\)$/)?.[1] : undefined
@@ -689,6 +669,7 @@ function patchParagraphUnit(
       newPlain = newPlain.slice(0, noteMatch.index).trimEnd()
       if (normForMatch(noteMatch[1]) !== normForMatch(origNote ?? block.footnoteText)) {
         ctx.skipped.push({ reason: "각주 텍스트 수정은 미지원 — 본문만 적용", before: block.footnoteText, after: noteMatch[1] })
+        noteEdited = true
       }
     } else {
       ctx.skipped.push({ reason: "각주 표기 삭제는 미지원 — 각주 유지, 본문만 적용", before: `(주: ${block.footnoteText})` })
@@ -711,7 +692,8 @@ function patchParagraphUnit(
     if (head.note) ctx.skipped.push({ reason: head.note, after: summarize(newPlain), partial: true })
   }
 
-  if (newPlain === origPlain) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
+  // 각주 글만 고친 편집은 위에서 알렸다
+  if (newPlain === origPlain) return noteEdited ? 0 : skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
 
   // 단일 hp:t로 합쳐 기록하면 재파싱 sanitize에서 변형되는 텍스트(run 경계 이중 공백 등)
   //: 기록 후 동일 렌더가 보장되지 않으므로 미지원. 단 원문 문단이 이미 그 꼴(균등 띄어쓰기 "기   간"이 마크다운에

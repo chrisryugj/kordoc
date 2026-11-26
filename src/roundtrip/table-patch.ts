@@ -18,7 +18,7 @@ import {
   normForMatch, noScriptTags, sanitizeText, escapeGfm, unescapeGfm, summarize,
   replicateGfmTable, parseGfmTable, unescapeGfmCell, isInlineColumnTable, replicateColumnTable,
   replicateHtmlTable, replicateTableToHtml, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
-  type MdUnit, type HtmlRowInfo, type MappedCell,
+  splitCellNote, type MdUnit, type HtmlRowInfo, type MappedCell,
 } from "./markdown-units.js"
 import { patchTableRows, type InsertCell } from "./table-rows.js"
 import { buildEmbeddedLineSplices } from "./embedded-line-patch.js"
@@ -402,12 +402,23 @@ export function applyCellEdit(
   const cell = scanTable.cellByAnchor.get(`${gridR},${gridC}`)
   if (!cell) return skip("셀 좌표 매핑 실패 (병합 영역의 빈 칸이거나 좌표 불일치)")
 
+  // 각주가 달린 칸 줄 "이름2) (주: 2) 각주 글)". 각주 표기와 각주 자리 번호를 떼고 본문만 맞대고 고친다. 각주 개체는 run 안
+  // 요소라 hp:t 만 고치는 아래 치환이 그대로 둔다 (본문 문단 noteMarks 와 같다)
+  const origLines = gfmCellLines(before)
+  if (origLines.some(l => /\(주: [\s\S]*\)$/.test(l)) && origLines.length === newLines.length) {
+    const notes = newLines.map((l, i) => splitCellNote(origLines[i], l, ctx.skipped))
+    newLines = notes.map(n => n.after)
+    before = notes.map(n => n.before).join("<br>")
+  }
+
   // 셀 콘텐츠 검증 — 스캔 문단 합산과 IR 셀 텍스트의 정규화 일치
   // (IR 셀 텍스트의 이미지 토큰은 스캔 문단에 없는 평탄화 산물이므로 제외)
   const irCell = table.cells[gridR]?.[gridC]
   const scanJoined = cell.paragraphs.map(p => p.text).filter(t => normForMatch(t)).join("\n")
+  // 각주 표기·번호를 뗀 칸 글. 맞대기도 본문끼리
+  const noteless = (text: string): string => text.split("\n").map(l => splitCellNote(l, l, []).before).join("\n")
   // IR 글의 첨자 태그는 파서 표기(원문 hp:t 엔 없다)라 떼고 맞댄다
-  if (irCell && normForMatch(scanJoined) !== normForMatch(noScriptTags(stripCellTokens(irCell.text)))) {
+  if (irCell && normForMatch(scanJoined) !== normForMatch(noteless(noScriptTags(stripCellTokens(irCell.text))))) {
     // 중첩표/글상자 등 구조 셀 — 평탄화 텍스트가 섞여 1:1 치환 불가
     if (normForMatch(irCell.text) !== "" || normForMatch(scanJoined) !== "") {
       const flatBlocks = (irCell.blocks ?? []).filter(b => b.type === "paragraph" || b.type === "heading")

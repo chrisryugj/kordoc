@@ -626,3 +626,50 @@ export function editedFromVisual(keepMarkdown: string, visualMarkdown: string, e
   return v > k
 }
 
+/**
+ * 편집 텍스트에서 각주·미주 참조 부호를 뺀다 — 부호는 앞 낱말에 붙어 나오므로(“액체1)와”) 앞 글자가
+ * 공백이 아닌 등장을 우선하고, 문단 첫머리 부호(“문1）”)는 0 위치로 인정. 못 찾은 부호는 사용자가
+ * 지운 것 — 주석 개체는 XML 에 그대로 남는다(삭제 미지원)
+ */
+export function removeNoteMarks(text: string, marks: string[]): { text: string; missing: string[] } {
+  let out = text
+  let cursor = 0
+  const missing: string[] = []
+  for (const mark of marks) {
+    if (!mark) continue
+    let at = -1
+    for (let p = out.indexOf(mark, cursor); p !== -1; p = out.indexOf(mark, p + 1)) {
+      if (p === 0 || !/\s/.test(out[p - 1])) { at = p; break }
+      if (at === -1) at = p
+    }
+    if (at === -1) { missing.push(mark); continue }
+    out = out.slice(0, at) + out.slice(at + mark.length)
+    cursor = at
+  }
+  return { text: out, missing }
+}
+
+/** 각주 글("1) 본문…; 2) …")에서 번호 표기를 순서대로. 파서는 각주마다 번호 표기로 시작하는 글을 "; " 로 잇는다 (ir-assemble) */
+export function noteMarksOf(footnoteText?: string): string[] {
+  return footnoteText ? footnoteText.split("; ").map(s => s.match(/^(\S+)\s/)?.[1] ?? "").filter(Boolean) : []
+}
+
+/**
+ * 칸 글 한 문단의 각주 표기("이름2) (주: 2) 각주 글)"). 파서가 각주 글을 문단 끝에 붙이고 각주 자리에 번호를 끼운다(ir-assemble).
+ * 둘 다 떼고 본문만 맞댄다. 각주 글을 고치거나 지운 편집은 알리고 본문만 적용한다 (문단 경로와 같다)
+ */
+export function splitCellNote(before: string, after: string, skipped: Array<{ reason: string; before?: string; after?: string }>): { before: string; after: string; noted: boolean } {
+  const re = /\s*\(주: ([\s\S]*)\)$/
+  const bm = before.match(re)
+  if (!bm) return { before, after, noted: false }
+  const marks = noteMarksOf(bm[1])
+  const am = after.match(re)
+  let body = after
+  if (am) {
+    body = after.slice(0, am.index).trimEnd()
+    if (normForMatch(am[1]) !== normForMatch(bm[1])) skipped.push({ reason: "각주 텍스트 수정은 미지원 — 본문만 적용", before: bm[1], after: am[1] })
+  } else skipped.push({ reason: "각주 표기 삭제는 미지원 — 각주 유지, 본문만 적용", before: `(주: ${bm[1]})` })
+  const r = removeNoteMarks(body, marks)
+  if (r.missing.length) skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
+  return { before: removeNoteMarks(before.slice(0, bm.index).trimEnd(), marks).text, after: r.text, noted: true }
+}
