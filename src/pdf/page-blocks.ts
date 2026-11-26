@@ -255,6 +255,19 @@ export function extractPageBlocksWithLines(
       }
     }
   }
+  // 안쪽 표들의 괘선이 쪽 테두리에 닿아 한 격자로 이어진 틀도 쪽 테두리다. 안쪽 열·행 선이 모두 품은 표의 선이고 품은 표 밖 넓이가 틀의 4분의 1 넘으면
+  // (본문이 든 자리) 틀을 뺀다. 남기면 쪽 전체가 한 표가 되어 비교표 아래 본문까지 칸 글로 들어갔다(관보 행정예고 쪽 테두리 안 현행·개정안 표와 의견 표)
+  if (ocrItems && ocrSpan >= pageHeight * 0.5) {
+    for (let i = grids.length - 1; i >= 0; i--) {
+      const g = grids[i]
+      const area = (b: { x1: number; x2: number; y1: number; y2: number }) => (b.x2 - b.x1) * (b.y2 - b.y1)
+      if (g.cells || area(g.bbox) < pageWidth * pageHeight * 0.5) continue
+      const inner = grids.filter(o => o !== g && !o.cells && o.bbox.x1 >= g.bbox.x1 - 2 && o.bbox.x2 <= g.bbox.x2 + 2 && o.bbox.y1 >= g.bbox.y1 - 2 && o.bbox.y2 <= g.bbox.y2 + 2)
+      if (inner.length === 0 || inner.reduce((s, o) => s + area(o.bbox), 0) > area(g.bbox) * 0.75) continue
+      const own = (vs: number[], pick: (o: TableGrid) => number[]) => vs.slice(1, -1).every(v => inner.some(o => pick(o).some(w => Math.abs(w - v) <= 4)))
+      if (own(g.colXs, o => o.colXs) && own(g.rowYs, o => o.rowYs)) grids.splice(i, 1)
+    }
+  }
   // 한 단 안에 든 1칸 틀(<보기> 상자, 쪽 폭 55% 미만)도 같다 — 틀 하나가 격자 경로를 끌면 두 단 줄을 이어 붙였다(수능 국어 6쪽)
   if (ocrItems && ocrSpan >= pageHeight * 0.5 && grids.length > 0 && grids.every(g => g.rowYs.length === 2 && g.colXs.length === 2 && !g.cells &&
       ((g.bbox.x2 - g.bbox.x1) * (g.bbox.y2 - g.bbox.y1) < pageWidth * pageHeight * 0.02 || g.bbox.x2 - g.bbox.x1 < pageWidth * 0.55))) {
