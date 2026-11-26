@@ -1136,3 +1136,196 @@ export function stackedGlyphBands(gray: Uint8Array, w: number, h: number, ink: I
   const bands = splitRowBands(gray, w, h, ink, 0.45)
   return bands.length >= 2 && bands.length <= 4 ? bands : null
 }
+
+/** 체크 칸 한 개 — 박스 로컬 외곽, 칸 꼴(□ 네모·[] 꺾쇠 괄호), 칸 안에 표시가 있는지 */
+export interface CheckboxFrame { x0: number; x1: number; y0: number; y1: number; kind: "\u25a1" | "[]"; checked: boolean }
+
+/**
+ * 서식 체크 칸 후보 — 줄 상자 안에서 한 변이 줄 높이 0.15~1.0배(손글씨 표시가 위아래로 삐져 줄 상자가 커진다)인 정사각 테두리(□)나 네 귀퉁이만
+ * 꺾인 테두리([ ])를 찾고, 칸 안에 표시 획이 있는지 본다. 결과는 겹쳐도 모두, 점수 높은 순 — 글자 획이 우연히 칸 꼴을 이룬 후보가 진짜 칸보다
+ * 높을 수 있어 고르는 쪽(glyph-restore)이 칸 자리 인식 글로 거른다.
+ *
+ * - 테두리는 가는 선이라 양옆(세로 변)·위아래(가로 변) k 픽셀 밖보다 뚜렷이 어두운 픽셀(능선)로 찾는다. 휴대폰 사진은 테두리가 글자보다
+ *   한참 옅어(배경 195·테두리 120~170·글자 60) Otsu 문턱으로는 끊기고, 조명이 고르지 않아 한 문턱으로 못 잡는다. 굵은 글자 획 속은 양옆도 어두워 빠진다
+ * - 변 덮임은 표시 획(글자 대비 절반 넘게 어두운 픽셀)에 가린 자리도 친다 — 체크 표시가 변을 덮고 지나간다. 점선 테두리(사진 서식의 ⬚)는 변을
+ *   따라 칸 변 8% 안의 끊김을 잇는다
+ * - 세로 변 후보는 능선 열 무리이고, 짝이 되는 반대 변이 표시에 덮여 안 보이면 그 획 길이만큼 옆에 둔 정사각도 본다
+ * - 표시는 칸 안(변 20% 또는 테두리 두께만큼 안쪽)에서 6% 넘게, 폭 35% 이상에 걸쳐야 한다 — 숫자 "[1]" 의 1 은 가는 세로 획 하나다. 속이 거의
+ *   찬 칸(■)은 내지 않는다
+ */
+export function checkboxFrames(gray: Uint8Array, w: number, h: number, ink: InkStats): CheckboxFrame[] {
+  if (!ink.darkInk || h < 12 || w < h) return []
+  const sorted = Uint8Array.from(gray).sort(), bg = sorted[sorted.length >> 1]
+  let n = 0, sum = 0
+  for (let i = 0; i < gray.length; i++) if (gray[i] <= ink.threshold) { n++; sum += gray[i] }
+  const dk = n ? sum / n : bg
+  if (bg - dk < 40) return []
+  const k = Math.max(2, Math.round(h * 0.05)), delta = Math.max(10, (bg - dk) * 0.12), mark = bg - (bg - dk) * 0.5
+  const at = (x: number, y: number) => gray[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]
+  const V = new Uint8Array(w * h), H = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = gray[y * w + x]
+    if (v < Math.min(at(x - k, y), at(x + k, y)) - delta) V[y * w + x] = 1
+    if (v < Math.min(at(x, y - k), at(x, y + k)) - delta) H[y * w + x] = 1
+  }
+  const inside = (x: number, y: number) => x >= 0 && x < w && y >= 0 && y < h
+  const vr = (x: number, y: number) => inside(x, y) && V[y * w + x] === 1
+  const hr = (x: number, y: number) => inside(x, y) && H[y * w + x] === 1
+  const dark = (x: number, y: number) => inside(x, y) && gray[y * w + x] < mark
+  const sMin = Math.max(8, h * 0.15), sMax = h
+  // 변 덮임 지도 — 변 자리 ±1(세로 변은 열, 가로 변은 행)에 능선(또렷함용) 또는 능선·표시 획이 있고, 변을 따라 gap 안의 끊김(점선 테두리)은
+  // 잇는다. 열·행 누적합으로 후보마다 변 덮임을 상수 시간에 잰다
+  const gap = Math.max(1, Math.round(h * 0.04))
+  const vmap = (any: boolean) => {
+    const src = any ? VD : V, m = new Uint8Array(w * h)
+    for (let i = 0; i < w * h; i++) { const x = i % w; m[i] = src[i] | (x > 0 ? src[i - 1] : 0) | (x + 1 < w ? src[i + 1] : 0) }
+    const p = new Int32Array(w * (h + 1))
+    for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) {
+      let on = 0
+      for (let d = -gap; d <= gap && !on; d++) { const yy = y + d; if (yy >= 0 && yy < h && m[yy * w + x]) on = 1 }
+      p[(y + 1) * w + x] = p[y * w + x] + on
+    }
+    return p
+  }
+  const hmap = (any: boolean) => {
+    const src = any ? HD : H, m = new Uint8Array(w * h)
+    for (let i = 0; i < w * h; i++) m[i] = src[i] | (i >= w ? src[i - w] : 0) | (i + w < w * h ? src[i + w] : 0)
+    const p = new Int32Array((w + 1) * h)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let on = 0
+      for (let d = -gap; d <= gap && !on; d++) { const xx = x + d; if (xx >= 0 && xx < w && m[y * w + xx]) on = 1 }
+      p[y * (w + 1) + x + 1] = p[y * (w + 1) + x] + on
+    }
+    return p
+  }
+  // 능선 또는 표시 획
+  const VD = new Uint8Array(w * h), HD = new Uint8Array(w * h)
+  for (let i = 0; i < w * h; i++) { const dk = gray[i] < mark ? 1 : 0; VD[i] = V[i] | dk; HD[i] = H[i] | dk }
+  const VA = vmap(true), VR = vmap(false), HA = hmap(true), HR = hmap(false)
+  const vside = (x: number, ya: number, yb: number, any: boolean) => { const p = any ? VA : VR; return (p[(yb + 1) * w + x] - p[ya * w + x]) / (yb - ya + 1) }
+  const hside = (xa: number, xb: number, y: number, any: boolean) => { if (y < 0 || y >= h) return 0; const p = any ? HA : HR; return (p[y * (w + 1) + xb + 1] - p[y * (w + 1) + xa]) / (xb - xa + 1) }
+  // 가로 변은 변 자리 ±2 행 중 가장 잘 덮인 행
+  const hbest = (xa: number, xb: number, y: number, any: boolean) => Math.max(hside(xa, xb, y - 2, any), hside(xa, xb, y - 1, any), hside(xa, xb, y, any), hside(xa, xb, y + 1, any), hside(xa, xb, y + 2, any))
+  // 세로 변 후보 — 열마다 가장 길게 이어진 능선(이웃 열 포함, 점선이라 몇 행 끊김 허용), 이어진 열은 한 무리로
+  const strokes: Array<{ x0: number; x1: number; x: number; y0: number; y1: number }> = []
+  for (let x = 0; x < w; x++) {
+    let best = 0, bestTop = 0, start = -1, miss = 0
+    for (let y = 0; y <= h; y++) {
+      if (y < h && (vr(x - 1, y) || vr(x, y) || vr(x + 1, y))) { if (start < 0) start = y; miss = 0 } else if (start >= 0 && (y === h || ++miss > gap)) {
+        // 마지막 능선 행까지 — 크롭 아래 끝에 닿은 변도 닫는다
+        const l = (y === h ? h - 1 - miss : y - miss) - start + 1
+        if (l > best) { best = l; bestTop = start }
+        start = -1; miss = 0
+      }
+    }
+    if (best < sMin * 0.8) continue
+    const p = strokes[strokes.length - 1]
+    if (p && x - p.x1 <= 1) { p.x1 = x; if (best > p.y1 - p.y0) { p.x = x; p.y0 = bestTop; p.y1 = bestTop + best } } else strokes.push({ x0: x, x1: x, x, y0: bestTop, y1: bestTop + best })
+  }
+  const corner = (x: number, y: number) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (vr(x + dx, y + dy) || hr(x + dx, y + dy) || dark(x + dx, y + dy)) return true; return false }
+  const found: Array<CheckboxFrame & { score: number }> = [], seen = new Set<string>()
+  // 줄기가 곧은지 — 줄마다 줄기 능선의 바깥 끝을 모아 10~90% 구간이 길이 6%(2px) 안. 표시 획은 능선이 아니라 세지 않는다
+  const lineStraight = (xc: number, y0: number, y1: number, outward: -1 | 1, size: number) => {
+    const ends: number[] = []
+    for (let y = y0 + 1; y <= y1 - 1; y++) for (let t = 3; t >= -3; t--) if (vr(xc + outward * t, y)) { ends.push(xc + outward * t); break }
+    if (ends.length < 3) return true
+    ends.sort((p, q) => p - q)
+    return ends[Math.floor(ends.length * 0.9)] - ends[Math.floor(ends.length * 0.1)] <= Math.max(2, size * 0.06)
+  }
+  // lx·rx 는 두 세로 변의 대표 열, lw·rw 는 변 두께 — 외곽(x0·x1)은 변 두께까지 넣는다(빠진 칸을 넣을 때 양옆 빈 자리를 재는 기준)
+  const tryBox = (lx: number, rx: number, ya: number, lw: number, rw: number) => {
+    const d = rx - lx
+    const y0 = Math.max(0, ya), y1 = Math.min(h - 1, ya + d)
+    if (d < sMin || d > sMax || lx < 0 || rx >= w || y1 - y0 < d * 0.8) return
+    const hook = Math.max(2, Math.round(d * 0.25))
+    const lc = vside(lx, y0, y1, true), rc = vside(rx, y0, y1, true)
+    if (lc < 0.75 || rc < 0.75) return
+    const tc = hbest(lx, rx, y0, true), bc = hbest(lx, rx, y1, true)
+    const hooks = Math.min(hbest(lx, lx + hook, y0, true), hbest(rx - hook, rx, y0, true), hbest(lx, lx + hook, y1, true), hbest(rx - hook, rx, y1, true))
+    // 꺾쇠는 네 모서리가 각져야 — 둥근 괄호 ( ) 는 위아래 끝이 줄기 열에서 벗어나 모서리 자리가 빈다
+    const square = corner(lx, y0) && corner(rx, y0) && corner(lx, y1) && corner(rx, y1)
+    // 꺾쇠 줄기는 곧다 — 줄마다 줄기 능선의 바깥 끝을 모아 10~90% 구간이 칸 변 6%(2px) 안이다. 둥근 괄호는 가운데가 바깥으로 불룩하다.
+    // 표시 획은 능선이 아니라 세지 않는다(표시가 줄기를 덮고 삐져나간다)
+    const straight = (xc: number, outward: -1 | 1) => lineStraight(xc, y0, y1, outward, d)
+    // 칸 안 — 변 20% 또는 테두리 두께만큼 안쪽에서 표시 획의 양과 가로 폭
+    const m = Math.max(2, Math.round(d * 0.2), lw + 2, rw + 2), ix0 = lx + m, ix1 = rx - m, iy0 = y0 + m, iy1 = y1 - m
+    if (ix1 <= ix0 || iy1 <= iy0) return
+    let c = 0, a = 0, mx0 = w, mx1 = -1
+    for (let y = iy0; y <= iy1; y++) for (let x = ix0; x <= ix1; x++) { a++; if (gray[y * w + x] < mark) { c++; if (x < mx0) mx0 = x; if (x > mx1) mx1 = x } }
+    const fill = c / a
+    if (fill >= 0.6) return
+    const checked = fill >= 0.06 && mx1 - mx0 + 1 >= (ix1 - ix0 + 1) * 0.35
+    // □ 는 바깥 귀퉁이가 찬다 — 변 가운데 60% 구간의 가장 바깥 테두리 능선 행·열로 외곽을 잡고 그 네 귀퉁이(변 10% 크기)에 잉크가 있는지 본다
+    // (점선은 하나쯤 빈다, 표시가 덮은 칸은 둘까지). 원 글머리 ○·ㅇ 은 외곽 귀퉁이가 반지름의 40% 만큼 비었다 — 변 덮임은 점선을 잇는 여유 탓에
+    // 원호도 넘는다. 표시 획은 굵어 능선이 적으니 외곽을 칸 밖으로 끌지 않는다
+    const ink = (x: number, y: number) => vr(x, y) || hr(x, y)
+    // 귀퉁이 픽셀은 두 변이 만나 어느 쪽으로도 능선이 아니다 — 귀퉁이는 잉크로 본다
+    const any = (x: number, y: number) => ink(x, y) || dark(x, y)
+    const outer = (from: number, to: number, step: number, at: (t: number, u: number) => boolean, ua: number, ub: number) => {
+      for (let t = from; step > 0 ? t <= to : t >= to; t += step) for (let u = ua; u <= ub; u++) if (at(t, u)) return t
+      return NaN
+    }
+    const ex0 = Math.round(lx + d * 0.2), ex1 = Math.round(rx - d * 0.2), ey0 = Math.round(y0 + d * 0.2), ey1 = Math.round(y1 - d * 0.2)
+    const top = outer(y0 - 3, y0 + 3, 1, (y, x) => ink(x, y), ex0, ex1), bot = outer(y1 + 3, y1 - 3, -1, (y, x) => ink(x, y), ex0, ex1)
+    const lft = outer(lx - 3, lx + 3, 1, (x, y) => ink(x, y), ey0, ey1), rgt = outer(rx + 3, rx - 3, -1, (x, y) => ink(x, y), ey0, ey1)
+    const cw = Math.max(1, Math.round(d * 0.1))
+    const filled = (cx: number, cy: number, sx: 1 | -1, sy: 1 | -1) => { for (let i = 0; i < cw; i++) for (let j = 0; j < cw; j++) if (any(cx + sx * i, cy + sy * j)) return true; return false }
+    const corners = [top, bot, lft, rgt].some(isNaN) ? 0 : [filled(lft, top, 1, 1), filled(rgt, top, -1, 1), filled(lft, bot, 1, -1), filled(rgt, bot, -1, -1)].filter(Boolean).length
+    const kind = tc >= 0.75 && bc >= 0.75 ? (corners >= (checked ? 2 : 3) ? "\u25a1" : null) : square && hooks >= 0.6 && tc < 0.75 && bc < 0.75 && straight(lx, -1) && straight(rx, 1) ? "[]" : null
+    if (!kind) return
+    // 또렷함 — 능선만으로 변 덮임 0.5 넘는 변이 셋 이상(인쇄한 가는 테두리). 굵은 글자 획으로 된 꼴은 능선이 적다
+    // 꺾쇠는 위아래 변 대신 네 귀퉁이 갈고리로 본다
+    const ridge = kind === "\u25a1" ? [hbest(lx, rx, y0, false), hbest(lx, rx, y1, false)]
+      : [Math.min(hbest(lx, lx + hook, y0, false), hbest(rx - hook, rx, y0, false)), Math.min(hbest(lx, lx + hook, y1, false), hbest(rx - hook, rx, y1, false))]
+    const clear = [vside(lx, y0, y1, false), vside(rx, y0, y1, false), ...ridge].filter(v => v >= 0.5).length >= 3
+    // 또렷하지 않은 꼴은 버린다 — 표시에 가린 자리를 변으로 쳐 주면 진한 글자 획이 모두 칸 꼴이 된다
+    if (!clear) return
+    const key = `${lx - lw},${rx + rw},${y0}`
+    if (seen.has(key)) return
+    seen.add(key)
+    found.push({ x0: Math.max(0, lx - lw), x1: Math.min(w - 1, rx + rw), y0, y1, kind, checked, score: lc + rc + Math.max(tc + bc, 2 * hooks) })
+  }
+  // 넓은 꺾쇠 — 두 줄기가 곧고(straight), 네 귀퉁이에 안쪽으로 꺾인 갈고리(높이 25%)가 있고, 위아래 변 가운데는 비었다. 표시는 칸 안 높이
+  // 35% 이상에 걸쳐야 한다(넓은 칸 안의 체크는 폭을 다 덮지 않는다)
+  const tryBracket = (lx: number, rx: number, y0: number, y1: number, lw: number, rw: number) => {
+    const len = y1 - y0, d = rx - lx, hook = Math.max(2, Math.round(len * 0.25)), gap = Math.max(1, Math.round(len * 0.08))
+    if (vside(lx, y0, y1, false) < 0.75 || vside(rx, y0, y1, false) < 0.75) return
+    const hooks = Math.min(hbest(lx, lx + hook, y0, true), hbest(rx - hook, rx, y0, true), hbest(lx, lx + hook, y1, true), hbest(rx - hook, rx, y1, true))
+    if (hooks < 0.6 || hbest(lx + hook + gap, rx - hook - gap, y0, true) >= 0.75 || hbest(lx + hook + gap, rx - hook - gap, y1, true) >= 0.75) return
+    const corners = [corner(lx, y0), corner(rx, y0), corner(lx, y1), corner(rx, y1)].every(Boolean)
+    if (!corners || !lineStraight(lx, y0, y1, -1, len) || !lineStraight(rx, y0, y1, 1, len)) return
+    const m = Math.max(2, Math.round(len * 0.2), lw + 2, rw + 2), ix0 = lx + m, ix1 = rx - m, iy0 = y0 + m, iy1 = y1 - m
+    if (ix1 <= ix0 || iy1 <= iy0) return
+    let c = 0, a = 0, my0 = h, my1 = -1
+    for (let y = iy0; y <= iy1; y++) for (let x = ix0; x <= ix1; x++) { a++; if (gray[y * w + x] < mark) { c++; if (y < my0) my0 = y; if (y > my1) my1 = y } }
+    if (c / a >= 0.6) return
+    const checked = c / a >= 0.03 && my1 - my0 + 1 >= (iy1 - iy0 + 1) * 0.35
+    const key = `[${lx - lw},${rx + rw},${y0}`
+    if (seen.has(key)) return
+    seen.add(key)
+    found.push({ x0: Math.max(0, lx - lw), x1: Math.min(w - 1, rx + rw), y0, y1, kind: "[]", checked, score: 2 + hooks * 2 })
+  }
+  for (let i = 0; i < strokes.length; i++) {
+    const L = strokes[i], len = L.y1 - L.y0
+    // 짝 획 — 칸 높이를 두 획의 위끝·아래끝에 맞춰 본다(옅은 변은 끊겨 짧고, 표시가 걸친 변은 표시만큼 길다)
+    for (let j = i + 1; j < strokes.length; j++) {
+      const R = strokes[j], d = R.x - L.x
+      if (d < sMin) continue
+      if (d > sMax) break
+      if (L.x1 - L.x0 > d * 0.3 || R.x1 - R.x0 > d * 0.3) continue
+      for (const ya of new Set([L.y0, R.y0, L.y1 - d, R.y1 - d])) tryBox(L.x, R.x, ya, L.x1 - L.x0, R.x1 - R.x0)
+    }
+    // 반대 변이 표시에 덮인 칸 — 획 길이를 한 변으로 왼쪽·오른쪽에
+    if (L.x1 - L.x0 <= len * 0.3) for (const d of [len - 1, len, len + 1]) { tryBox(L.x - d, L.x, L.y0, L.x1 - L.x0, L.x1 - L.x0); tryBox(L.x, L.x + d, L.y0, L.x1 - L.x0, L.x1 - L.x0) }
+    // 넓은 꺾쇠 칸 "[    ]" — 길이가 비슷한(±25%) 두 획이 높이의 0.6~2.5배 떨어져 마주 본다(서식의 [ ] 는 글자 한두 자 너비로 벌린다)
+    for (let j = i + 1; j < strokes.length; j++) {
+      const R = strokes[j], d = R.x - L.x, rlen = R.y1 - R.y0
+      if (d > len * 2.5) break
+      if (d < len * 0.6 || d < sMin || Math.abs(rlen - len) > len * 0.25) continue
+      const y0 = Math.max(L.y0, R.y0), y1 = Math.min(L.y1, R.y1) - 1
+      if (y1 - y0 < len * 0.8) continue
+      tryBracket(L.x, R.x, y0, y1, L.x1 - L.x0, R.x1 - R.x0)
+    }
+  }
+  return found.sort((p, q) => q.score - p.score).map(({ score: _, ...f }) => f)
+}
