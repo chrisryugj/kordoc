@@ -28,7 +28,7 @@ import { patchZipEntries } from "./zip-patch.js"
 import { checkPatchIntegrity } from "./integrity.js"
 import { stripHeadMarker, stripShownHeadMarker, noScriptTags,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable, parseHtmlTable, htmlCellInnerToLines,
-  alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH, removeNoteMarks,
+  alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH, removeNoteMarks, NOTE_TEXT_UNSUPPORTED,
   type MdUnit,
 } from "./markdown-units.js"
 import { patchGfmTable, patchHtmlTable, patchTextChunkTable, EMPHASIS_NOTE } from "./table-patch.js"
@@ -40,6 +40,7 @@ import { patchHwp } from "./hwp5-patch.js"
 import { parseEmphasis, styledInline, minimalTextSplices, flagsPerChar, restyledKept, type InsertStyle } from "./inline-edit.js"
 import { charPrBook, type CharPrBook } from "./char-pr.js"
 import { clickHereEditSplices } from "../form/click-here.js"
+import { noteEditSplices } from "./note-edit.js"
 import { lineBreakTextSplices } from "./line-break-edit.js"
 import { fallbackTextEdit, fallbackTableEdits } from "./text-fallback.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
@@ -660,15 +661,24 @@ function patchParagraphUnit(
 
   // 각주 표기 처리 — 본문이 아닌 각주 ctrl에 있으므로 분리
   let noteEdited = false
+  let noteApplied = false
   if (block.footnoteText) {
     // 주석 안 표(#149)는 마크다운에 HTML 격자로 나가 footnoteText(평탄화 글)와 모양이 다르다 — 원본 마크다운 표기와 견준다
-    const origNote = block.footnoteBlocks ? origPlain.match(/\s*\(주: ([\s\S]*)\)$/)?.[1] : undefined
+    const mdNote = origPlain.match(/\s*\(주: ([\s\S]*)\)$/)?.[1]
+    const origNote = block.footnoteBlocks ? mdNote : undefined
     origPlain = origPlain.replace(/\s*\(주: [\s\S]*\)$/, "")
     const noteMatch = newPlain.match(/\s*\(주: ([\s\S]*)\)$/)
     if (noteMatch) {
       newPlain = newPlain.slice(0, noteMatch.index).trimEnd()
       if (normForMatch(noteMatch[1]) !== normForMatch(origNote ?? block.footnoteText)) {
-        ctx.skipped.push({ reason: "각주 텍스트 수정은 미지원 — 본문만 적용", before: block.footnoteText, after: noteMatch[1] })
+        // 각주 글을 고친 편집 — 각주 본문 문단에 싣는다(주석 안 표는 격자 표기라 미지원). 못 실으면 알리고 본문만
+        const sp = block.footnoteBlocks ? NOTE_TEXT_UNSUPPORTED
+          : noteEditSplices(mapping.para, ctx.scans[mapping.para.sectionIndex]?.xml, mdNote ?? block.footnoteText, noteMatch[1])
+        if (typeof sp === "string") ctx.skipped.push({ reason: sp, before: block.footnoteText, after: noteMatch[1] })
+        else if (sp.length) {
+          ctx.sectionSplices[mapping.para.sectionIndex].push(...sp)
+          noteApplied = true
+        }
         noteEdited = true
       }
     } else {
@@ -692,14 +702,17 @@ function patchParagraphUnit(
     if (head.note) ctx.skipped.push({ reason: head.note, after: summarize(newPlain), partial: true })
   }
 
-  // 각주 글만 고친 편집은 위에서 알렸다
-  if (newPlain === origPlain) return noteEdited ? 0 : skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
+  // 각주 글만 고친 편집 — 각주 문단에 실었으면 적용, 못 실었으면 위에서 알렸다
+  if (newPlain === origPlain) {
+    if (!noteEdited) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
+    return noteApplied ? 1 : 0
+  }
 
   // 단일 hp:t로 합쳐 기록하면 재파싱 sanitize에서 변형되는 텍스트(run 경계 이중 공백 등)
   //: 기록 후 동일 렌더가 보장되지 않으므로 미지원. 단 원문 문단이 이미 그 꼴(균등 띄어쓰기 "기   간"이 마크다운에
   // 그대로 보이는 서식 문단)이면 같은 렌더 경로를 타므로 허용한다: 바뀐 자리만 고쳐 원문 띄어쓰기는 그대로 남는다
   if (sanitizeText(newPlain) !== newPlain && sanitizeText(origPlain) === origPlain) {
-    return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
+    return Math.max(skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원"), noteApplied ? 1 : 0)
   }
 
   const xml = ctx.scans[mapping.para.sectionIndex]?.xml
@@ -716,7 +729,7 @@ function patchParagraphUnit(
   const minimal = xml ? minimalTextSplices(mapping.para, xml, origPlain, newPlain, segsUsable ? origInline.segs : undefined, segsUsable ? newInline.segs : undefined, style) : null
   const splices = (xml ? clickHereEditSplices(mapping.para, xml, origPlain, newPlain) : null)
     ?? minimal ?? (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
-  if (splices === null) return skip("문단에 텍스트 노드를 만들 수 없음")
+  if (splices === null) return Math.max(skip("문단에 텍스트 노드를 만들 수 없음"), noteApplied ? 1 : 0)
   ctx.sectionSplices[mapping.para.sectionIndex].push(...splices)
   // 강조가 바뀐 편집인데 새 글 서식을 못 맞췄거나(좌표·글자 모양) 바뀐 자리 밖 글의 강조를 바꿨으면 부분 적용으로 알린다
   if (origInline.segs.length !== newInline.segs.length
