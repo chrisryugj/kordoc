@@ -159,6 +159,43 @@ export function splitRowBands(
   return bands.map(([y0, y1]) => { const [x0, x1] = inkCols(y0, y1); return { y0, y1, x0, x1 } })
 }
 
+/** 골짜기 행 잉크가 줄 잉크 중앙값의 이 배수 이하일 때만 가른다 */
+const VALLEY_MAX = 0.35
+
+/**
+ * 줄끼리 맞닿아 빈 행이 없는 여러 줄 상자를 k 줄로 가른다. 행 투영(칸 세로 괘선 열은 뺌)을 세 행씩 고르게 한 뒤 j/k 높이 둘레
+ * (줄 높이 0.3배 안)에서 가장 옅은 행을 경계로 삼는다. 촘촘한 표 칸 "위장관계 / 구역 / 설사" 는 줄 사이 빈 행이 없어 splitRowBands 가
+ * 한 띠로 두었다. 어느 경계든 골짜기가 VALLEY_MAX 보다 진하면 null
+ */
+export function valleyBands(gray: Uint8Array, w: number, h: number, ink: InkStats, k: number): Array<{ y0: number; y1: number; x0: number; x1: number }> | null {
+  if (k < 2) return null
+  const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+  const colInk = new Uint32Array(w)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (isInk(gray[y * w + x])) colInk[x]++
+  const live = (x: number) => colInk[x] < h * 0.85
+  const row = new Float64Array(h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (live(x) && isInk(gray[y * w + x])) row[y]++
+  const sm = (y: number) => (row[Math.max(0, y - 1)] + row[y] + row[Math.min(h - 1, y + 1)]) / 3
+  const inked = [...row].filter(v => v > 0).sort((a, b) => a - b)
+  const med = inked[inked.length >> 1]
+  if (!med) return null
+  const cuts: number[] = []
+  for (let j = 1; j < k; j++) {
+    const c = (h * j) / k, r = (h / k) * 0.3
+    let best = -1, bestV = Infinity
+    for (let y = Math.max(1, Math.round(c - r)); y <= Math.min(h - 2, Math.round(c + r)); y++) { const v = sm(y); if (v < bestV) { bestV = v; best = y } }
+    if (best < 0 || bestV > med * VALLEY_MAX || (cuts.length && best <= cuts[cuts.length - 1])) return null
+    cuts.push(best)
+  }
+  const edges = [0, ...cuts, h]
+  return edges.slice(1).map((y1, i) => {
+    const y0 = edges[i]
+    let x0 = w, x1 = -1
+    for (let y = y0; y < y1; y++) for (let x = 0; x < w; x++) if (live(x) && isInk(gray[y * w + x])) { if (x < x0) x0 = x; if (x > x1) x1 = x }
+    return { y0, y1, x0: x1 >= x0 ? x0 : 0, x1: x1 >= x0 ? x1 + 1 : w }
+  })
+}
+
 type Comp = { x0: number; x1: number; y0: number; y1: number; id: number }
 
 /**

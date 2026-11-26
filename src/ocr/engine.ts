@@ -37,7 +37,7 @@ import {
   ocrSourcePath,
   parseCharacterDict,
 } from "./models.js"
-import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands, stackedGlyphBands } from "./line-split.js"
+import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands, stackedGlyphBands, valleyBands } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
 import { restoreGlyphs, ringAsks, ringGlyph, trimInklessEnds } from "./glyph-restore.js"
 import type { RingRead } from "./glyph-restore.js"
@@ -197,6 +197,10 @@ const ORIENT_GAIN = 0.1
 const KEEP_MARGIN = 0.06
 /** 두 줄로 갈라 다시 읽은 줄(recognizePage 재시도)을 받을 신뢰도 하한 */
 const RETRY_SCORE = 0.9
+/** 쪽 한 줄 높이의 이 배수 넘는 가로 상자는 여러 줄을 문 것으로 보고 골짜기 행에서 가른다(valleyBands) */
+const MULTI_LINE_RATIO = 1.8
+/** 이 신뢰도 아래로 읽힌 여러 줄 상자는 갈라 다시 읽어 본다 */
+const WEAK_LINE_SCORE = 0.75
 /** 문턱은 넘었지만 두 줄을 덮은 상자 — 쪽 상자 높이 중앙값 대비 높이 배율·이보다 확신이 낮을 때만 갈라 다시 읽는다 */
 const TALL_LINE_RATIO = 1.1
 const TALL_LINE_SCORE = 0.9
@@ -997,8 +1001,49 @@ export class OcrEngine {
     // 관 리 과" 가 "살다까" 로 읽혀 버려짐). 버려질 상자만 가운데 빈 행에서 두 줄로 갈라 다시 읽어 신뢰도를 넘는 줄을 받는다
     // 빈 글로 읽힌 상자 — 세로로 쌓인 글자 상자는 한 줄로 읽으면 아무것도 안 나오기도 한다(아래 세로 글자 다시 읽기만)
     const blank = tuning.postprocess ? jobs.filter(j => j.rot === 0 && j.join === undefined && !j.footer && !j.keep && !best.has(j.group)).map(j => j.box) : []
+    // 쪽 한 줄 높이: 확신해 읽은 가로 줄 상자 높이의 중앙값(여덟 줄 이상일 때)
+    const sure = [...boxOf.entries()].filter(([it, b]) => it.confidence >= RETRY_SCORE && b.w >= b.h * 1.5).map(([, b]) => b.h).sort((a, b) => a - b)
+    const lineH = sure.length >= 8 ? sure[sure.length >> 1] : 0
+    /** 쪽 한 줄 높이의 MULTI_LINE_RATIO 배 넘는 상자(세로 상자 가르기에 안 걸리는 꼴)를 골짜기 행에서 줄 수만큼 가른 상자들. 줄 수는
+     *  높이÷한 줄 높이를 반올림한 값부터 하나 적은 값까지(상자가 이웃 줄 끝자락을 물어 높이가 부풀기도 한다). 못 가르면 null */
+    const valleySplit = (b: Box): Box[] | null => {
+      // 한 줄 높이 두 배보다 좁은 상자는 글자를 세로로 쌓은 칸이다(통계표 머리 "대/구". 갈라 읽으면 한 글자 띠라 버려졌다)
+      if (!lineH || b.h >= b.w * TALL_RATIO || b.h < lineH * MULTI_LINE_RATIO || b.w < lineH * 2) return null
+      // 표 칸 안(양옆 칸 세로 괘선 조각이 상자 높이 80% 이상을 덮음)만. 수식 줄(수능 수학)·손글씨 줄은 위아래로 큰 글자가 골짜기를 만들어
+      // 줄을 잘못 갈랐다. 여러 줄 상자는 칸 행 경계를 넘어 잡히기도 해 한 칸 괘선이 상자 전체를 덮기를 요구하지 않는다
+      const ruled = (left: boolean) => cellRules.filter(r => left ? r.x1 <= b.x + 2 : r.x1 >= b.x + b.w - 2)
+        .reduce((s, r) => s + Math.max(0, Math.min(r.y2, b.y + b.h) - Math.max(r.y1, b.y)), 0) >= b.h * 0.8
+      if (!ruled(true) || !ruled(false)) return null
+      const gray = grayCrop(rgba, width, b), ink = inkStats(gray)
+      const n = Math.min(4, Math.round(b.h / lineH))
+      for (const k of [n, n - 1]) {
+        const bands = valleyBands(gray, b.w, b.h, ink, k)
+        if (bands) return bandBoxes(b, bands, height)
+      }
+      return null
+    }
+    // 여러 줄을 문 상자를 문턱 넘게만 읽은 줄. 갈라 다시 읽어 줄마다 확신하고 평균이 뚜렷이 오르면 바꾼다(촘촘한 표 칸 "신경계 / 두통" → "실걸계" .57)
+    if (tuning.postprocess && lineH) {
+      const weak = items.flatMap(it => {
+        const b = boxOf.get(it)
+        const parts = b && it.confidence < WEAK_LINE_SCORE ? valleySplit(b) : null
+        return parts && parts.length >= 2 ? [{ it, parts }] : []
+      })
+      const flat = weak.flatMap(w => w.parts)
+      const res = flat.length ? await this.recognizeJobs(rgba, width, flat.map((box, k) => ({ box, rot: 0 as const, group: k })), tuning.recBatch) : []
+      let k = 0
+      for (const w of weak) {
+        const rs = res.slice(k, k += w.parts.length)
+        if (rs.some(r => !r || r.confidence < RETRY_SCORE || !r.text.trim())) continue
+        if (rs.reduce((s, r) => s + r!.confidence, 0) / rs.length < w.it.confidence + 0.15) continue
+        const parts = w.parts.map((box, i) => ({ text: restoreSymbols(restoreGlyphs(rgba, width, box, rs[i]!.text, rs[i]!.steps, rs[i]!.stepPx).trim()), ...this.itemBox(rgba, width, box, tuning), confidence: rs[i]!.confidence }))
+        items.splice(items.indexOf(w.it), 1, ...parts)
+      }
+    }
     if (retry.length || blank.length) {
       const subs: Box[] = []
+      /** 골짜기 행으로 가른 띠 (valleySplit) */
+      const valleyed = new Set<Box>()
       /** 세로로 쌓인 글자 상자 — 글자 띠마다 한 자씩 다시 읽는다 */
       const stacks: Array<{ box: Box; parts: Box[]; word: boolean }> = []
       for (const b of [...retry, ...blank]) {
@@ -1010,6 +1055,9 @@ export class OcrEngine {
         // 갈리지 않고 "주자"로 읽혀 버려졌다. 칸 밖(그림 이름표 "주사바늘")은 정답이 그림 글을 빼므로 종전대로 세 배
         const inCell = cellRules.some(r => r.x1 <= b.x + 2 && r.y1 <= b.y && r.y2 >= b.y + b.h) && cellRules.some(r => r.x1 >= b.x + b.w - 2 && r.y1 <= b.y && r.y2 >= b.y + b.h)
         if (cut && b.w >= (inCell ? 2 : 3) * Math.max(cut[0], b.h - cut[1])) { subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] }); continue }
+        // 빈 행 없이 줄끼리 맞닿은 여러 줄 상자는 골짜기 행에서 줄 수만큼 가른다(촘촘한 표 칸 "구역 / 설사" 가 한 상자로 .10)
+        const valley = retry.includes(b) ? valleySplit(b) : null
+        if (valley) { subs.push(...valley); for (const v of valley) valleyed.add(v); continue }
         const bands = stackedGlyphBands(gray, b.w, b.h, ink)
         // 띠 사이 틈이 글자 높이 0.3배 안이면 세로쓰기 낱말("서/울" 틈 4px·글자 21px) — 한 아이템으로. 더 벌어지면 위아래 두 줄 끝 글자
         // ("자주식 대 / 기계식 대" 틈 8px·글자 22px)라 띠마다 아이템으로 둔다(붙이면 "대대" 가 한 줄에 갔다)
@@ -1023,9 +1071,14 @@ export class OcrEngine {
         const r = res[k]
         // 문턱은 본 인식보다 높게 — 그림 속 작은 글("e-learning" → "eleanig" 0.79)이 붙었다(나라배움터 계획)
         if (!r || r.confidence < RETRY_SCORE) return
-        const text = restoreSymbols(restoreGlyphs(rgba, width, box, r.text, r.steps, r.stepPx).trim())
+        let text = restoreSymbols(restoreGlyphs(rgba, width, box, r.text, r.steps, r.stepPx).trim())
+        // 골짜기로 가른 띠 끝의 짝 없는 닫는 따옴표는 칸 모서리 조각이다(여수 계획 현원표 머리 "전문 경력관’")
+        if (valleyed.has(box) && !/[‘'"“]/u.test(text)) text = text.replace(/(?<=[가-힣])[’”]$/u, "")
         // 글자·숫자가 두 자 이상이어야 — 장식 띠를 "---" 로 읽었고(경기 학교 매뉴얼 머리), 그림 세로 축 글자 한 자("s")가 끼어 줄 묶음이 바뀌었다(ODL 134)
-        if ((text.match(/[\p{L}\p{N}]/gu) ?? []).length >= 2) items.push({ text, ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
+        if ((text.match(/[\p{L}\p{N}]/gu) ?? []).length < 2) return
+        // 골짜기로 가른 띠는 겹치는 줄에 이미 든 글이면 버린다. 띠가 이웃 줄 낱말("간식")을 다시 읽어 두 번 들어갔다(수능 국어 표)
+        if (valleyed.has(box) && items.some(o => overlap(box, o) > 0 && o.text.replace(/\s/g, "").includes(text.replace(/\s/g, "")))) return
+        items.push({ text, ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
       })
       const free = stacks.filter(st => !items.some(o => overlap(st.box, o) * 2 > st.box.w * st.box.h))
       const parts = free.flatMap(st => st.parts)
