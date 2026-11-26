@@ -102,6 +102,8 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
 const BOX_READ = /^[\u25a1\u2610\u2611\u3141\u53e3[\]\u3010\u3011\u3014\u3015()|1VvNMCXx\u3137\u3134\u221a\u2713\u2714~\u2228\u03bd]+$/u
 /** 칸으로 잘못 읽은 영문·숫자 — 앞뒤에 영문·숫자가 붙어 있으면 낱말 속 글자다("MINIMUM"·"State:Mp") */
 const BOX_LETTER = /[1VvNMCXx]/
+/** 칸으로 읽었어도 일반 글에 흔한 글자(영문·숫자·괄호·물결). 같은 줄에 다른 칸 증거가 있을 때만 바꾼다 */
+const BOX_AMBIGUOUS = /[A-Za-z0-9()[\]\u3010\u3011\u3014\u3015|~]/u
 /** 이미 칸으로 읽은 빈칸 — 그대로 둔다(자모 ㅁ·한자 口 로 쓴 글머리를 □ 로 바꾸지 않게) */
 const BOX_KEPT = /^(?:\u25a1|\u3141|\u53e3|\[\]?|\])$/u
 
@@ -118,6 +120,10 @@ function checkboxes({ chars, cx, gray, w, h, ink }: Ctx) {
   for (let k = 0; k + 1 < live.length; k++) d.push(cx(live[k + 1]) - cx(live[k]))
   const pitch = d.length >= 2 ? d.sort((a, b) => a - b)[d.length >> 1] : h * 0.6
   const taken: Array<{ x0: number; x1: number }> = []
+  // 영문·숫자·괄호로 읽힌 칸은 미뤄 두고, 같은 줄에 확실한 칸(□ 로 읽힘·넣은 □·√ 류로 읽힘)이 있을 때만 바꾼다.
+  // 일반 글의 "5 V에서"·"M (H20)"·"VC(운용사)"·"(계좌이체시) (전자)" 도 칸 꼴 후보가 된다. 서식 칸은 한 줄에 나란히 나온다
+  const pending: Array<() => void> = []
+  let sure = 0
   for (const f of checkboxFrames(gray, w, h, ink)) {
     if (taken.some(o => o.x0 <= f.x1 && f.x0 <= o.x1)) continue
     const s = f.x1 - f.x0, mid = (f.x0 + f.x1) / 2
@@ -130,25 +136,43 @@ function checkboxes({ chars, cx, gray, w, h, ink }: Ctx) {
     const wordHead = before === undefined || before !== own[0] - 1 || !/[A-Za-z0-9가-힣]$/u.test(chars[before])
     const read = own.map(i => chars[i]).join("")
     if (own.some(i => !BOX_READ.test(chars[i]))) continue
-    // 둥근 괄호 하나·숫자 1 만 읽힌 자리는 글의 괄호("(앞쪽)")·수("1항에"·"‘11월")일 수 있다 — 1 은 뒤에 공백이 있을 때만
-    if (/^[()]$/.test(read) || (/^1+$/.test(read) && next === own[own.length - 1] + 1)) continue
+    // 둥근 괄호·숫자 1 로만 읽힌 자리는 글의 괄호("(앞쪽)")·번호("(1)"·"1)")·수("1항에"·"‘11월"·소수 끝자리 "1.0")다. 표 칸 괘선·글자 획과
+    // 맞닿아 칸 꼴을 이룬다
+    if (/^\(?1*\)?$/.test(read) && read && read !== "()") continue
     // 여는 괄호만 읽힌 자리 뒤에 닫는 괄호가, 닫는 괄호만 읽힌 자리 앞에 여는 괄호가 같은 줄에 있으면 글의 괄호("[문서관리]"·"【붙임】")
     if (/^[[\u3010\u3014]$/u.test(read) && chars.slice(own[0] + 1).some(t => /[\]\u3011\u3015]/u.test(t))) continue
     if (/^[\]\u3011\u3015]$/u.test(read) && chars.slice(0, own[0]).some(t => /[[\u3010\u3014]/u.test(t))) continue
     // 영문·숫자로 읽은 칸은 낱말 머리에서만 — 앞 글자가 붙어 있거나 뒤에 영문·숫자가 붙으면 낱말·수 속 글자("MINIMUM"·"NFC"·"(1100)")
     if (own.some(i => BOX_LETTER.test(chars[i])) && (!wordHead || (next === own[own.length - 1] + 1 && /^[A-Za-z0-9]/.test(chars[next])))) continue
     // 모델이 이미 빈칸으로 읽은 자리는 그대로 — 표시가 있었다면 모델도 V·√ 같은 글자로 읽는다(칸 안 글자 획을 표시로 보지 않게)
-    if (BOX_KEPT.test(read)) { taken.push(f); continue }
+    if (BOX_KEPT.test(read)) { taken.push(f); if (!BOX_AMBIGUOUS.test(read)) sure++; continue }
+    // 체크 표시로 읽힌 글자인데 칸 안이 비었으면 글의 기호다("해당되는 곳에 √표를 합니다")
+    if (/[\u221a\u2713\u2714\u2228\u03bd]/u.test(read) && !f.checked) continue
     const glyph = f.kind === "\u25a1" ? (f.checked ? "\u2611" : "\u25a1") : f.checked ? "[\u221a]" : "[]"
-    if (own.length) { taken.push(f); chars[own[0]] = glyph; for (const i of own.slice(1)) chars[i] = ""; continue }
+    if (own.length) {
+      taken.push(f)
+      const put = () => { chars[own[0]] = glyph; for (const i of own.slice(1)) chars[i] = "" }
+      if (BOX_AMBIGUOUS.test(read)) pending.push(put)
+      else { sure++; put() }
+      continue
+    }
     // 앞 단계(gaps)가 빠진 □ 를 앞 글자 뒤에 이미 넣었으면 그 □ 를 바꾼다 — 또 넣지 않는다
     const prev = live[live.indexOf(next) - 1]
-    if (prev !== undefined && /(?:\u25a1|\[\])$/u.test(chars[prev])) { taken.push(f); if (f.checked) chars[prev] = chars[prev].replace(/(?:\u25a1|\[\])$/u, glyph); continue }
+    if (prev !== undefined && /(?:\u25a1|\[\])$/u.test(chars[prev])) { taken.push(f); sure++; if (f.checked) chars[prev] = chars[prev].replace(/(?:\u25a1|\[\])$/u, glyph); continue }
     // 빠진 칸을 새로 넣는 것은 빈 □ 이고 칸 양옆이 비었을 때만 — 표시가 있으면 모델이 무엇이든 읽는다(읽은 글자 없이 표시만 보이면 글자 획).
     // 모델은 [ ] 는 빠뜨리지 않는다. 리더(…·.) 뒤 쪽 번호 앞도 칸 자리가 아니다.
     // 한글 두 자의 맞닿은 획(경·우 의 ㅇ)이 칸 꼴을 이룬 자리는 옆에 글자 잉크가 붙어 있다
     if (f.checked || f.kind !== "\u25a1") continue
+    // 뒤 글자 자리 안의 칸 꼴은 그 글자의 획이다(줄 머리 "마" 의 ㅁ). 빠진 칸 뒤 글은 칸 끝에서 글자 간격 절반 넘게 떨어져 가운데가 온다
+    if (cx(next) < f.x1 + pitch * 0.5) continue
+    // 줄 상자 위아래 끝에 걸친 칸 꼴은 표 괘선이다(균등배분 머리 칸 "비 고" 아래 괘선). 글줄 안 칸은 세로 가운데가 줄 가운데 근처에 온다
+    if (Math.abs((f.y0 + f.y1) / 2 - h / 2) > h * 0.25) continue
     if (prev !== undefined && /[.\u00b7\u2026]$/u.test(chars[prev])) continue
+    // 줄 머리 빈자리는 엔진의 글머리 되살리기(leadingBullet)가 모양으로 정한다. □ 가 아닌 글머리(그림자 ❐·▣ 등)면 엔진에 맡긴다
+    const head = prev === undefined ? leadingBullet(gray, w, h, ink, cx(next))?.mark : undefined
+    if (head && head !== "\u25a1") continue
+    // 공백 없이 붙은 두 글자 사이는 낱말·수 속이다("10,220"·"ㄴ을")
+    if (prev === next - 1 && /[가-힣\u3131-\u318eA-Za-z0-9]$/u.test(chars[prev]) && /^[가-힣A-Za-z0-9]/u.test(chars[next])) continue
     // 양옆 빈 폭은 변의 35% — 한 글자 안 자모 사이(바 의 ㅂ·ㅏ)는 그보다 좁다
     const m = Math.max(2, Math.round(s * 0.35)), dirty = (xa: number, xb: number) => {
       let k = 0, n = 0
@@ -157,8 +181,10 @@ function checkboxes({ chars, cx, gray, w, h, ink }: Ctx) {
     }
     if (dirty(f.x0 - m, f.x0 - 1) || dirty(f.x1 + 1, f.x1 + m)) continue
     taken.push(f)
+    sure++
     chars[next] = glyph + " " + chars[next]
   }
+  if (sure) for (const put of pending) put()
 }
 
 /**
