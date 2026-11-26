@@ -1146,6 +1146,38 @@ PR158 반영 후를 기준으로 조판과 PDF를 번갈아 수정했다. 조판
 
 벤치에 결과만 PR 로 올라온 상용 LM-Kit One 은 OCR 없이 0.948·OCR 0.963 입니다. 격차 대부분은 표 칸을 정답지와 같은 HTML 모양(`<td> 글 </td>`, 머리행도 `<td>`)으로 내는 차이입니다. 같은 서식으로 맞추면 kordoc `plain` 0.951·LM-Kit 0.948 이고, `htmlTables` 까지 켜면 kordoc 이 OCR 없이 0.949·OCR 0.973 으로 둘 다 앞섭니다.
 
+## Upstage DP-Bench
+
+DP-Bench와 위 OpenDataLoader 벤치는 바이트가 같은 PDF 200개를 사용합니다. 아래 점수는 [Upstage 공식 정답과 채점기](https://huggingface.co/datasets/upstage/dp-bench/tree/24702c61a2fb13325534be664653bc6e60250d13)로 계산했습니다.
+
+DP-Bench 평가 결과를 공유해 이번 측정의 계기를 준 강정석 님께 감사합니다. [Threads 게시물](https://www.threads.com/@catlovessubakba/post/DgM5gnukkVY)
+
+| kordoc | 설정 | NID | TEDS | TEDS-S | 표 검출 F1 | 매칭 표 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 4.25.22 (`f30697d0`) | `ocr: false` | 96.12 | 99.11 | 99.65 | 97.20 | 52 / 55 |
+
+점수는 100점 척도입니다. PDF 200개를 모두 채점했고 실패와 누락은 0건입니다. TEDS와 TEDS-S는 매칭된 표의 평균이며, 표 검출 F1은 누락과 오탐을 반영합니다.
+
+예측 파일은 kordoc의 PDF 블록 순서와 표의 행·열 병합을 보존합니다. 좌표는 Upstage의 공개 예측 파일처럼 쪽 크기로 정규화합니다. 이 리비전의 정답은 픽셀 좌표를 쓰며, 공식 채점기는 두 좌표계를 변환하지 않고 영역 필터에 전달합니다.
+
+### 재현
+
+저장소 루트에서 Node.js, `uv`, Poppler의 `pdfinfo`를 사용합니다. 결과 JSON은 `bench/out/dp-bench-kordoc.eval.json`에 저장됩니다.
+
+```bash
+dp_bench_dir=bench/out/dp-bench
+dp_prediction=bench/out/dp-bench-kordoc.json
+
+uvx --from huggingface-hub hf download upstage/dp-bench --repo-type dataset \
+  --revision 24702c61a2fb13325534be664653bc6e60250d13 --local-dir "$dp_bench_dir"
+npm ci
+npm run build
+node bench/dp-bench.mjs "$dp_bench_dir" "$dp_prediction" &&
+  uv run --no-project --python 3.11 --with-requirements "$dp_bench_dir/requirements.txt" \
+    python "$dp_bench_dir/evaluate.py" --ref-path "$dp_bench_dir/dataset/reference.json" \
+    --pred-path "$dp_prediction" --mode all
+```
+
 ## 한국 공문서 — 원본 HWPX 를 정답으로
 
 HWPX 원본과 그 문서를 PDF 로 내보낸 파일이 짝으로 있는 실제 정부 문서(보도자료·결재문서·법령 서식·예산서 등)로, 원본을 정답 삼아 PDF 에서 뽑은 글과 표를 잽니다.

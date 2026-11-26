@@ -1146,6 +1146,38 @@ Preserved from the earlier README. These are historical results, not current ran
 
 LM-Kit One (commercial; results-only PR) reports 0.948 without OCR and 0.963 with OCR. Most of the gap is table markup — it writes cells in the ground truth's HTML shape (`<td> text </td>`, header rows as `<td>`). Normalised to the same markup, kordoc `plain` scores 0.951 vs LM-Kit 0.948; with `htmlTables` kordoc leads both rows: 0.949 without OCR, 0.973 with OCR.
 
+## Upstage DP-Bench
+
+DP-Bench and the OpenDataLoader benchmark above use the same 200 PDFs, byte for byte. The baseline below uses [Upstage's official reference and evaluator](https://huggingface.co/datasets/upstage/dp-bench/tree/24702c61a2fb13325534be664653bc6e60250d13).
+
+Thanks to 강정석 for sharing his DP-Bench evaluation and prompting this run. [Threads post](https://www.threads.com/@catlovessubakba/post/DgM5gnukkVY)
+
+| kordoc | Setting | NID | TEDS | TEDS-S | Table detection F1 | Matched tables |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 4.25.22 (`f30697d0`) | `ocr: false` | 96.12 | 99.11 | 99.65 | 97.20 | 52 / 55 |
+
+Scores are on a 0–100 scale. All 200 PDFs were scored with zero failures or missing predictions. TEDS and TEDS-S average matched tables. Table detection F1 accounts for missed and extra tables.
+
+Predictions preserve kordoc's PDF block order and table cell spans. The runner normalizes coordinates by page size, following Upstage's public predictions. The reference at this revision uses pixel coordinates. The official evaluator passes both coordinate systems to its spatial filter as supplied.
+
+### Reproduce
+
+Run the commands from the repository root with Node.js, `uv`, and Poppler's `pdfinfo` installed. The evaluator writes `bench/out/dp-bench-kordoc.eval.json`.
+
+```bash
+dp_bench_dir=bench/out/dp-bench
+dp_prediction=bench/out/dp-bench-kordoc.json
+
+uvx --from huggingface-hub hf download upstage/dp-bench --repo-type dataset \
+  --revision 24702c61a2fb13325534be664653bc6e60250d13 --local-dir "$dp_bench_dir"
+npm ci
+npm run build
+node bench/dp-bench.mjs "$dp_bench_dir" "$dp_prediction" &&
+  uv run --no-project --python 3.11 --with-requirements "$dp_bench_dir/requirements.txt" \
+    python "$dp_bench_dir/evaluate.py" --ref-path "$dp_bench_dir/dataset/reference.json" \
+    --pred-path "$dp_prediction" --mode all
+```
+
 ## Korean government documents — scored against the original HWPX
 
 Real government documents (press releases, approval documents, statutory forms, budgets) for which both the HWPX original and its PDF export exist; text and tables extracted from the PDF are scored with the original as ground truth.
