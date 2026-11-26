@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- OCR: 스캔·사진 서식의 체크 칸(□·[ ])을 줄 상자 픽셀에서 찾아 인식 글을 고친다. 칸 안에 표시가 있으면 ☑·[√], 없으면 □·[] 다. 모델이 칸을 V·√·C·ㄷ 같은 글자로 잘못 읽었으면 칸 글자로 바꾸고, 빈 □ 를 빠뜨렸으면 뒤 글 앞에 넣는다. 칸 자리를 한글이나 낱말 속 영문·숫자가 덮었으면 그대로 둔다. 공개 체크 칸 서식 스캔 10페이지(checkbox-detection external, 튜닝에 쓰지 않음)에서 빈칸 26/208 → 129/208, ocr-accuracy 37문서 CER 2.267% → 2.262%(나빠진 문서 0)
+
 ## [4.25.21] - 2026-11-26
 
 ### Added
