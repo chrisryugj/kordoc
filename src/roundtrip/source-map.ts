@@ -42,6 +42,11 @@ export interface ScanParagraph {
   selfCloseRun?: { start: number; end: number }
   /** 글상자(drawText) 경유 문단 — 셀 라벨 판정 등에서 본문과 구분 (v3.1) */
   inTextbox?: boolean
+  /**
+   * 이 문단에 달린 각주·미주마다 그 본문 문단(문서 순서, 주석 안 표·글상자 속 문단 제외). 주석 본문 문단은 kind "excluded" 라
+   * 문단 매핑에 들지 않고, 달린 문단을 거쳐서만 고친다 (#240)
+   */
+  notes?: ScanParagraph[][]
 }
 
 /** 스캔된 표 셀 — 앵커 좌표와 셀 내부 문단 */
@@ -167,6 +172,9 @@ const PARA_CONTAINER = new Set([
   "footNote", "endNote", "fn", "en", // 각주/미주 — 파서는 호스트 블록 footnoteText로만 흡수
 ])
 
+/** 각주·미주 요소 — 본문 문단을 달린 문단의 notes 로 모은다 */
+const NOTE_ELEMENT = new Set(["footNote", "endNote", "fn", "en"])
+
 /** 표 분류 시 "최상위"가 아니게 만드는 조상 */
 const TABLE_BARRIER = new Set([
   "tbl", "ctrl", "caption", "memogroup", "memo", "hiddenComment",
@@ -212,6 +220,17 @@ export function scanSectionXml(xml: string, sectionIndex: number): SectionScan {
   const cellStack: ScanCell[] = []
   let pendingT: { para: ScanParagraph; contentStart: number } | null = null
   const ctrlSubStack: OpenCtrlSub[] = []
+  const noteStack: ScanParagraph[][] = [] // 열린 각주·미주마다 본문 문단 목록
+
+  /** 지금 열리는 문단이 각주·미주 본문 직속인가 — 가장 가까운 문단 컨테이너가 주석 요소 (글상자·표 칸을 거치면 아님) */
+  const directlyInNote = (): boolean => {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const l = stack[i].local
+      if (NOTE_ELEMENT.has(l)) return true
+      if (l === "drawText" || PARA_CONTAINER.has(l)) return false
+    }
+    return false
+  }
 
   /** 스택 위에서 아래로 보며 가장 가까운 PARA_CONTAINER/장벽 판별.
    *  drawText는 투과 — 바깥에 tc가 있으면(셀 안 글상자) 파서의 mergeBlocksIntoCell과
@@ -312,6 +331,8 @@ export function scanSectionXml(xml: string, sectionIndex: number): SectionScan {
             else orphanTables.push(table)
           }
         }
+      } else if (NOTE_ELEMENT.has(local)) {
+        noteStack.pop()
       } else if (local === "header" || local === "footer") {
         const sub = ctrlSubStack[ctrlSubStack.length - 1]
         if (sub) {
@@ -390,6 +411,7 @@ export function scanSectionXml(xml: string, sectionIndex: number): SectionScan {
       const cls = classifyPara()
       para.kind = cls.kind
       if (cls.inTextbox) para.inTextbox = true
+      if (cls.kind === "excluded" && noteStack.length && directlyInNote()) noteStack[noteStack.length - 1].push(para)
       stack.push({ local, qname, contentStart })
       paraStack.push(para)
       if (para.kind === "body" || para.kind === "draw") bodyParagraphs.push(para)
@@ -399,6 +421,12 @@ export function scanSectionXml(xml: string, sectionIndex: number): SectionScan {
       } else if (para.kind === "excluded") {
         excludedParagraphs.push(para)
       }
+    } else if (NOTE_ELEMENT.has(local)) {
+      // 주석을 단 문단 = 가장 가까운 열린 문단 (칸 문단에 달린 주석은 그 칸 문단 것)
+      const list: ScanParagraph[] = []
+      const host = paraStack[paraStack.length - 1]
+      if (host) (host.notes ??= []).push(list)
+      noteStack.push(list)
     } else if (local === "run" || local === "r") {
       // hp:t가 없는 문단의 삽입 지점 후보 — 첫 run의 닫는 태그 위치는 닫힐 때 알 수 있으므로
       // 여기서는 prefix만 기억해두고, 닫는 태그에서 채움 (아래 참조)

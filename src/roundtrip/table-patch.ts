@@ -27,6 +27,7 @@ import type { CharPrBook } from "./char-pr.js"
 import { isDatePlaceholder } from "../form/recognize.js"
 import { hasInlineCellBlocks } from "../table/builder.js"
 import { clickHereEditSplices } from "../form/click-here.js"
+import { noteEditSplices } from "./note-edit.js"
 import { restructureCellLines } from "./structure-edit.js"
 
 /** 표 패치에 필요한 컨텍스트 (patcher.ts PatchCtx의 부분집합) */
@@ -395,9 +396,11 @@ export function applyCellEdit(
   newLines: string[], ctx: TablePatchCtx, before: string, after: string,
   origLineCount?: number,
 ): number {
+  // 칸 본문을 못 고쳐도 각주 글을 이미 실었으면 이 칸은 적용으로 센다
+  let noteApplied = false
   const skip = (reason: string) => {
     ctx.skipped.push({ reason, before: summarize(before), after: summarize(after) })
-    return 0
+    return noteApplied ? 1 : 0
   }
   const cell = scanTable.cellByAnchor.get(`${gridR},${gridC}`)
   if (!cell) return skip("셀 좌표 매핑 실패 (병합 영역의 빈 칸이거나 좌표 불일치)")
@@ -406,9 +409,24 @@ export function applyCellEdit(
   // 요소라 hp:t 만 고치는 아래 치환이 그대로 둔다 (본문 문단 noteMarks 와 같다)
   const origLines = gfmCellLines(before)
   if (origLines.some(l => /\(주: [\s\S]*\)$/.test(l)) && origLines.length === newLines.length) {
-    const notes = newLines.map((l, i) => splitCellNote(origLines[i], l, ctx.skipped))
+    // 각주 글을 고친 줄 — 각주 표기가 붙은 줄과 각주를 단 칸 문단을 순서대로 짝지어 그 각주 문단에 싣는다 (본문 문단과 같다)
+    const hosts = cell.paragraphs.filter(p => p.notes?.length)
+    const notedLines = origLines.map((l, i) => /\(주: [\s\S]*\)$/.test(l) ? i : -1).filter(i => i >= 0)
+    const notes = newLines.map((l, i) => splitCellNote(origLines[i], l, ctx.skipped, (origNote, newNote) => {
+      const host = hosts.length === notedLines.length ? hosts[notedLines.indexOf(i)] : undefined
+      if (!host) return false
+      const sp = noteEditSplices(host, ctx.scans[host.sectionIndex]?.xml, origNote, newNote)
+      if (typeof sp === "string") ctx.skipped.push({ reason: sp, before: origNote, after: newNote })
+      else if (sp.length) {
+        ctx.sectionSplices[host.sectionIndex].push(...sp)
+        noteApplied = true
+      }
+      return true
+    }))
     newLines = notes.map(n => n.after)
     before = notes.map(n => n.before).join("<br>")
+    // 각주 글만 고친 칸 — 본문은 그대로라 아래 칸 치환을 거치지 않는다
+    if (notes.every(n => normForMatch(n.before) === normForMatch(n.after))) return noteApplied ? 1 : 0
   }
 
   // 셀 콘텐츠 검증 — 스캔 문단 합산과 IR 셀 텍스트의 정규화 일치
@@ -561,7 +579,7 @@ export function applyCellEdit(
     }
   }
 
-  if (splices.length === 0) return 0
+  if (splices.length === 0) return noteApplied ? 1 : 0
   ctx.sectionSplices[sectionIndex].push(...splices)
   if (emphMissed) ctx.skipped.push({ reason: EMPHASIS_NOTE, before: summarize(before), after: summarize(after), partial: true })
   return 1

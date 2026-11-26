@@ -1,6 +1,6 @@
 /**
  * 각주가 달린 문단·표 칸의 본문 patch (#240). 마크다운에 각주는 본문 뒤 "1) (주: 1) 각주 글)" 로 나온다(파서가 각주 자리에 번호를 끼우고
- * 각주 글을 끝에 붙인다). 본문만 고친 편집은 각주를 그대로 두고 적용하고, 각주 글을 고친 편집은 그 이유로 알린다 (HWPX·HWP 5.x)
+ * 각주 글을 끝에 붙인다). 본문만 고친 편집은 각주를 그대로 두고 적용한다 (HWPX·HWP 5.x). 각주 글을 고친 편집은 patch-footnote-text.test.ts
  */
 
 import { describe, it } from "node:test"
@@ -41,15 +41,6 @@ for (const kind of ["hwpx", "hwp"] as const) {
         const re = await reparse(r.data!)
         assert.ok(/BB|DD/.test(re), re)
         assert.ok(re.includes("(주: 1) 본문 문단의 각주.)") && re.includes("(주: 2) 표 칸의 각주.)"), re)
-      }
-    })
-
-    it("각주 글만 고친 편집은 각주 때문이라고 알린다", async () => {
-      const { base, run } = await load()
-      for (const md of [base.replace("본문 문단의 각주.", "본문 문단의 각주AA."), base.replace("표 칸의 각주.", "표 칸의 각주CC.")]) {
-        const r = await run(md)
-        assert.equal(r.applied, 0)
-        assert.deepEqual(r.skipped.map(s => s.reason), ["각주 텍스트 수정은 미지원 — 본문만 적용"])
       }
     })
   })
