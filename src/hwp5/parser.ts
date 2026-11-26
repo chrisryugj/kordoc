@@ -328,9 +328,11 @@ function detectHwp5Headings(blocks: IRBlock[], docInfo: HwpDocInfo, tocTexts?: S
       sizeFreq.set(b.style.fontSize, (sizeFreq.get(b.style.fontSize) || 0) + b.text.length)
     }
   }
+  // 동률이면 작은 크기. 본문은 제목보다 작다. 먼저 나온 크기를 쓰면 짧은 문서에서 제목·본문 글자 수가 같을 때 제목 크기가 본문이 되어,
+  // 본문에 한 글자만 더해도 제목 판정이 뒤집혔다(#242, 기안문 제목 15자·본문 15자)
   let maxWeight = 0
   for (const [size, weight] of sizeFreq) {
-    if (weight > maxWeight) { maxWeight = weight; baseFontSize = size }
+    if (weight > maxWeight || (weight === maxWeight && size < baseFontSize)) { maxWeight = weight; baseFontSize = size }
   }
 
   // 블록 스타일이 전혀 없으면 "바탕글", "본문" 등 본문 스타일로 폴백
