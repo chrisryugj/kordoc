@@ -241,7 +241,7 @@ const GFM_PROTECTED = new RegExp(/!\[[^\]<>\n]*\]\([^)\s<>"'\x60:]*\)|\]\((?:htt
  * 드리프트 검사에 같은 함수를 쓰는 SSOT — 규칙을 바꾸면 그쪽 역변환(unescapeGfm·unescapeGfmCell)도
  * 같이 바꾼다.
  */
-export function escapeGfm(text: string): string {
+export function escapeGfm(text: string, inCell = false): string {
   // ~ → \~ (GFM strikethrough 방지), * → \* (emphasis/HR·마스킹 별표 "******" 방지),
   // _ → \_ (emphasis 방지, 단어 안 _ 는 그대로), ` → \` (inline code 방지).
   // | → \| — 문단 글의 리터럴 파이프는 GFM 표 구분자와 구별이 안 된다(줄 안 "| 이형식 |").
@@ -282,7 +282,8 @@ export function escapeGfm(text: string): string {
       return m.replace(/_/g, "\\_")
     })
     .replace(/(?<!\\)\|/g, "\\|")
-    .replace(/^([ \t]*)(?=#{1,6}(?:[ \t]|$))/gm, "$1\\")
+    // 줄머리 # 는 ATX 제목이 된다. 표 칸 안(GFM·HTML)에는 제목이 없어 그대로 둔다("# 염색체 수" 머리 칸)
+    .replace(inCell ? /(?!)/ : /^([ \t]*)(?=#{1,6}(?:[ \t]|$))/gm, "$1\\")
     .replace(/<(?!\/?(?:u|sup|sub)>)(?=[A-Za-z/!?])/g, "\\<")
     // 링크 문법 — 보호 스팬(안전 스킴 링크·그림 참조)은 가려졌으니 남은 "](" 는 문서 글이다: "[클릭](javascript:…)" 가
     // 살아 있는 링크가 되지 않게 \] 로. 줄머리 "[이름]: 주소" 참조 정의도 같은 이유로 \[
@@ -508,7 +509,7 @@ export function dedupeRunningHeaders(blocks: IRBlock[]): IRBlock[] {
  * 왕복 채널 run-span → 강조 마커 재방출. 마커는 텍스트에 밀착해야 유효하므로
  * span 가장자리 공백은 마커 밖으로 옮긴다. 코드 span 내부는 이스케이프 없이 원문.
  */
-function spansToMarkdown(spans: IRSpan[]): string {
+function spansToMarkdown(spans: IRSpan[], inCell = false): string {
   let out = ""
   for (const s of spans) {
     if (s.placeholder) continue // 미기입 누름틀 안내문 — 인쇄되지 않는 글 (IR 글에는 남는다)
@@ -521,7 +522,7 @@ function spansToMarkdown(spans: IRSpan[]): string {
     if (s.strike && !s.code) marker = `~~${marker}` // 닫힘은 아래 close 에서 역순 조합 (~~**…**~~)
     const uWrap = !!s.underline && !s.code // 밑줄은 태그 쌍이라 역순 조합 불가 — 별도 최외곽 래핑
     if (!marker && !uWrap) {
-      out += escapeGfm(text)
+      out += escapeGfm(text, inCell)
       continue
     }
     const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!
@@ -540,7 +541,7 @@ function spansToMarkdown(spans: IRSpan[]): string {
       close = pad + "`".repeat(run + 1)
     }
     if (uWrap) { open = "<u>" + open; close = close + "</u>" } // <u>~~**…**~~</u>
-    out += m[1] + open + (s.code ? core : escapeGfm(core)) + close + m[3]
+    out += m[1] + open + (s.code ? core : escapeGfm(core, inCell)) + close + m[3]
   }
   return out
 }
@@ -902,18 +903,20 @@ function qrLines(value: string): string[] {
     .replace(/^(0{0,8}1)([.)])(?=[ \t]|$)/, "$1\\$2"))
 }
 
-function cellBlockToMarkdown(b: IRBlock): string {
+function cellBlockToMarkdown(b: IRBlock, inCell: boolean): string {
   if (b.type === "image" && b.text) return `![image](${b.text})` + (b.qr ?? []).map(v => {
     const url = qrUrl(v)
-    return "<br>" + (url ? `<${url}>` : escapeGfm(v).replace(/\r?\n/g, "<br>"))
+    return "<br>" + (url ? `<${url}>` : escapeGfm(v, inCell).replace(/\r?\n/g, "<br>"))
   }).join("")
-  return b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b))
+  return b.spans?.length ? spansToMarkdown(b.spans, inCell) + escapeGfm(noteSuffix(b), inCell) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b), inCell)
 }
 
+/** 칸 마크다운. 구분자 "<br>" 은 표 칸 안이고, "\n" 은 1열 표를 글 줄로 풀 때다(줄머리 표지 이스케이프가 필요한 문단 자리) */
 export function cellToMarkdown(cell: IRCell, separator: string): string {
-  if (!hasInlineCellBlocks(cell)) return escapeGfm(sanitizeText(cell.text))
+  const inCell = separator === "<br>"
+  if (!hasInlineCellBlocks(cell)) return escapeGfm(sanitizeText(cell.text), inCell)
   return cell.blocks!
-    .map(cellBlockToMarkdown)
+    .map(b => cellBlockToMarkdown(b, inCell))
     .filter(Boolean)
     .join(separator)
 }
@@ -955,7 +958,7 @@ function gfmCellText(cell: IRCell, parentId: string, nested: { table: IRTable; m
       nested.push({ table: b.table!, md })
       part = `<!-- <table parent_id="${parentId}" child_id="${b.table!.markdownId}" /> -->`
     } else {
-      part = cellBlockToMarkdown(b)
+      part = cellBlockToMarkdown(b, true)
       if (!part) continue
       text += text ? "<br>" + part : part
     }

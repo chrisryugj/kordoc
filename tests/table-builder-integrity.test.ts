@@ -118,6 +118,15 @@ describe("escapeGfm — 리터럴 글의 마크다운 오해석 방지", () => {
     assert.equal(escapeGfm("#include <x> 와 a # b"), "#include \\<x> 와 a # b")
   })
 
+  it("표 칸 머리 # 은 그대로. 칸 안에는 제목이 없다(ODL \"# chromosomes in parent cells\" 머리 칸), 1열 표를 글로 풀면 \\#", () => {
+    const cell = (text: string) => ({ text, colSpan: 1, rowSpan: 1 })
+    const grid = blocksToMarkdown([{ type: "table", table: { rows: 2, cols: 2, cells: [[cell("# chromosomes"), cell("Mitosis")], [cell("# daughter cells"), cell("2")]] } } as IRBlock])
+    assert.ok(grid.includes("| # chromosomes | Mitosis |"), grid)
+    assert.ok(!grid.includes("\\#"), grid)
+    const oneCol = blocksToMarkdown([{ type: "table", table: { rows: 2, cols: 1, cells: [[cell("# 첫 줄")], [cell("둘째 줄")]] } } as IRBlock])
+    assert.ok(oneCol.includes("\\# 첫 줄"), oneCol)
+  })
+
   it("원시 HTML 로 읽힐 < 만 \\< — <Table …>·<br> 글, 한글·숫자·공백 뒤따름과 kordoc <u> 는 그대로", () => {
     assert.equal(md("표 24. <Table 18-4: Living Donor>"), "표 24. \\<Table 18-4: Living Donor>")
     assert.equal(escapeGfm("document.write(\"<br>\")"), "document.write(\"\\<br>\")")
