@@ -36,7 +36,7 @@ import {
   splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   stripHeadMarker, stripShownHeadMarker, noScriptTags, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
-  removeNoteMarks, noteMarksOf, splitCellNote, type MdUnit,
+  removeNoteMarks, noteMarksOf, splitCellNote, planNoteEdits, noteParaEdit, NOTE_TEXT_UNSUPPORTED, type MdUnit,
 } from "./markdown-units.js"
 import { stripCellTokens, extractCellTokens, extractImgTags, cellStyledLines, cellEmphasisMissed, EMPHASIS_NOTE } from "./table-patch.js"
 import { hwpCharBook, cellLineStyles, type HwpCharBook, type HwpInsertStyle } from "./hwp5-char-shape.js"
@@ -66,6 +66,8 @@ function cid(s: string): number {
 }
 const CTRL_TBL = cid("tbl ")
 const CTRL_GSO = cid("gso ")
+const CTRL_FN = cid("fn  ")
+const CTRL_EN = cid("en  ")
 
 function swap32(id: number): number {
   return (((id & 0xff) << 24) | (((id >>> 8) & 0xff) << 16) | (((id >>> 16) & 0xff) << 8) | ((id >>> 24) & 0xff)) >>> 0
@@ -143,6 +145,8 @@ export interface ScanPara5 {
   rawText: string
   /** 미기입 누름틀 안내문 구간 (뺄 전 글 위치, 오름차순)과 그 누름틀 CTRL_HEADER 레코드 — rawText 에 없다 */
   guides: Array<{ start: number; end: number; ctrl: number }>
+  /** 이 문단에 달린 각주·미주마다 그 본문 문단(컨트롤 순서 = 글 속 각주 순서). 각주 문단은 kind "other" 라 달린 문단을 거쳐서만 고친다 (#240) */
+  notes?: ScanPara5[][]
 }
 
 interface ScanCell5 {
@@ -245,6 +249,19 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
     }
     paras.push(para)
     parasByHeader.set(i, para)
+  }
+
+  // 각주·미주 본문 문단 — 각주 컨트롤의 LIST_HEADER 아래 문단은 컨트롤 직속(칸 문단과 같은 꼴)이다. 달린 문단의 notes 로 올린다
+  for (let i = 0; i < records.length; i++) {
+    if (!isCtrl(records[i], CTRL_FN) && !isCtrl(records[i], CTRL_EN)) continue
+    const host = parent[i] >= 0 ? parasByHeader.get(parent[i]) : undefined
+    if (!host) continue
+    const list: ScanPara5[] = []
+    for (let j = i + 1; j < records.length && records[j].level > records[i].level; j++) {
+      const np = parent[j] === i ? parasByHeader.get(j) : undefined
+      if (np) list.push(np)
+    }
+    (host.notes ??= []).push(list)
   }
 
   /** 표 CTRL_HEADER(i) → 소스맵 표. 칸마다 칸 문단에 앵커된 중첩 표도 모은다 (깊이 8 — 파서 중첩 상한과 같은 폭) */
@@ -770,12 +787,15 @@ function patchParagraph(
 
   // 각주 표기 — 본문이 아닌 각주 컨트롤에 있으므로 분리
   let noteEdited = false
+  let noteApplied = false
   if (block.footnoteText) {
     const noteMatch = newPlain.match(/\s*\(주: ([\s\S]*)\)$/)
     if (noteMatch) {
       newPlain = newPlain.slice(0, noteMatch.index).trimEnd()
       if (normForMatch(noteMatch[1]) !== normForMatch(block.footnoteText)) {
-        ctx.skipped.push({ reason: "각주 텍스트 수정은 미지원 — 본문만 적용", before: block.footnoteText, after: noteMatch[1] })
+        // 각주 글을 고친 편집 — 각주 본문 문단에 싣는다(주석 안 표는 격자 표기라 미지원). 못 실으면 알리고 본문만
+        noteApplied = !block.footnoteBlocks && stageNoteEdit(mapping.para, block.footnoteText, noteMatch[1], ctx)
+        if (block.footnoteBlocks) ctx.skipped.push({ reason: NOTE_TEXT_UNSUPPORTED, before: block.footnoteText, after: noteMatch[1] })
         noteEdited = true
       }
     } else {
@@ -802,12 +822,12 @@ function patchParagraph(
   // 오판하고 문단을 재기록해 중간 서식(CHAR_SHAPE 다중 런)을 파괴했다 (hwp5-1)
   let origPlain = block.text != null ? noScriptTags(block.text) : restoreBr(origStyled.plain)
   if (mapping.noteMarks?.length) origPlain = removeNoteMarks(origPlain, mapping.noteMarks).text
-  // 각주 글만 고친 편집은 위에서 알렸다
-  if (newPlain === origPlain) return noteEdited ? 0 : skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
+  // 각주 글만 고친 편집 — 각주 문단에 실었으면 적용, 못 실었으면 위에서 알렸다
+  if (newPlain === origPlain) return noteEdited ? (noteApplied ? 1 : 0) : skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
   // 재파싱 정리에서 바뀌는 글(이중 공백 등)은 미지원 — 단 원문 문단이 이미 그 꼴(마크다운에 이중 공백이 그대로 보이는 문단)이면
   // 같은 렌더 경로라 허용한다: 바뀐 자리만 고쳐 원문 띄어쓰기는 그대로 남는다 (HWPX patcher 와 같다)
   if (sanitizeText(newPlain) !== newPlain && sanitizeText(origPlain) === origPlain) {
-    return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
+    return Math.max(skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원"), noteApplied ? 1 : 0)
   }
 
   // 바뀐 자리 계산용 원문 평문: 편집본과 같은 마크다운 경로(공백 접힘·표지 걷기)를 거쳐야 diff 가 고친 자리만 잡는다
@@ -825,7 +845,30 @@ function patchParagraph(
   if (n && (style?.missed || (style && restyledKept(origStyled, editedStyled, origStyled.plain, editedStyled.plain)))) {
     ctx.skipped.push({ reason: EMPHASIS_NOTE, before: summarize(orig.raw), after: summarize(edited.raw), partial: true })
   }
-  return n
+  return Math.max(n, noteApplied ? 1 : 0)
+}
+
+/**
+ * 각주 글 편집을 각주 본문 문단에 싣는다 (HWPX note-edit.ts 와 같은 규칙). 고친 각주의 문단만 본문 문단과 같은 치환(stageParaPatch,
+ * 바뀐 자리만)으로 고치고 각주 컨트롤·번호는 그대로 둔다. 하나라도 실었으면 true. 못 실은 것은 이유를 알린다
+ */
+function stageNoteEdit(host: ScanPara5, origNote: string, newNote: string, ctx: PatchCtx5): boolean {
+  const note = (reason: string): number => {
+    ctx.skipped.push({ reason, before: summarize(origNote), after: summarize(newNote) })
+    return 0
+  }
+  if (!host.notes?.length) return note(NOTE_TEXT_UNSUPPORTED) > 0
+  const plan = planNoteEdits(origNote, newNote, host.notes.map(paras => paras.map(p => p.rawText).join(" ")))
+  if (typeof plan === "string") return note(plan) > 0
+  let staged = 0
+  for (const edit of plan) {
+    const paras = host.notes[edit.index].filter(p => normForMatch(p.rawText) !== "")
+    const one = noteParaEdit(paras.map(p => normForMatch(p.rawText)), edit.before, edit.after)
+    if (!one) { note("각주의 여러 문단에 걸친 수정은 미지원 — 각주 글 수정 미적용"); continue }
+    const para = paras[one.index]
+    staged += stageParaPatch(ctx.scans[para.sectionIndex], para, one.after, note, ctx.keepLineseg, one.before)
+  }
+  return staged > 0
 }
 
 // ── GFM 표 셀 ──
@@ -862,13 +905,18 @@ function patchGfmCells(
         const afterEach = afterParts.map(gfmCellToPlain)
         if (beforeEach.some(p => p === null) || afterEach.some(p => p === null)) { cellSkip("서식/링크/이미지 포함 셀 수정은 미지원 (v1)"); continue }
         if (beforeEach.join("\n") === afterEach.join("\n")) continue
-        const { before, after, noted } = splitCellNote(beforeEach.join("\n"), afterEach.join("\n"), ctx.skipped)
-        if (before === after) continue
         const para = cell.paras[0]
-        if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); continue }
-        if (afterEach.some(l => sanitizeText(l!) !== l)) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); continue }
-        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
-          noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(0, after))
+        // 각주 글을 고친 칸 — 각주 문단에 싣는다. 본문도 함께 고친 칸은 한 건으로 센다
+        let noteDone = 0
+        const { before, after, noted } = splitCellNote(beforeEach.join("\n"), afterEach.join("\n"), ctx.skipped, (o, n) => {
+          if (stageNoteEdit(para, o, n, ctx)) noteDone = 1
+          return true
+        })
+        if (before === after) { applied += noteDone; continue }
+        if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); applied += noteDone; continue }
+        if (afterEach.some(l => sanitizeText(l!) !== l)) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); applied += noteDone; continue }
+        applied += Math.max(noteDone, stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
+          noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(0, after)))
         continue
       }
       if (beforeParts.length !== cell.paras.length || afterParts.length !== cell.paras.length) {
@@ -879,14 +927,18 @@ function patchGfmCells(
         const rawAfter = gfmCellToPlain(afterParts[k])
         if (rawBefore === null || rawAfter === null) { cellSkip("서식/링크/이미지 포함 셀 수정은 미지원 (v1)"); break }
         if (rawBefore === rawAfter) continue
-        const { before, after, noted } = splitCellNote(rawBefore, rawAfter, ctx.skipped)
-        if (before === after) continue
-        if (after.includes("\n")) { cellSkip("셀 내 줄바꿈 추가는 미지원 (v1)"); break }
         const para = cell.paras[k]
-        if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); break }
-        if (sanitizeText(after) !== after) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); break }
-        applied += stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
-          noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(k, after))
+        let noteDone = 0
+        const { before, after, noted } = splitCellNote(rawBefore, rawAfter, ctx.skipped, (o, n) => {
+          if (stageNoteEdit(para, o, n, ctx)) noteDone = 1
+          return true
+        })
+        if (before === after) { applied += noteDone; continue }
+        if (after.includes("\n")) { cellSkip("셀 내 줄바꿈 추가는 미지원 (v1)"); applied += noteDone; break }
+        if (normForMatch(para.rawText) !== normForMatch(before)) { cellSkip("셀 텍스트 불일치 — 소스맵 신뢰 불가"); applied += noteDone; break }
+        if (sanitizeText(after) !== after) { cellSkip("공백 정규화 불안정 텍스트 — 미지원"); applied += noteDone; break }
+        applied += Math.max(noteDone, stageParaPatch(ctx.scans[para.sectionIndex], para, after, cellSkip, ctx.keepLineseg, before, // 바뀐 자리만 — 굵은 조각 등 run 유지
+          noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(k, after)))
       }
     }
   }

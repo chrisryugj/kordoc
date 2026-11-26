@@ -3,7 +3,7 @@
  *
  * 파서가 본문에 각주·미주 참조 부호("1)"·"문1）")를 끼우면서 IR 문단 텍스트가 hp:t 와 달라졌다 —
  * 매핑(resolveParagraphMappings)이 부호를 XML 속성에서 재구성해 되빼고, 패치는 부호를 hp:t 에
- * 쓰지 않는다 (주석 개체 XML 은 그대로). HWP5 패치 경로는 각주 문단을 종전대로 graceful skip 한다.
+ * 쓰지 않는다 (주석 개체 XML 은 그대로). 각주 글을 고친 편집은 각주 본문 문단에 싣는다 (#240, patch-footnote-text.test.ts).
  * escapeGfm 이 리터럴 | · < 를 \| · \< 로 내므로 패치 역변환(unescapeGfm)이 백슬래시를 hp:t 에
  * 남기지 않아야 한다.
  */
@@ -69,12 +69,25 @@ describe("patchHwpx — 각주 참조 부호가 있는 문단", () => {
     assert.ok(!ts.some(t => /액체1\)/.test(t)), JSON.stringify(ts))
   })
 
-  it("주석 글 수정은 미지원 사유로 보고하고 본문만 적용, 주석 XML 은 그대로", async () => {
+  it("주석 글 수정은 주석 본문 문단에, 본문 수정은 본문에 — 주석 개체의 글 밖 XML 은 그대로 (#240)", async () => {
     const { original, markdown } = await makeNoted()
     const edited = markdown.replace("(주: 1) 플라스틱 액체란)", "(주: 1) 바뀐 주석)").replace("같은 원료를", "같은 재료를")
     const res = await patchHwpx(original, edited)
     assert.ok(res.success && res.applied === 1)
-    assert.ok(res.skipped.some(s => s.reason.includes("각주 텍스트 수정은 미지원")), JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    const after = await sectionXml(res.data!)
+    // 주석 개체는 고친 글과 줄 나눔 캐시(고친 문단은 한글이 다시 짜도록 지운다)만 다르다
+    const noLineseg = (xml?: string) => xml?.replace(/<hp:linesegarray>[\s\S]*?<\/hp:linesegarray>/g, "")
+    assert.equal(noLineseg(noteXml(after)), noLineseg(noteXml(await sectionXml(original)))?.replace("플라스틱 액체란", "바뀐 주석"))
+    assert.ok(tTexts(after).some(t => t.includes("같은 재료를")))
+  })
+
+  it("주석 번호를 고친 편집은 사유로 보고하고 본문만 적용, 주석 XML 은 그대로", async () => {
+    const { original, markdown } = await makeNoted()
+    const edited = markdown.replace("(주: 1) 플라스틱 액체란)", "(주: 7) 플라스틱 액체란)").replace("같은 원료를", "같은 재료를")
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success && res.applied === 1)
+    assert.ok(res.skipped.some(s => s.reason.includes("각주 번호 수정")), JSON.stringify(res.skipped))
     const after = await sectionXml(res.data!)
     assert.equal(noteXml(after), noteXml(await sectionXml(original)))
     assert.ok(tTexts(after).some(t => t.includes("같은 재료를")))

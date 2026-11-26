@@ -658,7 +658,11 @@ export function noteMarksOf(footnoteText?: string): string[] {
  * 칸 글 한 문단의 각주 표기("이름2) (주: 2) 각주 글)"). 파서가 각주 글을 문단 끝에 붙이고 각주 자리에 번호를 끼운다(ir-assemble).
  * 둘 다 떼고 본문만 맞댄다. 각주 글을 고치거나 지운 편집은 알리고 본문만 적용한다 (문단 경로와 같다)
  */
-export function splitCellNote(before: string, after: string, skipped: Array<{ reason: string; before?: string; after?: string }>): { before: string; after: string; noted: boolean } {
+export function splitCellNote(
+  before: string, after: string, skipped: Array<{ reason: string; before?: string; after?: string }>,
+  /** 각주 글을 고친 편집을 맡을 곳 — 처리했으면(적용했거나 제 이유로 알렸으면) true. 없거나 false 면 미지원으로 알린다 */
+  editNote?: (origNote: string, newNote: string) => boolean,
+): { before: string; after: string; noted: boolean } {
   const re = /\s*\(주: ([\s\S]*)\)$/
   const bm = before.match(re)
   if (!bm) return { before, after, noted: false }
@@ -667,9 +671,76 @@ export function splitCellNote(before: string, after: string, skipped: Array<{ re
   let body = after
   if (am) {
     body = after.slice(0, am.index).trimEnd()
-    if (normForMatch(am[1]) !== normForMatch(bm[1])) skipped.push({ reason: "각주 텍스트 수정은 미지원 — 본문만 적용", before: bm[1], after: am[1] })
+    if (normForMatch(am[1]) !== normForMatch(bm[1]) && !editNote?.(bm[1], am[1])) skipped.push({ reason: NOTE_TEXT_UNSUPPORTED, before: bm[1], after: am[1] })
   } else skipped.push({ reason: "각주 표기 삭제는 미지원 — 각주 유지, 본문만 적용", before: `(주: ${bm[1]})` })
   const r = removeNoteMarks(body, marks)
   if (r.missing.length) skipped.push({ reason: "각주 참조 부호 삭제는 미지원 — 각주 유지, 본문만 적용", before: r.missing.join(" ") })
   return { before: removeNoteMarks(before.slice(0, bm.index).trimEnd(), marks).text, after: r.text, noted: true }
+}
+
+/** 각주 글을 고친 편집을 각주 문단에 옮기지 못할 때의 이유 (주석 안 표, 원문 각주와 못 맞댄 글) */
+export const NOTE_TEXT_UNSUPPORTED = "각주 텍스트 수정은 미지원 — 본문만 적용"
+
+/**
+ * 각주 글 편집("1) 가; 2) 나" → "1) 가; 2) 다")을 각주마다의 본문 편집으로 가른다. 마크다운의 각주 글은 각주마다 번호 표기로
+ * 시작하는 글을 "; " 로 이은 것이라(파서), 소스맵의 각주 본문(bodies, 각주 순서)을 원문 각주 글에서 차례로 찾아 그 사이 글(번호 표기·
+ * 구분)을 머리로 잡고, 편집 글을 같은 머리로 가른다. 머리가 달라진 편집(번호 고치기, 각주 추가·삭제)은 이유 문자열로 돌려준다
+ */
+export function planNoteEdits(origNote: string, newNote: string, bodies: string[]): Array<{ index: number; before: string; after: string }> | string {
+  const orig = normForMatch(origNote)
+  const heads: string[] = []
+  let pos = 0
+  for (const body of bodies) {
+    const key = normForMatch(body)
+    const at = key ? orig.indexOf(key, pos) : -1
+    if (at < 0) return NOTE_TEXT_UNSUPPORTED
+    heads.push(orig.slice(pos, at))
+    pos = at + key.length
+  }
+  if (!bodies.length || pos !== orig.length || heads.some((h, k) => k > 0 && !h.startsWith("; "))) return NOTE_TEXT_UNSUPPORTED
+  const split = (text: string): string[] | null => {
+    const out: string[] = []
+    let p = 0
+    for (let k = 0; k < heads.length; k++) {
+      if (!text.startsWith(heads[k], p)) return null
+      p += heads[k].length
+      const next = k + 1 < heads.length ? text.indexOf(heads[k + 1], p) : text.length
+      if (next < 0) return null
+      out.push(text.slice(p, next))
+      p = next
+    }
+    return out
+  }
+  const before = split(orig)
+  if (!before || before.some((b, k) => b !== normForMatch(bodies[k]))) return NOTE_TEXT_UNSUPPORTED
+  const after = split(newNote.replace(/\s+/g, " ").trim())
+  if (!after) return "각주 번호 수정·각주 추가·삭제는 미지원 — 각주 글 수정 미적용"
+  const edits: Array<{ index: number; before: string; after: string }> = []
+  for (let k = 0; k < before.length; k++) {
+    if (normForMatch(after[k]) === before[k]) continue
+    if (!after[k].trim()) return "각주 글 비우기는 미지원 — 각주 글 수정 미적용"
+    if (sanitizeText(after[k]) !== after[k]) return "공백 정규화 불안정 텍스트 — 각주 글 수정 미적용"
+    edits.push({ index: k, before: before[k], after: after[k] })
+  }
+  return edits
+}
+
+/**
+ * 각주 본문 편집을 그 각주의 문단 하나에 싣는다. 파서는 각주 문단들을 공백으로 이어 한 글로 내므로, 바뀐 자리(앞뒤 공통 글을 뺀 구간)가
+ * 한 문단 안에 들 때만 그 문단의 새 글을 낸다. 문단 경계에 걸친 편집은 null
+ */
+export function noteParaEdit(paraTexts: string[], before: string, after: string): { index: number; before: string; after: string } | null {
+  if (paraTexts.length === 1) return { index: 0, before, after }
+  if (!paraTexts.length || before !== paraTexts.join(" ")) return null
+  let p = 0
+  while (p < before.length && p < after.length && before[p] === after[p]) p++
+  let s = 0
+  while (s < before.length - p && s < after.length - p && before[before.length - 1 - s] === after[after.length - 1 - s]) s++
+  let off = 0
+  for (let i = 0; i < paraTexts.length; i++) {
+    const end = off + paraTexts[i].length
+    if (off <= p && before.length - s <= end) return { index: i, before: paraTexts[i], after: after.slice(off, after.length - (before.length - end)) }
+    off = end + 1
+  }
+  return null
 }

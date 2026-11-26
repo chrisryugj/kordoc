@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.21](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.21)** · 2026-11-26
+Latest release: **[4.25.22](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.22)** · 2026-11-26
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
+| 4.25.22 | patch now edits footnote text too (HWPX and HWP 5.x, #241, @serithemage), changing only the edited footnote's paragraphs and leaving footnote numbers and objects intact. In HWP 5.x, editing a body paragraph no longer flips how an untouched title line is read (#242) | Footnote text edits: skipped → **applied** · draft-document HWP body edit verification modified 1 → **0** · score 5,465 docs and roundtrip 75 docs, 0 drops · 5,367 tests, 0 failures |
 | 4.25.21 | patch now edits the body of paragraphs and table cells that carry footnotes (HWP 5.x and HWPX, #240), leaving the footnotes intact and reporting footnote-only edits by that reason. OCR reads the per-mille sign ‰ correctly | Body edits in footnoted HWP paragraphs and HWP/HWPX cells: skipped → **applied** · KoOCR 877 pages: 2 up, 0 down · **No** drop on roundtrip, formats, OCR and robustness · 0 test failures |
 | 4.25.20 | PDF image PNG encoding now runs asynchronously, speeding up image-heavy PDFs (#239, @LimePencil). Fixed gazette fund tables with merged header cells being demoted to text boxes, and OCR source lines under a table leaking into its last row | 400 PDFs processed in 560 s → **431 s** (byte-identical output) · KoOCR 877 pages: 11 up, 0 down, tables 0.916 → **0.918** · Gazette fund table CER 0.148 → 0.003 · **No** drop on tables, annex, ODL, text, OCR and robustness · 0 test failures |
 | 4.25.19 | Pages photographed at an angle, whose text lines tilt differently top to bottom, are straightened row by row before OCR (#237, @VerifiedIdiot). Landscape HWP files converted to HWPX no longer open in portrait in Hangul (#238) | Perspective variants, 54 pages: CER persp8 **8.46%**, persp8+2 14.1% · Existing OCR paths unchanged page by page (KoOCR 877 pages, OCR, robustness, odlocr) · Print settings matching Hangul-saved files 109 → **263/264** pairs · 0 test failures |
 | 4.25.18 | A patched HWP 5.x file whose table cell was emptied no longer opens as corrupted in the Hangul viewer (#236). Empty paragraphs are written without a text record, as Hangul does | Emptying a cell in 3 Hangul-saved HWP files: text records holding only the paragraph end 1·1·0 → **0·0·0** · Re-parse OK · 5,336 tests, 0 failures |
-| 4.25.17 | `ocrChars` option (CLI `--ocr-chars [n]`, #235, @VerifiedIdiot) returns per-character confidence, box and alternatives for each OCR line, so you can see which character in a line is uncertain and what could go there | Output is byte-identical with the option off (KoOCR 877-page predictions unchanged) · **No** drop on OCR, robustness, odlocr and tables · 5,335 tests, 0 failures |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
