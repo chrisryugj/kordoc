@@ -130,15 +130,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.24](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.24)** · 2026-11-27
+Latest release: **[4.25.25](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.25)** · 2026-11-28
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
+| 4.25.25 | Phone photos taken at an angle that are also rotated are now rotated first and then flattened, and trapezoid-shaped pages are flattened to the top and bottom edges. Such pages carry both `deskewAngle` and `dewarp` in `ocrLines` (undo the flattening first, then the rotation) | Degraded robustness perspective+rotation CER 0.141 → **0.116** (14 docs up), perspective 0.0843 → **0.0774** (Sokcho budget 0.188 → 0.024) · KoOCR, OCR and ODL OCR unchanged · 0 down |
 | 4.25.24 | OCR now splits touching lines that the detector grouped into one box in dense table cells and reads each line, instead of reading them as one line and dropping it. Table cell headings starting with "#" are no longer escaped | KoOCR 877 pages 4 up, OCR 1 up (header "전문경력관" was empty), degraded robustness 1 up · ODL table TEDS 1 doc 0.993 → **1** · 0 drops |
 | 4.25.23 | Finds check boxes □/[ ] in scanned and photographed forms and outputs whether each is checked as ☑/□ (#243, @VerifiedIdiot). Fixes OCR pages where a page border welded to inner tables swallowed the body text, and even-spacing collapse joining "각 과 및 안전센터". Adds an Upstage DP-Bench baseline benchmark (#245, @LimePencil) | KoOCR 877 pages 0.907 → **0.908** (tables 0.918 → 0.919, gazette notice page CER 0.877 → 0.388), 0 drops · OCR 56 docs 3 up · PDF text 5 up, tables 1 up · 0 drops · DP-Bench NID 96.12, TEDS 99.11 |
 | 4.25.22 | patch now edits footnote text too (HWPX and HWP 5.x, #241, @serithemage), changing only the edited footnote's paragraphs and leaving footnote numbers and objects intact. In HWP 5.x, editing a body paragraph no longer flips how an untouched title line is read (#242) | Footnote text edits: skipped → **applied** · draft-document HWP body edit verification modified 1 → **0** · score 5,465 docs and roundtrip 75 docs, 0 drops · 5,367 tests, 0 failures |
 | 4.25.21 | patch now edits the body of paragraphs and table cells that carry footnotes (HWP 5.x and HWPX, #240), leaving the footnotes intact and reporting footnote-only edits by that reason. OCR reads the per-mille sign ‰ correctly | Body edits in footnoted HWP paragraphs and HWP/HWPX cells: skipped → **applied** · KoOCR 877 pages: 2 up, 0 down · **No** drop on roundtrip, formats, OCR and robustness · 0 test failures |
-| 4.25.20 | PDF image PNG encoding now runs asynchronously, speeding up image-heavy PDFs (#239, @LimePencil). Fixed gazette fund tables with merged header cells being demoted to text boxes, and OCR source lines under a table leaking into its last row | 400 PDFs processed in 560 s → **431 s** (byte-identical output) · KoOCR 877 pages: 11 up, 0 down, tables 0.916 → **0.918** · Gazette fund table CER 0.148 → 0.003 · **No** drop on tables, annex, ODL, text, OCR and robustness · 0 test failures |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
