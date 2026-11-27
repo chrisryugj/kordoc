@@ -41,6 +41,10 @@ const DEWARP_SPREAD_DEG = 0.8
 const DEWARP_MONO_TOL_DEG = 0.3
 /** 편 뒤 투영 뾰족함이 쪽 전체 한 각 회전의 최고 점수보다 이 배수 넘게 높아야 편다 */
 const DEWARP_WIN = 1.02
+/** 원근 펴기 기준점이 직선에서 이만큼(°) 안이면 사다리꼴로 보고 직선을 쪽 끝까지 쓴다 */
+const DEWARP_LINEAR_TOL_DEG = 0.8
+/** 한 직선 펴기를 고르는 투영 뾰족함 비. 구간 직선 펴기보다 이 배수 넘게 뾰족해야 한다 */
+const DEWARP_LINEAR_WIN = 1.12
 
 /** 원근 펴기 — 행 y(래스터 px)의 글줄 기울기 θ(y)(°, deskewAngle 과 같은 뜻)를 잇는 기준점. 펴진 래스터 (x, y) 는 입력 (x, y + (x − cx)·tanθ(y)) */
 export interface SkewField {
@@ -74,6 +78,24 @@ export function estimateSkewField(rgba: Uint8Array, width: number, height: numbe
   const up = as.some((a, i) => i > 0 && a - as[i - 1] > DEWARP_MONO_TOL_DEG), down = as.some((a, i) => i > 0 && as[i - 1] - a > DEWARP_MONO_TOL_DEG)
   if (up && down) return null
   return { cx: (width - 1) / 2, knots }
+}
+
+/**
+ * 기준점에 맞춘 한 직선 θ(y) 를 쪽 위아래 끝까지 쓴 펴기(기준점이 직선에서 DEWARP_LINEAR_TOL_DEG 안일 때). 사다리꼴 원근은 높이에 따라
+ * 기울기가 고르게 변하는데 띠 기준점은 띠 가운데라, 바깥을 끝 띠 각으로 두면 쪽 위아래 끝 줄이 덜 펴졌다(오른쪽 변 8% 줄인 예산서 표:
+ * 실제 위끝 3.2° 를 2.1° 로, 괘선이 기울어 머리 행이 표 밖으로 빠짐). 구간 직선과 견줘 편 투영이 더 뾰족한 쪽을 고른다(deskewPage)
+ */
+export function linearSkewField(f: SkewField, height: number): SkewField | null {
+  const k = f.knots
+  if (k.length < 3) return null
+  const n = k.length, my = k.reduce((s, p) => s + p[0], 0) / n, ma = k.reduce((s, p) => s + p[1], 0) / n
+  const b = k.reduce((s, p) => s + (p[0] - my) * (p[1] - ma), 0) / k.reduce((s, p) => s + (p[0] - my) ** 2, 0)
+  const at = (y: number) => ma + b * (y - my)
+  if (k.some(p => Math.abs(p[1] - at(p[0])) > DEWARP_LINEAR_TOL_DEG)) return null
+  // 기준점 각이 0 을 사이에 두고 위아래로 갈릴 때만(쪽 가운데가 바로 선 사다리꼴). 한쪽 각만 있는 쪽(원근에 회전이 겹침)은 직선이
+  // 끝 줄을 넘치게 펴 표가 흐트러졌다(괴산 예산서·코바코 보도자료 원근+2° 판)
+  if (Math.min(...k.map(p => p[1])) >= 0 || Math.max(...k.map(p => p[1])) <= 0) return null
+  return { cx: f.cx, knots: [[0, at(0)], [height - 1, at(height - 1)]] }
 }
 
 /** 행마다 세로 밀기 — 펴진 (x, y) 는 입력 (x, y + (x − cx)·tanθ(y)) 에서 bilinear(세로), 바깥은 흰색 */
@@ -179,9 +201,16 @@ export function deskewPage(rgba: Uint8Array, width: number, height: number): { r
   const est = estimateSkew(rgba, width, height)
   // 펴기가 쪽 전체 한 각 회전보다 글줄을 뚜렷이 더 곧게 만들 때만 — 고르게 기운 쪽에 그림·도장 띠 하나가 엉뚱한 각을 내거나
   // 클린 렌더의 띠 각이 글꼴 획 탓에 흔들리면 기준점은 나와도 한 각 회전(또는 그대로)이 더 뾰족하다
-  const field = estimateSkewField(rgba, width, height)
-  if (field && dewarpScore(rgba, width, height, field, pageStep(width, height)) > est.score * DEWARP_WIN) {
-    return { rgba: dewarpRows(rgba, width, height, field), angle: 0, dewarp: field }
+  const piecewise = estimateSkewField(rgba, width, height)
+  const step = pageStep(width, height)
+  // 한 직선은 구간 직선보다 투영이 DEWARP_LINEAR_WIN 배 넘게 뾰족할 때만. 차이가 작으면 직선이 끝 줄을 넘치게 펴 표가 흐트러졌다
+  // (토픽 계획 원근 판: 1.09 배인데 CER .046 → .116)
+  const linear = piecewise && linearSkewField(piecewise, height)
+  const pwScore = piecewise ? dewarpScore(rgba, width, height, piecewise, step) : 0
+  const linScore = linear ? dewarpScore(rgba, width, height, linear, step) : 0
+  const best = linear && linScore > pwScore * DEWARP_LINEAR_WIN ? { f: linear, score: linScore } : piecewise ? { f: piecewise, score: pwScore } : null
+  if (best && best.score > est.score * DEWARP_WIN) {
+    return { rgba: dewarpRows(rgba, width, height, best.f), angle: 0, dewarp: best.f }
   }
   if (Math.abs(est.angle) < MIN_APPLY_DEG || est.gain < (est.lines < MIN_LINES ? MIN_GAIN_FEW : MIN_GAIN)) return { rgba, angle: 0 }
   return { rgba: rotateRgba(rgba, width, height, est.angle), angle: est.angle }

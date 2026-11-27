@@ -11,7 +11,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { deskewPage, dewarpRows, estimateSkew, estimateSkewField, fieldAngle, rotateRgba } from "../src/ocr/deskew.js"
+import { deskewPage, dewarpRows, estimateSkew, estimateSkewField, fieldAngle, linearSkewField, rotateRgba } from "../src/ocr/deskew.js"
 import { pageLines } from "../src/ocr/pdf-ocr.js"
 
 const W = 1200, H = 1600
@@ -55,6 +55,16 @@ describe("원근 펴기", () => {
     for (const [y, a] of f!.knots) assert.ok(Math.abs(a - keystone(y)) < 0.5, `y ${y} 의 각 ${a} ≈ ${keystone(y).toFixed(2)}`)
     const after = bandAngles(dewarpRows(rgba, W, H, f!))
     for (const a of after) assert.ok(Math.abs(a) <= 0.4, `편 뒤 띠 각 ${after}`)
+  })
+
+  it("기울기가 높이에 따라 고르게 변하면 한 직선 펴기는 쪽 위아래 끝까지 맞는다(끝 띠 각에 머물지 않는다)", () => {
+    // 오른쪽 변을 8% 줄인 사다리꼴과 같은 꼴. 위 +3.2° 에서 아래 −3.2°
+    const steep = (y: number) => 3.2 - 6.4 * (y / H)
+    const pw = estimateSkewField(page(steep), W, H)
+    assert.ok(pw, "기준점")
+    const f = linearSkewField(pw!, H)
+    assert.ok(f, "한 직선")
+    for (const y of [0, H - 1]) assert.ok(Math.abs(fieldAngle(f!, y) - steep(y)) < 0.5, `y ${y} 의 각 ${fieldAngle(f!, y).toFixed(2)} ≈ ${steep(y).toFixed(2)}`)
   })
 
   it("고르게 기운 쪽·기울지 않은 쪽은 기준점이 없고 deskewPage 는 종전대로 회전(또는 그대로)", () => {
