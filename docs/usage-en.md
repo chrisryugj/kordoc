@@ -287,8 +287,8 @@ await parse("printed-scan.pdf", { ocr: true, ocrRec: "printed" })               
   convert to block `bbox` space (PDF pt, bottom-left origin) with `x / scale` and `pageHeight − (y + h) / scale`. For image input the raster is the image as shown (EXIF orientation applied; shrunk if over 24MP).
   Deskewed pages (`deskewAngle` ≠ 0) use the rotated raster — map back with θ = `deskewAngle` (degrees), (cx, cy) = ((`width`−1)/2, (`height`−1)/2):
   `x₀ = cx + (x−cx)·cosθ − (y−cy)·sinθ`, `y₀ = cy + (x−cx)·sinθ + (y−cy)·cosθ` (apply to the four box corners).
-  Pages whose text-line skew differs top to bottom (perspective, e.g. phone photos) are flattened by shearing each row vertically instead of rotating; they carry `dewarp: { cx, knots }` and `deskewAngle` is 0.
-  `knots` are [row y (px), that row's skew θ (degrees, same sign as `deskewAngle`)] pairs, θ(y) is linear between knots and constant beyond the ends. Map back with `x₀ = x`, `y₀ = y + (x − cx)·tan θ(y)` (apply to the four box corners).
+  Pages whose text-line skew differs top to bottom (perspective, e.g. phone photos) are flattened by shearing each row vertically instead of rotating; they carry `dewarp: { cx, knots }`. A perspective page that is also rotated is first rotated by `deskewAngle` and then flattened, so it carries both.
+  `knots` are [row y (px), that row's skew θ (degrees, same sign as `deskewAngle`)] pairs, θ(y) is linear between knots and constant beyond the ends. Map back with `x₀ = x`, `y₀ = y + (x − cx)·tan θ(y)` (apply to the four box corners). When both are present, undo this flattening first, then apply the rotation formula above.
   Pages turned a further 90° (a landscape table photographed sideways) have no `dewarp`.
 - Table cells found from ruling lines or cell clips (scanned and text-layer PDF) carry their box in `cells[r][c].bbox`, in the same units as the table block's `bbox`;
   in raster pixels that is `x · scale`, `(pageHeight − y − height) · scale`. Always set, no option; Markdown is unchanged.

@@ -96,6 +96,15 @@ describe("원근 펴기", () => {
     assert.ok(d.rgba[o] < 128, "편 래스터의 그 자리도 잉크")
   })
 
+  it("원근에 회전이 겹친 쪽은 먼저 돌리고 남은 원근을 편다(deskewAngle 과 dewarp 둘 다 싣는다)", () => {
+    // 원근 쪽을 4° 더 돌린 꼴. 행마다 세로로 미는 펴기만으로는 4° 넘는 기울기에서 글자 획이 비스듬히 남는다
+    const rgba = rotateRgba(page(keystone), W, H, -4)
+    const d = deskewPage(rgba, W, H)
+    assert.ok(Math.abs(d.angle - 4.75) < 0.5, `회전각 ${d.angle}`)
+    assert.ok(d.dewarp, "남은 원근 펴기")
+    for (const a of bandAngles(d.rgba)) assert.ok(Math.abs(a) <= 0.5, `편 뒤 띠 각 ${bandAngles(d.rgba)}`)
+  })
+
   it("띠 각이 위→아래로 오르내리면 펴지 않는다", () => {
     // 위·아래는 0°, 가운데 띠만 2° — 도장·큰 제목 띠 하나가 튄 꼴
     const zigzag = page(y => (y > H * 0.35 && y < H * 0.65 ? 2 : 0))

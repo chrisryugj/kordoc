@@ -197,23 +197,38 @@ function dewarpScore(rgba: Uint8Array, width: number, height: number, f: SkewFie
  * 필요하면 페이지를 바로 세운 RGBA 를 돌려준다 (같은 크기, 중심 회전, 바깥은 흰색). 글줄 기울기가 위아래로 다르면(원근) 회전 대신
  * 행마다 펴고 dewarp 에 기준점을 싣는다(angle 0). 보정하지 않으면 입력 그대로 + angle 0.
  */
+/** 원근 쪽을 먼저 돌린 뒤 펴는 쪽 각 하한(°) */
+const ROTATE_DEWARP_MIN_DEG = 1.2
+
 export function deskewPage(rgba: Uint8Array, width: number, height: number): { rgba: Uint8Array; angle: number; dewarp?: SkewField } {
   const est = estimateSkew(rgba, width, height)
+  const step = pageStep(width, height)
   // 펴기가 쪽 전체 한 각 회전보다 글줄을 뚜렷이 더 곧게 만들 때만 — 고르게 기운 쪽에 그림·도장 띠 하나가 엉뚱한 각을 내거나
   // 클린 렌더의 띠 각이 글꼴 획 탓에 흔들리면 기준점은 나와도 한 각 회전(또는 그대로)이 더 뾰족하다
+  const direct = pickField(rgba, width, height, step)
+  const rotates = Math.abs(est.angle) >= MIN_APPLY_DEG && est.gain >= (est.lines < MIN_LINES ? MIN_GAIN_FEW : MIN_GAIN)
+  // 원근에 회전이 겹친 쪽(휴대폰 사진)은 행마다 세로로 미는 펴기만으로는 세로 괘선 기울기가 남는다. 먼저 쪽 각만큼 돌리고 남은 원근을 편다
+  // (좌표는 펴기를 먼저, 회전을 나중에 되돌린다)
+  // 쪽 각이 작으면(ROTATE_DEWARP_MIN_DEG 미만) 행 밀기만으로 회전이 거의 보정되고, 먼저 돌리면 오히려 남은 원근 기준점이 흔들렸다(시험 계획 원근 판 CER .046 → .092)
+  const rotated = rotates ? rotateRgba(rgba, width, height, est.angle) : null
+  const after = rotated && Math.abs(est.angle) >= ROTATE_DEWARP_MIN_DEG ? pickField(rotated, width, height, step) : null
+  const useDirect = direct && direct.score > est.score * DEWARP_WIN && (!after || direct.score >= after.score)
+  if (useDirect) return { rgba: dewarpRows(rgba, width, height, direct.f), angle: 0, dewarp: direct.f }
+  if (rotated && after && after.score > est.score * DEWARP_WIN) return { rgba: dewarpRows(rotated, width, height, after.f), angle: est.angle, dewarp: after.f }
+  if (!rotated) return { rgba, angle: 0 }
+  return { rgba: rotated, angle: est.angle }
+}
+
+/** 원근 펴기 고르기: 구간 직선과 한 직선 가운데 편 투영이 더 뾰족한 쪽(한 직선은 DEWARP_LINEAR_WIN 배 넘게 뾰족할 때만) */
+function pickField(rgba: Uint8Array, width: number, height: number, step: number): { f: SkewField; score: number } | null {
   const piecewise = estimateSkewField(rgba, width, height)
-  const step = pageStep(width, height)
+  if (!piecewise) return null
   // 한 직선은 구간 직선보다 투영이 DEWARP_LINEAR_WIN 배 넘게 뾰족할 때만. 차이가 작으면 직선이 끝 줄을 넘치게 펴 표가 흐트러졌다
   // (토픽 계획 원근 판: 1.09 배인데 CER .046 → .116)
-  const linear = piecewise && linearSkewField(piecewise, height)
-  const pwScore = piecewise ? dewarpScore(rgba, width, height, piecewise, step) : 0
+  const linear = linearSkewField(piecewise, height)
+  const pwScore = dewarpScore(rgba, width, height, piecewise, step)
   const linScore = linear ? dewarpScore(rgba, width, height, linear, step) : 0
-  const best = linear && linScore > pwScore * DEWARP_LINEAR_WIN ? { f: linear, score: linScore } : piecewise ? { f: piecewise, score: pwScore } : null
-  if (best && best.score > est.score * DEWARP_WIN) {
-    return { rgba: dewarpRows(rgba, width, height, best.f), angle: 0, dewarp: best.f }
-  }
-  if (Math.abs(est.angle) < MIN_APPLY_DEG || est.gain < (est.lines < MIN_LINES ? MIN_GAIN_FEW : MIN_GAIN)) return { rgba, angle: 0 }
-  return { rgba: rotateRgba(rgba, width, height, est.angle), angle: est.angle }
+  return linear && linScore > pwScore * DEWARP_LINEAR_WIN ? { f: linear, score: linScore } : { f: piecewise, score: pwScore }
 }
 
 /**

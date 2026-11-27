@@ -69,7 +69,7 @@ class OcrPageLines:
     width: int
     height: int
     scale: float
-    #: 기울기 보정으로 래스터를 돌린 각(°). 좌표는 돌린 래스터 기준 — 행마다 펴서 보정한 페이지는 0 이고 ``ParseResult.ocr_dewarp`` 를 본다
+    #: 기울기 보정으로 래스터를 돌린 각(°). 좌표는 돌린 래스터 기준. 행마다 편 페이지는 ``ParseResult.ocr_dewarp`` 도 본다(둘 다 있으면 펴기를 먼저, 회전을 나중에 되돌린다)
     deskew_angle: float
     #: 텍스트층이 있는 쪽이라 그림 영역만 읽었다
     regions_only: bool
@@ -118,7 +118,7 @@ class OcrChar:
 class OcrDewarp:
     """글줄 기울기가 위아래로 달라(휴대폰 사진의 원근 등) 회전 대신 행마다 세로로 밀어 편 페이지(``ocr_dewarp``). 좌표는 편 래스터 기준이다.
     ``knots`` 는 (행 y(px), 그 행의 기울기 θ(°, ``deskew_angle`` 과 같은 뜻)) 이고 θ(y) 는 기준점 사이를 직선으로 잇는다(바깥은 끝 기준점 각).
-    입력 좌표로는 ``x₀ = x``, ``y₀ = y + (x − cx)·tan θ(y)``."""
+    입력 좌표로는 ``x₀ = x``, ``y₀ = y + (x − cx)·tan θ(y)``. ``deskew_angle`` 이 0 이 아니면 그 뒤에 회전을 되돌린다."""
 
     cx: float
     knots: tuple[tuple[float, float], ...]
