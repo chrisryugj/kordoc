@@ -63,7 +63,7 @@ program
   .option("--image-format <format>", "그림 형식: png | webp — 지정하면 모든 그림을 그 형식으로 (webp 는 무손실, optional dependency sharp 필요). 지정하지 않으면 PDF 는 PNG, 다른 형식은 원본 그대로")
   .option("--image-placement <placement>", "PDF 그림 블록 자리: page-end (기본, 쪽 끝) | flow (쪽 위 자리로 글 사이, 그림 블록에 bbox)")
   .option("--drop-blank-images", "거의 한 색인 그림(빈 판·단색 띠·옅은 그러데이션)을 뺀다")
-  .option("--charts", "차트 값은 표로, SmartArt 는 목록으로 (HWP·HWPX·DOCX·PPTX·XLSX)")
+  .option("--charts", "차트 값은 표로, SmartArt 는 목록으로 (HWP·HWPX·DOCX·PPTX·XLSX), HWP·HWPX 안 엑셀 개체도 표로")
   .option("--qr-codes", "그림 속 QR 코드 값을 그림 블록 qr 과 그림 자리 다음 줄에 (optional dependency zxing-wasm 필요)")
   .option("--silent", "진행 메시지 숨기기")
   .action(async (files: string[], opts) => {

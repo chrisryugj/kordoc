@@ -139,6 +139,8 @@ export interface SectionShared {
   memos: { list: MemoNote[]; seen: WeakSet<Element> }
   /** 차트 파트(chartIDRef, 예: "Chart/chart1.xml") → 표 블록 — 파서가 섹션을 걷기 전에 읽어 둔다(탐색기는 zip 에 닿지 않는다) */
   charts?: Map<string, IRBlock[]>
+  /** OLE 개체(binaryItemIDRef, 예: "ole1") → 차트·엑셀 개체 표 블록 — 차트와 같이 파서가 미리 읽어 둔다 */
+  oles?: Map<string, IRBlock[]>
 }
 
 export function createSectionShared(): SectionShared {

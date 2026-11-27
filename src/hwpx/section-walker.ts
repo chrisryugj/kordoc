@@ -663,12 +663,14 @@ function walkParagraphChildren(
         } else {
           extractDrawTextBlocks(el, blocks, ctx)
         }
-      } else if (localTag === "switch") {
-        // 대체 표현 묶음의 차트(hp:case > hp:chart) — 미리 읽어 둔 차트 표를 그 자리에(셀 안이면 칸 블록으로).
-        // 종전에는 switch 안으로 들어가지 않아 차트 글이 통째로 빠졌다
-        const branch = findChildByLocalName(el, "case") ?? findChildByLocalName(el, "default")
-        const charts = branch ? [...branch.getElementsByTagName("*")].filter(c => (c.localName ?? c.tagName.replace(/^[^:]+:/, "")) === "chart") : []
-        const sink = charts.flatMap(c => (ctx.shared.charts?.get(c.getAttribute("chartIDRef") ?? "") ?? []).map(b => ({ ...b, pageNumber: ctx.page })))
+      } else if (localTag === "switch" || localTag === "ole") {
+        // 차트(hp:switch > hp:case > hp:chart)·OLE 개체(hp:ole — 엑셀 개체, 차트 갈래가 없는 차트) — 미리 읽어 둔 표를 그 자리에
+        // (셀 안이면 칸 블록으로). 종전에는 둘 다 건너뛰어 차트 값·엑셀 표가 통째로 빠졌다. switch 는 한컴처럼 갈래 하나만 본다
+        const branch = localTag === "ole" ? el : findChildByLocalName(el, "case") ?? findChildByLocalName(el, "default")
+        const objs = !branch ? [] : localTag === "ole" ? [el] : [...branch.getElementsByTagName("*")].filter(c => /^(chart|ole)$/.test(c.localName ?? c.tagName.replace(/^[^:]+:/, "")))
+        const sink = objs.flatMap(c => ((c.localName ?? c.tagName.replace(/^[^:]+:/, "")) === "chart"
+          ? ctx.shared.charts?.get(c.getAttribute("chartIDRef") ?? "") : ctx.shared.oles?.get(c.getAttribute("binaryItemIDRef") ?? "")) ?? [])
+          .map(b => ({ ...b, pageNumber: ctx.page }))
         if (sink.length) {
           if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, sink)
           else blocks.push(...sink)

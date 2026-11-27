@@ -382,6 +382,7 @@ export interface ParseOptions {
    *  모든 형식의 그림(HWP·HWPX·HWP3·DOCX·PPTX·PDF), `images: false` 여도 읽는다. optional dependency `zxing-wasm` 이 필요하다 */
   qrCodes?: boolean
   /** 차트 값을 표로("차트: 제목 (종류)" 캡션, 항목 열 + 계열 열), SmartArt 를 중첩 목록으로 낸다. HWP·HWPX·DOCX·PPTX·XLSX.
+   *  HWP·HWPX 안 엑셀 개체(OLE, BIFF8 통합 문서)도 시트 표로("엑셀 개체: 시트 이름" 캡션).
    *  기본 false — 끄면 출력 불변(차트는 본문 글이 아니라 별도 파트의 그림 자료다). `layoutTables: "keep"` 에서는 내지 않는다 */
   charts?: boolean
   /**

@@ -32,6 +32,7 @@ import { extractHwpxMetadata } from "./metadata.js"
 import { extractFromBrokenZip, resolveSectionPaths, readKordocLayout } from "./zip-sections.js"
 import { locateMemoBlocks } from "../memo-notes.js"
 import { parseChartXml, chartBlock } from "../shared/chart-xml.js"
+import { oleObjectBlocks } from "../hwp5/ole-chart.js"
 
 export { extractHwpxMetadataOnly } from "./metadata.js"
 
@@ -52,6 +53,20 @@ function assignSectionPage(block: IRBlock, sectionNum: number): void {
 }
 
 // stripDtd는 utils.js에서 import
+
+/** BinData/*.ole(4바이트 길이 머리 + 복합 문서) → 차트·엑셀 개체 표 블록. 본문 hp:ole binaryItemIDRef(확장자 뺀 이름)가 가리킨다 */
+async function loadHwpxOles(zip: JSZip): Promise<Map<string, IRBlock[]>> {
+  const out = new Map<string, IRBlock[]>()
+  for (const name of Object.keys(zip.files).filter(n => /^BinData\/[^/]+\.ole$/i.test(n))) {
+    try {
+      const blocks = oleObjectBlocks(Buffer.from(await readZipEntry(zip.file(name)!, "uint8array")))
+      if (blocks.length) out.set(name.slice(8).replace(/\.ole$/i, ""), blocks)
+    } catch {
+      // 깨진 개체는 건너뛴다
+    }
+  }
+  return out
+}
 
 /** Chart/chartN.xml(OOXML chartSpace) → 표 블록. 본문 hp:chart chartIDRef 가 이 경로를 가리킨다 */
 async function loadHwpxCharts(zip: JSZip): Promise<Map<string, IRBlock[]>> {
@@ -134,8 +149,11 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   shared.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
   shared.keepEmptyParagraphs = options?.keepEmptyParagraphs
   shared.includeFieldPlaceholders = options?.includeFieldPlaceholders
-  // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep", 패치·세션·양식)는 내지 않는다 — 표 서수가 hp:tbl 과 어긋난다
-  if (options?.charts && options.layoutTables !== "keep") shared.charts = await loadHwpxCharts(zip)
+  // charts 옵션을 켰을 때만(차트·엑셀 개체). 원본 표 구조 모드(layoutTables "keep", 패치·세션·양식)는 내지 않는다 — 표 서수가 hp:tbl 과 어긋난다
+  if (options?.charts && options.layoutTables !== "keep") {
+    shared.charts = await loadHwpxCharts(zip)
+    shared.oles = await loadHwpxOles(zip)
+  }
   // 섹션 근사 폴백 시 블록 pageNumber를 섹션 번호로 되돌리기 위한 구간 기록
   const sectionRanges: Array<{ sectionNum: number; start: number; end: number }> = []
   let parsedSections = 0

@@ -19,6 +19,7 @@ import type {
   ParseWarning,
 } from "../types.js"
 import { KordocError } from "../utils.js"
+import { parsePageRange } from "../page-range.js"
 import { blocksToMarkdown } from "../table/builder.js"
 import { parseLenientCfb } from "../hwp5/cfb-lenient.js"
 import {
@@ -251,11 +252,16 @@ function rawSheetToBlocks(
 
 // ─── 메인 ─────────────────────────────────────────
 
-export async function parseXlsDocument(
-  buffer: ArrayBuffer,
+export async function parseXlsDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
+  return parseXlsDocumentSync(buffer, options)
+}
+
+/** 동기판 — HWP 문서 안 엑셀 개체(OLE)처럼 동기 파서 안에서 읽을 때 */
+export function parseXlsDocumentSync(
+  buffer: ArrayBuffer | Uint8Array,
   options?: ParseOptions,
-): Promise<InternalParseResult> {
-  const buf = Buffer.from(buffer)
+): InternalParseResult {
+  const buf = buffer instanceof Uint8Array ? Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength) : Buffer.from(buffer)
 
   // 1. OLE2 컨테이너 → Workbook 스트림
   let cfb
@@ -312,7 +318,6 @@ export async function parseXlsDocument(
   const totalSheets = Math.min(globals.sheets.length, MAX_SHEETS)
   let pageFilter: Set<number> | null = null
   if (options?.pages) {
-    const { parsePageRange } = await import("../page-range.js")
     pageFilter = parsePageRange(options.pages, totalSheets)
   }
 
