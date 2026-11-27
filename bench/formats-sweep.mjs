@@ -15,7 +15,7 @@
 //   pptx : presentation.xml sldIdLst 순서의 슬라이드 a:p 문단(a:r·a:fld 의 a:t, a:br 은 공백) + 노트 슬라이드 본문 개체 틀 문단.
 //          그룹은 펼치고 mc:Fallback 스킵(Choice 이중 렌더), 쪽 번호·날짜·바닥글·머리글·슬라이드 그림 개체 틀은 비대상(내용 아님),
 //          병합이 덮은 표 칸(hMerge·vMerge)의 숨은 글 제외(xlsx·xls 와 같은 정책). 차트·SmartArt 글은 별도 파트라 모수 밖
-//          (파서가 UNSUPPORTED_ELEMENT 경고 — 분량은 행마다 unreadChars 로 보고)
+//          (분량은 행마다 unreadChars 로 보고, 재현율은 bench/chart-recall.mjs 가 따로 잰다)
 //
 // 큰 시트(유닛 > UNIT_CAP): 정렬(alignUnits)은 유닛 수에 초선형이라 25만+ 셀에서 수십 분 걸린다. 그런 시트는
 // 셀 단위 multiset 대조로 따로 잰다(bigStr·bigNum — 칸 글이 한 글자라도 다르면 그 칸 전부 miss, 정렬보다 엄격).

@@ -663,6 +663,16 @@ function walkParagraphChildren(
         } else {
           extractDrawTextBlocks(el, blocks, ctx)
         }
+      } else if (localTag === "switch") {
+        // 대체 표현 묶음의 차트(hp:case > hp:chart) — 미리 읽어 둔 차트 표를 그 자리에(셀 안이면 칸 블록으로).
+        // 종전에는 switch 안으로 들어가지 않아 차트 글이 통째로 빠졌다
+        const branch = findChildByLocalName(el, "case") ?? findChildByLocalName(el, "default")
+        const charts = branch ? [...branch.getElementsByTagName("*")].filter(c => (c.localName ?? c.tagName.replace(/^[^:]+:/, "")) === "chart") : []
+        const sink = charts.flatMap(c => (ctx.shared.charts?.get(c.getAttribute("chartIDRef") ?? "") ?? []).map(b => ({ ...b, pageNumber: ctx.page })))
+        if (sink.length) {
+          if (tableCtx?.cell) mergeBlocksIntoCell(tableCtx.cell, sink)
+          else blocks.push(...sink)
+        }
       } else if (localTag === "r" || localTag === "run" || localTag === "ctrl") {
         // <hp:run>, <hp:ctrl> 내부에 테이블/캡션이 포함될 수 있음 — 재귀
         walkChildren(el, d + 1, inShape)

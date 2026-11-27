@@ -31,6 +31,7 @@ import { extractImagesFromZip } from "./images.js"
 import { extractHwpxMetadata } from "./metadata.js"
 import { extractFromBrokenZip, resolveSectionPaths, readKordocLayout } from "./zip-sections.js"
 import { locateMemoBlocks } from "../memo-notes.js"
+import { parseChartXml, chartBlock } from "../shared/chart-xml.js"
 
 export { extractHwpxMetadataOnly } from "./metadata.js"
 
@@ -51,6 +52,20 @@ function assignSectionPage(block: IRBlock, sectionNum: number): void {
 }
 
 // stripDtd는 utils.js에서 import
+
+/** Chart/chartN.xml(OOXML chartSpace) → 표 블록. 본문 hp:chart chartIDRef 가 이 경로를 가리킨다 */
+async function loadHwpxCharts(zip: JSZip): Promise<Map<string, IRBlock[]>> {
+  const out = new Map<string, IRBlock[]>()
+  for (const name of Object.keys(zip.files).filter(n => /^Chart\/chart\d*\.xml$/i.test(n))) {
+    try {
+      const chart = parseChartXml(await readZipEntry(zip.file(name)!, "text"))
+      if (chart) out.set(name, [chartBlock(chart)])
+    } catch {
+      // 깨진 차트 파트는 건너뛴다 — 본문 파싱을 막지 않는다
+    }
+  }
+  return out
+}
 
 export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOptions): Promise<InternalParseResult> {
   // Best-effort 사전 검증 — CD 선언 크기 기반 (위조 가능, 실제 방어는 per-file 누적 체크)
@@ -119,6 +134,8 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   shared.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
   shared.keepEmptyParagraphs = options?.keepEmptyParagraphs
   shared.includeFieldPlaceholders = options?.includeFieldPlaceholders
+  // 원본 표 구조 모드(layoutTables "keep", 패치·세션·양식)는 차트를 표로 내지 않는다 — 표 서수가 hp:tbl 과 어긋난다
+  if (options?.layoutTables !== "keep") shared.charts = await loadHwpxCharts(zip)
   // 섹션 근사 폴백 시 블록 pageNumber를 섹션 번호로 되돌리기 위한 구간 기록
   const sectionRanges: Array<{ sectionNum: number; start: number; end: number }> = []
   let parsedSections = 0

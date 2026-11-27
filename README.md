@@ -95,7 +95,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 주요 기능
 
-- **읽기**: 문서 → Markdown·IR·쪽별 본문·RAG 청크, 로컬 OCR(손글씨 인식 포함), 그림 속 QR 값(`--qr-codes`), 그림 형식 통일(`--image-format png|webp`)
+- **읽기**: 문서 → Markdown·IR·쪽별 본문·RAG 청크, 로컬 OCR(손글씨 인식 포함), 그림 속 QR 값(`--qr-codes`), 그림 형식 통일(`--image-format png|webp`), 차트 값은 표로·SmartArt는 목록으로(HWP·HWPX·DOCX·PPTX·XLSX)
 - **비교·편집**: 블록·셀 단위 비교, HWPX·HWP 서식 보존 패치, 견본 서식 그대로 새 내용 쓰기
 - **작성**: Markdown → HWPX·HWP(HWP는 `npm install @rhwp/core` 뒤 `-o 문서.hwp`), 공문서 프리셋·부서 서식 견본(`--template`)·보고서 PDF 모양 따르기(`--layout`), 목차 쪽 번호, 표·수식·차트
 - **변환**: HWP 5.x → HWPX 서식 그대로(글꼴·문단 모양·표·그림·도형·수식·머리말·각주·차트, 배포용·변경 추적 문서 포함). PDF·DOCX 등은 `-o 문서.hwpx`로 읽은 내용을 HWPX로

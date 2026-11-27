@@ -134,6 +134,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/pdf/glyph-names.ts` | ToUnicode 없이 /Differences 글리프 이름만 둔 글꼴(옛 숫자 `seven.oldstyle`·작은 대문자 `c.sc`·합자 `f_l`)을 AGL 규칙으로 글자 복원 — 제어 문자로 나오는 코드를 되살린다(ToUnicode 가 U+FFFD 로 매긴 코드 포함). TeX CM 수식 글꼴을 라틴-1 이름으로 다시 매긴 하위 글꼴(TeXCMMathsSymbols thorn=+·onequarter==·eth=(·C0=−, Italic 0x3D=/)은 원래 기호로. 글꼴의 /Differences 는 `hayroFontInfo` 가 준다. `restoreNamedGlyphs` 는 normalizeItems 전에 연산자 목록 showText 글리프(originalCharCode)를 글꼴마다 텍스트 아이템 글자에 맞춰 짚어, 공백·빈 글로 사라지는 코드(9 `nine.oldstyle`·129 `F.a`, ODL 005·006)와 ToUnicode 가 소문자로 매긴 작은 대문자(`h.smcp`, ODL 001~015)를 되살린다 — 맞춤이 어긋난 글꼴은 손대지 않음(코퍼스 PDF 1,911건 중 대상 글꼴 2건·출력 변화 0) |
 | `src/xlsx/parser.ts` | XLSX(ZIP+XML) 파싱, 공유 문자열/병합 셀 처리 |
 | `src/xlsx/sheet-blocks.ts` | XLSX·XLS 공용 시트 → 표: 글 있는 행·열만 펼침(빈 행·열 제외·병합은 남은 행·열로 축소, #91), 열 수에 따른 칸 예산·절단 경고 |
+| `src/xlsx/sheet-charts.ts` | XLSX 시트의 차트·SmartArt: 시트 → 그리기 파트 → 차트·데이터 파트 관계를 따라 시트 표 뒤에 표·목록 블록 |
 | `src/docx/parser.ts` | DOCX(ZIP+XML) 파싱, 스타일/번호매기기/각주 처리 |
 | `src/pptx/parser.ts` | PPTX(ZIP+XML) 파싱 — sldIdLst 발표 순서, 슬라이드 = 쪽(pageNumber·pageMode layout), 개체 틀별 헤딩/목록/문단, a:tbl 병합(hMerge·vMerge 연속 칸 제외 + colAddr/rowAddr 직접 배치), 발표자 노트 quote 문단, 숨긴 슬라이드 제외 |
 | `src/table/builder.ts` | 2-pass 그리드 테이블 빌더 + 마크다운 변환, `escapeHtmlCellText`로 HTML 칸 원문 이스케이프. 캡션 안 표(`captionBlocks`)는 `captionToMarkdown`/`captionToHtml` 이 표로 낸다 |
@@ -171,6 +172,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/shared/generate-images.ts` | CLI·MCP 생성 이미지 로더 `loadGenerationImages` — 파일마다 실경로를 이미지 폴더(MCP 는 `KORDOC_ROOT` 도) 안인지 보고 `O_NOFOLLOW`·일반 파일만 연다. 한글·URL 인코딩·하위 폴더 이름 지원 (#101) |
 | `src/shared/symbol-fonts.ts` | Wingdings 코드표 SSOT: PDF 심볼 폰트 글리프와 HWP/HWPX 한컴 심볼 PUA(U+F021~F0FF) 공용 |
 | `src/shared/model-bundle.ts` | OCR·수식 모델 오프라인 사이드로드 (`kordoc models --export/--import`) — SHA 스펙이 SSOT, manifest 없음 |
+| `src/shared/chart-xml.ts` | DrawingML 차트(c:chartSpace) → 캡션 달린 표(항목 열 + 계열 열, 값 캐시 기준), SmartArt 데이터 → 중첩 목록. PPTX·DOCX·XLSX·HWPX(`Chart/chartN.xml`)·HWP(OLE 안 OOXML 차트, `hwp5/ole-chart.ts`) 공용. 재현율은 `bench/chart-recall.mjs` |
 | `src/page-range.ts` | 페이지 범위 문자열 파싱 (`"1-3,5"` → `Set<number>`) |
 | `src/page-markdown.ts` | 페이지별 마크다운 사영 (#68) — `IRBlock.pageNumber` 로 갈라 페이지마다 `blocksToMarkdown()`. `parse()` 가 `ParseSuccess.pages` 로 붙인다 |
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |

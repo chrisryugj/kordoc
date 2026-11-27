@@ -16,6 +16,7 @@ import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
 import { escapeLiteralTags } from "../script-tags.js"
 import { MAX_SHEET_COLS, sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
+import { sheetChartBlocks } from "./sheet-charts.js"
 
 // ─── 상수 ────────────────────────────────────────────
 
@@ -464,6 +465,8 @@ export async function parseXlsxDocument(
       const { rows, merges, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904, warnings, sheetPath)
       const sheetBlocks = sheetToBlocks(sheet.name, rows, maxCol, merges, i, warnings, options?.keepTrailingEmptyCols)
       blocks.push(...sheetBlocks)
+      // 원본 표 구조 모드(layoutTables "keep")는 차트를 표로 내지 않는다 — 표 서수가 시트 표와 어긋난다
+      if (options?.layoutTables !== "keep") blocks.push(...await sheetChartBlocks(zip, sheetPath, i + 1))
     } catch (err) {
       warnings.push({
         page: i + 1,

@@ -21,6 +21,7 @@ export const TAG_MEMO_LIST = 0x005d
 export const TAG_FOOTNOTE_SHAPE = 0x004a           // HWPTAG_BEGIN + 58 — 구역 정의의 각주·미주 모양
 export const TAG_TABLE = 0x004d
 export const TAG_SHAPE_COMPONENT = 0x004c           // HWPTAG_BEGIN + 60
+export const TAG_SHAPE_COMPONENT_OLE = 0x0054       // HWPTAG_BEGIN + 68
 export const TAG_SHAPE_COMPONENT_PICTURE = 0x0055   // HWPTAG_BEGIN + 69
 export const TAG_SHAPE_COMPONENT_CONTAINER = 0x0056 // HWPTAG_BEGIN + 70
 export const TAG_CTRL_DATA = 0x0057                 // HWPTAG_BEGIN + 71

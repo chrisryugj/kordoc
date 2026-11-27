@@ -137,6 +137,8 @@ export interface SectionShared {
   tocTexts: Set<string>
   /** 메모(fieldBegin type=MEMO) — 문서 순서 (#180). seen 은 같은 문단을 두 번 읽을 때 겹치지 않게 */
   memos: { list: MemoNote[]; seen: WeakSet<Element> }
+  /** 차트 파트(chartIDRef, 예: "Chart/chart1.xml") → 표 블록 — 파서가 섹션을 걷기 전에 읽어 둔다(탐색기는 zip 에 닿지 않는다) */
+  charts?: Map<string, IRBlock[]>
 }
 
 export function createSectionShared(): SectionShared {

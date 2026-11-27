@@ -19,6 +19,8 @@ import { parsePageRange } from "../page-range.js"
 import { detectHwp5SectionPages, type Hwp5SectionPageDetect } from "./page-boundary.js"
 import { indexHwp5Tables } from "./table-ids.js"
 import { parseSection, createHwp5DocState } from "./body.js"
+import { oleChartXml } from "./ole-chart.js"
+import { parseChartXml, chartBlock } from "../shared/chart-xml.js"
 
 export { parseSection, createHwp5DocState, hasRealStrike, hasRealUnderline, type Hwp5DocState } from "./body.js"
 
@@ -218,6 +220,19 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
   const doc = createHwp5DocState()
   doc.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
   doc.includeFieldPlaceholders = options?.includeFieldPlaceholders
+  // 차트 개체: BinData 는 차트를 처음 만날 때 한 번만 읽는다
+  let bins: Map<number, { data: Buffer; name: string }> | undefined
+  const charts = new Map<number, IRBlock[]>()
+  // 원본 표 구조 모드(layoutTables "keep", 패치·양식)는 차트를 표로 내지 않는다 — 표 서수가 원본 표와 어긋난다
+  if (options?.layoutTables !== "keep") doc.chartOf = storageId => {
+    if (!charts.has(storageId)) {
+      bins ??= readHwp5BinData(c)
+      const xml = oleChartXml(bins.get(storageId)?.data)
+      const chart = xml ? parseChartXml(xml.toString("utf8")) : null
+      charts.set(storageId, chart ? [chartBlock(chart)] : [])
+    }
+    return charts.get(storageId)!
+  }
   let parsedSections = 0
   let pageBase = 0
   for (let si = 0; si < sections.length; si++) {

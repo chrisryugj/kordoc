@@ -304,7 +304,7 @@ export interface ParseOptions {
   keepTrailingEmptyCols?: boolean
   /** 테두리가 안 보이는 틀 표 처리 (v4.17.0). 기본 `"visual"`: 보이는 대로 — 선이 없는 틀은 글로 풀고 선이 보이는 부분만 표로,
    *  칸으로 조립한 분수는 `$\frac{…}{…}$` 수식으로. `"keep"`: 종전대로 원본 표 구조 그대로(왕복 패치·양식 채우기처럼
-   *  원본 표 서수가 필요한 경로). HWPX·HWP5·PDF */
+   *  원본 표 서수가 필요한 경로). HWPX·HWP5·PDF. `"keep"` 에서는 차트를 표로 내지 않는다(원본 표가 아니라 서수가 밀린다, HWP·HWPX·DOCX·PPTX·XLSX) */
   layoutTables?: "visual" | "keep"
   /** 구조 파싱 뒤 표를 의미표/레이아웃/불확실로 분류해 `IRTable.classification` 에 붙인다 (#76).
    *  기본 false — 기본 parse 출력 불변. 중첩표·셀 blocks·캡션 blocks 까지 재귀, 원문 순서는 바꾸지 않는다. */

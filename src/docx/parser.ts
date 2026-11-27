@@ -19,6 +19,7 @@ import { blocksToMarkdown, buildTable, escapeLiteralDollar } from "../table/buil
 import { ommlElementToLatex, isDisplayMath } from "./equation.js"
 import { detectImageMime } from "../hwp5/images.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
+import { parseChartXml, chartBlock, smartArtBlocks } from "../shared/chart-xml.js"
 import { parsePageRange } from "../page-range.js"
 
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
@@ -899,6 +900,43 @@ function emitParagraphImages(
   }
 }
 
+/**
+ * 본문 관계 중 차트(word/charts/chartN.xml)·SmartArt 데이터(word/diagrams/dataN.xml) 파트를 읽어 관계 id → 블록.
+ * 종전에는 w:drawing 의 차트·SmartArt 글을 버렸다
+ */
+async function loadGraphicParts(zip: JSZip, rels: Map<string, string>): Promise<Map<string, IRBlock[]>> {
+  const out = new Map<string, IRBlock[]>()
+  for (const [id, target] of rels) {
+    const isChart = /(^|\/)charts\/chart\d*\.xml$/i.test(target), isDiagram = /(^|\/)diagrams\/data\d*\.xml$/i.test(target)
+    if (!isChart && !isDiagram) continue
+    const file = zip.file(target.startsWith("/") ? target.slice(1) : `word/${target.replace(/^\.\//, "")}`)
+    if (!file) continue
+    try {
+      const xml = await readZipEntry(file, "text")
+      if (isDiagram) { const b = smartArtBlocks(xml); if (b.length) out.set(id, b) }
+      else { const c = parseChartXml(xml); if (c) out.set(id, [chartBlock(c)]) }
+    } catch {
+      // 깨진 차트 파트는 건너뛴다 — 본문 파싱을 막지 않는다
+    }
+  }
+  return out
+}
+
+/** 문단 안 a:graphicData 의 차트(c:chart r:id)·SmartArt(dgm:relIds r:dm)를 문서 순서대로. mc:Fallback 사본은 건너뛴다 */
+function emitParagraphGraphics(p: Element, parts: Map<string, IRBlock[]>, out: IRBlock[], depth = 0): void {
+  if (depth > 40) return
+  for (const el of effectiveChildElements(p)) {
+    if (matchesLocal(el, "Fallback") || matchesLocal(el, "txbxContent")) continue
+    if (matchesLocal(el, "chart") || matchesLocal(el, "relIds")) {
+      const id = getAttr(el, matchesLocal(el, "chart") ? "id" : "dm")
+      const blocks = id ? parts.get(id) : undefined
+      if (blocks) out.push(...blocks.map(b => ({ ...b })))
+      continue
+    }
+    emitParagraphGraphics(el, parts, out, depth + 1)
+  }
+}
+
 // ─── 메인 파서 ─────────────────────────────────────────
 
 // ─── 머리글·바닥글 ──────────────────────────────────────
@@ -1048,6 +1086,9 @@ export async function parseDocxDocument(
   const pageBreaks = topLevel.map(el => countRenderedPageBreaks(el))
   const breakCount = pageBreaks.reduce((n, b) => n + b.leading + b.trailing, 0)
   const rendered = breakCount > 0 && breakCount + 1 === await readSavedPageCount(zip)
+  // 차트·SmartArt 관계 id → 표·목록 블록 (본문 문단의 a:graphicData 가 가리킨다)
+  // 원본 표 구조 모드(layoutTables "keep")는 차트를 표로 내지 않는다 — 표 서수가 원본 표와 어긋난다
+  const graphicParts = options?.layoutTables === "keep" ? new Map<string, IRBlock[]>() : await loadGraphicParts(zip, rels)
   // 그림 관계 id → 쪽. 본문 워크에서 링크되지 않아 문서 끝에 붙는 그림(표 칸 안 등)에 쓴다
   const imagePages = new Map<string, number>()
   let page = 1
@@ -1071,6 +1112,7 @@ export async function parseDocxDocument(
       if (block) blocks.push(block)
       // 문단 내 이미지를 문서 순서대로 본문에 삽입 (저장만 되고 링크 누락되던 버그 수정)
       if (imageMap.size > 0) emitParagraphImages(el, imageMap, linkedImages, blocks, pageOf)
+      if (graphicParts.size > 0) emitParagraphGraphics(el, graphicParts, blocks)
       // 텍스트박스(도형 안 글) 문단 — 앵커 문단 뒤에 별도 블록으로
       for (const tp of collectTextboxParagraphs(el)) {
         const tb = parseParagraph(tp, styles, numbering, footnotes, rels)

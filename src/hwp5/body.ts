@@ -4,7 +4,7 @@ import { tidyScriptTags, type ScriptKind } from "../script-tags.js"
 import {
   extractEquationText, createParaTextState, appendParaText, LITERAL_DOLLAR_MARK, LITERAL_LT_MARK, resolveLiteralLt, TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE,
   TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE, TAG_EQEDIT, TAG_SHAPE_COMPONENT, TAG_SHAPE_COMPONENT_CONTAINER,
-  TAG_SHAPE_COMPONENT_PICTURE, TAG_MEMO_LIST, TAG_FOOTNOTE_SHAPE, fileTimeText, extractText, type HwpRecord, type HwpDocInfo, type IndexedControlResolver, type ParaTextState,
+  TAG_SHAPE_COMPONENT_PICTURE, TAG_SHAPE_COMPONENT_OLE, TAG_MEMO_LIST, TAG_FOOTNOTE_SHAPE, fileTimeText, extractText, type HwpRecord, type HwpDocInfo, type IndexedControlResolver, type ParaTextState,
 } from "./record.js"
 import { NumberingState, expandNumberingFormat, formatNumber, shapeFormatToNumFmt } from "./numbering.js"
 import { hwpEquationToLatex } from "./equation.js"
@@ -128,6 +128,8 @@ export interface Hwp5DocState {
   includeFieldPlaceholders?: boolean
   /** 메모 (#180) — 붙은 글은 문단을 읽을 때, 메모 글은 구역 끝 메모 목록에서 채운다 */
   memos: MemoNote[]
+  /** 차트 개체(OLE) BinData storageId → 차트 표 블록. 파서가 BinData 를 읽어 채운다(없으면 차트를 건너뛴다) */
+  chartOf?: (storageId: number) => IRBlock[]
 }
 
 export function createHwp5DocState(): Hwp5DocState {
@@ -919,6 +921,12 @@ function parseGsoControl(ctrl: ParsedCtrl, records: HwpRecord[], ctx: Hwp5Ctx): 
     if (records[i].tagId === TAG_SHAPE_COMPONENT_PICTURE) {
       const img = pictureToImageBlock(records[i].data, ctx)
       if (img) blocks.push(img)
+    } else if (records[i].tagId === TAG_SHAPE_COMPONENT_OLE && ctx.doc.chartOf && records[i].data.length >= 14) {
+      // OLE 개체: 속성(4)·범위(4+4) 뒤 BinData id(u16 @12). 차트 OLE 면 OOXML 차트 스트림을 표로 (HWPX hp:chart 와 같은 표)
+      const binId = records[i].data.readUInt16LE(12)
+      const item = ctx.docInfo?.binData[binId - 1]
+      const storageId = item && item.storageId > 0 ? item.storageId : binId
+      blocks.push(...ctx.doc.chartOf(storageId).map(b => ({ ...b, pageNumber: ctx.page })))
     }
   }
 

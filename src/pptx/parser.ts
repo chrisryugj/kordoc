@@ -20,6 +20,7 @@ import { escapeLiteralTags, tidyScriptTags, wrapScript } from "../script-tags.js
 import { detectImageMime } from "../hwp5/images.js"
 import { localName, findChildByLocalName, childrenByLocalName, elementChildren, rawTextContent, MAX_XML_DEPTH } from "../shared/xml.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
+import { parseChartXml, chartBlock, smartArtBlocks } from "../shared/chart-xml.js"
 
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 (DOCX 와 같은 값) */
 const MAX_DECOMPRESS_SIZE = unzipLimitBytes(100 * 1024 * 1024)
@@ -276,6 +277,22 @@ async function pictureBlock(pic: Element, ctx: SlideContext): Promise<IRBlock | 
   return { type: "image", text: filename, pageNumber: ctx.page }
 }
 
+/** 그래픽 틀의 차트(c:chart r:id → 차트 파트)·SmartArt(dgm:relIds r:dm → 데이터 파트) → 표·목록 블록. 못 읽으면 빈 배열 */
+async function graphicDataBlocks(data: Element, uri: string, ctx: SlideContext): Promise<IRBlock[]> {
+  const isChart = /chart/i.test(uri), isDiagram = /diagram/i.test(uri)
+  // 원본 표 구조 모드(layoutTables "keep")는 차트·SmartArt 를 블록으로 내지 않는다 — 표 서수가 원본 표와 어긋난다
+  if ((!isChart && !isDiagram) || ctx.options?.layoutTables === "keep") return []
+  const ref = findChildByLocalName(data, isChart ? "chart" : "relIds")
+  const id = ref ? getAttr(ref, isChart ? "id" : "dm") : null
+  const rel = id ? ctx.rels.get(id) : undefined
+  const file = rel ? ctx.zip.file(rel.target) : null
+  if (!file) return []
+  const xml = await readZipEntry(file, "text")
+  if (isDiagram) return smartArtBlocks(xml, ctx.page)
+  const chart = parseChartXml(xml)
+  return chart ? [chartBlock(chart, ctx.page)] : []
+}
+
 /** p:spTree 를 그리는 순서대로 — 그룹(p:grpSp)은 펼치고 mc:AlternateContent 는 Choice 쪽을 본다 */
 async function walkShapes(tree: Element, ctx: SlideContext, out: IRBlock[], depth = 0): Promise<void> {
   if (depth > MAX_XML_DEPTH) return
@@ -310,8 +327,12 @@ async function walkShapes(tree: Element, ctx: SlideContext, out: IRBlock[], dept
           if (block) out.push(block)
         } else if (data) {
           const uri = getAttr(data, "uri") ?? ""
-          const kind = /chart/i.test(uri) ? "차트" : /diagram/i.test(uri) ? "SmartArt" : "개체"
-          ctx.warnings.push({ page: ctx.page, code: "UNSUPPORTED_ELEMENT", message: `PPTX ${kind}의 글은 읽지 않습니다 (${ctx.page}쪽)` })
+          const blocks = await graphicDataBlocks(data, uri, ctx)
+          if (blocks.length) out.push(...blocks)
+          else {
+            const kind = /chart/i.test(uri) ? "차트" : /diagram/i.test(uri) ? "SmartArt" : "개체"
+            ctx.warnings.push({ page: ctx.page, code: "UNSUPPORTED_ELEMENT", message: `PPTX ${kind}의 글은 읽지 않습니다 (${ctx.page}쪽)` })
+          }
         }
         break
       }
