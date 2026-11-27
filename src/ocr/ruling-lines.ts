@@ -43,6 +43,10 @@ const MAX_LINE_WIDTH_PT = 2.5
 const GAP_TOL_PX = 2
 /** 밴드 병합 시 요구하는 x(또는 y) 범위 겹침 비율 (짧은 쪽 기준) */
 const BAND_OVERLAP_RATIO = 0.5
+/** 띠 두께를 넓이 ÷ 길이로 잴 때 봐주는 기울기(높이 증가 ÷ 길이, 약 0.6°) */
+const SLOPE_TOL = 0.01
+/** 기운 선 판정: 가장 긴 스캔라인 런이 띠 길이의 이 비율 미만 */
+const SLOPE_MAX_ROW = 0.8
 /** 밴드 양측(±2px)이 이 비율 이상 잉크면 채운 영역 내부 슬리버로 판정 */
 const SURROUND_INK_RATIO = 0.35
 /**
@@ -109,7 +113,30 @@ export interface RulingLines {
  * RGBA 래스터에서 수평/수직 괘선 감지.
  * @param scale 렌더 스케일 (px/pt) — 길이·두께 임계를 pt 기준으로 환산
  */
+/** 이번 호출이 조금 기운 가는 선을 봐주는가(SLOPE_TOL 또는 0): detectRulingLines 가 정하고 detectBands 가 읽는다 */
+let slopeTol = 0
+
+/**
+ * @param opts.slopeTolerant 원근을 펴서 세로 괘선까지 선 쪽. 쪽 폭에 몇 화소 기운 채 남은 가로·세로 괘선도 선으로 낸다.
+ *   행만 밀어 편 쪽(세로 괘선이 아직 기욺)에서 켜면 새로 잡힌 가로선과 기운 세로선이 어긋난 격자를 만들어 표가 흐트러졌다
+ */
 export function detectRulingLines(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  scale: number,
+  opts: { slopeTolerant?: boolean } = {},
+): RulingLines {
+  const prev = slopeTol
+  slopeTol = opts.slopeTolerant ? SLOPE_TOL : 0
+  try {
+    return detectRulingLinesAt(rgba, width, height, scale)
+  } finally {
+    slopeTol = prev
+  }
+}
+
+function detectRulingLinesAt(
   rgba: Uint8Array,
   width: number,
   height: number,
@@ -682,6 +709,8 @@ interface Band {
   last: number // 직교축 마지막 스캔라인
   plo: number // 직전 스캔라인 런 (이을지 판정용 — 띠 합집합이 아니라)
   phi: number
+  area: number // 띠에 든 런 길이 합. 조금 기운 가는 선의 실제 두께(넓이 ÷ 길이)를 재는 데 쓴다
+  maxRun: number // 가장 긴 스캔라인 런
 }
 
 /**
@@ -718,7 +747,15 @@ function detectBands(
   }
 
   const emit = (b: Band) => {
-    const thick = b.last - b.first + 1
+    // 두께는 넓이 ÷ 길이로 잰다. 원근을 편 사진은 가는 괘선이 쪽 폭에 걸쳐 몇 화소 기울어 남아(괴산 예산서 원근 판 1,200px 에 4~6px)
+    // 첫 행~끝 행 높이로 재면 두께 상한을 넘어 행 괘선을 모두 버렸다. 꽉 칠한 띠는 행마다 길이를 다 채워 넓이 ÷ 길이가 곧 높이라 종전과 같고,
+    // 기울기는 SLOPE_TOL 안(높이 ≤ 두께 상한 + 길이 × SLOPE_TOL)일 때만 봐준다
+    const span = b.hi - b.lo + 1
+    const height = b.last - b.first + 1
+    const areaThick = Math.ceil(b.area / span)
+    // 기운 선만. 어느 스캔라인 런도 띠 길이의 SLOPE_MAX_ROW 에 못 미쳐야 한다. 굵은 띠(수능 지문 상자 변 5~6px)는 가운데 행들이 길이를 다 채운다
+    const sloped = slopeTol > 0 && height > maxThickPx && height <= maxThickPx + span * slopeTol && b.maxRun < span * SLOPE_MAX_ROW
+    const thick = sloped ? areaThick : height
     if (thick > maxThickPx) return // 색상바·텍스트 밴드
     // prevRun 띠는 위아래가 다 비어야 한다 — 한쪽이 사진·그림·칠한 띠인 변은 종전처럼 그 띠의 일부다
     if (prevRun && (surroundInkRatio(b, b.first - 2) >= SURROUND_INK_RATIO || surroundInkRatio(b, b.last + 2) >= SURROUND_INK_RATIO)) return
@@ -758,6 +795,8 @@ function detectBands(
           band.hi = Math.max(band.hi, run.hi)
           band.plo = run.lo
           band.phi = run.hi
+          band.area += run.hi - run.lo + 1
+          band.maxRun = Math.max(band.maxRun, run.hi - run.lo + 1)
           band.last = line
           next.push(band)
           used.add(r)
@@ -768,7 +807,7 @@ function detectBands(
       if (!merged) emit(band)
     }
     for (let r = 0; r < runs.length; r++) {
-      if (!used.has(r)) next.push({ lo: runs[r].lo, hi: runs[r].hi, first: line, last: line, plo: runs[r].lo, phi: runs[r].hi })
+      if (!used.has(r)) next.push({ lo: runs[r].lo, hi: runs[r].hi, first: line, last: line, plo: runs[r].lo, phi: runs[r].hi, area: runs[r].hi - runs[r].lo + 1, maxRun: runs[r].hi - runs[r].lo + 1 })
     }
     open = next
   }

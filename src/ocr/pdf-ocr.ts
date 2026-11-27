@@ -21,7 +21,7 @@ import { extractPageBlocksWithLines } from "../pdf/page-blocks.js"
 import { UNRULED_REGION_TABLES } from "../pdf/ocr-region-merge.js"
 import { detectRulingLines, rulingToPdfLines, type RulingLines } from "./ruling-lines.js"
 import { DEFAULT_OCR_TUNING, getOcrEngine, type OcrItem, type OcrPageStats, type OcrTuning } from "./engine.js"
-import { deskewPage, rotateQuarter } from "./deskew.js"
+import { deskewPage, rotateQuarter, verticalsStraightened } from "./deskew.js"
 import type { PageImageSink, PageRaster } from "./page-images.js"
 import { copyOcrTextGaps } from "./text-gaps.js"
 import { similarity } from "../diff/text-diff.js"
@@ -295,7 +295,7 @@ export async function ocrOnePage(
     // 원본 래스터를 잘라 읽는 closerReads와 좌표계가 달라져 줄 선택·병합이 어긋난다.
     let { rgba: upright, angle, dewarp } = vectorOps || regions ? { rgba, angle: 0, dewarp: undefined } : deskewPage(rgba, rw, rh)
     const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
-    let ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH)
+    let ruling = vectorOps ? undefined : detectRulingLines(upright, rw, rh, rh / pdfH, { slopeTolerant: angle === 0 && verticalsStraightened(dewarp, rh) })
     // 그림 영역만 읽는 쪽은 표 행 경계 보강선(isolated)을 뺀다 — 도해 상자·화살표 선이 행 경계로 잡혀 이름표 읽기 순서가 흔들렸다(ODL 055 팜유 흐름도)
     if (ruling && regions) ruling = { ...ruling, horizontals: ruling.horizontals.filter(h => !h.isolated) }
     // 눕힌 쪽 판정은 쪽 래스터 전체를 읽을 때만 — 벡터 글자 쪽은 벡터 괘선, 그림 영역은 PDF 좌표를 그대로 써야 한다

@@ -19,7 +19,7 @@ import { ensureOcrModelsFor } from "./models.js"
 import { applyImageFormulas } from "./image-formula.js"
 import { detectRulingLines, rulingToPdfLines } from "./ruling-lines.js"
 import { MAX_OCR_PIXELS, builtinOcrConfig, cellEdgeHorizontals, cellEdgeVerticals, ocrItemsToBlocks, pageLines, recognizeOcrPage, reportModelDownload } from "./pdf-ocr.js"
-import { deskewPage, rotateQuarter } from "./deskew.js"
+import { deskewPage, rotateQuarter, verticalsStraightened } from "./deskew.js"
 import type { PageRaster } from "./page-images.js"
 import { imageFormat, type ImageKind } from "../detect.js"
 import { MAX_PIXELS, bmpToRgba, encodePng } from "../image/transcode.js"
@@ -103,7 +103,7 @@ export async function parseImageDocument(
   const stats: OcrPageStats = { droppedLowConf: 0, ...(config.lines === "all" ? { dropped: [] } : {}) }
   // 괘선을 먼저 찾아 검출 상자를 표 칸·행 경계에서 가른다 — PDF OCR(ocrOnePage)과 같은 순서. 인식 뒤에 찾으면 이웃 칸 글이 한 상자로
   // 묶여 인식됐다(통계 보도자료 표 "2023 2024p ’23년대비" → "20232024p’23")
-  let ruling = detectRulingLines(data, width, height, scale)
+  let ruling = detectRulingLines(data, width, height, scale, { slopeTolerant: deskewed.angle === 0 && verticalsStraightened(deskewed.dewarp, height) })
   let items = await recognizeOcrPage(engine, config, config.tuning, data, width, height, stats,
     [...(ruling.cellDividers ?? []), ...cellEdgeVerticals(ruling)], cellEdgeHorizontals(ruling))
   // 가로 표를 눕혀 찍은 쪽 — 래스터를 세워 괘선부터 다시 읽는다(좌표·블록 상자는 세운 쪽 기준)

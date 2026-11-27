@@ -200,6 +200,21 @@ function dewarpScore(rgba: Uint8Array, width: number, height: number, f: SkewFie
 /** 원근 쪽을 먼저 돌린 뒤 펴는 쪽 각 하한(°) */
 const ROTATE_DEWARP_MIN_DEG = 1.2
 
+/** 편 쪽 세로 괘선이 섰다고 보는 펴기 평균각 상한(°). 돌린 뒤 편 쪽은 남은 원근이 0 을 사이에 두고 갈려 평균이 작다 */
+const STRAIGHT_MEAN_DEG = 1
+
+/** 펴기 기울기 θ(y) 의 쪽 높이 평균(°) */
+export function meanFieldAngle(f: SkewField, height: number): number {
+  let sum = 0, n = 0
+  for (let y = 0; y < height; y += 8) { sum += fieldAngle(f, y); n++ }
+  return n ? sum / n : 0
+}
+
+/** 원근을 펴서 세로 괘선까지 선 쪽인가. 행만 밀어 편 쪽은 평균각만큼 세로 괘선이 기운 채 남는다 */
+export function verticalsStraightened(f: SkewField | undefined, height: number): boolean {
+  return !!f && Math.abs(meanFieldAngle(f, height)) < STRAIGHT_MEAN_DEG
+}
+
 export function deskewPage(rgba: Uint8Array, width: number, height: number): { rgba: Uint8Array; angle: number; dewarp?: SkewField } {
   const est = estimateSkew(rgba, width, height)
   const step = pageStep(width, height)
