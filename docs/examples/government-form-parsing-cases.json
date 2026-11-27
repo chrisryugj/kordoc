@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "1.0",
+  "purpose": "민원서식 파싱과 의미 구조화 논의를 위한 합성 사례",
+  "status": "discussion-fixtures-not-executed",
+  "format": "아래 입력은 kordoc IR이나 실제 정부 문서가 아닌 설명용 자료다. expected는 논의할 수용 기준이다.",
+  "cases": [
+    {
+      "id": "C01",
+      "layer": "field-recognition-and-hierarchy",
+      "input": {"rows": [["신청인 (2행 병합)", "성명", ""], ["위 셀이 덮는 자리", "주소", ""]]},
+      "expected": {"paths": [["신청인", "성명"], ["신청인", "주소"]], "mustNotFill": ["성명", "주소"]},
+      "counterexample": "성명 | 홍길동 | 빈칸의 홍길동은 하위 라벨이 아니라 값일 수 있다."
+    },
+    {
+      "id": "C02",
+      "layer": "field-segmentation-and-hierarchy",
+      "input": {"label": "①성명", "valueParts": ["이름 작성 공간", "(남ㆍ여)"]},
+      "expected": {"paths": [["신청인", "①성명"], ["신청인", "성별"]], "options": ["남", "여"], "derivedLabels": ["성별"], "sharedSourceCell": true},
+      "counterexample": "성명 아래 한글·한자만 나뉜 경우는 성명을 그룹으로 둘 수 있다."
+    },
+    {
+      "id": "C03",
+      "layer": "hierarchy-and-type",
+      "input": {"variantA": "현지 연락처 | 주소 작성 공간 (전화: 빈칸)", "variantB": "연락처 | (전화번호: 빈칸) (휴대전화번호: 빈칸)"},
+      "expected": {"variantAPaths": [["신청인", "현지 연락처"], ["신청인", "전화"]], "variantBPaths": [["신청인", "연락처", "전화번호"], ["신청인", "연락처", "휴대전화번호"]], "variantAOwnValue": "주소를 적는 글"},
+      "counterexample": "연락처라는 이름만으로 전체 값을 전화번호로 확정하지 않는다."
+    },
+    {
+      "id": "C04",
+      "layer": "repeat-schema",
+      "input": {"variantAHeaders": ["관계", "성명", "생년월일", "직업"], "variantABlankRows": 3, "variantBRowLabels": ["1월", "2월", "3월"]},
+      "expected": {"variantA": {"columnCount": 4, "originalRows": 3, "repeat": "addable"}, "variantB": {"repeat": "fixed", "preserveRowLabels": true}, "preserveExistingFillTargets": true},
+      "counterexample": "목록 스키마와 실제 행별 채우기 자리를 같은 것으로 취급하지 않는다."
+    },
+    {
+      "id": "C05",
+      "layer": "field-and-guidance-boundary",
+      "input": {"paragraphs": ["끝지점", "※ 공간이 부족하면 별지를 첨부합니다."]},
+      "expected": {"label": "끝지점", "hint": "※ 공간이 부족하면 별지를 첨부합니다.", "guidanceIsSeparateInput": false},
+      "counterexample": "※를 안내 연결의 근거로 사용하는 것과 필수 표시로 확정하는 것은 다르다."
+    },
+    {
+      "id": "C06",
+      "layer": "region-continuation",
+      "input": {"tableSequence": ["신청인과 신청내용 앞부분", "신청내용 나머지와 신청 문구", "별도 동의서"]},
+      "expected": {"preserveTableBoundaries": true, "considerApplicationAcrossTables": [0, 1], "mustNotUnconditionallyMerge": [2]},
+      "counterexample": "모든 후속 표를 첫 신청 영역으로 합치지 않는다."
+    },
+    {
+      "id": "C07",
+      "layer": "source-markers",
+      "input": {"visualDescription": "첫 번호는 문단 자동번호, 선택 기호는 사각형 그림", "plainTextAloneMayOmitMarkers": true},
+      "expected": {"inspectSourceRepresentation": true, "inventMissingNumbers": false, "inventCheckedState": false},
+      "counterexample": "작은 사각형이 있다는 사실만으로 체크박스를 확정하지 않는다."
+    },
+    {
+      "id": "C08",
+      "layer": "nested-table-order-and-duplication",
+      "input": {"cellContents": ["앞 안내", {"nestedTable": [["성명", ""]]}, "뒤 안내"], "flattenedTextDuplicatesNestedText": true},
+      "expected": {"preserveContentOrder": true, "retainParentCellRelation": true, "mustNotCountFlattenedTextAndBlocksTwice": true},
+      "counterexample": "중첩 구조 보존이 자동 재배치의 안전성을 보장하지는 않는다."
+    },
+    {
+      "id": "C09",
+      "layer": "role-inference",
+      "input": {"sourceAppearance": "회색 칸", "text": "※ 뒤쪽 작성방법을 읽어주세요"},
+      "expected": {"officialFromColorAlone": false, "withoutRoleEvidence": "unresolved"},
+      "counterexample": "작성자용 칸 외에 안내와 구획 제목에도 배경색이 사용된다."
+    },
+    {
+      "id": "C10",
+      "layer": "template-and-options",
+      "input": {"quantity": "동번호 ( )개, 층수 ( )개", "choice": "[ ] 기타( )", "date": "년 월 일"},
+      "expected": {"quantityFields": ["동번호", "층수"], "unit": "개", "choiceHasAdditionalInput": true, "preserveDatePlaceholder": true, "inventValidationConstraints": false},
+      "counterexample": "사진 규격이나 이미 채워진 문구의 괄호까지 입력으로 만들지 않는다."
+    }
+  ]
+}
