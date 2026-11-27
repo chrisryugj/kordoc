@@ -280,8 +280,8 @@ async function pictureBlock(pic: Element, ctx: SlideContext): Promise<IRBlock | 
 /** 그래픽 틀의 차트(c:chart r:id → 차트 파트)·SmartArt(dgm:relIds r:dm → 데이터 파트) → 표·목록 블록. 못 읽으면 빈 배열 */
 async function graphicDataBlocks(data: Element, uri: string, ctx: SlideContext): Promise<IRBlock[]> {
   const isChart = /chart/i.test(uri), isDiagram = /diagram/i.test(uri)
-  // 원본 표 구조 모드(layoutTables "keep")는 차트·SmartArt 를 블록으로 내지 않는다 — 표 서수가 원본 표와 어긋난다
-  if ((!isChart && !isDiagram) || ctx.options?.layoutTables === "keep") return []
+  // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep")는 내지 않는다 — 표 서수가 원본 표와 어긋난다
+  if ((!isChart && !isDiagram) || !ctx.options?.charts || ctx.options.layoutTables === "keep") return []
   const ref = findChildByLocalName(data, isChart ? "chart" : "relIds")
   const id = ref ? getAttr(ref, isChart ? "id" : "dm") : null
   const rel = id ? ctx.rels.get(id) : undefined
@@ -331,7 +331,7 @@ async function walkShapes(tree: Element, ctx: SlideContext, out: IRBlock[], dept
           if (blocks.length) out.push(...blocks)
           else {
             const kind = /chart/i.test(uri) ? "차트" : /diagram/i.test(uri) ? "SmartArt" : "개체"
-            ctx.warnings.push({ page: ctx.page, code: "UNSUPPORTED_ELEMENT", message: `PPTX ${kind}의 글은 읽지 않습니다 (${ctx.page}쪽)` })
+            ctx.warnings.push({ page: ctx.page, code: "UNSUPPORTED_ELEMENT", message: `PPTX ${kind}의 글은 읽지 않습니다 (${ctx.page}쪽${ctx.options?.charts ? "" : ", charts 옵션으로 표·목록"})` })
           }
         }
         break

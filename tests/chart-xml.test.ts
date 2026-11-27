@@ -93,15 +93,18 @@ describe("형식별 연결", () => {
       + `<w:p><w:r><w:t>뒤 문단</w:t></w:r></w:p></w:body></w:document>`)
     zip.file("word/_rels/document.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="${REL}/chart" Target="charts/chart1.xml"/></Relationships>`)
     zip.file("word/charts/chart1.xml", BAR)
-    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }))
+    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }), { charts: true })
     assert.ok(r.success)
     if (!r.success) return
     const md = r.markdown
     assert.equal(md.match(/\*\*차트: 연도별 민원/g)?.length, 1)
     assert.ok(md.indexOf("앞 문단") < md.indexOf("차트: 연도별 민원") && md.indexOf("차트: 연도별 민원") < md.indexOf("뒤 문단"))
     // 원본 표 구조 모드(패치·양식 경로)는 차트를 표로 내지 않는다 — 표 서수가 원본 표와 같아야 한다
-    const keep = await parse(await zip.generateAsync({ type: "arraybuffer" }), { layoutTables: "keep" })
+    const keep = await parse(await zip.generateAsync({ type: "arraybuffer" }), { layoutTables: "keep", charts: true })
     assert.ok(keep.success && !keep.blocks.some(b => b.type === "table"))
+    // 기본(charts 끔)은 출력 불변
+    const off = await parse(await zip.generateAsync({ type: "arraybuffer" }))
+    assert.ok(off.success && !off.blocks.some(b => b.type === "table"))
   })
 
   it("XLSX: 시트 → 그리기 → 차트 관계를 따라 시트 표 뒤에 차트 표", async () => {
@@ -115,7 +118,7 @@ describe("형식별 연결", () => {
     zip.file("xl/drawings/drawing1.xml", `<?xml version="1.0"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"><xdr:twoCellAnchor><xdr:graphicFrame>${graphic("rId3")}</xdr:graphicFrame></xdr:twoCellAnchor></xdr:wsDr>`)
     zip.file("xl/drawings/_rels/drawing1.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId3" Type="${REL}/chart" Target="../charts/chart1.xml"/></Relationships>`)
     zip.file("xl/charts/chart1.xml", BAR)
-    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }))
+    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }), { charts: true })
     assert.ok(r.success)
     if (!r.success) return
     assert.ok(r.markdown.indexOf("칸 글") >= 0 && r.markdown.indexOf("칸 글") < r.markdown.indexOf("차트: 연도별 민원"))
@@ -133,7 +136,7 @@ describe("형식별 연결", () => {
       + `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="2" name="차트"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm/>${graphic("rId2")}</p:graphicFrame></p:spTree></p:cSld></p:sld>`)
     zip.file("ppt/slides/_rels/slide1.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="${REL}/chart" Target="../charts/chart1.xml"/></Relationships>`)
     zip.file("ppt/charts/chart1.xml", BAR)
-    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }))
+    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }), { charts: true })
     assert.ok(r.success)
     if (!r.success) return
     assert.match(r.markdown, /\| 2024년 \| 12 \| 10 \|/)

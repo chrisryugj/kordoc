@@ -57,6 +57,7 @@ const optionsSchema = z.object({
   images: z.boolean(),
   inlineImages: z.boolean(),
   qrCodes: z.boolean(),
+  charts: z.boolean(),
   imageFormat: z.enum(["png", "webp"]),
   imagePlacement: z.enum(["page-end", "flow"]),
   dropBlankImages: z.boolean(),

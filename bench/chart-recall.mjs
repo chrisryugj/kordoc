@@ -5,7 +5,7 @@
 //   차트 파트(…/charts/chartN.xml, HWPX Chart/chartN.xml): c:title 의 a:t·c:v, 값 캐시의 c:v.
 //     계열마다 되풀이되는 똑같은 c:cat·c:xVal 블록(같은 범위)은 한 번만. 숫자인 c:v 는 수치 단위(12자리 유효숫자로 맞춰 md 의 숫자 토큰 다중집합과 대조), 나머지는 글 단위(공백 뺀 부분 문자열 대조).
 //   SmartArt 데이터 파트(…/diagrams/dataN.xml): type 이 없거나 node·asst 인 dgm:pt 의 a:t 를 이은 글 단위.
-// 보고 전용 (게이트 아님). 사용법: node bench/chart-recall.mjs [--verbose]
+// kordoc 은 charts: true 로 읽는다(기본 출력에는 차트가 없다). 보고 전용 (게이트 아님). 사용법: node bench/chart-recall.mjs [--verbose]
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -89,7 +89,7 @@ for (const file of await walk(corpus)) {
   const truth = await truthOf(await readFile(isHwp ? file + "x" : file).catch(() => null))
   if (!truth) continue
   const kind = file.split(".").pop().toLowerCase()
-  const res = await parse(await readFile(file), { ocr: false }).catch(e => ({ success: false, error: String(e) }))
+  const res = await parse(await readFile(file), { ocr: false, charts: true }).catch(e => ({ success: false, error: String(e) }))
   const r = res.success ? score(truth, res.markdown) : { tT: 0, tM: 0, nT: truth.nums.length, nM: 0, misses: [String(res.error).slice(0, 60)] }
   const a = (agg[kind] ??= { docs: 0, tT: 0, tM: 0, nT: 0, nM: 0 })
   a.docs++; a.tT += r.tT; a.tM += r.tM; a.nT += r.nT; a.nM += r.nM

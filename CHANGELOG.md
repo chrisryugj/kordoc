@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.27] - 2026-11-28
+
 ### Added
 
-- 차트·SmartArt 읽기: HWP·HWPX·DOCX·PPTX·XLSX 차트의 값 캐시를 표로 낸다. 캡션은 "차트: 제목 (종류)", 첫 열은 항목(분산형은 x 값), 그 뒤 열은 계열이다. 다단 항목은 "2024 / 상반기"처럼 잇고, 글 없는 자동 제목은 계열이 하나일 때 그 계열 이름으로 쓴다. SmartArt(PPTX·DOCX·XLSX)는 노드 글을 연결 순서대로 중첩 목록으로 낸다. 종전에는 다섯 형식 모두 차트 글을 버렸다(PPTX 는 미지원 경고만). HWP 는 차트 개체(OLE)에 함께 저장된 OOXML 차트를 읽어 같은 문서 HWPX 와 출력이 같다(rhwp 차트 28쌍 전부 일치). 원본 표 구조 모드(`layoutTables: "keep"`, 패치·세션·양식 채우기·extractTables)는 차트를 표로 내지 않는다. 표 서수를 원본 표와 맞대는 경로라 차트 표가 끼면 번호가 밀린다
-- 벤치: `bench/chart-recall.mjs`(보고 전용). 코퍼스에서 차트 파트가 든 161문서의 차트 XML 을 파서와 코드 공유 없이 읽어 글·수치 재현율을 잰다. 차트 글 0.172 → **1**, 수치 0.058 → **1**(PPTX 7·XLSX 1·HWPX 77·HWP 76문서)
+- 차트·SmartArt 읽기(`charts: true`, CLI `--charts`): HWP·HWPX·DOCX·PPTX·XLSX 차트의 값 캐시를 표로 낸다. 캡션은 "차트: 제목 (종류)", 첫 열은 항목(분산형은 x 값), 그 뒤 열은 계열이다. 다단 항목은 "2024 / 상반기"처럼 잇고, 글 없는 자동 제목은 계열이 하나일 때 그 계열 이름으로 쓴다. SmartArt(PPTX·DOCX·XLSX)는 노드 글을 연결 순서대로 중첩 목록으로 낸다. HWP 는 차트 개체(OLE)에 함께 저장된 OOXML 차트를 읽어 같은 문서 HWPX 와 출력이 같다(rhwp 차트 28쌍 전부 일치). 기본은 끔이고 끄면 출력이 4.25.26 과 같다. 차트는 본문 글이 아니라 별도 파트의 그림 자료라서다(HWPX 자기참조 채점의 정답도 본문 섹션 글만 센다). 원본 표 구조 모드(`layoutTables: "keep"`, 패치·세션·양식 채우기·extractTables)는 켜도 내지 않는다. 표 서수를 원본 표와 맞대는 경로라 차트 표가 끼면 번호가 밀린다
+- 벤치: `bench/chart-recall.mjs`(보고 전용, `charts: true` 로 읽음). 코퍼스에서 차트 파트가 든 161문서의 차트 XML 을 파서와 코드 공유 없이 읽어 글·수치 재현율을 잰다. 차트 글 0.172 → **1**, 수치 0.058 → **1**(PPTX 7·XLSX 1·HWPX 77·HWP 76문서)
 
 ## [4.25.26] - 2026-11-28
 

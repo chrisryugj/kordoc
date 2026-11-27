@@ -95,7 +95,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 주요 기능
 
-- **읽기**: 문서 → Markdown·IR·쪽별 본문·RAG 청크, 로컬 OCR(손글씨 인식 포함), 그림 속 QR 값(`--qr-codes`), 그림 형식 통일(`--image-format png|webp`), 차트 값은 표로·SmartArt는 목록으로(HWP·HWPX·DOCX·PPTX·XLSX)
+- **읽기**: 문서 → Markdown·IR·쪽별 본문·RAG 청크, 로컬 OCR(손글씨 인식 포함), 그림 속 QR 값(`--qr-codes`), 그림 형식 통일(`--image-format png|webp`), 차트 값은 표로·SmartArt는 목록으로(`--charts`, HWP·HWPX·DOCX·PPTX·XLSX)
 - **비교·편집**: 블록·셀 단위 비교, HWPX·HWP 서식 보존 패치, 견본 서식 그대로 새 내용 쓰기
 - **작성**: Markdown → HWPX·HWP(HWP는 `npm install @rhwp/core` 뒤 `-o 문서.hwp`), 공문서 프리셋·부서 서식 견본(`--template`)·보고서 PDF 모양 따르기(`--layout`), 목차 쪽 번호, 표·수식·차트
 - **변환**: HWP 5.x → HWPX 서식 그대로(글꼴·문단 모양·표·그림·도형·수식·머리말·각주·차트, 배포용·변경 추적 문서 포함). PDF·DOCX 등은 `-o 문서.hwpx`로 읽은 내용을 HWPX로
@@ -112,6 +112,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 | 대상 | 규모 | 결과 |
 | --- | --- | --- |
+| 4.25.27 | `--charts`(`charts: true`)로 HWP·HWPX·DOCX·PPTX·XLSX 차트 값을 표로, SmartArt 를 목록으로 읽습니다. 종전에는 차트 글을 버렸습니다. 기본은 끔이라 기본 출력은 그대로입니다 | 차트 파트가 든 161문서 차트 글 재현율 0.172 → **1**·수치 0.058 → **1** · HWP·HWPX 차트 28쌍 출력 일치 · 기본 출력 score 5,465·formats 146·annex 544문서 하락 0 |
 | HWPX | 2,424문서 · 10,342표 | 표 구조 일치 **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130쌍 · 4,315표 | 짝 문서의 표 구조 일치 **100%** |
 | HWP 5.x → HWPX<br>변환 | 한글 저장 짝 264쌍 (속성 대조 232쌍) | 속성 일치 **99.21%** · 완전 일치 **69/232** · 글 **264/264** · 한글 화면 대조 80문서 |
@@ -130,7 +131,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 최근 업데이트
 
-최신 배포: **[4.25.26](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.26)** · 2026-11-28
+최신 배포: **[4.25.27](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.27)** · 2026-11-28
 
 | 버전 | 바뀐 점 | 실측 변화 |
 | --- | --- | --- |
@@ -138,7 +139,6 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 | 4.25.25 | 휴대폰으로 비스듬히 찍으면서 쪽까지 돌아간 사진을 먼저 돌린 뒤 원근을 펴고, 사다리꼴로 찍힌 쪽은 쪽 위아래 끝까지 폅니다. 이런 쪽은 `ocrLines` 에 `deskewAngle` 과 `dewarp` 가 함께 실립니다(펴기 먼저, 회전 나중에 되돌림) | 열화 견고성 원근+회전 CER 0.141 → **0.116**(14문서 오름)·원근 0.0843 → **0.0774**(속초 예산서 0.188 → 0.024) · KoOCR·OCR·ODL OCR 변화 0 · 하락 0 |
 | 4.25.24 | OCR 이 촘촘한 표 칸에서 맞닿은 여러 줄을 한 줄로 읽어 버리던 것을 줄마다 나눠 읽습니다. 표 칸 머리 "#" 를 이스케이프하지 않습니다 | KoOCR 877쪽 오름 4·OCR 오름 1(빈칸이던 머리 "전문경력관")·열화 견고성 오름 1 · ODL 표 TEDS 1문서 0.993 → **1** · 하락 0 |
 | 4.25.23 | 스캔·사진 서식의 체크 칸 □·[ ] 를 찾아 체크 여부를 ☑·□ 로 냅니다(#243, @VerifiedIdiot). 쪽 테두리와 이어진 표가 본문까지 삼키던 OCR 쪽, "각 과 및 안전센터" 를 붙이던 균등배분 접기를 고쳤습니다. Upstage DP-Bench 기준선 벤치를 더했습니다(#245, @LimePencil) | KoOCR 877쪽 0.907 → **0.908**(표 0.918 → 0.919, 관보 행정예고 쪽 CER 0.877 → 0.388)·내림 0 · OCR 56문서 오름 3 · PDF 글 오름 5·표 오름 1 · 하락 0 · DP-Bench NID 96.12·TEDS 99.11 |
-| 4.25.22 | 각주 글도 patch 로 고칩니다(HWPX·HWP 5.x, #241, @serithemage). 고친 각주의 문단만 바꾸고 각주 번호·개체는 그대로 둡니다. HWP 5.x 에서 본문을 고쳐도 손대지 않은 제목 줄 판정이 바뀌지 않습니다(#242) | 각주 글 수정: 건너뜀 → **적용** · 기안문 HWP 본문 수정 뒤 검증 modified 1 → **0** · score 5,465문서·roundtrip 75문서 하락 0 · 시험 5,367개 실패 0 |
 
 이전 버전과 상세 내용은 [변경 이력](CHANGELOG.md)에 있습니다.
 

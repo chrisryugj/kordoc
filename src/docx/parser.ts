@@ -1087,8 +1087,8 @@ export async function parseDocxDocument(
   const breakCount = pageBreaks.reduce((n, b) => n + b.leading + b.trailing, 0)
   const rendered = breakCount > 0 && breakCount + 1 === await readSavedPageCount(zip)
   // 차트·SmartArt 관계 id → 표·목록 블록 (본문 문단의 a:graphicData 가 가리킨다)
-  // 원본 표 구조 모드(layoutTables "keep")는 차트를 표로 내지 않는다 — 표 서수가 원본 표와 어긋난다
-  const graphicParts = options?.layoutTables === "keep" ? new Map<string, IRBlock[]>() : await loadGraphicParts(zip, rels)
+  // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep")는 내지 않는다 — 표 서수가 원본 표와 어긋난다
+  const graphicParts = options?.charts && options.layoutTables !== "keep" ? await loadGraphicParts(zip, rels) : new Map<string, IRBlock[]>()
   // 그림 관계 id → 쪽. 본문 워크에서 링크되지 않아 문서 끝에 붙는 그림(표 칸 안 등)에 쓴다
   const imagePages = new Map<string, number>()
   let page = 1

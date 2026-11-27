@@ -109,6 +109,7 @@ if (result.success) {
 | `imagePlacement` | `--image-placement flow` | PDF 그림 블록 자리. 기본 `"page-end"`(쪽 끝, `bbox` 없음). `"flow"`: 쪽 위 자리로 글 블록 사이에 — 같은 단(가로로 겹치는 블록)에서 그림 위쪽 변 이상 높이에서 시작하는 마지막 블록 뒤, 없으면 그 단의 첫 블록 앞. 그림 블록에 `bbox` 를 붙인다. 같은 그림의 반복은 처음 자리에만 |
 | `dropBlankImages` | `--drop-blank-images` | 거의 한 색인 그림(흰 바탕 합성 뒤 채널마다 최댓값−최솟값 24 이하: 빈 판·단색 띠·옅은 그러데이션)을 그림 블록·`images`·글 속 참조에서 뺀다(기본 false, 그림 바이트를 낼 때만). 모든 형식 — PDF 는 디코딩한 화소, 다른 형식은 원본을 풀어 본다(BMP 내장 디코더, 그 밖 optional dependency `sharp`, WMF·EMF 는 남김) |
 | `qrCodes` | `--qr-codes` | 그림 속 QR 코드 값을 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에(http(s) URL 은 자동 링크 `<URL>`, 모든 형식, `images: false` 여도 읽음). optional dependency `zxing-wasm` 필요 |
+| `charts` | `--charts` | 차트 값을 표로(캡션 "차트: 제목 (종류)", 첫 열 항목·분산형은 x 값, 그 뒤 계열 열), SmartArt 를 중첩 목록으로. HWP·HWPX·DOCX·PPTX·XLSX. 기본 끔(끄면 출력 불변), `layoutTables: "keep"` 에서는 내지 않음 |
 | `classifyTables` | — | 표를 의미표/레이아웃/불확실로 분류해 `IRTable.classification` 에 |
 | `onProgress` | — | 진행률 콜백 `(current, total)` |
 

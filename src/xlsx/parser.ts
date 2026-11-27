@@ -465,8 +465,8 @@ export async function parseXlsxDocument(
       const { rows, merges, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904, warnings, sheetPath)
       const sheetBlocks = sheetToBlocks(sheet.name, rows, maxCol, merges, i, warnings, options?.keepTrailingEmptyCols)
       blocks.push(...sheetBlocks)
-      // 원본 표 구조 모드(layoutTables "keep")는 차트를 표로 내지 않는다 — 표 서수가 시트 표와 어긋난다
-      if (options?.layoutTables !== "keep") blocks.push(...await sheetChartBlocks(zip, sheetPath, i + 1))
+      // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep")는 내지 않는다 — 표 서수가 시트 표와 어긋난다
+      if (options?.charts && options.layoutTables !== "keep") blocks.push(...await sheetChartBlocks(zip, sheetPath, i + 1))
     } catch (err) {
       warnings.push({
         page: i + 1,

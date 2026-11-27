@@ -304,7 +304,7 @@ export interface ParseOptions {
   keepTrailingEmptyCols?: boolean
   /** 테두리가 안 보이는 틀 표 처리 (v4.17.0). 기본 `"visual"`: 보이는 대로 — 선이 없는 틀은 글로 풀고 선이 보이는 부분만 표로,
    *  칸으로 조립한 분수는 `$\frac{…}{…}$` 수식으로. `"keep"`: 종전대로 원본 표 구조 그대로(왕복 패치·양식 채우기처럼
-   *  원본 표 서수가 필요한 경로). HWPX·HWP5·PDF. `"keep"` 에서는 차트를 표로 내지 않는다(원본 표가 아니라 서수가 밀린다, HWP·HWPX·DOCX·PPTX·XLSX) */
+   *  원본 표 서수가 필요한 경로). HWPX·HWP5·PDF. `"keep"` 에서는 `charts` 를 켜도 차트를 표로 내지 않는다(원본 표가 아니라 서수가 밀린다) */
   layoutTables?: "visual" | "keep"
   /** 구조 파싱 뒤 표를 의미표/레이아웃/불확실로 분류해 `IRTable.classification` 에 붙인다 (#76).
    *  기본 false — 기본 parse 출력 불변. 중첩표·셀 blocks·캡션 blocks 까지 재귀, 원문 순서는 바꾸지 않는다. */
@@ -381,6 +381,9 @@ export interface ParseOptions {
   /** 그림 속 QR 코드를 읽어 그림 블록 `qr` 과 Markdown 그림 자리 다음 줄에 값을 낸다 (#187). 기본 false — 끄면 출력 불변.
    *  모든 형식의 그림(HWP·HWPX·HWP3·DOCX·PPTX·PDF), `images: false` 여도 읽는다. optional dependency `zxing-wasm` 이 필요하다 */
   qrCodes?: boolean
+  /** 차트 값을 표로("차트: 제목 (종류)" 캡션, 항목 열 + 계열 열), SmartArt 를 중첩 목록으로 낸다. HWP·HWPX·DOCX·PPTX·XLSX.
+   *  기본 false — 끄면 출력 불변(차트는 본문 글이 아니라 별도 파트의 그림 자료다). `layoutTables: "keep"` 에서는 내지 않는다 */
+  charts?: boolean
   /**
    * 그림 형식 (#188). 기본(지정 안 함)은 LLM 이 읽는 형식으로 정규화한다 — 주요 LLM API(Claude·OpenAI·Gemini)가 모두 받는
    * PNG·JPEG·WebP 는 원본 바이트 그대로, 그 밖(BMP·GIF·TIFF·AVIF·HEIC·SVG)은 PNG. PDF 그림은 지금처럼 PNG. 이미지 파일 입력은 페이지마다 그 페이지 이미지.

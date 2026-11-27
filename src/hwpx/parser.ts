@@ -134,8 +134,8 @@ export async function parseHwpxDocument(buffer: ArrayBuffer, options?: ParseOpti
   shared.keepTrailingEmptyCols = options?.keepTrailingEmptyCols
   shared.keepEmptyParagraphs = options?.keepEmptyParagraphs
   shared.includeFieldPlaceholders = options?.includeFieldPlaceholders
-  // 원본 표 구조 모드(layoutTables "keep", 패치·세션·양식)는 차트를 표로 내지 않는다 — 표 서수가 hp:tbl 과 어긋난다
-  if (options?.layoutTables !== "keep") shared.charts = await loadHwpxCharts(zip)
+  // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep", 패치·세션·양식)는 내지 않는다 — 표 서수가 hp:tbl 과 어긋난다
+  if (options?.charts && options.layoutTables !== "keep") shared.charts = await loadHwpxCharts(zip)
   // 섹션 근사 폴백 시 블록 pageNumber를 섹션 번호로 되돌리기 위한 구간 기록
   const sectionRanges: Array<{ sectionNum: number; start: number; end: number }> = []
   let parsedSections = 0

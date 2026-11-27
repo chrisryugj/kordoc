@@ -223,8 +223,8 @@ export function parseHwp5Document(buffer: Buffer, options?: ParseOptions): Inter
   // 차트 개체: BinData 는 차트를 처음 만날 때 한 번만 읽는다
   let bins: Map<number, { data: Buffer; name: string }> | undefined
   const charts = new Map<number, IRBlock[]>()
-  // 원본 표 구조 모드(layoutTables "keep", 패치·양식)는 차트를 표로 내지 않는다 — 표 서수가 원본 표와 어긋난다
-  if (options?.layoutTables !== "keep") doc.chartOf = storageId => {
+  // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep", 패치·양식)는 내지 않는다 — 표 서수가 원본 표와 어긋난다
+  if (options?.charts && options.layoutTables !== "keep") doc.chartOf = storageId => {
     if (!charts.has(storageId)) {
       bins ??= readHwp5BinData(c)
       const xml = oleChartXml(bins.get(storageId)?.data)
