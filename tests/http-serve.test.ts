@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -17,20 +17,35 @@ const [major, minor] = process.versions.node.split(".").map(Number)
 const supported = major > 24 || (major === 24 && minor >= 15)
 const testOptions = { skip: supported ? false : "serve requires Node.js 24.15+", timeout: 45_000 }
 
-async function start(dataDir: string, args: string[] = [], options: { token?: string; worker?: "hold" | "crash" } = {}) {
+type StartOptions = {
+  token?: string
+  worker?: "hold" | "crash" | "gate-second"
+  socketTimeoutMs?: number
+  clock?: boolean
+}
+
+async function start(dataDir: string, args: string[] = [], options: StartOptions = {}) {
   const env = { ...process.env }
   delete env.KORDOC_SANDBOX
   delete env.KORDOC_SERVE_TOKEN
   if (options.token) env.KORDOC_SERVE_TOKEN = options.token
+  const preloads: URL[] = []
   if (options.worker) {
     const preload = new URL("./fixtures/serve-worker.mjs", import.meta.url)
     preload.searchParams.set("mode", options.worker)
     preload.searchParams.set("attempts", join(dataDir, "worker-attempts.log"))
-    env.NODE_OPTIONS = [env.NODE_OPTIONS, `--import=${preload.href}`].filter(Boolean).join(" ")
+    preload.searchParams.set("release", join(dataDir, "release-worker"))
+    if (options.socketTimeoutMs) preload.searchParams.set("socketTimeoutMs", String(options.socketTimeoutMs))
+    preloads.push(preload)
+  }
+  if (options.clock) preloads.push(new URL("./helpers/serve-clock-preload.mjs", import.meta.url))
+  if (preloads.length) {
+    env.NODE_OPTIONS = [env.NODE_OPTIONS, ...preloads.map(path => `--import=${path.href}`)].filter(Boolean).join(" ")
   }
   const child = spawn(process.execPath, ["--import", "tsx", cli, "serve", "--port", "0", "--data-dir", dataDir, ...args], {
-    env, stdio: ["ignore", "ignore", "pipe"],
+    env, stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
+  assert.ok(child.stderr)
   let stderr = ""
   let done = false
   const exited = new Promise<number | null>((resolve, reject) => {
@@ -43,10 +58,16 @@ async function start(dataDir: string, args: string[] = [], options: { token?: st
     try { return await exited } finally { clearTimeout(deadline) }
   }
   child.stderr.setEncoding("utf8").on("data", chunk => { stderr += chunk })
+  const advanceClock = async (milliseconds: number) => {
+    const message = once(child, "message", { signal: AbortSignal.timeout(5_000) })
+    child.send(milliseconds)
+    const [reply] = await message
+    assert.equal(reply, "clock-advanced")
+  }
   try {
     for (let i = 0; i < 1_000 && !done; i++) {
-      const url = /http:\/\/127\.0\.0\.1:\d+/.exec(stderr)?.[0]
-      if (url) return { url, stop }
+      const url = /http:\/\/(?:127\.0\.0\.1|\[::1\]):\d+/.exec(stderr)?.[0]
+      if (url) return { url, stop, advanceClock }
       await delay(10)
     }
     assert.fail(`serve did not start: ${stderr}`)
@@ -96,8 +117,9 @@ test("serve parses bytes, reuses a job on retry, and persists its result across 
     assert.match(result.markdown, /서면자문 의견서/)
     assert.ok(Array.isArray(result.blocks) && result.blocks.length > 0)
 
+    const firstUrl = server.url
     const results = await Promise.all(Array.from({ length: 3 }, () =>
-      upload(server!.url + "/v1/jobs", file, { "idempotency-key": "same-document" })))
+      upload(firstUrl + "/v1/jobs", file, { "idempotency-key": "same-document" })))
     const path = results[0].headers.get("location")
     assert.match(path ?? "", /^\/v1\/jobs\/[a-f\d-]+$/)
     const accepted = await Promise.all(results.map(async reply => {
@@ -116,13 +138,13 @@ test("serve parses bytes, reuses a job on retry, and persists its result across 
     assert.equal(finished.result.blocks, undefined)
 
     const otherFile = await readFile(otherFixture)
-    const distinct = await Promise.all([file, otherFile].map(bytes => upload(server!.url + "/v1/jobs", bytes)))
+    const distinct = await Promise.all([file, otherFile].map(bytes => upload(firstUrl + "/v1/jobs", bytes)))
     const [firstJob, secondJob] = await Promise.all(distinct.map(async response => {
       assert.equal(response.status, 202)
       const path = response.headers.get("location")
       assert.ok(path)
       await response.body?.cancel()
-      return poll(server!.url + path)
+      return poll(firstUrl + path)
     }))
     assert.equal(firstJob.result.fileType, "hwpx")
     assert.match(firstJob.result.markdown, /서면자문 의견서/)
@@ -305,5 +327,103 @@ test("a parser child exits when its IPC host disconnects with stdin still open",
     lines.close()
     child.kill("SIGKILL")
     await exited
+  }
+})
+
+test("serve returns a pollable 504 after the socket goes idle during a synchronous wait", testOptions, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kordoc-http-"))
+  let server: Awaited<ReturnType<typeof start>> | undefined
+  try {
+    server = await start(dir, ["--workers", "1", "--sync-timeout-ms", "250"], {
+      worker: "hold", socketTimeoutMs: 30,
+    })
+    const reply = await upload(server.url + "/v1/parse", await readFile(fixture))
+    assert.equal(reply.status, 504)
+    const { jobId, error } = await reply.json()
+    assert.equal(error.code, "WAIT_TIMEOUT")
+    const location = reply.headers.get("location")
+    assert.equal(location, "/v1/jobs/" + jobId)
+    const statusReply = await fetch(server.url + location)
+    assert.equal(statusReply.status, 200)
+    const job = await statusReply.json()
+    assert.equal(job.jobId, jobId)
+    assert.equal(job.status, "running")
+  } finally {
+    await server?.stop()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("serve frees expired output capacity when a running job finishes", testOptions, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kordoc-http-"))
+  let server: Awaited<ReturnType<typeof start>> | undefined
+  const ttl = 600_000
+  const resultSize = Buffer.byteLength(JSON.stringify({ markdown: "result 1", fileType: "hwpx", warnings: [] }))
+  try {
+    server = await start(dir, [
+      "--workers", "1", "--max-retained-bytes", String(resultSize), "--job-ttl-ms", String(ttl),
+    ], { clock: true, worker: "gate-second" })
+    const bytes = await readFile(fixture)
+    const first = await submitJob(server.url, bytes)
+    assert.equal((await poll(server.url + first)).result.markdown, "result 1")
+
+    const next = await submitJob(server.url, bytes)
+    await poll(server.url + next, ["running"])
+    await server.advanceClock(ttl * 2)
+    await writeFile(join(dir, "release-worker"), "")
+    const uploadPath = join(dir, "files", next.slice("/v1/jobs/".length) + ".upload")
+    for (let i = 0; ; i++) {
+      try {
+        await access(uploadPath)
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") break
+        throw error
+      }
+      assert.ok(i < 1_000, "job did not release its upload")
+      await delay(10)
+    }
+    const completed = await poll(server.url + next)
+    assert.equal(completed.status, "succeeded", JSON.stringify(completed))
+    assert.equal(completed.result.markdown, "result 2")
+    const full = await upload(server.url + "/v1/parse", bytes)
+    assert.equal(full.status, 503)
+    assert.ok(full.headers.get("retry-after"))
+    assert.equal((await full.json()).error.code, "RESULT_CAPACITY")
+    const expired = await fetch(server.url + first)
+    assert.equal(expired.status, 404)
+    await expired.body?.cancel()
+  } finally {
+    await server?.stop()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("serve classifies an IPv6 loopback bind with an interface scope", {
+  ...testOptions, skip: testOptions.skip || process.platform !== "linux",
+}, async t => {
+  const host = "::1%lo"
+  const probe = createServer()
+  probe.listen(0, host)
+  try {
+    await once(probe, "listening")
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error.code === "EADDRNOTAVAIL" || error.code === "EAFNOSUPPORT")) {
+      t.skip("IPv6 loopback is unavailable")
+      return
+    }
+    throw error
+  }
+  probe.close()
+
+  const dir = await mkdtemp(join(tmpdir(), "kordoc-http-"))
+  let server: Awaited<ReturnType<typeof start>> | undefined
+  try {
+    server = await start(dir, ["--host", host])
+    const response = await upload(server.url + "/v1/parse", "unsupported fixture")
+    assert.equal(response.status, 422)
+    assert.equal((await response.json()).error.code, "UNSUPPORTED_FORMAT")
+  } finally {
+    await server?.stop()
+    await rm(dir, { recursive: true, force: true })
   }
 })

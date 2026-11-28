@@ -218,7 +218,10 @@ class ParseService {
         return
       }
       try {
-        if (job.status === "failed") {
+        if (job.status === "failed" && job.error === "RESULT_CAPACITY") {
+          const { code, message } = jobError(job.error)
+          sendError(res, new HttpError(503, code, message))
+        } else if (job.status === "failed") {
           let status = 500
           if (job.error === "WORKER_TIMEOUT") status = 504
           else if (parserErrorCode.safeParse(job.error).success && job.error !== "FILE_NOT_FOUND") status = 422
@@ -384,6 +387,7 @@ class ParseService {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
       })
+      res.flushHeaders()
       if (wrapped) {
         const envelope = async function* () {
           yield `{"jobId":"${job.id}","status":"succeeded","result":`
