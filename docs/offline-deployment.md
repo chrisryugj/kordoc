@@ -91,6 +91,8 @@ MCP 서버는 기동 시 적용된 제한을 stderr 에 한 줄 남긴다:
 폐쇄망 모드에서 `kordoc setup` 을 실행하면 MCP 등록 항목이 `npx` 대신 설치된
 `dist/mcp.js` 절대경로로 기록되고, 위 두 변수가 설정 파일의 `env` 에 함께 박힌다.
 
+`kordoc serve`의 파싱 워커는 `KORDOC_OFFLINE=1`과 `KORDOC_NO_HANCOM=1`을 적용한다. OCR을 쓸 때는 서버를 실행하는 계정의 모델 캐시에 모델을 미리 반입한다. HTTP 요청은 업로드한 파일을 처리하며, 작업의 저장 위치는 서버 시작 시 `--data-dir`로 정한다. [HTTP API](http-api.md)
+
 ## 5. 아웃바운드 통신 전량 목록
 
 소스 전체에서 `fetch` 를 호출하는 지점은 세 곳뿐이고, 바깥으로 나가는 것은 앞의 두 곳이다.

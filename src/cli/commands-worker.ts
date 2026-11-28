@@ -45,6 +45,7 @@ export function registerWorkerCommands(program: Command): void {
     .option("--max-response-bytes <n>", "protocol 2: 응답 한 줄 상한 바이트")
     .action(async (opts: { protocol: string; maxRequestBytes?: string; maxResponseBytes?: string }) => {
       if (opts.protocol === "2") {
+        if (process.connected) process.once("disconnect", () => process.exit(0))
         const limit = (v: string | undefined, name: string): number | undefined => {
           if (v === undefined) return undefined
           const n = Number(v)

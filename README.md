@@ -10,7 +10,7 @@
 
 > *대한민국에서 둘째가라면 서러울 문서지옥. 거기서 7년 버틴 공무원이 만들었습니다.*
 
-한국 공문서를 AI가 읽고 쓸 수 있게 합니다. HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, 이미지(PNG·JPG·WebP·TIFF·GIF·BMP·AVIF·HEIC·PCX)를 Markdown과 구조화 데이터로 바꾸고, Markdown에서 HWPX·HWP 공문서를 만듭니다. 라이브러리·CLI·MCP 서버로 씁니다.
+한국 공문서를 AI가 읽고 쓸 수 있게 합니다. HWP 3.x·5.x, HWPX, HWPML, PDF, XLS·XLSX, DOCX, PPTX, 이미지(PNG·JPG·WebP·TIFF·GIF·BMP·AVIF·HEIC·PCX)를 Markdown과 구조화 데이터로 바꾸고, Markdown에서 HWPX·HWP 공문서를 만듭니다. 라이브러리·CLI·HTTP API·MCP 서버로 씁니다.
 
 [English](README-EN.md) · [상세 사용법](docs/usage.md) · [벤치마크](docs/benchmarks.md) · [변경 이력](CHANGELOG.md)
 
@@ -161,6 +161,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 
 ## 문서·보안
 
+- Node.js 24.15 이상에서 `kordoc serve`로 단건 파싱과 비동기 작업을 실행합니다. [HTTP API 사용법](docs/http-api.md)
 - [상세 사용법](docs/usage.md): 전체 CLI·MCP 도구·API·지원 포맷
 - [Java SDK](sdk/java/README.md) · [Python SDK](sdk/python/README.md): 상주 엔진 워커로 Java·Python 시스템에서 파싱 ([워커 프로토콜](docs/parse-worker-protocol.md))
 - [공문서 생성 가이드](docs/gongmunseo-engine-spec.md) · [아키텍처](docs/architecture.md)

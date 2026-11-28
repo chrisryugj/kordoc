@@ -488,6 +488,10 @@ npx kordoc watch ./문서 --webhook https://api/hook  # 웹훅 알림
 
 ---
 
+## HTTP 서버
+
+다른 시스템에서 파일을 업로드하고 Markdown을 받으려면 `kordoc serve`를 실행하세요. 단건 호출과 비동기 작업 조회는 [HTTP API 사용법](http-api.md)을 참고하세요.
+
 ## 🤖 MCP 서버
 
 자동 설치는 [`npx -y kordoc setup`](#ai-에이전트-연동-mcp--30초). 수동 등록:

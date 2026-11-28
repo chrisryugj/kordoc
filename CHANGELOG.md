@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `kordoc serve`: HTTP로 문서를 업로드하고 Markdown을 받는다. 단건 파싱과 SQLite에 접수 기록을 남기는 비동기 작업을 지원한다. 서버 재시작 뒤에도 대기 작업을 이어서 처리한다. Node.js 24.15 이상이 필요하다. [사용법](docs/http-api.md)
+
 ### Fixed
 
 - `kordoc watch`: 변환·webhook 이 끝나기 전에 같은 파일을 다시 저장하면 새 변경이 로그 없이 버려져 출력이 옛 내용으로 남던 것. 처리 중 들어온 같은 파일은 한 번으로 합쳐 끝난 뒤 다시 처리하고, 그때 디바운스가 남아 있으면 저장이 끝날 때까지 기다린다(webhook 응답 3초 재현 10회 중 10회 → 0회) (#252, @jaewon0502)
