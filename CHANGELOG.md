@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- patch: 공개 `parse()` 결과를 고쳐 넣으면 그림 블록·그림 든 표 칸이 모두 "이미지 변경은 미지원"으로 건너뛰던 것. `parse()` 는 그림 형식을 통일해 `image_001.png` 로, patch 가 다시 읽는 원본은 `image_001.bmp` 로 내 이름이 달랐다. 번호가 같고 확장자만 다른 참조는 원본 이름으로 맞춘다. 2,254유닛 보고서를 그대로 넣었을 때 건너뜀 68 → **0**
+
 ## [4.25.30] - 2026-11-28
 
 ### Added

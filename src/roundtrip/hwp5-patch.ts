@@ -36,7 +36,7 @@ import { anchorAfter, anchorAfterHost, plainNewText, deleteBodyPara, addBodyPara
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
-  splitMarkdownUnits, alignUnitsEx, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
+  splitMarkdownUnits, alignUnitsEx, alignImageNames, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   stripHeadMarker, stripShownHeadMarker, noScriptTags, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   removeNoteMarks, noteMarksOf, splitCellNote, planNoteEdits, noteParaEdit, NOTE_TEXT_UNSUPPORTED, type MdUnit,
@@ -393,6 +393,8 @@ export async function patchHwp(
   let keepTrailingEmptyCols = false
   try {
     const trimmed = parseHwp5Document(originalBuf, { layoutTables: "keep" })
+    // parse() 가 바꾼 그림 확장자(BMP → PNG 등)는 원본 이름으로 — 그림 블록이 "바뀜"으로 건너뛰지 않게
+    editedMarkdown = alignImageNames(editedMarkdown, trimmed.markdown)
     const wide = parseHwp5Document(originalBuf, { layoutTables: "keep", keepTrailingEmptyCols: true })
     keepTrailingEmptyCols = editedFromWideCols(trimmed.markdown, wide.markdown, editedMarkdown)
     const kept = keepTrailingEmptyCols ? wide : trimmed

@@ -28,7 +28,7 @@ import { patchZipEntries } from "./zip-patch.js"
 import { checkPatchIntegrity } from "./integrity.js"
 import { stripHeadMarker, stripShownHeadMarker, noScriptTags,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable, parseHtmlTable, htmlCellInnerToLines,
-  alignUnits, alignUnitsEx, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH, removeNoteMarks, NOTE_TEXT_UNSUPPORTED,
+  alignUnits, alignUnitsEx, alignImageNames, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH, removeNoteMarks, NOTE_TEXT_UNSUPPORTED,
   type MdUnit,
 } from "./markdown-units.js"
 import { patchGfmTable, patchHtmlTable, patchTextChunkTable, EMPHASIS_NOTE } from "./table-patch.js"
@@ -82,6 +82,8 @@ export async function patchHwpx(
   let keepTrailingEmptyCols = false
   try {
     const trimmed = await parseHwpxDocument(u8ToArrayBuffer(original), { layoutTables: "keep" })
+    // parse() 가 바꾼 그림 확장자(BMP → PNG 등)는 원본 이름으로 — 그림 블록이 "바뀜"으로 건너뛰지 않게
+    editedMarkdown = alignImageNames(editedMarkdown, trimmed.markdown)
     const wide = await parseHwpxDocument(u8ToArrayBuffer(original), { layoutTables: "keep", keepTrailingEmptyCols: true })
     keepTrailingEmptyCols = editedFromWideCols(trimmed.markdown, wide.markdown, editedMarkdown)
     const parsed = keepTrailingEmptyCols ? wide : trimmed

@@ -91,6 +91,18 @@ export function splitMarkdownUnits(md: string): MdUnit[] {
   return units
 }
 
+/**
+ * 편집본의 그림 파일명을 원본 추출의 이름으로 맞춘다 — 공개 parse() 는 그림 형식을 통일해(BMP·GIF 등 → PNG) "image_001.png" 로,
+ * patch 가 다시 읽는 원본 IR 은 "image_001.bmp" 로 낸다. 번호가 같고 확장자만 다른 참조만 바꾼다(그림을 바꾼 편집과 구분 못 할
+ * 일은 없다: 그림 바이트는 마크다운에 없다). 종전엔 parse() 결과를 그대로 넣어도 그림 블록·그림 든 칸이 전부 "바뀜"으로 건너뛰었다
+ */
+export function alignImageNames(edited: string, original: string): string {
+  const names = new Map<string, string>()
+  for (const m of original.matchAll(/\b(image_\d+)\.([A-Za-z0-9]+)\b/g)) if (!names.has(m[1])) names.set(m[1], m[0])
+  if (!names.size) return edited
+  return edited.replace(/\b(image_\d+)\.([A-Za-z0-9]+)\b/g, (all, stem: string) => names.get(stem) ?? all)
+}
+
 // ─── 정렬 (정확 일치 LCS + 갭 유사도 페어링) ─────────
 // 유닛(블록)과 표 행 양쪽에서 공용 — patcher.ts에서 이동 (v3.7)
 
