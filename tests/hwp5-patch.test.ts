@@ -151,9 +151,12 @@ function tableMerged(headerText: string, leftText: string | null, rightText: str
   anchorHeader.writeUInt16LE(1, 12)
   anchorHeader.writeUInt16LE(1, 16)
 
-  const tableData = Buffer.alloc(8)
+  // HWP 5.0 명세 TABLE: 행별 칸 수(첫 행 병합 1칸, 둘째 행 2칸)·테두리·영역 수 0
+  const tableData = Buffer.alloc(18 + 2 * 2 + 4)
   tableData.writeUInt16LE(2, 4) // rows
   tableData.writeUInt16LE(2, 6) // cols
+  tableData.writeUInt16LE(1, 18)
+  tableData.writeUInt16LE(2, 20)
 
   const parts = [
     rec(0x42, 0, anchorHeader),
@@ -1139,6 +1142,20 @@ describe("patchHwp — 안전 게이트", () => {
     assert.equal(del.applied, 1)
     assert.doesNotMatch(parseHwp5Document(Buffer.from(del.data!), { layoutTables: "keep" }).markdown, /점수/)
     assert.equal(tableInfo(del.data!).rows, 2)
+  })
+
+  it("병합 표(HTML) 행 더하기·빼기 — 머리 행 병합은 그대로, 합친 칸 없는 행을 본뜬다", async () => {
+    const hwp = buildHwp([tableMerged("머리글", "왼쪽", "오른쪽")])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.match(md, /<tr><td>왼쪽<\/td><td>오른쪽<\/td><\/tr>/)
+    const add = await patchHwp(hwp, md.replace("<tr><td>왼쪽</td><td>오른쪽</td></tr>", "<tr><td>왼쪽</td><td>오른쪽</td></tr>\n<tr><td>새 왼쪽</td><td>새 오른쪽</td></tr>"))
+    assert.equal(add.applied, 1, JSON.stringify(add.skipped))
+    const out = parseHwp5Document(Buffer.from(add.data!), { layoutTables: "keep" }).markdown
+    assert.match(out, /<th colspan="2">머리글<\/th>/)
+    assert.match(out, /<tr><td>왼쪽<\/td><td>오른쪽<\/td><\/tr>\n<tr><td>새 왼쪽<\/td><td>새 오른쪽<\/td><\/tr>/)
+    const del = await patchHwp(add.data!, out.replace("<tr><td>왼쪽</td><td>오른쪽</td></tr>\n", ""))
+    assert.equal(del.applied, 1, JSON.stringify(del.skipped))
+    assert.doesNotMatch(parseHwp5Document(Buffer.from(del.data!), { layoutTables: "keep" }).markdown, /<td>왼쪽<\/td>/)
   })
 
   it("강제 줄바꿈 든 칸 문단 — 문단 안 두 줄 사이는 그 문단 줄로, 문단 사이는 새 문단, 줄이 다 빠진 문단은 지운다 (#249)", async () => {

@@ -32,12 +32,12 @@ import {
 } from "./patcher.js"
 import { previewTextFromBlocks, PREVIEW_IMAGE_NOTE } from "./preview-text.js"
 import { stageCellLines, fixTopLevelLastMark } from "./hwp5-cell-lines.js"
-import { stageTableRows } from "./hwp5-table-rows.js"
+import { stageTableRows, stageRowOps, rowOpsFromPairs } from "./hwp5-table-rows.js"
 import { anchorAfter, anchorAfterHost, newBlockText, deleteBodyPara, addBodyPara, type BodyAnchor } from "./hwp5-body-paras.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
-  splitMarkdownUnits, alignUnitsEx, alignImageNames, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
+  splitMarkdownUnits, alignUnits, alignUnitsEx, alignImageNames, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   stripHeadMarker, stripShownHeadMarker, noScriptTags, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   removeNoteMarks, noteMarksOf, splitCellNote, planNoteEdits, noteParaEdit, NOTE_TEXT_UNSUPPORTED, type MdUnit,
@@ -1067,7 +1067,7 @@ function patchHtmlCells5Raw(
   if (depth > 8) return skip("중첩표 깊이 초과")
   // 자기검증 — builder 렌더와 동일해야 좌표 신뢰 가능
   if (replicateTableToHtml(table) !== origRaw) return skip("표 좌표 재현 불일치 — 매핑 신뢰 불가")
-  const replica = replicateHtmlTable(table)
+  let replica = replicateHtmlTable(table)
   // 되읽기 대칭 검증 — 셀 텍스트에 리터럴 '</td>' 등이 있으면 셀 경계가 어긋나 미편집 셀이
   // 잘려 저장될 수 있음. 원문을 되읽어 replica와 대조한다.
   const origRows = parseHtmlTable(origRaw)
@@ -1076,11 +1076,27 @@ function patchHtmlCells5Raw(
       || r.cells.some((c, j) => c.inner !== replica[i].cells[j].inner))) {
     return skip("셀 경계 모호 (리터럴 태그 의심) — 매핑 신뢰 불가")
   }
-  const editedRows = parseHtmlTable(editedRaw)
+  let editedRows = parseHtmlTable(editedRaw)
   if (!editedRows) return skip("편집된 HTML 표 파싱 실패")
-  if (editedRows.length !== replica.length) return skip("표 행 추가/삭제는 미지원 (표 구조 변경)")
-
   let applied = 0
+  if (editedRows.length !== replica.length) {
+    // 행 더하기·빼기 — 사본 행 번호가 소스맵 행 번호와 같은 표만. 새 행은 합친 칸 없이 열 수만큼 글 칸
+    const eds = editedRows
+    const sameRows = replica.length === scanTable.rows && replica.every((row, r) => row.cells.every(c => c.gridR === r))
+    const key = (cells: Array<{ inner: string }>) => cells.map(c => c.inner).join("\u0001")
+    const plan = sameRows ? rowOpsFromPairs(alignUnits(replica.map(r => key(r.cells)), eds.map(r => key(r.cells))), e => {
+      const row = eds[e].cells
+      if (row.length !== scanTable.cols || row.some(c => c.colSpan !== 1 || c.rowSpan !== 1)) return null
+      const lines = row.map(c => htmlCellInnerToLines(c.inner))
+      return lines.some(l => l.hadNonText) ? null : lines.map(l => l.lines)
+    }) : null
+    const n = plan ? stageRowOps(ctx.scans[scanTable.sectionIndex], scanTable, plan.ops) : null
+    if (n === null || !plan) return skip("표 행 추가/삭제는 미지원 (표 구조 변경)")
+    applied += n
+    replica = plan.matched.map(([o]) => replica[o])
+    editedRows = plan.matched.map(([, e]) => eds[e])
+  }
+
   for (let r = 0; r < replica.length; r++) {
     if (editedRows[r].cells.length !== replica[r].cells.length) {
       skip(`표 ${r + 1}행 셀 수 변경은 미지원`)
