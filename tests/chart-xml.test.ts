@@ -117,6 +117,25 @@ describe("형식별 연결", () => {
     assert.ok(off.success && !off.blocks.some(b => b.type === "table"))
   })
 
+  it("DOCX: 표 칸 안 차트는 표 바로 뒤에, 글상자 안 차트는 글상자 글 뒤에 — 한 번씩", async () => {
+    const zip = docxWithChart()
+    const W = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"`
+    const inline = `<w:r><w:drawing><wp:inline>${graphic("rId5")}</wp:inline></w:drawing></w:r>`
+    zip.file("word/document.xml", `<?xml version="1.0"?><w:document ${W}><w:body>`
+      + `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>칸 글</w:t></w:r></w:p><w:p>${inline}</w:p></w:tc></w:tr></w:tbl>`
+      + `<w:p><w:r><w:t>사이 문단</w:t></w:r></w:p>`
+      + `<w:p><w:r><w:drawing><wp:anchor><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>상자 글</w:t></w:r></w:p><w:p>${inline}</w:p></w:txbxContent></wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>`
+      + `</w:body></w:document>`)
+    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }), { charts: true })
+    assert.ok(r.success)
+    if (!r.success) return
+    const md = r.markdown
+    assert.equal(md.match(/\*\*차트: 연도별 민원/g)?.length, 2)
+    const first = md.indexOf("차트: 연도별 민원"), second = md.indexOf("차트: 연도별 민원", first + 1)
+    assert.ok(md.indexOf("칸 글") < first && first < md.indexOf("사이 문단"))
+    assert.ok(md.indexOf("상자 글") < second)
+  })
+
   it("XLSX: 시트 → 그리기 → 차트 관계를 따라 시트 표 뒤에 차트 표", async () => {
     const zip = new JSZip()
     zip.file("[Content_Types].xml", `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>`)

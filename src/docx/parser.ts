@@ -1118,10 +1118,13 @@ export async function parseDocxDocument(
         const tb = parseParagraph(tp, styles, numbering, footnotes, rels)
         if (tb) blocks.push(tb)
         if (imageMap.size > 0) emitParagraphImages(tp, imageMap, linkedImages, blocks, pageOf)
+        if (graphicParts.size > 0) emitParagraphGraphics(tp, graphicParts, blocks)
       }
     } else if (localName === "tbl") {
       const block = parseTable(el, styles, numbering, footnotes, rels, options?.keepTrailingEmptyCols)
       if (block) blocks.push(block)
+      // 표 칸 안 차트·SmartArt — 칸 글은 평문이라 표 바로 뒤에 낸다(표 칸 안 그림이 문서 끝 참조로 가는 것과 같은 까닭)
+      if (graphicParts.size > 0) emitParagraphGraphics(el, graphicParts, blocks)
     }
     if (breaks) {
       for (let i = first; i < blocks.length; i++) blocks[i].pageNumber ??= page

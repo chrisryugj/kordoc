@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- DOCX `charts`: 표 칸 안 차트·SmartArt 는 표 바로 뒤에, 글상자 안 차트는 글상자 글 뒤에 낸다. 종전에는 본문 문단의 차트만 읽었다
+
 ## [4.25.28] - 2026-11-28
 
 ### Added
