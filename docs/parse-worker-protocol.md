@@ -35,7 +35,7 @@ ready 는 요청을 받을 수 있다는 뜻일 뿐, 워밍업이 끝났다는 �
 | `cmd` | O | `"parse"` 또는 `"quit"` |
 | `file` | O | 입력 파일의 절대 경로 |
 | `options` | | 아래 허용 목록의 `ParseOptions` |
-| `transport` | | `{"images": "inline" \| "files", "assetsDir": "/abs/dir"}` |
+| `transport` | | 선택 키 `images`(`"inline"`·`"files"`), `assetsDir`(절대 경로), `result`(`"markdown"`·`"blocks"`) |
 
 요청은 한 번에 하나씩 순서대로 처리합니다. 동시에 처리하려면 워커를 여러 개 띄웁니다.
 `{"cmd":"quit"}` 이나 stdin EOF 를 받으면 마지막 응답까지 다 쓴 뒤 종료 코드 0 으로 끝납니다.
@@ -66,7 +66,9 @@ stdout 이 닫히면(EPIPE) 남은 요청을 버리고, stdin EOF 를 기다리�
 {"id":3,"error":{"code":"INVALID_OPTIONS","message":"options: Unrecognized key(s) in object: 'filePath'"}}
 ```
 
-- `result` 는 `kordoc 문서 --format json` 과 같은 `ParseResult` 입니다. 문서를 읽지 못한 것도 `success: false` 결과로 옵니다.
+- `transport.result` 를 생략하면 `result` 는 `kordoc 문서 --format json` 과 같은 `ParseResult` 입니다.
+- `transport.result` 에 `"markdown"` 을 지정하면 성공 응답의 `result` 에 `success`, `fileType`, `markdown`, `warnings` 만 담습니다. `"blocks"` 는 여기에 `blocks` 를 추가합니다. 경고가 없으면 `warnings` 는 빈 배열입니다.
+- 워커는 필드를 고른 뒤 응답 줄 상한을 적용합니다. 파싱 실패는 모든 모드에서 기존 `success: false` 결과로 답합니다. `transport.result` 와 `transport.images: "files"` 를 함께 지정하면 `INVALID_REQUEST` 로 답합니다.
 - `error` 는 요청이나 전송이 잘못된 경우입니다. 요청에 올바른 `id` 가 있으면 함께 돌려줍니다.
 - `rss` 는 응답 직전의 워커 RSS(바이트)입니다. 처리 중 최댓값이 아닙니다. 호스트가 워커 교체 시점을 정하는 데 씁니다.
 

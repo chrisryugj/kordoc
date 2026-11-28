@@ -162,6 +162,41 @@ describe("parse-worker protocol 2 — 요청·응답", () => {
     assert.equal(JSON.parse(out[2]).id, 2) // 워커는 살아 있다
   }))
 
+  test("transport.result 는 응답 상한을 적용하기 전에 필요한 필드만 남긴다", () => withDir(async (dir) => {
+    const file = join(dir, "record.hwpml")
+    const records = Array.from({ length: 4 }, (_, i) =>
+      `<P ParaShape="0"><TEXT CharShape="0"><CHAR>기록 ${i}: ${"가나다라마바사 ".repeat(100)}</CHAR></TEXT></P>`).join("")
+    writeFileSync(file, `<?xml version="1.0" encoding="UTF-8"?><HWPML Version="2.9"><BODY><SECTION Id="0">${records}</SECTION></BODY></HWPML>`)
+    const parsed = await parse(file, { images: false })
+    assert.ok(parsed.success)
+    const { fileType, markdown, warnings, blocks } = parsed
+    const projected = { success: true, fileType, markdown, warnings: warnings ?? [] }
+    const request = { cmd: "parse", file, options: { images: false } }
+    const { out, code } = await runWorker([
+      line({ ...request, id: 1 }),
+      line({ ...request, id: 2, transport: { result: "markdown" } }),
+      line({ ...request, id: 3, transport: { result: "blocks" } }),
+    ], ["--protocol", "2", "--max-response-bytes", String(24 * 1024)])
+    assert.equal(code, 0)
+    assert.equal(JSON.parse(out[1]).error.code, "RESPONSE_TOO_LARGE")
+    assert.deepEqual(JSON.parse(out[2]).result, projected)
+    assert.deepEqual(JSON.parse(out[3]).result, { ...projected, blocks: toWire(blocks) })
+  }))
+
+  test("transport.result 는 파싱 실패를 그대로 돌려주고 이미지 파일 전송과 함께 쓰면 거절한다", () => withDir(async (dir) => {
+    const request = { cmd: "parse", file: join(dir, "없음.hwp") }
+    const { out, code } = await runWorker([
+      line({ ...request, id: 1 }),
+      line({ ...request, id: 2, transport: { result: "markdown" } }),
+      line({ ...request, id: 3, transport: { result: "blocks", images: "files", assetsDir: dir } }),
+    ])
+    assert.equal(code, 0)
+    const failure = JSON.parse(out[1]).result
+    assert.equal(failure.code, "FILE_NOT_FOUND")
+    assert.deepEqual(JSON.parse(out[2]).result, failure)
+    assert.equal(JSON.parse(out[3]).error.code, "INVALID_REQUEST")
+  }))
+
   test("stdin 이 닫혀도 마지막 큰 응답을 끝까지 쓰고 종료", () => withDir(async (dir) => {
     const file = join(dir, "big.docx")
     writeFileSync(file, await imageDocx("가나다라마바사 ".repeat(300_000)))

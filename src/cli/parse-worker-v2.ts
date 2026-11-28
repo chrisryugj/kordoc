@@ -77,6 +77,7 @@ const optionsSchema = z.object({
 const transportSchema = z.object({
   images: z.enum(["inline", "files"]).optional(),
   assetsDir: z.string().optional(),
+  result: z.enum(["markdown", "blocks"]).optional(),
 }).strict()
 
 const parseRequestSchema = z.object({
@@ -308,6 +309,8 @@ export async function runParseWorkerV2(opts: ParseWorkerV2Options = {}): Promise
     const { file, transport } = req.data
     if (!isAbsolute(file)) { await fail(id, "INVALID_REQUEST", "file 은 절대 경로여야 합니다"); continue }
     const files = transport?.images === "files"
+    const resultMode = transport?.result
+    if (files && resultMode !== undefined) { await fail(id, "INVALID_REQUEST", "transport.result 와 transport.images \"files\" 는 함께 쓸 수 없습니다"); continue }
     if (files && sandboxed) { await fail(id, "INVALID_REQUEST", "transport.images \"files\" 는 KORDOC_SANDBOX=gvisor 에서 쓸 수 없습니다 — 샌드박스 안에서 쓴 파일은 사라집니다. \"inline\" 을 쓰세요"); continue }
     if (files) {
       const dir = transport?.assetsDir
@@ -328,7 +331,16 @@ export async function runParseWorkerV2(opts: ParseWorkerV2Options = {}): Promise
         continue
       }
     }
-    const sent = await write({ id, rss: process.memoryUsage.rss(), ...(assetsDir ? { assetsDir } : {}), result })
+    const sent = await write({
+      id, rss: process.memoryUsage.rss(), ...(assetsDir ? { assetsDir } : {}),
+      result: result.success && resultMode !== undefined ? {
+        success: result.success,
+        fileType: result.fileType,
+        markdown: result.markdown,
+        warnings: result.warnings ?? [],
+        ...(resultMode === "blocks" ? { blocks: result.blocks } : {}),
+      } : result,
+    })
     // 응답을 못 보냈으면(상한 초과·stdout 닫힘) 그 요청의 자산은 아무도 가리키지 않는다 — 미완료 자산으로 지운다
     if (!sent && assetsDir) rmSync(assetsDir, { recursive: true, force: true })
   }

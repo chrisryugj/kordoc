@@ -15,7 +15,7 @@ const answer = z.union([
   z.object({ id: z.number(), result: z.discriminatedUnion("success", [
     z.object({
       success: z.literal(true), markdown: z.string(), fileType,
-      warnings: z.array(z.unknown()).optional(), blocks: z.array(z.unknown()),
+      warnings: z.array(z.unknown()), blocks: z.array(z.unknown()).optional(),
     }),
     z.object({ success: z.literal(false), code: z.string().optional() }),
   ]) }),
@@ -48,7 +48,8 @@ export class ParseWorker {
   private readonly wireLimit: number
 
   constructor(private readonly timeoutMs: number, resultLimit: number) {
-    this.wireLimit = Math.max(16 * 1024 * 1024, resultLimit * 2)
+    // Leave room for the protocol envelope and control frames. The server checks the exact public JSON size.
+    this.wireLimit = resultLimit + 4 * 1024
   }
 
   async run(file: string, options: JobOptions): Promise<Outcome> {
@@ -120,8 +121,10 @@ export class ParseWorker {
       if (!hello.capabilities.includes("parse")) throw new Error("Worker lacks parse capability")
     }
     const id = ++connection.lastId
+    const includeBlocks = options.blocks === "true"
     const request = JSON.stringify({
       id, cmd: "parse", file,
+      transport: { result: includeBlocks ? "blocks" : "markdown" },
       options: {
         images: false,
         ocr: options.ocr === "force" ? "force" : options.ocr === "true",
@@ -142,7 +145,8 @@ export class ParseWorker {
       return { kind: "failure", error: code.success ? code.data : "PARSE_ERROR" }
     }
     const { markdown, fileType, warnings, blocks } = message.result
-    const json = JSON.stringify({ markdown, fileType, warnings: warnings ?? [], ...(options.blocks === "true" ? { blocks } : {}) })
+    if (includeBlocks && blocks === undefined) throw new Error("Worker response is missing blocks")
+    const json = JSON.stringify({ markdown, fileType, warnings, ...(includeBlocks ? { blocks } : {}) })
     return { kind: "success", json }
   }
 }

@@ -26,7 +26,7 @@ if (process.argv[2] === "parse-worker") {
       if (id === 2) {
         while (!existsSync(searchParams.get("release"))) await delay(10)
       }
-      const result = { success: true, fileType: "hwpx", markdown: `result ${id}`, blocks: [] }
+      const result = { success: true, fileType: "hwpx", markdown: `result ${id}`, warnings: [], blocks: [] }
       process.stdout.write(JSON.stringify({ id, result }) + "\n")
     }
   }
