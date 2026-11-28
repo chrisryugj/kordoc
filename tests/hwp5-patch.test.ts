@@ -106,9 +106,12 @@ function table2x2(cells: (string | string[] | null)[][]): Buffer {
   anchorHeader.writeUInt16LE(1, 12)
   anchorHeader.writeUInt16LE(1, 16)
 
-  const tableData = Buffer.alloc(8)
+  // HWP 5.0 명세 TABLE: 속성(4)·행 수·열 수·칸 간격·안 여백(4×2)·행별 칸 수(행×2)·테두리(2)·영역 수(2)
+  const tableData = Buffer.alloc(18 + 2 * 2 + 4)
   tableData.writeUInt16LE(2, 4)
   tableData.writeUInt16LE(2, 6)
+  tableData.writeUInt16LE(2, 18)
+  tableData.writeUInt16LE(2, 20)
 
   const parts = [
     rec(0x42, 0, anchorHeader),
@@ -1106,6 +1109,36 @@ describe("patchHwp — 안전 게이트", () => {
     const noop = await patchHwp(hwp, md)
     assert.deepEqual(Buffer.from(noop.data!), Buffer.from(hwp))
     assert.equal(noop.warnings, undefined)
+  })
+
+  it("표 행 더하기·빼기 — 앞 행 칸을 본떠 끼우고, 행 주소·TABLE 행 수를 맞춘다, 짝지어진 행의 칸 고침도 함께", async () => {
+    const hwp = buildHwp([table2x2([["항목", "값"], ["점수", "80"]])])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    const tableInfo = (data: Uint8Array) => {
+      const recs = readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(data)), "/BodyText/Section0").content))
+      const t = recs.find(x => x.tagId === 0x4d)!
+      return { rows: t.data.readUInt16LE(4), rowAddrs: recs.filter(x => x.tagId === 0x48).map(x => x.data.readUInt16LE(10)) }
+    }
+    for (const [edited, want, rows, label] of [
+      [md.replace("| 점수 | 80 |", "| 점수 | 80 |\n| 등급 | 우수 |"), "| 점수 | 80 |\n| 등급 | 우수 |", 3, "끝에 행 더하기"],
+      [md.replace("| 점수 | 80 |", "| 등급 | 우수 |\n| 점수 | 80 |"), "| 등급 | 우수 |\n| 점수 | 80 |", 3, "가운데 행 넣기"],
+      [md.replace("| 점수 | 80 |", "| 점수 | 90 |\n| 등급 | 우수 |"), "| 점수 | 90 |\n| 등급 | 우수 |", 3, "더하며 칸 고치기"],
+    ] as const) {
+      const r = await patchHwp(hwp, edited)
+      assert.ok(r.applied >= 1, `${label}: ${r.applied} ${JSON.stringify(r.skipped)}`)
+      assert.deepEqual(r.skipped, [], label)
+      const out = parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown
+      assert.ok(out.includes(want), `${label}: ${JSON.stringify(md)} → ${JSON.stringify(out)}`)
+      const t = tableInfo(r.data!)
+      assert.equal(t.rows, rows, `${label}: TABLE 행 수`)
+      assert.deepEqual(t.rowAddrs, Array.from({ length: rows * 2 }, (_, k) => Math.floor(k / 2)), `${label}: 행 주소`)
+    }
+    const three = await patchHwp(hwp, md.replace("| 점수 | 80 |", "| 점수 | 80 |\n| 등급 | 우수 |"))
+    const md3 = parseHwp5Document(Buffer.from(three.data!), { layoutTables: "keep" }).markdown
+    const del = await patchHwp(three.data!, md3.replace("| 점수 | 80 |\n", ""))
+    assert.equal(del.applied, 1)
+    assert.doesNotMatch(parseHwp5Document(Buffer.from(del.data!), { layoutTables: "keep" }).markdown, /점수/)
+    assert.equal(tableInfo(del.data!).rows, 2)
   })
 
   it("강제 줄바꿈 든 칸 문단 — 문단 안 두 줄 사이는 그 문단 줄로, 문단 사이는 새 문단, 줄이 다 빠진 문단은 지운다 (#249)", async () => {

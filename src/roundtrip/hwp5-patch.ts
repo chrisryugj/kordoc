@@ -32,6 +32,7 @@ import {
 } from "./patcher.js"
 import { previewTextFromBlocks, PREVIEW_IMAGE_NOTE } from "./preview-text.js"
 import { stageCellLines, fixTopLevelLastMark } from "./hwp5-cell-lines.js"
+import { stageTableRows } from "./hwp5-table-rows.js"
 import { anchorAfter, anchorAfterHost, newBlockText, deleteBodyPara, addBodyPara, type BodyAnchor } from "./hwp5-body-paras.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
@@ -166,6 +167,8 @@ export interface ScanTable5 {
   sectionIndex: number
   /** 표 컨트롤을 담은 문단(PARA_HEADER) 레코드 — 표 뒤에 문단을 끼울 자리 */
   hostIdx: number
+  /** HWPTAG_TABLE 레코드 — 행 수·행별 칸 수 */
+  tableIdx: number
   rows: number
   cols: number
   /** "row,col" → 셀 (앵커 좌표 기준) */
@@ -316,7 +319,7 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
       }
       j = k
     }
-    return { sectionIndex, hostIdx: parent[i], rows, cols, cells }
+    return { sectionIndex, hostIdx: parent[i], tableIdx, rows, cols, cells }
   }
 
   // 최상위 표 수집 (다른 tbl 내부에 중첩된 표 제외 — IR 최상위 표 서수와 정렬). 중첩 표는 칸의 tables 로
@@ -958,13 +961,20 @@ function patchGfmCells(
   scanTable: ScanTable5, orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5,
   skip: (reason: string) => number,
 ): number {
-  const origRows = parseGfmTable(orig.lines)
-  const editedRows = parseGfmTable(edited.lines)
+  let origRows = parseGfmTable(orig.lines)
+  let editedRows = parseGfmTable(edited.lines)
+  // 행 번호(소스맵 행) — 행 더하기·빼기 뒤에는 짝지어진 행만 칸 글을 고친다
+  let rowOf = origRows.map((_, r) => r)
+  let applied = 0
   if (origRows.length !== editedRows.length || origRows.some((r, i) => r.length !== editedRows[i].length)) {
-    return skip("표 구조 변경(행/열 수)은 미지원 (v1)")
+    const rows = origRows.length !== editedRows.length ? stageTableRows(ctx.scans[scanTable.sectionIndex], scanTable, origRows, editedRows, gfmCellToPlain) : null
+    if (!rows) return skip("표 구조 변경(행/열 수)은 미지원 (v1)")
+    applied += rows.applied
+    rowOf = rows.pairs.map(([o]) => o)
+    editedRows = rows.pairs.map(([, e]) => editedRows[e])
+    origRows = rows.pairs.map(([o]) => origRows[o])
   }
 
-  let applied = 0
   for (let r = 0; r < origRows.length; r++) {
     for (let c = 0; c < origRows[r].length; c++) {
       if (origRows[r][c] === editedRows[r][c]) continue
@@ -972,7 +982,7 @@ function patchGfmCells(
         ctx.skipped.push({ reason, before: summarize(origRows[r][c]), after: summarize(editedRows[r][c]) })
         return 0
       }
-      const cell = scanTable.cells.get(`${r},${c}`)
+      const cell = scanTable.cells.get(`${rowOf[r]},${c}`)
       if (!cell) { cellSkip("병합 영역 셀 — 앵커 셀이 아니므로 미지원"); continue }
 
       // 셀 내 여러 문단은 GFM에서 <br>로 이어진다 — 분할해 각 문단과 1:1 매핑한다.
