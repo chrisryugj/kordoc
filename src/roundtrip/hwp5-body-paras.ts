@@ -40,12 +40,18 @@ export function anchorAfterHost(scan: SectionScan5, hostIdx: number, paras: Scan
   return { scan, tpl, at: groupEnd(scan, host.headerIdx) }
 }
 
-/** 새 블록 마크다운이 서식 없는 한 줄 글인가 — 그 글을 돌려준다 */
+/**
+ * 새 블록 마크다운이 서식 없는 한 줄 글인가 — 원문에 넣을 글을 돌려준다. 줄 머리의 제목·목록·표·인용·코드·그림, 강조(**·__)·코드(`)·
+ * 수식($)·취소선(~~)·링크([글](주소))·HTML 태그는 서식이라 null. 그 밖 글자("[붙임 1]", "a_b", "1 | 2")는 그대로, 역슬래시 이스케이프는 푼다
+ */
 export function plainNewText(raw: string): string | null {
   const t = raw.trim()
   if (!t || t.includes("\n")) return null
-  if (/^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||```|!\[|<)/.test(t) || /[\\*_`$<>[\]|]/.test(t)) return null
-  return t
+  if (/^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||```|!\[)/.test(t)) return null
+  const bare = t.replace(/\\[\\`*_{}[\]()#+\-.!|<>$~]/g, "")  // 이스케이프된 글자는 서식 판정에서 뺀다
+  if (/\*\*|__|`|\$|~~|\[[^\]]*\]\([^)]*\)|<\/?[A-Za-z][^>]*>/.test(bare)) return null
+  if (/(^|[^\w*])\*[^*\s][^*]*\*(?!\w)|(^|\W)_[^_\s][^_]*_(?!\w)/.test(bare)) return null  // *기울임*·_기울임_
+  return t.replace(/\\([\\`*_{}[\]()#+\-.!|<>$~])/g, "$1")
 }
 
 /** 원문 문단 지우기 — 못 지우면 false */

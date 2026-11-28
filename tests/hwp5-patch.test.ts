@@ -1143,6 +1143,7 @@ describe("patchHwp — 안전 게이트", () => {
       [md + "\n\n끝에 넣은 문단입니다", "끝에 더하기"],
       [md.replace("\n\n둘째 문단입니다", ""), "가운데 빼기"],
       [md.replace("\n\n셋째 문단입니다", ""), "끝 빼기"],
+      [md.replace("둘째 문단입니다", "둘째 문단입니다\n\n[붙임 1] 사업 계획서"), "대괄호 든 평문 더하기"],
     ] as const) {
       const r = await patchHwp(hwp, edited)
       assert.ok(r.applied >= 1, label)
