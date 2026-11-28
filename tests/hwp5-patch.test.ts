@@ -1108,6 +1108,31 @@ describe("patchHwp — 안전 게이트", () => {
     assert.equal(noop.warnings, undefined)
   })
 
+  it("강제 줄바꿈 든 칸 문단 — 문단 안 두 줄 사이는 그 문단 줄로, 문단 사이는 새 문단, 줄이 다 빠진 문단은 지운다 (#249)", async () => {
+    const hwp = buildHwp([table2x2([["항목", "경과"], ["기록", ["첫 줄\n둘째 줄", "셋째 줄"]]])])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.match(md, /첫 줄<br>둘째 줄<br>셋째 줄/)
+    const heads = (data: Uint8Array) => {
+      const recs = readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(data)), "/BodyText/Section0").content))
+      const li = recs.map(x => x.tagId).lastIndexOf(0x48)
+      return { count: recs[li].data.readUInt16LE(0), paras: recs.slice(li + 1).filter(x => x.tagId === 0x42 && x.level === recs[li].level).length }
+    }
+    for (const [cell, paras, label] of [
+      ["첫 줄<br>사이 줄<br>둘째 줄<br>셋째 줄", 2, "문단 안 두 줄 사이"],
+      ["첫 줄<br>둘째 줄<br>새 문단<br>셋째 줄", 3, "문단 사이"],
+      ["첫 줄<br>둘째 줄", 1, "문단째 지우기"],
+      ["첫 줄 고침<br>둘째 줄<br>셋째 줄", 2, "같은 줄 수 고치기"],
+    ] as const) {
+      const r = await patchHwp(hwp, md.replace("첫 줄<br>둘째 줄<br>셋째 줄", cell))
+      assert.equal(r.applied, 1, label)
+      assert.deepEqual(r.skipped, [], label)
+      assert.match(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown, new RegExp(`\\| ${cell} \\|`), label)
+      const h = heads(r.data!)
+      assert.equal(h.paras, paras, `${label}: 칸 문단 수`)
+      assert.equal(h.count, paras, `${label}: 칸 머리 문단 수`)
+    }
+  })
+
   it("본문 문단 더하기·빼기 — 평문 새 문단은 앞 문단 모양으로, 맨 문단은 지운다, 서식 든 새 블록은 건너뜀", async () => {
     const hwp = buildHwp([paragraph("첫째 문단입니다"), paragraph("둘째 문단입니다"), paragraph("셋째 문단입니다")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown

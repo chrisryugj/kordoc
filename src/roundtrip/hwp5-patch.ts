@@ -976,11 +976,10 @@ function patchGfmCells(
           noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(0, after)))
         continue
       }
-      // 줄(문단) 더하기·빼기 — 옛 줄이 칸 문단과 1:1 로 맞을 때만 (#249)
-      if (beforeParts.length === cell.paras.length && afterParts.length !== cell.paras.length) {
+      // 줄(문단) 더하기·빼기, 강제 줄바꿈 든 칸 문단 (#249) — 칸 문단을 줄로 편 것이 옛 줄과 맞을 때 (stageCellLines 가 확인)
+      if (afterParts.length !== cell.paras.length || beforeParts.length !== cell.paras.length) {
         const b = beforeParts.map(gfmCellToPlain), a = afterParts.map(gfmCellToPlain)
-        const trusted = b.every((l, k) => l !== null && normForMatch(cell.paras[k].rawText) === normForMatch(l))
-        if (trusted && a.every(l => l !== null && !l.includes("\n") && sanitizeText(l) === l)) {
+        if (b.every(l => l !== null) && a.every(l => l !== null && !l.includes("\n") && sanitizeText(l) === l)) {
           const n = stageCellLines(ctx.scans[cell.paras[0].sectionIndex], cell, b as string[], a as string[], cellSkip, ctx.keepLineseg)
           if (n !== null) { applied += n; continue }
         }
@@ -1178,6 +1177,12 @@ function applyCellEdit5(
   }
 
   const nonEmpty = cell.paras.filter(p => normForMatch(p.rawText) !== "")
+  // 줄(문단) 더하기·빼기, 강제 줄바꿈 든 칸 문단 (#249) — 칸 문단이 모두 글 있는 줄이고 강조 표지가 없을 때. 그 밖은 아래 종전 처리
+  if (nonEmpty.length === cell.paras.length && newLines.length > 0 && (newLines.length !== nonEmpty.length || (origLineCount !== undefined && origLineCount !== nonEmpty.length))
+    && newLines.every(l => !l.includes("\n") && sanitizeText(l) === l) && !/\*\*|<\/?(?:u|sup|sub)>/.test(before + after)) {
+    const n = stageCellLines(ctx.scans[cell.paras[0].sectionIndex], cell, cell.paras.flatMap(p => p.rawText.split("\n")), newLines, skip, ctx.keepLineseg)
+    if (n !== null) return n
+  }
   if (origLineCount !== undefined && nonEmpty.length > 0 && origLineCount !== nonEmpty.length) {
     return skip("셀 줄 경계 매핑 모호 (문단 내 줄바꿈) — 미지원")
   }
@@ -1188,12 +1193,6 @@ function applyCellEdit5(
   const targets = nonEmpty.length > 0 ? nonEmpty : cell.paras
   if (targets.length === 0) return skip("셀에 문단이 없음 — 미지원")
 
-  // 줄(문단) 더하기·빼기 — 칸 문단이 모두 글 있는 줄이고 강조 표지가 없을 때 (#249). 그 밖은 아래 종전 처리(합치기·비우기)
-  if (nonEmpty.length === cell.paras.length && newLines.length !== targets.length && newLines.length > 0
-    && newLines.every(l => !l.includes("\n")) && !/\*\*|<\/?(?:u|sup|sub)>/.test(before + after)) {
-    const n = stageCellLines(ctx.scans[cell.paras[0].sectionIndex], cell, cell.paras.map(p => normForMatch(p.rawText)), newLines, skip, ctx.keepLineseg)
-    if (n !== null) return n
-  }
   // 라인 → 문단 순서 매핑 (넘치는 줄은 마지막 문단에 강제 줄바꿈으로 병합, 줄어든 줄은 비움)
   const assigned: string[] = []
   for (let i = 0; i < targets.length; i++) {

@@ -108,12 +108,20 @@ function lcsPairs(a: string[], b: string[]): Array<[number, number]> {
 
 /**
  * 칸 줄 편집을 스테이징한다. 적용하면 1, 손대지 않고 건너뛰면 0(skip 사유를 남긴다), 이 경로로 못 다루는 칸이면 null(호출자가 종전 처리).
+ *
+ * 칸 문단은 강제 줄바꿈("\n")으로 여러 줄일 수 있다 — 줄로 펴서 맞댄다(before = 펴진 줄, 칸 문단 글과 정규화 일치해야 한다).
+ * 한 문단의 두 줄 사이에 더한 줄은 그 문단 안 강제 줄바꿈 줄로, 문단 사이·끝에 더한 줄은 새 문단으로 넣는다. 줄이 다 빠진 문단은 지운다
  */
 export function stageCellLines(
   scan: SectionScan5, cell: ScanCell5, before: string[], after: string[],
   skip: (reason: string) => number, keepLineseg: boolean,
 ): number | null {
-  if (!scan.safe || cell.tables.length > 0 || before.length !== cell.paras.length || after.length === 0) return null
+  if (!scan.safe || cell.tables.length > 0 || after.length === 0 || !cell.paras.length) return null
+  // 칸 문단 → 줄(주인 문단 번호)
+  const owner: number[] = []
+  cell.paras.forEach((p, k) => { for (const _ of p.rawText.split("\n")) owner.push(k) })
+  const flat = cell.paras.flatMap(p => p.rawText.split("\n"))
+  if (flat.length !== before.length || flat.some((t, i) => normForMatch(t) !== normForMatch(before[i]))) return null
   const records = scan.records
   const level = records[cell.paras[0].headerIdx].level
   const hasCtrl = (h: number) => { for (let j = h + 1; j < groupEnd(scan, h); j++) if (records[j].tagId === TAG_CTRL_HEADER) return true; return false }
@@ -131,25 +139,42 @@ export function stageCellLines(
     if (ai < before.length) ops.push({ kind: "keep", i: ai, j: aj })
     pi = ai + 1; pj = aj + 1
   }
-  for (const op of ops) if (op.kind === "del" && (hasCtrl(cell.paras[op.i].headerIdx) || cell.paras[op.i].guides.length)) return skip("지울 칸 줄에 개체·누름틀이 있어 미지원")
 
-  // 1) 고친 줄
-  for (const op of ops) {
-    if (op.kind !== "edit" || normForMatch(before[op.i]) === normForMatch(after[op.j])) continue
-    if (!stageParaPatch(scan, cell.paras[op.i], after[op.j], skip, keepLineseg, before[op.i])) return 0
+  // 문단마다 새 줄 · 문단 뒤에 붙일 새 문단
+  const lines: string[][] = cell.paras.map(() => [])
+  const touched = new Set<number>()
+  const newAfter = new Map<number, string[]>()  // -1 = 첫 문단 앞
+  let cur = -1
+  ops.forEach((op, x) => {
+    if (op.kind === "keep" || op.kind === "edit") { cur = owner[op.i]; lines[cur].push(op.kind === "keep" ? flat[op.i] : after[op.j]); if (op.kind === "edit") touched.add(cur); return }
+    if (op.kind === "del") { cur = owner[op.i]; touched.add(cur); return }
+    // 더한 줄: 다음 옛 줄이 같은 문단이면 그 문단 안 줄, 아니면 새 문단
+    const next = ops.slice(x + 1).find(o => o.kind !== "add") as { i: number } | undefined
+    if (cur >= 0 && next && owner[next.i] === cur) { lines[cur].push(after[op.j]); touched.add(cur); return }
+    newAfter.set(cur, [...(newAfter.get(cur) ?? []), after[op.j]])
+  })
+  for (const k of touched) if (!lines[k].length && (hasCtrl(cell.paras[k].headerIdx) || cell.paras[k].guides.length)) return skip("지울 칸 줄에 개체·누름틀이 있어 미지원")
+
+  // 1) 고친 문단 — 줄은 강제 줄바꿈으로 잇는다
+  for (const k of touched) {
+    if (!lines[k].length) continue
+    const was = cell.paras[k].rawText.split("\n").map(normForMatch).join("\n")
+    if (lines[k].map(normForMatch).join("\n") === was) continue
+    if (!stageParaPatch(scan, cell.paras[k], lines[k].join("\n"), skip, keepLineseg, cell.paras[k].rawText)) return 0
   }
-  // 2) 뺀 줄 — 문단 레코드 묶음을 지운다
-  for (const op of ops) if (op.kind === "del") deleteParagraph(scan, cell.paras[op.i].headerIdx)
-  // 3) 더한 줄 — 앞 문단 뒤(없으면 첫 문단 앞)에 새 문단. 문단 모양·글자 모양은 앞 문단(없으면 뒤 문단)에서
+  // 2) 줄이 다 빠진 문단 — 레코드 묶음을 지운다
+  for (const k of touched) if (!lines[k].length) deleteParagraph(scan, cell.paras[k].headerIdx)
+  // 3) 새 문단 — 앞 문단 뒤(없으면 첫 문단 앞)에. 문단 모양·글자 모양은 앞 문단(없으면 첫 문단)에서
   const finalOrder: Array<number | NewPara> = []
-  let prev = -1  // 마지막으로 놓인 옛 문단 i
-  for (const op of ops) {
-    if (op.kind === "keep" || op.kind === "edit") { prev = op.i; finalOrder.push(cell.paras[op.i].headerIdx); continue }
-    if (op.kind === "del") { prev = op.i; continue }
-    const p = newParagraph(scan, cell.paras[prev >= 0 ? prev : 0], after[op.j], level)
-    finalOrder.push(p)
-    insertParagraph(scan, prev >= 0 ? groupEnd(scan, cell.paras[prev].headerIdx) : cell.paras[0].headerIdx, level, p)
+  const addNew = (k: number) => {
+    for (const text of newAfter.get(k) ?? []) {
+      const p = newParagraph(scan, cell.paras[k >= 0 ? k : 0], text, level)
+      finalOrder.push(p)
+      insertParagraph(scan, k >= 0 ? groupEnd(scan, cell.paras[k].headerIdx) : cell.paras[0].headerIdx, level, p)
+    }
   }
+  addNew(-1)
+  cell.paras.forEach((p, k) => { if (lines[k].length || !touched.has(k)) finalOrder.push(p.headerIdx); addNew(k) })
   // 4) 마지막 문단 표시·칸 문단 수
   finalOrder.forEach((p, k) => (typeof p === "number" ? setLastMark(scan, p, k === finalOrder.length - 1) : markNew(p, k === finalOrder.length - 1)))
   const lh = Buffer.from(scan.repl.get(cell.listHeaderIdx) ?? records[cell.listHeaderIdx].data)
