@@ -575,6 +575,22 @@ describe("patchHwp — 1열 표 여러 줄 칸(실문서)", { skip: !licDoc }, (
   })
 })
 
+const KKP2 = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "korea-kr-pairs2")
+const kkpDoc = existsSync(KKP2) ? readdirSync(KKP2).find(f => f.startsWith("156775878_") && f.endsWith(".hwp")) : undefined
+describe("patchHwp — 끝 빈 열 잘린 표 짝짓기(실문서)", { skip: !kkpDoc }, () => {
+  it("앞 표가 끝 빈 열이 잘려 같은 크기 표를 건너뛰지 않아 뒤 표들 칸도 고친다", async () => {
+    // 3x3(끝 열 비어 IR 3x2) 두 개 뒤에 진짜 3x2 두 개 — 같은 크기 표부터 찾으면 앞 3x2 가 뒤 짝을 가져가 뒤 표 12개가 짝을 잃었다
+    const hwp = new Uint8Array(readFileSync(join(KKP2, kkpDoc!)))
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.ok(md.includes("87,891") && md.includes("(국내 계약액)"), md.slice(0, 400))
+    const edited = md.replace("87,891", "87,892").replace("(국내 계약액)", "(국내 계약 금액)")
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 2, JSON.stringify(r.skipped))
+    const out = parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown
+    assert.ok(out.includes("87,892") && out.includes("(국내 계약 금액)"), out.slice(0, 400))
+  })
+})
+
 const PAIRS = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "pairs")
 const p05 = existsSync(PAIRS) ? readdirSync(PAIRS).find(f => f.startsWith("pair05-") && f.endsWith(".hwp")) : undefined
 describe("patchHwp — 칸 안 중첩 표(실문서)", { skip: !p05 }, () => {

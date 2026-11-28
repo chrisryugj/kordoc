@@ -682,11 +682,13 @@ function resolveTableMappings(blocks: IRBlock[], scanTables: ScanTable5[]): Map<
   for (let i = 0; i < blocks.length; i++) {
     const table = blocks[i].table
     if (blocks[i].type !== "table" || !table) continue
+    // IR 은 후행 빈 열을 자른다(#47 기본 계약) — 넘는 열이 모두 빈 칸인 더 넓은 스캔 표도 같은 줄의 후보. 잘린 열은 항상 뒤쪽이라
+    // (행, 열) 좌표가 그대로다. 같은 크기 표를 먼저 찾으면 앞의 빈 열 잘린 짝을 건너뛰어 뒤 표들이 줄줄이 짝을 잃는다
     const cands: number[] = []
     for (let k = si; k < scanTables.length; k++) {
-      if (scanTables[k].rows === table.rows && scanTables[k].cols === table.cols) cands.push(k)
+      const t = scanTables[k]
+      if (t.rows === table.rows && (t.cols === table.cols || (t.cols > table.cols && trailingColsEmpty(t, table.cols)))) cands.push(k)
     }
-    // IR 은 후행 빈 열을 자른다(#47 기본 계약) — 열이 더 많은 스캔 표도 후보. 잘린 열은 항상 뒤쪽이라 (행, 열) 좌표가 그대로다
     if (cands.length === 0) {
       for (let k = si; k < scanTables.length; k++) {
         if (scanTables[k].rows === table.rows && scanTables[k].cols > table.cols) cands.push(k)
@@ -705,6 +707,14 @@ function resolveTableMappings(blocks: IRBlock[], scanTables: ScanTable5[]): Map<
     si = pick + 1
   }
   return result
+}
+
+/** 열 from 이상에서 시작하는 셀이 모두 빈 글인가 */
+function trailingColsEmpty(t: ScanTable5, from: number): boolean {
+  for (const [key, cell] of t.cells) {
+    if (Number(key.slice(key.indexOf(",") + 1)) >= from && normForMatch(cell.paras.map(p => p.rawText).join(" "))) return false
+  }
+  return true
 }
 
 /** 앵커 셀 좌표가 겹치는 셀들의 정규화 텍스트 일치 개수 (표 디스앰비규에이션용) */
