@@ -5,15 +5,16 @@ import { z } from "zod"
 import type { FileType } from "../types.js"
 import { parserErrorCode, type JobErrorCode, type JobOptions } from "./types.js"
 
-const fileTypes = [
-  "hwpx", "hwp", "hwp3", "hwpml", "pdf", "xlsx", "xls", "docx", "pptx", "image", "unknown",
-] satisfies FileType[]
+const fileType = z.enum({
+  hwpx: "hwpx", hwp: "hwp", hwp3: "hwp3", hwpml: "hwpml", pdf: "pdf",
+  xlsx: "xlsx", xls: "xls", docx: "docx", pptx: "pptx", image: "image", unknown: "unknown",
+} satisfies { [Kind in FileType]: Kind })
 
 const ready = z.object({ ready: z.literal(true), protocol: z.literal(2), capabilities: z.array(z.string()) })
 const answer = z.union([
   z.object({ id: z.number(), result: z.discriminatedUnion("success", [
     z.object({
-      success: z.literal(true), markdown: z.string(), fileType: z.enum(fileTypes),
+      success: z.literal(true), markdown: z.string(), fileType,
       warnings: z.array(z.unknown()).optional(), blocks: z.array(z.unknown()),
     }),
     z.object({ success: z.literal(false), code: z.string().optional() }),

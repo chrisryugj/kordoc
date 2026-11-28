@@ -37,7 +37,7 @@ function sendError(res: ServerResponse, error: HttpError) {
 
 function isLoopback(host: string) {
   if (host === "localhost" || isIP(host) === 4 && host.startsWith("127.")) return true
-  return isIP(host) === 6 && new URL(`http://[${host}]`).hostname === "[::1]"
+  return isIP(host) === 6 && new URL(`http://[${host.split("%", 1)[0]}]`).hostname === "[::1]"
 }
 
 function isLoopbackHeader(header: string | undefined) {
@@ -68,13 +68,14 @@ export async function serve(options: ServeOptions) {
 
   const host = options.host.toLowerCase() === "localhost" ? "127.0.0.1" : options.host
   if (!isIP(host)) throw new Error("--host must be an IP address or localhost.")
+  const loopback = isLoopback(host)
   const token = process.env.KORDOC_SERVE_TOKEN
-  if (!token && !isLoopback(host)) throw new Error("Set KORDOC_SERVE_TOKEN before binding to a non-loopback address.")
+  if (!token && !loopback) throw new Error("Set KORDOC_SERVE_TOKEN before binding to a non-loopback address.")
   if (token && (token.length > 4096 || !/^[A-Za-z\d._~+/-]+=*$/.test(token))) {
     throw new Error("KORDOC_SERVE_TOKEN must be a valid bearer token.")
   }
 
-  const service = new ParseService({ ...options, host }, token ? sha256(token) : undefined)
+  const service = new ParseService({ ...options, host }, loopback, token ? sha256(token) : undefined)
   await service.run()
 }
 
@@ -96,14 +97,14 @@ class ParseService {
   private reservedResultBytes = 0
   private runningOcr = 0
 
-  constructor(private readonly options: ServeOptions, private readonly tokenHash?: Buffer) {
+  constructor(private readonly options: ServeOptions, private readonly loopback: boolean, private readonly tokenHash?: Buffer) {
     this.store = new JobStore(options.dataDir)
     this.slots = Array.from({ length: options.workers }, () => ({
       worker: new ParseWorker(options.jobTimeoutMs, options.maxResultBytes),
     }))
     this.ocrLimit = Math.min(options.ocrWorkers, Math.max(1, options.workers - 1))
     this.server.maxConnections = Math.max(128, options.maxUploads + options.maxJobs + 32)
-    this.server.setTimeout(Math.max(60_000, options.syncTimeoutMs, options.uploadTimeoutMs), socket => socket.destroy())
+    this.server.setTimeout(60_000)
     this.server.on("request", this.receive)
     this.server.on("checkContinue", this.receive)
   }
@@ -156,6 +157,9 @@ class ParseService {
   }
 
   private receive = (req: IncomingMessage, res: ServerResponse) => {
+    res.on("timeout", () => {
+      if (res.headersSent) res.destroy()
+    })
     const task = this.route(req, res).catch(error => {
       if (res.headersSent) res.destroy()
       else if (error instanceof HttpError) sendError(res, error)
@@ -166,7 +170,7 @@ class ParseService {
   }
 
   private authorize(req: IncomingMessage, res: ServerResponse) {
-    if (req.headers.origin !== undefined || isLoopback(this.options.host) && !isLoopbackHeader(req.headers.host)) {
+    if (req.headers.origin !== undefined || this.loopback && !isLoopbackHeader(req.headers.host)) {
       throw new HttpError(403, "FORBIDDEN", "Browser origins and non-loopback Host headers on a loopback listener are forbidden.")
     }
     if (!this.tokenHash) return
@@ -412,6 +416,7 @@ class ParseService {
       case "retry": terminal = this.store.retryOrFail(job, outcome.error); break
       case "failure": terminal = this.store.fail(job.id, outcome.error); break
       case "success": terminal = await this.saveResult(job.id, outcome.json); break
+      default: throw new Error("Unexpected parser outcome", { cause: outcome satisfies never })
     }
     if (terminal) this.waiters.get(job.id)?.(terminal)
   }
@@ -419,6 +424,7 @@ class ParseService {
   private async saveResult(id: string, json: string): Promise<TerminalJob> {
     const size = Buffer.byteLength(json)
     if (size > this.options.maxResultBytes) return this.store.fail(id, "RESULT_TOO_LARGE")
+    this.store.prune(this.options.jobTtlMs)
     if (size + this.reservedResultBytes + this.store.retainedBytes() > this.options.maxRetainedBytes) {
       return this.store.fail(id, "RESULT_CAPACITY")
     }
