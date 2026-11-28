@@ -1144,11 +1144,13 @@ describe("patchHwp — 안전 게이트", () => {
       [md.replace("\n\n둘째 문단입니다", ""), "가운데 빼기"],
       [md.replace("\n\n셋째 문단입니다", ""), "끝 빼기"],
       [md.replace("둘째 문단입니다", "둘째 문단입니다\n\n[붙임 1] 사업 계획서"), "대괄호 든 평문 더하기"],
+      [md.replace("둘째 문단입니다", "둘째 문단입니다\n\n**굵은** 새 문단입니다"), "굵은 조각 든 새 문단"],
     ] as const) {
       const r = await patchHwp(hwp, edited)
       assert.ok(r.applied >= 1, label)
-      assert.deepEqual(r.skipped, [], label)
-      assert.equal(parseHwp5Document(Buffer.from(r.data!)).markdown.trim(), edited.trim(), label)
+      // 합성 문서는 DocInfo 글자 모양이 없어 굵은 짝을 못 만든다 — 글만 넣고 부분 적용으로 알린다(서식은 실제 문서 시험에서)
+      assert.deepEqual(r.skipped.filter(x => !x.partial), [], label)
+      assert.equal(parseHwp5Document(Buffer.from(r.data!)).markdown.trim().replace(/\*\*/g, ""), edited.trim().replace(/\*\*/g, ""), label)
       const heads = topHeads(r.data!)
       assert.deepEqual(heads.map(h => h.data.readUInt32LE(0) >>> 31), heads.map((_, k) => (k === heads.length - 1 ? 1 : 0)), `${label}: 마지막 문단 표시`)
     }

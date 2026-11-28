@@ -30,18 +30,25 @@ export interface NewPara { header: Buffer; recs: Array<{ tagId: number; level: n
  * 새 문단 레코드 — tpl 문단의 문단 모양·스타일·첫 글자 모양으로(한글에서 Enter 와 같다). 컨트롤·범위 태그 없음, 줄 나눔 정보 없음
  * (한글이 다시 짠다). 빈 글은 PARA_TEXT 없이 글자 수 1(한글 빈 문단 저장형). 마지막 문단 표시는 호출자가 맞춘다
  */
-export function newParagraph(scan: SectionScan5, tpl: ScanPara5, text: string, level: number): NewPara {
+/** tpl 문단 첫 글자 모양 id */
+export function firstCharShape(scan: SectionScan5, tpl: ScanPara5): number {
+  const d = tpl.charShapeIdx >= 0 ? scan.records[tpl.charShapeIdx].data : null
+  return d && d.length >= 8 ? d.readUInt32LE(4) : 0
+}
+
+export function newParagraph(scan: SectionScan5, tpl: ScanPara5, text: string, level: number, runs?: Array<[number, number]>): NewPara {
   const records = scan.records
-  const shapeId = tpl.charShapeIdx >= 0 && records[tpl.charShapeIdx].data.length >= 8 ? records[tpl.charShapeIdx].data.readUInt32LE(4) : 0
+  const shapeId = firstCharShape(scan, tpl)
   const header = Buffer.from(records[tpl.headerIdx].data)
   header.writeUInt32LE((text ? text.length + 1 : 1) >>> 0, 0)  // 글 + 문단 끝(0x0d)
   header.writeUInt32LE(0, 4)                                    // 컨트롤 없음
   header.writeUInt8(0, 11)                                      // 구역·단·쪽 나누기 없음(앞 문단의 쪽 나누기를 물려받지 않는다)
-  header.writeUInt16LE(1, 12)                                   // 글자 모양 구간 1
+  const pairs = runs?.length ? runs : [[0, shapeId] as [number, number]]
+  header.writeUInt16LE(pairs.length, 12)                        // 글자 모양 구간 수
   header.writeUInt16LE(0, 14)                                   // 범위 태그 없음
   header.writeUInt16LE(0, 16)                                   // 줄 나눔 정보 없음
-  const cs = Buffer.alloc(8)
-  cs.writeUInt32LE(shapeId >>> 0, 4)
+  const cs = Buffer.alloc(pairs.length * 8)
+  pairs.forEach(([pos, id], k) => { cs.writeUInt32LE(pos >>> 0, k * 8); cs.writeUInt32LE(id >>> 0, k * 8 + 4) })
   return {
     header,
     recs: [

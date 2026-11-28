@@ -32,7 +32,7 @@ import {
 } from "./patcher.js"
 import { previewTextFromBlocks, PREVIEW_IMAGE_NOTE } from "./preview-text.js"
 import { stageCellLines, fixTopLevelLastMark } from "./hwp5-cell-lines.js"
-import { anchorAfter, anchorAfterHost, plainNewText, deleteBodyPara, addBodyPara, type BodyAnchor } from "./hwp5-body-paras.js"
+import { anchorAfter, anchorAfterHost, newBlockText, deleteBodyPara, addBodyPara, type BodyAnchor } from "./hwp5-body-paras.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
@@ -480,13 +480,14 @@ export async function patchHwp(
       if (p && !coarse && deleteBodyPara(scans[p.sectionIndex], p)) { applied++; bodyEdited.add(scans[p.sectionIndex]); continue }
       skipped.push({ reason: "블록 삭제는 미지원 (v1), 원본 유지", before: summarize(u.raw) })
     } else if (ei !== null) {
-      const text = editedUnits[ei].kind === "text" ? plainNewText(editedUnits[ei].raw) : null
+      const text = editedUnits[ei].kind === "text" ? newBlockText(editedUnits[ei].raw) : null
       if (text && anchor && anchor.scan.safe && !coarse) {
-        // 새 평문 문단이 앞 제목·굵은 문단 모양을 물려받으면 제목·굵은 글로 읽힌다 — 가까운 평문 문단 모양으로
-        addBodyPara({ ...anchor, tpl: plainTemplateNear(anchorBlock) ?? anchor.tpl }, text)
+        // 새 문단이 앞 제목·굵은 문단 모양을 물려받으면 제목·굵은 글로 읽힌다 — 가까운 평문 문단 모양으로. 강조 조각은 서식만 다른 글자 모양
+        const missed = addBodyPara({ ...anchor, tpl: plainTemplateNear(anchorBlock) ?? anchor.tpl }, text, charBook)
+        if (missed) skipped.push({ reason: EMPHASIS_NOTE, after: summarize(editedUnits[ei].raw), partial: true })
         applied++; bodyEdited.add(anchor.scan); continue
       }
-      skipped.push({ reason: text ? "블록 추가: 앞 원문 블록을 못 찾아 미지원" : "블록 추가는 서식 없는 한 줄 글 문단만 지원 (제목·목록·표·강조는 미지원)", after: summarize(editedUnits[ei].raw) })
+      skipped.push({ reason: text ? "블록 추가: 앞 원문 블록을 못 찾아 미지원" : "블록 추가는 한 줄 글 문단만 지원 (제목·목록·표·코드·수식·링크는 미지원)", after: summarize(editedUnits[ei].raw) })
     }
   }
   for (const scan of bodyEdited) fixTopLevelLastMark(scan)

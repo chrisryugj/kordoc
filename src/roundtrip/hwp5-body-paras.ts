@@ -6,7 +6,9 @@
  * 빼기: 원문의 맨 문단(컨트롤·누름틀·각주 없음, 섹션 맨 위 레벨)만 레코드를 지운다. 구역 정의가 든 첫 문단은 컨트롤이 있어 지우지 않는다.
  * 끝나면 섹션 마지막 문단 표시를 다시 맞춘다(fixTopLevelLastMark).
  */
-import { deleteParagraph, groupEnd, insertParagraph, newParagraph } from "./hwp5-cell-lines.js"
+import { deleteParagraph, firstCharShape, groupEnd, insertParagraph, newParagraph } from "./hwp5-cell-lines.js"
+import { styledInline } from "./inline-edit.js"
+import type { HwpCharBook } from "./hwp5-char-shape.js"
 import type { ScanPara5, SectionScan5 } from "./hwp5-patch.js"
 
 const TAG_CTRL_HEADER = 0x47
@@ -40,18 +42,29 @@ export function anchorAfterHost(scan: SectionScan5, hostIdx: number, paras: Scan
   return { scan, tpl, at: groupEnd(scan, host.headerIdx) }
 }
 
+/** 새 블록 글 — 평문과 서식 조각(styledInline: 조각마다 서식 비트) */
+export interface NewText { text: string; segs: string[]; flags: number[] }
+
 /**
- * 새 블록 마크다운이 서식 없는 한 줄 글인가 — 원문에 넣을 글을 돌려준다. 줄 머리의 제목·목록·표·인용·코드·그림, 강조(**·__)·코드(`)·
- * 수식($)·취소선(~~)·링크([글](주소))·HTML 태그는 서식이라 null. 그 밖 글자("[붙임 1]", "a_b", "1 | 2")는 그대로, 역슬래시 이스케이프는 푼다
+ * 새 블록 마크다운이 한 줄 글 문단인가 — 넣을 글과 서식 조각을 돌려준다. 줄 머리의 제목·목록·표·인용·코드·그림, 코드(`)·수식($)·
+ * 링크([글](주소))·밑줄·첨자 밖 HTML 태그는 null. 굵게·기울임·취소선·밑줄·첨자는 조각 서식으로(새 글자 모양은 addBodyPara 가 고른다),
+ * 그 밖 글자("[붙임 1]", "a_b", "1 | 2")는 그대로, 역슬래시 이스케이프는 푼다
  */
-export function plainNewText(raw: string): string | null {
+export function newBlockText(raw: string): NewText | null {
   const t = raw.trim()
   if (!t || t.includes("\n")) return null
   if (/^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||```|!\[)/.test(t)) return null
   const bare = t.replace(/\\[\\`*_{}[\]()#+\-.!|<>$~]/g, "")  // 이스케이프된 글자는 서식 판정에서 뺀다
-  if (/\*\*|__|`|\$|~~|\[[^\]]*\]\([^)]*\)|<\/?[A-Za-z][^>]*>/.test(bare)) return null
-  if (/(^|[^\w*])\*[^*\s][^*]*\*(?!\w)|(^|\W)_[^_\s][^_]*_(?!\w)/.test(bare)) return null  // *기울임*·_기울임_
-  return t.replace(/\\([\\`*_{}[\]()#+\-.!|<>$~])/g, "$1")
+  if (/`|\$|\[[^\]]*\]\([^)]*\)|<(?!\/?(?:u|sup|sub)>)\/?[A-Za-z][^>]*>/.test(bare)) return null
+  const st = styledInline(t)
+  if (!st.plain.trim() || st.plain.includes("\n")) return null
+  return { text: st.plain, segs: st.segs, flags: st.flags }
+}
+
+/** 서식 없는 한 줄 글이면 그 글(강조 없는 새 블록만) — 시험·호환용 */
+export function plainNewText(raw: string): string | null {
+  const nt = newBlockText(raw)
+  return nt && nt.flags.every(f => f === 0) ? nt.text : null
 }
 
 /** 원문 문단 지우기 — 못 지우면 false */
@@ -61,7 +74,27 @@ export function deleteBodyPara(scan: SectionScan5, p: ScanPara5 | undefined): bo
   return true
 }
 
-/** 새 문단 끼우기 */
-export function addBodyPara(anchor: BodyAnchor, text: string): void {
-  insertParagraph(anchor.scan, anchor.at, 0, newParagraph(anchor.scan, anchor.tpl, text, 0))
+/**
+ * 새 문단 끼우기 — 서식 조각마다 tpl 첫 글자 모양에서 서식 비트만 다른 글자 모양(book.variant). 맞는 모양을 못 구한 조각은 tpl 모양
+ * 그대로 두고 그 수를 돌려준다(호출자가 부분 적용으로 알린다)
+ */
+export function addBodyPara(anchor: BodyAnchor, nt: NewText | string, book?: HwpCharBook): number {
+  const t = typeof nt === "string" ? { text: nt, segs: [nt], flags: [0] } : nt
+  const base = firstCharShape(anchor.scan, anchor.tpl)
+  const baseFlags = book?.flagsOf(base)
+  const runs: Array<[number, number]> = []
+  let pos = 0, missed = 0
+  t.segs.forEach((seg, k) => {
+    const f = t.flags[k] ?? 0
+    let id = base
+    if (f && book && baseFlags !== undefined) {
+      const v = book.variant(base, baseFlags | f)
+      if (v === undefined) missed++
+      else id = v
+    } else if (f) missed++
+    if (seg && (!runs.length || runs[runs.length - 1][1] !== id)) runs.push([pos, id])
+    pos += seg.length
+  })
+  insertParagraph(anchor.scan, anchor.at, 0, newParagraph(anchor.scan, anchor.tpl, t.text, 0, runs))
+  return missed
 }

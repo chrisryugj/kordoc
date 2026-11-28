@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- patch(HWP 5.x): 새 본문 문단에 굵게·기울임·취소선·밑줄·첨자 조각을 그대로 넣는다. 조각마다 앞 문단 글자 모양에서 서식 비트만 다른 글자 모양을 고르거나 만든다(DocInfo 를 다시 쓸 수 있을 때). 맞는 모양을 못 구하면 글만 넣고 부분 적용으로 알린다. 종전에는 강조가 든 새 블록을 건너뛰었다. 코퍼스 HWP 5.x 100문서에 굵은 조각 든 문단 넣기: 반영 87·재파싱 굵게 유지 87·rhwp 로 열림 87
+
 ## [4.25.31] - 2026-11-28
 
 ### Added
