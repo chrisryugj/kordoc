@@ -55,7 +55,7 @@ async function assertNonSectionEntriesIdentical(a: Uint8Array, b: Uint8Array): P
   const zb = await JSZip.loadAsync(b)
   assert.deepEqual(Object.keys(za.files).sort(), Object.keys(zb.files).sort(), "엔트리 목록 동일")
   for (const name of Object.keys(za.files)) {
-    if (za.files[name].dir || /section\d+\.xml$/i.test(name)) continue
+    if (za.files[name].dir || /section\d+\.xml$/i.test(name) || name === "Preview/PrvText.txt") continue  // 미리보기 글은 고친 본문으로 다시 쓴다 (#248)
     const da = await za.file(name)!.async("uint8array")
     const db = await zb.file(name)!.async("uint8array")
     assert.equal(Buffer.compare(Buffer.from(da), Buffer.from(db)), 0, `엔트리 바이트 보존: ${name}`)

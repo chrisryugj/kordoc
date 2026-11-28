@@ -275,8 +275,18 @@ function alignedShownEdits(raw: string, origNorm: string, newNorm: string, origS
     if (isWs(origNorm[r.b - 1])) while (e < raw.length && isWs(raw[e]) && (r.b >= pos.length || e < pos[r.b])) e++
     return e
   }
-  return ranges.map(r => ({ start: at(r.a), end: endOf(r), text: r.text, at: r.at }))
+  // 괄호 자리표시("(              )")의 공백은 값이 들어갈 빈칸이다. IR 에는 "( )" 로 접혀 보여 그 사이에 넣은 값이 원문 공백 줄
+  // 끝(닫는 괄호 앞)에 붙어 칸 오른쪽으로 밀렸다. 날짜 자리표시(#151)처럼 공백 줄을 한 칸만 남기고 값으로 바꾼다 (#247)
+  const blankBox = (k: number): boolean => k >= 1 && k + 1 < origNorm.length && isWs(origNorm[k])
+    && OPEN_BOX.includes(origNorm[k - 1]) && CLOSE_BOX.includes(origNorm[k + 1]) && pos[k + 1] - pos[k] > 1
+  return ranges.map(r => {
+    if (r.a === r.b && blankBox(r.a - 1)) return { start: pos[r.a - 1] + 1, end: pos[r.a], text: r.text, at: r.at }
+    if (r.a === r.b && blankBox(r.a)) return { start: pos[r.a], end: pos[r.a + 1] - 1, text: r.text, at: r.at }
+    return { start: at(r.a), end: endOf(r), text: r.text, at: r.at }
+  })
 }
+
+const OPEN_BOX = "(（[［", CLOSE_BOX = ")）]］"
 
 /**
  * 새 글을 마크다운 서식대로 넣기 (minimalTextSplices) — 바뀐 자리의 새 글 조각이 들어갈 run 과 서식 비트가 다르면 서식만 다른

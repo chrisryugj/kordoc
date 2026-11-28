@@ -44,6 +44,7 @@ import { noteEditSplices } from "./note-edit.js"
 import { lineBreakTextSplices } from "./line-break-edit.js"
 import { fallbackTextEdit, fallbackTableEdits } from "./text-fallback.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
+import { refreshHwpxPreview } from "./preview-text.js"
 import { createStructureEditor, pairTablesInGaps, charStyles } from "./structure-edit.js"
 
 export type { PatchOptions, PatchResult, PatchSkip } from "../types.js"
@@ -196,11 +197,13 @@ export async function patchHwpx(
   }
 
   let data: Uint8Array
+  const warnings: string[] = []
   if (replacements.size === 0) {
     data = new Uint8Array(original) // Buffer.slice는 view라 명시적 복사
   } else {
     try {
-      data = patchZipEntries(original, replacements)
+      // 미리보기 글(Preview/PrvText.txt) — 고친 본문으로 다시 쓴다. 고치기 전 글(지운 개인정보 포함)이 남지 않게 (#248)
+      data = await refreshHwpxPreview(zip, original, replacements, patchZipEntries(original, replacements), warnings)
     } catch (err) {
       return { success: false, applied: 0, skipped, error: `ZIP 재조립 실패: ${err instanceof Error ? err.message : String(err)}` }
     }
@@ -220,7 +223,7 @@ export async function patchHwpx(
     }
   }
 
-  return { success: true, data, applied, skipped, verification }
+  return { success: true, data, applied, skipped, verification, ...(warnings.length ? { warnings } : {}) }
 }
 
 // ─── 유닛 구성 ───────────────────────────────────────

@@ -33,6 +33,7 @@ import {
   type ScanParagraph, type ScanCell, type ScanTable, type SectionScan, type SpliceEdit,
 } from "../roundtrip/source-map.js"
 import { patchZipEntries } from "../roundtrip/zip-patch.js"
+import { refreshHwpxPreview } from "../roundtrip/preview-text.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
 
 /** 채우기 결과 */
@@ -530,7 +531,8 @@ export async function fillHwpx(
 
   const cleanFilled = filled.filter((f): f is FormField => f !== null)
   const unmatched = resolveUnmatched(normalizedValues, matchedLabels, values)
-  const out = replacements.size > 0 ? patchZipEntries(u8, replacements) : new Uint8Array(u8)
+  // 미리보기 글(Preview/PrvText.txt)도 채운 본문으로 (patch 와 같다, #248)
+  const out = replacements.size > 0 ? await refreshHwpxPreview(zip, u8, replacements, patchZipEntries(u8, replacements), warnings) : new Uint8Array(u8)
   return {
     buffer: out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer,
     filled: cleanFilled,

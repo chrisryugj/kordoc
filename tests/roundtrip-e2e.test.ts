@@ -71,7 +71,7 @@ async function assertIntegrity(orig: Uint8Array, patched: Uint8Array): Promise<v
   const zo = await JSZip.loadAsync(orig)
   assert.deepEqual(Object.keys(zo.files).sort(), Object.keys(zp.files).sort(), "엔트리 목록 동일")
   for (const name of Object.keys(zo.files)) {
-    if (zo.files[name].dir || /section\d+\.xml$/i.test(name)) continue
+    if (zo.files[name].dir || /section\d+\.xml$/i.test(name) || name === "Preview/PrvText.txt") continue  // 미리보기 글은 고친 본문으로 다시 쓴다 (#248)
     const da = await zo.file(name)!.async("uint8array")
     const db = await zp.file(name)!.async("uint8array")
     assert.equal(Buffer.compare(Buffer.from(da), Buffer.from(db)), 0, `엔트리 바이트 보존: ${name}`)

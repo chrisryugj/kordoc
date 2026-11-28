@@ -70,6 +70,8 @@ export function buildPrvText(blocks: MdBlock[]): string {
     let text = b.text || (b.rows ? b.rows.map(r => r.join(" ")).join("\n") : "")
     if (b.type === "code_block" && (b.lang || "").toLowerCase() === "chart") text = "[차트]" // DSL 원문 노출 방지
     else if (b.type === "html_table") text = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+    // 문단·칸의 <br> 은 줄바꿈이다 — 미리보기 글에 태그 글자로 넣지 않는다 (#250)
+    else if (b.type !== "code_block") text = text.split(/(`[^`]*`)/).map((seg, i) => (i % 2 ? seg : seg.replace(/<br\s*\/?>/gi, "\n"))).join("")
     if (!text) continue
     lines.push(text)
     bytes += text.length * 3
@@ -564,7 +566,9 @@ export function generateRuns(text: string, defaultCharPr: number = CHAR_NORMAL, 
       out.push(`<hp:run charPrIDRef="${mapped(charId)}">${generateEquationXml(latexLikeToEqEdit(span.text), 0, INLINE_EQ_ID_BASE + ++inlineDoc!.mathSeq)}</hp:run>`)
       continue
     }
-    out.push(`<hp:run charPrIDRef="${mapped(charId)}"><hp:t>${escapeTextXml(span.text)}</hp:t></hp:run>`)
+    // 문단 안 <br> 은 한 문단 안 줄바꿈(hp:lineBreak)이다. 종전엔 "&lt;br&gt;" 글자로 들어갔다 (#250). 표 칸은 gen-table 이 먼저 문단으로 가른다
+    const body = span.code ? escapeTextXml(span.text) : escapeTextXml(span.text).replace(/&lt;br\s*\/?&gt;/gi, "<hp:lineBreak/>")
+    out.push(`<hp:run charPrIDRef="${mapped(charId)}"><hp:t>${body}</hp:t></hp:run>`)
   }
   closeField()
   return out.join("")

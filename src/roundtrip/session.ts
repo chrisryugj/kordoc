@@ -23,6 +23,7 @@ import {
   type SectionScan, type ScanTable, type SpliceEdit,
 } from "./source-map.js"
 import { patchZipEntries } from "./zip-patch.js"
+import { refreshHwpxPreview } from "./preview-text.js"
 import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import {
   resolveParagraphMappings, removeNoteMarks, buildTableOrdinals, buildOrigUnits, diffUnitLists,
@@ -366,7 +367,8 @@ export class HwpxSession {
 
     let data: Uint8Array
     try {
-      data = patchZipEntries(st.bytes, replacements)
+      // 미리보기 글(Preview/PrvText.txt)도 고친 본문으로 — patchHwpx 와 같은 바이트 (#248)
+      data = await refreshHwpxPreview(await JSZip.loadAsync(st.bytes), st.bytes, replacements, patchZipEntries(st.bytes, replacements), [])
     } catch (err) {
       return { success: false, applied: 0, skipped, error: `ZIP 재조립 실패: ${err instanceof Error ? err.message : String(err)}` }
     }

@@ -30,6 +30,7 @@ import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult
 import {
   buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
 } from "./patcher.js"
+import { previewTextFromBlocks, PREVIEW_IMAGE_NOTE } from "./preview-text.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
@@ -480,6 +481,12 @@ export async function patchHwp(
         out = replaceOleStream(out, "/FileHeader", header)
         warnings.push("변경 내용 추적 문서라 한글이 고친 본문을 그리도록 추적 표시를 껐습니다. 한글에서는 지금 내용만 보이고 누가 무엇을 바꿨는지의 기록은 보이지 않습니다(원본 파일에는 남아 있음).")
       }
+      // 미리보기 글(PrvText, UTF-16LE) — 고친 본문으로 다시 쓴다. 고치기 전 글(지운 개인정보 포함)이 남지 않게 (#248)
+      if (CFB.find(cfb, "/PrvText")?.content) {
+        const text = previewTextFromBlocks(parseHwp5Document(out).blocks)
+        out = replaceOleStream(out, "/PrvText", Buffer.from(text, "utf16le"))
+      }
+      if (CFB.find(cfb, "/PrvImage")?.content) warnings.push(PREVIEW_IMAGE_NOTE)
       data = new Uint8Array(out)
     } catch (err) {
       return { success: false, applied: 0, skipped, error: `HWP 섹터 수술 실패: ${msg(err)}` }
@@ -745,6 +752,10 @@ function modifyUnit5(oi: number, orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5,
         const ec = e.flat()[f]
         if (oc === ec || keys[f] === ec.replace(/\s+/g, "")) return
         const occ = keys.slice(0, f).filter(x => x === keys[f]).length
+        // 칸 줄 수가 바뀐 편집은 문단 추가·삭제다 — 글 찾기로 남은 문단에 나눠 넣으면 새 줄이 앞 줄 끝에 공백으로 붙고
+        // 손대지 않은 줄이 다른 문단으로 밀린다. 좌표 경로의 건너뜀(문단 수 변경)을 그대로 남겨 대체본(.rewrite.hwpx)이 맡게 한다 (#249)
+        const lines = (x: string) => x.replace(/^\u0000/, "").split("\n").length  // tableUnitCells 가 <br> 을 "\n" 으로 편다
+        if (lines(oc) !== lines(ec)) { failed.push({ before: oc.replace("\u0000", ""), after: ec.replace("\u0000", "") }); return }
         if (!oc.startsWith("\u0000") && keys[f] && edit(oc, ec, occ, keys.filter(x => x === keys[f]).length, scope)) applied++
         else failed.push({ before: oc.replace("\u0000", ""), after: ec.replace("\u0000", "") })
       })

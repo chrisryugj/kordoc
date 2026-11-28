@@ -93,7 +93,8 @@ function noTextParagraph(level = 0): Buffer {
 }
 
 /** 2x2 표 (앵커 문단 + tbl 컨트롤 + 셀 4개). 셀 값 null = PARA_TEXT 생략형 빈 문단 */
-function table2x2(cells: (string | null)[][]): Buffer {
+/** 칸 값: 글 = 문단 하나, 배열 = 칸 안 문단 여럿, null = 빈 문단 */
+function table2x2(cells: (string | string[] | null)[][]): Buffer {
   const anchorHeader = Buffer.alloc(24)
   const ctrlChar = Buffer.alloc(16)
   ctrlChar.writeUInt16LE(0x0b, 0)
@@ -120,14 +121,15 @@ function table2x2(cells: (string | null)[][]): Buffer {
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 2; c++) {
       const lh = Buffer.alloc(34)
-      lh.writeUInt16LE(1, 0)  // paraCount
+      const v = cells[r][c]
+      lh.writeUInt16LE(Array.isArray(v) ? v.length : 1, 0)  // paraCount
       lh.writeUInt16LE(c, 8)  // colAddr
       lh.writeUInt16LE(r, 10) // rowAddr
       lh.writeUInt16LE(1, 12)
       lh.writeUInt16LE(1, 14)
       parts.push(rec(0x48, 2, lh))
-      const v = cells[r][c]
-      parts.push(v === null ? noTextParagraph(2) : paragraph(v, 2))
+      if (Array.isArray(v)) parts.push(...v.map(t => paragraph(t, 2)))
+      else parts.push(v === null ? noTextParagraph(2) : paragraph(v, 2))
     }
   }
   return Buffer.concat(parts)
@@ -1114,7 +1116,21 @@ describe("patchHwp — 안전 게이트", () => {
     assert.ok(r.skipped.some(s => s.reason.includes("추가")))
   })
 
-  it("비수정 스트림(PrvText 등)은 바이트 보존", async () => {
+  it("칸 줄 수가 바뀐 편집은 앞 줄에 붙이지 않고 건너뜀으로 알린다 — 같은 줄 수 편집은 반영 (#249)", async () => {
+    const hwp = buildHwp([table2x2([["항목", "경과"], ["기록", ["첫째 줄", "둘째 줄", "셋째 줄"]]])])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.match(md, /첫째 줄<br>둘째 줄<br>셋째 줄/)
+    const add = await patchHwp(hwp, md.replace("첫째 줄<br>둘째 줄", "첫째 줄<br>추가 줄<br>둘째 줄"))
+    assert.equal(add.applied, 0)
+    assert.ok(add.skipped.some(s => /문단 수 변경/.test(s.reason)), JSON.stringify(add.skipped))
+    const out = parseHwp5Document(Buffer.from(add.data!), { layoutTables: "keep" }).markdown
+    assert.doesNotMatch(out, /첫째 줄 추가 줄/)
+    const same = await patchHwp(hwp, md.replace("둘째 줄", "둘째 줄 고침"))
+    assert.equal(same.applied, 1)
+    assert.match(parseHwp5Document(Buffer.from(same.data!), { layoutTables: "keep" }).markdown, /첫째 줄<br>둘째 줄 고침<br>셋째 줄/)
+  })
+
+  it("비수정 스트림(FileHeader·DocInfo)은 바이트 보존, 미리보기 글(PrvText)은 고친 본문으로 (#248)", async () => {
     const hwp = buildHwp([paragraph("수정될 문단"), paragraph("고정 문단")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
     const r = await patchHwp(hwp, md.replace("수정될 문단", "바뀐 문단"))
@@ -1122,11 +1138,14 @@ describe("patchHwp — 안전 게이트", () => {
     assert.equal(r.applied, 1)
     const c1 = CFB.parse(Buffer.from(hwp))
     const c2 = CFB.parse(Buffer.from(r.data!))
-    for (const p of ["/FileHeader", "/DocInfo", "/PrvText"]) {
+    for (const p of ["/FileHeader", "/DocInfo"]) {
       const a = Buffer.from(CFB.find(c1, p).content)
       const b = Buffer.from(CFB.find(c2, p).content)
       assert.deepEqual(b, a, `${p} 스트림이 변경됨`)
     }
+    const prv = Buffer.from(CFB.find(c2, "/PrvText").content).toString("utf16le")
+    assert.match(prv, /바뀐 문단/)
+    assert.doesNotMatch(prv, /수정될 문단|미리보기/)
     // 이물질 엔트리 미주입 — 원본에 없던 엔트리가 패치본에 생기면 안 됨
     // (합성 원본은 테스트 빌더의 CFB.write가 넣은 Sh33tJ5를 이미 포함 — 그 이상 금지)
     const names1 = new Set<string>(c1.FullPaths)
