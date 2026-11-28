@@ -12,7 +12,7 @@ import { CELL_LINES, CLIP_TABLES, CONT_PARTS, EMPTY_PARTS, IMAGE_CELLS, TABLE_CO
 import { joinSplitParts, mergeCrossPageTables } from "./table-parts.js"
 import { joinCellEdges } from "./cell-edges.js"
 import { markContinuedText } from "./table-pages.js"
-import { carrySoftWraps } from "../table/layout-frames.js"
+import { carrySoftWraps, cellParagraphs } from "../table/layout-frames.js"
 
 /** 조각의 좌우 변과 앞 표 열 경계를 같은 것으로 보는 거리 (pt) — 격자 열 경계는 클립 좌표 묶음(0.3pt)의 평균 */
 const COL_MATCH_TOL = 0.5
@@ -37,7 +37,7 @@ function lastRowCell(t: IRTable, x1: number, x2: number): IRCell | undefined {
 
 /** 칸 내용을 블록으로 — blocks 가 없으면 text 줄마다 문단 (틀 칸 blocks 와 같은 모양) */
 const cellBlocks = (cell: IRCell, pageNumber?: number): IRBlock[] =>
-  cell.blocks ?? cell.text.split("\n").map(t => t.trim()).filter(Boolean).map(text => ({ type: "paragraph" as const, text, pageNumber }))
+  cell.blocks ?? cellParagraphs(cell).map(text => ({ type: "paragraph" as const, text, pageNumber }))
 
 /** 표 블록들을 거꾸로 훑어 이어짐 조각을 앞 쪽 표 칸에 붙이고 조각은 뺀다 (세 쪽 넘게 이어지면 뒤 조각부터 앞 조각에 모인다) */
 export function mergeContinuedCells(blocks: IRBlock[], pageHeights?: Map<number, number>): void {
@@ -111,6 +111,7 @@ function fillNestedContinuation(blocks: IRBlock[], at: number): void {
   const add = u.cells[0]?.[0]
   if (!cell || !add || cell.text.trim() || cell.blocks?.length || IMAGE_CELLS.has(cell)) return
   cell.text = add.text
+  carrySoftWraps(add, cell)
   if (add.blocks) cell.blocks = add.blocks
   if (IMAGE_CELLS.has(add)) IMAGE_CELLS.add(cell)
   joinCellEdges(cell, add)

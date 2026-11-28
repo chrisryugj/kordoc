@@ -15,9 +15,9 @@ import { CELL_LINES, CLIP_TABLES, EMPTY_PARTS, FILLER_CELLS, IMAGE_CELLS, PART_C
 import { matchesCompleteSiblingRow, matchesCompleteRubricRow, matchesIndependentRowPair, matchesCompleteContextRow, matchesCompleteAlignedLabelListRow, partialAlignedLabelCells, itemMark, hasNumberedRowSequence } from "./split-row-pattern.js"
 import { CONTACT_HEAD, CONTACT_ROLE } from "./contact-table.js"
 import { markJoinedPages } from "./table-pages.js"
-import { startsNewItem, wrapJoiner, type WrapLexicon } from "./line-wrap.js"
+import { softWrapPair, startsNewItem, wrapJoiner, type WrapLexicon } from "./line-wrap.js"
 import { NO_EDGES, hasOpenCellSeam, joinCellEdges } from "./cell-edges.js"
-import { CELL_EDGES, carrySoftWraps } from "../table/layout-frames.js"
+import { CELL_EDGES, CELL_SOFT_WRAPS, carrySoftWraps, cellParagraphs } from "../table/layout-frames.js"
 
 /** 글 이어짐은 표시 서식이 아니라 실제 글로 판정한다. 출력 칸의 밑줄·취소선은 그대로 둔다. */
 const flowText = (text: string): string => text.replace(/<\/?u>|~~/g, "")
@@ -492,10 +492,16 @@ function appendCell(a: IRCell, b: IRCell, flows = false, lex?: WrapLexicon): voi
   if (IMAGE_CELLS.has(b)) IMAGE_CELLS.add(a)
   if (a.blocks?.length || b.blocks?.length) {
     const asBlocks = (c: IRCell): IRBlock[] => c.blocks?.length ? c.blocks
-      : c.text.split("\n").map(l => l.trim()).filter(Boolean).map((text): IRBlock => ({ type: "paragraph", text }))
+      : cellParagraphs(c).map((text): IRBlock => ({ type: "paragraph", text }))
     a.blocks = [...asBlocks(a), ...asBlocks(b)]
   }
+  if (b.text.trim() && a.text.trim() && flows && !midWordAcross(a.text, b.text, lex)) {
+    // 칸을 채우고 쪽을 넘은 어절 경계 — 틀을 풀 때 한 문단으로 (CELL_SOFT_WRAPS)
+    const prev = a.text.slice(a.text.lastIndexOf("\n") + 1).trim(), next = b.text.split("\n", 1)[0].trim()
+    if (prev && next && softWrapPair(prev, next)) CELL_SOFT_WRAPS.set(a, new Set([...(CELL_SOFT_WRAPS.get(a) ?? []), prev + "\n" + next]))
+  }
   if (b.text.trim()) a.text = a.text.trim() ? a.text + (flows && midWordAcross(a.text, b.text, lex) ? "" : "\n") + b.text : b.text
+  carrySoftWraps(b, a)
   joinCellEdges(a, b)
 }
 

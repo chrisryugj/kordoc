@@ -310,6 +310,14 @@ export function startsNewItem(prevText: string, nextText: string): boolean {
 }
 
 /**
+ * 어절 경계 꺾임으로 이어 볼 수 있는 줄쌍인가 — 새 항목 머리가 아니고, "다. " 로 열지 않는다(startsNewItem 은 "…하였⏎다." 때문에
+ * 한글 뒤 "다." 를 항목으로 안 보지만, 어절 경계로 꺾였다면 "다." 는 항목 번호다)
+ */
+export function softWrapPair(prevText: string, nextText: string): boolean {
+  return !startsNewItem(prevText, nextText) && !/^다\.\s/.test(nextText.replace(MARKUP, "").trimStart())
+}
+
+/**
  * 꺾인 자리의 이음 — "" (어절 중간, 붙임) | " " (어절 경계). prevText 는 꺾인 줄, nextText 는 이어지는 줄.
  * 판정 순서와 근거는 머리 주석. 어휘 사전이 없으면(단독 호출) 형태 규칙만 쓴다.
  */

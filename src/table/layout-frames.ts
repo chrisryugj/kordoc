@@ -23,6 +23,20 @@ export interface Edges { t: boolean; b: boolean; l: boolean; r: boolean }
 export const CELL_EDGES = new WeakMap<IRCell, Edges>()
 /** 칸 글에서 칸 폭에 밀려 어절 경계로 꺾인 줄쌍("앞 줄\n뒤 줄", 다듬은 글) — 틀을 풀어 문단으로 만들 때 이 줄쌍은 띄어 잇는다(PDF 칸) */
 export const CELL_SOFT_WRAPS = new WeakMap<IRCell, Set<string>>()
+/** 칸 글 → 문단 글들 — 줄마다 한 문단, 꺾인 줄쌍(CELL_SOFT_WRAPS)은 띄어 한 문단 */
+export function cellParagraphs(cell: IRCell, text = cell.text): string[] {
+  const soft = CELL_SOFT_WRAPS.get(cell)
+  const out: string[] = []
+  let last = ""
+  for (const raw of text.split("\n")) {
+    const line = raw.trim()
+    if (!line) continue
+    if (out.length && soft?.has(last + "\n" + line)) out[out.length - 1] += " " + line
+    else out.push(line)
+    last = line
+  }
+  return out
+}
 /** 칸을 복제·합칠 때 꺾인 줄쌍을 넘긴다 */
 export function carrySoftWraps(from: IRCell, to: IRCell): void {
   const a = CELL_SOFT_WRAPS.get(from)
@@ -250,19 +264,7 @@ function textRow(row: Anchor[], out: IRBlock[], pageNumber: number | undefined, 
     if (toc) {
       for (const line of toc) out.push({ type: "paragraph", text: line, pageNumber })
     } else if (parts.length === 1) {
-      const soft = CELL_SOFT_WRAPS.get(cells[0])
-      let cur = "", last = ""
-      for (const raw of parts[0].split("\n")) {
-        const line = raw.trim()
-        if (!line) continue
-        if (cur && soft?.has(last + "\n" + line)) cur += " " + line
-        else {
-          if (cur) out.push({ type: "paragraph", text: cur, pageNumber })
-          cur = line
-        }
-        last = line
-      }
-      if (cur) out.push({ type: "paragraph", text: cur, pageNumber })
+      for (const text of cellParagraphs(cells[0], parts[0])) out.push({ type: "paragraph", text, pageNumber })
     } else {
       const text = parts.map(p => p.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean).join(" ")
       if (text) out.push({ type: "paragraph", text, pageNumber })

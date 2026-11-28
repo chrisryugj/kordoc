@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { WrapLexicon, wrapJoiner, startsNewItem, bodyLineJoins, joinPageBreakWraps, splitPageBreakWraps, PARA_LAST_LINE, PARA_FIRST_LEFT, type WrapLine } from "../src/pdf/line-wrap.js"
+import { WrapLexicon, wrapJoiner, startsNewItem, softWrapPair, bodyLineJoins, joinPageBreakWraps, splitPageBreakWraps, PARA_LAST_LINE, PARA_FIRST_LEFT, type WrapLine } from "../src/pdf/line-wrap.js"
 import type { IRBlock } from "../src/types.js"
 import { cellTextToString, type TextItem } from "../src/pdf/line-detector.js"
 import { extractPageBlocksFallback } from "../src/pdf/page-blocks.js"
@@ -358,6 +358,14 @@ describe("bodyLineJoins — 본문 꺾임 기하", () => {
 function ti(text: string, x: number, y: number, w: number, fontSize = 10): TextItem {
   return { text, x, y, w, h: fontSize, fontSize, fontName: "Test" }
 }
+
+describe("softWrapPair — 어절 경계 꺾임으로 이어 볼 줄쌍", () => {
+  it("새 항목 머리와 한글 뒤 \"다. \" 항목은 잇지 않는다", () => {
+    assert.equal(softWrapPair("경우에는 그 중", "금액이 큰 부과기준을 적용한다."), true)
+    assert.equal(softWrapPair("…산정한 물량", "다. 보조 시설의 채취능력"), false)
+    assert.equal(softWrapPair("…산정한 물량", "2. 위 산식 중"), false)
+  })
+})
 
 describe("cellTextToString — 칸 상자가 있으면 꺾임을 기하·어휘로", () => {
   // 칸 x 58~301.6, 안쪽 여백 5.1 → 글 오른끝 296.5 (pair05 해외통계채용 가점 표 실측 기하)
