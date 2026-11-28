@@ -3,6 +3,7 @@
 import type { CellContext, IRBlock, IRCell, IRSpan, IRTable } from "../types.js"
 import { sanitizeHref, escapeHtml, BARE_URL, isGfmUrl } from "../utils.js"
 import { mapPuaText } from "../shared/pua.js"
+import { softWrappedText } from "./soft-wraps.js"
 
 /** 테이블 열 수 상한 — 한국 공공문서 기준 충분한 값 */
 export const MAX_COLS = 200
@@ -835,7 +836,7 @@ function cellInnerHtml(cell: IRCell): string {
       .filter(Boolean)
       .join("<br>")
   }
-  return escapeHtmlCellText(sanitizeText(cell.text)).replace(/\n/g, "<br>")
+  return escapeHtmlCellText(sanitizeText(softWrappedText(cell))).replace(/\n/g, "<br>")
 }
 
 /** 병합 테이블 → HTML <table> 출력 (rowspan/colspan 보존) */
@@ -914,7 +915,7 @@ function cellBlockToMarkdown(b: IRBlock, inCell: boolean): string {
 /** 칸 마크다운. 구분자 "<br>" 은 표 칸 안이고, "\n" 은 1열 표를 글 줄로 풀 때다(줄머리 표지 이스케이프가 필요한 문단 자리) */
 export function cellToMarkdown(cell: IRCell, separator: string): string {
   const inCell = separator === "<br>"
-  if (!hasInlineCellBlocks(cell)) return escapeGfm(sanitizeText(cell.text), inCell)
+  if (!hasInlineCellBlocks(cell)) return escapeGfm(sanitizeText(inCell ? softWrappedText(cell) : cell.text), inCell)
   return cell.blocks!
     .map(b => cellBlockToMarkdown(b, inCell))
     .filter(Boolean)

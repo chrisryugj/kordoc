@@ -36,6 +36,15 @@ function table(rows: Array<Array<[string, number, number, Edges]>>, cols: number
 
 const md = (blocks: IRBlock[]): string => blocksToMarkdown(unframeLayoutTables(blocks))
 
+describe("칸 꺾인 줄쌍의 마크다운", () => {
+  it("표로 남는 칸은 꺾인 줄쌍만 띄우고 다른 줄바꿈은 <br> — IR 칸 글은 그대로", () => {
+    const t = table([[["항목", 1, 1, BOX], ["값", 1, 1, BOX]], [["가", 1, 1, BOX], ["웨이퍼 위에 실제 반도체\n회로를 만드는 단계\n둘째 문단", 1, 1, BOX]]], 2)
+    CELL_SOFT_WRAPS.set(t.cells[1][1], new Set(["웨이퍼 위에 실제 반도체\n회로를 만드는 단계"]))
+    assert.match(blocksToMarkdown([{ type: "table", table: t }]), /\| 웨이퍼 위에 실제 반도체 회로를 만드는 단계<br>둘째 문단 \|/)
+    assert.equal(t.cells[1][1].text, "웨이퍼 위에 실제 반도체\n회로를 만드는 단계\n둘째 문단")
+  })
+})
+
 describe("unframeLayoutTables", () => {
   it("칸 폭에 밀려 꺾인 줄쌍(CELL_SOFT_WRAPS)은 문단으로 풀 때 띄어 잇는다 — 다른 줄바꿈은 문단 경계", () => {
     const t = table([[["가. 하나의 위반행위가 둘 이상의 부과기준에 해당하는 경우에는 그 중\n금액이 큰 부과기준을 적용한다.\n나. 부과권자는", 1, 1, NONE]]], 1)

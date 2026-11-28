@@ -364,6 +364,10 @@ describe("softWrapPair — 어절 경계 꺾임으로 이어 볼 줄쌍", () => 
     assert.equal(softWrapPair("경우에는 그 중", "금액이 큰 부과기준을 적용한다."), true)
     assert.equal(softWrapPair("…산정한 물량", "다. 보조 시설의 채취능력"), false)
     assert.equal(softWrapPair("…산정한 물량", "2. 위 산식 중"), false)
+    assert.equal(softWrapPair("…산정한 물량입니다", "ㆍ보조 시설"), false)
+    assert.equal(softWrapPair("주요", "경력"), false)
+    assert.equal(softWrapPair("실시간 기상상황입니다", "+ 송전선로 상태"), false)
+    assert.equal(softWrapPair("직선보간법을 적용한다", "2 $\\frac{1}{2}$"), false)
   })
 })
 
