@@ -405,7 +405,9 @@ function handleShape(el: Element, sink: IRBlock[], ctx: WalkCtx): void {
     if (capText) sink.push({ type: "paragraph", text: capText, pageNumber: ctx.page })
   }
 
-  if (!imgRef && !drawTextChild && ctx.warnings && ctx.sectionNum) {
+  // 그림 참조가 빈 그림 틀(hc:img binaryItemIDRef="" — 서명 칸·사진 붙일 자리)은 건너뛴 그림이 없다. 경고하지 않는다
+  const emptyFrame = !imgRef && [...el.getElementsByTagName("*")].some(c => (c.localName ?? c.tagName.replace(/^[^:]+:/, "")) === "img" && c.getAttribute("binaryItemIDRef") === "")
+  if (!imgRef && !drawTextChild && !emptyFrame && ctx.warnings && ctx.sectionNum) {
     const localTag = (el.tagName || el.localName || "").replace(/^[^:]+:/, "")
     ctx.warnings.push({ page: ctx.page, message: `스킵된 요소: ${localTag}`, code: "SKIPPED_IMAGE" })
   }

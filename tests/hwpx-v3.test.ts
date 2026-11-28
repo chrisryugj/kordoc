@@ -502,6 +502,15 @@ describe("hwpx v3 — 글상자+이미지 병행, 셀 안 이미지", () => {
     assert.equal(result.blocks.filter(b => b.type === "paragraph" && b.text === "[이미지: missing]").length, 2,
       "실패 블록은 각각 paragraph로 전환")
   })
+
+  it("그림 참조가 빈 그림 틀(서명 칸 자리)은 건너뛴 그림이 아니다 — 경고 없음, 참조 없는 도형은 종전대로 경고", async () => {
+    const empty = `<hp:p id="0"><hp:run><hp:pic id="1"><hc:img xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" binaryItemIDRef=""/></hp:pic></hp:run></hp:p>`
+    const r1 = await parseHwpxDocument(await makeHwpx(sec(empty)))
+    assert.equal(r1.warnings?.filter(w => w.code === "SKIPPED_IMAGE").length ?? 0, 0)
+    const bare = `<hp:p id="0"><hp:run><hp:pic id="1"/></hp:run></hp:p>`
+    const r2 = await parseHwpxDocument(await makeHwpx(sec(bare)))
+    assert.equal(r2.warnings?.filter(w => w.code === "SKIPPED_IMAGE").length, 1)
+  })
 })
 
 describe("hwpx v3 — 변경추적/메모/숨은텍스트", () => {
