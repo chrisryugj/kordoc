@@ -104,7 +104,9 @@ SDK 는 워커를 `node dist/cli.js parse-worker --protocol 2` 로 띄우고 환
 두 층으로 나눠 쓴다.
 
 1. 인프라 층: kordoc 을 쓰는 파드·컨테이너 전체를 RuntimeClass `gvisor` 나 `docker --runtime=runsc` 로 띄운다. 코드는 바꾸지 않는다.
-2. kordoc 층: 서버 프로세스는 밖에 두고, `KORDOC_SANDBOX=gvisor` 로 파싱 워커만 gVisor 에 넣는다.
+2. kordoc 층: 사용자가 직접 `parse-worker`나 SDK를 띄우는 경우 `KORDOC_SANDBOX=gvisor`로 파싱 워커만 gVisor에 넣는다.
+
+`kordoc serve`를 격리할 때는 컨테이너 전체에 gVisor 런타임을 적용한다. HTTP 리스너에 필요한 네트워크를 연결하고 `--data-dir`은 영속 볼륨에 마운트한다. [HTTP API 운영 설정](http-api.md#운영-설정)
 
 권장 설정:
 
@@ -148,4 +150,4 @@ CI 의 `npm test` 전체는 호스트(`test (24)` 잡)에서 182초, gVisor 컨�
 
 - macOS·Windows 에서는 `KORDOC_SANDBOX=gvisor` 를 켜도 격리되지 않는다(경고만 낸다). 이 운영체제의 Docker Desktop 은 컨테이너를 Linux VM 안에서 돌리므로, 호스트 보호가 필요하면 컨테이너로 실행한다.
 - gVisor 커널 자체의 취약점은 gVisor 업데이트로 대응한다.
-- 파일을 쓰는 명령(`to-hwpx`, `render` 등)과 MCP 서버는 `KORDOC_SANDBOX` 를 받지 않는다. 컨테이너 런타임으로 격리한다.
+- 파일을 쓰는 명령(`to-hwpx`, `render` 등)과 MCP 서버 및 `kordoc serve`는 `KORDOC_SANDBOX` 를 받지 않는다. 컨테이너 런타임으로 격리한다.

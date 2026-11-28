@@ -10,7 +10,7 @@
 
 > *Korea's document hell is second to none. Built by a civil servant who survived seven years in it.*
 
-kordoc lets AI read and write Korean government documents. It converts HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and images (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) to Markdown and structured data, and writes HWPX or HWP government documents from Markdown. Use it as a library, CLI or MCP server.
+kordoc lets AI read and write Korean government documents. It converts HWP 3.x/5.x, HWPX, HWPML, PDF, XLS/XLSX, DOCX, PPTX and images (PNG/JPG/WebP/TIFF/GIF/BMP/AVIF/HEIC/PCX) to Markdown and structured data, and writes HWPX or HWP government documents from Markdown. Use it as a library, CLI, HTTP API, or MCP server.
 
 [한국어](README.md) · [Usage guide](docs/usage-en.md) · [Benchmarks](docs/benchmarks-en.md) · [Changelog](CHANGELOG.md)
 
@@ -161,6 +161,7 @@ Yes. `KORDOC_OFFLINE=1` blocks all outbound traffic, and OCR runs on the local C
 
 ## Documentation and security
 
+- Run `kordoc serve` on Node.js 24.15 or later for single-file parsing and queued jobs. [HTTP API quick start](docs/usage-en.md#http-api)
 - [Usage guide](docs/usage-en.md): complete CLI, MCP tools, APIs and format support
 - [Java SDK](sdk/java/README.md) · [Python SDK](sdk/python/README.md): parse from Java and Python systems through a resident engine worker ([worker protocol](docs/parse-worker-protocol.md), Korean)
 - [Government-document generation](docs/gongmunseo-engine-spec.md) · [Architecture](docs/architecture.md)

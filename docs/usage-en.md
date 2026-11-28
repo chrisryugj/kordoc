@@ -486,6 +486,27 @@ With `-o`/`-d`, images go to a per-document folder `images/<document name>/` wit
 
 ---
 
+## HTTP API
+
+Run `kordoc serve` with Node.js 24.15 or later. The server listens on `127.0.0.1:8787` by default.
+
+```sh
+kordoc serve
+```
+
+Send one document per request.
+
+```sh
+curl --fail-with-body \
+  -H 'Content-Type: application/octet-stream' \
+  --data-binary @document.hwpx \
+  http://127.0.0.1:8787/v1/parse
+```
+
+The response includes `fileType`, `markdown`, and `warnings`. Add `?blocks=true` to include structured blocks. For background processing, post the same body to `/v1/jobs`. The response includes HTTP 202 and a `Location` header. Send a GET request to that location to check the job and retrieve its result.
+
+Keep the server's SQLite queue and files in a persistent `--data-dir`. When binding to a non-loopback address, set `KORDOC_SERVE_TOKEN` and send it as a bearer token. For limits, retry behavior, and proxy settings, see the [HTTP API reference in Korean](http-api.md).
+
 ## 🤖 MCP Server
 
 Automatic setup: [`npx -y kordoc setup`](#ai-agent-integration-mcp--30-seconds). Manual registration:
