@@ -13,7 +13,25 @@ import { CELL_EDGES } from "../table/layout-frames.js"
  * buildTable이 CellContext의 확장 필드를 복사하지 않으므로 cellAddr 좌표
  * (없으면 텍스트+스팬 매칭)로 결과 IRCell을 찾아 재부착한다.
  */
+/**
+ * <hp:tr> 이 하나뿐인데 칸 주소가 모두 같은 뒤쪽 행(rowCnt−1 등)을 가리키는 표 — 앞 행은 저장되지 않았다. 칸이 그 한 행의 열을
+ * 빈틈없이 채우면(병합 없이 이어진 열) 0행으로 본다. 종전엔 없는 앞 행이 빈 행으로 생겼다(행 주소 2 → 빈 행 둘 + 글 행)
+ */
+function normalizeShiftedSingleRow(rows: TableState["rows"]): void {
+  if (rows.length !== 1 || !rows[0].length) return
+  const cells = rows[0]
+  const r = cells[0].rowAddr
+  if (!r || cells.some(c => c.rowAddr !== r || c.rowSpan !== 1 || c.colAddr === undefined)) return
+  let next = 0
+  for (const c of [...cells].sort((a, b) => a.colAddr! - b.colAddr!)) {
+    if (c.colAddr !== next) return
+    next += Math.max(1, c.colSpan)
+  }
+  for (const c of cells) c.rowAddr = 0
+}
+
 function buildTableWithCellMeta(state: TableState, keepAnchoredEmptyCols?: boolean, keepEmptyParagraphs?: boolean): IRTable {
+  normalizeShiftedSingleRow(state.rows)
   const table = buildTable(state.rows, { keepAnchoredEmptyCols, keepEmptyParagraphs })
   if (state.caption) table.caption = state.caption
   if (state.caption && state.captionBelow) table.captionBelow = true

@@ -7,6 +7,7 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
 import { markdownToHwpx, parseHwpx } from "../src/index.js"
+import { parseHwpxDocument } from "../src/hwpx/parser.js"
 
 const MERGED = [
   "<table>",
@@ -86,5 +87,18 @@ describe("markdownToHwpx — HTML 표 생성", () => {
     assert.ok(!/borderFill id="0"/.test(header), "borderFill id=0 금지 (1-based 규약)")
     assert.ok(/<hh:borderFill id="2"[^>]*>[\s\S]*?type="SOLID"/.test(header), "SOLID 테두리 fill 존재")
     assert.ok(/hp:tc[^>]*borderFillIDRef="2"/.test(section), "셀이 SOLID fill 참조")
+  })
+})
+
+describe("행 주소가 밀린 한 행 표", () => {
+  it("<hp:tr> 이 하나인데 칸 주소가 뒤쪽 행이면 0행으로 — 없는 앞 행을 빈 행으로 만들지 않는다", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("# 시험\n\n| 가 | 나 |\n|---|---|\n\n끝\n"))
+    const xml = (await zip.file("Contents/section0.xml")!.async("string"))
+      .replace(/(<hp:tbl [^>]*rowCnt=")1"/, "$13\"").replace(/(<hp:cellAddr colAddr="\d+" rowAddr=")0"/g, "$12\"")
+    zip.file("Contents/section0.xml", xml)
+    const out = await zip.generateAsync({ type: "uint8array" })
+    const md = (await parseHwpxDocument(out.buffer.slice(0) as ArrayBuffer, { layoutTables: "keep" })).markdown
+    assert.doesNotMatch(md, /\|  \|  \|/)
+    assert.match(md, /\| 가 \| 나 \|/)
   })
 })

@@ -104,6 +104,20 @@ describe("HWP3 표 — 셀 기하로 격자 복원 (종전: 셀 글을 본문 �
     assert.deepEqual(g.cells[2], { row: 1, col: 0, rowSpan: 1, colSpan: 2 })
   })
 
+  it("사적 기호 7코드(±·×·˚·∼·‧·▶·↑)를 버리지 않는다 (rhwp #8912)", () => {
+    assert.equal([0x2051, 0x2053, 0x048a, 0x223c, 0x3151, 0x2f66, 0x2191].map(c => String.fromCodePoint(decodeJohab(c))).join(""), "±×˚∼‧▶↑")
+  })
+
+  it("행이 수천 개인 표도 아래쪽 칸이 오른쪽 이웃을 찾는다 — 같은 열의 셀 수에 탐색이 막히지 않는다", () => {
+    // 3열 × 2,500행. 종전엔 시작 좌표 정렬 뒤 셀 2,048개까지만 훑어 2,049번째 행부터 첫 칸이 오른쪽 이웃을 못 찾고 표 끝까지 합쳐졌다
+    const rows = 2500, specs: number[][] = []
+    for (let r = 0; r < rows; r++) for (let c = 0; c < 3; c++) specs.push([c * 100, r * 20, 100, 20])
+    const g = hwp3CellGrid(Buffer.concat(specs.map(([x, y, w, h]) => { const b = Buffer.alloc(27); b.writeUInt16LE(x, 4); b.writeUInt16LE(y, 6); b.writeUInt16LE(w, 8); b.writeUInt16LE(h, 10); return b })), specs.length)
+    assert.equal(g.cols, 3)
+    assert.equal(g.rows, rows)
+    assert.ok(g.cells.every(c => c.colSpan === 1 && c.rowSpan === 1), "합쳐진 칸이 없어야 한다")
+  })
+
   it("겹친 앵커 셀은 글을 앞 셀에 이어 붙인다 — 글 손실 금지 (rhwp 는 버림)", () => {
     const t = tableOf(blocks(doc(para(object([
       { x: 0, y: 0, w: 100, h: 50, text: "first" }, { x: 0, y: 0, w: 100, h: 50, text: "dup" },

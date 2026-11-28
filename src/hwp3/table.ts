@@ -17,7 +17,7 @@ import { MAX_COLS, MAX_ROWS } from "../table/builder.js"
 
 /** 이웃 판정 허용치 — 이웃 셀 왼쪽 변이 이 셀 오른쪽 변보다 조금 안쪽에 있어도(저장 반올림) 이웃으로 본다 */
 const NEIGHBOR_SLACK = 10
-/** 이웃 탐색 전진 상한 — 실측 최대 표(sample16 367셀)의 몇 배 */
+/** 이웃 탐색 상한(서로 다른 시작 좌표 묶음 수) — 정상 표는 바로 다음 묶음에서 찾는다. 손상 파일의 계단형 셀(묶음마다 셀 하나)만 막는다 */
 const MAX_NEIGHBOR_SCAN = 2048
 
 export interface Hwp3CellPos {
@@ -50,24 +50,47 @@ function edgeAt(edges: number[], v: number): number {
 
 /**
  * 각 셀의 "다음 이웃 시작" — axis 방향(x: 오른쪽, y: 아래)으로 끝 변 이후에 시작하면서 다른 축으로 겹치는
- * 셀 중 가장 가까운 시작 좌표. 없으면 undefined. 시작 좌표 정렬 + 이분 탐색 후 전진(표 크기 × 행 수 수준)
+ * 셀 중 가장 가까운 시작 좌표. 없으면 undefined.
+ *
+ * 셀을 시작 좌표별로 묶고, 묶음마다 다른 축 구간을 정렬해 겹치는 것끼리 합쳐 둔다. 끝 변 이후의 묶음을 가까운 것부터 보며
+ * 묶음 안 겹침은 이분 탐색으로 가린다. 탐색 상한은 셀 수가 아니라 묶음 수다 — 종전엔 정렬한 셀을 2,048개까지 훑어, 행이
+ * 2,048개를 넘는 표의 아래쪽 칸이 같은 열 위쪽 셀에 막혀 오른쪽 이웃을 못 찾고 표 끝까지 합쳐졌다
  */
 function nextStarts(geo: Geo[], axis: "x" | "y"): Array<number | undefined> {
   const start = axis === "x" ? (g: Geo) => g.x : (g: Geo) => g.y
   const end = axis === "x" ? (g: Geo) => g.r : (g: Geo) => g.b
-  const overlap = axis === "x"
-    ? (a: Geo, b: Geo) => b.y < a.b && b.b > a.y
-    : (a: Geo, b: Geo) => b.x < a.r && b.r > a.x
-  const order = geo.map((_, i) => i).sort((i, j) => start(geo[i]) - start(geo[j]))
-  const starts = order.map(i => start(geo[i]))
-  return geo.map(a => {
-    // 끝 변 − 허용치 이상, 그리고 자기 시작보다 뒤에서 시작하는 첫 후보부터. 정상 표는 행(열) 수 안에서 찾는다 —
-    // 손상 파일의 계단형 셀 수만 개가 O(n²) 로 도는 것을 막는 상한
-    let k = edgeAt(starts, Math.max(end(a) - NEIGHBOR_SLACK, start(a) + 1))
-    for (let steps = 0; k < order.length && steps < MAX_NEIGHBOR_SCAN; k++, steps++) {
-      const b = geo[order[k]]
-      if (start(b) <= start(a)) continue
-      if (overlap(a, b)) return start(b)
+  const lo = axis === "x" ? (g: Geo) => g.y : (g: Geo) => g.x
+  const hi = axis === "x" ? (g: Geo) => g.b : (g: Geo) => g.r
+  const byStart = new Map<number, Array<[number, number]>>()
+  for (const g of geo) {
+    const list = byStart.get(start(g))
+    if (list) list.push([lo(g), hi(g)])
+    else byStart.set(start(g), [[lo(g), hi(g)]])
+  }
+  const starts = [...byStart.keys()].sort((a, b) => a - b)
+  // 겹침 판정은 엄격(b.lo < a.hi && b.hi > a.lo)이라 끝점만 맞닿은 구간은 합치지 않는다
+  const spans = starts.map(v => {
+    const list = byStart.get(v)!.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    const merged: Array<[number, number]> = []
+    for (const [a, b] of list) {
+      const last = merged[merged.length - 1]
+      if (last && (a < last[1] || (a === last[0] && b === last[1]))) last[1] = Math.max(last[1], b)
+      else merged.push([a, b])
+    }
+    return merged
+  })
+  /** 합친 구간 가운데 [a, b) 와 겹치는 것이 있나 — 시작이 b 보다 앞인 마지막 구간의 끝이 a 를 넘으면 */
+  const overlaps = (merged: Array<[number, number]>, a: number, b: number): boolean => {
+    let l = 0, h = merged.length
+    while (l < h) { const m = (l + h) >> 1; if (merged[m][0] < b) l = m + 1; else h = m }
+    return l > 0 && merged[l - 1][1] > a
+  }
+  return geo.map(g => {
+    // 끝 변 − 허용치 이상, 그리고 자기 시작보다 뒤에서 시작하는 첫 묶음부터. 손상 파일의 계단형 셀이 O(n²) 로 돌지 않게 묶음 수로 묶는다
+    let k = edgeAt(starts, Math.max(end(g) - NEIGHBOR_SLACK, start(g) + 1))
+    if (k < starts.length && starts[k] < Math.max(end(g) - NEIGHBOR_SLACK, start(g) + 1)) k++
+    for (let steps = 0; k < starts.length && steps < MAX_NEIGHBOR_SCAN; k++, steps++) {
+      if (overlaps(spans[k], lo(g), hi(g))) return starts[k]
     }
     return undefined
   })

@@ -294,6 +294,15 @@ function decodeHwp3Extra(ch: number): number {
     // 두 문서에서 한컴 변환본의 `═` 개수와 정확히 일치해 표시값 직행으로 싣는다.
     case 0x3048: return 0x2550
     case 0x37ed: return 0x2550
+    // 사적 기호 7코드 (rhwp #8912). 같은 보고서의 HWP5 판과 같은 문장을 맞춰 본 값이다(한컴 변환본 대조는 아님) —
+    // 매핑이 없어 글자째 버려졌다("오차 ±1mm" → "오차 1mm", "1,000˚C∼1,400˚C"). 0x223C 는 KS 기호행 ∼→～ 보정(hancomVariant)과 별개다
+    case 0x2051: return 0x00b1 // ±
+    case 0x2053: return 0x00d7 // ×
+    case 0x048a: return 0x02da // ˚
+    case 0x223c: return 0x223c // ∼
+    case 0x3151: return 0x2027 // ‧
+    case 0x2f66: return 0x25b6 // ▶
+    case 0x2191: return 0x2191 // ↑
     // 사적 원문자·괄호문자 계열. 사적 코드는 일반식이 없어 실측 문서에서 연속으로
     // 확인된 구간만 싣는다 (sample11 ↔ hwp3-sample11-hwpx 문맥 정렬).
     //   0x2E01~0x2E07 → ①~⑦ 7코드 연속 일치, 0x2C21~0x2C26 → ⓐ~ⓕ (ⓒ~ⓕ 개수 일치),
