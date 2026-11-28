@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- PDF: `pageImages` 와 사용자 OCR 프로바이더에 넘기는 쪽 그림의 빨강·파랑이 뒤바뀌던 것(PDFium 은 RGBA 를 넘기는데 BGRA 로 보고 바꿨다). 내장 OCR 은 종전 채널 순서를 그대로 받아 인식 결과가 같다(OCR 56문서 현행 main 과 같음). 렌더 버퍼를 복사하지 않고 다시 써 24MP 스캔 내보내기 최대 RSS 640 → 541 MiB (#251, @LimePencil)
+
 ## [4.25.32] - 2026-11-28
 
 ### Added
