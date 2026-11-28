@@ -89,8 +89,9 @@ class ParseService {
   private readonly waiters = new Map<string, (job: TerminalJob) => void>()
   private readonly requests = new Set<Promise<void>>()
   private readonly server = createServer({ headersTimeout: 10_000, requestTimeout: 0, connectionsCheckingInterval: 1_000 })
-  private stop = (_error?: Error) => {}
+  private stop = () => {}
   private stopping = false
+  private failure?: Error
   private uploads = 0
   private reservedInputs = 0
   private reservedInputBytes = 0
@@ -105,17 +106,14 @@ class ParseService {
     this.ocrLimit = Math.min(options.ocrWorkers, Math.max(1, options.workers - 1))
     this.server.maxConnections = Math.max(128, options.maxUploads + options.maxJobs + 32)
     this.server.setTimeout(60_000)
-    this.server.on("request", this.receive)
-    this.server.on("checkContinue", this.receive)
   }
 
   async run() {
-    const stop = new Promise<Error | undefined>(resolve => { this.stop = resolve })
+    const stop = new Promise<void>(resolve => { this.stop = resolve })
     const onSignal = () => this.halt()
     let expiry: NodeJS.Timeout | undefined
+    let shutdownRequested = false
     try {
-      this.store.prune(this.options.jobTtlMs)
-      if (!this.ocrLimit) this.store.disableOcr()
       await new Promise<void>((resolve, reject) => {
         this.server.once("error", reject)
         this.server.listen(this.options.port, this.options.host, () => {
@@ -124,6 +122,11 @@ class ParseService {
           resolve()
         })
       })
+      this.store.recover()
+      this.store.prune(this.options.jobTtlMs)
+      if (!this.ocrLimit) this.store.disableOcr()
+      this.server.on("request", this.receive)
+      this.server.on("checkContinue", this.receive)
       process.on("SIGINT", onSignal)
       process.on("SIGTERM", onSignal)
       const address = this.server.address()
@@ -134,8 +137,8 @@ class ParseService {
         try { this.store.prune(this.options.jobTtlMs) } catch (error) { this.halt(error) }
       }, Math.min(60_000, Math.max(1_000, this.options.jobTtlMs)))
       this.pump()
-      const error = await stop
-      if (error) throw error
+      await stop
+      shutdownRequested = true
     } finally {
       this.stopping = true
       process.off("SIGINT", onSignal)
@@ -146,14 +149,20 @@ class ParseService {
       await Promise.allSettled([
         ...this.requests, ...this.slots.flatMap(slot => [slot.task, slot.worker.retire()]),
       ])
-      this.store.close()
+      try {
+        if (shutdownRequested && !this.failure) this.store.releaseRunning()
+      } finally {
+        this.store.close()
+      }
     }
+    if (this.failure) throw this.failure
   }
 
   private halt(error?: unknown) {
+    if (error !== undefined) this.failure ??= error instanceof Error ? error : new Error("Service failed.")
     if (this.stopping) return
     this.stopping = true
-    this.stop(error === undefined ? undefined : error instanceof Error ? error : new Error("Service failed."))
+    this.stop()
   }
 
   private receive = (req: IncomingMessage, res: ServerResponse) => {

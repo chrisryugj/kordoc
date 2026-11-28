@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
@@ -16,11 +17,17 @@ const [major, minor] = process.versions.node.split(".").map(Number)
 const supported = major > 24 || (major === 24 && minor >= 15)
 const testOptions = { skip: supported ? false : "serve requires Node.js 24.15+", timeout: 45_000 }
 
-async function start(dataDir: string, args: string[] = [], token?: string) {
+async function start(dataDir: string, args: string[] = [], options: { token?: string; worker?: "hold" | "crash" } = {}) {
   const env = { ...process.env }
   delete env.KORDOC_SANDBOX
   delete env.KORDOC_SERVE_TOKEN
-  if (token) env.KORDOC_SERVE_TOKEN = token
+  if (options.token) env.KORDOC_SERVE_TOKEN = options.token
+  if (options.worker) {
+    const preload = new URL("./fixtures/serve-worker.mjs", import.meta.url)
+    preload.searchParams.set("mode", options.worker)
+    preload.searchParams.set("attempts", join(dataDir, "worker-attempts.log"))
+    env.NODE_OPTIONS = [env.NODE_OPTIONS, `--import=${preload.href}`].filter(Boolean).join(" ")
+  }
   const child = spawn(process.execPath, ["--import", "tsx", cli, "serve", "--port", "0", "--data-dir", dataDir, ...args], {
     env, stdio: ["ignore", "ignore", "pipe"],
   })
@@ -56,15 +63,24 @@ function upload(url: string, body: Uint8Array | string, headers?: Record<string,
   })
 }
 
-async function poll(url: string) {
+async function submitJob(url: string, bytes: Uint8Array, query = "") {
+  const added = await upload(url + "/v1/jobs" + query, bytes)
+  assert.equal(added.status, 202)
+  const path = added.headers.get("location")
+  assert.ok(path)
+  await added.body?.cancel()
+  return path
+}
+
+async function poll(url: string, statuses = ["succeeded", "failed"]) {
   for (let i = 0; i < 1_000; i++) {
     const resp = await fetch(url, { signal: AbortSignal.timeout(5_000) })
     assert.equal(resp.status, 200)
     const job = await resp.json()
-    if (job.status === "succeeded" || job.status === "failed") return job
+    if (statuses.includes(job.status)) return job
     await delay(10)
   }
-  assert.fail("job did not finish")
+  assert.fail(`job did not reach ${statuses.join(" or ")}`)
 }
 
 test("serve parses bytes, reuses a job on retry, and persists its result across restart", testOptions, async () => {
@@ -130,7 +146,7 @@ test("serve enforces authentication, body and query limits, and reports parse er
   let server: Awaited<ReturnType<typeof start>> | undefined
   const headers = { authorization: "Bearer integration-test-token" }
   try {
-    server = await start(dir, ["--max-upload-bytes", "64"], "integration-test-token")
+    server = await start(dir, ["--max-upload-bytes", "64"], { token: "integration-test-token" })
     const unauthorized = await upload(server.url + "/v1/jobs", "test")
     assert.equal(unauthorized.status, 401)
     await unauthorized.body?.cancel()
@@ -150,6 +166,82 @@ test("serve enforces authentication, body and query limits, and reports parse er
     const invalidFile = await upload(server.url + "/v1/parse", "invalid document", headers)
     assert.equal(invalidFile.status, 422, await invalidFile.clone().text())
     assert.equal((await invalidFile.json()).error.code, "UNSUPPORTED_FORMAT")
+  } finally {
+    await server?.stop()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+const posixTestOptions = {
+  ...testOptions, skip: testOptions.skip || (process.platform === "win32" && "SIGTERM requires POSIX signals"),
+}
+
+test("serve resumes a running job after repeated orderly shutdowns", posixTestOptions, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kordoc-http-"))
+  let server: Awaited<ReturnType<typeof start>> | undefined
+  const args = ["--workers", "1"]
+  try {
+    server = await start(dir, args, { worker: "hold" })
+    const path = await submitJob(server.url, await readFile(fixture))
+    await poll(server.url + path, ["running"])
+    assert.equal(await server.stop(), 0)
+
+    server = await start(dir, args, { worker: "hold" })
+    await poll(server.url + path, ["running"])
+    assert.equal(await server.stop(), 0)
+
+    server = await start(dir, args)
+    const job = await poll(server.url + path)
+    assert.equal(job.status, "succeeded", JSON.stringify(job))
+    assert.match(job.result.markdown, /서면자문 의견서/)
+  } finally {
+    await server?.stop()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("serve preserves a queued OCR job when startup cannot bind its port", posixTestOptions, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kordoc-http-"))
+  const occupied = createServer()
+  let server: Awaited<ReturnType<typeof start>> | undefined
+  const args = ["--workers", "1"]
+  try {
+    occupied.listen(0, "127.0.0.1")
+    await once(occupied, "listening")
+    const address = occupied.address()
+    assert.ok(address && typeof address === "object")
+
+    const bytes = await readFile(fixture)
+    server = await start(dir, args, { worker: "hold" })
+    const first = await submitJob(server.url, bytes)
+    await poll(server.url + first, ["running"])
+    const ocr = await submitJob(server.url, bytes, "?ocr=true")
+    await poll(server.url + ocr, ["queued"])
+    assert.equal(await server.stop(), 0)
+
+    await assert.rejects(start(dir, [...args, "--port", String(address.port), "--ocr-workers", "0"]), /EADDRINUSE/)
+
+    server = await start(dir, args)
+    const job = await poll(server.url + ocr)
+    assert.equal(job.status, "succeeded", JSON.stringify(job))
+    assert.match(job.result.markdown, /서면자문 의견서/)
+  } finally {
+    occupied.close()
+    await server?.stop()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("serve fails a job after two parser crashes", testOptions, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kordoc-http-"))
+  let server: Awaited<ReturnType<typeof start>> | undefined
+  try {
+    server = await start(dir, ["--workers", "1"], { worker: "crash" })
+    const path = await submitJob(server.url, await readFile(fixture))
+    const job = await poll(server.url + path)
+    assert.equal(job.status, "failed", JSON.stringify(job))
+    assert.equal(job.error.code, "WORKER_FAILED")
+    assert.equal(await readFile(join(dir, "worker-attempts.log"), "utf8"), "parse\nparse\n")
   } finally {
     await server?.stop()
     await rm(dir, { recursive: true, force: true })

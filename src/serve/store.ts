@@ -75,16 +75,23 @@ export class JobStore {
       `)
       mkdirSync(this.files, { mode: 0o700, recursive: true })
       if (!lstatSync(this.files).isDirectory()) throw new Error("The service files directory must be a local directory.")
-      this.db.prepare(`
-        UPDATE jobs SET status = 'failed', error = 'WORKER_INTERRUPTED', finished = ?
-        WHERE status = 'running' AND attempts >= ?
-      `).run(Date.now(), maxAttempts)
-      this.db.exec("UPDATE jobs SET status = 'queued' WHERE status = 'running'")
-      this.cleanOrphans()
     } catch (error) {
       this.db.close()
       throw error
     }
+  }
+
+  recover() {
+    this.db.prepare(`
+      UPDATE jobs SET status = 'failed', error = 'WORKER_INTERRUPTED', finished = ?
+      WHERE status = 'running' AND attempts >= ?
+    `).run(Date.now(), maxAttempts)
+    this.db.exec("UPDATE jobs SET status = 'queued' WHERE status = 'running'")
+    this.cleanOrphans()
+  }
+
+  releaseRunning() {
+    this.db.exec("UPDATE jobs SET status = 'queued', attempts = attempts - 1 WHERE status = 'running'")
   }
 
   get(id: string) {
