@@ -282,12 +282,14 @@ export async function ocrOnePage(
   const closer = regions && mode === "builtin" && renderScale * 2 <= Math.sqrt(MAX_OCR_PIXELS / Math.max(1, pdfW * pdfH))
   const rendered = await page.render({
     scale: closer ? renderScale * 2 : renderScale,
-    render: async ({ data }) => data,
+    render: retainPdfiumRgba,
   })
-  const hiRgba = closer ? bgraToRgba(rendered.data) : null
+  // 내장 OCR 은 종전 채널 순서를 써야 회색조 가중치와 인식 결과가 같다.
+  if (mode === "builtin") swapRedBlue(rendered.data)
+  const hiRgba = closer ? rendered.data : null
   let { rgba, width: rw, height: rh } = hiRgba
     ? halve(hiRgba, rendered.width, rendered.height)
-    : { rgba: bgraToRgba(rendered.data), width: rendered.width, height: rendered.height }
+    : { rgba: rendered.data, width: rendered.width, height: rendered.height }
 
   if (mode === "builtin") {
     // 스캔 기울기 보정 — 인식과 괘선 감지가 같은(바로 선) 래스터를 본다. 클린 렌더는 무보정.
@@ -332,9 +334,11 @@ export async function ocrOnePage(
     const scale = rh / pdfH
     /** 블록과 함께 돌려줄 쪽 줄 (config.lines 일 때만) */
     // 줄 좌표의 기준 래스터 — 기울기·눕힌 페이지를 바로잡은 것
-    const raster = wantRaster ? { raster: { data: upright, width: rw, height: rh } } : undefined
-    const withLines = (blocks: IRBlock[], kept: OcrItem[], regionsOnly = false) =>
-      config.lines ? { blocks, lines: pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly, dewarp), ...raster } : { blocks, ...raster }
+    const withLines = (blocks: IRBlock[], kept: OcrItem[], regionsOnly = false) => {
+      if (wantRaster) swapRedBlue(upright)
+      const raster = wantRaster ? { raster: { data: upright, width: rw, height: rh } } : undefined
+      return config.lines ? { blocks, lines: pageLines(pageNo, rw, rh, scale, angle, kept, stats.dropped, regionsOnly, dewarp), ...raster } : { blocks, ...raster }
+    }
     // 텍스트층이 있는 쪽의 그림 영역만 읽을 때는 영역마다 그 안 글줄로 따로 블록을 만든다 — 쪽 전체로 묶으면 본문 줄과 그림 글이
     // 한 문단으로 합쳐져 영역 판정(mergeOcrImageRegions)에서 빠진다
     if (regions) {
@@ -431,8 +435,8 @@ export async function renderPdfPageImages(buffer: ArrayBuffer, pages: number[], 
         if (!out.reserve(Math.ceil(pdfW * scale) * Math.ceil(pdfH * scale))) continue
         // 받은 뒤에 담는다 — 제한 시간을 넘겨 버린 페이지가 뒤늦게 끝나도 섞이지 않는다 (runPdfOcr 의 줄과 같은 규칙)
         out.push(await withTimeout((async () => {
-          const r = await page.render({ scale, render: async ({ data }) => data })
-          return out.encode(pageNo, { data: bgraToRgba(r.data), width: r.width, height: r.height })
+          const { data, width, height } = await page.render({ scale, render: retainPdfiumRgba })
+          return out.encode(pageNo, { data, width, height })
         })(), PAGE_TIMEOUT_MS, `pageImages 페이지 ${pageNo} 타임아웃 (${PAGE_TIMEOUT_MS / 1000}초)`))
       } catch (e) {
         warnings.push({ page: pageNo, message: `페이지 ${pageNo} pageImages 생략: ${e instanceof Error ? e.message : String(e)}`, code: "SKIPPED_IMAGE" })
@@ -768,14 +772,15 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Pro
   }
 }
 
-/** pdfium BGRA → RGBA */
-function bgraToRgba(bgra: Uint8Array): Uint8Array {
-  const out = new Uint8Array(bgra.length)
-  for (let i = 0; i < bgra.length; i += 4) {
-    out[i] = bgra[i + 2]
-    out[i + 1] = bgra[i + 1]
-    out[i + 2] = bgra[i]
-    out[i + 3] = bgra[i + 3]
+async function retainPdfiumRgba({ data }: { data: Uint8Array }): Promise<Uint8Array> {
+  // pdfium 은 RGBA 를 넘긴다. 2.1.12 이전의 WASM 힙 뷰는 렌더 콜백 안에서 복사해야 한다.
+  return data.byteOffset === 0 && data.byteLength === data.buffer.byteLength ? data : new Uint8Array(data)
+}
+
+function swapRedBlue(data: Uint8Array): void {
+  for (let i = 0; i < data.length; i += 4) {
+    const red = data[i]
+    data[i] = data[i + 2]
+    data[i + 2] = red
   }
-  return out
 }
