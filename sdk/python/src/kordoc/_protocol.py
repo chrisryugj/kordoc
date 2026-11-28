@@ -29,6 +29,7 @@ OPTION_NAMES: dict[str, str] = {
     "images": "images",
     "inline_images": "inlineImages",
     "qr_codes": "qrCodes",
+    "charts": "charts",
     "image_format": "imageFormat",
     "image_placement": "imagePlacement",
     "drop_blank_images": "dropBlankImages",

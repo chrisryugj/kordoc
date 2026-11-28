@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `charts` 옵션을 MCP `parse_document`(`charts: true`)와 Python SDK(`charts=True`)·Java SDK(`.charts(true)`)에서도 쓴다. 워커 허용 목록 31 → 32개
 - HWP·HWPX 안 엑셀 개체(OLE) 읽기(`charts: true`, CLI `--charts`): 개체에 든 통합 문서(BIFF8 Workbook)를 시트 표로 낸다. 캡션은 "엑셀 개체: 시트 이름". 종전에는 개체 미리보기 그림만 있고 표 값은 버렸다(코퍼스 HWP 1,700건 중 3문서 4개체). 차트 갈래가 없는 차트 OLE 도 같은 길로 차트 표가 된다. 한셀이 쓴 통합 문서(판 번호 0x1001)는 칸 배치가 BIFF8 과 달라 건너뛴다. 차트와 같이 기본은 끔이고 원본 표 구조 모드(`layoutTables: "keep"`)에서는 내지 않는다
 
 ## [4.25.27] - 2026-11-28

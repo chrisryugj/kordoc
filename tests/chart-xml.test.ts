@@ -5,6 +5,10 @@ import JSZip from "jszip"
 import { parse } from "../src/index.js"
 import { parseChartXml, chartBlock, smartArtBlocks } from "../src/shared/chart-xml.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { registerParseTools } from "../src/mcp/tools-parse.js"
 
 const C = `xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`
 const pts = (vals: string[]) => `<c:ptCount val="${vals.length}"/>` + vals.map((v, i) => `<c:pt idx="${i}"><c:v>${v}</c:v></c:pt>`).join("")
@@ -82,17 +86,23 @@ const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const graphic = (rid: string) => `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">`
   + `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="${REL}" r:id="${rid}"/></a:graphicData></a:graphic>`
 
+/** 앞 문단 · 차트(mc:AlternateContent Choice·Fallback 둘 다) · 뒤 문단인 DOCX */
+function docxWithChart(): JSZip {
+  const zip = new JSZip()
+  zip.file("[Content_Types].xml", `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`)
+  zip.file("_rels/.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="word/document.xml"/></Relationships>`)
+  zip.file("word/document.xml", `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>`
+    + `<w:p><w:r><w:t>앞 문단</w:t></w:r></w:p>`
+    + `<w:p><w:r><mc:AlternateContent><mc:Choice Requires="c14"><w:drawing><wp:inline>${graphic("rId5")}</wp:inline></w:drawing></mc:Choice><mc:Fallback><w:drawing><wp:inline>${graphic("rId5")}</wp:inline></w:drawing></mc:Fallback></mc:AlternateContent></w:r></w:p>`
+    + `<w:p><w:r><w:t>뒤 문단</w:t></w:r></w:p></w:body></w:document>`)
+  zip.file("word/_rels/document.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="${REL}/chart" Target="charts/chart1.xml"/></Relationships>`)
+  zip.file("word/charts/chart1.xml", BAR)
+  return zip
+}
+
 describe("형식별 연결", () => {
   it("DOCX: 문단의 차트를 그 자리에 표로, mc:Fallback 사본은 한 번만", async () => {
-    const zip = new JSZip()
-    zip.file("[Content_Types].xml", `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`)
-    zip.file("_rels/.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="word/document.xml"/></Relationships>`)
-    zip.file("word/document.xml", `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>`
-      + `<w:p><w:r><w:t>앞 문단</w:t></w:r></w:p>`
-      + `<w:p><w:r><mc:AlternateContent><mc:Choice Requires="c14"><w:drawing><wp:inline>${graphic("rId5")}</wp:inline></w:drawing></mc:Choice><mc:Fallback><w:drawing><wp:inline>${graphic("rId5")}</wp:inline></w:drawing></mc:Fallback></mc:AlternateContent></w:r></w:p>`
-      + `<w:p><w:r><w:t>뒤 문단</w:t></w:r></w:p></w:body></w:document>`)
-    zip.file("word/_rels/document.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="${REL}/chart" Target="charts/chart1.xml"/></Relationships>`)
-    zip.file("word/charts/chart1.xml", BAR)
+    const zip = docxWithChart()
     const r = await parse(await zip.generateAsync({ type: "arraybuffer" }), { charts: true })
     assert.ok(r.success)
     if (!r.success) return
@@ -141,5 +151,23 @@ describe("형식별 연결", () => {
     if (!r.success) return
     assert.match(r.markdown, /\| 2024년 \| 12 \| 10 \|/)
     assert.ok(!(r.warnings ?? []).some(w => w.code === "UNSUPPORTED_ELEMENT"))
+  })
+})
+
+describe("parse_document charts 인수", () => {
+  it("charts: true 면 차트 표를 내고, 빼면 기본 출력 그대로", async () => {
+    let callback: (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }> = async () => ({ content: [] })
+    registerParseTools({ tool(name: string, ...args: any[]) { if (name === "parse_document") callback = args.at(-1) } } as any)
+    const dir = mkdtempSync(join(tmpdir(), "kordoc-mcp-chart-"))
+    try {
+      const file = join(dir, "chart.docx")
+      writeFileSync(file, await docxWithChart().generateAsync({ type: "nodebuffer" }))
+      const on = (await callback({ file_path: file, charts: true })).content.map(c => c.text).join("\n")
+      const off = (await callback({ file_path: file })).content.map(c => c.text).join("\n")
+      assert.match(on, /차트: 연도별 민원/)
+      assert.doesNotMatch(off, /차트: 연도별 민원/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

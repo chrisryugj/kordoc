@@ -33,11 +33,11 @@ def test_requests_match_fixture() -> None:
 
 
 def test_option_names_cover_worker_allowlist() -> None:
-    # docs/parse-worker-protocol.md 허용 목록과 같은 31개
+    # docs/parse-worker-protocol.md 허용 목록과 같은 32개
     assert sorted(OPTION_NAMES.values()) == sorted([
         "tableFormat", "htmlTables", "htmlCellLinks", "layoutTables", "classifyTables", "tables", "plain", "scriptTags",
         "removeHeaderFooter", "dedupeRunningHeaders", "keepTrailingEmptyCols", "keepEmptyParagraphs",
-        "includeFieldPlaceholders", "pages", "images", "inlineImages", "qrCodes", "imageFormat", "imagePlacement", "dropBlankImages", "ocr", "formulaOcr", "password",
+        "includeFieldPlaceholders", "pages", "images", "inlineImages", "qrCodes", "charts", "imageFormat", "imagePlacement", "dropBlankImages", "ocr", "formulaOcr", "password",
         "ocrLines", "ocrDet", "ocrDetLongSide", "ocrRec", "ocrRecDict", "pageImages", "ocrLineCandidates", "ocrChars"])
 
 

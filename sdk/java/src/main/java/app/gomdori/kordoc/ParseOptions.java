@@ -79,6 +79,8 @@ public final class ParseOptions {
         public Builder images(boolean v) { return put("images", v); }
         public Builder inlineImages(boolean v) { return put("inlineImages", v); }
         public Builder qrCodes(boolean v) { return put("qrCodes", v); }
+        /** 차트 값은 표로, SmartArt 는 목록으로, HWP·HWPX 안 엑셀 개체는 시트 표로 (기본 false) */
+        public Builder charts(boolean v) { return put("charts", v); }
         /** "flow"(기본, 쪽 위 자리로 글 사이) | "page-end"(쪽 끝, 4.24.50 까지의 출력) — PDF 그림 블록 자리 */
         public Builder imagePlacement(String placement) { wire.put("imagePlacement", placement); return this; }
         /** 거의 한 색인 그림(빈 판·단색 띠·옅은 그러데이션)을 뺀다 — 그림 바이트를 낼 때만 */

@@ -36,6 +36,8 @@ export function registerParseTools(server: McpServer): void {
         .describe("빈 문단 보존 — 본문은 빈 paragraph 블록, 표 셀은 빈 줄 (#57, 기본 off, CLI --keep-empty-paragraphs 대응)"),
       include_field_placeholders: z.boolean().optional()
         .describe("미기입 누름틀 안내문도 출력 — 빈 서식 문서의 칸 용도 보존 (#92, 기본 off, CLI --include-field-placeholders 대응)"),
+      charts: z.boolean().optional()
+        .describe("차트 값은 표로(\"차트: 제목 (종류)\" 캡션), SmartArt 는 목록으로, HWP·HWPX 안 엑셀 개체는 시트 표로 (HWP·HWPX·DOCX·PPTX·XLSX, 기본 off, CLI --charts 대응)"),
       memos: z.boolean().optional()
         .describe("메모(한글 \"메모 넣기\")를 문서 끝 \"메모\" 절로 — 작성자·시각·붙은 글·메모 글 (#180, HWPX·HWP5, 기본 off, CLI --memos 대응). 메모가 있으면 끄더라도 머리 줄에 개수를 알린다"),
       keep_layout_tables: z.boolean().optional()
@@ -53,7 +55,7 @@ export function registerParseTools(server: McpServer): void {
       tables: z.boolean().optional()
         .describe("PDF 표 감지 (기본 true — false로 끄기, CLI --no-tables 대응). 테두리 박스를 표로 오인해 읽기 순서가 뒤집히는 문서(2단 시험지 등)에서 자연 읽기순 텍스트만 뽑습니다 (#64)"),
     },
-    async ({ file_path, ocr, remove_header_footer, formula_ocr, ocr_rec, ocr_det, ocr_det_long_side, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, memos, keep_layout_tables, html_tables, table_format, script_tags, plain, password, tables }) => {
+    async ({ file_path, ocr, remove_header_footer, formula_ocr, ocr_rec, ocr_det, ocr_det_long_side, dedupe_running_headers, keep_trailing_empty_cols, keep_empty_paragraphs, include_field_placeholders, charts, memos, keep_layout_tables, html_tables, table_format, script_tags, plain, password, tables }) => {
       try {
         const { buffer, resolved } = await readValidatedFile(file_path, MAX_FILE_SIZE, PARSE_EXTENSIONS)
         const format = detectFormat(buffer)
@@ -83,6 +85,7 @@ export function registerParseTools(server: McpServer): void {
           ...(keep_trailing_empty_cols ? { keepTrailingEmptyCols: true } : {}),
           ...(keep_empty_paragraphs ? { keepEmptyParagraphs: true } : {}),
           ...(include_field_placeholders ? { includeFieldPlaceholders: true } : {}),
+          ...(charts ? { charts: true } : {}),
           ...(memos ? { memos: true } : {}),
           ...(plain ? { plain: true } : {}),
           ...(script_tags !== undefined ? { scriptTags: script_tags } : {}),

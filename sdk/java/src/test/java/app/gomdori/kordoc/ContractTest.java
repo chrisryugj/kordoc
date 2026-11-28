@@ -56,10 +56,10 @@ class ContractTest {
         ObjectNode all = ParseOptions.builder().tableFormat("gfm").htmlTables(false).htmlCellLinks(true).layoutTables("keep").classifyTables(true)
                 .tables(false).plain(true).scriptTags(false).removeHeaderFooter(false).dedupeRunningHeaders(true)
                 .keepTrailingEmptyCols(true).keepEmptyParagraphs(true).includeFieldPlaceholders(true).pages("1-2")
-                .images(false).inlineImages(true).qrCodes(true).imageFormat("webp").imagePlacement("flow").dropBlankImages(true).ocr(true).formulaOcr(false).password("pw")
+                .images(false).inlineImages(true).qrCodes(true).charts(true).imageFormat("webp").imagePlacement("flow").dropBlankImages(true).ocr(true).formulaOcr(false).password("pw")
                 .ocrLines(true).ocrDet("server").ocrDetLongSide(1920).ocrRec(new OcrModelFile(Path.of("/m/rec.onnx"), "a".repeat(64)))
                 .ocrRecDict(new OcrModelFile(Path.of("/m/rec.yml"), "a".repeat(64))).pageImages("webp").ocrLineCandidates(3).ocrChars(3).build().wireOptions();
-        assertEquals(31, all.size());
+        assertEquals(32, all.size());
     }
 
     @Test
