@@ -30,7 +30,7 @@ import { validateOcrOptions } from "../src/ocr/options.js"
 import { PageImageSink } from "../src/ocr/page-images.js"
 import { renderPdfPageImages, runPdfOcr } from "../src/ocr/pdf-ocr.js"
 import type { PageImage, ParseOptions, ParseResult, ParseWarning } from "../src/types.js"
-import { SCAN_SVG, TINY_BMP, scanFixtures, textPdf, tinyBmp, tinyBmpColor } from "./fixtures/sdk-docs.js"
+import { SCAN_SVG, TINY_BMP, imagePdf, scanFixtures, textPdf, tinyBmp, tinyBmpColor } from "./fixtures/sdk-docs.js"
 
 const toAB = (b: Uint8Array) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
 const fixture = (name: string) => toAB(readFileSync(new URL(`./fixtures/${name}`, import.meta.url)))
@@ -275,6 +275,27 @@ describe("PDF (OCR 끔)", () => {
 })
 
 describe("PDF — OCR 한 쪽과 그리기만 한 쪽", () => {
+  it("PDF 의 빨강·파랑은 OCR 프로바이더 PNG 와 페이지 이미지에 그대로 나온다", async (t) => {
+    const sharp = await loadSharp()
+    if (!sharp || !await hasPdfium()) { t.skip("sharp·pdfium 미설치"); return }
+    const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120"><rect width="120" height="120" fill="red"/><rect x="120" width="120" height="120" fill="blue"/></svg>`)
+    const pdf = imagePdf(await sharp(svg).jpeg().toBuffer(), 120, 60)
+    const swatches = async (png: Uint8Array) => {
+      const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+      return [0.25, 0.75].map(x => {
+        const offset = (Math.floor(info.height / 2) * info.width + Math.floor(info.width * x)) * 4
+        return Array.from(data.subarray(offset, offset + 4), channel => Math.round(channel / 255) * 255)
+      })
+    }
+    const seen: number[][][] = []
+    const on = await parse(pdf, { ocr: async (png) => { seen.push(await swatches(png)); return "글" }, pageImages: true })
+    const off = await parse(pdf, { ocr: false, pageImages: true })
+    assert.ok(on.success && off.success)
+    assert.equal(seen.length, 1)
+    const colors = [[255, 0, 0, 255], [0, 0, 255, 255]]
+    assert.deepEqual([seen[0], await swatches(on.pageImages![0].data), await swatches(off.pageImages![0].data)], [colors, colors, colors])
+  })
+
   it("OCR 한 쪽은 OCR 이 읽은 래스터를 받고, 나머지 쪽만 따로 그린다 (같은 배율)", async (t) => {
     if (!await loadSharp() || !await hasPdfium()) { t.skip("sharp·pdfium 미설치"); return }
     const pdf = toAB(textPdf([[300, 300], [200, 100], [100, 200]]))
