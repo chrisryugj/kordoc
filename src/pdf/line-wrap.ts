@@ -318,7 +318,7 @@ export function softWrapPair(prevText: string, nextText: string): boolean {
   // 글머리 기호·더하기·등호로 여는 줄은 새 항목·식, 수식($…$)이 든 줄쌍은 식 조각(분수 위아래 줄), 앞 줄이 여덟 글자 안 되면 좁은 머리 칸에서 끊어 쓴 낱말("주요⏎경력")일 수 있다
   // 문장 중간에서 꺾여 "제31조제1항…" 으로 여는 줄은 조문 인용이다 — 조 제목 "제3조(목적)" 은 새 조항
   const lawRef = /^제\d+(?:조(?:의\d+)?|항|호)(?!\s*\()/.test(next) && !SENTENCE_END.test(prev)
-  return (lawRef || !startsNewItem(prevText, nextText)) && !/^다\.\s/.test(next) && !/^[ㆍ·•∙․○●◦□■▪▫◆◇※*\-–—+＋=]/.test(next) && !/\$/.test(next + prev) && [...prev].length >= 8
+  return (lawRef || !startsNewItem(prevText, nextText)) && !/^다\.\s/.test(next) && !/^[ㆍ·•∙․○●◦◎□■▪▫◆◇◈▸▹►▻▶▷❍❏❑✓✔➢➤☞※*\-–—+＋=]/.test(next) && !/\$/.test(next + prev) && [...prev].length >= 8
 }
 
 /**

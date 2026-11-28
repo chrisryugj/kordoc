@@ -366,6 +366,7 @@ describe("softWrapPair — 어절 경계 꺾임으로 이어 볼 줄쌍", () => 
     assert.equal(softWrapPair("…산정한 물량", "2. 위 산식 중"), false)
     assert.equal(softWrapPair("…산정한 물량입니다", "ㆍ보조 시설"), false)
     assert.equal(softWrapPair("주요", "경력"), false)
+    assert.equal(softWrapPair("'인구집단 건강' 중심 지역보건의료체계 구축", "▸지역보건의료기관 기능 개편과 확충"), false)
     assert.equal(softWrapPair("다음 각 목의 위반행위로서 법", "제31조제1항제2호에 해당하는"), true)
     assert.equal(softWrapPair("이 영은 공포한 날부터 시행한다.", "제2조(정의) 이 영에서"), false)
     assert.equal(softWrapPair("실시간 기상상황입니다", "+ 송전선로 상태"), false)

@@ -309,7 +309,11 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
   const wide = lineEnds.slice(0, -1).map((a, i) => a.right - a.left + 1.5 * lineEnds[i + 1].firstCharW > inner)
   // 줄 끝 아이템 뒤 공백 글리프 — 그 꺾임은 어절 경계라 붙이지 않는다 (markTrailingSpaceGlyphs)
   const spaced = merged.map(s => !!s[s.length - 1].spaceAfter)
-  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide, spaced, soft: wrap.soft }))
+  // 글자 크기·글꼴이 바뀌는 줄쌍은 꺾임으로 보지 않는다 — 굵은 제목 줄 뒤 부제 줄("…기능 강화⏎지역사회, 인구집단…")
+  const styleOf = (s: TextItem[]) => { const a = s[s.length - 1], b = s[0]; return { endFs: a.fontSize, endFont: a.fontName, startFs: b.fontSize, startFont: b.fontName } }
+  const styles = merged.map(styleOf)
+  const sameStyle = merged.slice(0, -1).map((_, i) => Math.abs(styles[i].endFs - styles[i + 1].startFs) <= 0.05 * styles[i].endFs && styles[i].endFont === styles[i + 1].startFont)
+  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide, spaced, soft: wrap.soft, sameStyle }))
 }
 
 /** 첨자 행 병합 — cellTextToString 행 그룹핑 결과에 적용 (규칙은 text-line.ts와 동일) */
@@ -452,7 +456,7 @@ export { detectEvenSpacedItems }
  * 칸 줄 잇기. soft 를 주면 어절 경계에서 꺾인 줄 사이(돌려준 글의 줄 k 와 k+1 사이면 k)를 담는다 — 칸에는 줄로 두고(쌓인 값 칸과
  * 기하로 못 가른다), 틀을 풀어 본문 문단으로 만들 때만 띄어 잇는다(CELL_SOFT_WRAPS)
  */
-function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon; wide?: boolean[]; spaced?: boolean[]; soft?: number[] }): string {
+function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon; wide?: boolean[]; spaced?: boolean[]; soft?: number[]; sameStyle?: boolean[] }): string {
   // 셀 내 줄바꿈 병합 — 잘린 단어/숫자 조각 복구
   if (textLines.length <= 1) return textLines[0] || ""
   const numberWrapped = (k: number) => !!wrap?.wraps[k] && (wrap.wide?.[k] ?? true)
@@ -497,7 +501,7 @@ function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?
       merged[merged.length - 1] = prev.trimEnd() + " " + curr.trim()
     }
     else {
-      if (wrap?.soft && wrap.wraps[i - 1] && softWrapPair(prev, curr) && /\S$/.test(prev) && /^\S/.test(curr) &&
+      if (wrap?.soft && wrap.wraps[i - 1] && (wrap.sameStyle?.[i - 1] ?? true) && softWrapPair(prev, curr) && /\S$/.test(prev) && /^\S/.test(curr) &&
           (wrap.spaced?.[i - 1] || wrapJoiner(prev, curr, wrap.lex, false) === " ")) wrap.soft.push(merged.length - 1)
       merged.push(curr)
     }
