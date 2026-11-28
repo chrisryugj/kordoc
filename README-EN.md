@@ -112,6 +112,7 @@ Results use fixed corpora and reference criteria. Measured on: default 4.22.14 (
 
 | Target | Population | Result |
 | --- | --- | --- |
+| 4.25.30 | HWP 5.x patch adds and removes table cell lines (paragraphs) (#249). New lines become new paragraphs with the previous paragraph's shape, and the cell paragraph count and last-paragraph mark are kept in sync | Adding lines to HWP cells: skipped → **applied in place** · 92 corpus HWP 5.x edits: reparse matches 92, opens in rhwp 92 · 5,418 tests, 0 failures |
 | 4.25.29 | patch no longer pushes a value typed into a blank bracket placeholder behind its spaces (#247) and rewrites the preview text from the edited body (#248, fill and sessions too). HWP 5.x cell edits that change the line count are reported as skipped instead of being glued onto the previous line (#249). `<br>` in body paragraphs of generate becomes a line break (#250). DOCX `--charts` also reads charts in table cells and text boxes | Blank bracket: 27 leftover spaces → **0** · deleted lines left in the preview → **gone** · `<br>` in 9 presets: literal → **line break** · roundtrip 75 and gen 5 docs, 0 drops · 5,418 tests, 0 failures |
 | 4.25.28 | `--charts` also reads Excel objects (OLE) in HWP/HWPX as sheet tables. The `charts` option is available in MCP `parse_document` and the Python and Java SDKs. Empty picture frames no longer raise a skipped-image warning | Excel objects in 2 HWP docs: 0 → **3** tables · option on vs off over 4,353 docs: 0 errors, 0 changes outside chart/Excel blocks · default output: score 5,465, formats 146, annex 544 docs, 0 drops · false warnings in 199 HWPX docs → **0** |
 | 4.25.27 | `--charts` (`charts: true`) reads chart data as tables and SmartArt as lists in HWP, HWPX, DOCX, PPTX and XLSX. Chart text used to be dropped. Off by default, so default output is unchanged | 161 docs with chart parts: chart text recall 0.172 → **1**, numbers 0.058 → **1** · 28 HWP/HWPX chart pairs give identical output · default output: score 5,465, formats 146, annex 544 docs, 0 drops |
@@ -133,12 +134,11 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.29](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.29)** · 2026-11-28
+Latest release: **[4.25.30](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.30)** · 2026-11-28
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
 | 4.25.26 | Finds table rules that stay slightly tilted after flattening a phone photo taken at an angle, so budget tables no longer collapse their rows into one cell | Degraded robustness perspective CER 0.0661 → **0.0525** (11 docs up, Bucheon budget 0.158 → 0.001) · KoOCR, OCR and ODL OCR unchanged · 0 down |
-| 4.25.25 | Phone photos taken at an angle that are also rotated are now rotated first and then flattened, and trapezoid-shaped pages are flattened to the top and bottom edges. Such pages carry both `deskewAngle` and `dewarp` in `ocrLines` (undo the flattening first, then the rotation) | Degraded robustness perspective+rotation CER 0.141 → **0.116** (14 docs up), perspective 0.0843 → **0.0774** (Sokcho budget 0.188 → 0.024) · KoOCR, OCR and ODL OCR unchanged · 0 down |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
