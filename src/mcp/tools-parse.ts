@@ -39,7 +39,7 @@ export function registerParseTools(server: McpServer): void {
       charts: z.boolean().optional()
         .describe("차트 값은 표로(\"차트: 제목 (종류)\" 캡션), SmartArt 는 목록으로, HWP·HWPX 안 엑셀 개체는 시트 표로 (HWP·HWPX·DOCX·PPTX·XLSX, 기본 off, CLI --charts 대응)"),
       memos: z.boolean().optional()
-        .describe("메모(한글 \"메모 넣기\")를 문서 끝 \"메모\" 절로 — 작성자·시각·붙은 글·메모 글 (#180, HWPX·HWP5, 기본 off, CLI --memos 대응). 메모가 있으면 끄더라도 머리 줄에 개수를 알린다"),
+        .describe("메모(한글 \"메모 넣기\")를 문서 끝 \"메모\" 절로: 작성자·시각·붙은 글·메모 글 (#180, HWPX·HWP5·DOCX·XLSX, 기본 off, CLI --memos 대응). 메모가 있으면 끄더라도 머리 줄에 개수를 알린다"),
       keep_layout_tables: z.boolean().optional()
         .describe("테두리가 안 보이는 틀 표도 원본 표 구조 그대로 (기본 off = 보이는 대로: 틀은 글, 칸으로 조립한 분수는 수식). patch_document 로 되돌릴 편집본은 켜서 뽑는다 (CLI --keep-layout-tables)"),
       html_tables: z.boolean().optional()

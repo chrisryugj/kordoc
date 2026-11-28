@@ -318,7 +318,7 @@ export interface ParseOptions {
   /** 미기입 누름틀 안내문도 마크다운에 낸다 (#92). 기본 false: 종전대로 뺀다(한컴은 화면에만 흐리게 보이고 인쇄하지 않는 글).
    *  빈 서식 문서에서 "이 칸에 무엇을 적나"(예: "학교명 기재 금지")가 안내문뿐일 때 켠다. HWPX·HWP5 */
   includeFieldPlaceholders?: boolean
-  /** 메모(한글 "메모 넣기")를 마크다운 끝에 "메모" 절로 모아 낸다 (#180). 기본 false: 본문만 — 메모는 결과 `memos` 로만. HWPX·HWP5 */
+  /** 메모(한글 "메모 넣기")를 마크다운 끝에 "메모" 절로 모아 낸다 (#180). 기본 false: 본문만 — 메모는 결과 `memos` 로만. HWPX·HWP5·DOCX·XLSX */
   memos?: boolean
   /** 비밀번호로 보호된 문서의 열기 암호.
    *  HWPX(ODF AES-256-CBC)·HWP3(DES) 지원. 한컴 DRM(문서 보안)은 별개라 해당 없음. */
@@ -534,7 +534,7 @@ export interface ParseSuccess extends ParseResultBase {
   ocrLines?: OcrPageLines[]
   /** OCR 경로가 읽은 페이지 래스터 — `pageImages` 옵션을 켠 PDF·이미지 입력에서만. 쪽 번호 순 */
   pageImages?: PageImage[]
-  /** 문서의 메모(한글 "메모 넣기") — 메모가 있는 HWPX·HWP5 문서에서만, 문서 순서 (#180). 본문 마크다운에는 섞지 않는다
+  /** 문서의 메모(한글 "메모 넣기") — 메모가 있는 HWPX·HWP5·DOCX(메모)·XLSX(칸 메모) 문서에서만, 문서 순서 (#180). 본문 마크다운에는 섞지 않는다
    *  (`memos` 옵션을 켜면 끝에 모아 낸다) */
   memos?: MemoNote[]
 }

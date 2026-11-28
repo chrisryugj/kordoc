@@ -26,7 +26,7 @@ const relsPathOf = (part: string) => {
   return `${part.slice(0, i + 1)}_rels/${part.slice(i + 1)}.rels`
 }
 
-async function readRels(zip: JSZip, part: string): Promise<Array<{ id: string; type: string; target: string }>> {
+export async function readRels(zip: JSZip, part: string): Promise<Array<{ id: string; type: string; target: string }>> {
   const file = zip.file(relsPathOf(part))
   if (!file) return []
   const xml = await readZipEntry(file, "text")

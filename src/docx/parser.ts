@@ -12,7 +12,7 @@ import { symbolChar } from "./symbol-font.js"
 import { DOMParser, warnInto } from "../xml/dom.js"
 import type {
   CellContext, IRBlock, DocumentMetadata, InternalParseResult,
-  ParseOptions, ParseWarning, ExtractedImage, InlineStyle,
+  ParseOptions, ParseWarning, ExtractedImage, InlineStyle, MemoNote,
 } from "../types.js"
 import { KordocError, partExtension, precheckZipSize, unzipLimitBytes, stripDtd, sanitizeHref } from "../utils.js"
 import { blocksToMarkdown, buildTable, escapeLiteralDollar } from "../table/builder.js"
@@ -20,6 +20,8 @@ import { ommlElementToLatex, isDisplayMath } from "./equation.js"
 import { detectImageMime } from "../hwp5/images.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
 import { parseChartXml, chartBlock, smartArtBlocks } from "../shared/chart-xml.js"
+import { docxComments } from "./comments.js"
+import { locateMemoBlocks } from "../memo-notes.js"
 import { parsePageRange } from "../page-range.js"
 
 /** ZIP 압축 해제 누적 최대 크기 (100MB) — ZIP bomb 방지 */
@@ -1190,6 +1192,17 @@ export async function parseDocxDocument(
 
   const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 
+  // 메모(word/comments.xml) — 본문에 섞지 않고 결과 memos 로 (HWP·HWPX 메모와 같다)
+  let memos: MemoNote[] = []
+  const commentsFile = zip.file("word/comments.xml")
+  if (commentsFile) {
+    try {
+      memos = locateMemoBlocks(blocks, docxComments(parseXml(await readZipEntry(commentsFile, "text"), warnings, "word/comments.xml"), bodyEl))
+    } catch (err) {
+      warnings.push({ code: "PARTIAL_PARSE", message: `DOCX 메모(comments.xml) 읽기 실패: ${err instanceof Error ? err.message : String(err)}` })
+    }
+  }
+
   return {
     markdown,
     blocks,
@@ -1197,5 +1210,6 @@ export async function parseDocxDocument(
     outline: outline.length > 0 ? outline : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
     images: images.length > 0 ? images : undefined,
+    ...(memos.length ? { memos } : {}),
   }
 }

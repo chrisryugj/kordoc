@@ -9,7 +9,7 @@ import JSZip from "jszip"
 import { DOMParser, warnInto } from "../xml/dom.js"
 import type {
   IRBlock, IRTable, IRCell, DocumentMetadata, InternalParseResult,
-  ParseOptions, ParseWarning, ExtractedImage,
+  ParseOptions, ParseWarning, ExtractedImage, MemoNote,
 } from "../types.js"
 import { KordocError, precheckZipSize, unzipLimitBytes, stripDtd } from "../utils.js"
 import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
@@ -17,6 +17,8 @@ import { escapeLiteralTags } from "../script-tags.js"
 import { MAX_SHEET_COLS, sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
 import { sheetChartBlocks } from "./sheet-charts.js"
+import { sheetComments } from "./sheet-comments.js"
+import { locateMemoBlocks } from "../memo-notes.js"
 
 // ─── 상수 ────────────────────────────────────────────
 
@@ -429,6 +431,7 @@ export async function parseXlsxDocument(
 
   // 5. 각 시트 파싱
   const blocks: IRBlock[] = []
+  const memos: MemoNote[] = []
   const processedSheets = Math.min(sheets.length, MAX_SHEETS)
 
   for (let i = 0; i < processedSheets; i++) {
@@ -467,6 +470,8 @@ export async function parseXlsxDocument(
       blocks.push(...sheetBlocks)
       // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep")는 내지 않는다 — 표 서수가 시트 표와 어긋난다
       if (options?.charts && options.layoutTables !== "keep") blocks.push(...await sheetChartBlocks(zip, sheetPath, i + 1))
+      // 칸 메모 — 본문 표에는 섞지 않고 결과 memos 로(HWP·HWPX 메모와 같다)
+      memos.push(...await sheetComments(zip, sheetPath, rows))
     } catch (err) {
       warnings.push({
         page: i + 1,
@@ -501,5 +506,5 @@ export async function parseXlsxDocument(
 
   const markdown = blocksToMarkdown(blocks, { tableFormat: options?.tableFormat })
 
-  return { markdown, blocks, metadata, warnings: warnings.length > 0 ? warnings : undefined }
+  return { markdown, blocks, metadata, warnings: warnings.length > 0 ? warnings : undefined, ...(memos.length ? { memos: locateMemoBlocks(blocks, memos) } : {}) }
 }

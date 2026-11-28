@@ -387,8 +387,9 @@ export async function parsePdf(buffer: ArrayBuffer, options?: ParseOptions): Pro
 /** XLSX 파일을 Markdown으로 변환 */
 export async function parseXlsx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
-    const { markdown, blocks, metadata, warnings } = await parseXlsxDocument(buffer, options)
-    return { success: true, fileType: "xlsx", markdown, blocks, metadata, warnings, pageCount: metadata?.pageCount }
+    const { markdown, blocks, metadata, warnings, memos } = await parseXlsxDocument(buffer, options)
+    const md = options?.memos && memos?.length ? markdown + memosMarkdown(memos) : markdown
+    return { success: true, fileType: "xlsx", markdown: md, blocks, metadata, warnings, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }
   } catch (err) {
     return { success: false, fileType: "xlsx", error: sanitizeError(err), code: classifyError(err) }
   }
@@ -407,11 +408,12 @@ export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Pro
 /** DOCX 파일을 Markdown으로 변환 */
 export async function parseDocx(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
-    const { markdown, blocks, metadata, outline, warnings, images } = await parseDocxDocument(buffer, options)
+    const { markdown, blocks, metadata, outline, warnings, images, memos } = await parseDocxDocument(buffer, options)
     const qr = await withImageQr(blocks, markdown, warnings, images, options)
     const blank = await withoutBlankImages(blocks, qr.markdown, qr.warnings, images, options)
     const webp = await withImageFormat(blocks, blank.markdown, blank.warnings, images, options)
-    return scriptsOff({ success: true, fileType: "docx", markdown: webp.markdown, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount }, options?.scriptTags === false)
+    const md = options?.memos && memos?.length ? webp.markdown + memosMarkdown(memos) : webp.markdown
+    return scriptsOff({ success: true, fileType: "docx", markdown: md, blocks, metadata, outline, warnings: webp.warnings, images: images?.length ? images : undefined, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }, options?.scriptTags === false)
   } catch (err) {
     return { success: false, fileType: "docx", error: sanitizeError(err), code: classifyError(err) }
   }
