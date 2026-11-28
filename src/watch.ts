@@ -35,13 +35,18 @@ export function assertRecursiveWatchSupport(
 /**
  * 동시 처리 상한 게이트 — 상한 초과분은 버리지 않고 대기 큐에 넣어 처리 완료 시
  * 순서대로 drain (기존: 상한 초과 return으로 새 파일이 무음 유실되던 것 방지).
+ * 처리 중인 키가 다시 들어오면 겹쳐 돌리지 않고, 끝난 뒤 대기 큐 맨 뒤에서 한 번만 다시 처리한다.
  */
 export function createTaskQueue(maxConcurrent: number, run: (key: string) => Promise<void>): (key: string) => void {
   let active = 0
   const inProgress = new Set<string>()
   const waiting: string[] = []
+  const rerun = new Set<string>()
   const enqueue = (key: string): void => {
-    if (inProgress.has(key)) return // 동일 파일 동시 처리 방지
+    if (inProgress.has(key)) {
+      rerun.add(key) // 동일 파일 동시 처리 방지 — 변경은 기억했다가 완료 후 반영
+      return
+    }
     if (active >= maxConcurrent) {
       if (!waiting.includes(key)) waiting.push(key)
       return
@@ -51,6 +56,7 @@ export function createTaskQueue(maxConcurrent: number, run: (key: string) => Pro
     void run(key).finally(() => {
       inProgress.delete(key)
       active--
+      if (rerun.delete(key)) waiting.push(key)
       const next = waiting.shift()
       if (next) enqueue(next)
     })
@@ -160,11 +166,13 @@ export async function watchDirectory(options: WatchOptions): Promise<void> {
     }
   }
 
-  const enqueue = createTaskQueue(MAX_CONCURRENT, (filePath) =>
-    processFile(filePath).catch((err) => {
+  const enqueue = createTaskQueue(MAX_CONCURRENT, async (filePath) => {
+    // 디바운스가 남아 있으면 아직 저장이 이어지는 중 — 건너뛰고 타이머가 다시 넣게 한다
+    if (pending.has(filePath)) return
+    await processFile(filePath).catch((err) => {
       process.stderr.write(`[kordoc watch] 처리 실패: ${filePath} — ${err instanceof Error ? err.message : String(err)}\n`)
-    }),
-  )
+    })
+  })
 
   // fs.watch recursive (Node 18+ Windows/macOS, Node 19.1+ Linux — 위에서 사전 검증)
   const watcher = watch(dir, { recursive: true }, (event, filename) => {

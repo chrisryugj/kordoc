@@ -57,7 +57,7 @@ describe("P1-2 createTaskQueue — 상한 초과 대기 큐 drain", () => {
     enqueue("c") // 상한 초과 → 대기
     enqueue("d") // 상한 초과 → 대기
     enqueue("c") // 대기 중 중복 → dedupe
-    enqueue("a") // 처리 중 중복 → dedupe
+    enqueue("a") // 처리 중 재변경 → 끝난 뒤 다시 실행
     assert.deepEqual(started, ["a", "b"], "상한(2)까지만 즉시 시작")
 
     resolvers.get("a")!()
@@ -67,7 +67,28 @@ describe("P1-2 createTaskQueue — 상한 초과 대기 큐 drain", () => {
     resolvers.get("b")!()
     resolvers.get("c")!()
     await new Promise((r) => setImmediate(r))
-    assert.deepEqual(started, ["a", "b", "c", "d"], "d까지 전부 처리 — 무음 유실 없음")
+    assert.deepEqual(started, ["a", "b", "c", "d", "a"], "대기 중이던 d 다음에 a 재실행 — 무음 유실 없음")
+  })
+
+  it("처리 중 여러 번 바뀐 키는 겹치지 않고, 끝난 뒤 한 번만 다시 실행된다", async () => {
+    const started: string[] = []
+    const resolvers: Array<() => void> = []
+    const enqueue = createTaskQueue(2, (key) => {
+      started.push(key)
+      return new Promise<void>((res) => resolvers.push(res))
+    })
+    enqueue("a")
+    enqueue("a")
+    enqueue("a")
+    assert.deepEqual(started, ["a"], "상한이 남아도 같은 키는 동시에 돌지 않는다")
+
+    resolvers[0]!()
+    await new Promise((r) => setImmediate(r))
+    assert.deepEqual(started, ["a", "a"])
+
+    resolvers[1]!()
+    await new Promise((r) => setImmediate(r))
+    assert.deepEqual(started, ["a", "a"], "새 변경이 없으면 더 돌지 않는다")
   })
 
   it("완료된 키는 재입장 가능 (동일 파일 재수정 대응)", async () => {
