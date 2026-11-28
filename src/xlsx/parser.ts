@@ -18,6 +18,7 @@ import { MAX_SHEET_COLS, sheetToBlocks, type SheetMerge } from "./sheet-blocks.j
 import { readZipEntry } from "../hwpx/parser-shared.js"
 import { sheetChartBlocks } from "./sheet-charts.js"
 import { sheetComments } from "./sheet-comments.js"
+import { applySheetLinks } from "./sheet-links.js"
 import { locateMemoBlocks } from "../memo-notes.js"
 
 // ─── 상수 ────────────────────────────────────────────
@@ -466,6 +467,7 @@ export async function parseXlsxDocument(
     try {
       const sheetXml = await readZipEntry(sheetFile, "text")
       const { rows, merges, maxCol } = parseWorksheet(sheetXml, sharedStrings, dateXfs, date1904, warnings, sheetPath)
+      await applySheetLinks(zip, sheetPath, sheetXml, rows)  // 칸 하이퍼링크 → "[글](주소)"
       const sheetBlocks = sheetToBlocks(sheet.name, rows, maxCol, merges, i, warnings, options?.keepTrailingEmptyCols)
       blocks.push(...sheetBlocks)
       // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep")는 내지 않는다 — 표 서수가 시트 표와 어긋난다

@@ -13,7 +13,7 @@ import type {
   CellContext, IRBlock, DocumentMetadata, InternalParseResult,
   ParseOptions, ParseWarning, ExtractedImage,
 } from "../types.js"
-import { KordocError, partExtension, precheckZipSize, unzipLimitBytes, stripDtd } from "../utils.js"
+import { KordocError, partExtension, precheckZipSize, unzipLimitBytes, stripDtd, sanitizeHref } from "../utils.js"
 import { parsePageRange } from "../page-range.js"
 import { blocksToMarkdown, buildTable, escapeLiteralDollar } from "../table/builder.js"
 import { escapeLiteralTags, tidyScriptTags, wrapScript } from "../script-tags.js"
@@ -116,6 +116,22 @@ async function readRels(zip: JSZip, part: string, warnings?: ParseWarning[]): Pr
   return map
 }
 
+/** 파트의 바깥 링크 관계(TargetMode External, 하이퍼링크) rId → 주소. 허용 스킴이 아니면 뺀다 */
+async function externalLinks(zip: JSZip, part: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  const slash = part.lastIndexOf("/")
+  const file = zip.file(`${slash >= 0 ? part.slice(0, slash + 1) : ""}_rels/${part.slice(slash + 1)}.rels`)
+  if (!file) return map
+  const xml = await readZipEntry(file, "text")
+  for (const m of xml.matchAll(/<Relationship\b[^>]*>/g)) {
+    if (!/TargetMode="External"/.test(m[0]) || !/\/hyperlink"/.test(m[0])) continue
+    const id = /\bId="([^"]+)"/.exec(m[0])?.[1], target = /\bTarget="([^"]+)"/.exec(m[0])?.[1]
+    const href = target ? sanitizeHref(target.replace(/&amp;/g, "&")) : null
+    if (id && href) map.set(id, href)
+  }
+  return map
+}
+
 /** 발표 순서대로 슬라이드 파트 — presentation.xml 이 없거나 비면 파일 번호 순 */
 async function slideParts(zip: JSZip, warnings: ParseWarning[]): Promise<string[]> {
   const ordered: string[] = []
@@ -142,8 +158,14 @@ async function slideParts(zip: JSZip, warnings: ParseWarning[]): Promise<string[
 
 /** a:p 한 문단의 글 — a:r·a:fld 의 a:t, 줄바꿈 a:br 은 공백. IR 규약대로 리터럴 $ 는 \$, 태그 꼴 "<sub>" 는 \<sub>
  *  (escapeLiteralDollar·escapeLiteralTags — 그대로 두면 "$10 ~ $20" 이 마크다운에서 수식이 된다) */
-function paragraphText(p: Element): string {
+function paragraphText(p: Element, links?: Map<string, string>): string {
   let text = ""
+  // 글 링크(a:rPr > a:hlinkClick r:id → 슬라이드의 바깥 관계) — 같은 주소가 이어진 조각은 한 링크 "[글](주소)" 로 (DOCX 와 같은 꼴)
+  let linkHref: string | null = null, linkText = ""
+  const flush = () => {
+    if (linkHref !== null) text += linkText.trim() ? `[${linkText}](${linkHref})` : linkText
+    linkHref = null; linkText = ""
+  }
   for (const child of elementChildren(p)) {
     const name = localName(child)
     if (name === "r" || name === "fld") {
@@ -151,11 +173,17 @@ function paragraphText(p: Element): string {
       // 위·아래첨자 — a:rPr baseline(1/1000 %, 양수 위·음수 아래). 펴면 "10⁴" 가 "104" 로 값이 바뀐다 (DOCX·HWPX 와 같은 표지)
       const rPr = findChildByLocalName(child, "rPr")
       const baseline = Number(rPr ? getAttr(rPr, "baseline") ?? 0 : 0)
-      if (t) text += wrapScript(escapeLiteralTags(escapeLiteralDollar(rawTextContent(t))), baseline > 0 ? "sup" : baseline < 0 ? "sub" : null)
+      const piece = t ? wrapScript(escapeLiteralTags(escapeLiteralDollar(rawTextContent(t))), baseline > 0 ? "sup" : baseline < 0 ? "sub" : null) : ""
+      const hl = rPr && links ? findChildByLocalName(rPr, "hlinkClick") : null
+      const href = hl ? links!.get(getRelId(hl) ?? "") ?? null : null
+      if (href !== linkHref) flush()
+      if (href) { linkHref = href; linkText += piece } else text += piece
     } else if (name === "br") {
+      flush()
       text += " "
     }
   }
+  flush()
   return tidyScriptTags(text.replace(/\s+/g, " ").trim())
 }
 
@@ -164,10 +192,10 @@ type Bullet = "none" | "ordered" | "unordered" | undefined
 interface Para { text: string; lvl: number; bullet: Bullet }
 
 /** a:txBody 의 문단들 — 빈 문단은 뺀다. 글머리표는 a:pPr 에 적힌 것만(없으면 상속 = undefined) */
-function bodyParagraphs(txBody: Element): Para[] {
+function bodyParagraphs(txBody: Element, links?: Map<string, string>): Para[] {
   const out: Para[] = []
   for (const p of childrenByLocalName(txBody, "p")) {
-    const text = paragraphText(p)
+    const text = paragraphText(p, links)
     if (!text) continue
     const pPr = findChildByLocalName(p, "pPr")
     let bullet: Bullet
@@ -211,7 +239,7 @@ function pushParagraphs(paras: Para[], bulletDefault: boolean, page: number, out
 // ─── 표 ────────────────────────────────────────────────
 
 /** a:tbl → 표 블록. 병합 연속 칸(hMerge·vMerge)은 원점 칸의 gridSpan·rowSpan 이 덮으므로 뺀다 */
-function parseTable(tbl: Element, page: number, keepEmptyCols?: boolean): IRBlock | null {
+function parseTable(tbl: Element, page: number, keepEmptyCols?: boolean, links?: Map<string, string>): IRBlock | null {
   const rows = childrenByLocalName(tbl, "tr")
   if (rows.length === 0) return null
   const cellRows: CellContext[][] = rows.map((tr, r) => {
@@ -219,7 +247,7 @@ function parseTable(tbl: Element, page: number, keepEmptyCols?: boolean): IRBloc
     childrenByLocalName(tr, "tc").forEach((tc, c) => {
       if (getAttr(tc, "hMerge") === "1" || getAttr(tc, "vMerge") === "1") return
       const txBody = findChildByLocalName(tc, "txBody")
-      const text = txBody ? bodyParagraphs(txBody).map(p => p.text).join("\n") : ""
+      const text = txBody ? bodyParagraphs(txBody, links).map(p => p.text).join("\n") : ""
       cells.push({
         text,
         colSpan: Math.max(1, parseInt(getAttr(tc, "gridSpan") ?? "1", 10) || 1),
@@ -245,6 +273,8 @@ interface SlideContext {
   options?: ParseOptions
   /** 그림 파트 → 파일명 (같은 그림을 여러 슬라이드가 쓰면 한 번만 저장) */
   imageNames: Map<string, string>
+  /** 바깥 링크 관계 rId → 주소(sanitizeHref 통과한 것만) — 글 링크용 */
+  links: Map<string, string>
   images: ExtractedImage[]
 }
 
@@ -310,7 +340,7 @@ async function walkShapes(tree: Element, ctx: SlideContext, out: IRBlock[], dept
         const ph = placeholderType(el)
         const txBody = findChildByLocalName(el, "txBody")
         if ((ph && SKIP_PLACEHOLDERS.has(ph)) || !txBody) break
-        const paras = bodyParagraphs(txBody)
+        const paras = bodyParagraphs(txBody, ctx.links)
         if (paras.length === 0) break
         if (ph === "title" || ph === "ctrTitle") {
           out.push({ type: "heading", level: ph === "ctrTitle" ? 1 : 2, text: paras.map(p => p.text).join(" "), pageNumber: ctx.page })
@@ -323,7 +353,7 @@ async function walkShapes(tree: Element, ctx: SlideContext, out: IRBlock[], dept
         const data = findPath(el, "graphic", "graphicData")
         const tbl = data ? findChildByLocalName(data, "tbl") : null
         if (tbl) {
-          const block = parseTable(tbl, ctx.page, ctx.options?.keepTrailingEmptyCols)
+          const block = parseTable(tbl, ctx.page, ctx.options?.keepTrailingEmptyCols, ctx.links)
           if (block) out.push(block)
         } else if (data) {
           const uri = getAttr(data, "uri") ?? ""
@@ -392,7 +422,7 @@ export async function parsePptxDocument(
     }
     const rels = await readRels(zip, slides[i], warnings)
     const tree = findPath(root, "cSld", "spTree")
-    if (tree) await walkShapes(tree, { zip, rels, page, warnings, options, imageNames, images }, blocks)
+    if (tree) await walkShapes(tree, { zip, rels, page, warnings, options, imageNames, images, links: await externalLinks(zip, slides[i]) }, blocks)
     const notes = await notesText(zip, rels, warnings)
     if (notes) blocks.push({ type: "paragraph", text: `발표자 노트: ${notes}`, quote: true, pageNumber: page })
   }
