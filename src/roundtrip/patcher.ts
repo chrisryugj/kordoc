@@ -28,7 +28,7 @@ import { patchZipEntries } from "./zip-patch.js"
 import { checkPatchIntegrity } from "./integrity.js"
 import { stripHeadMarker, stripShownHeadMarker, noScriptTags,
   splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable, parseHtmlTable, htmlCellInnerToLines,
-  alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH, removeNoteMarks, NOTE_TEXT_UNSUPPORTED,
+  alignUnits, alignUnitsEx, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH, removeNoteMarks, NOTE_TEXT_UNSUPPORTED,
   type MdUnit,
 } from "./markdown-units.js"
 import { patchGfmTable, patchHtmlTable, patchTextChunkTable, EMPHASIS_NOTE } from "./table-patch.js"
@@ -131,17 +131,17 @@ export async function patchHwpx(
   // 3) 유닛 구성 + 정렬 (마크다운 도메인 diff)
   const origUnits = buildOrigUnits(origBlocks)
   const editedUnits = splitMarkdownUnits(editedMarkdown)
-  const pairs = alignUnits(origUnits.map(u => looseRaw(u.raw)), editedUnits.map(u => looseRaw(u.raw)))
+  const { pairs, coarse } = alignUnitsEx(origUnits.map(u => looseRaw(u.raw)), editedUnits.map(u => looseRaw(u.raw)))
 
   // 4) 본문 문단 ↔ 소스맵 문단 매핑 (정규화 텍스트 + 등장 순서)
   const paraMap = resolveParagraphMappings(origBlocks, scans)
   const scanTables = scans.flatMap(s => s.tables.filter(t => t.rows.length > 0 && !t.channel))
   const obTableOrdinals = buildTableOrdinals(origBlocks)
 
-  // 5) 변경 적용 — 문단 추가·삭제(structure)는 정확 정렬(대형 문서 폴백이 아닌 LCS)일 때만: 폴백은 가운데 구간을 통째로
-  //    삭제+추가로 보고하므로 그대로 반영하면 원본 서식이 전부 복제본으로 갈린다
+  // 5) 변경 적용 — 문단 추가·삭제(structure)는 정확 정렬(LCS 또는 대형 문서 Myers)일 때만: 거친 정렬(coarse)은 가운데 구간을
+  //    통째로 삭제+추가로 보고하므로 그대로 반영하면 원본 서식이 전부 복제본으로 갈린다
   const sectionSplices: SpliceEdit[][] = scans.map(() => [])
-  const structural = options?.structure !== false && origUnits.length * editedUnits.length <= 4_000_000
+  const structural = options?.structure !== false && !coarse
   const charBook = tableInsert && charPrBook(tableInsert.headerXml)
   const ctx: PatchCtx = { origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped, tableInsert, structure: structural, borders, charBook,
     unitKeys: origUnits.map(u => (u.kind === "text" ? fallbackPlain(u.raw, origBlocks[u.blockIdx]).replace(/\s+/g, "") : "")) }

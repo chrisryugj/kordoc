@@ -11,17 +11,86 @@
 import { TAG_PARA_TEXT } from "../hwp5/record.js"
 import { normForMatch } from "./markdown-units.js"
 import { stageParaPatch } from "./hwp5-para-stage.js"
-import type { ScanCell5, SectionScan5 } from "./hwp5-patch.js"
+import type { ScanCell5, ScanPara5, SectionScan5 } from "./hwp5-patch.js"
 
 const TAG_PARA_HEADER = 0x42, TAG_CHAR_SHAPE = 0x44, TAG_CTRL_HEADER = 0x47
 const LAST = 0x80000000
 
 /** 문단 레코드 묶음 끝(다음 문단·칸 경계) — header 다음부터 레벨이 더 깊은 레코드까지 */
-function groupEnd(scan: SectionScan5, headerIdx: number): number {
+export function groupEnd(scan: SectionScan5, headerIdx: number): number {
   const level = scan.records[headerIdx].level
   let j = headerIdx + 1
   while (j < scan.records.length && scan.records[j].level > level) j++
   return j
+}
+
+export interface NewPara { header: Buffer; recs: Array<{ tagId: number; level: number; data: Buffer }> }
+
+/**
+ * 새 문단 레코드 — tpl 문단의 문단 모양·스타일·첫 글자 모양으로(한글에서 Enter 와 같다). 컨트롤·범위 태그 없음, 줄 나눔 정보 없음
+ * (한글이 다시 짠다). 빈 글은 PARA_TEXT 없이 글자 수 1(한글 빈 문단 저장형). 마지막 문단 표시는 호출자가 맞춘다
+ */
+export function newParagraph(scan: SectionScan5, tpl: ScanPara5, text: string, level: number): NewPara {
+  const records = scan.records
+  const shapeId = tpl.charShapeIdx >= 0 && records[tpl.charShapeIdx].data.length >= 8 ? records[tpl.charShapeIdx].data.readUInt32LE(4) : 0
+  const header = Buffer.from(records[tpl.headerIdx].data)
+  header.writeUInt32LE((text ? text.length + 1 : 1) >>> 0, 0)  // 글 + 문단 끝(0x0d)
+  header.writeUInt32LE(0, 4)                                    // 컨트롤 없음
+  header.writeUInt8(0, 11)                                      // 구역·단·쪽 나누기 없음(앞 문단의 쪽 나누기를 물려받지 않는다)
+  header.writeUInt16LE(1, 12)                                   // 글자 모양 구간 1
+  header.writeUInt16LE(0, 14)                                   // 범위 태그 없음
+  header.writeUInt16LE(0, 16)                                   // 줄 나눔 정보 없음
+  const cs = Buffer.alloc(8)
+  cs.writeUInt32LE(shapeId >>> 0, 4)
+  return {
+    header,
+    recs: [
+      ...(text ? [{ tagId: TAG_PARA_TEXT, level: level + 1, data: Buffer.concat([Buffer.from(text, "utf16le"), Buffer.from([0x0d, 0x00])]) }] : []),
+      { tagId: TAG_CHAR_SHAPE, level: level + 1, data: cs },
+    ],
+  }
+}
+
+/** 문단을 records 의 at 자리 앞에 끼운다(같은 자리에 여럿이면 넣은 차례대로) */
+export function insertParagraph(scan: SectionScan5, at: number, level: number, p: NewPara): void {
+  const list = scan.inserts.get(at) ?? []
+  list.push({ tagId: TAG_PARA_HEADER, level, data: p.header }, ...p.recs)
+  scan.inserts.set(at, list)
+}
+
+/** 문단 레코드 묶음을 지운다 */
+export function deleteParagraph(scan: SectionScan5, headerIdx: number): void {
+  for (let j = headerIdx; j < groupEnd(scan, headerIdx); j++) scan.repl.set(j, null)
+}
+
+/** 원본 문단 머리의 마지막 문단 표시를 맞춘다(이미 고친 머리면 그 바이트를) */
+export function setLastMark(scan: SectionScan5, headerIdx: number, last: boolean): void {
+  const cur = scan.repl.get(headerIdx) ?? scan.records[headerIdx].data
+  if (((cur.readUInt32LE(0) & LAST) !== 0) === last) return
+  const next = Buffer.from(cur)
+  next.writeUInt32LE(((next.readUInt32LE(0) & ~LAST) | (last ? LAST : 0)) >>> 0, 0)
+  scan.repl.set(headerIdx, next)
+}
+const markNew = (p: NewPara, last: boolean) => p.header.writeUInt32LE(((p.header.readUInt32LE(0) & ~LAST) | (last ? LAST : 0)) >>> 0, 0)
+
+/**
+ * 섹션 맨 위 문단(레벨 0)의 마지막 문단 표시를 최종 순서대로 다시 맞춘다 — 본문 문단을 더하거나 지운 뒤.
+ * 지운 문단(repl null)은 빼고, 끼운 문단은 끼운 자리 차례로 센다
+ */
+export function fixTopLevelLastMark(scan: SectionScan5): void {
+  const order: Array<number | Buffer> = []
+  const take = (i: number) => { for (const r of scan.inserts.get(i) ?? []) if (r.tagId === TAG_PARA_HEADER && r.level === 0) order.push(r.data) }
+  for (let i = 0; i < scan.records.length; i++) {
+    take(i)
+    const r = scan.records[i]
+    if (r.tagId === TAG_PARA_HEADER && r.level === 0 && scan.repl.get(i) !== null) order.push(i)
+  }
+  take(scan.records.length)
+  order.forEach((o, k) => {
+    const last = k === order.length - 1
+    if (typeof o === "number") setLastMark(scan, o, last)
+    else o.writeUInt32LE(((o.readUInt32LE(0) & ~LAST) | (last ? LAST : 0)) >>> 0, 0)
+  })
 }
 
 /** LCS 짝 (i, j) 목록 — 줄 수가 작아(칸 줄) O(n·m) 로 충분하다 */
@@ -70,51 +139,19 @@ export function stageCellLines(
     if (!stageParaPatch(scan, cell.paras[op.i], after[op.j], skip, keepLineseg, before[op.i])) return 0
   }
   // 2) 뺀 줄 — 문단 레코드 묶음을 지운다
-  for (const op of ops) {
-    if (op.kind !== "del") continue
-    const h = cell.paras[op.i].headerIdx
-    for (let j = h; j < groupEnd(scan, h); j++) scan.repl.set(j, null)
-  }
+  for (const op of ops) if (op.kind === "del") deleteParagraph(scan, cell.paras[op.i].headerIdx)
   // 3) 더한 줄 — 앞 문단 뒤(없으면 첫 문단 앞)에 새 문단. 문단 모양·글자 모양은 앞 문단(없으면 뒤 문단)에서
-  const finalOrder: Array<{ header: number } | { added: { header: Buffer; recs: Array<{ tagId: number; level: number; data: Buffer }> } }> = []
+  const finalOrder: Array<number | NewPara> = []
   let prev = -1  // 마지막으로 놓인 옛 문단 i
-  const addAt = (i: number) => (i >= 0 ? groupEnd(scan, cell.paras[i].headerIdx) : cell.paras[0].headerIdx)
   for (const op of ops) {
-    if (op.kind === "keep" || op.kind === "edit") { prev = op.i; finalOrder.push({ header: cell.paras[op.i].headerIdx }); continue }
+    if (op.kind === "keep" || op.kind === "edit") { prev = op.i; finalOrder.push(cell.paras[op.i].headerIdx); continue }
     if (op.kind === "del") { prev = op.i; continue }
-    const tpl = cell.paras[prev >= 0 ? prev : 0]
-    const th = records[tpl.headerIdx].data
-    const shapeId = tpl.charShapeIdx >= 0 && records[tpl.charShapeIdx].data.length >= 8 ? records[tpl.charShapeIdx].data.readUInt32LE(4) : 0
-    const text = after[op.j]
-    const header = Buffer.from(th)
-    header.writeUInt32LE((text ? text.length + 1 : 1) >>> 0, 0)  // 글 + 문단 끝(0x0d). 빈 줄은 PARA_TEXT 없이 1
-    header.writeUInt32LE(0, 4)                                    // 컨트롤 없음
-    header.writeUInt16LE(1, 12)                                   // 글자 모양 구간 1
-    header.writeUInt16LE(0, 14)                                   // 범위 태그 없음
-    header.writeUInt16LE(0, 16)                                   // 줄 나눔 정보 없음 — 한글이 다시 짠다
-    const cs = Buffer.alloc(8)
-    cs.writeUInt32LE(shapeId >>> 0, 4)
-    const recs = [
-      ...(text ? [{ tagId: TAG_PARA_TEXT, level: level + 1, data: Buffer.concat([Buffer.from(text, "utf16le"), Buffer.from([0x0d, 0x00])]) }] : []),
-      { tagId: TAG_CHAR_SHAPE, level: level + 1, data: cs },
-    ]
-    const added = { header, recs }
-    finalOrder.push({ added })
-    const at = addAt(prev)
-    const list = scan.inserts.get(at) ?? []
-    list.push({ tagId: TAG_PARA_HEADER, level, data: header }, ...recs)
-    scan.inserts.set(at, list)
+    const p = newParagraph(scan, cell.paras[prev >= 0 ? prev : 0], after[op.j], level)
+    finalOrder.push(p)
+    insertParagraph(scan, prev >= 0 ? groupEnd(scan, cell.paras[prev].headerIdx) : cell.paras[0].headerIdx, level, p)
   }
   // 4) 마지막 문단 표시·칸 문단 수
-  finalOrder.forEach((p, k) => {
-    const last = k === finalOrder.length - 1
-    if ("added" in p) { p.added.header.writeUInt32LE(((p.added.header.readUInt32LE(0) & ~LAST) | (last ? LAST : 0)) >>> 0, 0); return }
-    const cur = scan.repl.get(p.header) ?? records[p.header].data
-    if (((cur.readUInt32LE(0) & LAST) !== 0) === last) return
-    const next = Buffer.from(cur)
-    next.writeUInt32LE(((next.readUInt32LE(0) & ~LAST) | (last ? LAST : 0)) >>> 0, 0)
-    scan.repl.set(p.header, next)
-  })
+  finalOrder.forEach((p, k) => (typeof p === "number" ? setLastMark(scan, p, k === finalOrder.length - 1) : markNew(p, k === finalOrder.length - 1)))
   const lh = Buffer.from(scan.repl.get(cell.listHeaderIdx) ?? records[cell.listHeaderIdx].data)
   lh.writeUInt16LE(finalOrder.length, 0)
   scan.repl.set(cell.listHeaderIdx, lh)

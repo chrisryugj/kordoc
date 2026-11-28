@@ -97,16 +97,37 @@ export function splitMarkdownUnits(md: string): MdUnit[] {
 export type AlignedPair = [number | null, number | null]
 
 export function alignUnits(a: string[], b: string[]): AlignedPair[] {
+  return alignUnitsEx(a, b).pairs
+}
+
+/** Myers 차이의 편집 수 상한 — 큰 문서에서 이만큼 넘게 다르면 거친 정렬로 (흔적 메모리 상한² 정수) */
+const MYERS_MAX_D = 1000
+
+/**
+ * 정렬 + 거친 정렬 여부. 대형 문서(유닛 수 곱 > 4백만)는 앞뒤 공통 구간을 걷어낸 가운데를 Myers O((m+n)·D) 차이로 정확 일치 짝을
+ * 찾는다. 편집이 MYERS_MAX_D 를 넘으면 종전처럼 가운데를 길이가 같으면 자리대로, 다르면 전부 추가·삭제로 내고 coarse=true —
+ * 이때 추가·삭제는 실제 편집이 아닐 수 있으니 문단을 더하고 지우는 경로(HWP 5.x 본문)는 손대지 않는다
+ */
+export function alignUnitsEx(a: string[], b: string[]): { pairs: AlignedPair[]; coarse: boolean } {
   const m = a.length, n = b.length
   if (m * n > 4_000_000) {
+    let pre = 0
+    while (pre < m && pre < n && a[pre] === b[pre]) pre++
+    let suf = 0
+    while (suf < m - pre && suf < n - pre && a[m - 1 - suf] === b[n - 1 - suf]) suf++
+    const mid = myersMatches(a, b, pre, m - suf, pre, n - suf, MYERS_MAX_D)
+    if (mid) {
+      const matches: [number, number][] = []
+      for (let k = 0; k < pre; k++) matches.push([k, k])
+      matches.push(...mid)
+      for (let s = suf; s > 0; s--) matches.push([m - s, n - s])
+      return { pairs: pairGaps(a, b, matches), coarse: false }
+    }
     // 대형 문서 보호 — dense LCS 불가. 공통 prefix/suffix만 정확 일치로 페어링하고
     // 가운데 구간은 길이가 같을 때만 인덱스 페어링, 다르면(블록 추가/삭제) 전부
     // 추가/삭제로 보고해 시프트 오적용(전 문단이 한 칸씩 밀려 덮어써짐)을 차단한다.
     const result: AlignedPair[] = []
-    let pre = 0
-    while (pre < m && pre < n && a[pre] === b[pre]) { result.push([pre, pre]); pre++ }
-    let suf = 0
-    while (suf < m - pre && suf < n - pre && a[m - 1 - suf] === b[n - 1 - suf]) suf++
+    for (let k = 0; k < pre; k++) result.push([k, k])
     const aMid = m - pre - suf, bMid = n - pre - suf
     if (aMid === bMid) {
       for (let i = 0; i < aMid; i++) result.push([pre + i, pre + i])
@@ -115,7 +136,7 @@ export function alignUnits(a: string[], b: string[]): AlignedPair[] {
       for (let j = 0; j < bMid; j++) result.push([null, pre + j])
     }
     for (let s = suf - 1; s >= 0; s--) result.push([m - 1 - s, n - 1 - s])
-    return result
+    return { pairs: result, coarse: true }
   }
 
   // 정확 일치 LCS
@@ -140,9 +161,12 @@ export function alignUnits(a: string[], b: string[]): AlignedPair[] {
     else j--
   }
   matches.reverse()
+  return { pairs: pairGaps(a, b, matches), coarse: false }
+}
 
-  // 갭 구간 페어링 — 양쪽 갭 크기가 같으면 위치 기반(전면 재작성 인정),
-  // 다르면 유사도 기반으로 수정/추가/삭제 구분
+/** 정확 일치 짝 사이 갭 구간 페어링 — 양쪽 갭 크기가 같으면 위치 기반(전면 재작성 인정), 다르면 유사도 기반으로 수정/추가/삭제 구분 */
+function pairGaps(a: string[], b: string[], matches: [number, number][]): AlignedPair[] {
+  const m = a.length, n = b.length
   const result: AlignedPair[] = []
   let ai = 0, bi = 0
   const flushGap = (aEnd: number, bEnd: number) => {
@@ -174,6 +198,39 @@ export function alignUnits(a: string[], b: string[]): AlignedPair[] {
   }
   flushGap(m, n)
   return result
+}
+
+/**
+ * Myers O((N+M)·D) 차이 — a[a0..a1) 와 b[b0..b1) 의 정확 일치 짝(전역 좌표, 오름차순). 편집 수가 maxD 를 넘으면 null
+ */
+function myersMatches(a: string[], b: string[], a0: number, a1: number, b0: number, b1: number, maxD: number): [number, number][] | null {
+  const N = a1 - a0, M = b1 - b0, off = maxD + 1
+  const v = new Int32Array(2 * maxD + 3)
+  const trace: Int32Array[] = []
+  for (let d = 0; d <= maxD; d++) {
+    trace.push(v.slice())
+    for (let k = -d; k <= d; k += 2) {
+      let x = k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]) ? v[off + k + 1] : v[off + k - 1] + 1
+      let y = x - k
+      while (x < N && y < M && a[a0 + x] === b[b0 + y]) { x++; y++ }
+      v[off + k] = x
+      if (x >= N && y >= M) {
+        // 거꾸로 따라가며 대각선(일치) 구간을 모은다 — trace[dd] 는 dd 번째 편집 직전 상태
+        const out: [number, number][] = []
+        let cx = N, cy = M
+        for (let dd = d; dd > 0; dd--) {
+          const pv = trace[dd], kk = cx - cy
+          const prevK = kk === -dd || (kk !== dd && pv[off + kk - 1] < pv[off + kk + 1]) ? kk + 1 : kk - 1
+          const px = pv[off + prevK], py = px - prevK
+          while (cx > px && cy > py) { out.push([a0 + cx - 1, b0 + cy - 1]); cx--; cy-- }
+          cx = px; cy = py
+        }
+        while (cx > 0 && cy > 0) { out.push([a0 + cx - 1, b0 + cy - 1]); cx--; cy-- }
+        return out.reverse()
+      }
+    }
+  }
+  return null
 }
 
 /** [from, to] 범위에서 target과의 최고 유사도 */

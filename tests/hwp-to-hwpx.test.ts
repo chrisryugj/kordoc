@@ -400,7 +400,7 @@ describe("hwpToHwpx — 합성 문서", () => {
 describe("patch 대체본 — HWP 원본", () => {
   it("HWP 제자리 수정이 못 하는 문단 추가를 서식 그대로 바꾼 HWPX 에 그 자리에서 반영한다", async () => {
     const hwp = buildHwp(Buffer.concat([paragraph("첫 문단", [[0, 0]], 0, 11), paragraph("둘째 문단", [[0, 1]], 0, 12), paragraph("셋째 문단", [[0, 0]], 0, 13)]))
-    const edited = "첫 문단 고침\n\n둘째 문단\n\n늘린 문단\n\n셋째 문단"
+    const edited = "첫 문단 고침\n\n둘째 문단\n\n늘린 문단 [가]\n\n셋째 문단"  // 대괄호 든 새 문단 — HWP 제자리는 마크다운 기호 없는 평문 새 문단만
     assert.ok(needsRewrite(await patchHwp(hwp, edited)))
     const r = await rewriteEdited(hwp, false, edited, true)
     assert.ok(r)

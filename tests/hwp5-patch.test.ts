@@ -1108,12 +1108,26 @@ describe("patchHwp — 안전 게이트", () => {
     assert.equal(noop.warnings, undefined)
   })
 
-  it("블록 추가/삭제는 skip으로 보고", async () => {
-    const hwp = buildHwp([paragraph("하나"), paragraph("둘셋넷")])
+  it("본문 문단 더하기·빼기 — 평문 새 문단은 앞 문단 모양으로, 맨 문단은 지운다, 서식 든 새 블록은 건너뜀", async () => {
+    const hwp = buildHwp([paragraph("첫째 문단입니다"), paragraph("둘째 문단입니다"), paragraph("셋째 문단입니다")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const r = await patchHwp(hwp, md + "\n\n새로 추가된 문단")
-    assert.equal(r.success, true)
-    assert.ok(r.skipped.some(s => s.reason.includes("추가")))
+    const topHeads = (data: Uint8Array) => readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(data)), "/BodyText/Section0").content))
+      .filter(x => x.tagId === 0x42 && x.level === 0)
+    for (const [edited, label] of [
+      [md.replace("둘째 문단입니다", "둘째 문단입니다\n\n새로 넣은 문단입니다"), "가운데 더하기"],
+      [md + "\n\n끝에 넣은 문단입니다", "끝에 더하기"],
+      [md.replace("\n\n둘째 문단입니다", ""), "가운데 빼기"],
+      [md.replace("\n\n셋째 문단입니다", ""), "끝 빼기"],
+    ] as const) {
+      const r = await patchHwp(hwp, edited)
+      assert.ok(r.applied >= 1, label)
+      assert.deepEqual(r.skipped, [], label)
+      assert.equal(parseHwp5Document(Buffer.from(r.data!)).markdown.trim(), edited.trim(), label)
+      const heads = topHeads(r.data!)
+      assert.deepEqual(heads.map(h => h.data.readUInt32LE(0) >>> 31), heads.map((_, k) => (k === heads.length - 1 ? 1 : 0)), `${label}: 마지막 문단 표시`)
+    }
+    const fmt = await patchHwp(hwp, md + "\n\n## 새 제목")
+    assert.ok(fmt.skipped.some(s => s.reason.includes("추가")), "서식 든 새 블록은 건너뜀")
   })
 
   it("칸 줄(문단) 더하기·빼기 — 새 줄은 제 문단으로, 칸 문단 수·마지막 문단 표시를 맞춘다 (#249)", async () => {

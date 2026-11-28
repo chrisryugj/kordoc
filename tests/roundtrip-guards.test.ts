@@ -72,24 +72,31 @@ describe("markdown-units 되읽기 대칭 (리뷰 #23)", () => {
 // ─── 대형 문서 정렬 폴백 (리뷰 #2/#4) ─────────────────
 
 describe("patchHwpx: 대형 문서 폴백 (m*n > 4M)", () => {
-  it("문단 삽입 → 시프트 오적용 없이 graceful 보고 + 마지막 문단 보존", async () => {
+  it("대형 문서 문단 삽입 — Myers 정렬로 그 자리에만 넣는다(시프트 오적용 없음)", async () => {
     const paras = Array.from({ length: 2100 }, (_, i) => `문단 ${i + 1}번 내용입니다.`)
-    const buf = await markdownToHwpx(paras.join("\n\n"))
-    const original = new Uint8Array(buf)
+    const original = new Uint8Array(await markdownToHwpx(paras.join("\n\n")))
     const parsed = await parseHwpx(toAB(original))
     assert.ok(parsed.success)
-
-    // 중간에 문단 1개 삽입 — 폴백 정렬에서 추가/삭제로 정직 보고돼야 함
     const lines = parsed.markdown.split("\n\n")
     lines.splice(1000, 0, "삽입된 새 문단입니다.")
     const res = await patchHwpx(original, lines.join("\n\n"))
     assert.ok(res.success)
-    assert.ok(res.skipped.some(s => s.reason.includes("추가")), `추가 미지원 보고 누락: applied=${res.applied}`)
-
     const r2 = await parseHwpx(toAB(res.data!))
     assert.ok(r2.success)
-    assert.ok(r2.markdown.includes("문단 2100번 내용입니다."), "마지막 문단 텍스트 파괴 (시프트 오적용)")
-    assert.ok(!r2.markdown.includes("삽입된 새 문단"), "추가 미지원인데 본문이 변형됨")
+    assert.deepEqual(r2.markdown.trim().split("\n\n"), lines.join("\n\n").trim().split("\n\n"), "그 자리에만 들어가고 나머지는 그대로")
+  })
+
+  it("대형 문서 편집이 너무 많으면(거친 정렬) 문단을 더하거나 지우지 않고 보고한다", async () => {
+    const paras = Array.from({ length: 4000 }, (_, i) => `문단 ${i + 1}번 내용입니다.`)
+    const original = new Uint8Array(await markdownToHwpx(paras.join("\n\n")))
+    const parsed = await parseHwpx(toAB(original))
+    assert.ok(parsed.success)
+    const lines = parsed.markdown.split("\n\n").filter((_, i) => i % 3 !== 1)  // 1,333 문단 삭제 — 유닛 곱 4백만 초과·Myers 상한(1,000) 초과
+    const res = await patchHwpx(original, lines.join("\n\n"))
+    assert.ok(res.success)
+    assert.ok(res.skipped.some(s => s.reason.includes("삭제")), `삭제 미지원 보고 누락: applied=${res.applied}`)
+    const r2 = await parseHwpx(toAB(res.data!))
+    assert.ok(r2.markdown.includes("문단 4000번 내용입니다.") && r2.markdown.includes("문단 2번 내용입니다."), "원문 보존")
   })
 })
 

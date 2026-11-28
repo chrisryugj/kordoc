@@ -28,14 +28,15 @@ import {
 } from "../hwp5/record.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
+  buildOrigUnits, diffUnitLists, textUnitStyled, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
 } from "./patcher.js"
 import { previewTextFromBlocks, PREVIEW_IMAGE_NOTE } from "./preview-text.js"
-import { stageCellLines } from "./hwp5-cell-lines.js"
+import { stageCellLines, fixTopLevelLastMark } from "./hwp5-cell-lines.js"
+import { anchorAfter, anchorAfterHost, plainNewText, deleteBodyPara, addBodyPara, type BodyAnchor } from "./hwp5-body-paras.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
-  splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
+  splitMarkdownUnits, alignUnitsEx, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize, isInlineColumnTable, replicateColumnTable,
   replicateTableToHtml, replicateHtmlTable, parseHtmlTable, htmlCellInnerToLines, extractTopLevelTables,
   stripHeadMarker, stripShownHeadMarker, noScriptTags, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   removeNoteMarks, noteMarksOf, splitCellNote, planNoteEdits, noteParaEdit, NOTE_TEXT_UNSUPPORTED, type MdUnit,
@@ -161,8 +162,10 @@ export interface ScanCell5 {
   tables: ScanTable5[]
 }
 
-interface ScanTable5 {
+export interface ScanTable5 {
   sectionIndex: number
+  /** 표 컨트롤을 담은 문단(PARA_HEADER) 레코드 — 표 뒤에 문단을 끼울 자리 */
+  hostIdx: number
   rows: number
   cols: number
   /** "row,col" → 셀 (앵커 좌표 기준) */
@@ -313,7 +316,7 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
       }
       j = k
     }
-    return { sectionIndex, rows, cols, cells }
+    return { sectionIndex, hostIdx: parent[i], rows, cols, cells }
   }
 
   // 최상위 표 수집 (다른 tbl 내부에 중첩된 표 제외 — IR 최상위 표 서수와 정렬). 중첩 표는 칸의 tables 로
@@ -429,7 +432,8 @@ export async function patchHwp(
   // 4) 유닛 구성 + 정렬 (HWPX 패처와 동일한 마크다운 도메인 diff)
   const origUnits = buildOrigUnits(origBlocks)
   const editedUnits = splitMarkdownUnits(editedMarkdown)
-  const pairs = alignUnits(origUnits.map(u => u.raw), editedUnits.map(u => u.raw))
+  // 거친 정렬(대형 문서에서 편집이 너무 많음)의 추가·삭제는 실제 편집이 아닐 수 있다 — 본문 문단 더하기·빼기를 하지 않는다
+  const { pairs, coarse } = alignUnitsEx(origUnits.map(u => u.raw), editedUnits.map(u => u.raw))
 
   const paraMap = resolveParaMappings(origBlocks, scans)
   const tableMap = resolveTableMappings(origBlocks, scans.flatMap(s => s.tables))
@@ -437,18 +441,53 @@ export async function patchHwp(
   // 5) 변경 적용 (스테이징)
   const ctx: PatchCtx5 = { origBlocks, paraMap, scans, tableMap, skipped, keepLineseg: options?.keepLineseg === true, charBook }
   const unitKeys = origUnits.map(u => (u.kind === "text" ? fallbackPlain(u.raw, origBlocks[u.blockIdx]).replace(/\s+/g, "") : ""))
+  // 본문 문단 더하기·빼기 — 바로 앞 원문 블록(문단·표 담은 문단) 뒤가 새 문단 자리다
+  let anchor: BodyAnchor | null = null, anchorBlock = -1
+  const bodyEdited = new Set<SectionScan5>()
+  const plainBlock = (i: number): ScanPara5 | undefined => {
+    const b = origBlocks[i], p = paraMap.get(i)?.para
+    return b?.type === "paragraph" && b.text && !b.style?.bold && p && p.kind === "body" && scans[p.sectionIndex].records[p.headerIdx].level === 0 ? p : undefined
+  }
+  const plainTemplateNear = (i: number): ScanPara5 | undefined => {
+    if (i < 0 || plainBlock(i)) return undefined  // 앞 블록이 평문 문단이면 그 모양 그대로
+    for (let d = 1; d <= 30; d++) {
+      const p = plainBlock(i + d) ?? plainBlock(i - d)
+      if (p) return p
+    }
+    return undefined
+  }
+  const anchorOf = (u: OrigUnit): BodyAnchor | null => {
+    if (u.fragment) return null
+    if (u.kind === "text") {
+      const p = paraMap.get(u.blockIdx)?.para
+      return p ? anchorAfter(scans[p.sectionIndex], p) : null
+    }
+    const t = tableMap.get(u.blockIdx)
+    return t ? anchorAfterHost(scans[t.sectionIndex], t.hostIdx, scans[t.sectionIndex].paras) : null
+  }
   for (const [oi, ei] of pairs) {
     if (oi !== null && ei !== null) {
       const orig = origUnits[oi]
       const edited = editedUnits[ei]
+      anchor = anchorOf(orig); anchorBlock = orig.blockIdx
       if (orig.raw === edited.raw) continue
       applied += modifyUnit5(oi, orig, edited, ctx, unitKeys)
     } else if (oi !== null) {
-      skipped.push({ reason: "블록 삭제는 미지원 (v1) — 원본 유지", before: summarize(origUnits[oi].raw) })
+      const u = origUnits[oi], p = u.kind === "text" && !u.fragment ? paraMap.get(u.blockIdx)?.para : undefined
+      anchor = anchorOf(u); anchorBlock = u.blockIdx
+      if (p && !coarse && deleteBodyPara(scans[p.sectionIndex], p)) { applied++; bodyEdited.add(scans[p.sectionIndex]); continue }
+      skipped.push({ reason: "블록 삭제는 미지원 (v1), 원본 유지", before: summarize(u.raw) })
     } else if (ei !== null) {
-      skipped.push({ reason: "블록 추가는 미지원 (v1)", after: summarize(editedUnits[ei].raw) })
+      const text = editedUnits[ei].kind === "text" ? plainNewText(editedUnits[ei].raw) : null
+      if (text && anchor && anchor.scan.safe && !coarse) {
+        // 새 평문 문단이 앞 제목·굵은 문단 모양을 물려받으면 제목·굵은 글로 읽힌다 — 가까운 평문 문단 모양으로
+        addBodyPara({ ...anchor, tpl: plainTemplateNear(anchorBlock) ?? anchor.tpl }, text)
+        applied++; bodyEdited.add(anchor.scan); continue
+      }
+      skipped.push({ reason: text ? "블록 추가: 앞 원문 블록을 못 찾아 미지원" : "블록 추가는 서식 없는 한 줄 글 문단만 지원 (제목·목록·표·강조는 미지원)", after: summarize(editedUnits[ei].raw) })
     }
   }
+  for (const scan of bodyEdited) fixTopLevelLastMark(scan)
 
   // 6) 섹션 재직렬화 + 재압축 + 섹터 레벨 in-place 교체 — 컨테이너 전체 재조립 없음
   //    (수정된 섹션의 데이터 섹터/FAT 체인/디렉토리 start·size 외에는 원본 바이트 유지)
