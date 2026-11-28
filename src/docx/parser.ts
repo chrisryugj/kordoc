@@ -273,10 +273,11 @@ function parseRels(xml: string, warnings?: ParseWarning[], part?: string): Map<s
 
 // ─── 각주 파싱 ─────────────────────────────────────────
 
-function parseFootnotes(xml: string, warnings?: ParseWarning[]): Map<string, string> {
-  const doc = parseXml(xml, warnings, "word/footnotes.xml")
+/** 각주(footnotes.xml) 또는 미주(endnotes.xml, kind "endnote" — id 앞에 "e:" 를 붙여 같은 표에 둔다) */
+function parseFootnotes(xml: string, warnings?: ParseWarning[], kind: "footnote" | "endnote" = "footnote"): Map<string, string> {
+  const doc = parseXml(xml, warnings, `word/${kind}s.xml`)
   const notes = new Map<string, string>()
-  const fnElements = findElements(doc, "footnote")
+  const fnElements = findElements(doc, kind)
   for (const fn of fnElements) {
     const id = getAttr(fn, "id")
     if (!id || id === "0" || id === "-1") continue // 0=separator, -1=continuation
@@ -289,7 +290,7 @@ function parseFootnotes(xml: string, warnings?: ParseWarning[]): Map<string, str
         for (const t of tElements) texts.push(escapeLiteralTags(escapeLiteralDollar(t.textContent ?? "")))
       }
     }
-    notes.set(id, texts.join("").trim())
+    notes.set(kind === "endnote" ? `e:${id}` : id, texts.join("").trim())
   }
   return notes
 }
@@ -492,6 +493,12 @@ function collectInline(
       if (fnRefEls.length > 0) {
         const fnId = getAttr(fnRefEls[0], "id")
         if (fnId && footnotes.has(fnId)) footnoteText = footnotes.get(fnId)
+      }
+      // 미주 — 각주와 같은 자리(footnoteText)에. 종전엔 endnotes.xml 을 읽지 않아 미주 글이 빠졌다
+      const enRefEls = getChildElements(el, "endnoteReference")
+      if (enRefEls.length > 0) {
+        const enId = getAttr(enRefEls[0], "id")
+        if (enId && footnotes.has(`e:${enId}`)) footnoteText = footnotes.get(`e:${enId}`)
       }
 
       if (rr.text) {
@@ -1054,6 +1061,7 @@ export async function parseDocxDocument(
 
   // 4. 각주 로드
   let footnotes = new Map<string, string>()
+  const enFile = zip.file("word/endnotes.xml")
   const fnFile = zip.file("word/footnotes.xml")
   if (fnFile) {
     try {
@@ -1063,6 +1071,13 @@ export async function parseDocxDocument(
         code: "PARTIAL_PARSE",
         message: `DOCX 각주(footnotes.xml) 파싱 실패 — 각주 생략: ${err instanceof Error ? err.message : String(err)}`,
       })
+    }
+  }
+  if (enFile) {
+    try {
+      for (const [k, v] of parseFootnotes(await readZipEntry(enFile, "text"), warnings, "endnote")) footnotes.set(k, v)
+    } catch (err) {
+      warnings.push({ code: "PARTIAL_PARSE", message: `DOCX 미주(endnotes.xml) 읽기 실패, 미주 생략: ${err instanceof Error ? err.message : String(err)}` })
     }
   }
 

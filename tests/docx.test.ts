@@ -647,3 +647,18 @@ describe("DOCX 쪽 번호 — Word 조판 표지(w:lastRenderedPageBreak)", () =
     }
   })
 })
+
+describe("DOCX 미주", () => {
+  it("endnotes.xml 의 미주 글을 각주와 같은 자리(footnoteText)에 — 구분선 미주(id 0·-1)는 뺀다", async () => {
+    const W = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`
+    const buffer = await createDocx(`<w:p><w:r><w:t>본문 문장</w:t></w:r><w:r><w:endnoteReference w:id="1"/></w:r></w:p>`, {
+      files: { "word/endnotes.xml": `<?xml version="1.0"?><w:endnotes ${W}><w:endnote w:id="-1"><w:p><w:r><w:t>구분선</w:t></w:r></w:p></w:endnote><w:endnote w:id="1"><w:p><w:r><w:t>출처: 2026 통계</w:t></w:r></w:p></w:endnote></w:endnotes>` },
+    })
+    const r = await parse(buffer)
+    assert.ok(r.success)
+    if (!r.success) return
+    assert.equal(r.blocks[0].footnoteText, "출처: 2026 통계")
+    assert.match(r.markdown, /출처: 2026 통계/)
+    assert.doesNotMatch(r.markdown, /구분선/)
+  })
+})
