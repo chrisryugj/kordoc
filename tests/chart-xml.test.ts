@@ -154,6 +154,25 @@ describe("형식별 연결", () => {
     assert.equal(r.blocks.find(b => b.table?.caption?.startsWith("차트"))?.pageNumber, 1)
   })
 
+  it("XLSX: 칸 없는 차트 시트(chartsheet)도 제 시트 자리에 차트 표", async () => {
+    const zip = new JSZip()
+    zip.file("[Content_Types].xml", `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>`)
+    zip.file("_rels/.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`)
+    zip.file("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${REL}"><sheets><sheet name="자료" sheetId="1" r:id="rId1"/><sheet name="차트1" sheetId="2" r:id="rId2"/></sheets></workbook>`)
+    zip.file("xl/_rels/workbook.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${REL}/chartsheet" Target="chartsheets/sheet1.xml"/></Relationships>`)
+    zip.file("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>칸 글</t></is></c></row></sheetData></worksheet>`)
+    zip.file("xl/chartsheets/sheet1.xml", `<?xml version="1.0"?><chartsheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${REL}"><drawing r:id="rId1"/></chartsheet>`)
+    zip.file("xl/chartsheets/_rels/sheet1.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/drawing" Target="../drawings/drawing1.xml"/></Relationships>`)
+    zip.file("xl/drawings/drawing1.xml", `<?xml version="1.0"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"><xdr:absoluteAnchor><xdr:graphicFrame>${graphic("rId3")}</xdr:graphicFrame></xdr:absoluteAnchor></xdr:wsDr>`)
+    zip.file("xl/drawings/_rels/drawing1.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId3" Type="${REL}/chart" Target="../charts/chart1.xml"/></Relationships>`)
+    zip.file("xl/charts/chart1.xml", BAR)
+    const r = await parse(await zip.generateAsync({ type: "arraybuffer" }), { charts: true })
+    assert.ok(r.success)
+    if (!r.success) return
+    assert.ok(r.markdown.indexOf("## 차트1") < r.markdown.indexOf("차트: 연도별 민원"))
+    assert.equal(r.blocks.find(b => b.table?.caption?.startsWith("차트"))?.pageNumber, 2)
+  })
+
   it("PPTX: 그래픽 틀의 차트를 표로 읽고 미지원 경고를 내지 않는다", async () => {
     const zip = new JSZip()
     const P = `xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${REL}"`
