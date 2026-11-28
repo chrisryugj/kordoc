@@ -112,11 +112,11 @@ Results use fixed corpora and reference criteria. Measured on: default 4.22.14 (
 
 | Target | Population | Result |
 | --- | --- | --- |
+| 4.25.32 | HWP 5.x patch adds table rows (merged tables too), new headings, and new paragraphs with emphasis. PDF frames and table cells join lines wrapped by the cell width into one paragraph, and the heavy rule ━ in annex fractions is restored. Fixes merged cells in large HWP 3.x tables, seven private HWP 3.x symbols, and shifted row addresses in HWPX | HWP table rows: 138 added, 138 removed (150 docs, all open in rhwp) · merged-table rows added 99 · PDF mid-sentence splits 612 → **104** (1,102 docs against the source) · extra line breaks in cells 4,866 → **1,627** · annex text recall 0.914 → **1** (livestock manure act annex 1) · score, formats, roundtrip, annex, gen, PDF text, tables, ODL: 0 drops |
 | 4.25.31 | HWP 5.x patch also adds and removes body paragraphs and lines in cells with forced line breaks. Large-document patch alignment is exact now (Myers). Reads DOCX comments and endnotes, XLSX and XLS cell notes, XLSX and PPTX links, and XLS/XLSX text boxes. Feeding `parse()` output back no longer skips image cells | HWP body paragraphs: 158 added, 145 removed (200 docs) · cell line edits 92 → **98** · notes 0 → **89** (XLSX 20, XLS 69, XLS 69/69 against the converted reference) · links 0 → **185** · skips on an unedited report 68 → **0** · score, formats, roundtrip, annex, gen: 0 drops |
 | 4.25.30 | HWP 5.x patch adds and removes table cell lines (paragraphs) (#249). New lines become new paragraphs with the previous paragraph's shape, and the cell paragraph count and last-paragraph mark are kept in sync | Adding lines to HWP cells: skipped → **applied in place** · 92 corpus HWP 5.x edits: reparse matches 92, opens in rhwp 92 · 5,418 tests, 0 failures |
 | 4.25.29 | patch no longer pushes a value typed into a blank bracket placeholder behind its spaces (#247) and rewrites the preview text from the edited body (#248, fill and sessions too). HWP 5.x cell edits that change the line count are reported as skipped instead of being glued onto the previous line (#249). `<br>` in body paragraphs of generate becomes a line break (#250). DOCX `--charts` also reads charts in table cells and text boxes | Blank bracket: 27 leftover spaces → **0** · deleted lines left in the preview → **gone** · `<br>` in 9 presets: literal → **line break** · roundtrip 75 and gen 5 docs, 0 drops · 5,418 tests, 0 failures |
 | 4.25.28 | `--charts` also reads Excel objects (OLE) in HWP/HWPX as sheet tables. The `charts` option is available in MCP `parse_document` and the Python and Java SDKs. Empty picture frames no longer raise a skipped-image warning | Excel objects in 2 HWP docs: 0 → **3** tables · option on vs off over 4,353 docs: 0 errors, 0 changes outside chart/Excel blocks · default output: score 5,465, formats 146, annex 544 docs, 0 drops · false warnings in 199 HWPX docs → **0** |
-| 4.25.27 | `--charts` (`charts: true`) reads chart data as tables and SmartArt as lists in HWP, HWPX, DOCX, PPTX and XLSX. Chart text used to be dropped. Off by default, so default output is unchanged | 161 docs with chart parts: chart text recall 0.172 → **1**, numbers 0.058 → **1** · 28 HWP/HWPX chart pairs give identical output · default output: score 5,465, formats 146, annex 544 docs, 0 drops |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
 | HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.21%** · exact **69/232** · text **264/264** · 80 documents checked side by side in Hangul |
@@ -135,7 +135,7 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.31](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.31)** · 2026-11-28
+Latest release: **[4.25.32](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.32)** · 2026-11-28
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
