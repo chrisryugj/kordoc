@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.25.28] - 2026-11-28
+
 ### Added
 
 - `charts` 옵션을 MCP `parse_document`(`charts: true`)와 Python SDK(`charts=True`)·Java SDK(`.charts(true)`)에서도 쓴다. 워커 허용 목록 31 → 32개
