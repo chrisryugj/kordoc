@@ -31,6 +31,7 @@ import {
   buildOrigUnits, alignUnits, diffUnitLists, textUnitStyled, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
 } from "./patcher.js"
 import { previewTextFromBlocks, PREVIEW_IMAGE_NOTE } from "./preview-text.js"
+import { stageCellLines } from "./hwp5-cell-lines.js"
 import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
@@ -118,6 +119,8 @@ function serializeRecords(recs: RawRecord[], repl?: Map<number, Buffer | null>, 
     const data = repl?.get(i)
     if (data !== null) push(recs[i].tagId, recs[i].level, data ?? recs[i].data)
   }
+  // 섹션 맨 끝에 붙인 레코드(마지막 칸 끝 문단 뒤에 더한 문단 등)
+  for (const ins of inserts?.get(recs.length) ?? []) push(ins.tagId, ins.level, ins.data)
   return Buffer.concat(parts)
 }
 
@@ -150,7 +153,9 @@ export interface ScanPara5 {
   notes?: ScanPara5[][]
 }
 
-interface ScanCell5 {
+export interface ScanCell5 {
+  /** 칸 머리(LIST_HEADER) 레코드 — 첫 2바이트가 칸 문단 수 */
+  listHeaderIdx: number
   paras: ScanPara5[]
   /** 칸 문단에 앵커된 중첩 표 (레코드 순서 — IR 칸 blocks 의 표 순서와 같다) */
   tables: ScanTable5[]
@@ -304,7 +309,7 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
         k++
       }
       if (lh.data.length >= 16) {
-        cells.set(`${lh.data.readUInt16LE(10)},${lh.data.readUInt16LE(8)}`, { paras: cellParas, tables: cellTables })
+        cells.set(`${lh.data.readUInt16LE(10)},${lh.data.readUInt16LE(8)}`, { listHeaderIdx: j, paras: cellParas, tables: cellTables })
       }
       j = k
     }
@@ -930,6 +935,15 @@ function patchGfmCells(
           noted ? undefined : cellLineStyles(origRows[r][c], editedRows[r][c], ctx.charBook)(0, after)))
         continue
       }
+      // 줄(문단) 더하기·빼기 — 옛 줄이 칸 문단과 1:1 로 맞을 때만 (#249)
+      if (beforeParts.length === cell.paras.length && afterParts.length !== cell.paras.length) {
+        const b = beforeParts.map(gfmCellToPlain), a = afterParts.map(gfmCellToPlain)
+        const trusted = b.every((l, k) => l !== null && normForMatch(cell.paras[k].rawText) === normForMatch(l))
+        if (trusted && a.every(l => l !== null && !l.includes("\n") && sanitizeText(l) === l)) {
+          const n = stageCellLines(ctx.scans[cell.paras[0].sectionIndex], cell, b as string[], a as string[], cellSkip, ctx.keepLineseg)
+          if (n !== null) { applied += n; continue }
+        }
+      }
       if (beforeParts.length !== cell.paras.length || afterParts.length !== cell.paras.length) {
         cellSkip("셀 문단 수 변경 — 미지원 (문단 추가/삭제)"); continue
       }
@@ -1133,6 +1147,12 @@ function applyCellEdit5(
   const targets = nonEmpty.length > 0 ? nonEmpty : cell.paras
   if (targets.length === 0) return skip("셀에 문단이 없음 — 미지원")
 
+  // 줄(문단) 더하기·빼기 — 칸 문단이 모두 글 있는 줄이고 강조 표지가 없을 때 (#249). 그 밖은 아래 종전 처리(합치기·비우기)
+  if (nonEmpty.length === cell.paras.length && newLines.length !== targets.length && newLines.length > 0
+    && newLines.every(l => !l.includes("\n")) && !/\*\*|<\/?(?:u|sup|sub)>/.test(before + after)) {
+    const n = stageCellLines(ctx.scans[cell.paras[0].sectionIndex], cell, cell.paras.map(p => normForMatch(p.rawText)), newLines, skip, ctx.keepLineseg)
+    if (n !== null) return n
+  }
   // 라인 → 문단 순서 매핑 (넘치는 줄은 마지막 문단에 강제 줄바꿈으로 병합, 줄어든 줄은 비움)
   const assigned: string[] = []
   for (let i = 0; i < targets.length; i++) {

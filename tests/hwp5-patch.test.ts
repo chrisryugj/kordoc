@@ -844,7 +844,7 @@ describe("patchHwp — 셀 다중줄 (강제 줄바꿈 0x0a)", () => {
     assert.equal(ls.data.readInt32LE(40) - ls.data.readInt32LE(4), 1320, "seg1이 pitch(lineH+lineSpc=1320)만큼 아래")
   })
 
-  it("HTML 병합셀에 줄 추가 — 넘치는 줄을 마지막 문단에 강제 줄바꿈으로 병합", async () => {
+  it("HTML 병합셀에 줄 추가 — 새 줄은 새 문단으로 (#249, 종전엔 마지막 문단에 강제 줄바꿈으로 합침)", async () => {
     const hwp = buildHwp([tableMerged("머리글", "왼쪽", "오른쪽")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
     assert.ok(md.includes("<td>오른쪽</td>"), `HTML 렌더 확인: ${md}`)
@@ -1116,18 +1116,30 @@ describe("patchHwp — 안전 게이트", () => {
     assert.ok(r.skipped.some(s => s.reason.includes("추가")))
   })
 
-  it("칸 줄 수가 바뀐 편집은 앞 줄에 붙이지 않고 건너뜀으로 알린다 — 같은 줄 수 편집은 반영 (#249)", async () => {
+  it("칸 줄(문단) 더하기·빼기 — 새 줄은 제 문단으로, 칸 문단 수·마지막 문단 표시를 맞춘다 (#249)", async () => {
     const hwp = buildHwp([table2x2([["항목", "경과"], ["기록", ["첫째 줄", "둘째 줄", "셋째 줄"]]])])
     const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
     assert.match(md, /첫째 줄<br>둘째 줄<br>셋째 줄/)
-    const add = await patchHwp(hwp, md.replace("첫째 줄<br>둘째 줄", "첫째 줄<br>추가 줄<br>둘째 줄"))
-    assert.equal(add.applied, 0)
-    assert.ok(add.skipped.some(s => /문단 수 변경/.test(s.reason)), JSON.stringify(add.skipped))
-    const out = parseHwp5Document(Buffer.from(add.data!), { layoutTables: "keep" }).markdown
-    assert.doesNotMatch(out, /첫째 줄 추가 줄/)
-    const same = await patchHwp(hwp, md.replace("둘째 줄", "둘째 줄 고침"))
-    assert.equal(same.applied, 1)
-    assert.match(parseHwp5Document(Buffer.from(same.data!), { layoutTables: "keep" }).markdown, /첫째 줄<br>둘째 줄 고침<br>셋째 줄/)
+    const cases: Array<[string, string]> = [
+      ["첫째 줄<br>추가 줄<br>둘째 줄<br>셋째 줄", "가운데 더하기"],
+      ["첫째 줄<br>둘째 줄<br>셋째 줄<br>넷째 줄", "끝에 더하기"],
+      ["영째 줄<br>첫째 줄<br>둘째 줄<br>셋째 줄", "앞에 더하기"],
+      ["첫째 줄<br>셋째 줄", "가운데 빼기"],
+      ["첫째 줄<br>둘째 줄", "끝 빼기"],
+      ["첫째 줄 고침<br>새 줄<br>둘째 줄<br>셋째 줄", "고치며 더하기"],
+    ]
+    for (const [cell, label] of cases) {
+      const r = await patchHwp(hwp, md.replace("첫째 줄<br>둘째 줄<br>셋째 줄", cell))
+      assert.equal(r.applied, 1, label)
+      assert.deepEqual(r.skipped, [], label)
+      assert.match(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown, new RegExp(`\\| ${cell} \\|`), label)
+      // 레코드: 칸 머리 문단 수 = 문단 수, 마지막 문단에만 끝 표시
+      const recs = readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(r.data!)), "/BodyText/Section0").content))  // buildHwp 는 압축 안 함
+      const li = recs.map(x => x.tagId).lastIndexOf(0x48)
+      const heads = recs.slice(li + 1).filter(x => x.tagId === 0x42 && x.level === recs[li].level)
+      assert.equal(recs[li].data.readUInt16LE(0), heads.length, label)
+      assert.deepEqual(heads.map(h => h.data.readUInt32LE(0) >>> 31), heads.map((_, k) => (k === heads.length - 1 ? 1 : 0)), label)
+    }
   })
 
   it("비수정 스트림(FileHeader·DocInfo)은 바이트 보존, 미리보기 글(PrvText)은 고친 본문으로 (#248)", async () => {
