@@ -450,6 +450,19 @@ export async function patchHwp(
     const b = origBlocks[i], p = paraMap.get(i)?.para
     return b?.type === "paragraph" && b.text && !b.style?.bold && p && p.kind === "body" && scans[p.sectionIndex].records[p.headerIdx].level === 0 ? p : undefined
   }
+  /** 같은 수준 제목 문단(컨트롤 없는 본문 맨 위) — 가까운 것부터 */
+  const headingTemplateNear = (i: number, level: number): ScanPara5 | undefined => {
+    const ok = (k: number): ScanPara5 | undefined => {
+      const b = origBlocks[k], p = paraMap.get(k)?.para
+      return b?.type === "heading" && (b.level ?? 2) === level && p && p.kind === "body" && scans[p.sectionIndex].records[p.headerIdx].level === 0 && p.ctrlMask === 0 ? p : undefined
+    }
+    for (let d = 0; d < origBlocks.length; d++) {
+      const p = (i - d >= 0 ? ok(i - d) : undefined) ?? ok(i + d + 1)
+      if (p) return p
+      if (i - d < 0 && i + d + 1 >= origBlocks.length) break
+    }
+    return undefined
+  }
   const plainTemplateNear = (i: number): ScanPara5 | undefined => {
     if (i < 0 || plainBlock(i)) return undefined  // 앞 블록이 평문 문단이면 그 모양 그대로
     for (let d = 1; d <= 30; d++) {
@@ -480,7 +493,17 @@ export async function patchHwp(
       if (p && !coarse && deleteBodyPara(scans[p.sectionIndex], p)) { applied++; bodyEdited.add(scans[p.sectionIndex]); continue }
       skipped.push({ reason: "블록 삭제는 미지원 (v1), 원본 유지", before: summarize(u.raw) })
     } else if (ei !== null) {
-      const text = editedUnits[ei].kind === "text" ? newBlockText(editedUnits[ei].raw) : null
+      // 새 제목 "## 절" — 같은 수준 원문 제목 문단(글자 크기·문단 모양)을 본뜬다. 같은 수준 제목이 없으면 건너뜀
+      const hm = editedUnits[ei].kind === "text" ? /^(#{1,6})\s+(.+)$/.exec(editedUnits[ei].raw.trim()) : null
+      if (hm && anchor && anchor.scan.safe && !coarse) {
+        const nt = newBlockText(hm[2]), tpl = headingTemplateNear(anchorBlock, hm[1].length)
+        if (nt && tpl && tpl.sectionIndex === scans.indexOf(anchor.scan)) {
+          const missed = addBodyPara({ ...anchor, tpl }, nt, charBook)
+          if (missed) skipped.push({ reason: EMPHASIS_NOTE, after: summarize(editedUnits[ei].raw), partial: true })
+          applied++; bodyEdited.add(anchor.scan); continue
+        }
+      }
+      const text = editedUnits[ei].kind === "text" && !hm ? newBlockText(editedUnits[ei].raw) : null
       if (text && anchor && anchor.scan.safe && !coarse) {
         // 새 문단이 앞 제목·굵은 문단 모양을 물려받으면 제목·굵은 글로 읽힌다 — 가까운 평문 문단 모양으로. 강조 조각은 서식만 다른 글자 모양
         const missed = addBodyPara({ ...anchor, tpl: plainTemplateNear(anchorBlock) ?? anchor.tpl }, text, charBook)
