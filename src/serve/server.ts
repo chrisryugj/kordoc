@@ -321,6 +321,7 @@ class ParseService {
       }
 
       const digest = hash.digest("hex")
+      if (rawKey) this.store.prune(this.options.jobTtlMs)
       const duplicate = rawKey ? this.store.findKey(rawKey) : undefined
       if (existing && !duplicate) throw new HttpError(503, "RETRY_UPLOAD", "The original job expired. Retry the upload.")
       if (duplicate) {
