@@ -112,6 +112,7 @@ Results use fixed corpora and reference criteria. Measured on: default 4.22.14 (
 
 | Target | Population | Result |
 | --- | --- | --- |
+| 4.25.31 | HWP 5.x patch also adds and removes body paragraphs and lines in cells with forced line breaks. Large-document patch alignment is exact now (Myers). Reads DOCX comments and endnotes, XLSX and XLS cell notes, XLSX and PPTX links, and XLS/XLSX text boxes. Feeding `parse()` output back no longer skips image cells | HWP body paragraphs: 158 added, 145 removed (200 docs) · cell line edits 92 → **98** · notes 0 → **89** (XLSX 20, XLS 69, XLS 69/69 against the converted reference) · links 0 → **185** · skips on an unedited report 68 → **0** · score, formats, roundtrip, annex, gen: 0 drops |
 | 4.25.30 | HWP 5.x patch adds and removes table cell lines (paragraphs) (#249). New lines become new paragraphs with the previous paragraph's shape, and the cell paragraph count and last-paragraph mark are kept in sync | Adding lines to HWP cells: skipped → **applied in place** · 92 corpus HWP 5.x edits: reparse matches 92, opens in rhwp 92 · 5,418 tests, 0 failures |
 | 4.25.29 | patch no longer pushes a value typed into a blank bracket placeholder behind its spaces (#247) and rewrites the preview text from the edited body (#248, fill and sessions too). HWP 5.x cell edits that change the line count are reported as skipped instead of being glued onto the previous line (#249). `<br>` in body paragraphs of generate becomes a line break (#250). DOCX `--charts` also reads charts in table cells and text boxes | Blank bracket: 27 leftover spaces → **0** · deleted lines left in the preview → **gone** · `<br>` in 9 presets: literal → **line break** · roundtrip 75 and gen 5 docs, 0 drops · 5,418 tests, 0 failures |
 | 4.25.28 | `--charts` also reads Excel objects (OLE) in HWP/HWPX as sheet tables. The `charts` option is available in MCP `parse_document` and the Python and Java SDKs. Empty picture frames no longer raise a skipped-image warning | Excel objects in 2 HWP docs: 0 → **3** tables · option on vs off over 4,353 docs: 0 errors, 0 changes outside chart/Excel blocks · default output: score 5,465, formats 146, annex 544 docs, 0 drops · false warnings in 199 HWPX docs → **0** |
@@ -134,11 +135,10 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.25.30](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.30)** · 2026-11-28
+Latest release: **[4.25.31](https://github.com/chrisryugj/kordoc/releases/tag/v4.25.31)** · 2026-11-28
 
 | Version | What changed | Measured change |
 | --- | --- | --- |
-| 4.25.26 | Finds table rules that stay slightly tilted after flattening a phone photo taken at an angle, so budget tables no longer collapse their rows into one cell | Degraded robustness perspective CER 0.0661 → **0.0525** (11 docs up, Bucheon budget 0.158 → 0.001) · KoOCR, OCR and ODL OCR unchanged · 0 down |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
