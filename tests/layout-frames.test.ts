@@ -5,7 +5,7 @@
 
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { CELL_BASELINES, CELL_EDGES, unframeLayoutTables, type Edges } from "../src/table/layout-frames.js"
+import { CELL_BASELINES, CELL_EDGES, CELL_SOFT_WRAPS, unframeLayoutTables, type Edges } from "../src/table/layout-frames.js"
 import { blocksToMarkdown } from "../src/table/builder.js"
 import JSZip from "jszip"
 import { extractHwpxStyles } from "../src/hwpx/styles.js"
@@ -37,6 +37,12 @@ function table(rows: Array<Array<[string, number, number, Edges]>>, cols: number
 const md = (blocks: IRBlock[]): string => blocksToMarkdown(unframeLayoutTables(blocks))
 
 describe("unframeLayoutTables", () => {
+  it("칸 폭에 밀려 꺾인 줄쌍(CELL_SOFT_WRAPS)은 문단으로 풀 때 띄어 잇는다 — 다른 줄바꿈은 문단 경계", () => {
+    const t = table([[["가. 하나의 위반행위가 둘 이상의 부과기준에 해당하는 경우에는 그 중\n금액이 큰 부과기준을 적용한다.\n나. 부과권자는", 1, 1, NONE]]], 1)
+    CELL_SOFT_WRAPS.set(t.cells[0][0], new Set(["가. 하나의 위반행위가 둘 이상의 부과기준에 해당하는 경우에는 그 중\n금액이 큰 부과기준을 적용한다."]))
+    assert.equal(md([{ type: "table", table: t }]), "가. 하나의 위반행위가 둘 이상의 부과기준에 해당하는 경우에는 그 중 금액이 큰 부과기준을 적용한다.\n\n나. 부과권자는")
+  })
+
   it("틀을 풀고 표 띠가 남으면 캡션은 그 띠 표의 캡션 — 위 캡션은 첫 띠, 아래 캡션은 마지막 띠", () => {
     const mk = (below: boolean): IRTable => ({ ...table([[["안내 글", 2, 1, NONE]], [["항목", 1, 1, BOX], ["금액", 1, 1, BOX]]], 2), caption: "<표 1>", ...(below ? { captionBelow: true } : {}) })
     for (const below of [false, true]) {

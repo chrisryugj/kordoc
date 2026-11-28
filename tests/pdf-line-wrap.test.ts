@@ -375,6 +375,25 @@ describe("cellTextToString — 칸 상자가 있으면 꺾임을 기하·어휘�
     assert.equal(cellTextToString(items, { box, lex }), "- 보국수훈자, 재일학도의용군인, 특별공로자의\n배우자")
   })
 
+  it("어절 경계 꺾임은 칸 글엔 줄바꿈으로 두고 soft 에 그 줄 번호를 담는다", () => {
+    const lex = lexOf("가 재일학도의용군인 나")
+    const items = [
+      ti("-", 63.1, 608, 5.6), ti("보국수훈자,", 224.8, 608, 55.7), ti("재", 285.7, 608, 10.8),
+      ti("일학도의용군인,", 71.8, 594, 77.1), ti("특별공로자의", 231.7, 594, 64.8),
+      ti("배우자", 71.8, 580, 32.4),
+    ]
+    items[1].hasSpaceBefore = true
+    items[2].hasSpaceBefore = true
+    items[4].hasSpaceBefore = true
+    const soft: number[] = []
+    assert.equal(cellTextToString(items, { box, lex, soft }), "- 보국수훈자, 재일학도의용군인, 특별공로자의\n배우자")
+    assert.deepEqual(soft, [0])
+    // 칸 폭 한참 앞에서 끝난 줄(문단 끝)은 꺾임이 아니다
+    const end: number[] = []
+    cellTextToString([ti("기준이다.", 70, 100, 40), ti("다음", 70, 86, 20)], { box, soft: end })
+    assert.deepEqual(end, [])
+  })
+
   it("칸 안쪽에 다음 글자가 들어갈 자리가 있던 줄(문단 끝)은 잇지 않는다", () => {
     const items = [ti("기준", 70, 100, 20), ti("을", 70, 86, 10)]
     // 조사로 시작해도 앞 줄이 칸 폭의 한참 앞에서 끝났으면 원문 줄바꿈이다

@@ -207,7 +207,7 @@ function keepWordsInOneCell(result: Map<ExtractedCell, TextItem[]>): void {
  * @param wrap 칸 상자·문서 어휘 증거 — 있으면 줄 꺾임을 기하·어휘로 판정해 어절 중간 꺾임만 붙인다(line-wrap.ts).
  *   없으면(과소분할 재구성 등 칸 상자 없는 호출) 종전 조각 규칙
  */
-export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; x2: number }; lex?: WrapLexicon }): string {
+export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; x2: number }; lex?: WrapLexicon; soft?: number[] }): string {
   if (items.length === 0) return ""
   if (items.length === 1) return items[0].text
 
@@ -309,7 +309,7 @@ export function cellTextToString(items: TextItem[], wrap?: { box: { x1: number; 
   const wide = lineEnds.slice(0, -1).map((a, i) => a.right - a.left + 1.5 * lineEnds[i + 1].firstCharW > inner)
   // 줄 끝 아이템 뒤 공백 글리프 — 그 꺾임은 어절 경계라 붙이지 않는다 (markTrailingSpaceGlyphs)
   const spaced = merged.map(s => !!s[s.length - 1].spaceAfter)
-  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide, spaced }))
+  return scripted(mergeCellTextLines(textLines, { wraps, lex: wrap.lex, wide, spaced, soft: wrap.soft }))
 }
 
 /** 첨자 행 병합 — cellTextToString 행 그룹핑 결과에 적용 (규칙은 text-line.ts와 동일) */
@@ -448,7 +448,11 @@ export { detectEvenSpacedItems }
  * 경계를 공백으로 잇는 건 삼간다). 종전 조각 규칙 — 8자 이하 한글 조각 붙임·쉼표/여는 괄호 뒤 15자 붙임 — 은 hwpx↔pdf 417쌍
  * 칸 줄 이음 실측에서 정밀도 10%(맞음 101·틀림 874)·2%(맞음 5·틀림 316)라 칸 상자가 있는 호출에서는 쓰지 않는다
  */
-function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon; wide?: boolean[]; spaced?: boolean[] }): string {
+/**
+ * 칸 줄 잇기. soft 를 주면 어절 경계에서 꺾인 줄 사이(돌려준 글의 줄 k 와 k+1 사이면 k)를 담는다 — 칸에는 줄로 두고(쌓인 값 칸과
+ * 기하로 못 가른다), 틀을 풀어 본문 문단으로 만들 때만 띄어 잇는다(CELL_SOFT_WRAPS)
+ */
+function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?: WrapLexicon; wide?: boolean[]; spaced?: boolean[]; soft?: number[] }): string {
   // 셀 내 줄바꿈 병합 — 잘린 단어/숫자 조각 복구
   if (textLines.length <= 1) return textLines[0] || ""
   const numberWrapped = (k: number) => !!wrap?.wraps[k] && (wrap.wide?.[k] ?? true)
@@ -493,6 +497,8 @@ function mergeCellTextLines(textLines: string[], wrap?: { wraps: boolean[]; lex?
       merged[merged.length - 1] = prev.trimEnd() + " " + curr.trim()
     }
     else {
+      if (wrap?.soft && wrap.wraps[i - 1] && !startsNewItem(prev, curr) && /\S$/.test(prev) && /^\S/.test(curr) &&
+          (wrap.spaced?.[i - 1] || wrapJoiner(prev, curr, wrap.lex, false) === " ")) wrap.soft.push(merged.length - 1)
       merged.push(curr)
     }
   }

@@ -49,6 +49,7 @@ import { bridgeSkippedRowVerticals } from "./vertical-bridge.js"
 import { splitSidebarTitleRegion, splitTrailingColumnRegion, panelBlocks } from "./local-regions.js"
 import { pushLineParagraphs } from "./paragraph-lines.js"
 import { buildFrameCellBlocks, takePendingNested, recordFrameTitle, groupFrameParagraphUnits, recordFrameReadingUnit, frameLayoutBoxes, takeFrameSpanningText, frameColumnTextBands, FRAME_RECT_TOL } from "./frame-cell-blocks.js"
+import { CELL_SOFT_WRAPS } from "../table/layout-frames.js"
 import { groupFlowBoxUnits } from "./flow-boxes.js"
 import { extendNestedShadedHeaders } from "./nested-shaded-headers.js"
 import { isChartTable, isExamLayoutTable, isFormulaTable, isTableOfContents, tocBlock, valueAxisBeside } from "./table-roles.js"
@@ -628,11 +629,18 @@ function extractBlocksWithGrids(
         takeClipCellEdges(cell, irGrid[cell.row][cell.col])
         continue
       }
+      const soft: number[] = []
+      const rawText = cellTextToString(cellItems, { box: cell.bbox, lex, soft })
       irGrid[cell.row][cell.col] = {
-        text: cleanCellText(cellTextToString(cellItems, { box: cell.bbox, lex })),
+        text: cleanCellText(rawText),
         colSpan: cell.colSpan,
         rowSpan: cell.rowSpan,
         bbox: cellBox(cell),
+      }
+      // 어절 경계 꺾임 — 다듬은 뒤에도 줄 수가 같을 때만(줄 번호가 맞아야 한다)
+      const cleanLines = irGrid[cell.row][cell.col].text.split("\n")
+      if (soft.length && cleanLines.length === rawText.split("\n").length) {
+        CELL_SOFT_WRAPS.set(irGrid[cell.row][cell.col], new Set(soft.map(k => cleanLines[k].trim() + "\n" + cleanLines[k + 1].trim())))
       }
       // 1×1 상자는 시각적 글줄 대신 원문 기하로 만든 문단을 함께 둔다. 칸 text 는 keep 모드의 기존 글을 보존한다.
       if (numRows === 1 && numCols === 1 && cellItems.length) {

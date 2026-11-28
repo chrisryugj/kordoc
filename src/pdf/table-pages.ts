@@ -5,7 +5,7 @@
  */
 
 import type { IRBlock, IRCell, IRTable } from "../types.js"
-import { CELL_PAGES } from "../table/layout-frames.js"
+import { CELL_PAGES, carrySoftWraps } from "../table/layout-frames.js"
 
 /** 한 칸 글 안에서 뒤 쪽 글이 시작하는 자리들 (글자 자리 오름차순) — 쪼개진 행·칸 이어짐 */
 type Split = { at: number; page: number }
@@ -177,6 +177,7 @@ function splitCrossPageRows(t: IRTable, pageNumber: number | undefined): IRTable
     // 칸을 고쳐 복제해도 쪽 표시·남은 쪼갠 자리는 따라간다
     const clone = (cell: IRCell, patch: Partial<IRCell>): IRCell => {
       const out = { ...cell, ...patch }
+      carrySoftWraps(cell, out)
       const p = CELL_PAGES.get(cell)
       if (p !== undefined) CELL_PAGES.set(out, p)
       if (!("text" in patch) && CELL_SPLITS.has(cell)) CELL_SPLITS.set(out, CELL_SPLITS.get(cell)!)
@@ -229,10 +230,11 @@ export function splitPageTables(blocks: IRBlock[]): IRBlock[] {
     const cuts: number[] = [0]
     for (let r = 1; r < t.rows; r++) if (pages[r] !== pages[r - 1]) cuts.push(r)
     if (cuts.length === 1) return t === b.table ? [b] : [{ ...b, table: t }]
+    const cut = (cell: IRCell, rowSpan: number): IRCell => { const out = { ...cell, rowSpan }; carrySoftWraps(cell, out); return out }
     return cuts.map((from, k) => {
       const end = cuts[k + 1] ?? t.rows
       const cells = t.cells.slice(from, end).map((row, dr) => row.map(cell =>
-        cell && from + dr + cell.rowSpan > end ? { ...cell, rowSpan: end - from - dr } : cell))
+        cell && from + dr + cell.rowSpan > end ? cut(cell, end - from - dr) : cell))
       const table: IRTable = { ...t, rows: end - from, cells, ...(k ? { caption: undefined, captionBlocks: undefined } : {}) }
       return { ...b, table, pageNumber: pages[from] }
     })

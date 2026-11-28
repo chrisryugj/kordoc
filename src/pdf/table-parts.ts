@@ -17,7 +17,7 @@ import { CONTACT_HEAD, CONTACT_ROLE } from "./contact-table.js"
 import { markJoinedPages } from "./table-pages.js"
 import { startsNewItem, wrapJoiner, type WrapLexicon } from "./line-wrap.js"
 import { NO_EDGES, hasOpenCellSeam, joinCellEdges } from "./cell-edges.js"
-import { CELL_EDGES } from "../table/layout-frames.js"
+import { CELL_EDGES, carrySoftWraps } from "../table/layout-frames.js"
 
 /** 글 이어짐은 표시 서식이 아니라 실제 글로 판정한다. 출력 칸의 밑줄·취소선은 그대로 둔다. */
 const flowText = (text: string): string => text.replace(/<\/?u>|~~/g, "")
@@ -140,6 +140,7 @@ export function joinSplitParts(prev: IRTable, pcx: number[], curr: IRTable, ccx:
     const lines = CELL_LINES.get(a.cell)
     if (lines) CELL_LINES.set(grid[r][c1], shift ? lines.map(l => ({ ...l, l: l.l + shift, r: l.r + shift })) : lines)
     if (IMAGE_CELLS.has(a.cell)) IMAGE_CELLS.add(grid[r][c1])
+    carrySoftWraps(a.cell, grid[r][c1])
     const edges = CELL_EDGES.get(a.cell)
     if (edges) { CELL_EDGES.set(grid[r][c1], edges); edged = true }
     return true
