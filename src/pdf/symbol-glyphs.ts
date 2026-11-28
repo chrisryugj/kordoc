@@ -154,6 +154,9 @@ export function classifyOutline({ contours, upm }: Outline): string | null {
 
 interface FontObj { name?: string; data?: Uint8Array }
 
+/** 이만큼 이어진 ━ 는 장식 줄 */
+const RULE_RUN = 60
+
 /**
  * 쪽 글 아이템의 U+F000 을 그 자리 글리프 모양의 기호로 바꾼다(제자리). 글꼴마다 글리프 흐름(showText)의 F000 글리프를 차례로
  * 아이템 글의 F000 과 짝짓는다 — 두 흐름의 F000 수가 다르면 그 글꼴은 손대지 않는다
@@ -196,6 +199,14 @@ export function restoreUnmappedGlyphs(items: PdfTextItem[], fnArray: ArrayLike<n
   for (const q of queues.values()) for (let k = 0; k < q.length; k++) {
     const pair = k + 1 < q.length ? pairedNumber(q[k], q[k + 1]) : undefined
     if (pair !== undefined) { q[k] = pair; q[k + 1] = ""; k++ } else q[k] = mapPuaText(q[k])
+  }
+  // 굵은 가로줄 ━ 이 길게 이어지면(본문 폭 장식 줄, hwp3-sample11 장 머리·쪽 꼬리 85자 남짓) 글이 아니다 — 종전대로 되살리지 않는다.
+  // 분수 가로줄(별표 계산식, 28~29자)·괘선 화살표(━┐·━>)는 짧다
+  for (const q of queues.values()) for (let k = 0; k < q.length;) {
+    let e = k
+    while (e < q.length && q[e] === "━") e++
+    if (e - k >= RULE_RUN) for (let j = k; j < e; j++) q[j] = NO_UNICODE
+    k = e > k ? e : k + 1
   }
   const byFont = new Map<string, PdfTextItem[]>()
   for (const it of items) {

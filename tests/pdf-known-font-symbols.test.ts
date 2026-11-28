@@ -41,3 +41,18 @@ describe("원본 문자표와 동일한 HCRDotum의 미지 기호", () => {
     assert.equal(restore("HCRDotum", [970], font, "§Ÿ·①"), "§Ÿ·①")
   })
 })
+
+// Haansoft Batang 원본 cmap F080F(━)와 같은 윤곽(가축분뇨법 시행령 [별표 1] 분수 가로줄). 글꼴 파일은 포함하지 않는다.
+describe("Haansoft Batang 굵은 가로줄 ━", () => {
+  const bar: Array<Array<[number, number, boolean]>> = [[[0, 388, true], [0, 388, true], [0, 345, true], [512, 345, true], [512, 388, true]]]
+  const barFont = outlineFont(1024, bar)
+  it("분수 가로줄 길이(29자)는 ━ 로 되살린다", () => {
+    assert.equal(restore("Haansoft Batang", Array(29).fill(500), barFont), "━".repeat(29))
+  })
+  it("본문 폭 장식 줄(60자 이상 이어짐)은 종전대로 되살리지 않는다", () => {
+    assert.equal(restore("Haansoft Batang", Array(85).fill(500), barFont), NO_UNICODE.repeat(85))
+  })
+  it("다른 글꼴은 같은 윤곽이어도 거절한다", () => {
+    assert.equal(restore("HCRBatang", [500], barFont), NO_UNICODE)
+  })
+})

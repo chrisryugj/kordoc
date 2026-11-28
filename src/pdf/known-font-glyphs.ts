@@ -15,7 +15,7 @@ const FACES: Record<string, number> = {
  * HANDotum·HANDotumB·HANBatang·HANBatangB·HBatang·HDotum 글꼴의 번호 글리프 U+F0288~F029B·F02B0~F02CC
  * (원·네모 숫자와 두 자리 번호 조각 — shared/pua.ts), 네모 안 예 F00DA, 가운데점 F02EF, ⊟·⊞ F03A7·F03A8, ■ F031C,
  * 괘선 조각 F0806~F0810 의 지문이다. 원·네모의 일의 자리 숫자처럼 윤곽·폭이 같은 코드는 공용 정책 글도 같아 한 지문에 둔다.
- * F080F(━)는 쪽 머리·꼬리 장식 줄로 쪽마다 찍힌 문서가 있어(hwp3-sample11) 넣지 않는다.
+ * F080F(━)는 쪽 머리·꼬리 장식 줄로 쪽마다 찍힌 문서가 있어(hwp3-sample11) Haansoft Batang 지문 하나만 넣는다(별표 분수 가로줄, 가축분뇨법 시행령 [별표 1]).
  */
 const KNOWN: Record<string, [number, number]> = {
   "826331f96b451b13": [0xf00da, 3], // [예]
@@ -212,6 +212,7 @@ const KNOWN: Record<string, [number, number]> = {
   "f1d0f30f61e84248": [0xf080e, 48], // ┘
   "65d24bb2fe5dcf5a": [0xf0810, 15], // │
   "5644629ab371a597": [0xf0810, 48], // │
+  "e5a11875a73dba10": [0xf080f, 16], // ━ (함초롬바탕 계열 Haansoft Batang 만 — 분수 가로줄. 쪽 장식 줄 문서의 글꼴은 넣지 않는다)
 }
 /** 확인한 글꼴의 지문이면 그 글리프의 사설 코드 */
 export function knownFontPua(name: string | undefined, outline: GlyphOutline, width: unknown): number | null {
