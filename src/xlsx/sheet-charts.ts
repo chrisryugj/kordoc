@@ -71,3 +71,25 @@ export async function sheetChartBlocks(zip: JSZip, sheetPath: string, page: numb
   }
   return out
 }
+
+/**
+ * 시트 그리기 파트의 도형·글상자 글(xdr:sp > xdr:txBody 의 a:p) — 놓인 차례대로 문단 하나씩. 칸 밖에 띄운 안내 글도 문서 내용이다
+ * (XLS 글상자·도형 글과 같다). 차트 틀(graphicFrame)은 도형이 아니라 여기에 안 든다
+ */
+export async function sheetShapeTexts(zip: JSZip, sheetPath: string): Promise<string[]> {
+  const out: string[] = []
+  for (const drawingRel of (await readRels(zip, sheetPath)).filter(r => r.type.endsWith("/drawing"))) {
+    const file = zip.file(resolvePart(sheetPath, drawingRel.target))
+    if (!file) continue
+    const doc = new DOMParser().parseFromString(stripDtd(await readZipEntry(file, "text")), "text/xml")
+    for (const sp of [...doc.getElementsByTagName("*")].filter(e => localName(e) === "sp")) {
+      const body = [...sp.childNodes].find(n => n.nodeType === 1 && localName(n as Element) === "txBody") as Element | undefined
+      if (!body) continue
+      const paras = [...body.childNodes].filter(n => n.nodeType === 1 && localName(n as Element) === "p")
+        .map(p => [...(p as Element).getElementsByTagName("*")].filter(e => localName(e) === "t").map(t => t.textContent ?? "").join("").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+      if (paras.length) out.push(paras.join("\n"))
+    }
+  }
+  return out
+}

@@ -34,6 +34,30 @@ function xlString(d: Buffer, at: number): string {
 
 const colName = (c: number): string => { let s = ""; for (c++; c > 0; c = Math.floor((c - 1) / 26)) s = String.fromCharCode(65 + ((c - 1) % 26)) + s; return s }
 
+/**
+ * 시트의 글 있는 그리기 개체(글상자·도형·체크 상자·라디오 단추) 글 — 레코드 차례대로. 메모(0x19)는 sheetNotes, 매크로 단추(7)는
+ * 화면 조작용이라 뺀다. MS-XLS ftCmo ot: 2 사각형 · 3 타원 · 6 글상자 · 0xB 체크 상자 · 0xC 라디오 단추 · 0x1E 그리기(오피스 도형)
+ */
+export function sheetTextObjects(records: BiffRecord[], bofIndex: number): string[] {
+  const TEXT_OT = new Set([2, 3, 6, 0x0b, 0x0c, 0x1e])
+  const out: string[] = []
+  let textObj = false, depth = 0
+  for (let i = bofIndex + 1; i < records.length; i++) {
+    const r = records[i]
+    if (r.opcode === OP_BOF) { depth++; continue }
+    if (r.opcode === OP_EOF) { if (depth-- === 0) break; continue }
+    if (depth > 0) continue
+    if (r.opcode === OP_OBJ && r.data.length >= 8 && r.data.readUInt16LE(0) === 0x15) textObj = TEXT_OT.has(r.data.readUInt16LE(4))
+    else if (r.opcode === OP_TXO && textObj && r.data.length >= 12) {
+      const cch = r.data.readUInt16LE(10)
+      const t = cch > 0 ? readContinuedText(records, i + 1, cch).replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").trim() : ""
+      if (t) out.push(t)
+      textObj = false
+    }
+  }
+  return out
+}
+
 export function sheetNotes(records: BiffRecord[], bofIndex: number, cells: RawCell[]): MemoNote[] {
   const text = new Map<number, string>()
   const notes: Array<{ row: number; col: number; id: number; author: string }> = []

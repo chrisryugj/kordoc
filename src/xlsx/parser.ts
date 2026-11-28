@@ -16,7 +16,7 @@ import { blocksToMarkdown, escapeLiteralDollar } from "../table/builder.js"
 import { escapeLiteralTags } from "../script-tags.js"
 import { MAX_SHEET_COLS, sheetToBlocks, type SheetMerge } from "./sheet-blocks.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
-import { sheetChartBlocks } from "./sheet-charts.js"
+import { sheetChartBlocks, sheetShapeTexts } from "./sheet-charts.js"
 import { sheetComments } from "./sheet-comments.js"
 import { applySheetLinks } from "./sheet-links.js"
 import { locateMemoBlocks } from "../memo-notes.js"
@@ -472,6 +472,8 @@ export async function parseXlsxDocument(
       blocks.push(...sheetBlocks)
       // charts 옵션을 켰을 때만. 원본 표 구조 모드(layoutTables "keep")는 내지 않는다 — 표 서수가 시트 표와 어긋난다
       if (options?.charts && options.layoutTables !== "keep") blocks.push(...await sheetChartBlocks(zip, sheetPath, i + 1))
+      // 도형·글상자 글 — 시트 표 뒤 문단으로(칸 밖에 띄운 글도 문서 내용이다)
+      for (const text of await sheetShapeTexts(zip, sheetPath)) blocks.push({ type: "paragraph", text, pageNumber: i + 1 })
       // 칸 메모 — 본문 표에는 섞지 않고 결과 memos 로(HWP·HWPX 메모와 같다)
       memos.push(...await sheetComments(zip, sheetPath, rows))
     } catch (err) {

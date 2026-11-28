@@ -43,7 +43,7 @@ import { extractSheetCells, type RawSheet, type CellValue } from "./cell.js"
 import { decodeUtf16Le } from "./encoding.js"
 import { dateKindOfFmt, dateSerialToIso, type DateKind } from "../xlsx/parser.js"
 import { sheetToBlocks } from "../xlsx/sheet-blocks.js"
-import { sheetNotes } from "./notes.js"
+import { sheetNotes, sheetTextObjects } from "./notes.js"
 import { locateMemoBlocks } from "../memo-notes.js"
 
 // ─── 상수 ─────────────────────────────────────────
@@ -356,6 +356,8 @@ export function parseXlsDocumentSync(
       const { sheet } = extractSheetCells(records, bofIdx, globals.sst, convertNum)
       const blocks = rawSheetToBlocks(meta.name, sheet, i, warnings, options?.keepTrailingEmptyCols)
       allBlocks.push(...blocks)
+      // 글상자·도형·체크 상자 글 — 시트 표 뒤 문단으로(칸 밖에 띄운 글도 문서 내용이다)
+      for (const text of sheetTextObjects(records, bofIdx)) allBlocks.push({ type: "paragraph", text, pageNumber: i + 1 })
       // 칸 메모 — 본문 표에는 섞지 않고 결과 memos 로(XLSX 칸 메모와 같다)
       memos.push(...sheetNotes(records, bofIdx, sheet.cells))
     } catch (e) {

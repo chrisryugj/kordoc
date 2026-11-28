@@ -82,3 +82,21 @@ describe("XLS(BIFF8) 칸 메모", () => {
     ])
   })
 })
+
+import { sheetTextObjects } from "../src/xls/notes.js"
+
+describe("XLS 글상자·도형 글", () => {
+  it("글상자·체크 상자 글은 읽고, 매크로 단추·메모 개체 글은 뺀다", () => {
+    const rec = (opcode: number, data: Buffer) => ({ opcode, data, offset: 0 })
+    const obj = (ot: number) => { const d = Buffer.alloc(22); d.writeUInt16LE(0x15, 0); d.writeUInt16LE(0x12, 2); d.writeUInt16LE(ot, 4); return d }
+    const txo = (cch: number) => { const d = Buffer.alloc(18); d.writeUInt16LE(cch, 10); return d }
+    const cont = (s: string) => Buffer.concat([Buffer.from([1]), Buffer.from(s, "utf16le")])
+    const records = [rec(0x0809, Buffer.alloc(16)),
+      rec(0x005d, obj(6)), rec(0x01b6, txo(4)), rec(0x003c, cont("안내 글")),
+      rec(0x005d, obj(7)), rec(0x01b6, txo(2)), rec(0x003c, cont("조회")),
+      rec(0x005d, obj(0x0b)), rec(0x01b6, txo(2)), rec(0x003c, cont("동의")),
+      rec(0x005d, obj(0x19)), rec(0x01b6, txo(2)), rec(0x003c, cont("메모")),
+      rec(0x000a, Buffer.alloc(0))]
+    assert.deepEqual(sheetTextObjects(records as never, 0), ["안내 글", "동의"])
+  })
+})
