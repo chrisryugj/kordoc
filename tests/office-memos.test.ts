@@ -53,3 +53,32 @@ describe("DOCX·XLSX 메모", () => {
     assert.doesNotMatch(r.markdown, /근로를 시작한 날/)
   })
 })
+
+import { sheetNotes } from "../src/xls/notes.js"
+
+describe("XLS(BIFF8) 칸 메모", () => {
+  const rec = (opcode: number, data: Buffer) => ({ opcode, data, offset: 0 })
+  const obj = (ot: number, id: number) => { const d = Buffer.alloc(22); d.writeUInt16LE(0x15, 0); d.writeUInt16LE(0x12, 2); d.writeUInt16LE(ot, 4); d.writeUInt16LE(id, 6); return d }
+  const txo = (cch: number) => { const d = Buffer.alloc(18); d.writeUInt16LE(cch, 10); return d }
+  const cont = (s: string, wide: boolean) => Buffer.concat([Buffer.from([wide ? 1 : 0]), Buffer.from(s, wide ? "utf16le" : "latin1")])
+  const note = (row: number, col: number, id: number, author: string) => {
+    const a = Buffer.from(author, "utf16le"), d = Buffer.alloc(11 + a.length)
+    d.writeUInt16LE(row, 0); d.writeUInt16LE(col, 2); d.writeUInt16LE(id, 6); d.writeUInt16LE(author.length, 8); d[10] = 1; a.copy(d, 11)
+    return d
+  }
+  it("OBJ(메모)·TXO·CONTINUE 글과 NOTE 칸·작성자를 개체 id 로 잇는다 — 작성자 머리 떼기, 빈 칸은 칸 주소, 하위 흐름 건너뜀", () => {
+    const records = [
+      rec(0x0809, Buffer.alloc(16)),
+      rec(0x005d, obj(0x19, 1)), rec(0x01b6, txo(10)), rec(0x003c, cont("김:\n", true)), rec(0x003c, cont("확인하세요", true)),
+      rec(0x0809, Buffer.alloc(16)), rec(0x005d, obj(0x19, 9)), rec(0x000a, Buffer.alloc(0)),  // 하위 흐름(차트) 안 개체는 무시
+      rec(0x005d, obj(0x19, 2)), rec(0x01b6, txo(3)), rec(0x003c, cont("빈칸", true)),
+      rec(0x001c, note(0, 0, 1, "김")), rec(0x001c, note(4, 2, 2, "")),
+      rec(0x000a, Buffer.alloc(0)),
+    ]
+    const memos = sheetNotes(records as never, 0, [{ row: 0, col: 0, value: "입사일" }])
+    assert.deepEqual(memos, [
+      { text: "확인하세요", anchor: "입사일", paragraph: "입사일", offset: 0, author: "김" },
+      { text: "빈칸", anchor: "C5", paragraph: "", offset: 0 },
+    ])
+  })
+})

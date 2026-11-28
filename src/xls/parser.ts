@@ -13,6 +13,7 @@
 
 import type {
   IRBlock,
+  MemoNote,
   DocumentMetadata,
   InternalParseResult,
   ParseOptions,
@@ -42,6 +43,8 @@ import { extractSheetCells, type RawSheet, type CellValue } from "./cell.js"
 import { decodeUtf16Le } from "./encoding.js"
 import { dateKindOfFmt, dateSerialToIso, type DateKind } from "../xlsx/parser.js"
 import { sheetToBlocks } from "../xlsx/sheet-blocks.js"
+import { sheetNotes } from "./notes.js"
+import { locateMemoBlocks } from "../memo-notes.js"
 
 // ─── 상수 ─────────────────────────────────────────
 
@@ -323,6 +326,7 @@ export function parseXlsDocumentSync(
 
   // 6. 각 시트 처리
   const allBlocks: IRBlock[] = []
+  const memos: MemoNote[] = []
   for (let i = 0; i < totalSheets; i++) {
     if (pageFilter && !pageFilter.has(i + 1)) continue
     const meta = globals.sheets[i]
@@ -352,6 +356,8 @@ export function parseXlsDocumentSync(
       const { sheet } = extractSheetCells(records, bofIdx, globals.sst, convertNum)
       const blocks = rawSheetToBlocks(meta.name, sheet, i, warnings, options?.keepTrailingEmptyCols)
       allBlocks.push(...blocks)
+      // 칸 메모 — 본문 표에는 섞지 않고 결과 memos 로(XLSX 칸 메모와 같다)
+      memos.push(...sheetNotes(records, bofIdx, sheet.cells))
     } catch (e) {
       warnings.push({
         page: i + 1,
@@ -371,5 +377,6 @@ export function parseXlsDocumentSync(
     blocks: allBlocks,
     metadata,
     warnings: warnings.length > 0 ? warnings : undefined,
+    ...(memos.length ? { memos: locateMemoBlocks(allBlocks, memos) } : {}),
   }
 }

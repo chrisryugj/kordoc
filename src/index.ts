@@ -398,8 +398,9 @@ export async function parseXlsx(buffer: ArrayBuffer, options?: ParseOptions): Pr
 /** XLS (Excel 97-2003) 파일을 Markdown으로 변환 */
 export async function parseXls(buffer: ArrayBuffer, options?: ParseOptions): Promise<ParseResult> {
   try {
-    const { markdown, blocks, metadata, warnings } = await parseXlsDocument(buffer, options)
-    return { success: true, fileType: "xls", markdown, blocks, metadata, warnings, pageCount: metadata?.pageCount }
+    const { markdown, blocks, metadata, warnings, memos } = await parseXlsDocument(buffer, options)
+    const md = options?.memos && memos?.length ? markdown + memosMarkdown(memos) : markdown
+    return { success: true, fileType: "xls", markdown: md, blocks, metadata, warnings, pageCount: metadata?.pageCount, ...(memos?.length ? { memos } : {}) }
   } catch (err) {
     return { success: false, fileType: "xls", error: sanitizeError(err), code: classifyError(err) }
   }
