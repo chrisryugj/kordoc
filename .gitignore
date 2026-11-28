@@ -37,6 +37,7 @@ input/
 
 # 결과물
 output/
+.kordoc-serve/
 # 벤치 코퍼스 — 실제 공문서, 저장소 미포함
 bench/corpus
 bench/out/

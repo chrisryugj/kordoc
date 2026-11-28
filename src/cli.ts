@@ -12,6 +12,7 @@ import { registerGenerateCommands } from "./cli/commands-generate.js"
 import { registerPackCommands } from "./cli/commands-pack.js"
 import { registerRenderCommands } from "./cli/commands-render.js"
 import { registerSystemCommands } from "./cli/commands-system.js"
+import { registerServeCommand } from "./cli/commands-serve.js"
 import { registerWorkerCommands } from "./cli/commands-worker.js"
 
 const program = new Command()
@@ -118,6 +119,7 @@ registerPackCommands(program)
 registerRenderCommands(program)
 registerSystemCommands(program)
 registerWorkerCommands(program)
+registerServeCommand(program)
 registerBatchWorker(program)
 
 // stdout 은 마크다운·JSON·생성 바이너리 채널 — pdfjs 등이 console 로 찍는 경고가 섞이지 않게 stderr 로
